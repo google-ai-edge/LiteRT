@@ -23,10 +23,9 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/ahwb_buffer.h"
@@ -45,7 +44,7 @@
 namespace litert {
 namespace internal {
 
-#if LITERT_HAS_AHWB_SUPPORT
+#if LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
 
 PFNGLBUFFERSTORAGEEXTERNALEXTPROC glBufferStorageExternalEXT;
 PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC eglGetNativeClientBufferANDROID;
@@ -63,12 +62,12 @@ bool IsAhwbToGlBufferInteropSupported() {
   return extensions_allowed;
 }
 
-#endif  // LITERT_HAS_AHWB_SUPPORT
+#endif  // LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
 
 Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
                                                  AhwbBuffer& ahwb_buffer) {
-#if LITERT_HAS_AHWB_SUPPORT
-  LITERT_RETURN_IF_ERROR(gpu_env->getEglDisplay() != EGL_NO_DISPLAY,
+#if LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+  LITERT_RETURN_IF_ERROR(gpu_env->GetEglDisplay() != EGL_NO_DISPLAY,
                          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                             "Failed to get EGL display"));
   LITERT_RETURN_IF_ERROR(
@@ -123,8 +122,8 @@ Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
   return GlBuffer(std::move(tflite_gl_buffer), ahwb_buffer.ahwb);
 #else
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                    "AHWB support is not enabled.");
-#endif  // LITERT_HAS_AHWB_SUPPORT
+                    "AHardwareBuffer to GL interop is not supported.");
+#endif  // LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
 }
 
 GlBuffer::GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target,
@@ -134,15 +133,11 @@ GlBuffer::GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target,
 #if LITERT_HAS_OPENGL_SUPPORT
   size_bytes_ = size_bytes;
 
-  if (deallocator != nullptr) {
-    tflite_gl_buffer_ = tflite::gpu::gl::GlBuffer(
-        target, id, size_bytes, offset, /*has_ownership=*/false);
-    deallocator_ = std::move(deallocator);
-  } else {
-    tflite_gl_buffer_ = tflite::gpu::gl::GlBuffer(
-        target, id, size_bytes, offset, /*has_ownership=*/true);
-    deallocator_ = nullptr;
-  }
+  // has_ownership is set to false since buffer deletion is determined by the
+  // deallocator in this case.
+  tflite_gl_buffer_ = tflite::gpu::gl::GlBuffer(target, id, size_bytes, offset,
+                                                /*has_ownership=*/false);
+  deallocator_ = deallocator;
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::GlBuffer() is not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -217,7 +212,7 @@ size_t GlBuffer::offset() const {
 
 Expected<GlBuffer> GlBuffer::Alloc(GpuEnvironment* gpu_env, size_t size_bytes) {
 #if LITERT_HAS_OPENGL_SUPPORT
-  LITERT_RETURN_IF_ERROR(gpu_env->getEglDisplay() != EGL_NO_DISPLAY,
+  LITERT_RETURN_IF_ERROR(gpu_env->GetEglDisplay() != EGL_NO_DISPLAY,
                          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                             "Failed to get EGL display"));
   tflite::gpu::gl::GlBuffer tflite_gl_buffer;

@@ -3,6 +3,7 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load(
     "//tflite:special_rules.bzl",
     "tflite_ios_lab_runner",

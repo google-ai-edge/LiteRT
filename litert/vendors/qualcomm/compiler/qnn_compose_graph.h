@@ -21,8 +21,8 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -52,6 +52,7 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
 // Composes a new QNN Graph from given LiteRt Graph. Qnn Graph is written to
 // context behind "qnn". Uses given graph_name to name entry point.
 LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
+                          Qnn_ProfileHandle_t profile_handle,
                           LiteRtSubgraph subgraph,
                           absl::string_view qnn_graph_name,
                           const ::qnn::Options& options);

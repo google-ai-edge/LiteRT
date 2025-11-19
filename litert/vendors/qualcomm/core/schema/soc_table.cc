@@ -33,6 +33,9 @@ constexpr SocInfo kSocInfos[] = {
     {SocInfo("SM8750", SnapdragonModel::SM8750, DspArch::V79,
              8  // vtcm_size_in_mb
              )},
+    {SocInfo("SM8850", SnapdragonModel::SM8850, DspArch::V81,
+             8  // vtcm_size_in_mb
+             )},
 };
 constexpr uint64_t kNumSocInfos =
     sizeof(::qnn::kSocInfos) / sizeof(::qnn::kSocInfos[0]);

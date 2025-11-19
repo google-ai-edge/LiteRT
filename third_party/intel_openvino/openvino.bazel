@@ -1,0 +1,43 @@
+# openvino_build_content.bazel
+# This file defines the BUILD content for the @openvino_native_sdk repository.
+# Paths within this file are relative to the root of the external repository
+# (which is the symlinked "openvino" directory in this case).
+
+cc_library(
+    name = "openvino",
+    hdrs = glob([
+        "openvino/runtime/include/**/*.h", # Gathers all .h files recursively
+        "openvino/runtime/include/ie/cpp/**/*.h",
+        "openvino/runtime/include/ie/**/*.h",
+        "openvino/runtime/include/**/*.hpp",
+    ]),
+    srcs = select({
+        "@org_tensorflow//tensorflow:windows": [
+            "openvino/runtime/lib/intel64/Release/openvino.lib",
+            "openvino/runtime/lib/intel64/Release/openvino_tensorflow_lite_frontend.lib",
+        ],
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            "openvino/runtime/lib/intel64/libopenvino.so",
+            "openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
+        ],
+        "//conditions:default": [
+            "openvino/runtime/lib/intel64/libopenvino.so",
+            "openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
+        ],
+    }),
+    # Important: This strips the prefix so users include like <ie/cpp/foo.h>
+    strip_include_prefix = "openvino/runtime/include",
+    includes = [
+        "openvino/runtime/include/ie/cpp",
+        "openvino/runtime/include/ie",
+        "openvino/runtime/include",
+    ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:windows": [
+            "/FORCE:MULTIPLE",
+        ],
+        "//conditions:default": [
+        ],
+    }),
+    visibility = ["//visibility:public"],
+)

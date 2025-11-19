@@ -22,10 +22,11 @@
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_accelerator.h"
+#include "litert/c/internal/litert_accelerator.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
-#include "litert/c/litert_logging.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 
@@ -72,7 +73,8 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
     for (int i = 0; i < num_tags; ++i) {
       auto value = values_vector[i];
       auto option = Environment::Option{
-          static_cast<Environment::OptionTag>(tags_array[i]), std::any(value)};
+          static_cast<Environment::OptionTag>(tags_array[i]),
+          litert::LiteRtVariant(value)};
       options.push_back(option);
     }
   }

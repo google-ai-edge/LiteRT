@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -31,9 +32,9 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "neuron_litert_schema",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        ":neuron_litert_schema",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings:str_format",
         "@flatbuffers//:runtime_cc",

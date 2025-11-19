@@ -1,0 +1,37 @@
+{
+  "name": "@litertjs/wasm-utils",
+  "version": "0.2.1",
+  "description": "Wasm utils for LiteRT.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/**"
+  ],
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/packages/wasm_utils"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --metafile && npm run bundle",
+    "bundle": "esbuild --bundle src/index.ts --outfile=dist/bundle.js --format=esm --sourcemap --metafile=dist/bundle-metafile.json",
+    "lint": "eslint .",
+    "typecheck": "tsc",
+    "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf dist",
+    "pack": "npm pack"
+  },
+  "devDependencies": {
+    "@litertjs/tsconfig": "^0.2.1",
+    "@litertjs/eslint-config": "^0.2.1",
+    "esbuild": "^0.23.0",
+    "eslint": "^9.8.0",
+    "tsup": "^8.2.3",
+    "typescript": "^5.5.4"
+  }
+}

@@ -17,9 +17,9 @@
 #include <memory>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/gpu_environment.h"
@@ -36,10 +36,10 @@ litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
 }
 
 litert::Expected<void> LiteRtEnvironmentT::AddOptions(
-    absl::Span<const LiteRtEnvOption> options) {
+    absl::Span<const LiteRtEnvOption> options, bool overwrite) {
   LITERT_LOG(LITERT_INFO, "Adding options to the existing LiteRT environment");
   for (const auto& opt : options) {
-    options_.SetOption(opt);
+    LITERT_RETURN_IF_ERROR(options_.SetOption(opt, overwrite));
   }
   return {};
 }

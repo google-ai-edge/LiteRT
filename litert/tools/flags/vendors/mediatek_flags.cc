@@ -47,15 +47,31 @@ ABSL_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
           kLiteRtMediatekNeuronAdapterOptimizationHintNormal,
           "Optimization hint for Mediatek Inference.");
 
+ABSL_FLAG(bool, mediatek_disable_dla_dir_removal, false,
+          "Disable DLA directory removal for Mediatek Compilation.");
+
+ABSL_FLAG(
+    std::string, mediatek_dla_dir, "",
+    "Meidatek DLA provided directory. If provided, all compiled DLA's will be "
+    "stored in the provided directory path. Meant to be used in conjunction "
+    "with `--mediatek_disable_dla_dir_removal` so that DLA's aren't cleaned "
+    "up post compilation.");
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error) {
+  if (text == "version7") {
+    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7;
+    return true;
+  }
+
   if (text == "version8") {
     *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
     return true;
   }
-  if (text == "version7") {
-    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7;
+
+  if (text == "version9") {
+    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9;
     return true;
   }
 
@@ -65,10 +81,12 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options) {
   switch (options) {
-    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
-      return "version8";
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7:
       return "version7";
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
+      return "version8";
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9:
+      return "version9";
   }
 }
 
@@ -108,7 +126,7 @@ std::string AbslUnparseFlag(
       return "sustained_speed";
     case (
         kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer
-        ):
+      ):
       return "fast_single_answer";
     case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost:
       return "turbo_boost";
@@ -157,8 +175,7 @@ std::string AbslUnparseFlag(
 
 namespace litert::mediatek {
 
-Expected<MediatekOptions> MediatekOptionsFromFlags() {
-  LITERT_ASSIGN_OR_RETURN(auto options, MediatekOptions::Create());
+Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options) {
   options.SetNeronSDKVersionType(
       absl::GetFlag(FLAGS_mediatek_sdk_version_type));
   options.SetEnableGemmaCompilerOptimizations(
@@ -168,7 +185,10 @@ Expected<MediatekOptions> MediatekOptionsFromFlags() {
   options.SetEnableL1CacheOptimizations(
       absl::GetFlag(FLAGS_mediatek_enable_l1_cache_optimizations));
   options.SetOptimizationHint(absl::GetFlag(FLAGS_mediatek_optimization_hint));
-  return options;
+  options.SetDisableDlaDirRemoval(
+      absl::GetFlag(FLAGS_mediatek_disable_dla_dir_removal));
+  options.SetMediatekDlaDir(absl::GetFlag(FLAGS_mediatek_dla_dir));
+  return {};
 }
 
 }  // namespace litert::mediatek

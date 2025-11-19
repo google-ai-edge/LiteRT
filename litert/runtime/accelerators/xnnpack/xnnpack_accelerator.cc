@@ -16,16 +16,14 @@
 
 #include <memory>
 
-#include "litert/c/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
-#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 #include "tflite/c/c_api_types.h"
@@ -56,10 +54,11 @@ class CpuAccelerator final
 
   // Creates a Dispatch delegate instance.
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOptions options, void** delegate) {
-    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+                                     LiteRtOptions options,
+                                     LiteRtDelegateWrapper* delegate_wrapper) {
+    LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
-        << "Delegate pointer is null.";
+        << "Delegate wrapper pointer is null.";
     LITERT_RETURN_IF_ERROR(accelerator != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
         << "Accelerator handle is invalid.";
@@ -67,11 +66,11 @@ class CpuAccelerator final
                            ErrorStatusBuilder::InvalidArgument())
         << "Accelerator is not registered to an environment.";
 
-    litert::Options cc_options(options, litert::OwnHandle::kNo);
-    Expected<OpaqueOptions> opaque_options = cc_options.GetOpaqueOptions();
+    LiteRtOpaqueOptions opaque_options;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options, &opaque_options));
     LiteRtCpuOptions cpu_options;
     const auto options_data_status = LiteRtFindOpaqueOptionsData(
-        opaque_options->Get(), CpuOptions::Identifier().data(),
+        opaque_options, LiteRtGetCpuOptionsIdentifier(),
         reinterpret_cast<void**>(&cpu_options));
 
     switch (options_data_status) {
@@ -93,17 +92,38 @@ class CpuAccelerator final
       LITERT_RETURN_IF_ERROR(LiteRtGetCpuOptionsXnnPackWeightCachePath(
           cpu_options, &xnn_options.weight_cache_file_path));
     }
-    *delegate = TfLiteXNNPackDelegateCreate(&xnn_options);
-
-    LITERT_RETURN_IF_ERROR(*delegate != nullptr,
+    TfLiteOpaqueDelegate* xnnpack_delegate =
+        TfLiteXNNPackDelegateCreate(&xnn_options);
+    LITERT_RETURN_IF_ERROR(xnnpack_delegate != nullptr,
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
+    LITERT_RETURN_IF_ERROR(
+        LiteRtWrapDelegate(xnnpack_delegate, delegate_wrapper));
+
     return kLiteRtStatusOk;
   }
 
   // Destroys an XNNPack delegate instance.
-  static void DestroyDelegate(void* delegate) {
-    TfLiteXNNPackDelegateDelete(reinterpret_cast<TfLiteDelegate*>(delegate));
+  static void DestroyDelegate(LiteRtDelegateWrapper delegate_wrapper) {
+    TfLiteOpaqueDelegate* xnnpack_delegate;
+    LiteRtUnwrapDelegate(delegate_wrapper, &xnnpack_delegate);
+    TfLiteXNNPackDelegateDelete(xnnpack_delegate);
+  }
+
+  // Returns true to indicate the XNNPack delegate is responsible for JIT
+  // compilation.
+  static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
+      LiteRtAcceleratorT* accelerator, bool* does_jit_compilation) {
+    LITERT_RETURN_IF_ERROR(does_jit_compilation,
+                           litert::ErrorStatusBuilder::InvalidArgument())
+        << "`does_jit_compilation` pointer is null.";
+#if defined(__EMSCRIPTEN__)
+    // Xnnpack is always applied to Web.
+    *does_jit_compilation = false;
+#else
+    *does_jit_compilation = true;
+#endif  // defined(__EMSCRIPTEN__)
+    return kLiteRtStatusOk;
   }
 };
 
@@ -126,6 +146,11 @@ LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment) {
 
   LITERT_ASSIGN_OR_RETURN(auto accelerator_impl,
                           litert::CpuAccelerator::Create());
+
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
+          accelerator.get(), litert::CpuAccelerator::
+                                 IsTfLiteDelegateResponsibleForJitCompilation));
 
   LITERT_RETURN_IF_ERROR(LiteRtRegisterAccelerator(
       environment, accelerator.release(), accelerator_impl.release(),

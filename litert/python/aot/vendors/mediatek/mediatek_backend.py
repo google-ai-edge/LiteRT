@@ -37,6 +37,10 @@ COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
 class MediaTekBackend(types.Backend):
   """Backend implementation for the example compiler plugin."""
 
+  def __init__(self, config: types.Config):
+    super().__init__(config)
+    self._compilation_config = config.get("compilation_config", None)
+
   @property
   def soc_manufacturer(self) -> target_lib.SocManufacturer:
     return target_lib.SocManufacturer.MEDIATEK

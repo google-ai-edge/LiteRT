@@ -25,11 +25,12 @@ limitations under the License.
 
 #include "absl/strings/str_join.h"
 #include "flatbuffers/vector.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/schema/schema_utils.h"
+#include "tflite/converter/schema/schema_utils.h"
 #include "tensorflow/core/public/release_version.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/model_builder.h"
 #include "tflite/schema/schema_generated.h"
+#include "tflite/version.h"
 
 namespace tflite {
 
@@ -471,7 +472,8 @@ std::string model_analyzer(const std::string& model_file_or_buffer,
       out_stream << "\nGPU COMPATIBILITY WARNING: Subgraph#" << i
                  << " has GPU delegate compatibility issues at nodes "
                  << absl::StrJoin(gpu_incompatible_nodes, ", ")
-                 << " on TFLite runtime version " << TF_VERSION_STRING << "\n";
+                 << " on TFLite runtime version " << TFLITE_VERSION_STRING
+                 << "\n";
     }
 
     // Dump Subgraph Tensors.
@@ -489,7 +491,7 @@ std::string model_analyzer(const std::string& model_file_or_buffer,
   if (check_gpu_compatibility && model_is_gpu_compatible) {
     out_stream
         << "\nYour model looks compatible with GPU delegate"
-        << " on TFLite runtime version " << TF_VERSION_STRING
+        << " on TFLite runtime version " << TFLITE_VERSION_STRING
         << ".\nThis does not guarantee that your model will work well with GPU"
            " delegate because there could still be runtime "
            "incompatibililties.\n";

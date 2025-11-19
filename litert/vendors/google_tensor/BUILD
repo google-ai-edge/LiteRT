@@ -1,3 +1,5 @@
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 # Copyright 2024 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,9 +42,8 @@ litert_lib(
     ],
     ungrte = False,
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
         "@com_google_absl//absl/debugging:leak_check",
@@ -79,14 +80,13 @@ cc_test(
     }),
     deps = [
         ":adapter",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_model",
-        "//litert/c/options:litert_google_tensor_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
         "//litert/test:common",
         "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],

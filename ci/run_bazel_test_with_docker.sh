@@ -49,7 +49,7 @@ else
     git submodule update --remote
   fi
 
-  cd /third_party_tensorflow
+  cd /root_dir
 
   # Run configure.
   configs=(
@@ -63,7 +63,6 @@ else
     'N'
   )
   printf '%s\n' "${configs[@]}" | ./configure
-  cp .tf_configure.bazelrc /root_dir
 
   export HERMETIC_PYTHON_VERSION=${DOCKER_PYTHON_VERSION}
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"

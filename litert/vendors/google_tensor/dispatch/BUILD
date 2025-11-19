@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -45,6 +47,7 @@ litert_dynamic_lib(
         "litert_dispatch_invocation_context.h",
         "litert_dispatch_metrics.h",
         "sb_api.h",
+        "sb_dispatch_annotations.h",
         "southbound.h",
     ],
     copts = [
@@ -56,10 +59,7 @@ litert_dynamic_lib(
         "-fdata-sections",
     ],
     export_litert_only = True,
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + [
+    linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_GoogleTensor.so",
         "-Wl,-lc++abi",
     ],
@@ -69,14 +69,11 @@ litert_dynamic_lib(
         # Don't build/test in OSS until Southbound is available.
         "nobuilder",
     ],
-    visibility = [
-        "//litert:__subpackages__",
-        "//litert:litert_internal_users",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_any",
+        "//litert/c/internal:litert_logging",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_environment_options",
@@ -84,6 +81,10 @@ litert_dynamic_lib(
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/dynamic_runtime/options:darwinn_options",
+        "//litert/vendors/cc:options_helper",
     ],
 )
 
@@ -95,12 +96,16 @@ litert_device_test(
         "//litert/test:testdata/simple_model_google_tensor.bin",
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
+    # TODO: google_tensor team fix visibility for fence deps.
+    tags = [
+        "nobuilder",
+        "notap",
+    ],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/cc:litert_environment",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_options",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -121,23 +126,43 @@ litert_device_test(
         "//litert/test:testdata/simple_model_google_tensor.bin",
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
+    features = select({
+        "//tools/cc_target_os:android": ["-layering_check"],
+        "//conditions:default": [],
+    }),
+    # TODO: google_tensor team fix visibility for fence deps.
+    tags = [
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
-        "//litert/c:litert_event",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_options",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
+    ],
+)
+
+cc_test(
+    name = "darwinn_options_test",
+    srcs = ["darwinn_options_test.cc"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/dynamic_runtime/options:darwinn_options",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_googletest//:gtest_main",
     ],
 )

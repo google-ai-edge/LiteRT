@@ -33,8 +33,8 @@
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
 
@@ -107,7 +107,7 @@ static const char kDispatchLibPatternFmt[] = "Dispatch";
 
 LiteRtStatus FindLiteRtDispatchSharedLibs(absl::string_view search_path,
                                           std::vector<std::string>& results) {
-  std::string root(search_path.data());
+  std::string root(search_path.data(), search_path.size());
   const std::string lib_pattern =
       absl::StrCat(kLiteRtSharedLibPrefix, kDispatchLibPatternFmt);
   return FindLiteRtSharedLibsHelper(root, lib_pattern, /*full_match=*/false,

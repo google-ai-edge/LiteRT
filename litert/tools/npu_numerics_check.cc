@@ -12,22 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cmath>
-#include <functional>
-#include <iostream>
-#include <string>
-#include <utility>
-#include <vector>
-#define INCLUDE_QUALCOMM_RUNTIME_FLAGS
-#define INCLUDE_MEDIATEK_RUNTIME_FLAGS
-#define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
-
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <iostream>
 #include <numeric>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_common.h"
+#define INCLUDE_QUALCOMM_RUNTIME_FLAGS
+#define INCLUDE_MEDIATEK_RUNTIME_FLAGS
+#define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
@@ -57,13 +59,18 @@ ABSL_FLAG(float, epsilon, 1e-4f,
           "Threshold value for npu / cpu inference comparison");
 ABSL_FLAG(bool, check_element_type, false,
           "Whether to check the element type of the output buffers.");
+ABSL_FLAG(bool, print_distribution, false,
+          "Whether to print the distribution of the output buffers.");
+ABSL_FLAG(
+    bool, print_difference_distribution, false,
+    "Whether to print the difference distribution of the output buffers.");
 
 namespace litert {
 namespace {
 
-using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
-using ::litert::mediatek::MediatekOptionsFromFlags;
-using ::litert::qualcomm::QualcommOptionsFromFlags;
+using ::litert::google_tensor::UpdateGoogleTensorOptionsFromFlags;
+using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
+using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
 
 Expected<Environment> GetEnvironment() {
   std::vector<litert::Environment::Option> environment_options = {};
@@ -80,16 +87,15 @@ Expected<Environment> GetEnvironment() {
 
 Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
-  if (auto qnn_opts = QualcommOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*qnn_opts));
-  }
-  if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*google_tensor_opts));
-  }
-  if (auto mediatek_opts = MediatekOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*mediatek_opts));
-  }
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
+  LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
+  LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
+                          options.GetGoogleTensorOptions());
+  LITERT_RETURN_IF_ERROR(
+      UpdateGoogleTensorOptionsFromFlags(google_tensor_opts));
+  LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+  LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
   return options;
 }
 
@@ -110,8 +116,9 @@ Expected<void> FillInputTensor(TensorBuffer& buffer, float scale) {
     return buffer.Write<float>(absl::MakeConstSpan(data));
   } else if (type.ElementType() == ElementType::Int32) {
     std::vector<int32_t> data(total_elements);
+    unsigned int seed = 7;
     for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 32;
+      data[i] = rand_r(&seed) % 1024 + 1;
     }
     return buffer.Write<int32_t>(absl::MakeConstSpan(data));
   } else if (type.ElementType() == ElementType::Int16) {
@@ -120,6 +127,12 @@ Expected<void> FillInputTensor(TensorBuffer& buffer, float scale) {
       data[i] = i % 2048;
     }
     return buffer.Write<int16_t>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::Int64) {
+    std::vector<int64_t> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = i % 2048;
+    }
+    return buffer.Write<int64_t>(absl::MakeConstSpan(data));
   } else if (type.ElementType() == ElementType::Int8) {
     std::vector<int8_t> data(total_elements);
     for (size_t i = 0; i < total_elements; ++i) {
@@ -156,6 +169,139 @@ Expected<std::vector<TensorBuffer>> CreateOutputBuffers(
   return compiled_model.CreateOutputBuffers(signature_index);
 }
 
+void PrintDistribution(const std::vector<float>& cpu_data,
+                       const std::vector<float>& npu_data) {
+  if (cpu_data.empty() || npu_data.empty()) {
+    return;
+  }
+
+  float min_val = cpu_data[0];
+  float max_val = cpu_data[0];
+  for (const auto& val : cpu_data) {
+    if (val < min_val) min_val = val;
+    if (val > max_val) max_val = val;
+  }
+  for (const auto& val : npu_data) {
+    if (val < min_val) min_val = val;
+    if (val > max_val) max_val = val;
+  }
+
+  if (min_val == max_val) {
+    std::cout << "All values are the same: " << min_val << std::endl;
+    return;
+  }
+
+  const int kNumBins = 20;
+  std::vector<int> cpu_hist(kNumBins, 0);
+  std::vector<int> npu_hist(kNumBins, 0);
+  const float bin_width = (max_val - min_val) / kNumBins;
+
+  for (const auto& val : cpu_data) {
+    int bin = (val - min_val) / bin_width;
+    if (bin >= kNumBins) bin = kNumBins - 1;
+    cpu_hist[bin]++;
+  }
+  for (const auto& val : npu_data) {
+    int bin = (val - min_val) / bin_width;
+    if (bin >= kNumBins) bin = kNumBins - 1;
+    npu_hist[bin]++;
+  }
+
+  int max_hist_count = 0;
+  for (int count : cpu_hist) {
+    if (count > max_hist_count) max_hist_count = count;
+  }
+  for (int count : npu_hist) {
+    if (count > max_hist_count) max_hist_count = count;
+  }
+
+  if (max_hist_count == 0) {
+    return;
+  }
+
+  const int kMaxBarWidth = 50;
+  std::cout << "\n--- Value Distribution ---" << std::endl;
+  std::cout << absl::StrFormat("%-22s | %-50s | %-50s\n", "Value Range", "CPU",
+                               "NPU");
+  std::cout << std::string(22 + 3 + 50 + 3 + 50, '-') << std::endl;
+
+  for (int i = 0; i < kNumBins; ++i) {
+    float bin_start = min_val + i * bin_width;
+    float bin_end = bin_start + bin_width;
+    std::string range_str = absl::StrFormat("[%.4f, %.4f)", bin_start, bin_end);
+
+    int cpu_bar_width = (cpu_hist[i] * kMaxBarWidth) / max_hist_count;
+    int npu_bar_width = (npu_hist[i] * kMaxBarWidth) / max_hist_count;
+    std::string cpu_bar(cpu_bar_width, '#');
+    std::string npu_bar(npu_bar_width, '#');
+
+    std::cout << absl::StrFormat("%-22s | %-50s | %-50s\n", range_str, cpu_bar,
+                                 npu_bar);
+  }
+  std::cout << "--------------------------\n" << std::endl;
+}
+
+void PrintDifferenceDistribution(const std::vector<float>& cpu_data,
+                                 const std::vector<float>& npu_data) {
+  if (cpu_data.size() != npu_data.size() || cpu_data.empty()) {
+    return;
+  }
+
+  std::vector<float> diffs(cpu_data.size());
+  for (size_t i = 0; i < cpu_data.size(); ++i) {
+    diffs[i] = cpu_data[i] - npu_data[i];
+  }
+
+  float min_diff = diffs[0];
+  float max_diff = diffs[0];
+  for (const auto& diff : diffs) {
+    if (diff < min_diff) min_diff = diff;
+    if (diff > max_diff) max_diff = diff;
+  }
+
+  if (min_diff == max_diff) {
+    std::cout << "All differences are the same: " << min_diff << std::endl;
+    return;
+  }
+
+  const int kNumBins = 20;
+  std::vector<int> hist(kNumBins, 0);
+  const float bin_width = (max_diff - min_diff) / kNumBins;
+
+  for (const auto& diff : diffs) {
+    int bin = (diff - min_diff) / bin_width;
+    if (bin >= kNumBins) bin = kNumBins - 1;
+    hist[bin]++;
+  }
+
+  int max_hist_count = 0;
+  for (int count : hist) {
+    if (count > max_hist_count) max_hist_count = count;
+  }
+
+  if (max_hist_count == 0) {
+    return;
+  }
+
+  const int kMaxBarWidth = 100;
+  std::cout << "\n--- Difference (CPU - NPU) Distribution ---" << std::endl;
+  std::cout << absl::StrFormat("%-22s | %s\n", "Difference Range",
+                               "Distribution");
+  std::cout << std::string(22 + 3 + 100, '-') << std::endl;
+
+  for (int i = 0; i < kNumBins; ++i) {
+    float bin_start = min_diff + i * bin_width;
+    float bin_end = bin_start + bin_width;
+    std::string range_str = absl::StrFormat("[%.4f, %.4f)", bin_start, bin_end);
+
+    int bar_width = (hist[i] * kMaxBarWidth) / max_hist_count;
+    std::string bar(bar_width, '#');
+
+    std::cout << absl::StrFormat("%-22s | %s\n", range_str, bar);
+  }
+  std::cout << "---------------------------------------------\n" << std::endl;
+}
+
 // Compares a single pair of output buffers and prints the results.
 Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
                                          TensorBuffer& npu_buffer,
@@ -166,6 +312,12 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   int total_different = 0;
   double mean_squared_error = 0;
   float mean_diff = 0;
+  double dot_product = 0.0;
+  double magnitude_cpu = 0.0;
+  double magnitude_npu = 0.0;
+  float max_abs_cpu = 0.0f;
+  double sum_cpu = 0.0;
+  double sum_npu = 0.0;
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_type, cpu_buffer.TensorType());
   LITERT_ASSIGN_OR_RETURN(auto npu_type, npu_buffer.TensorType());
@@ -229,6 +381,11 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
       LITERT_RETURN_IF_ERROR(buffer.Read<int16_t>(absl::MakeSpan(data)));
       copy_data_and_return(buffer_data, data, total_elements);
     }
+    if (element_type == ElementType::Int64) {
+      std::vector<int64_t> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<int64_t>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
     if (element_type == ElementType::Int8) {
       std::vector<int8_t> data(total_elements);
       LITERT_RETURN_IF_ERROR(buffer.Read<int8_t>(absl::MakeSpan(data)));
@@ -247,6 +404,14 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   std::vector<float> npu_data(total_elements);
   get_val(cpu_buffer, cpu_data);
   get_val(npu_buffer, npu_data);
+
+  if (absl::GetFlag(FLAGS_print_distribution)) {
+    PrintDistribution(cpu_data, npu_data);
+  }
+  if (absl::GetFlag(FLAGS_print_difference_distribution)) {
+    PrintDifferenceDistribution(cpu_data, npu_data);
+  }
+
   for (int element_index = 0; element_index < total_elements; ++element_index) {
     const float abs_diff =
         fabs(cpu_data[element_index] - npu_data[element_index]);
@@ -255,6 +420,12 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
         (cpu_data[element_index] - npu_data[element_index]);
     mean_squared_error += diff_square;
     mean_diff += abs_diff;
+    dot_product += cpu_data[element_index] * npu_data[element_index];
+    magnitude_cpu += cpu_data[element_index] * cpu_data[element_index];
+    magnitude_npu += npu_data[element_index] * npu_data[element_index];
+    max_abs_cpu = std::max(max_abs_cpu, std::abs(cpu_data[element_index]));
+    sum_cpu += cpu_data[element_index];
+    sum_npu += npu_data[element_index];
 
     all_diffs.push_back(std::make_pair(abs_diff, element_index));
     if (abs_diff > epsilon) {
@@ -275,6 +446,24 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
     }
   }
 
+  const double cosine_similarity =
+      dot_product / (sqrt(magnitude_cpu) * sqrt(magnitude_npu));
+  const double mse = mean_squared_error / total_elements;
+  const double snr = 10 * log10(magnitude_cpu / mean_squared_error);
+  const double psnr = 10 * log10(max_abs_cpu * max_abs_cpu / mse);
+
+  const double numerator = total_elements * dot_product - sum_cpu * sum_npu;
+  const double denominator_cpu =
+      total_elements * magnitude_cpu - sum_cpu * sum_cpu;
+  const double denominator_npu =
+      total_elements * magnitude_npu - sum_npu * sum_npu;
+  double pearson_correlation = 0.0;
+  if (denominator_cpu > 0 && denominator_npu > 0) {
+    pearson_correlation = numerator / (sqrt(denominator_cpu * denominator_npu));
+  } else if (mean_squared_error == 0) {
+    pearson_correlation = 1.0;
+  }
+
   std::sort(all_diffs.begin(), all_diffs.end());
   std::sort(all_diffs.begin(), all_diffs.end(),
             [](auto& left, auto& right) { return left.first < right.first; });
@@ -290,8 +479,14 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
               << std::endl;
   }
 
+  std::cout << "CPU magnitude: " << magnitude_cpu << std::endl;
+  std::cout << "NPU magnitude: " << magnitude_npu << std::endl;
   std::cout << "Mean diff: " << mean_diff / all_diffs.size() << std::endl;
-  std::cout << "MSE: " << mean_squared_error / total_elements << std::endl;
+  std::cout << "Cosine similarity: " << cosine_similarity << std::endl;
+  std::cout << "MSE: " << mse << std::endl;
+  std::cout << "SNR: " << snr << " dB" << std::endl;
+  std::cout << "PSNR: " << psnr << " dB" << std::endl;
+  std::cout << "Pearson correlation: " << pearson_correlation << std::endl;
   std::cout << "Total " << total_different << " out of " << total_elements
             << " are different elements, for output #" << buffer_index
             << ", threshold - " << epsilon << std::endl;
@@ -334,24 +529,19 @@ Expected<void> RunModel() {
                  "--dispatch_library_dir to provide it.");
   }
 
-  ABSL_LOG(INFO) << "CPU Model: " << absl::GetFlag(FLAGS_cpu_model);
-  LITERT_ASSIGN_OR_RETURN(
-      auto cpu_model, Model::CreateFromFile(absl::GetFlag(FLAGS_cpu_model)));
-
-  ABSL_LOG(INFO) << "NPU Model: " << absl::GetFlag(FLAGS_npu_model);
-  LITERT_ASSIGN_OR_RETURN(
-      auto npu_model, Model::CreateFromFile(absl::GetFlag(FLAGS_npu_model)));
-
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model_cpu,
-                          CompiledModel::Create(env, cpu_model, options));
+  ABSL_LOG(INFO) << "CPU Model: " << absl::GetFlag(FLAGS_cpu_model);
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_cpu,
+      CompiledModel::Create(env, absl::GetFlag(FLAGS_cpu_model), options));
 
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model_npu,
-                          CompiledModel::Create(env, npu_model, options));
+  ABSL_LOG(INFO) << "NPU Model: " << absl::GetFlag(FLAGS_npu_model);
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_npu,
+      CompiledModel::Create(env, absl::GetFlag(FLAGS_npu_model), options));
 
-  LITERT_ASSIGN_OR_RETURN(auto signatures, cpu_model.GetSignatures());
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
 
@@ -364,8 +554,16 @@ Expected<void> RunModel() {
                                 input_scale));
   LITERT_ASSIGN_OR_RETURN(
       auto npu_input_buffers,
-      CreateAndFillInputBuffers(compiled_model_npu, signature_index,
-                                input_scale));
+      compiled_model_npu.CreateInputBuffers(signature_index));
+  // Copy input buffers from CPU to NPU.
+  for (size_t i = 0; i < cpu_input_buffers.size(); ++i) {
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size, cpu_input_buffers[i].Size());
+    std::vector<char> data(buffer_size);
+    LITERT_RETURN_IF_ERROR(
+        cpu_input_buffers[i].Read<char>(absl::MakeSpan(data)));
+    LITERT_RETURN_IF_ERROR(
+        npu_input_buffers[i].Write<char>(absl::MakeSpan(data)));
+  }
 
   // Create output buffers
   LITERT_ASSIGN_OR_RETURN(

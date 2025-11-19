@@ -31,21 +31,25 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
-#include "litert/runtime/gl_buffer.h"
-#include "litert/runtime/gl_texture.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "litert/runtime/gl_buffer.h"
+#include "litert/runtime/gl_texture.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
 namespace litert::internal {
 class GpuEnvironment;
+class MetalMemory;
 }  // namespace litert::internal
 
 class LiteRtTensorBufferT {
@@ -102,6 +106,10 @@ class LiteRtTensorBufferT {
   static litert::Expected<Ptr> CreateManaged(
       LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+  static litert::Expected<Ptr> CreateManagedWithAlignment(
+      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+      const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+      size_t alignment);
 
 #if LITERT_HAS_OPENCL_SUPPORT
   static litert::Expected<Ptr> CreateFromOpenClMemory(
@@ -109,6 +117,13 @@ class LiteRtTensorBufferT {
       LiteRtTensorBufferType buffer_type, cl_mem buffer,
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  static litert::Expected<Ptr> CreateFromMetalMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, void* metal_buffer,
+      size_t buffer_size);
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
@@ -140,11 +155,14 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetIonBuffer();
   litert::Expected<std::pair<void*, int>> GetDmaBufBuffer();
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
+#if LITERT_HAS_OPENGL_SUPPORT
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+  litert::Expected<litert::internal::CustomBuffer*> GetCustomBuffer();
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
   litert::Expected<void> Unlock();
@@ -204,7 +222,12 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-                   litert::internal::GlBuffer, litert::internal::GlTexture>;
+                   litert::internal::CustomBuffer
+#if LITERT_HAS_OPENGL_SUPPORT
+                   ,
+                   litert::internal::GlBuffer, litert::internal::GlTexture
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+                   >;
 
   LiteRtTensorBufferT(LiteRtEnvironment env,
                       const LiteRtRankedTensorType& tensor_type,
@@ -213,6 +236,9 @@ class LiteRtTensorBufferT {
 
   static litert::Expected<Ptr> CreateManagedOnHostMemory(
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+  static litert::Expected<Ptr> CreateManagedOnHostMemory(
+      const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+      size_t alignment);
 
   static litert::Expected<Ptr> CreateManagedAhwbBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
@@ -234,6 +260,21 @@ class LiteRtTensorBufferT {
   static litert::Expected<Ptr> CreateManagedGlBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       size_t buffer_size);
+
+  static litert::Expected<Ptr> CreateManagedWebGpuBuffer(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
+  // Creates a managed Metal memory buffer. The function will allocate a Metal
+  // memory buffer and copy the data from the host memory to the Metal memory
+  // buffer.
+  static litert::Expected<Ptr> CreateManagedMetalMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
+  static litert::Expected<Ptr> CreateManagedVulkanMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
 
   litert::Expected<void> IsValid();
 

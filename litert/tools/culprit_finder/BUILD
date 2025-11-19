@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
@@ -23,14 +27,21 @@ package(
 cc_library(
     name = "culprit_finder_utils",
     hdrs = ["culprit_finder_utils.h"],
+    copts = select({
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     deps = [
+        "//litert/c/internal:litert_logging",
         "//tflite:framework",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
-        "//tflite/kernels:builtin_ops",
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }) + [
         "//tflite/tools:command_line_flags",
-        "//tflite/tools:logging",
         "//tflite/tools:tool_params",
     ],
 )
@@ -51,6 +62,27 @@ cc_library(
         "//tflite:framework_stable",
         "//tflite/profiling:model_runtime_info",
         "//tflite/tools:logging",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "model_metadata_lib_test",
+    srcs = ["model_metadata_lib_test.cc"],
+    data = [
+        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
+    ],
+    deps = [
+        ":interpreter_handler",
+        ":model_metadata_lib",
+        "//litert/cc:litert_expected",
+        "//tflite:framework",
+        "//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only",
+        "//tflite/tools/delegates:delegate_provider_hdr",
+        "//tflite/tools/delegates:delegate_provider_lib",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -65,10 +97,10 @@ cc_library(
     ],  # Incompatible with -fexceptions.
     visibility = ["//visibility:public"],
     deps = [
+        "//litert/c/internal:litert_logging",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "//tflite/tools:logging",
         "//tflite/tools:utils",
     ],
 )
@@ -77,7 +109,10 @@ cc_library(
     name = "interpreter_handler",
     srcs = ["interpreter_handler.cc"],
     hdrs = ["interpreter_handler.h"],
-    copts = ["-fexceptions"],
+    copts = ["-fexceptions"] + select({
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     features = [
         "-use_header_modules",
         "-parse_headers",
@@ -86,17 +121,19 @@ cc_library(
     deps = [
         ":tflite_input_manager",
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//tflite:framework",
-        "//tflite:framework_stable",
         "//tflite/c:c_api_types",
         "//tflite/core:model_builder",
-        "//tflite/kernels:builtin_ops",
-        "//tflite/tools:logging",
-        "//tflite/tools:model_loader",
-        "//tflite/tools/delegates:delegate_provider_hdr",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }) + [
+        "//tflite/tools:model_loader",
+        "//tflite/tools/delegates:delegate_provider_hdr",
     ],
 )
 
@@ -124,16 +161,20 @@ cc_library(
         "@com_google_absl//absl/types:span",
         # copybara:uncomment_begin(google-only)
         # "//third_party/odml/infra/ml_drift_delegate:ml_drift_delegate_provider",
-        # "//litert/cc:litert_expected",
-        # "//litert/cc:litert_macros",
-        # "//litert/cc:litert_tflite_error_status_builder",
-        # "//tflite/profiling/proto:model_runtime_info_cc",
         # copybara:uncomment_end
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_tflite_error_status_builder",
+        "//tflite/profiling/proto:model_runtime_info_cc",
         "//tflite:framework",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
-        "//tflite/kernels:builtin_ops",
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }) + [
         "//tflite/profiling:memory_usage_monitor",
         "//tflite/profiling:model_runtime_info",
         "//tflite/tools:command_line_flags",
@@ -158,6 +199,6 @@ cc_binary(
     srcs = ["culprit_finder_main.cc"],
     deps = [
         ":culprit_finder_lib",
-        "//tflite/tools:logging",
+        "//litert/c/internal:litert_logging",
     ],
 )

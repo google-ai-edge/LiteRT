@@ -7,6 +7,8 @@ load(
     "tf_opts_nortti_if_android",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "tf_custom_op_py_strict_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:build_def.bzl", "tf_to_tflite", "tflite_copts")
 
 package(
@@ -103,7 +105,10 @@ cc_library(
     name = "double_op_and_kernels",
     testonly = 1,
     srcs = ["double_op.cc"],
-    copts = tflite_copts() + tf_opts_nortti_if_android(),
+    copts = tflite_copts() + tf_opts_nortti_if_android() + select({
+        "@org_tensorflow//tensorflow:android": ["-Wno-private-header"],
+        "//conditions:default": [],
+    }),
     features = tf_features_nolayering_check_if_ios(),
     deps = select({
         "@org_tensorflow//tensorflow:android": [

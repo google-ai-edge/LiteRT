@@ -52,11 +52,16 @@ class TensorPool {
       const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
       const void* data);
 
+  TensorWrapper* CreateStaticTensorWithValue(
+      Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimentions, float fill_value);
+
   TensorWrapper& CreateStaticTensorWithSuffix(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
       const std::vector<std::uint32_t>& dimentions, std::string_view suffix,
-      std::uint32_t bytes, const void* data);
+      std::uint32_t bytes, const void* data, bool copy_data);
 
   TensorWrapper& CloneNativeTensorFrom(const TensorWrapper& src);
 
@@ -87,7 +92,7 @@ namespace {
 
 template <typename Src, typename Dst>
 bool FillData(const TensorWrapper& src_tensor, std::vector<Dst>& dst_data) {
-  const auto src_data = src_tensor.GetStaticTensorData<Src>();
+  const auto src_data = src_tensor.GetTensorData<Src>();
   if (!src_data.has_value()) {
     QNN_LOG_ERROR("Failed to get static tensor data when filling data.");
     return false;
@@ -163,7 +168,7 @@ TensorWrapper* TensorPool::ConvertStaticTensorFrom(
   auto& back = tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_STATIC,
       GetQnnDataType<T>(src_tensor.IsQuant()), src_tensor.GetQuantParams(),
-      src_tensor.GetDims(), sizeof(T) * dst_data.size(), dst_data.data());
+      src_tensor.GetDims(), sizeof(T) * dst_data.size(), dst_data.data(), true);
   return &back;
 }
 

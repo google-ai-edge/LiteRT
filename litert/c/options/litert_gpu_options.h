@@ -42,24 +42,32 @@ LiteRtStatus LiteRtSetGpuOptionsInfiniteFloatCapping(
 LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
                                               bool enable);
 
-// Set to true to run in no external tensors mode. This prevents GPU
-// Accelerator from using external tensors.
-// This mode mostly gives a better performance but it requires additional
-// GPU-GPU copies for input and output tensors.
+// Sets the GPU backend.
+LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
+                                           LiteRtGpuBackend backend);
+
+// Set to true to run in external tensors mode. This allows GPU
+// Accelerator to always use external tensors (PHWC4 format) as inputs and
+// outputs. This mode mostly gives a slightly lower performance but it reduces
+// additional GPU-GPU copies for input and output tensors.
 //
 // WARNING: This is an experimental feature and subject to change.
-// TODO - b/421905729: Change name to LiteRtSetGpuOptionsNoExternalTensorsMode
-// with the next API updates.
-LiteRtStatus LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtSetGpuOptionsExternalTensorsMode(
     LiteRtOpaqueOptions gpu_options, bool enable);
 
-// Add a prefix pattern to match external tensors. External tensors won't be
-// affected by the NoExternalTensorsMode. This is useful for state
-// tensors to reduce GPU-GPU copies even with the NoExternalTensorsMode.
-// For example, if the prefix pattern is "kv_cache_", then all tensors whose
-// names begin with "kv_cache_" will be exempted from NoExternalTensorsMode.
+// Add a prefix pattern to match external tensors. When ExternalTensorsMode is
+// not used (default behavior), all input and output tensors requires PHWC4
+// layout conversion. This pattern is useful for state tensors to reduce the
+// layout conversion. For example, if the prefix pattern is "kv_cache_", then
+// all tensors whose names begin with "kv_cache_" will be exempted.
 LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
     LiteRtOpaqueOptions gpu_options, const char* pattern);
+
+// Sets the GPU priority. Low priority helps to unblock UI workloads.
+//
+// WARNING: This is an experimental feature and subject to change.
+LiteRtStatus LiteRtSetGpuOptionsGpuPriority(LiteRtOpaqueOptions gpu_options,
+                                            LiteRtGpuPriority priority);
 
 // This enables dynamic range quantization of the input tensor for large sized
 // fully connected and convolution operations, if the device supports it. This
@@ -122,6 +130,19 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
     LiteRtOpaqueOptions gpu_accelerator_options,
     bool serialize_external_tensors);
 
+// Sets whether to madvise the original shared tensors after use. Note that
+// this boolean flag is to disable madvise which is enabled by default.
+LiteRtStatus
+LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool madvise_original_shared_tensors);
+
+// Sets the number of steps of command buffer preparations.
+LiteRtStatus
+LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    int num_steps_of_command_buffer_preparations);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -137,9 +158,10 @@ LiteRtStatus LiteRtGetGpuOptionsInfiniteFloatCapping(
 LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
                                               LiteRtGpuOptionsPayload payload);
 
-// TODO - b/421905729: Change name to LiteRtGetGpuOptionsNoExternalTensorsMode
-// with the next API updates.
-LiteRtStatus LiteRtGetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
+                                           LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuOptionsExternalTensorsMode(
     bool* enabled, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus
@@ -178,6 +200,18 @@ LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
 
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
     const char** external_tensor_pattern, int pattern_index,
+    LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
+                                            LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    bool* madvise_original_shared_tensors, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    int* num_steps_of_command_buffer_preparations,
     LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus

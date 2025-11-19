@@ -19,12 +19,12 @@
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -58,7 +58,7 @@ Expected<void> LegalizeFullyConnectedOp(
     input_indices.push_back(*id);
   }
 
-  // if there's on bias input, add a zero bias
+  // if there's no bias input, add a zero bias
   if (input_indices.size() < 3) {
     auto num_element = GetDimensions(op.Inputs()[1])[0];
     auto zero_bias_idx = AddZeroBiasForConvBase(op.Inputs()[0], op.Inputs()[1],
@@ -87,7 +87,9 @@ Expected<void> LegalizeFullyConnectedOp(
   auto output_operand = OperandType::Create(op.Outputs()[0]);
   std::vector<uint32_t> output_indices;
 
-  if (GetRank(op.Outputs()[0]) > 2) {
+  if (!neuron_adapter_api.IsFeatureEnabled(
+          NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP) &&
+      GetRank(op.Outputs()[0]) > 2) {
     // if output_operand shape <B, K, N>, reshape to <B * K, N>
     auto last_dim = output_operand->GetDimension().back();
     auto elements = output_operand->GetElementCount();
@@ -112,7 +114,9 @@ Expected<void> LegalizeFullyConnectedOp(
                  "Failed to set NEURON_FULLY_CONNECTED operation");
   }
 
-  if (GetRank(op.Outputs()[0]) > 2) {
+  if (!neuron_adapter_api.IsFeatureEnabled(
+          NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP) &&
+      GetRank(op.Outputs()[0]) > 2) {
     // intermediate as reshape input
     input_indices = {output_indices.back()};
     auto output_operand = operand_map.GetOperandIndex(op.Outputs()[0]);

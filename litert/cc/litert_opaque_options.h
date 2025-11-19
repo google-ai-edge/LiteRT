@@ -16,14 +16,16 @@
 #define ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_
 
 #include <cassert>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <type_traits>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
@@ -35,11 +37,6 @@ class OpaqueOptions
   using Ref = std::reference_wrapper<OpaqueOptions>;
 
   OpaqueOptions() = default;
-
-  // Parameter `owned` indicates if the created AcceleratorCompilationOptions
-  // object should take ownership of the provided `options` handle.
-  explicit OpaqueOptions(LiteRtOpaqueOptions options, OwnHandle owned)
-      : Handle(options, owned) {}
 
   static Expected<OpaqueOptions> Create(
       const std::string& payload_identifier, void* payload_data,
@@ -97,6 +94,25 @@ class OpaqueOptions
     }
     return {};
   }
+
+  Expected<void> SetHash(LiteRtOpaqueOptionsHashFunc payload_hash_func);
+
+  Expected<uint64_t> Hash() const;
+
+  ///  \internal  Wraps a LiteRtOpaqueOptions C object in a OpaqueOptions C++
+  ///  object.
+  ///
+  /// Warning: This is internal use only.
+  static OpaqueOptions WrapCObject(LiteRtOpaqueOptions options,
+                                   OwnHandle owned) {
+    return OpaqueOptions(options, owned);
+  }
+
+ protected:
+  // Parameter `owned` indicates if the created AcceleratorCompilationOptions
+  // object should take ownership of the provided `options` handle.
+  explicit OpaqueOptions(LiteRtOpaqueOptions options, OwnHandle owned)
+      : Handle(options, owned) {}
 };
 
 // Find the opaque option in the chain that matches the provided identifier.

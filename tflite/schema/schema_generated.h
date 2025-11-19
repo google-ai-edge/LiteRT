@@ -15,6 +15,6 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_SCHEMA_SCHEMA_GENERATED_H_
 #define TENSORFLOW_LITE_SCHEMA_SCHEMA_GENERATED_H_
 
-#include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 #endif  // TENSORFLOW_LITE_SCHEMA_SCHEMA_GENERATED_H_

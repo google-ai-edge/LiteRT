@@ -13,7 +13,9 @@
 # limitations under the License.
 
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load(
     "//tflite:build_def.bzl",
     "tflite_jni_binary",
@@ -34,15 +36,11 @@ cc_library(
     hdrs = ["src/main/jni/litert_jni_common.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//tflite/java/jni",
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -52,15 +50,13 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_environment",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_any",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//tflite/java/jni",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -73,18 +69,15 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
-        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//tflite/java/jni",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -95,18 +88,15 @@ cc_library(
         ":litert_jni_common",
         ":litert_model_jni",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/dynamic_runtime:litert_compiled_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/internal:litert_handle",
+        "//tflite/java/jni",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -116,15 +106,12 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/internal:litert_handle",
+        "//tflite/java/jni",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 # TODO(b/409850505): Unify the JNI build target with the OSS version.
@@ -133,10 +120,7 @@ cc_library(
 #     name = "litert_jni_lib",
 #     binary_name = "liblitert_jni.so",
 #     force_android = True,
-#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + select({
-#         "@org_tensorflow//tensorflow:android": ["-landroid"],
-#         "//conditions:default": [],
-#     }),
+#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
 #     deps = [
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
@@ -149,10 +133,7 @@ cc_library(
 # copybara:comment_begin(oss-only)
 tflite_jni_binary(
     name = "litert_jni",
-    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
     linkscript = ":litert_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,
@@ -214,3 +195,18 @@ aar_with_jni(
     name = "litert",
     android_library = ":litert_kotlin_api",
 )
+
+# copybara:uncomment_begin(google-only)
+# android_library(
+#     name = "litert_kotlin_api_native_gpu_deps",
+#     exports = [
+#         "//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator_shared_lib",
+#     ],
+# )
+#
+# # Marvel target for GPU Accelerator which supports both WebGPU and OpenCL.
+# aar_with_jni(
+#     name = "litert_gpu_accelerator",
+#     android_library = ":litert_kotlin_api_native_gpu_deps",
+# )
+# copybara:uncomment_end

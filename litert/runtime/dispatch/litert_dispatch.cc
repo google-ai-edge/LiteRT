@@ -14,22 +14,23 @@
 
 #include "litert/vendors/c/litert_dispatch.h"
 
+#if !defined(LITERT_WINDOWS_OS)
 #include <dlfcn.h>
+#endif  // !defined(LITERT_WINDOWS_OS)
 
-#include <any>
 #include <string>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_shared_library.h"
 #include "litert/core/dynamic_loading.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
@@ -42,6 +43,7 @@
     LITERT_LOG(LITERT_ERROR, #function " not found");             \
     return kLiteRtStatusErrorRuntimeFailure;                      \
   }                                                               \
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);         \
   return TheApi.interface->function(__VA_ARGS__);
 
 #define INVOKE_ASYNC_FUNC(function, ...)                                \
@@ -89,10 +91,10 @@ litert::Expected<std::string> GetSharedLibraryPath(
       auto dispatch_lib_dir,
       env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir));
   litert::internal::FindLiteRtDispatchSharedLibs(
-      std::any_cast<const char*>(dispatch_lib_dir), dispatch_lib_paths);
+      std::get<const char*>(dispatch_lib_dir), dispatch_lib_paths);
   if (dispatch_lib_paths.empty()) {
     LITERT_LOG(LITERT_ERROR, "No dispatch library found in %s",
-               std::any_cast<const char*>(dispatch_lib_dir));
+               std::get<const char*>(dispatch_lib_dir));
     return litert::Error(kLiteRtStatusErrorRuntimeFailure);
   }
   if (dispatch_lib_paths.size() > 1) {
@@ -533,33 +535,33 @@ LiteRtStatus LiteRtDispatchAssignNodeFunction(
                     function_name);
 }
 
-LiteRtStatus LiteRtDispatchAnnotateGraph(LiteRtDispatchGraph graph,
+LiteRtStatus LiteRtDispatchAnnotateGraph(LiteRtDispatchGraph* graph,
                                          const char* key, const char* value) {
   if (!graph) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  INVOKE_GRAPH_FUNC(annotate_graph, graph, key, value);
+  INVOKE_GRAPH_FUNC(annotate_graph, *graph, key, value);
 }
 
-LiteRtStatus LiteRtDispatchAnnotateNode(LiteRtDispatchGraph graph,
+LiteRtStatus LiteRtDispatchAnnotateNode(LiteRtDispatchGraph* graph,
                                         LiteRtDispatchNodeId node_id,
                                         const char* key, const char* value) {
   if (!graph) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  INVOKE_GRAPH_FUNC(annotate_node, graph, node_id, key, value);
+  INVOKE_GRAPH_FUNC(annotate_node, *graph, node_id, key, value);
 }
 
-LiteRtStatus LiteRtDispatchAnnotateEdge(LiteRtDispatchGraph graph,
+LiteRtStatus LiteRtDispatchAnnotateEdge(LiteRtDispatchGraph* graph,
                                         LiteRtDispatchEdgeId edge_id,
                                         const char* key, const char* value) {
   if (!graph) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  INVOKE_GRAPH_FUNC(annotate_edge, graph, edge_id, key, value);
+  INVOKE_GRAPH_FUNC(annotate_edge, *graph, edge_id, key, value);
 }
 
 LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
@@ -571,4 +573,19 @@ LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
   }
   INVOKE_GRAPH_FUNC(invocation_context_create_from_graph, device_context, graph,
                     invocation_context);
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextGetGraph(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph) {
+  if (!invocation_context || !graph) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.graph_interface ||
+      !TheApi.graph_interface->invocation_context_get_graph) {
+    LITERT_LOG(LITERT_ERROR, "invocation_context_get_graph not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  INVOKE_GRAPH_FUNC(invocation_context_get_graph, invocation_context, graph);
 }

@@ -18,9 +18,7 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 // Wrapper for dynamically loaded LiteRtCompilerPlugin library. See
@@ -78,6 +76,10 @@ typedef LiteRtStatus (*LiteRtGetCompiledResultCallInfoT)(
 typedef LiteRtStatus (*LiteRtGetNumCompiledResultCallsT)(
     LiteRtCompiledResult, LiteRtParamIndex* num_calls);
 
+typedef LiteRtStatus (*LiteRtCompilerPluginRegisterAllTransformationsT)(
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns);
+
 //
 // Function Pointer Container
 //
@@ -104,6 +106,7 @@ struct LiteRtCompilerPluginApi {
   LiteRtCompiledResultNumByteCodeModulesT get_compiled_result_num_byte_code;
   LiteRtGetCompiledResultCallInfoT get_compiled_result_call_info;
   LiteRtGetNumCompiledResultCallsT get_compiled_result_num_calls;
+  LiteRtCompilerPluginRegisterAllTransformationsT register_all_transformations;
 };
 
 #ifdef __cplusplus
@@ -145,6 +148,9 @@ static constexpr absl::string_view kLiteRtGetCompiledResultCallInfo =
     "LiteRtGetCompiledResultCallInfo";
 static constexpr absl::string_view kLiteRtGetNumCompiledResultCalls =
     "LiteRtGetNumCompiledResultCalls";
+static constexpr absl::string_view
+    kLiteRtCompilerPluginRegisterAllTransformations =
+        "LiteRtCompilerPluginRegisterAllTransformations";
 
 #endif  // __cplusplus
 

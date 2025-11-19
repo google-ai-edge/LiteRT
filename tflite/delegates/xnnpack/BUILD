@@ -1,5 +1,7 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_copts")
 load("//tflite:special_rules.bzl", "internal_visibility_allowlist", "tflite_portable_test_suite_combined")
 
@@ -251,6 +253,8 @@ cc_library(
         "//tflite:minimal_logging",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+        "//tflite/converter/kernels/internal:compatibility_macros",
+        "//tflite/converter/tools/optimize:reduced_precision_metadata",
         "//tflite/core:subgraph",
         "//tflite/core/api",
         "//tflite/core/c:common",
@@ -265,8 +269,6 @@ cc_library(
         "@XNNPACK",
         "@eigen_archive//:eigen3",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/kernels/internal:compatibility_macros",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/optimize:reduced_precision_metadata",
         "@pthreadpool",
     ],
 )
@@ -297,6 +299,8 @@ cc_library(
         "//tflite:minimal_logging",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+        "//tflite/converter/kernels/internal:compatibility_macros",
+        "//tflite/converter/tools/optimize:reduced_precision_metadata",
         "//tflite/core:subgraph",
         "//tflite/core/api",
         "//tflite/core/c:common",
@@ -311,8 +315,6 @@ cc_library(
         "@XNNPACK",
         "@eigen_archive//:eigen3",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/kernels/internal:compatibility_macros",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/optimize:reduced_precision_metadata",
         "@pthreadpool",
     ],
 )
@@ -385,6 +387,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         ":file_util",
+        ":windows_util",
         "//tflite:minimal_logging",
     ],
 )
@@ -410,6 +413,17 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "windows_util",
+    srcs = ["windows_util.cc"],
+    hdrs = ["windows_util.h"],
+    compatible_with = get_compatible_with_portable(),
+    tags = [
+        "keep_dep",  # Build cleaner will want to remove this because it doesn't check for Windows builds.
+    ],
+    deps = [],
+)
+
 ################################ Tester classes ################################
 
 cc_library(
@@ -432,6 +446,7 @@ cc_library(
         ":test_util",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -439,7 +454,6 @@ cc_library(
         "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -454,13 +468,13 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -472,13 +486,13 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -492,6 +506,7 @@ cc_library(
         ":xnnpack_delegate_test_mode",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -499,7 +514,6 @@ cc_library(
         "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -512,13 +526,13 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -532,6 +546,7 @@ cc_library(
         ":xnnpack_delegate_test_mode",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -539,7 +554,6 @@ cc_library(
         "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -551,13 +565,13 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -571,13 +585,13 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -591,13 +605,13 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -611,13 +625,13 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -631,6 +645,7 @@ cc_library(
         ":xnnpack_delegate_test_mode",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -638,7 +653,6 @@ cc_library(
         "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -650,13 +664,13 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -669,6 +683,8 @@ cc_library(
         "//tflite:framework",
         "//tflite:version",
         "//tflite/c:common",
+        "//tflite/converter/schema:schema_conversion_utils",
+        "//tflite/converter/schema:schema_fbs",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -677,8 +693,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
     ],
 )
 
@@ -690,13 +704,13 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -708,13 +722,13 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -728,6 +742,7 @@ cc_library(
         ":xnnpack_delegate_test_mode",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -735,7 +750,6 @@ cc_library(
         "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -747,13 +761,13 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -766,6 +780,7 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -773,7 +788,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -787,6 +801,7 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -794,7 +809,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -808,6 +822,7 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -815,7 +830,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -829,6 +843,7 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -836,7 +851,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -848,6 +862,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -855,7 +870,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -867,6 +881,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -874,7 +889,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -887,6 +901,7 @@ cc_library(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -894,7 +909,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -906,6 +920,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -913,7 +928,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -925,6 +939,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -932,7 +947,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -945,6 +959,7 @@ cc_library(
         ":xnnpack_delegate_test_mode",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:cc_api_stable",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -952,7 +967,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -969,6 +983,7 @@ cc_library(
         ":xnnpack_delegate",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:cc_api_stable",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -976,7 +991,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -988,6 +1002,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -995,7 +1010,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -1007,6 +1021,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -1014,7 +1029,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -1026,6 +1040,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -1033,7 +1048,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -1045,6 +1059,7 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:cc_api_stable",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -1052,7 +1067,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -1193,6 +1207,7 @@ cc_library(
         ":xnnpack_delegate_test_mode",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -1201,7 +1216,6 @@ cc_library(
         "@FP16",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 

@@ -1,0 +1,20 @@
+{
+  "name": "@litertjs/eslint-config",
+  "private": "true",
+  "version": "0.2.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/packages/eslint_config"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "eslint.config.js",
+  "files": [
+    "eslint.config.js"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^9.8.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

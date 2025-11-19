@@ -29,22 +29,31 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
+#include "litert/core/options.h"
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+#include "tflite/interpreter.h"
 
 namespace litert {
 namespace {
@@ -146,10 +155,10 @@ CreateInputOutputBuffersFromRequirements(LiteRtEnvironment env,
   tensor_buffers.reserve(tensors.size());
 
   for (int i = 0; i < tensors.size(); ++i) {
-    Expected<LiteRtTensorBufferRequirementsT*> requirements_expected =
+    Expected<const LiteRtTensorBufferRequirementsT*> requirements_expected =
         is_input ? compiled_model.GetInputBufferRequirements(signature_key, i)
                  : compiled_model.GetOutputBufferRequirements(signature_key, i);
-    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferRequirementsT * requirements,
+    LITERT_ASSIGN_OR_RETURN(const LiteRtTensorBufferRequirementsT* requirements,
                             requirements_expected);
 
     LITERT_ASSIGN_OR_RETURN(
@@ -214,7 +223,7 @@ TEST(CompiledModelTest, Basic) {
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg0,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
@@ -224,7 +233,7 @@ TEST(CompiledModelTest, Basic) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg1,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
@@ -234,7 +243,7 @@ TEST(CompiledModelTest, Basic) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * output_buffer_requirements,
+      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
@@ -256,13 +265,15 @@ TEST(CompiledModelTest, Basic) {
 
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   {
-    TensorBuffer cpu_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer cpu_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -363,7 +374,7 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
 
   // Check input and output buffer requirements expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg0,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
@@ -373,7 +384,7 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg1,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
@@ -383,7 +394,7 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * output_buffer_requirements,
+      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
@@ -409,13 +420,15 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeAhwb);
   {
-    TensorBuffer ahwb_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer ahwb_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer ahwb_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer ahwb_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -497,7 +510,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   // Check ComiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg0,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
@@ -507,7 +520,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg1,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
@@ -517,7 +530,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * output_buffer_requirements,
+      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
@@ -544,13 +557,15 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeOpenClBuffer);
   {
-    TensorBuffer opencl_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer opencl_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer opencl_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer opencl_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -615,21 +630,26 @@ TEST(CompiledModelTest, WithProfiler) {
   ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
                                                  kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetEnableProfiling(/*enabled=*/true);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
   LiteRtDestroyOptions(jit_compilation_options);
 
   // Create profiler.
-  LiteRtProfiler profiler = nullptr;
-  ASSERT_EQ(LiteRtCreateProfiler(100, &profiler), kLiteRtStatusOk);
-  compiled_model->SetProfiler(profiler);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtProfiler profiler,
+                              compiled_model->GetProfiler());
   ASSERT_EQ(LiteRtStartProfiler(profiler), kLiteRtStatusOk);
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg0,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
@@ -639,7 +659,7 @@ TEST(CompiledModelTest, WithProfiler) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg1,
+      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
@@ -649,7 +669,7 @@ TEST(CompiledModelTest, WithProfiler) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtTensorBufferRequirementsT * output_buffer_requirements,
+      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
@@ -671,13 +691,15 @@ TEST(CompiledModelTest, WithProfiler) {
 
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   {
-    TensorBuffer cpu_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer cpu_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -712,9 +734,579 @@ TEST(CompiledModelTest, WithProfiler) {
     LiteRtDestroyTensorBuffer(output_buffer);
   }
 
-  LiteRtDestroyProfiler(profiler);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
 }
+
+TEST(CompiledModelTest, ErrorReporterBufferMode) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetErrorReporterMode(
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Report some errors
+  compiled_model->ReportError("Test error 1: %d", 100);
+  compiled_model->ReportError("Test error 2: %s", "failed operation");
+  compiled_model->ReportError("Test error 3");
+
+  // Get error messages
+  auto messages_result = compiled_model->GetErrorMessages();
+  ASSERT_TRUE(messages_result);
+  std::string messages = *messages_result;
+
+  // Verify all errors are captured
+  EXPECT_THAT(messages, ::testing::HasSubstr("Test error 1: 100"));
+  EXPECT_THAT(messages, ::testing::HasSubstr("Test error 2: failed operation"));
+  EXPECT_THAT(messages, ::testing::HasSubstr("Test error 3"));
+
+  // Clear errors
+  auto clear_result = compiled_model->ClearErrors();
+  ASSERT_TRUE(clear_result);
+
+  // Verify errors are cleared
+  messages_result = compiled_model->GetErrorMessages();
+  ASSERT_TRUE(messages_result);
+  EXPECT_EQ(*messages_result, "");
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, ErrorReporterStderrMode) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetErrorReporterMode(
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Report errors (they will go to stderr)
+  compiled_model->ReportError("Test stderr error: %d", 42);
+
+  // ClearErrors and GetErrorMessages should fail for stderr mode
+  auto clear_result = compiled_model->ClearErrors();
+  EXPECT_FALSE(clear_result);
+  EXPECT_EQ(clear_result.Error().Status(), kLiteRtStatusErrorUnsupported);
+
+  auto messages_result = compiled_model->GetErrorMessages();
+  EXPECT_FALSE(messages_result);
+  EXPECT_EQ(messages_result.Error().Status(), kLiteRtStatusErrorUnsupported);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, ErrorReporterNoneMode) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetErrorReporterMode(
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Error reporter should be null (no getter available)
+
+  // Report errors (should be no-op)
+  compiled_model->ReportError("This error should be ignored");
+
+  // ClearErrors and GetErrorMessages should fail for none mode
+  auto clear_result = compiled_model->ClearErrors();
+  EXPECT_FALSE(clear_result);
+  EXPECT_EQ(clear_result.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+
+  auto messages_result = compiled_model->GetErrorMessages();
+  EXPECT_FALSE(messages_result);
+  EXPECT_EQ(messages_result.Error().Status(),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
+  // Test that each model has its own error reporter
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+
+  // Create first model with buffer reporter
+  LiteRtModel model1;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model1), kLiteRtStatusOk);
+
+  LiteRtOptions options1;
+  ASSERT_EQ(LiteRtCreateOptions(&options1), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options1, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options1, RuntimeOptions::Create());
+  runtime_options1.SetErrorReporterMode(
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options1, runtime_options1.Release()),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model1,
+      LiteRtCompiledModelT::Create(env_ptr, model1, options1));
+  LiteRtDestroyOptions(options1);
+
+  // Create second model with stderr reporter
+  LiteRtModel model2;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model2), kLiteRtStatusOk);
+
+  LiteRtOptions options2;
+  ASSERT_EQ(LiteRtCreateOptions(&options2), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options2, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options2, RuntimeOptions::Create());
+  runtime_options2.SetErrorReporterMode(
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options2, runtime_options2.Release()),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model2,
+      LiteRtCompiledModelT::Create(env_ptr, model2, options2));
+  LiteRtDestroyOptions(options2);
+
+  // Report errors to both models
+  compiled_model1->ReportError("Model 1 error");
+  compiled_model2->ReportError("Model 2 error");
+
+  // Model 1 should have buffer functionality
+  auto messages1 = compiled_model1->GetErrorMessages();
+  ASSERT_TRUE(messages1);
+  EXPECT_THAT(*messages1, ::testing::HasSubstr("Model 1 error"));
+
+  // Model 2 should not support buffer operations
+  auto messages2 = compiled_model2->GetErrorMessages();
+  EXPECT_FALSE(messages2);
+
+  LiteRtDestroyModel(model1);
+  LiteRtDestroyModel(model2);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, ErrorReporterDefaultMode) {
+  // Test default error reporter mode when not explicitly set
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel without setting error reporter mode
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, options));
+  LiteRtDestroyOptions(options);
+
+  // Default should be stderr mode
+  compiled_model->ReportError("Default mode error");
+
+  // Should not support buffer operations
+  auto messages = compiled_model->GetErrorMessages();
+  EXPECT_FALSE(messages);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, ErrorReporterWithProfilingEnabled) {
+  // Test that error reporter and profiler can coexist, ensure the runtime
+  // options are correctly applied.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+
+  // Enable both profiling and buffer error reporter
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetEnableProfiling(true);
+  runtime_options.SetErrorReporterMode(
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options, runtime_options.Release()),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, options));
+  LiteRtDestroyOptions(options);
+
+  // Both should work independently
+  compiled_model->ReportError("Error with profiling enabled");
+
+  auto messages = compiled_model->GetErrorMessages();
+  ASSERT_TRUE(messages);
+  EXPECT_THAT(*messages, ::testing::HasSubstr("Error with profiling enabled"));
+
+  // Profiler should also be available
+  auto profiler = compiled_model->GetProfiler();
+  EXPECT_TRUE(profiler);
+  EXPECT_NE(*profiler, nullptr);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, BindExternalWeightBuffer) {
+  // This test verifies that an external buffer can be bound to a weight tensor
+  // using the runtime options.
+
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  std::string signature_key = std::string(model->Signatures()[0]->Key());
+
+  // Define the external weight buffer. The values should be added to the input.
+  alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) float kWeightTensor[] = {1.0f,
+                                                                        2.0f};
+
+  // Create the tensor binding structure.
+  LiteRtExternalTensorBinding weight_binding = {
+      .signature_name = "",
+      .tensor_name = "arg1",
+      .data = kWeightTensor,
+      .size_bytes = sizeof(kWeightTensor),
+  };
+
+  // Create CompiledModel with options that include the external binding.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  // Add the binding to the options.
+  reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options)
+      ->external_tensor_bindings.push_back(weight_binding);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  auto cc_env = litert::Environment::WrapCObject(env_ptr, OwnHandle::kNo);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffer,
+      TensorBuffer::CreateManaged(
+          cc_env, TensorBufferType::kHostMemory,
+          RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
+          2 * sizeof(float)));
+  // The model has two inputs: "input" and "weight". We only provide the buffer
+  // for "input". The "weight" buffer is bound externally.
+  std::vector<LiteRtTensorBuffer> input_buffers;
+  input_buffers.push_back(std::move(input_buffer.Get()));
+  input_buffers.push_back(nullptr);  // The weight buffer is bound externally.
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(
+          env_ptr, *model, LiteRtSignatureT::kDefaultSignatureKey,
+          *compiled_model));
+  ASSERT_EQ(output_buffers.size(), 1);
+
+  // Provide data for the non-weight input tensor.
+  std::vector<float> input_data = {5.0f, 6.0f};
+  // The first input is the data input.
+  input_buffer.Write<float>(absl::MakeConstSpan(input_data));
+
+  // Execute model.
+  bool async = false;
+  // We only need to pass the buffer for the "input" tensor. The "weight" tensor
+  // is already bound.
+  LITERT_ASSERT_OK(
+      compiled_model->Run(signature_key, input_buffers, output_buffers, async));
+
+  // Check model output.
+  {
+    void* host_mem_addr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    absl::Span<const float> output =
+        absl::MakeSpan(static_cast<const float*>(host_mem_addr), 2);
+    std::vector<float> expected_output = {6.0f, 8.0f};  // input_data + weights
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(output_buffers[0]), kLiteRtStatusOk);
+  }
+
+  // Cleanup.
+  for (auto& input_buffer : input_buffers) {
+    if (input_buffer != nullptr) {
+      LiteRtDestroyTensorBuffer(input_buffer);
+    }
+  }
+  for (auto& output_buffer : output_buffers) {
+    LiteRtDestroyTensorBuffer(output_buffer);
+  }
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, GetInterpreter) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
+                              GetInterpreter(compiled_model.get()));
+  EXPECT_NE(interpreter, nullptr);
+}
+
+TEST(CompiledModelTest, GetOutputTensorShapes) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  std::vector<LiteRtLayout> output_layouts(1);
+  auto output_tensor_shapes = absl::MakeSpan(output_layouts);
+  LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
+      LiteRtSignatureT::kDefaultSignatureKey, output_tensor_shapes));
+  ASSERT_EQ(output_tensor_shapes.size(), 1);
+  // The output tensor shape is [[2]]
+  EXPECT_EQ(output_tensor_shapes[0].rank, 1);
+  EXPECT_EQ(output_tensor_shapes[0].dimensions[0], 2);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, CheckResize) {
+  constexpr absl::string_view kSimpleAddDynamicShapeModel =
+      "simple_add_dynamic_shape.tflite";
+
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kSimpleAddDynamicShapeModel);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto input_tensor0 = interp->input_tensor(0);
+  auto input_tensor1 = interp->input_tensor(1);
+  {
+    // Check that the input tensors need resize with {2, 128, 4}.
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        bool input0_need_resize,
+        InputTensorNeedsResize(compiled_model.get(), input_tensor0,
+                               {2, 128, 4}));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        bool input1_need_resize,
+        InputTensorNeedsResize(compiled_model.get(), input_tensor1,
+                               {2, 128, 4}));
+    EXPECT_TRUE(input0_need_resize);
+    EXPECT_TRUE(input1_need_resize);
+  }
+  {
+    // Check that the input tensors don't need resize with {1, 128, 4}.
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        bool input0_need_resize,
+        InputTensorNeedsResize(compiled_model.get(), input_tensor0,
+                               {1, 128, 4}));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        bool input1_need_resize,
+        InputTensorNeedsResize(compiled_model.get(), input_tensor1,
+                               {1, 128, 4}));
+    EXPECT_FALSE(input0_need_resize);
+    EXPECT_FALSE(input1_need_resize);
+  }
+
+  // Check output tensor shape.
+  std::vector<LiteRtLayout> output_layouts(1);
+  auto output_tensor_shapes = absl::MakeSpan(output_layouts);
+  LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
+      LiteRtSignatureT::kDefaultSignatureKey, output_tensor_shapes));
+  ASSERT_EQ(output_tensor_shapes.size(), 1);
+  // The output tensor shape is [1, 128, 4]
+  EXPECT_EQ(output_tensor_shapes[0].rank, 3);
+  EXPECT_EQ(output_tensor_shapes[0].dimensions[0], 1);
+  EXPECT_EQ(output_tensor_shapes[0].dimensions[1], 128);
+  EXPECT_EQ(output_tensor_shapes[0].dimensions[2], 4);
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, CheckResizeFail) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto input_tensor0 = interp->input_tensor(0);
+  auto input_tensor1 = interp->input_tensor(1);
+  // Check that the input tensors need resize with {2, 128, 4}.
+  // The input tensor has static dimensions, so the resize should fail.
+  EXPECT_THAT(
+      InputTensorNeedsResize(compiled_model.get(), input_tensor0, {2, 128, 4}),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(
+      InputTensorNeedsResize(compiled_model.get(), input_tensor1, {2, 128, 4}),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
 }  // namespace
 }  // namespace litert

@@ -15,6 +15,7 @@
 #include "litert/c/options/litert_google_tensor_options.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -23,11 +24,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_detail.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
+#include "litert/core/cache/hash_util.h"
 #include "litert/runtime/litert_google_tensor.h"
 
 LiteRtStatus LiteRtGoogleTensorOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -43,7 +41,18 @@ LiteRtStatus LiteRtGoogleTensorOptionsCreate(LiteRtOpaqueOptions* options) {
         delete reinterpret_cast<LiteRtGoogleTensorOptions>(payload);
       },
       options));
-
+  auto google_tensor_hash = [](const void* payload) -> uint64_t {
+    const LiteRtGoogleTensorOptionsT* options =
+        reinterpret_cast<const LiteRtGoogleTensorOptionsT*>(payload);
+    uint64_t ans = 0;
+    litert::HashCombine(
+        ans, options->float_truncation_type, options->int64_to_int32_truncation,
+        options->output_dir, options->dump_op_timings,
+        options->enable_large_model_support, options->sharding_intensity);
+    return ans;
+  };
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetOpaqueOptionsHash(*options, google_tensor_hash));
   options_data.release();
   return kLiteRtStatusOk;
 }
@@ -171,6 +180,25 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *enable_large_model_support = options->enable_large_model_support;
+  return kLiteRtStatusOk;
+}
+
+// enable_4bit_compilation -----------------------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetEnable4BitCompilation(
+    LiteRtGoogleTensorOptions options, bool enable_4bit_compilation) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->enable_4bit_compilation = enable_4bit_compilation;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
+    LiteRtGoogleTensorOptions options, bool* enable_4bit_compilation) {
+  if (options == nullptr || enable_4bit_compilation == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *enable_4bit_compilation = options->enable_4bit_compilation;
   return kLiteRtStatusOk;
 }
 

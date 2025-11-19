@@ -47,27 +47,27 @@ class IonLibrary {
   }
 
   static Expected<Ptr> Create() {
-    DlHandle dlhandle(::dlopen("libion.so", RTLD_NOW | RTLD_LOCAL), ::dlclose);
-    if (!dlhandle) {
+    DlHandle dl_handle(dlopen("libion.so", RTLD_NOW | RTLD_LOCAL), ::dlclose);
+    if (!dl_handle) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "libion.so not found");
     }
 
     auto ion_open =
-        reinterpret_cast<IonOpen>(::dlsym(dlhandle.get(), "ion_open"));
+        reinterpret_cast<IonOpen>(dlsym(dl_handle.get(), "ion_open"));
     if (!ion_open) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure, "ion_open not found");
     }
 
     auto ion_close =
-        reinterpret_cast<IonClose>(::dlsym(dlhandle.get(), "ion_close"));
+        reinterpret_cast<IonClose>(::dlsym(dl_handle.get(), "ion_close"));
     if (!ion_close) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "ion_close not found");
     }
 
     auto ion_alloc_fd =
-        reinterpret_cast<IonAllocFd>(::dlsym(dlhandle.get(), "ion_alloc_fd"));
+        reinterpret_cast<IonAllocFd>(::dlsym(dl_handle.get(), "ion_alloc_fd"));
     if (!ion_alloc_fd) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "ion_alloc_fd not found");
@@ -79,7 +79,7 @@ class IonLibrary {
                         "Failed to open ion device");
     }
 
-    return Ptr(new IonLibrary(std::move(dlhandle), client_fd, ion_close,
+    return Ptr(new IonLibrary(std::move(dl_handle), client_fd, ion_close,
                               ion_alloc_fd));
   }
 
@@ -108,14 +108,14 @@ class IonLibrary {
       return;
     }
     auto& record = iter->second;
-    ::munmap(record.addr, record.size);
-    ::close(record.fd);
+    munmap(record.addr, record.size);
+    close(record.fd);
     records_.erase(iter);
   }
 
  private:
-  static constexpr const int kIonHeapId = 25;
-  static constexpr const int kIonFlags = 1;
+  static constexpr int kIonHeapId = 25;
+  static constexpr int kIonFlags = 1;
 
   struct Record {
     int fd;
@@ -131,12 +131,12 @@ class IonLibrary {
 
   IonLibrary(DlHandle&& dlhandle, int client_fd, IonClose ion_close,
              IonAllocFd ion_alloc_fd)
-      : dlhandle_(std::move(dlhandle)),
+      : dl_handle_(std::move(dlhandle)),
         client_fd_(client_fd),
         ion_close_(ion_close),
         ion_alloc_fd_(ion_alloc_fd) {}
 
-  DlHandle dlhandle_;
+  DlHandle dl_handle_;
   int client_fd_;
   IonClose ion_close_;
   IonAllocFd ion_alloc_fd_;

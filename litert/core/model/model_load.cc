@@ -15,6 +15,7 @@
 #include "litert/core/model/model_load.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -23,9 +24,8 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -33,7 +33,6 @@
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
-#include "litert/core/model/model_graph.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -57,6 +56,9 @@ class FlatbufferContext {
     const int32_t dep_code = code->deprecated_builtin_code();
     litert_op.SetOpCode(
         static_cast<LiteRtOpCode>(std::max(dep_code, builtin_code)));
+    if (code->custom_code()) {
+      litert_op.SetCustomCode(code->custom_code()->str());
+    }
     litert::internal::SetTflOpCodeInd(litert_op, ind);
     return {};
   }
@@ -88,7 +90,8 @@ class FlatbufferContext {
 };
 
 LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
-                      const TflPackedOp& tfl_op, LiteRtOpT& litert_op) {
+                      const TflPackedOp& tfl_op, LiteRtOpT& litert_op,
+                      size_t op_index) {
   // I/O TENSORS
 
   if (tfl_op.intermediates() && tfl_op.intermediates()->size() != 0) {
@@ -143,6 +146,7 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
   // OP CODE
 
   LITERT_RETURN_IF_ERROR(context.SetOpCode(litert_op, tfl_op.opcode_index()));
+  litert_op.SetOpIndex(op_index);
 
   return kLiteRtStatusOk;
 }
@@ -248,8 +252,8 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
 
   if (tfl_tensor.sparsity() != nullptr) {
     // TODO: b/365299994 - Support sparsity tensors.
-    LITERT_LOG(LITERT_ERROR, "Sparsity tensors not yet supported.");
-    return kLiteRtStatusErrorUnsupported;
+    LITERT_LOG(LITERT_WARNING,
+               "Sparsity tensors may not yet be fully supported.");
   }
 
   return kLiteRtStatusOk;
@@ -273,7 +277,7 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   for (auto i = 0; i < num_ops; ++i) {
     const auto* tfl_op = tfl_subgraph.operators()->Get(i);
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
-                                    litert_subgraph.EmplaceOp()));
+                                    litert_subgraph.EmplaceOp(), i));
   }
 
   // Update subgraph I/O.
@@ -317,36 +321,47 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
       return kLiteRtStatusErrorInvalidFlatbuffer;
     }
 
-    // The tensor names may not be matched between signature and subgraph.
-    // Update the tensor names with the signature names since the signature
-    // names are used for LiteRT APIs.
-    for (auto i = 0; i < tfl_inputs.size(); ++i) {
-      const auto& tfl_input = tfl_inputs.at(i);
-      auto* index_litert_input =
-          litert_subgraph->Tensors().at(tfl_input->tensor_index);
-      index_litert_input->SetName(tfl_input->name);
+    absl::flat_hash_map<LiteRtTensor, std::string> input_aliases;
+    input_aliases.reserve(tfl_inputs.size());
+    for (const auto& tfl_input : tfl_inputs) {
+      auto* tensor = litert_subgraph->Tensors().at(tfl_input->tensor_index);
+      const std::string& name = tfl_input->name;
+      input_aliases[tensor] =
+          !name.empty() ? name : std::string(tensor->Name());
     }
-    for (auto i = 0; i < tfl_outputs.size(); ++i) {
-      const auto& tfl_output = tfl_outputs.at(i);
-      auto* index_litert_output =
-          litert_subgraph->Tensors().at(tfl_output->tensor_index);
-      index_litert_output->SetName(tfl_output->name);
+
+    absl::flat_hash_map<LiteRtTensor, std::string> output_aliases;
+    output_aliases.reserve(tfl_outputs.size());
+    for (const auto& tfl_output : tfl_outputs) {
+      auto* tensor = litert_subgraph->Tensors().at(tfl_output->tensor_index);
+      const std::string& name = tfl_output->name;
+      output_aliases[tensor] =
+          !name.empty() ? name : std::string(tensor->Name());
     }
 
     // Keep signature input/output names in the same order as the subgraph.
     std::vector<std::string> input_names;
+    std::vector<LiteRtTensor> input_tensors;
     input_names.reserve(tfl_inputs.size());
     for (auto& tensor : litert_subgraph->Inputs()) {
-      input_names.push_back(std::string(tensor->Name()));
+      input_names.push_back(input_aliases.contains(tensor)
+                                ? input_aliases.at(tensor)
+                                : std::string(tensor->Name()));
+      input_tensors.push_back(tensor);
     }
     std::vector<std::string> output_names;
+    std::vector<LiteRtTensor> output_tensors;
     output_names.reserve(tfl_outputs.size());
     for (auto& tensor : litert_subgraph->Outputs()) {
-      output_names.push_back(std::string(tensor->Name()));
+      output_names.push_back(output_aliases.contains(tensor)
+                                 ? output_aliases.at(tensor)
+                                 : std::string(tensor->Name()));
+      output_tensors.push_back(tensor);
     }
 
     parent.EmplaceSignature(litert_subgraph, std::move(input_names),
-                            std::move(output_names),
+                            std::move(input_tensors), std::move(output_names),
+                            std::move(output_tensors),
                             tfl_signature->signature_key);
   }
 
@@ -417,6 +432,15 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
 
 }  // namespace
 
+Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(
+    OwningBufferRef<uint8_t>&& buffer) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(std::move(buffer));
+  if (!flatbuffer) {
+    return flatbuffer.Error();
+  }
+  return UnpackModel(std::move(**flatbuffer));
+}
+
 Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(BufferRef<uint8_t> buffer) {
   auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(buffer);
   if (!flatbuffer) {
@@ -425,12 +449,16 @@ Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(BufferRef<uint8_t> buffer) {
   return UnpackModel(std::move(**flatbuffer));
 }
 
-Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename) {
-  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(filename);
+Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
+                                              bool allow_modifications) {
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(filename, allow_modifications);
   if (!flatbuffer) {
     return flatbuffer.Error();
   }
-  return UnpackModel(std::move(**flatbuffer));
+  LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
+  model->SetSourcePath(std::string(filename));
+  return std::move(model);
 }
 
 }  // namespace litert::internal

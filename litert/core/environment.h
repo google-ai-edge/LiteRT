@@ -17,16 +17,17 @@
 
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment_options.h"
 #include "litert/runtime/accelerator_registry.h"
 #include "litert/runtime/gpu_environment.h"
+#include "litert/runtime/tensor_buffer_registry.h"
 
 // A singleton class that contains global LiteRT environment options.
 class LiteRtEnvironmentT {
@@ -50,10 +51,17 @@ class LiteRtEnvironmentT {
   const LiteRtEnvironmentOptionsT& GetOptions() const { return options_; }
 
   // Adds options to the existing environment.
-  litert::Expected<void> AddOptions(absl::Span<const LiteRtEnvOption> options);
+  litert::Expected<void> AddOptions(absl::Span<const LiteRtEnvOption> options,
+                                    bool overwrite = false);
 
+  // Returns the accelerator registry.
   litert::internal::AcceleratorRegistry& GetAcceleratorRegistry() {
     return accelerators_;
+  }
+
+  // Returns the tensor buffer registry.
+  litert::internal::TensorBufferRegistry& GetTensorBufferRegistry() {
+    return tensor_buffer_registry_;
   }
 
   // Sets the GPU environment. The owner of the GPU environment is transferred
@@ -94,6 +102,7 @@ class LiteRtEnvironmentT {
 
  private:
   litert::internal::AcceleratorRegistry accelerators_;
+  litert::internal::TensorBufferRegistry tensor_buffer_registry_;
   LiteRtEnvironmentOptionsT options_;
   std::unique_ptr<litert::internal::GpuEnvironment> gpu_env_;
 };

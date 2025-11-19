@@ -19,13 +19,15 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -175,6 +177,37 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer) {
+  if (!tensor_type || !tensor_buffer || !metal_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateFromMetalMemory(
+          env, *tensor_type, buffer_type, metal_buffer, metal_buffer_size));
+  *tensor_buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetTensorBufferMetalMemory(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+  if (!tensor_buffer || !hw_memory_handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(litert::internal::CustomBuffer * custom_buffer,
+                          tensor_buffer->GetCustomBuffer());
+
+  *hw_memory_handle = custom_buffer->hw_buffer_handle();
+  return kLiteRtStatusOk;
+}
+
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 #if LITERT_HAS_FASTRPC_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
     const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
@@ -209,6 +242,7 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 }
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
 
+#if LITERT_HAS_OPENGL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
@@ -240,7 +274,23 @@ LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
   *offset = gl_buffer->offset();
   return kLiteRtStatusOk;
 }
+#else
+LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
+    LiteRtGlBufferDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  return kLiteRtStatusErrorUnsupported;
+}
 
+LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
+                                           LiteRtGLenum* target,
+                                           LiteRtGLuint* id, size_t* size_bytes,
+                                           size_t* offset) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
@@ -271,6 +321,50 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
   *layer = gl_texture->layer();
   return kLiteRtStatusOk;
 }
+#else
+LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
+    size_t size_bytes, LiteRtGLint layer,
+    LiteRtGlTextureDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus LiteRtGetTensorBufferGlTexture(
+    LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
+    LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+// Return an error if the backing buffer is not a WebGpu buffer.
+LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+  if (!tensor_buffer || !hw_memory_handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto webgpu_buffer, tensor_buffer->GetCustomBuffer());
+
+  *hw_memory_handle = webgpu_buffer->hw_buffer_handle();
+  return kLiteRtStatusOk;
+}
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_VULKAN_SUPPORT
+LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+  if (!tensor_buffer || !hw_memory_handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto custom_buffer, tensor_buffer->GetCustomBuffer());
+
+  *hw_memory_handle = custom_buffer->hw_buffer_handle();
+  return kLiteRtStatusOk;
+}
+#endif  // LITERT_HAS_VULKAN_SUPPORT
 
 LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
@@ -282,6 +376,46 @@ LiteRtStatus LiteRtCreateManagedTensorBuffer(
   LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
                           LiteRtTensorBufferT::CreateManaged(
                               env, buffer_type, *tensor_type, buffer_size));
+  *tensor_buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements requirements,
+    LiteRtTensorBuffer* tensor_buffer) {
+  if (!tensor_type || !requirements || !tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the first supported buffer type from requirements
+  if (requirements->SupportedBufferTypes().empty()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LiteRtTensorBufferType buffer_type = requirements->SupportedBufferTypes()[0];
+  size_t buffer_size = requirements->BufferSize();
+  size_t alignment = requirements->Alignment();
+
+  const LiteRtRankedTensorType* tensor_type_to_use = tensor_type;
+  LiteRtRankedTensorType tensor_type_with_strides;
+  int num_requirement_strides = 0;
+  const uint32_t* requirement_strides = nullptr;
+  if (LiteRtGetTensorBufferRequirementsStrides(
+          requirements, &num_requirement_strides, &requirement_strides) ==
+          kLiteRtStatusOk &&
+      requirement_strides != nullptr && num_requirement_strides > 0) {
+    tensor_type_with_strides = *tensor_type;
+    tensor_type_with_strides.layout.has_strides = true;
+    for (int i = 0; i < num_requirement_strides; ++i) {
+      tensor_type_with_strides.layout.strides[i] = requirement_strides[i];
+    }
+    tensor_type_to_use = &tensor_type_with_strides;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateManagedWithAlignment(
+          env, buffer_type, *tensor_type_to_use, buffer_size, alignment));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 }

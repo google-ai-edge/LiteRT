@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
@@ -22,16 +24,14 @@ cc_library(
     srcs = ["xnnpack_accelerator.cc"],
     hdrs = ["xnnpack_accelerator.h"],
     deps = [
-        "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
+        "//litert/c/internal:litert_accelerator_registration",
+        "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_cpu_options",
-        "//litert/cc/internal:litert_options",
         "//litert/runtime:accelerator",
         "//litert/runtime/accelerators:accelerator_implementation_helper",
         "//tflite/c:c_api_types",

@@ -37,11 +37,11 @@ std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options);
 
 ABSL_DECLARE_FLAG(bool, google_tensor_int64_to_int32);
 
-ABSL_DECLARE_FLAG(std::string, google_tensor_output_dir);
-
 ABSL_DECLARE_FLAG(bool, google_tensor_dump_op_timings);
 
 ABSL_DECLARE_FLAG(bool, google_tensor_enable_large_model_support);
+
+ABSL_DECLARE_FLAG(bool, google_tensor_enable_4bit_compilation);
 
 ABSL_DECLARE_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
                   google_tensor_sharding_intensity);
@@ -63,7 +63,9 @@ ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
 
 namespace litert::google_tensor {
 
-Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags();
+// Updates the provided GoogleTensorOptions based on the values of the
+// GoogleTensor-specific command-line flags defined in this file.
+Expected<void> UpdateGoogleTensorOptionsFromFlags(GoogleTensorOptions& options);
 
 }  // namespace litert::google_tensor
 

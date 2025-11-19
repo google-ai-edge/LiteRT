@@ -13,13 +13,15 @@
 // limitations under the License.
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -44,18 +46,18 @@ class CmInvoker {
   // Assumes default signature.
   void Setup() {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        compiled_model_, CompiledModel::Create(env_, model_, Accelerator()));
-    const auto sig = model_.DefaultSignatureKey();
+        compiled_model_,
+        CompiledModelNext::Create(env_, model_, Accelerator()));
     LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_,
-                                compiled_model_.CreateInputBuffers(sig));
+                                compiled_model_->CreateInputBuffers());
     LITERT_ASSERT_OK_AND_ASSIGN(output_buffers_,
-                                compiled_model_.CreateOutputBuffers(sig));
+                                compiled_model_->CreateOutputBuffers());
   }
 
   // Invoke the compiled model api. Must be called after Setup().
   void Run() {
-    ASSERT_TRUE(compiled_model_.Run(model_.DefaultSignatureKey(),
-                                    input_buffers_, output_buffers_));
+    ASSERT_TRUE(compiled_model_->Run(model_.DefaultSignatureKey(),
+                                     input_buffers_, output_buffers_));
   }
 
   // Is this test in a state where it should be skipped? Implementations should
@@ -63,7 +65,7 @@ class CmInvoker {
   virtual void MaybeSkip() const = 0;
 
   // Which accelerator option to use.
-  virtual LiteRtHwAccelerators Accelerator() const = 0;
+  virtual HwAccelerators Accelerator() const = 0;
 
   std::vector<TensorBuffer>& GetInputBuffers() { return input_buffers_; }
   std::vector<TensorBuffer>& GetOutputBuffers() { return output_buffers_; }
@@ -74,7 +76,7 @@ class CmInvoker {
   Environment env_;
   Model model_;
 
-  CompiledModel compiled_model_;
+  std::optional<CompiledModelNext> compiled_model_;
   std::vector<TensorBuffer> input_buffers_;
   std::vector<TensorBuffer> output_buffers_;
 };
@@ -87,8 +89,8 @@ class SkippedCmInvoker : public CmInvoker {
     GTEST_SKIP() << "User requested skip for this model.";
   }
 
-  LiteRtHwAccelerators Accelerator() const override {
-    return kLiteRtHwAcceleratorNone;
+  HwAccelerators Accelerator() const override {
+    return HwAccelerators::kNone;
   };
 };
 
@@ -105,8 +107,8 @@ class CmNpuInvoker : public CmInvoker {
     return !IsCompiled(m);
   }
 
-  LiteRtHwAccelerators Accelerator() const override {
-    return IsJit() ? kLiteRtHwAcceleratorNpu : kLiteRtHwAcceleratorNone;
+  HwAccelerators Accelerator() const override {
+    return IsJit() ? HwAccelerators::kNpu : HwAccelerators::kNone;
   }
 
   void MaybeSkip() const override {
@@ -123,8 +125,8 @@ class CmCpuInvoker : public CmInvoker {
   CmCpuInvoker(Environment&& env, Model&& model)
       : CmInvoker(std::move(env), std::move(model)) {}
 
-  LiteRtHwAccelerators Accelerator() const override {
-    return kLiteRtHwAcceleratorCpu;
+  HwAccelerators Accelerator() const override {
+    return HwAccelerators::kCpu;
   }
 
   void MaybeSkip() const override {

@@ -16,18 +16,24 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/model/model_serialize.h"
+#endif  // !defined(LITERT_DISABLE_NPU)
 
 #ifdef __cplusplus
 extern "C" {
@@ -110,6 +116,32 @@ LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtAddModelMetadata(LiteRtModel model, const char* metadata_key,
+                                    const void* metadata_buffer,
+                                    size_t metadata_buffer_size) {
+  if (!model) {
+    LITERT_LOG(LITERT_ERROR, "LiteRtAddModelMetadata: model is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!metadata_key) {
+    LITERT_LOG(LITERT_ERROR, "LiteRtAddModelMetadata: metadata_key is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!metadata_buffer) {
+    LITERT_LOG(LITERT_ERROR, "LiteRtAddModelMetadata: metadata_buffer is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (metadata_buffer_size < 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "LiteRtAddModelMetadata: metadata_buffer_size is negative");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return model->PushMetadata(
+      metadata_key, absl::Span<const uint8_t>(
+                        reinterpret_cast<const uint8_t*>(metadata_buffer),
+                        metadata_buffer_size));
+}
+
 LiteRtStatus LiteRtGetNumModelSignatures(LiteRtModel model,
                                          LiteRtParamIndex* num_signatures) {
   if (!model || !num_signatures) {
@@ -135,10 +167,60 @@ LiteRtStatus LiteRtGetModelSignature(LiteRtModel model,
 
 void LiteRtDestroyModel(LiteRtModel model) { delete model; }
 
+LiteRtStatus LiteRtSerializeModelWithSignatures(
+    LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
+    bool destroy_model, char** signatures, LiteRtParamIndex num_signatures,
+    LiteRtModelSerializationOptions options) {
+  size_t num_subgraphs = model->NumSubgraphs();
+  if (num_subgraphs != num_signatures) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (size_t i = 0; i < num_subgraphs; ++i) {
+    if (signatures[i] == nullptr) {
+      // If the signature is null, we will use the default signature.
+      // This is to support the backward compatibility with the previous version
+      // of the compiler.
+      continue;
+    }
+    std::string signature_key(signatures[i]);
+
+    LiteRtSubgraphT& subgraph = model->Subgraph(i);
+
+    std::vector<std::string> input_names;
+    std::vector<LiteRtTensor> input_tensors;
+    for (auto& tensor : subgraph.Inputs()) {
+      input_names.push_back(std::string(tensor->Name()));
+      input_tensors.push_back(tensor);
+    }
+    std::vector<std::string> output_names;
+    std::vector<LiteRtTensor> output_tensors;
+    for (auto& tensor : subgraph.Outputs()) {
+      output_names.push_back(std::string(tensor->Name()));
+      output_tensors.push_back(tensor);
+    }
+
+    // Use EmplaceSignature to add a new signature
+    model->EmplaceSignature(&subgraph, std::move(input_names),
+                            std::move(input_tensors), std::move(output_names),
+                            std::move(output_tensors),
+                            std::move(signature_key));
+  }
+  return LiteRtSerializeModel(model, buf, size, offset, destroy_model, options);
+}
+
 LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   size_t* size, size_t* offset,
                                   bool destroy_model,
                                   LiteRtModelSerializationOptions options) {
+#if defined(LITERT_DISABLE_NPU)
+  if (!model || !buf || !size || !offset) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (destroy_model) {
+    delete model;
+  }
+  return kLiteRtStatusErrorUnsupported;
+#else
   auto serialized = litert::internal::SerializeModel(
       std::move(*model), options.bytecode_alignment);
   // Even if we fail to serialize, we still need to destroy the model if
@@ -154,6 +236,7 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
   }
   std::tie(*buf, *size, *offset) = serialized->Release();
   return kLiteRtStatusOk;
+#endif  // !defined(LITERT_DISABLE_NPU)
 }
 
 LiteRtStatus LiteRtPushOp(LiteRtOpList op_list, LiteRtOp op,
@@ -217,6 +300,33 @@ LiteRtStatus LiteRtGetSignatureInputName(LiteRtSignature signature,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetSignatureInputTensor(LiteRtSignature signature,
+                                           const char* input_name,
+                                           LiteRtTensor* tensor) {
+  if (!signature || !input_name || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto input_tensor = signature->FindInputTensor(input_name);
+  if (!input_tensor) {
+    return input_tensor.Error().Status();
+  }
+  *tensor = *input_tensor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSignatureInputTensorByIndex(LiteRtSignature signature,
+                                                  LiteRtParamIndex input_idx,
+                                                  LiteRtTensor* tensor) {
+  if (!signature || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (input_idx >= signature->InputNames().size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *tensor = signature->GetInputTensor(input_idx);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetNumSignatureOutputs(LiteRtSignature signature,
                                           LiteRtParamIndex* num_outputs) {
   if (!signature || !num_outputs) {
@@ -236,6 +346,33 @@ LiteRtStatus LiteRtGetSignatureOutputName(LiteRtSignature signature,
     return kLiteRtStatusErrorIndexOOB;
   }
   *output_name = signature->OutputNames().at(output_idx).data();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSignatureOutputTensor(LiteRtSignature signature,
+                                            const char* output_name,
+                                            LiteRtTensor* tensor) {
+  if (!signature || !output_name || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto output_tensor = signature->FindOutputTensor(output_name);
+  if (!output_tensor) {
+    return output_tensor.Error().Status();
+  }
+  *tensor = *output_tensor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSignatureOutputTensorByIndex(LiteRtSignature signature,
+                                                   LiteRtParamIndex output_idx,
+                                                   LiteRtTensor* tensor) {
+  if (!signature || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (output_idx >= signature->OutputNames().size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *tensor = signature->GetOutputTensor(output_idx);
   return kLiteRtStatusOk;
 }
 
@@ -352,6 +489,15 @@ LiteRtStatus LiteRtGetOpOutput(LiteRtOp op, LiteRtParamIndex output_index,
     return kLiteRtStatusErrorIndexOOB;
   }
   *output = op->Outputs()[output_index];
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCustomCode(LiteRtOp op, const char** code) {
+  if (!op || !code) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto custom_code, op->CustomCode());
+  *code = custom_code.data();
   return kLiteRtStatusOk;
 }
 

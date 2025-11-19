@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
@@ -31,9 +34,27 @@ cc_library(
     hdrs = ["apply_plugin_flags.h"],
     deps = [
         ":flag_types",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/options:compiler_options",
         "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,
+)
+
+cc_test(
+    name = "apply_plugin_flags_test",
+    srcs = ["apply_plugin_flags_test.cc"],
+    deps = [
+        ":apply_plugin_flags",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:compiler_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(

@@ -18,18 +18,18 @@
 #include <string>
 
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
 // Create a new NeuronModel Graph from given LiteRt Graph.
-Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
-                           const Subgraph& partition,
-                           const std::string& model_name, NeuronModel* model,
-                           OperandMap* operand_map);
+Expected<void> CreateModel(
+    const NeuronAdapterApi& neuron_adapter_api, const Subgraph& partition,
+    const std::string& model_name, NeuronModel* model, OperandMap* operand_map,
+    std::unordered_set<int>* unknown_op_indices = nullptr);
 
 }  // namespace litert::mediatek
 

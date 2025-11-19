@@ -15,6 +15,6 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_SCHEMA_CONVERSION_METADATA_GENERATED_H_
 #define TENSORFLOW_LITE_SCHEMA_CONVERSION_METADATA_GENERATED_H_
 
-#include "tensorflow/compiler/mlir/lite/schema/conversion_metadata_generated.h"
+#include "tflite/converter/schema/conversion_metadata_generated.h"
 
 #endif  // TENSORFLOW_LITE_SCHEMA_CONVERSION_METADATA_GENERATED_H_

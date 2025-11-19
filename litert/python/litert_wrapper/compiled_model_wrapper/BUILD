@@ -18,6 +18,7 @@ load(
     # copybara:uncomment "py_strict_test",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -32,15 +33,7 @@ cc_library(
         "compiled_model_wrapper.h",
     ],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",
@@ -64,10 +57,7 @@ pybind_extension(
     wrap_py_init = True,
     deps = [
         ":compiled_model_wrapper_lib",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//tflite:framework",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
@@ -102,7 +92,7 @@ py_strict_library(
 #     deps = [
 #         ":_pywrap_litert_compiled_model_wrapper",
 #         ":compiled_model",
-#         "//third_party/py/google/protobuf:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
+#         "@com_google_protobuf//:protobuf_python:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
 #     ],
 # )
 # copybara:uncomment_end

@@ -176,12 +176,48 @@ LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims);
 
 //==============================================================================
 //
+// Get option APIs for LiteRt ReduceMin op.
+//  Options:
+// - KeepdimsOption : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceMinKeepDimsOption(LiteRtOp op, bool* keepdims);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt ReduceAny op.
+//  Options:
+// - KeepdimsOption : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceAnyKeepDimsOption(LiteRtOp op, bool* keepdims);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt ReduceAll op.
+//  Options:
+// - KeepdimsOption : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt Pack op.
 //  Options:
 // - axisOption : int32_t
 //
 //==============================================================================
 LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt Unpack op.
+//  Options:
+// - axisOption : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis);
 
 //==============================================================================
 //
@@ -375,6 +411,28 @@ LiteRtStatus LiteRtGetMaxPool2dFilterWidthOption(LiteRtOp op,
 LiteRtStatus LiteRtGetMaxPool2dFilterHeightOption(LiteRtOp op,
                                                   int32_t* filter_height);
 LiteRtStatus LiteRtGetMaxPool2dFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt L2Pool2d op.
+//  Options:
+// - padding : uint32_t
+// - stride_w : int32_t
+// - stride_h : int32_t
+// - filter_width : int32_t
+// - filter_height : int32_t
+// - fused_activation_function : uint32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetL2Pool2dPaddingOption(LiteRtOp op, uint32_t* padding);
+LiteRtStatus LiteRtGetL2Pool2dStrideWOption(LiteRtOp op, int32_t* stride_w);
+LiteRtStatus LiteRtGetL2Pool2dStrideHOption(LiteRtOp op, int32_t* stride_h);
+LiteRtStatus LiteRtGetL2Pool2dFilterWidthOption(LiteRtOp op,
+                                                int32_t* filter_width);
+LiteRtStatus LiteRtGetL2Pool2dFilterHeightOption(LiteRtOp op,
+                                                 int32_t* filter_height);
+LiteRtStatus LiteRtGetL2Pool2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
 
 //==============================================================================

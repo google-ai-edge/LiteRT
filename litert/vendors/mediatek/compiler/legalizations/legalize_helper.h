@@ -21,10 +21,10 @@
 #include "neuron/api/NeuronAdapter.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 
 namespace litert::mediatek {
@@ -388,6 +388,32 @@ inline Expected<uint32_t> AddMaxPool2dFuseActivationOption(
   LITERT_RETURN_IF_ERROR(
       LiteRtGetMaxPool2dFusedActivationOption(op.Get(), &fuse))
       << "Fails to get MaxPool2dFuseActivation";
+  return operand_map.AddScalarInt32(fuse);
+}
+
+//==============================================================================
+// kLiteRtOpCodeTflReduceMax
+//==============================================================================
+inline Expected<uint32_t> AddReduceMaxKeepDimsOption(const litert::Op& op,
+                                                     OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_REDUCE_MAX.
+  bool keepdim = false;
+  LITERT_RETURN_IF_ERROR(LiteRtGetReduceMaxKeepDimsOption(op.Get(), &keepdim))
+      << "Fails to get ReduceMaxKeepDims";
+  return operand_map.AddScalarBool(keepdim);
+}
+
+//==============================================================================
+// kLiteRtOpCodeTflDiv
+//==============================================================================
+inline Expected<uint32_t> AddDivFuseActivationOption(const litert::Op& op,
+                                                     OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_DIV.
+  uint32_t fuse = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetDivFusedActivationOption(op.Get(), &fuse))
+      << "Fails to get DivFuseActivation";
   return operand_map.AddScalarInt32(fuse);
 }
 

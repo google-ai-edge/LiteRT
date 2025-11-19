@@ -28,11 +28,11 @@ constexpr size_t kOutputIndex = 0;
 
 }  // namespace
 
-std::vector<OpWrapper> BuildPadOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs) {
+std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
+                                  const std::vector<TensorWrapperRef>& inputs,
+                                  const std::vector<TensorWrapperRef>& outputs,
+                                  const std::uint32_t scheme_value) {
   std::vector<OpWrapper> res;
-
   TensorWrapper& pad_tensor = inputs[kPadAmountIndex];
   if (!pad_tensor.IsTensorStatic()) {
     QNN_LOG_ERROR("QNN only support static pad amount tensor.")
@@ -50,15 +50,14 @@ std::vector<OpWrapper> BuildPadOp(
   TensorWrapper& input_tensor = inputs[kInputIndex];
   pad_op.AddInputTensor(input_tensor);
   pad_op.AddOutputTensor(outputs[kOutputIndex]);
-  pad_op.AddScalarParam<std::uint32_t>(QNN_OP_PAD_PARAM_SCHEME,
-                                       QNN_OP_PAD_SCHEME_CONSTANT);
+  pad_op.AddScalarParam<std::uint32_t>(QNN_OP_PAD_PARAM_SCHEME, scheme_value);
   pad_op.AddTensorParam(QNN_OP_PAD_PARAM_PAD_AMOUNT, *converted_pad_tensor);
 
   if (input_tensor.IsQuant8() || input_tensor.IsQuant16()) {
     std::int32_t pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
-          inputs[kPadConstValueIndex].get().GetStaticTensorData<std::int32_t>();
+          inputs[kPadConstValueIndex].get().GetTensorData<std::int32_t>();
       if (!pad_const_data.has_value()) {
         QNN_LOG_ERROR("Failed to get pad const value data.");
         return {};
@@ -84,7 +83,7 @@ std::vector<OpWrapper> BuildPadOp(
     float pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
-          inputs[kPadConstValueIndex].get().GetStaticTensorData<float>();
+          inputs[kPadConstValueIndex].get().GetTensorData<float>();
       if (!pad_const_data.has_value()) {
         QNN_LOG_ERROR("Failed to get pad const value data.");
         return {};
@@ -101,6 +100,32 @@ std::vector<OpWrapper> BuildPadOp(
   }
 
   return res;
+}
+
+std::vector<OpWrapper> BuildConstantPadOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  return BuildPadOp(tensor_pool, inputs, outputs, QNN_OP_PAD_SCHEME_CONSTANT);
+}
+
+std::vector<OpWrapper> BuildMirrorPadOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs, const std::uint32_t mode) {
+  std::uint32_t scheme_value = QNN_OP_PAD_SCHEME_CONSTANT;
+  // get scheme if mirror pad
+  switch (static_cast<MirrorPadMode>(mode)) {
+    case MirrorPadMode::REFLECT:
+      scheme_value = QNN_OP_PAD_SCHEME_MIRROR_REFLECT;
+      break;
+    case MirrorPadMode::SYMMETRIC:
+      scheme_value = QNN_OP_PAD_SCHEME_MIRROR_SYMMETRIC;
+      break;
+    default:
+      QNN_LOG_ERROR(
+          "QNN only support reflect and symmetric mode for mirror pad op.")
+      return {};
+  }
+  return BuildPadOp(tensor_pool, inputs, outputs, scheme_value);
 }
 
 }  // namespace qnn

@@ -19,46 +19,54 @@
 
 #include <stdlib.h>
 
-#include <cstddef>
+#include <array>
 #include <cstdint>
-#include <filesystem>  // NOLINT
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_shared_library.h"
 #include "litert/core/dynamic_loading.h"
 #include "litert/vendors/qualcomm/common.h"
-#include "litert/vendors/qualcomm/core/backends/htp_device_config.h"
-#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
+#include "litert/vendors/qualcomm/core/backends/htp_backend.h"
+#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "litert/vendors/qualcomm/qnn_log.h"
 #include "HTP/QnnHtpContext.h"  // from @qairt
-#include "HTP/QnnHtpDevice.h"  // from @qairt
-#include "QnnBackend.h"  // from @qairt
+#include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
-#include "QnnLog.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "System/QnnSystemCommon.h"  // from @qairt
 #include "System/QnnSystemContext.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
 
+namespace {
+static constexpr int kRequiredNumProviders{1};
+}
 namespace litert::qnn {
 
 namespace {
+
+RtldFlags GetRtldFlags() {
+#if defined(__ANDROID__)
+  // Race condition segfault without NoDelete on android.
+  return RtldFlags::Lazy().Local().NoDelete();
+#else
+  return RtldFlags::Default();
+#endif
+}
 
 constexpr char kLibQnnGetProvidersSymbol[] = "QnnInterface_getProviders";
 
@@ -101,33 +109,25 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 
 }  // namespace
 
-QnnManager::~QnnManager() {
-  if (perf_control_) perf_control_->Terminate();
-  if (device_platform_info_ != nullptr) {
-    if (auto status =
-            Api()->deviceFreePlatformInfo(nullptr, device_platform_info_);
-        status != QNN_SUCCESS) {
-      LITERT_LOG(LITERT_ERROR, "Failed to free HTP backend platform info: %d",
-                 status);
-    }
-  }
-  (void)FreeDevice();
-  (void)FreeBackend();
-  (void)FreeLogging();
-}
+QnnManager::~QnnManager() = default;
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
              path.data());
-  LITERT_ASSIGN_OR_RETURN(lib_,
-                          SharedLibrary::Load(path, RtldFlags::Default()));
+  LITERT_ASSIGN_OR_RETURN(
+      lib_, SharedLibrary::Load(path, GetRtldFlags()));
   LITERT_LOG(LITERT_INFO, "Loaded qnn shared library", "");
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  LITERT_ASSIGN_OR_RETURN(lib_system_,
-                          SharedLibrary::Load(path, RtldFlags::Default()));
+  auto lib_system_or =
+      SharedLibrary::Load(path, GetRtldFlags());
+  if (!lib_system_or) {
+    LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
+    return lib_system_or.Error().Status();
+  }
+  lib_system_ = std::move(lib_system_or.Value());
   return kLiteRtStatusOk;
 }
 
@@ -138,7 +138,7 @@ const QnnApi* QnnManager::Api() const {
   return &interface_->QNN_INTERFACE_VER_NAME;
 }
 
-LiteRtStatus QnnManager::ResolveApi() {
+LiteRtStatus QnnManager::ResolveApi(Qnn_Version_t expected_qnn_version) {
   if (!lib_.Loaded()) {
     LITERT_LOG(LITERT_ERROR, "%s",
                "Cannot resolve functions: libQnn*.so has not been loaded.\n");
@@ -146,21 +146,87 @@ LiteRtStatus QnnManager::ResolveApi() {
   }
 
   LITERT_ASSIGN_OR_RETURN(auto providers, LoadProvidersFromLib(lib_));
-  for (const auto& prov : providers) {
-    const bool major =
-        prov->apiVersion.coreApiVersion.major == QNN_API_VERSION_MAJOR;
-
-    const bool minor =
-        prov->apiVersion.coreApiVersion.minor == QNN_API_VERSION_MINOR;
-
-    const bool patch =
-        prov->apiVersion.coreApiVersion.patch == QNN_API_VERSION_PATCH;
-
-    if (major && minor && patch) {
-      interface_ = prov;
-      break;
-    }
+  if (providers.size() != kRequiredNumProviders) {
+    LITERT_LOG(LITERT_ERROR, "Found %zu providers, expected %u",
+               providers.size(), kRequiredNumProviders);
+    return kLiteRtStatusErrorDynamicLoading;
   }
+
+  auto qnn_version = providers[0]->apiVersion;
+  // Check api version
+  if (qnn_version.coreApiVersion.major != QNN_API_VERSION_MAJOR) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn library version %u.%u.%u is not supported. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.coreApiVersion.major,
+               qnn_version.coreApiVersion.minor,
+               qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
+               QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if ((qnn_version.coreApiVersion.major == QNN_API_VERSION_MAJOR &&
+       qnn_version.coreApiVersion.minor < QNN_API_VERSION_MINOR)) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn library version %u.%u.%u is mismatched. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.coreApiVersion.major,
+               qnn_version.coreApiVersion.minor,
+               qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
+               QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if (qnn_version.coreApiVersion.major == QNN_API_VERSION_MAJOR &&
+      qnn_version.coreApiVersion.minor > QNN_API_VERSION_MINOR) {
+    LITERT_LOG(LITERT_WARNING,
+               "Qnn library version %u.%u.%u is used. "
+               "The version LiteRT using is %u.%u.%u.",
+               qnn_version.coreApiVersion.major,
+               qnn_version.coreApiVersion.minor,
+               qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
+               QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
+  }
+
+  // Check backend version
+  if (qnn_version.backendApiVersion.major != expected_qnn_version.major) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn backend library version %u.%u.%u is not supported. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.backendApiVersion.major,
+               qnn_version.backendApiVersion.minor,
+               qnn_version.backendApiVersion.patch, expected_qnn_version.major,
+               expected_qnn_version.minor, expected_qnn_version.patch);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if ((qnn_version.backendApiVersion.major == expected_qnn_version.major &&
+       qnn_version.backendApiVersion.minor < expected_qnn_version.minor)) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn backend library version %u.%u.%u is mismatched. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.backendApiVersion.major,
+               qnn_version.backendApiVersion.minor,
+               qnn_version.backendApiVersion.patch, expected_qnn_version.major,
+               expected_qnn_version.minor, expected_qnn_version.patch);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if (qnn_version.backendApiVersion.major == expected_qnn_version.major &&
+      qnn_version.backendApiVersion.minor > expected_qnn_version.minor) {
+    LITERT_LOG(LITERT_WARNING,
+               "Qnn backend library version %u.%u.%u is used. "
+               "The version LiteRT using is %u.%u.%u.",
+               qnn_version.backendApiVersion.major,
+               qnn_version.backendApiVersion.minor,
+               qnn_version.backendApiVersion.patch, expected_qnn_version.major,
+               expected_qnn_version.minor, expected_qnn_version.patch);
+  }
+  interface_ = providers[0];
 
   if (interface_ == nullptr) {
     LITERT_LOG(LITERT_ERROR, "%s", "No valid interface was provided\n");
@@ -171,29 +237,48 @@ LiteRtStatus QnnManager::ResolveApi() {
 }
 
 LiteRtStatus QnnManager::ResolveSystemApi() {
-  if (!lib_.Loaded()) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               "Cannot resolve functions: libQnn*.so has not been loaded.\n");
+  LITERT_ASSIGN_OR_RETURN(auto system_providers,
+                          LoadSystemProvidersFromLib(lib_system_));
+  if (system_providers.size() != kRequiredNumProviders) {
+    LITERT_LOG(LITERT_ERROR, "Found %zu system providers, expected %u",
+               system_providers.size(), kRequiredNumProviders);
     return kLiteRtStatusErrorDynamicLoading;
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto system_providers,
-                          LoadSystemProvidersFromLib(lib_system_));
-  for (const auto& system_prov : system_providers) {
-    const bool major =
-        system_prov->systemApiVersion.major == QNN_SYSTEM_API_VERSION_MAJOR;
-
-    const bool minor =
-        system_prov->systemApiVersion.minor == QNN_SYSTEM_API_VERSION_MINOR;
-
-    const bool patch =
-        system_prov->systemApiVersion.patch == QNN_SYSTEM_API_VERSION_PATCH;
-
-    if (major && minor && patch) {
-      system_interface_ = system_prov;
-      break;
-    }
+  auto qnn_system_version = system_providers[0]->systemApiVersion;
+  if (qnn_system_version.major != QNN_SYSTEM_API_VERSION_MAJOR) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn System library version %u.%u.%u is not supported. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_system_version.major, qnn_system_version.minor,
+               qnn_system_version.patch, QNN_SYSTEM_API_VERSION_MAJOR,
+               QNN_SYSTEM_API_VERSION_MINOR, QNN_SYSTEM_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
   }
+
+  if ((qnn_system_version.major == QNN_SYSTEM_API_VERSION_MAJOR &&
+       qnn_system_version.minor < QNN_SYSTEM_API_VERSION_MINOR)) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn System library version %u.%u.%u is mismatched. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_system_version.major, qnn_system_version.minor,
+               qnn_system_version.patch, QNN_SYSTEM_API_VERSION_MAJOR,
+               QNN_SYSTEM_API_VERSION_MINOR, QNN_SYSTEM_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if (qnn_system_version.major == QNN_SYSTEM_API_VERSION_MAJOR &&
+      qnn_system_version.minor > QNN_SYSTEM_API_VERSION_MINOR) {
+    LITERT_LOG(LITERT_WARNING,
+               "Qnn System library version %u.%u.%u is used. "
+               "The version LiteRT using is %u.%u.%u.",
+               qnn_system_version.major, qnn_system_version.minor,
+               qnn_system_version.patch, QNN_SYSTEM_API_VERSION_MAJOR,
+               QNN_SYSTEM_API_VERSION_MINOR, QNN_SYSTEM_API_VERSION_PATCH);
+  }
+  system_interface_ = system_providers[0];
 
   if (system_interface_ == nullptr) {
     LITERT_LOG(LITERT_ERROR, "%s", "No valid system interface was provided\n");
@@ -208,39 +293,6 @@ const QnnSystemApi* QnnManager::SystemApi() const {
     return nullptr;
   }
   return &system_interface_->QNN_SYSTEM_INTERFACE_VER_NAME;
-}
-
-LiteRtStatus QnnManager::FreeLogging() {
-  if (log_handle_ != nullptr) {
-    if (QNN_SUCCESS != Api()->logFree(log_handle_)) {
-      LITERT_LOG(LITERT_ERROR, "%s", "Failed to free logging\n");
-      return kLiteRtStatusErrorNotFound;
-    }
-  }
-  log_handle_ = nullptr;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus QnnManager::FreeBackend() {
-  if (backend_handle_ != nullptr) {
-    if (QNN_SUCCESS != Api()->backendFree(backend_handle_)) {
-      LITERT_LOG(LITERT_ERROR, "%s", "Failed to free backend\n");
-      return kLiteRtStatusErrorNotFound;
-    }
-  }
-  backend_handle_ = nullptr;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus QnnManager::FreeDevice() {
-  if (device_handle_ != nullptr) {
-    if (QNN_SUCCESS != Api()->deviceFree(device_handle_)) {
-      LITERT_LOG(LITERT_ERROR, "%s", "Failed to free device\n");
-      return kLiteRtStatusErrorNotFound;
-    }
-  }
-  device_handle_ = nullptr;
-  return kLiteRtStatusOk;
 }
 
 LiteRtStatus QnnManager::GenerateContextBinary(
@@ -269,7 +321,8 @@ LiteRtStatus QnnManager::GenerateContextBinary(
 
 LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
   // TODO: Unblock QNN validation for RMSNorm
-  if (std::string(op_config.v1.name).find("RmsNorm") != std::string::npos) {
+  if (absl::StrContains(op_config.v1.name, "RmsNorm") ||
+      absl::StrContains(op_config.v1.name, "L2Norm")) {
     return kLiteRtStatusOk;
   }
 
@@ -295,8 +348,7 @@ std::optional<::qnn::SocInfo> FindSocInfo(
   return std::nullopt;
 }
 
-LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
-                              std::optional<std::string> shared_library_dir,
+LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
   // If shared_library_dir is provided, add it to the path as it may contain
@@ -312,102 +364,48 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
     }
 
     // TODO: Put dynamic loading module in cc or vendor/cc.
-    litert::internal::PutLibOnLdPath(shared_library_dir->data(), kLibQnnHtpSo);
+    litert::internal::PutLibOnLdPath(*shared_library_dir,
+                                     ::qnn::HtpBackend::GetLibraryName());
   }
-
-  LITERT_RETURN_IF_ERROR(LoadLib(kLibQnnHtpSo));
-  LITERT_RETURN_IF_ERROR(ResolveApi());
 
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
-  if (options.GetLogLevel() != ::qnn::LogLevel::kOff) {
-    if (auto status = Api()->logCreate(
-            GetDefaultStdOutLogger(),
-            static_cast<QnnLog_Level_t>(options.GetLogLevel()), &LogHandle());
-        status != QNN_SUCCESS) {
-      LITERT_LOG(LITERT_ERROR, "Failed to create QNN logger: %d", status);
-      return kLiteRtStatusErrorRuntimeFailure;
-    }
-  }
+  options_ = options;
+  switch (options_.GetBackendType()) {
+    case ::qnn::BackendType::kHtpBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
+      LITERT_RETURN_IF_ERROR(
+          ResolveApi(::qnn::HtpBackend::GetExpectedBackendVersion()));
 
-  if (auto status =
-          Api()->backendCreate(LogHandle(), configs.data(), &BackendHandle());
-      status != QNN_SUCCESS) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create QNN backend: %d", status);
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-
-  std::vector<const QnnDevice_Config_t*> device_configs;
-  if (soc_info.has_value()) {
-    LITERT_LOG(LITERT_INFO, "Using provided SoC info.");
-    soc_info_ = *soc_info;
-  } else {
-    LITERT_LOG(LITERT_INFO, "Apply deviceGetPlatformInfo for SoC info.");
-    if (auto status =
-            Api()->deviceGetPlatformInfo(nullptr, &device_platform_info_);
-        status == QNN_SUCCESS) {
-      auto soc_info_online = FindSocInfo(static_cast<::qnn::SnapdragonModel>(
-          device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
-              ->onChipDevice.socModel));
-
-      if (soc_info_online.has_value()) {
-        soc_info_ = *soc_info_online;
+      backend_ = std::make_unique<::qnn::HtpBackend>(Api());
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, soc_info));
+      auto* htp_backend = dynamic_cast<::qnn::HtpBackend*>(backend_.get());
+      if (!htp_backend) {
+        LITERT_LOG(LITERT_ERROR, "dynamic_cast to HtpBackend failed");
+        return kLiteRtStatusErrorRuntimeFailure;
       }
+      soc_info_ = htp_backend->GetSocInfo();
 
-    } else {
-      LITERT_LOG(LITERT_WARNING, "Fail to get platforminfo: %d, using default.",
-                 status);
+      break;
     }
-  }
+    case ::qnn::BackendType::kIrBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::IrBackend::GetLibraryName()));
+      LITERT_RETURN_IF_ERROR(
+          ResolveApi(::qnn::IrBackend::GetExpectedBackendVersion()));
 
-  LITERT_LOG(LITERT_INFO, "Initializing QNN backend for SoC model: %s",
-             soc_info_.soc_name);
-  htp_device_config_ = std::make_unique<::qnn::HtpDeviceConfig>();
-  const std::vector<QnnDevice_CustomConfig_t> device_custom_config =
-      htp_device_config_->CreateDeviceCustomConfig(&soc_info_);
-  const std::vector<QnnDevice_PlatformInfo_t*> device_platform_info =
-      htp_device_config_->CreateDevicePlatformInfo(&soc_info_);
-  uint32_t num_custom_configs =
-      device_platform_info.size() + device_custom_config.size();
-  device_configs_.resize(num_custom_configs);
-  // +1 for null terminated
-  device_configs.reserve(num_custom_configs + 1);
-  for (std::size_t i = 0; i < device_custom_config.size(); ++i) {
-    device_configs_[i].option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
-    device_configs_[i].customConfig = device_custom_config[i];
-    device_configs.emplace_back(&device_configs_[i]);
-  }
-  for (std::size_t i = 0; i < device_platform_info.size(); ++i) {
-    device_configs_[device_custom_config.size() + i].option =
-        QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
-    device_configs_[device_custom_config.size() + i].hardwareInfo =
-        device_platform_info[i];
-    device_configs.emplace_back(
-        &device_configs_[device_custom_config.size() + i]);
-  }
-  // null terminated
-  device_configs.emplace_back(nullptr);
-  if (auto status = Api()->deviceCreate(LogHandle(), device_configs.data(),
-                                        &DeviceHandle());
-      status != QNN_SUCCESS) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create QNN device: %d", status);
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
+      backend_ = std::make_unique<::qnn::IrBackend>(Api());
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
 
-  // HTP Performance Settings
-  if (options.GetHtpPerformanceMode() != ::qnn::HtpPerformanceMode::kDefault) {
-    LITERT_LOG(LITERT_INFO, "Set HTP performance mode: %d",
-               options.GetHtpPerformanceMode());
-    perf_control_ =
-        std::make_unique<PerfControl>(Api(), options.GetHtpPerformanceMode());
-    QnnHtpDevice_Arch_t local_arch =
-        device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
-            ->onChipDevice.arch;
-    if (auto status = perf_control_->Init(local_arch); !status) {
+      break;
+    }
+    default: {
+      LITERT_LOG(LITERT_ERROR, "Unsupported backend type: %d",
+                 options_.GetBackendType());
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }
+
   return kLiteRtStatusOk;
 }
 
@@ -425,17 +423,57 @@ QnnManager::CreateSystemContextHandle() {
 }
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
-    absl::Span<const QnnContext_Config_t*> configs) {
+    absl::Span<const QnnContext_Config_t*> configs,
+    ::qnn::Profiling profiling_level) {
   Qnn_ContextHandle_t context_handle;
-  if (auto status = Api()->contextCreate(BackendHandle(), DeviceHandle(),
-                                         configs.data(), &context_handle);
+  if (auto status = Api()->contextCreate(
+          BackendHandle(), DeviceHandle(),
+          // `configs` should be null-terminated. For empty `configs`, most
+          // backend libraries accept nullptr so we use nullptr directly instead
+          // of a array which contains only one nullptr.
+          configs.size() <= 1 ? nullptr : configs.data(), &context_handle);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
-  auto deleter = Api()->contextFree;
-  return ContextHandle{context_handle, /*profile=*/nullptr, deleter, nullptr};
+  auto context_deleter = Api()->contextFree;
+
+  // Return empty profile handle if profiling is off.
+  if (profiling_level == ::qnn::Profiling::kOff) {
+    return ContextHandle{context_handle, nullptr, context_deleter, nullptr};
+  }
+
+  // Create profile handle.
+  Qnn_ProfileHandle_t profile_handle = nullptr;
+  uint32_t profiling = static_cast<uint32_t>(profiling_level);
+  if (profiling_level == ::qnn::Profiling::kLinting) {
+    profiling = QNN_HTP_PROFILE_LEVEL_LINTING;
+  } else if (profiling_level == ::qnn::Profiling::kOptrace) {
+    profiling = QNN_PROFILE_LEVEL_DETAILED;
+  }
+  if (auto status =
+          Api()->profileCreate(BackendHandle(), profiling, &profile_handle);
+      status != QNN_SUCCESS) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to create profile handle");
+  }
+
+  // Handle Optrace profile config.
+  if (profiling_level == ::qnn::Profiling::kOptrace) {
+    static const QnnProfile_Config_t profile_config = {
+        .option = QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE, .enableOptrace = 1};
+    static std::array<const QnnProfile_Config_t*, 2> results = {&profile_config,
+                                                                nullptr};
+    if (auto status = Api()->profileSetConfig(profile_handle, results.data());
+        status != QNN_SUCCESS) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to set profile configs");
+    }
+  }
+
+  return ContextHandle{context_handle, profile_handle, context_deleter,
+                       Api()->profileFree};
 }
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
@@ -457,22 +495,15 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 }
 
 Expected<QnnManager::Ptr> QnnManager::Create(
-    absl::Span<const QnnBackend_Config_t*> configs,
     const ::qnn::Options& options,
     std::optional<std::string> shared_library_dir,
     std::optional<::qnn::SocInfo> soc_info) {
   Ptr qnn_manager(new QnnManager);
-  if (auto status =
-          qnn_manager->Init(configs, shared_library_dir, soc_info, options);
+  if (auto status = qnn_manager->Init(shared_library_dir, soc_info, options);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to set up QNN manager");
   }
   return qnn_manager;
-}
-
-absl::Span<const QnnBackend_Config_t*> QnnManager::DefaultBackendConfigs() {
-  static const QnnBackend_Config_t* configs[] = {nullptr};
-  return absl::MakeSpan(configs);
 }
 
 absl::Span<const QnnContext_Config_t*> QnnManager::DefaultContextConfigs() {

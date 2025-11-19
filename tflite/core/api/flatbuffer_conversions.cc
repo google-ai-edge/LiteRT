@@ -21,7 +21,7 @@ limitations under the License.
 #include <memory>
 
 #include "flatbuffers/vector.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/core/api/error_reporter.h"
+#include "tflite/converter/core/api/error_reporter.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/compatibility.h"
@@ -267,6 +267,11 @@ TfLiteStatus ParseOpDataTfLite(const Operator* op, BuiltinOperator op_type,
 
     case BuiltinOperator_DIV: {
       return ParseDiv(op, error_reporter, allocator, builtin_data);
+    }
+
+    case BuiltinOperator_DYNAMIC_UPDATE_SLICE: {
+      return ParseDynamicUpdateSlice(op, error_reporter, allocator,
+                                     builtin_data);
     }
 
     case BuiltinOperator_ELU: {
@@ -987,7 +992,6 @@ TfLiteStatus ParseOpDataTfLite(const Operator* op, BuiltinOperator op_type,
     case BuiltinOperator_COS:
     case BuiltinOperator_CUSTOM:
     case BuiltinOperator_DENSIFY:
-    case BuiltinOperator_DYNAMIC_UPDATE_SLICE:
     case BuiltinOperator_EQUAL:
     case BuiltinOperator_HASHTABLE_FIND:
     case BuiltinOperator_HASHTABLE_IMPORT:
@@ -1087,6 +1091,9 @@ TfLiteStatus ConvertTensorType(TensorType tensor_type, TfLiteType* type,
       return kTfLiteOk;
     case TensorType_INT4:
       *type = kTfLiteInt4;
+      return kTfLiteOk;
+    case TensorType_INT2:
+      *type = kTfLiteInt2;
       return kTfLiteOk;
     default:
       *type = kTfLiteNoType;
@@ -1463,6 +1470,14 @@ TfLiteStatus ParseDiv(const Operator* op, ErrorReporter* error_reporter,
         ConvertActivation(schema_params->fused_activation_function());
   }
   *builtin_data = params.release();
+  return kTfLiteOk;
+}
+
+// We have this parse function instead of directly returning kTfLiteOk from the
+// switch-case in ParseOpData because this function is used as part of the
+// selective registration for the OpResolver implementation in micro.
+TfLiteStatus ParseDynamicUpdateSlice(const Operator*, ErrorReporter*,
+                                     BuiltinDataAllocator*, void**) {
   return kTfLiteOk;
 }
 
@@ -3000,4 +3015,4 @@ TfLiteStatus ParseOpData(const Operator* op, BuiltinOperator op_type,
 }
 
 }  // namespace tflite
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/core/api/flatbuffer_conversions.cc)
+// LINT.ThenChange(//tflite/converter/core/api/flatbuffer_conversions.cc)

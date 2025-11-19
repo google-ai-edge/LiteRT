@@ -20,8 +20,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 extern "C" {
@@ -34,11 +34,6 @@ namespace litert {
 
 class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
  public:
-  // Parameter `owned` indicates if the created TensorBufferRequirements object
-  // should take ownership of the provided `requirements` handle.
-  explicit Event(LiteRtEvent event, OwnHandle owned)
-      : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
-
   // Creates an Event object with the given `sync_fence_fd`.
   //
   // Warning: This is an old API that does not take LiteRtEnvironment. It is
@@ -145,6 +140,19 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     LiteRtGetEventEventType(Get(), &type);
     return type;
   }
+
+  ///  \internal Wraps a LiteRtEvent C object in a Event C++ object.
+  ///
+  /// Warning: This is internal use only.
+  static Event WrapCObject(LiteRtEvent event, OwnHandle owned) {
+    return Event(event, owned);
+  }
+
+ private:
+  // Parameter `owned` indicates if the created TensorBufferRequirements object
+  // should take ownership of the provided `requirements` handle.
+  explicit Event(LiteRtEvent event, OwnHandle owned)
+      : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
 };
 
 }  // namespace litert

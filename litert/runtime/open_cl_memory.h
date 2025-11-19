@@ -20,24 +20,18 @@
 #include <utility>
 
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gpu_environment.h"
+#include "litert/runtime/tensor_buffer_lockstate.h"
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/buffer.h"
 
 namespace litert::internal {
 
-enum class LockState {
-  kUnlocked = 0,
-  kRead = 1,
-  kWrite = 2,
-  kReadWrite = 3,
-};
 /**
  * The OpenCL memory class that provides GPU memory allocation and two-way sync
  * between the CPU memory and the GPU OpenCL buffer.

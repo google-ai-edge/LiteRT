@@ -12,9 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_public"],
+    default_visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_c_users",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
 )
 
 cc_library(
@@ -45,6 +54,30 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_compiler_options",
+    srcs = ["litert_compiler_options.cc"],
+    hdrs = ["litert_compiler_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//litert/core/cache:hash_util",
+    ],
+)
+
+cc_test(
+    name = "litert_compiler_options_test",
+    srcs = ["litert_compiler_options_test.cc"],
+    deps = [
+        ":litert_compiler_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # QUALCOMM #########################################################################################
 
 cc_library(
@@ -54,13 +87,12 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
+        "//litert/core/cache:hash_util",
         "@com_google_absl//absl/strings:string_view",
     ],
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_test(
@@ -87,11 +119,8 @@ cc_library(
         ":litert_google_tensor_options_type",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
+        "//litert/core/cache:hash_util",
         "//litert/runtime:litert_google_tensor",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -102,6 +131,8 @@ cc_test(
     srcs = ["litert_google_tensor_options_test.cc"],
     deps = [
         ":litert_google_tensor_options",
+        ":litert_google_tensor_options_type",
+        "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/test:matchers",
@@ -118,11 +149,23 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
+        "//litert/core/cache:hash_util",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+# INTEL OPENVINO ##############################################################################
+
+cc_library(
+    name = "litert_intel_openvino_options",
+    srcs = ["litert_intel_openvino_options.cc"],
+    hdrs = ["litert_intel_openvino_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//litert/core/cache:hash_util",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -138,6 +181,23 @@ cc_library(
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
     ],
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "litert_webnn_options",
+    srcs = ["litert_webnn_options.cc"],
+    hdrs = ["litert_webnn_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_library(
@@ -148,8 +208,11 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
+        "//litert/core:options",
         "//litert/runtime:litert_runtime_options",
     ],
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_library(
@@ -197,8 +260,38 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "litert_webnn_options_test",
+    srcs = ["litert_webnn_options_test.cc"],
+    deps = [
+        ":litert_webnn_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# DARWINN ##########################################################################################
+
+cc_library(
+    name = "litert_darwinn_runtime_options",
+    srcs = ["litert_darwinn_runtime_options.cc"],
+    hdrs = ["litert_darwinn_runtime_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:litert_darwinn_options",
+    ],
+)
+
 filegroup(
     name = "options_headers",
     srcs = glob(["litert_*.h"]),
-    visibility = ["//litert/c:__pkg__"],
+    visibility = [
+        "//litert/c:__pkg__",
+        "//litert/cc:__pkg__",
+    ],
 )

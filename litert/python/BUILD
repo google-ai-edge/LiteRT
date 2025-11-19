@@ -26,6 +26,8 @@ py_strict_library(
     deps = [
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
+        # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
+        # "//litert/python/mlir",
     ],
 )
 

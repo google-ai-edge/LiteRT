@@ -19,15 +19,15 @@
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <string>
+#include <system_error> // NOLINT
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 
 namespace litert::internal {
 
@@ -74,6 +74,10 @@ std::string Join(const std::vector<absl::string_view>& paths) {
   return std_path.generic_string();
 }
 
+std::string Stem(absl::string_view path) {
+  return MakeStdPath(path).stem().generic_string();
+}
+
 bool Exists(absl::string_view path) { return StdExists(MakeStdPath(path)); }
 
 Expected<size_t> Size(absl::string_view path) {
@@ -101,6 +105,85 @@ Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
   }
 
   return buf;
+}
+
+Expected<std::vector<std::string>> ListDir(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  if (!StdExists(std_path)) {
+    return Error(kLiteRtStatusErrorNotFound,
+                 absl::StrFormat("Directory not found: %s", std_path.c_str()));
+  }
+  std::vector<std::string> res;
+  for (const auto& entry : std::filesystem::directory_iterator(std_path)) {
+    if (std::filesystem::is_regular_file(entry)) {
+      res.push_back(entry.path().generic_string());
+    }
+  }
+  return res;
+}
+
+Expected<std::string> Filename(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  if (!StdExists(std_path)) {
+    return Error(kLiteRtStatusErrorNotFound,
+                 absl::StrFormat("File not found: %s", std_path.c_str()));
+  }
+  return std_path.filename().generic_string();
+}
+
+bool IsDir(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  return std::filesystem::is_directory(std_path);
+}
+
+Expected<void> MkDir(absl::string_view path) {
+  if (IsDir(path)) {
+    return {};
+  }
+  if (Exists(path)) {
+    return Error(
+        kLiteRtStatusErrorAlreadyExists,
+        absl::StrFormat("Path exists and is not a directory: %s", path.data()));
+  }
+  auto std_path = MakeStdPath(path);
+  const auto stat = std::filesystem::create_directories(std_path);
+  if (!stat) {
+    return Error(
+        kLiteRtStatusErrorFileIO,
+        absl::StrFormat("Failed to create directory: %s", std_path.c_str()));
+  }
+  return {};
+}
+
+Expected<std::string> Parent(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  return std_path.parent_path().generic_string();
+}
+
+Expected<void> RmDir(std::string path_to_remove) {
+  std::error_code error_code;
+  std::uintmax_t count =
+      std::filesystem::remove_all(path_to_remove, error_code);
+  if (error_code) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Could not remove: %s, error: %s",
+                                 path_to_remove.c_str(), error_code.message()));
+  }
+
+  if (!Exists(path_to_remove)) {
+    if (count > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "Successfully removed directory and its contents: %s (%ju "
+                 "items deleted)",
+                 path_to_remove.c_str(), count);
+    }
+    // If count == 0 and it doesn't exist, it means it never existed. Still Ok.
+    return {};
+  } else {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Could not fully remove: %s",
+                                 path_to_remove.c_str()));
+  }
 }
 
 }  // namespace litert::internal

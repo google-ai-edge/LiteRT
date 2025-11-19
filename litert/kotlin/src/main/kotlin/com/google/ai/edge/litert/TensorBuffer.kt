@@ -50,6 +50,13 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
   }
 
   @Throws(LiteRtException::class)
+  fun writeLong(data: LongArray) {
+    assertNotDestroyed()
+
+    nativeWriteLong(handle, data)
+  }
+
+  @Throws(LiteRtException::class)
   fun readInt(): IntArray {
     assertNotDestroyed()
 
@@ -77,6 +84,13 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     return nativeReadBoolean(handle)
   }
 
+  @Throws(LiteRtException::class)
+  fun readLong(): LongArray {
+    assertNotDestroyed()
+
+    return nativeReadLong(handle)
+  }
+
   protected override fun destroy() {
     nativeDestroy(handle)
   }
@@ -94,6 +108,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
 
     @JvmStatic private external fun nativeWriteBoolean(handle: Long, data: BooleanArray)
 
+    @JvmStatic private external fun nativeWriteLong(handle: Long, data: LongArray)
+
     @JvmStatic private external fun nativeReadInt(handle: Long): IntArray
 
     @JvmStatic private external fun nativeReadFloat(handle: Long): FloatArray
@@ -101,6 +117,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     @JvmStatic private external fun nativeReadInt8(handle: Long): ByteArray
 
     @JvmStatic private external fun nativeReadBoolean(handle: Long): BooleanArray
+
+    @JvmStatic private external fun nativeReadLong(handle: Long): LongArray
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }
@@ -125,7 +143,33 @@ enum class TensorBufferType(private val type: Int) {
   OpenClTextureFp16(13),
   OpenClBufferPacked(14),
   OpenClImageBuffer(15),
-  OpenClImageBufferFp16(16);
+  OpenClImageBufferFp16(16),
+
+  // 20-29 are reserved for WebGpu memory objects.
+  WebGpuBuffer(20),
+  WebGpuBufferFp16(21),
+  WebGpuTexture(22),
+  WebGpuTextureFp16(23),
+  WebGpuImageBuffer(24),
+  WebGpuImageBufferFp16(25),
+  WebGpuBufferPacked(26),
+
+  // 30-39 are reserved for Metal memory objects.
+  // MetalBuffer(30),
+  // MetalBufferFp16(31),
+  // MetalTexture(32),
+  // MetalTextureFp16(33),
+  // MetalBufferPacked(34),
+
+  // 40-49 are reserved for Vulkan memory objects.
+  // WARNING: Vulkan support is experimental.
+  VulkanBuffer(40),
+  VulkanBufferFp16(41),
+  VulkanTexture(42),
+  VulkanTextureFp16(43),
+  VulkanImageBuffer(44),
+  VulkanImageBufferFp16(45),
+  VulkanBufferPacked(46);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_tensor_buffer_types.h:tensor_buffer_types)
 

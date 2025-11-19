@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -40,15 +41,12 @@ litert_dynamic_lib(
         "-fdata-sections",
     ],
     export_litert_only = True,
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + [
-        "-Wl,-soname=libLiteRtDispatch_Mediatek.so",
+    linkopts = litert_android_linkopts() + [
+        "-Wl,-soname=libLiteRtDispatch_MediaTek.so",
         "-Wl,-lc++abi",
     ],
     shared_lib_name = "dispatch_api_so",
-    so_name = "libLiteRtDispatch_Mediatek.so",
+    so_name = "libLiteRtDispatch_MediaTek.so",
     tags = [
         # Remove when sdk is available to bazel.
         "nobuilder",
@@ -56,22 +54,17 @@ litert_dynamic_lib(
     ],
     visibility = ["//litert:__subpackages__"],
     deps = [
-        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/types:span",
         "@neuro_pilot//:v8_latest_host_headers",
         "//litert/c:litert_environment_options",
         # Needed to build in OSS
         "//litert/core/util:tensor_type_util",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/core:dynamic_loading",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/mediatek:neuron_adapter_api",
@@ -89,11 +82,10 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_api",
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
-        "//litert/cc:litert_environment",
-        "//litert/cc/internal:litert_options",
+        "//litert/cc:litert_environment_testonly",
+        "//litert/cc:litert_options_testonly",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
         "//litert/test:matchers",

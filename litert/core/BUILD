@@ -12,12 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        "//litert:litert_internal_users",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_internal_users",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
@@ -29,11 +35,10 @@ cc_library(
         "//litert/c:litert_options.h",
     ],
     deps = [
+        ":scoped_weight_source",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
-        "//litert/c:litert_opaque_options",
         "//litert/c:litert_tensor_buffer",
-        "//litert/cc:litert_opaque_options",
     ],
 )
 
@@ -43,7 +48,7 @@ cc_library(
     hdrs = ["build_stamp.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -90,13 +95,13 @@ cc_library(
     ] + select({
         "@org_tensorflow//tensorflow:windows": [
             ":filesystem",
-            "//litert/c:litert_logging",
+            "//litert/c/internal:litert_logging",
             "@com_google_absl//absl/strings",
             "@com_google_absl//absl/strings:str_format",
         ],
         "//conditions:default": [
             ":filesystem",
-            "//litert/c:litert_logging",  # buildcleaner: keep
+            "//litert/c/internal:litert_logging",  # buildcleaner: keep
             "//litert/cc:litert_macros",
             "@com_google_absl//absl/strings",
         ],
@@ -129,14 +134,17 @@ cc_library(
     ],
     deps = [
         ":environment_options",
+        ":error_reporter",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
         "//litert/runtime:gpu_environment_header",
+        "//litert/runtime:tensor_buffer_registry_header",
+        "//tflite/core/api:error_reporter",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -173,6 +181,7 @@ cc_test(
         ":environment",
         "//litert/c:litert_any",
         "//litert/cc:litert_any",
+        "//litert/runtime:gpu_environment",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -184,10 +193,9 @@ cc_library_with_testonly_vis(
     hdrs = ["filesystem.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -230,7 +238,7 @@ cc_test(
 #         ":filesystem",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/strings:string_view",
-#         "//litert/c:litert_logging",  # buildcleaner: keep
+#         "//litert/c/internal:litert_logging",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #     ],
@@ -251,6 +259,72 @@ cc_library(
     hdrs = ["version.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
+    ],
+)
+
+cc_library(
+    name = "error_reporter",
+    srcs = ["error_reporter.cc"],
+    hdrs = ["error_reporter.h"],
+    deps = [
+        ":buffer_error_reporter",
+        "//litert/c/internal:litert_logging",
+        "//tflite/core/api:error_reporter",
+    ],
+)
+
+cc_library(
+    name = "buffer_error_reporter",
+    srcs = ["buffer_error_reporter.cc"],
+    hdrs = ["buffer_error_reporter.h"],
+    deps = [
+        "//tflite/core/api:error_reporter",
+    ],
+)
+
+cc_test(
+    name = "error_reporter_test",
+    srcs = ["error_reporter_test.cc"],
+    deps = [
+        ":buffer_error_reporter",
+        ":error_reporter",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "scoped_file",
+    srcs = ["scoped_file.cc"] + select({
+        "@platforms//os:windows": ["scoped_file_win.cc"],
+        "//conditions:default": ["scoped_file_posix.cc"],
+    }),
+    hdrs = ["scoped_file.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "scoped_weight_source",
+    hdrs = ["scoped_weight_source.h"],
+    deps = [
+        ":scoped_file",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_test(
+    name = "scoped_file_test",
+    srcs = ["scoped_file_test.cc"],
+    deps = [
+        ":scoped_file",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )

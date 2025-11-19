@@ -34,7 +34,7 @@ std::vector<OpWrapper> BuildCumsumOp(
     return res;
   }
 
-  const auto axis_data = axis_tensor.GetStaticTensorData<std::int32_t>();
+  const auto axis_data = axis_tensor.GetTensorData<std::int32_t>();
   if (!axis_data.has_value()) {
     QNN_LOG_ERROR("Failed to get static axis tensor data.");
     return res;

@@ -5,6 +5,8 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS")
 load(
     "//tflite:special_rules.bzl",

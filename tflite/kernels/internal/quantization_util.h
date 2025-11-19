@@ -167,7 +167,7 @@ IntOut SafeCast(FloatIn x) {
   return x < 0 ? std::numeric_limits<IntOut>::min()
                : std::numeric_limits<IntOut>::max();
 }
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/kernels/internal/quantization_util.h)
+// LINT.ThenChange(//tflite/converter/kernels/internal/quantization_util.h)
 
 // Decompose a double multiplier into a Q0.31 int32 representation of its
 // significand, and shift representation of NEGATIVE its exponent ---

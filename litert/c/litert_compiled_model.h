@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,6 +86,36 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtParamIndex output_index,
     LiteRtTensorBufferRequirements* buffer_requirements);
 
+// Returns the tensor layout for the given input tensor. This reflects the most
+// recent shape requested via LiteRtCompiledModelResizeInputTensor or automatic
+// resizing during execution.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature in `LiteRtModel`.
+// - input_index: the index of the input tensor in the signature (subgraph).
+// - layout: user provided storage to receive the `LiteRtLayout`.
+LiteRtStatus LiteRtGetCompiledModelInputTensorLayout(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, LiteRtLayout* layout);
+
+// Returns the tensor layouts for all output tensors.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature in `LiteRtModel`.
+// - num_layouts: the number of output tensor layouts.
+// - layouts: user allocated memory to store `LiteRtLayout` for tensor outputs.
+// - update_allocation: whether to update the tensor allocation. Set to true
+//   for dynamic models after resize input tensors.
+//
+// Note: This function usually should be called after resizing input tensors
+// to get the new output tensor layouts. User should be responsible for
+// allocation and deallocating of the layouts memory.
+LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_layouts, LiteRtLayout* layouts, bool update_allocation);
+
 // Returns the associated environment of the given compiled model.
 LiteRtStatus LiteRtGetCompiledModelEnvironment(
     LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment);
@@ -133,6 +164,22 @@ LiteRtStatus LiteRtRunCompiledModelAsync(
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async);
 
+// Sets a callback function that will be called periodically during model
+// execution to check if the execution should be cancelled.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - data: user-provided data that will be passed to the callback function.
+// - check_cancelled_func: callback function that returns true if execution
+//   should be cancelled, false otherwise.
+//
+// Note: Either use this callback-based mechanism or the non callback version
+// with LiteRtEnableCompiledModelCancellation/LiteRtCancelCompiledModel, but not
+// both.
+LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
+    LiteRtCompiledModel compiled_model, void* data,
+    bool (*check_cancelled_func)(void*));
+
 // Destroy a owned LiteRtCompiledModel object.
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model);
 
@@ -150,11 +197,104 @@ LiteRtStatus LiteRtCompiledModelStopMetricsCollection(
 LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
     LiteRtCompiledModel compiled_model, bool* fully_accelerated);
 
-// Sets the profiler for the model. Caller owns the profiler and is responsible
-// for calling LiteRtDestroyProfiler() to release the profiler. Profiler is
-// needed on during the model execution, can be disposed after execution.
-LiteRtStatus LiteRtCompiledModelSetProfiler(LiteRtCompiledModel compiled_model,
-                                            LiteRtProfiler profiler);
+// Gets the profiler for the model. CompiledModel owns the profiler.
+LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
+                                            LiteRtProfiler* profiler);
+
+// Resizes the specified input tensor to support dynamic shapes.
+//
+// This function allows resizing input tensors at runtime, similar to TFLite's
+// ResizeInputTensor API. After calling this function, the compiled model will
+// reallocate internal buffers as needed to accommodate the new tensor shape.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature in `LiteRtModel`.
+// - input_index: the index of the input tensor in the signature (subgraph).
+// - dims: A span containing the new dimensions for the input tensor.
+//
+// Note: After resizing, the previously obtained buffer requirements may be
+// invalidated. Callers should re-query buffer requirements if needed. After
+// resizing, LiteRtGetCompiledModelAllOutputTensorLayouts can be used to get
+// the new output tensor layouts.
+//
+// Returns:
+// - kLiteRtStatusOk: Success.
+// - kLiteRtStatusErrorInvalidArgument: Invalid parameters.
+// - kLiteRtStatusErrorRuntimeFailure: Failed to resize tensor.
+// - kLiteRtStatusErrorUnimplemented: Dynamic shape is not supported for the
+//   given model or delegate.
+LiteRtStatus LiteRtCompiledModelResizeInputTensor(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const int* dims, size_t dims_size);
+
+// Sets a dispatch annotation on the compiled model. These annotations will be
+// propagated to dispatch graphs when they are created during model execution.
+// The annotations provide runtime hints and metadata that can be used by
+// hardware accelerators for optimization.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature (zero-based).
+// - key: the annotation key (must not be null).
+// - value: the annotation value (must not be null).
+//
+// Example annotations:
+// - "priority": "high|medium|low" - execution priority hints
+// - "memory_type": "shared|dedicated" - memory allocation preferences
+// - "accelerator": "npu|gpu|dsp" - preferred hardware accelerator
+// - "precision": "fp32|fp16|int8" - computation precision requirements
+LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key, const char* value);
+
+// Gets a dispatch annotation from the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature (zero-based).
+// - key: the annotation key to look up (must not be null).
+// - value: pointer to store the annotation value (will be set to null if key
+//   not found).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+//
+// Note: The returned value pointer is owned by the compiled model and should
+// not be freed or outlive the compiled model.
+LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key, const char** value);
+
+// Removes a dispatch annotation from the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - key: the annotation key to remove (must not be null).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key);
+
+// Error reporter APIs
+
+// Reports an error to the compiled model's error reporter.
+// Note: This function accepts printf-style format strings.
+LiteRtStatus LiteRtCompiledModelReportError(LiteRtCompiledModel compiled_model,
+                                            const char* format, ...);
+
+// Clears all errors (only available with buffer error reporter mode).
+LiteRtStatus LiteRtCompiledModelClearErrors(LiteRtCompiledModel compiled_model);
+
+// Gets all error messages as a single string (only available with buffer error
+// reporter mode). The caller is responsible for freeing the returned
+// `error_messages` buffer using `free`.
+LiteRtStatus LiteRtCompiledModelGetErrorMessages(
+    LiteRtCompiledModel compiled_model, char** error_messages);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

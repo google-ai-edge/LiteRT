@@ -1,0 +1,14 @@
+{
+  "name": "@litertjs/tsconfig",
+  "version": "0.2.1",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/packages/tsconfig"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -15,17 +15,16 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 #define ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 
-#include <any>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
@@ -33,9 +32,6 @@ namespace litert {
 class Environment
     : public internal::Handle<LiteRtEnvironment, LiteRtDestroyEnvironment> {
  public:
-  explicit Environment(LiteRtEnvironment env, OwnHandle owned = OwnHandle::kYes)
-      : Handle(env, owned) {}
-
   enum class OptionTag {
     CompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,
     DispatchLibraryDir = kLiteRtEnvOptionTagDispatchLibraryDir,
@@ -45,11 +41,26 @@ class Environment
     ClCommandQueue = kLiteRtEnvOptionTagOpenClCommandQueue,
     EglContext = kLiteRtEnvOptionTagEglContext,
     EglDisplay = kLiteRtEnvOptionTagEglDisplay,
+    WebGpuDevice = kLiteRtEnvOptionTagWebGpuDevice,
+    WebGpuQueue = kLiteRtEnvOptionTagWebGpuQueue,
+    MetalDevice = kLiteRtEnvOptionTagMetalDevice,
+    MetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
+    // WARNING: Vulkan support is experimental.
+    VulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
+    VulkanCommandPool = kLiteRtEnvOptionTagVulkanCommandPool,
+    CallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+    CallbackUserDataOnGpuEnvDestry =
+        kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+    MagicNumberConfigs = kLiteRtEnvOptionTagMagicNumberConfigs,
+    MagicNumberVerifications = kLiteRtEnvOptionTagMagicNumberVerifications,
+    CompilerCacheDir = kLiteRtEnvOptionTagCompilerCacheDir,
+    WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
+    WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
   };
 
   struct Option {
     OptionTag tag;
-    std::any value;
+    LiteRtVariant value;
   };
 
   Expected<EnvironmentOptions> GetOptions() const {
@@ -76,7 +87,8 @@ class Environment
   // Returns whether the environment supports CL/GL interop.
   bool SupportsClGlInterop() const {
     bool is_supported = false;
-    if (auto status = LiteRtSupportsClGlInterop(Get(), &is_supported);
+    if (auto status =
+            LiteRtEnvironmentSupportsClGlInterop(Get(), &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
@@ -86,7 +98,8 @@ class Environment
   // Returns whether the environment supports AHWB/CL interop.
   bool SupportsAhwbClInterop() const {
     bool is_supported = false;
-    if (auto status = LiteRtSupportsAhwbClInterop(Get(), &is_supported);
+    if (auto status =
+            LiteRtEnvironmentSupportsAhwbClInterop(Get(), &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
@@ -96,14 +109,25 @@ class Environment
   // Returns whether the environment supports AHWB/GL interop.
   bool SupportsAhwbGlInterop() const {
     bool is_supported = false;
-    if (auto status = LiteRtSupportsAhwbGlInterop(Get(), &is_supported);
+    if (auto status =
+            LiteRtEnvironmentSupportsAhwbGlInterop(Get(), &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
     return is_supported;
   }
 
+  ///  \internal Wraps a LiteRtEnvironment C object in a Environment C++ object.
+  ///
+  /// Warning: This is internal use only.
+  static Environment WrapCObject(LiteRtEnvironment env, OwnHandle owned) {
+    return Environment(env, owned);
+  }
+
  private:
+  explicit Environment(LiteRtEnvironment env, OwnHandle owned = OwnHandle::kYes)
+      : Handle(env, owned) {}
+
   static Expected<std::vector<LiteRtEnvOption>> ConvertOptions(
       absl::Span<const Option> options) {
     std::vector<LiteRtEnvOption> c_options;

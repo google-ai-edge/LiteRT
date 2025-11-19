@@ -4,7 +4,7 @@ ENV ANDROID_DEV_HOME /android
 RUN mkdir -p ${ANDROID_DEV_HOME}
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends default-jdk
+    apt-get install -y --no-install-recommends default-jdk llvm-18 clang-18
 
 # Install Android SDK.
 ENV ANDROID_SDK_FILENAME commandlinetools-linux-13114758_latest.zip

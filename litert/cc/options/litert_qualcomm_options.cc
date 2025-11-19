@@ -18,14 +18,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 
@@ -45,28 +46,30 @@ Expected<QualcommOptions> QualcommOptions::Create() {
   return QualcommOptions(options, litert::OwnHandle::kYes);
 }
 
-void QualcommOptions::SetLogLevel(LiteRtQualcommOptionsLogLevel log_level) {
-  internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(), log_level);
+void QualcommOptions::SetLogLevel(QualcommOptions::LogLevel log_level) {
+  internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(),
+                     static_cast<LiteRtQualcommOptionsLogLevel>(log_level));
 }
 
-LiteRtQualcommOptionsLogLevel QualcommOptions::GetLogLevel() {
+QualcommOptions::LogLevel QualcommOptions::GetLogLevel() {
   LiteRtQualcommOptionsLogLevel log_level;
   internal::AssertOk(LiteRtQualcommOptionsGetLogLevel, Data(), &log_level);
-  return log_level;
+  return static_cast<QualcommOptions::LogLevel>(log_level);
 }
 
 void QualcommOptions::SetHtpPerformanceMode(
-    LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode) {
-  internal::AssertOk(LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
-                     htp_performance_mode);
+    QualcommOptions::HtpPerformanceMode htp_performance_mode) {
+  internal::AssertOk(
+      LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
+      static_cast<LiteRtQualcommOptionsHtpPerformanceMode>(
+          htp_performance_mode));
 }
 
-LiteRtQualcommOptionsHtpPerformanceMode
-QualcommOptions::GetHtpPerformanceMode() {
+QualcommOptions::HtpPerformanceMode QualcommOptions::GetHtpPerformanceMode() {
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode;
   internal::AssertOk(LiteRtQualcommOptionsGetHtpPerformanceMode, Data(),
                      &htp_performance_mode);
-  return htp_performance_mode;
+  return static_cast<QualcommOptions::HtpPerformanceMode>(htp_performance_mode);
 }
 
 void QualcommOptions::SetEnableWeightSharing(bool weight_sharing_enabled) {
@@ -105,14 +108,15 @@ bool QualcommOptions::GetUseQint16AsQuint16() {
   return use_qin16_as_quint16;
 }
 
-void QualcommOptions::SetProfiling(LiteRtQualcommOptionsProfiling profiling) {
-  internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(), profiling);
+void QualcommOptions::SetProfiling(QualcommOptions::Profiling profiling) {
+  internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(),
+                     static_cast<LiteRtQualcommOptionsProfiling>(profiling));
 }
 
-LiteRtQualcommOptionsProfiling QualcommOptions::GetProfiling() {
+QualcommOptions::Profiling QualcommOptions::GetProfiling() {
   LiteRtQualcommOptionsProfiling profiling;
   internal::AssertOk(LiteRtQualcommOptionsGetProfiling, Data(), &profiling);
-  return profiling;
+  return static_cast<QualcommOptions::Profiling>(profiling);
 }
 
 void QualcommOptions::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
@@ -134,6 +138,86 @@ std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
     dump_ids.emplace_back(ids[i]);
   }
   return dump_ids;
+}
+
+void QualcommOptions::SetIrJsonDir(const std::string& ir_json_dir) {
+  internal::AssertOk(LiteRtQualcommOptionsSetIrJsonDir, Data(),
+                     ir_json_dir.c_str());
+}
+
+absl::string_view QualcommOptions::GetIrJsonDir() {
+  const char* ir_json_dir;
+  internal::AssertOk(LiteRtQualcommOptionsGetIrJsonDir, Data(), &ir_json_dir);
+  return absl::string_view(ir_json_dir);
+}
+
+void QualcommOptions::SetDlcDir(const std::string& dlc_dir) {
+  internal::AssertOk(LiteRtQualcommOptionsSetDlcDir, Data(), dlc_dir.c_str());
+}
+
+absl::string_view QualcommOptions::GetDlcDir() {
+  const char* dlc_dir;
+  internal::AssertOk(LiteRtQualcommOptionsGetDlcDir, Data(), &dlc_dir);
+  return absl::string_view(dlc_dir);
+}
+
+void QualcommOptions::SetVtcmSize(std::uint32_t vtcm_size) {
+  internal::AssertOk(LiteRtQualcommOptionsSetVtcmSize, Data(), vtcm_size);
+}
+
+std::uint32_t QualcommOptions::GetVtcmSize() {
+  std::uint32_t vtcm_size;
+  internal::AssertOk(LiteRtQualcommOptionsGetVtcmSize, Data(), &vtcm_size);
+  return vtcm_size;
+}
+
+void QualcommOptions::SetNumHvxThreads(std::uint32_t num_hvx_threads) {
+  internal::AssertOk(LiteRtQualcommOptionsSetNumHvxThreads, Data(),
+                     num_hvx_threads);
+}
+
+std::uint32_t QualcommOptions::GetNumHvxThreads() {
+  std::uint32_t num_hvx_threads;
+  internal::AssertOk(LiteRtQualcommOptionsGetNumHvxThreads, Data(),
+                     &num_hvx_threads);
+  return num_hvx_threads;
+}
+
+void QualcommOptions::SetOptimizationLevel(
+    QualcommOptions::OptimizationLevel optimization_level) {
+  internal::AssertOk(
+      LiteRtQualcommOptionsSetOptimizationLevel, Data(),
+      static_cast<LiteRtQualcommOptionsOptimizationLevel>(optimization_level));
+}
+
+QualcommOptions::OptimizationLevel QualcommOptions::GetOptimizationLevel() {
+  LiteRtQualcommOptionsOptimizationLevel optimization_level;
+  internal::AssertOk(LiteRtQualcommOptionsGetOptimizationLevel, Data(),
+                     &optimization_level);
+  return static_cast<QualcommOptions::OptimizationLevel>(
+      optimization_level);
+}
+
+void QualcommOptions::SetUseConvHMX(bool use_conv_hmx) {
+  internal::AssertOk(LiteRtQualcommOptionsSetUseConvHMX, Data(), use_conv_hmx);
+}
+
+bool QualcommOptions::GetUseConvHMX() {
+  bool use_conv_hmx;
+  internal::AssertOk(LiteRtQualcommOptionsGetUseConvHMX, Data(), &use_conv_hmx);
+  return use_conv_hmx;
+}
+
+void QualcommOptions::SetUseFoldReLU(bool use_fold_relu) {
+  internal::AssertOk(LiteRtQualcommOptionsSetUseFoldReLU, Data(),
+                     use_fold_relu);
+}
+
+bool QualcommOptions::GetUseFoldReLU() {
+  bool use_fold_relu;
+  internal::AssertOk(LiteRtQualcommOptionsGetUseFoldReLU, Data(),
+                     &use_fold_relu);
+  return use_fold_relu;
 }
 
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {

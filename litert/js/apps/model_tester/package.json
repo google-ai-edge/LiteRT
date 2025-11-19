@@ -1,0 +1,49 @@
+{
+  "name": "@litertjs/model-tester",
+  "version": "0.2.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "serve.js",
+  "bin": {
+    "model-tester": "serve.js"
+  },
+  "scripts": {
+    "copy-wasm": "mkdirp dist && cp -r `node -e \"console.log(path.join(require.resolve('@litertjs/core/package.json'), '../wasm'))\"` dist/",
+    "copy-static-files": "cp -r static dist && npm run copy-wasm",
+    "dev": "rimraf dist && npm run copy-static-files && node scripts/devserver.js",
+    "build": "rimraf dist && npm run copy-static-files  && esbuild --bundle --target=es2020 --outfile=dist/bundle.js --sourcemap src/index.ts"
+  },
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/apps/model_tester"
+  },
+  "license": "Apache-2.0",
+  "description": "",
+  "dependencies": {
+    "@lit/task": "^1.0.2",
+    "@litertjs/tfjs-interop": "^0.2.1",
+    "@litertjs/core": "^0.2.1",
+    "argparse": "^2.0.1",
+    "d3": "^5.16.0",
+    "esbuild": "^0.23.0",
+    "express": "^5.1.0",
+    "lit": "^3.2.1",
+    "mkdirp": "^3.0.1",
+    "open": "^10.2.0",
+    "rimraf": "^6.0.1"
+  },
+  "devDependencies": {
+    "@litertjs/tsconfig": "^0.2.1",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
+    "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "@types/argparse": "^2.0.17",
+    "@types/d3": "^5.16.4",
+    "@types/express": "^5.0.3"
+  }
+}

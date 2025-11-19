@@ -20,8 +20,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_cpu_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/test/matchers.h"
@@ -95,6 +95,20 @@ TEST(CpuOptions, SetAndGetXNNPackWeighCachePathWorks) {
   LITERT_EXPECT_OK(options.SetXNNPackWeightCachePath("a/path"));
   EXPECT_THAT(options.GetXNNPackWeightCachePath(),
               IsOkAndHolds(StrEq("a/path")));
+}
+
+TEST(CpuOptions, CheckXNNPackWeightCacheFileDescriptorDefaultValue) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+  EXPECT_THAT(options.GetXNNPackWeightCacheFileDescriptor(),
+              IsOkAndHolds(-1));
+}
+
+TEST(CpuOptions, SetAndGetXNNPackWeighCacheFileDescriptorWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+
+  LITERT_EXPECT_OK(options.SetXNNPackWeightCacheFileDescriptor(1234));
+  EXPECT_THAT(options.GetXNNPackWeightCacheFileDescriptor(),
+              IsOkAndHolds(1234));
 }
 
 TEST(CpuOptions, CheckXNNPackFlagsDefaultValue) {

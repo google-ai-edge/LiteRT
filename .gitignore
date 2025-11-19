@@ -19,10 +19,12 @@ Thumbs.db
 .vscode
 
 .idea/
-cmake-build-debug/
+cmake_build_android_arm64/
+host_flatc_build/
+cmake_build/
 
 /.bazelrc.user
 /bazel-*
 .vscode/
 *.whl
-/.tf_configure.bazelrc
+/.litert_configure.bazelrc

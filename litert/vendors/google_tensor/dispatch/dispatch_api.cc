@@ -15,23 +15,28 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
 #include <cstdio>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
+#include "litert/c/litert_metrics.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_macros.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
@@ -46,7 +51,7 @@ char BuildId[256];
 
 LiteRtEnvironmentOptions TheEnvironmntOptions;
 LiteRtOptions TheOptions;
-
+std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
 }  // namespace
 
 namespace litert {
@@ -66,13 +71,26 @@ std::optional<std::string> GetSharedLibraryDir(
                dispatch_lib_dir_any.Error().Message().c_str());
     return std::nullopt;
   }
-  return std::string(std::any_cast<const char*>(*dispatch_lib_dir_any));
+  return std::string(std::get<const char*>(*dispatch_lib_dir_any));
 }
 
 LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
   TheEnvironmntOptions = environment_options;
   TheOptions = options;
+
+  // Parse Darwinn runtime options from the opaque options
+  auto [env, opts, opq_opts, darwinn_opts] =
+      litert::ParseOptions<litert::DarwinnRuntimeOptions>(environment_options,
+                                                          options);
+
+  if (darwinn_opts) {
+    TheDarwinnOptions = std::make_unique<litert::DarwinnRuntimeOptions>(
+        std::move(*darwinn_opts));
+    LITERT_LOG(LITERT_INFO, "Found Darwinn runtime options");
+  } else {
+    LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found, using defaults");
+  }
 
   auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
 
@@ -131,7 +149,9 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
-  if (auto result = LiteRtDispatchDeviceContextT::Create(*TheSouthbound);
+  if (auto result = LiteRtDispatchDeviceContextT::Create(
+          *TheSouthbound, TheDarwinnOptions.get());
+
       result) {
     *device_context = result->release();
     return kLiteRtStatusOk;
@@ -567,6 +587,16 @@ LiteRtStatus InvocationContextCreateFromGraph(
   }
 }
 
+LiteRtStatus InvocationContextGetGraph(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph) {
+  if (!invocation_context || !graph) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *graph = invocation_context->graph();
+  return kLiteRtStatusOk;
+}
+
 }  // namespace google_tensor
 }  // namespace litert
 
@@ -622,6 +652,8 @@ LiteRtDispatchGraphInterface TheGraphInterface = {
     .annotate_edge = litert::google_tensor::AnnotateEdge,
     .invocation_context_create_from_graph =
         litert::google_tensor::InvocationContextCreateFromGraph,
+    .invocation_context_get_graph =
+        litert::google_tensor::InvocationContextGetGraph,
 };
 
 LiteRtDispatchApi TheApi = {

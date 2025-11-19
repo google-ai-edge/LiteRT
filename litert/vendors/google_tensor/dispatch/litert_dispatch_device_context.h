@@ -15,15 +15,20 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
-#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
+
+namespace litert {
+class DarwinnRuntimeOptions;
+}  // namespace litert
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -32,7 +37,8 @@ class LiteRtDispatchDeviceContextT {
   ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
-      const litert::google_tensor::Southbound& southbound);
+      const litert::google_tensor::Southbound& southbound,
+      const litert::DarwinnRuntimeOptions* darwinn_options = nullptr);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
@@ -58,10 +64,19 @@ class LiteRtDispatchDeviceContextT {
   explicit LiteRtDispatchDeviceContextT(
       const litert::google_tensor::Southbound& southbound)
       : southbound_(southbound) {}
+  // Struct to store Darwinn runtime options for later application
+  struct DarwinnOptionsData {
+    std::optional<uint32_t> inference_power_state;
+    std::optional<uint32_t> inference_memory_power_state;
+    std::optional<int8_t> inference_priority;
+    bool atomic_inference = false;
+    bool prefer_coherent = false;
+  };
 
   const litert::google_tensor::Southbound& southbound_;
   ThrContext* thr_context_ = nullptr;
   absl::flat_hash_set<ThrGraph*> thr_graphs_;
+  std::optional<DarwinnOptionsData> darwinn_options_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

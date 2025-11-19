@@ -15,12 +15,21 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_
 
+#include "litert/c/litert_common.h"
+
 // Internal LiteRt runtime options struct. This data structure is used to
 // pass runtime options to the interpreter and will be used in the framework
 // code.
 struct LiteRtRuntimeOptionsT {
   // If true, the interpreter will inline composite ops.
   bool shlo_composite_inlining = false;
+
+  // If true, the interpreter will enable profiling.
+  bool enable_profiling = false;
+
+  // Error reporter mode to use for this model
+  LiteRtErrorReporterMode error_reporter_mode =
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone;
 
   static const char* Identifier() { return "runtime"; }
 };

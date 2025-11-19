@@ -16,8 +16,8 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_event_type.h"
+#include "litert/cc/internal/litert_platform_support.h"
 #include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_platform_support.h"
 #include "litert/test/matchers.h"
 
 namespace litert {

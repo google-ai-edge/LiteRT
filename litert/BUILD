@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:special_rule.bzl", "litert_friends")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
@@ -19,71 +21,111 @@ package(
     ],
 )
 
-# These are the internal packages that have access to the cc api linked against the runtime .so.
+# Controls visibility into LiteRT C++ and C APIs.
+# Access to LiteRT C++ API is controlled by :litert_cc_users_dynamic_link and
+# :litert_cc_users_static_link. Access to LiteRT C++ API implies access to LiteRT C API.
+# Access to LiteRT C API is controlled by :litert_c_users.
+
+# Users with access to the LiteRT C++ API linked dynamically (litert/cc/dynamic_runtime).
+# Requires linking against libLiteRtRuntimeCApi.so.
+# For statically linked C++ API, use :litert_cc_users_static_link.
+#
+# Note: External users should use litert/cc:litert_api_with_dynamic_runtime which is litert_public.
+# This should be only used for internal LiteRT targets.
 package_group(
-    name = "litert_internal_users_with_public_cc",
-    # copybara:uncomment includes = ["//third_party/py/executorch:execufriends"],
+    name = "litert_cc_users_dynamic_link",
     packages = [
-        # Self packages.
-        "//ci/tools/...",
         "//litert/cc/...",
+        "//litert/compiler/plugin/...",
         "//litert/google/...",
         "//litert/integration_test/...",
         "//litert/kotlin/...",
         "//litert/python/...",
-        "//litert/test/...",
-        "//litert/sdk_util/...",
-        # When litert_lm_link_capi_so=false
-        # copybara:uncomment "//third_party/odml/litert_lm/...",
-        # Users with access to core internal apis.
-        # copybara:uncomment "//third_party/odml/infra/genai/conversion/...",
-        # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
-    ],
-)
-
-# These are the internal packages that have access to the cc api linked statically.
-package_group(
-    name = "litert_internal_users_with_internal_cc",
-    packages = [
-        # copybara:uncomment "//third_party/darwinn/litert/...",
-        # copybara:uncomment "//third_party/darwinn/tflite/...",
-        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
-        # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
-        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
-        "//litert/c/...",
-        "//litert/compiler/...",
-        "//litert/core/...",
-        "//litert/runtime/...",
-        "//litert/tools/...",
-        "//litert/vendors/cc/...",
-        "//litert/vendors/qualcomm/...",
-        # When litert_lm_link_capi_so=false
-        # copybara:uncomment "//third_party/odml/litert_lm/...",
-        # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
-    ],
-)
-
-# All packages with visibility to the internal apis.
-package_group(
-    name = "litert_internal_users",
-    includes = [
-        ":litert_internal_users_with_internal_cc",
-        ":litert_internal_users_with_public_cc",
-    ],
-)
-
-# Users with access to only the public stable abi + wrappers.
-package_group(
-    name = "litert_external_users",
-    packages = [
-        # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
-        # copybara:uncomment "//platforms/darwinn/compiler/...",
-        # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
-        "//litert/runtime/...",
+        "//litert/runtime/accelerators/gpu/...",
+        "//litert/runtime/dispatch/...",
+        "//litert/runtime/ml_drift_delegate/...",
+        "//litert/rust/...",
         "//litert/samples/...",
+        "//litert/sdk_util/...",
+        "//litert/test/...",
         "//litert/tools/...",
         "//litert/vendors/...",
-        # copybara:uncomment "//third_party/odml/litert/llm/...",
+        # When litert_link_capi_so=false
+        "//ci/tools/...",
+        # copybara:uncomment "//third_party/odml/litert/tensor/...",
+    ] + litert_friends(),
+)
+
+# Users with access to the LiteRT C++ API linked statically (i.e. litert/cc/).
+# For dynamically linked C++ API, use :litert_cc_users_dynamic_link.
+package_group(
+    name = "litert_cc_users_static_link",
+    packages = [
+        "//litert/ats/...",
+        "//litert/google/...",
+        "//litert/integration_test/...",
+        "//litert/js/...",
+        "//litert/python/...",
+        "//third_party/odml/litert/tensor/...",
+        "//litert/samples/semantic_similarity/...",
+        # TODO(b/424778444): Internal runtime would better not call cc runtime APIs. Remove below targets.
+        "//litert/runtime/...",
+        "//litert/cc/...",
+        "//litert/c/...",
+        "//third_party/odml/litert/weight_loader/...",
+        "//litert/c/options/...",
+        "//litert/compiler/plugin/...",
+        "//litert/core/model/...",
+        "//litert/test/...",
+        "//litert/tools/...",
+    ] + litert_friends(),
+)
+
+# All packages with visibility to the internal APIs
+# such as litert/cc/internal and litert/c/internal.
+package_group(
+    name = "litert_internal_users",
+    packages = [
+        "//ci/tools/...",
+        "//litert/ats/...",
+        "//litert/c/...",
+        "//litert/cc/...",
+        "//litert/compiler/...",
+        "//litert/core/...",
+        "//litert/google/...",
+        "//litert/integration_test/...",
+        "//litert/kotlin/...",
+        "//litert/python/...",
+        "//litert/runtime/...",
+        "//litert/sdk_util/...",
+        "//litert/test/...",
+        "//litert/tools/...",
+        "//litert/vendors/...",
+        "//third_party/odml/litert/weight_loader/...",
+    ] + litert_friends(),
+)
+
+# All packages with visibility to the internal APIs
+# such as litert/cc/internal and litert/c/internal.
+package_group(
+    name = "litert_friends",
+    packages = litert_friends(),
+)
+
+# Users with access to the LiteRT C API.
+package_group(
+    name = "litert_c_users",
+    includes = [
+        ":litert_internal_users",
+    ],
+    packages = [
+        "//litert/vendors/...",
+        "//litert/kotlin/...",
+        "//litert/rust/...",
+        "//litert/samples/...",
+        "//third_party/odml/litert/tensor/...",
+        # TODO(b/454666070): Below targets should be removed after we remove their use of C headers.
+        # copybara:uncomment "//platforms/darwinn/...",
     ],
 )
 
@@ -92,7 +134,9 @@ package_group(
     name = "litert_public",
     # copybara:uncomment_begin(oss)
     # includes = [
-    # ":litert_external_users",
+    # ":litert_c_users",
+    # ":litert_cc_users_dynamic_link",
+    # ":litert_cc_users_static_link",
     # ":litert_internal_users",
     # ],
     # copybara:uncomment_end_and_comment_begin
@@ -115,4 +159,43 @@ package_group(
         ":litert_internal_users",
     ],
     packages = [],
+)
+
+exports_files(
+    glob(["*.gwsq"]),
+    visibility = ["//visibility:public"],
+)
+
+# If litert_link_capi_so is not defined, each target links LiteRT C API either statically or
+# dynamically based on its own requirements.
+config_setting(
+    name = "litert_link_capi_so",
+    values = {"define": "litert_link_capi_so=true"},
+)
+
+config_setting(
+    name = "litert_link_capi_static",
+    values = {"define": "litert_link_capi_so=false"},
+)
+
+# Configuration for building with built-in kernels (default)
+config_setting(
+    name = "with_builtin_ops",
+    values = {"define": "litert_builtin_ops=true"},
+)
+
+# Configuration for building without built-in kernels
+config_setting(
+    name = "without_builtin_ops",
+    values = {"define": "litert_builtin_ops=false"},
+)
+
+# Configuration for building Android builds that can't depend on libandroid.so
+config_setting(
+    name = "litert_android_no_jni",
+    constraint_values = ["@platforms//os:android"],
+    values = {
+        "define": "litert_android_no_jni=true",
+        "crosstool_top": "//external:android/crosstool",  # copybara:comment
+    },
 )

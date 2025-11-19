@@ -1,0 +1,130 @@
+name: "cmake-android-linux"
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
+  workflow_dispatch:
+    inputs:
+      REFRESH_CACHE:
+        description: 'Refresh cache to remove unused files'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  presubmit:
+    name: "Presubmit-Android-Linux"
+    runs-on: LiteRT_Linux_x64
+    permissions:
+      actions: write
+      contents: write
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 6
+      GH_TOKEN: ${{ github.token }}
+      REFRESH_CACHE: ${{ github.event_name == 'schedule' ||
+                         (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up cache keys
+        id: cache-keys
+        run: |
+          CACHE_RESTORE_KEY_1="${{ github.workflow }}"
+          CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}"
+          CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+          CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$GITHUB_OUTPUT"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+      - name: Clean build outputs if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        run: |
+          rm -rf litert/cmake_build_android_arm64
+          rm -rf host_flatc_build
+      - name: Restore cmake cache if cache is not being refreshed.
+        id: cmake-cache
+        if: env.REFRESH_CACHE != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            litert/cmake_build_android_arm64
+            host_flatc_build
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+      - name: Check cache hit
+        run: |
+          echo "Cache Hit: ${{ steps.cmake-cache.outputs.cache-hit }}"
+          echo "Cache Primary Key: ${{ steps.cmake-cache.outputs.cache-primary-key }}"
+          echo "Cache Matched Key: ${{ steps.cmake-cache.outputs.cache-matched-key }}"
+      - name: Setup CMake 3.28.3
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.28.3"
+
+      - name: Ensure clang toolchain
+        run: |
+          if ! command -v clang >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y clang
+          fi
+          clang --version
+      - name: Install Android NDK r27
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+
+      - name: Export ANDROID_NDK_HOME
+        run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - name: Configure host flatbuffers tools
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        working-directory: litert
+
+      - name: Locate host flatc
+        id: host-tools
+        run: |
+          HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build && pwd)"
+          echo "dir=$HOST_DIR" >> "$GITHUB_OUTPUT"
+        working-directory: litert
+
+      - name: Configure Android build
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DTFLITE_HOST_TOOLS_DIR="${{ steps.host-tools.outputs.dir }}"
+        working-directory: litert
+
+      - name: Build Android artifacts
+        run: cmake --build cmake_build_android_arm64 --parallel
+        working-directory: litert
+
+      - name: Remove cache if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        continue-on-error: true
+        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+      - name: Save cmake cache if it's new or being refreshed.
+        uses: actions/cache/save@v4
+        if: env.REFRESH_CACHE == 'true' || steps.cmake-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            litert/cmake_build_android_arm64
+            host_flatc_build
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}

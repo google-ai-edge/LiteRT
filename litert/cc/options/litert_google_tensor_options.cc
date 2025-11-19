@@ -24,19 +24,16 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////
+// TODO(b/448037748): Add unit tests for this file.
 
 namespace litert::google_tensor {
-
-const char* GoogleTensorOptions::Discriminator() {
-  return LiteRtGoogleTensorOptionsGetIdentifier();
-}
 
 Expected<GoogleTensorOptions> GoogleTensorOptions::Create(
     OpaqueOptions& options) {
@@ -119,6 +116,20 @@ bool GoogleTensorOptions::GetEnableLargeModelSupport() const {
   LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
       options_data, &enable_large_model_support);
   return enable_large_model_support;
+}
+
+void GoogleTensorOptions::SetEnable4BitCompilation(
+    bool enable_4bit_compilation) {
+  internal::AssertOk(LiteRtGoogleTensorOptionsSetEnable4BitCompilation, Data(),
+                     enable_4bit_compilation);
+}
+
+bool GoogleTensorOptions::GetEnable4BitCompilation() const {
+  LiteRtGoogleTensorOptions options_data = Data();
+  bool enable_4bit_compilation;
+  LiteRtGoogleTensorOptionsGetEnable4BitCompilation(options_data,
+                                                    &enable_4bit_compilation);
+  return enable_4bit_compilation;
 }
 
 void GoogleTensorOptions::SetShardingIntensity(

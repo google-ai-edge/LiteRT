@@ -52,12 +52,25 @@ struct LiteRtGpuOptionsPayloadT {
   // Set to true to serialize immutable external tensors. By default only the
   // non-external tensors are serialized.
   bool serialize_external_tensors = false;
-  // Set to true to run in no immutable external tensors mode. This prevents GPU
-  // Accelerator from using immutable external tensors.
-  bool experimental_no_immutable_external_tensors_mode = false;
+  // Set to true to run in no external tensors mode. This enables GPU
+  // Accelerator using external tensors (PHWC4 format) directly as inputs and
+  // outputs.
+  bool experimental_external_tensors_mode = false;
   // List of external tensor patterns which are not affected by the no immutable
   // external tensors mode.
   std::vector<std::string> external_tensor_patterns;
+  // Added in version 1.4.0.
+  // GPU backend to use.
+  LiteRtGpuBackend gpu_backend = kLiteRtGpuBackendAutomatic;
+  // Added in version 2.0.2a1.
+  // GPU priority to use.
+  LiteRtGpuPriority gpu_priority = kLiteRtGpuPriorityNormal;
+  // Added in version 2.0.2a1.
+  // Set to true to madvise the original shared tensors after use.
+  bool madvise_original_shared_tensors = false;
+  // Added in version 2.0.2a1.
+  // Number of steps to prepare WebGPU command buffers in advance.
+  int num_steps_of_command_buffer_preparations = 0;
 };
 
 namespace litert {
@@ -119,11 +132,19 @@ LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
+                                           LiteRtGpuBackend backend) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->gpu_backend = backend;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuOptionsExternalTensorsMode(
     LiteRtOpaqueOptions gpu_options, bool enable) {
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
-  payload->experimental_no_immutable_external_tensors_mode = enable;
+  payload->experimental_external_tensors_mode = enable;
   return kLiteRtStatusOk;
 }
 
@@ -132,6 +153,14 @@ LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
   payload->external_tensor_patterns.push_back(std::string(pattern));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuOptionsGpuPriority(LiteRtOpaqueOptions gpu_options,
+                                            LiteRtGpuPriority priority) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->gpu_priority = priority;
   return kLiteRtStatusOk;
 }
 
@@ -204,6 +233,27 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus
+LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool madvise_original_shared_tensors) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->madvise_original_shared_tensors = madvise_original_shared_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    int num_steps_of_command_buffer_preparations) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->num_steps_of_command_buffer_preparations =
+      num_steps_of_command_buffer_preparations;
+  return kLiteRtStatusOk;
+}
+
 const char* LiteRtGetGpuOptionsPayloadIdentifier() {
   return LiteRtGpuOptionsPayloadT::kIdentifier.data();
 }
@@ -228,6 +278,16 @@ LiteRtStatus LiteRtGetGpuOptionsInfiniteFloatCapping(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
+                                           LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(backend, ErrorStatusBuilder::InvalidArgument())
+      << "`backend` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *backend = payload->gpu_backend;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
                                               LiteRtGpuOptionsPayload payload) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
@@ -238,13 +298,23 @@ LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtGetGpuOptionsExternalTensorsMode(
     bool* enabled, LiteRtGpuOptionsPayload payload) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
-  *enabled = payload->experimental_no_immutable_external_tensors_mode;
+  *enabled = payload->experimental_external_tensors_mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
+                                            LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(priority, ErrorStatusBuilder::InvalidArgument())
+      << "`priority` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *priority = payload->gpu_priority;
   return kLiteRtStatusOk;
 }
 
@@ -355,5 +425,32 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
       << "`payload` cannot be null.";
   *external_tensor_pattern =
       payload->external_tensor_patterns[pattern_index].c_str();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    bool* madvise_original_shared_tensors,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(madvise_original_shared_tensors,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`madvise_original_shared_tensors` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *madvise_original_shared_tensors = payload->madvise_original_shared_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    int* num_steps_of_command_buffer_preparations,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(num_steps_of_command_buffer_preparations,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`num_steps_of_command_buffer_preparations` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *num_steps_of_command_buffer_preparations =
+      payload->num_steps_of_command_buffer_preparations;
   return kLiteRtStatusOk;
 }

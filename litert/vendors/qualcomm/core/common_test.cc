@@ -35,6 +35,21 @@ TEST(QnnOptionTest, LogLevel) {
   EXPECT_EQ(options.GetLogLevel(), kLogDebug);
 }
 
+TEST(QnnOptionTest, BackendType) {
+  Options options;
+  static constexpr BackendType kUndefined = BackendType::kUndefinedBackend;
+  options.SetBackendType(kUndefined);
+  EXPECT_EQ(options.GetBackendType(), kUndefined);
+
+  static constexpr BackendType kHtp = BackendType::kHtpBackend;
+  options.SetBackendType(kHtp);
+  EXPECT_EQ(options.GetBackendType(), kHtp);
+
+  static constexpr BackendType kIr = BackendType::kIrBackend;
+  options.SetBackendType(kIr);
+  EXPECT_EQ(options.GetBackendType(), kIr);
+}
+
 TEST(QnnOptionTest, HtpPerformanceMode) {
   Options options;
 
@@ -110,14 +125,87 @@ TEST(QnnOptionTest, EnableWeightSharing) {
   EXPECT_EQ(options.GetEnableWeightSharing(), false);
 }
 
+TEST(QnnOptionTest, UseConvHMX) {
+  Options options;
+  options.SetUseConvHMX(true);
+  EXPECT_EQ(options.GetUseConvHMX(), true);
+  options.SetUseConvHMX(false);
+  EXPECT_EQ(options.GetUseConvHMX(), false);
+}
+
+TEST(QnnOptionTest, UseFoldReLU) {
+  Options options;
+  options.SetUseFoldReLU(true);
+  EXPECT_EQ(options.GetUseFoldReLU(), true);
+  options.SetUseFoldReLU(false);
+  EXPECT_EQ(options.GetUseFoldReLU(), false);
+}
+
+TEST(QnnOptionTest, SetIrJsonDir) {
+  Options options;
+  options.SetIrJsonDir("tmp/");
+  EXPECT_FALSE(options.GetIrJsonDir().empty());
+  EXPECT_EQ(options.GetIrJsonDir(), "tmp/");
+  options.SetIrJsonDir("");
+  EXPECT_TRUE(options.GetIrJsonDir().empty());
+}
+
+TEST(QnnOptionTest, SetDlcDir) {
+  Options options;
+  options.SetDlcDir("tmp/");
+  EXPECT_FALSE(options.GetDlcDir().empty());
+  EXPECT_EQ(options.GetDlcDir(), "tmp/");
+  options.SetDlcDir("");
+  EXPECT_TRUE(options.GetDlcDir().empty());
+}
+
+TEST(QnnOptionTest, SetVtcmSize) {
+  Options options;
+  options.SetVtcmSize(4);
+  EXPECT_NE(options.GetVtcmSize(), 0);
+  EXPECT_EQ(options.GetVtcmSize(), 4);
+  options.SetVtcmSize(0);
+  EXPECT_EQ(options.GetVtcmSize(), 0);
+}
+
+TEST(QnnOptionTest, SetHvxThread) {
+  Options options;
+  options.SetNumHvxThreads(4);
+  EXPECT_NE(options.GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.GetNumHvxThreads(), 4);
+  options.SetNumHvxThreads(0);
+  EXPECT_EQ(options.GetNumHvxThreads(), 0);
+}
+
+TEST(QnnOptionTest, SetOptimizationLevel) {
+  Options options;
+  options.SetOptimizationLevel(OptimizationLevel::kHtpOptimizeForPrepare);
+  EXPECT_NE(options.GetOptimizationLevel(),
+            OptimizationLevel::kHtpOptimizeForInferenceO3);
+  EXPECT_EQ(options.GetOptimizationLevel(),
+            OptimizationLevel::kHtpOptimizeForPrepare);
+  options.SetOptimizationLevel(OptimizationLevel::kHtpOptimizeForInferenceO3);
+  EXPECT_EQ(options.GetOptimizationLevel(),
+            OptimizationLevel::kHtpOptimizeForInferenceO3);
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
+  EXPECT_EQ(options.GetBackendType(), BackendType::kHtpBackend);
   EXPECT_EQ(options.GetProfiling(), Profiling::kOff);
   EXPECT_FALSE(options.GetUseHtpPreference());
   EXPECT_FALSE(options.GetUseQint16AsQuint16());
   EXPECT_FALSE(options.GetEnableWeightSharing());
+  EXPECT_TRUE(options.GetUseConvHMX());
+  EXPECT_TRUE(options.GetUseFoldReLU());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
+  EXPECT_TRUE(options.GetIrJsonDir().empty());
+  EXPECT_TRUE(options.GetDlcDir().empty());
+  EXPECT_EQ(options.GetVtcmSize(), 0);
+  EXPECT_EQ(options.GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.GetOptimizationLevel(),
+            OptimizationLevel::kHtpOptimizeForInferenceO3);
 }
 
 }  // namespace

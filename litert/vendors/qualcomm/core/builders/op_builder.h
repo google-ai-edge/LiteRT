@@ -13,6 +13,10 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
 namespace qnn {
+enum class MirrorPadMode {
+  REFLECT = 0,
+  SYMMETRIC,
+};
 
 enum class PaddingType {
   Unknown = 0,
@@ -48,7 +52,7 @@ OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
   The replaced output tensor will be returned and can be used in fused
   activation node.
 */
-TensorWrapper& ReplaceOutputTensorForFusedActivation(
+TensorWrapper& CreateFusedActivationInputTensor(
     TensorPool& tensor_pool, const uint32_t fused_activation_function,
     std::vector<TensorWrapperRef>& output_tensors);
 

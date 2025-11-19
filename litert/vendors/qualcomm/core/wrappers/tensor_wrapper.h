@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -101,7 +102,7 @@ class TensorWrapper final {
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
                          const std::vector<std::uint32_t>& dimentions,
-                         std::uint32_t bytes, const void* data);
+                         std::uint32_t bytes, const void* data, bool copy_data);
 
   TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
 
@@ -118,6 +119,12 @@ class TensorWrapper final {
   void CloneTo(Qnn_Tensor_t& dst) const;
 
   Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }
+
+  uint32_t GetId() const { return qnn_tensor_.v1.id; }
+
+  const Qnn_Tensor_t& GetQnnTensor() const { return qnn_tensor_; }
+
+  std::string GetName() const { return qnn_tensor_.v1.name; }
 
   std::uint32_t GetRank() const;
 
@@ -294,7 +301,7 @@ class TensorWrapper final {
   }
 
   template <typename T>
-  std::optional<absl::Span<const T>> GetStaticTensorData() const;
+  std::optional<absl::Span<const T>> GetTensorData() const;
 
   void ConvertAxisScaleOffsetToScaleOffset();
 
@@ -303,7 +310,7 @@ class TensorWrapper final {
   void ConvertQint16ToQuint16();
 
   void MarkDump() {
-    if (!IsStrEndsWith(name_, kDumpSuffix)) {
+    if (!absl::EndsWith(name_, kDumpSuffix)) {
       name_ += kDumpSuffix;
       qnn_tensor_.v2.name = name_.c_str();
     }
@@ -311,11 +318,9 @@ class TensorWrapper final {
   }
 
   bool IsMarkedDump() const {
-    return IsStrEndsWith(name_, kDumpSuffix) &&
+    return absl::EndsWith(name_, kDumpSuffix) &&
            qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
   }
-
-  std::string GetName() const { return name_; }
 
  private:
   void UpdateQnnQuantParams() {
@@ -335,7 +340,7 @@ class TensorWrapper final {
     qnn_tensor_.v2.dataType = data_type;
   }
 
-  void SetDataBy(std::uint32_t bytes, const void* data);
+  void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
 
   bool HasStaticData() const {
     return qnn_tensor_.v2.clientBuf.dataSize != 0 &&
@@ -353,16 +358,16 @@ class TensorWrapper final {
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
 
 template <typename T>
-std::optional<absl::Span<const T>> TensorWrapper::GetStaticTensorData() const {
-  if (!IsTensorStatic()) {
+std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {
+  if (!IsTensorStatic() && !IsSubgraphOutput()) {
     QNN_LOG_ERROR(
-        "Cannot GetStaticTensorData() on a non-static tensor, tensor type %d.",
+        "Cannot GetTensorData() on a non-static tensor, tensor type %d.",
         GetTensorType());
     return std::nullopt;
   }
 
   if (GetDataType() != GetQnnDataType<T>(IsQuant())) {
-    QNN_LOG_ERROR("GetStaticTensorData() with incorrect template type.");
+    QNN_LOG_ERROR("GetTensorData() with incorrect template type.");
     return std::nullopt;
   }
 

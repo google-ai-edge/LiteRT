@@ -27,7 +27,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/quantization/lite/test_util.h"
+#include "tflite/converter/quantization/lite/test_util.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/init_main.h"
 #include "tensorflow/core/util/command_line_flags.h"

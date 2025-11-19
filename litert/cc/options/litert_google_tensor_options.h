@@ -32,7 +32,9 @@ class GoogleTensorOptions : public OpaqueOptions {
 
   GoogleTensorOptions() = delete;
 
-  static const char* Discriminator();
+  static const char* Discriminator() {
+    return LiteRtGoogleTensorOptionsGetIdentifier();
+  }
 
   static Expected<GoogleTensorOptions> Create(OpaqueOptions& options);
   static Expected<GoogleTensorOptions> Create();
@@ -57,6 +59,10 @@ class GoogleTensorOptions : public OpaqueOptions {
   bool GetEnableLargeModelSupport() const;
 
   void SetEnableLargeModelSupport(bool enable_large_model_support);
+
+  bool GetEnable4BitCompilation() const;
+
+  void SetEnable4BitCompilation(bool enable_4bit_compilation);
 
   void SetShardingIntensity(
       LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity);

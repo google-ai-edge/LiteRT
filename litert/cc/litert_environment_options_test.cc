@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_environment_options.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 
@@ -30,7 +31,7 @@ TEST(EnvironmentOptionsTest, GetOption) {
   static constexpr char kOptionValue[] = "foo/bar";
 
   auto env = Environment::Create(
-      {Environment::Option{kOptionTag, std::any(kOptionValue)}});
+      {Environment::Option{kOptionTag, litert::LiteRtVariant(kOptionValue)}});
   ASSERT_TRUE(env);
 
   auto options = env->GetOptions();
@@ -38,13 +39,13 @@ TEST(EnvironmentOptionsTest, GetOption) {
 
   auto option = options->GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir);
   ASSERT_TRUE(option);
-  EXPECT_STREQ(std::any_cast<const char*>(*option), kOptionValue);
+  EXPECT_STREQ(std::get<const char*>(*option), kOptionValue);
 }
 
 TEST(EnvironmentOptionsTest, OptionNotFound) {
   static constexpr auto kOptionTag =
       Environment::OptionTag::CompilerPluginLibraryDir;
-  std::any kOptionValue = "foo/bar";
+  litert::LiteRtVariant kOptionValue = "foo/bar";
 
   auto env =
       Environment::Create({Environment::Option{kOptionTag, kOptionValue}});

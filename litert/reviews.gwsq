@@ -1,0 +1,109 @@
+send_cls_to('litert_compiler_core');
+
+#define Andrew "yunandrew"
+#define Luke "lukeboyer"
+#define Weiyi "weiyiw"
+#define Steven "toribiosteven"
+#define Matt "mattalexander"
+#define Arian "aarfaian"
+
+define AddCritiqueTag(list Tag)  {
+  add_description(list_to_string(Tag));
+}
+
+define EnsureLgtm(list Lgtmers, list Path) {
+  if (author_in(Lgtmers)) {
+    return;
+  }
+  if (has_available_reviewer(Lgtmers)) {
+      list Lgtmers_ = Lgtmers;
+    } else {
+      list Lgtmers_ = Fallback;
+    }
+  list PocToAdd = select_from(Lgtmers_);
+  string PocToAddStr = list_to_string(PocToAdd);
+  string PathStr = list_to_string(Path);
+  string PocCommentStr = format("{{PocToAddStr}}: {{PathStr}}");
+  list PocComment = sum(PocComment, string_to_list(PocCommentStr));
+  if (!list_contains(current_reviewers(), PocToAdd) 
+      && !list_contains(current_ccs(), PocToAdd)) {
+        add_cc(PocToAdd);
+        set_tag("WANT_LGTM", list_to_string(PocToAdd), append=True);
+    
+  }
+}
+
+
+// Review assignment for core compiler related changes.
+//
+// The idea is here is to ensure that the PoC for each sub-component
+// provdes at least an LGTM if they are not already a reviewer.
+//
+// Also add some of the boiler plate tags and a #<tag> based on the compenent
+// which can be filtered on within critque search.
+define Main {
+  set_tag("EXPORT_TO_GITHUB_PR", '1');
+
+  reassign_to_list([Andrew, Luke, Steven, Matt, Arian]);
+
+  list Fallback = [Weiyi, Luke, Arian];
+
+  list PocComment = [];
+
+  handle("litert/core/model") {
+    EnsureLgtm([Luke, Andrew], ["litert/core/model"]);
+    AddCritiqueTag(["\n\n#litert-model"]);
+  }
+
+  handle("litert/compiler") {
+    EnsureLgtm([Luke, Andrew], ["litert/compiler"]);
+    AddCritiqueTag(["#litert-compiler"]);
+  }
+
+  handle("litert/python") {
+    EnsureLgtm([Weiyi], ["litert/python"]);
+    AddCritiqueTag(["#litert-python"]);
+  }
+
+  handle("litert/c/.*.h|litert/vendors/c/.*.h") {
+    EnsureLgtm([Luke, Andrew, Weiyi], ["litert/c/.*.h", "litert/vendors/c/.*.h"]);
+    AddCritiqueTag(["#litert-c-api"]);
+  }
+
+  handle("litert/vendors/intel_openvino") {
+    EnsureLgtm([Matt], ["litert/vendors/intel_openvino"]);
+    AddCritiqueTag(["#litert-intel-openvino"]);
+  }
+
+  handle("litert/vendors/qualcomm") {
+    EnsureLgtm([Andrew, Luke], ["litert/vendors/qualcomm"]);
+    AddCritiqueTag(["#litert-qualcomm"]);
+  }
+
+  handle("litert/vendors/mediatek") {
+    EnsureLgtm([Steven], ["litert/vendors/mediatek"]);
+    AddCritiqueTag(["#litert-mediatek"]);
+  }
+
+  handle("litert/vendors/google_tensor") {
+    EnsureLgtm([Luke], ["litert/vendors/google_tensor"]);
+    AddCritiqueTag(["#litert-google-tensor"]);
+  }
+
+  handle("(litert/integration_test|litert/cts)") {
+    EnsureLgtm([Luke], ["litert/integration_test", "litert/cts"]);
+    AddCritiqueTag(["#litert-test"]);
+  }
+
+  string ReviewersStr = list_to_string(current_reviewers() - ['litert_compiler_core']);
+  string Prefix = format("Thanks for your CL {{author}}!\n\n@{{ReviewersStr}} has been selected as the primary reviewer.");
+
+  string PocCommentStr = "";
+  if (len(PocComment) > 0) {
+      string PocForSubcomponents = list_to_string(PocComment, "\n");
+      string PocCommentStr = format("The folowing PoCs for subcomponents affected by this change are required to LGTM. Please request review from them once the primary review has been completed.\n\n{{PocForSubcomponents}}");
+  }
+  
+
+  add_comment(format("{{Prefix}}{{PocCommentStr}}\n\n-LiteRt Review Bot"));
+}

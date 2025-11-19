@@ -159,7 +159,7 @@ TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp16Precision) {
                               options.GetData<LiteRtGpuOptionsPayloadT>());
 
   LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionDefault;
-  options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp16);
+  options.SetPrecision(GpuOptions::Precision::kFp16);
 
   LITERT_ASSERT_OK(
       LiteRtGetGpuAcceleratorCompilationOptionsPrecision(&precision, payload));
@@ -174,7 +174,7 @@ TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp32Precision) {
   // Check the default value.
   LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionDefault;
 
-  options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
+  options.SetPrecision(GpuOptions::Precision::kFp32);
 
   LITERT_ASSERT_OK(
       LiteRtGetGpuAcceleratorCompilationOptionsPrecision(&precision, payload));

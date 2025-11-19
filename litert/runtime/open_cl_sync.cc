@@ -20,13 +20,13 @@
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/gpu_environment.h"
+#include "litert/runtime/litert_gpu_util.h"
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/cl_command_queue.h"
 #include "tflite/delegates/gpu/cl/cl_memory.h"
@@ -35,6 +35,8 @@
 #include "tflite/delegates/gpu/common/shape.h"
 #include "tflite/delegates/gpu/common/task/tensor_desc.h"
 #include "tflite/delegates/gpu/common/tensor.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
 
 using tflite::gpu::BHWC;
 using tflite::gpu::CreateBhwcTensorDescriptor;
@@ -48,56 +50,19 @@ using TensorFloat32 = tflite::gpu::Tensor<BHWC, DataType::FLOAT32>;
 using TensorInt32 = tflite::gpu::Tensor<BHWC, DataType::INT32>;
 
 namespace litert::internal {
-
+// TODO(b/431308296): Clean up the GPU memory sync logic to make it generic for
+// all GPU backends.
 absl::StatusOr<TensorDescriptor> CreateTensorDescriptor(
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type) {
   BHWC shape;
-  switch (tensor_type->layout.rank) {
-    case 0:
-      shape = BHWC(1, 1, 1, 1);
-      break;
-    case 1:
-      shape = BHWC(tensor_type->layout.dimensions[0], 1, 1, 1);
-      break;
-    case 2:
-      shape = BHWC(tensor_type->layout.dimensions[0], 1, 1,
-                   tensor_type->layout.dimensions[1]);
-      break;
-    case 3:
-      shape = BHWC(tensor_type->layout.dimensions[0], 1,
-                   tensor_type->layout.dimensions[1],
-                   tensor_type->layout.dimensions[2]);
-      break;
-    case 4:
-      shape = BHWC(
-          tensor_type->layout.dimensions[0], tensor_type->layout.dimensions[1],
-          tensor_type->layout.dimensions[2], tensor_type->layout.dimensions[3]);
-      break;
-    default:
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Rank ", tensor_type->layout.rank, " tensor is not supported."));
-  }
+  LITERT_RETURN_IF_ERROR(
+      ConvertLiteRtTensorTypeToGpuShape(tensor_type, &shape).ok());
 
   DataType data_type;
-  switch (tensor_type->element_type) {
-    case kLiteRtElementTypeFloat32:
-      data_type = (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
-                   buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
-                   buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16)
-                      ? DataType::FLOAT16
-                      : DataType::FLOAT32;
-      break;
-    case kLiteRtElementTypeBool:
-      data_type = DataType::BOOL;
-      break;
-    case kLiteRtElementTypeInt32:
-      data_type = DataType::INT32;
-      break;
-    default:
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Unsupported element type: ", tensor_type->element_type));
-  }
+  LITERT_RETURN_IF_ERROR(
+      ConvertLiteRtDataTypeToGpuDataType(tensor_type, &data_type, buffer_type)
+          .ok());
 
   TensorStorageType storage_type;
   switch (buffer_type) {
@@ -136,7 +101,7 @@ LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
   tflite::gpu::cl::CLMemory tensor_memory;
 
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::AllocateTensorMemory(*gpu_env->getContext(),
+      tflite::gpu::cl::AllocateTensorMemory(*gpu_env->GetContext(),
                                             *tensor_desc, &tensor_memory)
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
@@ -182,20 +147,20 @@ LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
 
   auto cl_tensor = std::make_unique<tflite::gpu::cl::Tensor>();
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::CreateTensorShared(*gpu_env->getContext(), cl_memory,
+      tflite::gpu::cl::CreateTensorShared(*gpu_env->GetContext(), cl_memory,
                                           *tensor_desc, cl_tensor.get())
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
   if (tensor_desc->GetDataType() == DataType::BOOL) {
     return LiteRtGpuMemoryUploadImpl<TensorBool, bool>(
-        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else if (tensor_desc->GetDataType() == DataType::INT32) {
     return LiteRtGpuMemoryUploadImpl<TensorInt32, int32_t>(
-        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else {
     return LiteRtGpuMemoryUploadImpl<TensorFloat32, float>(
-        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   }
 
   return kLiteRtStatusOk;
@@ -238,22 +203,24 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
 
   auto cl_tensor = std::make_unique<tflite::gpu::cl::Tensor>();
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::CreateTensorShared(*gpu_env->getContext(), cl_memory,
+      tflite::gpu::cl::CreateTensorShared(*gpu_env->GetContext(), cl_memory,
                                           *tensor_desc, cl_tensor.get())
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
   if (tensor_desc->GetDataType() == DataType::BOOL) {
     return LiteRtGpuMemoryDownloadImpl<TensorBool, bool>(
-        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else if (tensor_desc->GetDataType() == DataType::INT32) {
     return LiteRtGpuMemoryDownloadImpl<TensorInt32, int32_t>(
-        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else {
     return LiteRtGpuMemoryDownloadImpl<TensorFloat32, float>(
-        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   }
   return kLiteRtStatusOk;
 }
 
 }  // namespace litert::internal
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT

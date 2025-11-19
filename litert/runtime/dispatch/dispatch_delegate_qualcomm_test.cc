@@ -25,9 +25,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_dispatch_delegate.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
-#include "litert/cc/litert_dispatch_delegate.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -35,8 +37,13 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/tensor_buffer.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
+#include "litert/runtime/tensor_identifier.h"
+#include "litert/runtime/tfl_utils.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -77,6 +84,25 @@ litert::Expected<Options> CreateDispatchOptions(const uint8_t* base) {
   return options;
 }
 
+LiteRtExternalLiteRtBufferContextT CreateBufferContext(
+    const LiteRtEnvironment& env, const tflite::Interpreter& interpreter) {
+  auto get_tensor_id = [&interpreter](const TfLiteOpaqueTensor* target_tensor)
+      -> litert::internal::TfLiteTensorIdentifier {
+    auto tensor_id = litert::internal::GetTensorIdentifier(
+        interpreter, reinterpret_cast<const TfLiteTensor*>(target_tensor));
+    if (!tensor_id) {
+      LITERT_LOG(LITERT_ERROR, "Failed to get tensor identifier: %s",
+                 tensor_id.Error().Message().c_str());
+      constexpr litert::internal::TfLiteTensorIdentifier kInvalidTensorId{-1,
+                                                                          -1};
+      return kInvalidTensorId;
+    }
+    return *tensor_id;
+  };
+
+  return LiteRtExternalLiteRtBufferContextT(env, get_tensor_id);
+}
+
 TEST(DispatchDelegate, CpuBuffer) {
   // The dispatch delegate must be declared before the TFL interpreter so that
   // it gets destroyed only after the interpreter and the dispatch delegate
@@ -92,7 +118,8 @@ TEST(DispatchDelegate, CpuBuffer) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
-  litert::internal::ExternalLiteRtBufferContext buffer_context(env.Get());
+  LiteRtExternalLiteRtBufferContextT buffer_context =
+      CreateBufferContext(env.Get(), interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -166,7 +193,8 @@ TEST(DispatchDelegate, HwBuffer) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
-  litert::internal::ExternalLiteRtBufferContext buffer_context(env.Get());
+  LiteRtExternalLiteRtBufferContextT buffer_context =
+      CreateBufferContext(env.Get(), interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -190,45 +218,41 @@ TEST(DispatchDelegate, HwBuffer) {
             kTfLiteOk);
 
   // Create and register tensor buffers for all inputs and outputs.
-  std::vector<litert::TensorBuffer> input_buffers;
+  std::vector<LiteRtTensorBufferPtr> input_buffers;
   for (int i = 0; i < interpreter.inputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto* input_buffer_requirements,
+        const LiteRtTensorBufferRequirementsT* input_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.input_tensor(i)));
-    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
-                                input_buffer_requirements->SupportedTypes());
+    const std::vector<LiteRtTensorBufferType>& supported_types =
+        input_buffer_requirements->SupportedBufferTypes();
     ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeFastRpc);
     LITERT_ASSERT_OK_AND_ASSIGN(
-        TensorBuffer input_buffer,
+        LiteRtTensorBufferPtr input_buffer,
         buffer_context.CreateBufferForTensor(interpreter.input_tensor(i)));
-    ASSERT_TRUE(input_buffer.IsOwned());
-    ASSERT_THAT(input_buffer.BufferType(),
-                IsOkAndHolds(kLiteRtTensorBufferTypeFastRpc));
-    LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
-                                input_buffer.Duplicate());
+    ASSERT_EQ(input_buffer->buffer_type(), kLiteRtTensorBufferTypeFastRpc);
+    input_buffer->Duplicate();
+    LiteRtTensorBufferPtr duplicate_buffer(input_buffer.get());
     auto status = buffer_context.RegisterTensorBuffer(
         interpreter.input_tensor(i), std::move(duplicate_buffer));
     ASSERT_EQ(status, kLiteRtStatusOk);
     input_buffers.push_back(std::move(input_buffer));
   }
 
-  std::vector<litert::TensorBuffer> output_buffers;
+  std::vector<LiteRtTensorBufferPtr> output_buffers;
   for (int i = 0; i < interpreter.outputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto* output_buffer_requirements,
+        const auto* output_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.output_tensor(i)));
     ASSERT_NE(output_buffer_requirements, nullptr);
-    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
-                                output_buffer_requirements->SupportedTypes());
+    const auto& supported_types =
+        output_buffer_requirements->SupportedBufferTypes();
     ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeFastRpc);
     LITERT_ASSERT_OK_AND_ASSIGN(
-        TensorBuffer output_buffer,
+        LiteRtTensorBufferPtr output_buffer,
         buffer_context.CreateBufferForTensor(interpreter.output_tensor(i)));
-    ASSERT_TRUE(output_buffer.IsOwned());
-    ASSERT_THAT(output_buffer.BufferType(),
-                IsOkAndHolds(kLiteRtTensorBufferTypeFastRpc));
-    LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
-                                output_buffer.Duplicate());
+    ASSERT_EQ(output_buffer->buffer_type(), kLiteRtTensorBufferTypeFastRpc);
+    output_buffer->Duplicate();
+    LiteRtTensorBufferPtr duplicate_buffer(output_buffer.get());
     auto status = buffer_context.RegisterTensorBuffer(
         interpreter.output_tensor(i), std::move(duplicate_buffer));
     ASSERT_EQ(status, kLiteRtStatusOk);
@@ -248,28 +272,33 @@ TEST(DispatchDelegate, HwBuffer) {
   // Fill model inputs.
   ASSERT_STREQ(runner->input_names()[0], "arg0");
   auto& input_0_buffer = input_buffers[0];
-  input_0_buffer.Write<float>(
-      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      void* host_mem_addr,
+      input_0_buffer->Lock(kLiteRtTensorBufferLockModeWrite));
+  std::memcpy(host_mem_addr, kTestInput0Tensor, sizeof(kTestInput0Tensor));
+  LITERT_ASSERT_OK(input_0_buffer->Unlock());
 
   ASSERT_STREQ(runner->input_names()[1], "arg1");
   auto& input_1_buffer = input_buffers[1];
-  input_1_buffer.Write<float>(
-      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      host_mem_addr, input_1_buffer->Lock(kLiteRtTensorBufferLockModeWrite));
+  std::memcpy(host_mem_addr, kTestInput1Tensor, sizeof(kTestInput1Tensor));
+  LITERT_ASSERT_OK(input_1_buffer->Unlock());
 
   EXPECT_EQ(runner->Invoke(), kTfLiteOk);
 
   // Check model output.
   ASSERT_STREQ(runner->output_names()[0], "tfl.custom");
-  {
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
-    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
-    for (auto i = 0; i < kTestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
-    }
-    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      void* output_mem_addr,
+      output_buffers[0]->Lock(kLiteRtTensorBufferLockModeRead));
+  absl::Span<const float> output = absl::MakeConstSpan(
+      reinterpret_cast<const float*>(output_mem_addr), kTestOutputSize);
+  for (auto i = 0; i < kTestOutputSize; ++i) {
+    ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
   }
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  LITERT_ASSERT_OK(output_buffers[0]->Unlock());
 }
 
 TEST(DispatchDelegate, CompiledModel) {
@@ -278,21 +307,6 @@ TEST(DispatchDelegate, CompiledModel) {
       OwningBufferRef<uint8_t> model_with_byte_code,
       internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
                                         testing::GetTestFilePath(kNpuFile)));
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
-
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
-
-  auto output_names = signature.OutputNames();
-  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -305,47 +319,57 @@ TEST(DispatchDelegate, CompiledModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kNpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be FastRpc and DmaBuf.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg0,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg0"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
+      std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::kFastRpc,
+                          TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg1"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::kFastRpc,
+                          TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
-      compiled_model.GetOutputBufferRequirements(signature_index,
-                                                 /*output_name=*/"tfl.custom"));
+      compiled_model.GetOutputBufferRequirements(
+          /*output_name=*/"tfl.custom"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
+      std::vector<TensorBufferType> output_buffer_types,
       output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types, ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                                               kLiteRtTensorBufferTypeDmaBuf));
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kFastRpc,
+                                               TensorBufferType::kDmaBuf));
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   ASSERT_TRUE(input_buffers[0].Write<float>(
@@ -354,14 +378,14 @@ TEST(DispatchDelegate, CompiledModel) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute compiled model.
-  ASSERT_TRUE(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  ASSERT_TRUE(compiled_model.Run(input_buffers, output_buffers));
 
   // Check model output.
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -376,21 +400,6 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
       OwningBufferRef<uint8_t> model_with_byte_code,
       internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
                                         testing::GetTestFilePath(kNpuFile)));
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
-
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
-
-  auto output_names = signature.OutputNames();
-  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -400,7 +409,17 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kNpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
@@ -408,10 +427,10 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   ABSL_LOG(INFO) << "First inference";
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   ASSERT_TRUE(input_buffers[0].Write<float>(
@@ -420,12 +439,12 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute the model once and check the outputs.
-  ASSERT_TRUE(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  ASSERT_TRUE(compiled_model.Run(input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -446,12 +465,12 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
 
   // Execute model a second time by reusing the same I/O buffers, to verify if
   // the buffer registration is working.
-  ASSERT_TRUE(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  ASSERT_TRUE(compiled_model.Run(input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
@@ -465,10 +484,10 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   // ///////////////////////////////////////////////////////////////////////////
   ABSL_LOG(INFO) << "Third inference";
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   ASSERT_TRUE(input_buffers[0].Write<float>(
@@ -478,12 +497,12 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
 
   // Execute model a third time by using new I/O buffers, to verify if buffer
   // registration and attachment is working.
-  ASSERT_TRUE(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  ASSERT_TRUE(compiled_model.Run(input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
@@ -500,21 +519,6 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
       internal::GetModelBufWithByteCode(
           testing::GetTestFilePath("shared_input_cpu_npu.tflite"),
           testing::GetTestFilePath(kNpuFile)));
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
-
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
-
-  auto output_names = signature.OutputNames();
-  EXPECT_THAT(output_names, ElementsAre("tfl.add", "tfl.custom"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -524,13 +528,23 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kCpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.add", "tfl.custom"));
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   ASSERT_TRUE(input_buffers[0].Write<float>(
@@ -539,14 +553,14 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  ASSERT_TRUE(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  ASSERT_TRUE(compiled_model.Run(input_buffers, output_buffers));
 
   // Check model outputs.
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -556,7 +570,8 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[1]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[1], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];

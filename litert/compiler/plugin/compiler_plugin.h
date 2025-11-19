@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,9 +26,10 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_compiler_options.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_shared_library.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
@@ -80,7 +82,24 @@ class CompiledResult {
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
  public:
+  // Get the number of transformations registered by the plugin.
+  size_t GetNumTransformations() const { return transformations_.size(); }
+
+  // Get the transformation at the given index.
+  LiteRtTransformation GetTransformation(int index) const {
+    return transformations_[index];
+  }
+
+  using Ref = std::reference_wrapper<CompilerPlugin>;
+
   std::string DebugString() const;
+
+  int GetMaxTransformationIterations() const {
+    return max_transformation_iterations_;
+  }
+  void SetMaxTransformationIterations(int max_transformation_iterations) {
+    max_transformation_iterations_ = max_transformation_iterations;
+  }
 
   // Get the compiler plugin's API version.
   Expected<LiteRtApiVersion> ApiVersion() const;
@@ -107,6 +126,11 @@ class CompilerPlugin {
   Expected<CompiledResult> Compile(LiteRtModel partitions,
                                    absl::string_view soc_model = "");
 
+  // Register all transformations to the rewriter object owned by this plugin.
+  Expected<void> RegisterAllTransformations();
+
+  Expected<void> GreedyPatternMatchAndRewrite(LiteRtModelT& model);
+
   // Search for shared library files with prefix "libLiteRtCompilerPlugin" in
   // the directories passed through "lib_search_paths". Populates
   // "loaded_plugins" with resolved plugin apis for each found library that can
@@ -115,6 +139,16 @@ class CompilerPlugin {
   static Expected<std::vector<CompilerPlugin>> LoadPlugins(
       absl::Span<const absl::string_view> lib_search_paths,
       LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
+
+  // Same as above but returns the plugin with matching Soc manufacturer if it
+  // exists.
+  static Expected<CompilerPlugin> FindPlugin(
+      absl::string_view soc_manufacturer,
+      absl::Span<const absl::string_view> lib_search_paths,
+      LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
+
+  // Returns the compiler options used to create this plugin.
+  Expected<LiteRtCompilerOptions> CompilerOptions() const;
 
   CompilerPlugin(CompilerPlugin&& other);
   CompilerPlugin& operator=(CompilerPlugin&& other);
@@ -133,8 +167,12 @@ class CompilerPlugin {
 
   std::vector<std::string> soc_models_;
   SharedLibrary lib_;
+  LiteRtOptions options_ = nullptr;
   LiteRtCompilerPluginApi plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
+  std::vector<LiteRtTransformation> transformations_;
+
+  size_t max_transformation_iterations_ = 100;
 
   // Internal LiteRtCompiledResult wrapper.
 
@@ -175,6 +213,11 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
                                         PartitionResult partitions,
                                         absl::string_view soc_model = "");
 
+// Applies the transformation registered by vendor plugin to the model.
+Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
+                              LiteRtModelT& model,
+                              absl::string_view soc_model = "");
+
 // Apply all available plugins providing the selected HW accelerators to the
 // given model, modify the model accordingly, and return (1) the number of
 // compiler plugins successfully applied, (2) a string listing the compiler
@@ -191,6 +234,11 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     LiteRtEnvironment environment, LiteRtOptions options, LiteRtModel model,
     LiteRtHwAcceleratorSet selected_hw_accelerators, bool* mutated = nullptr);
 
+// Applies only the provided `compiler_plugins` to the given model.
+Expected<ApplyPluginsResult> ApplyPlugins(
+    LiteRtModel model, LiteRtHwAcceleratorSet selected_hw_accelerators,
+    std::vector<CompilerPlugin>& compiler_plugins, bool* mutated = nullptr);
+//
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_COMPILER_PLUGIN_COMPILER_PLUGIN_H_

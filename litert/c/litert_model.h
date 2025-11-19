@@ -20,9 +20,8 @@
 #include <stdint.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "tflite/core/c/c_api_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,62 +40,6 @@ LiteRtStatus LiteRtGetTensorName(LiteRtTensor tensor, const char** name);
 // Get the index associated with this tensor.
 LiteRtStatus LiteRtGetTensorIndex(LiteRtTensor tensor, uint32_t* tensor_index);
 
-// TENSOR TYPES
-
-// Primitive types for elements in a tensor.
-typedef enum {
-  kLiteRtElementTypeNone = kTfLiteNoType,
-  kLiteRtElementTypeBool = kTfLiteBool,
-  kLiteRtElementTypeInt4 = kTfLiteInt4,
-  kLiteRtElementTypeInt8 = kTfLiteInt8,
-  kLiteRtElementTypeInt16 = kTfLiteInt16,
-  kLiteRtElementTypeInt32 = kTfLiteInt32,
-  kLiteRtElementTypeInt64 = kTfLiteInt64,
-  kLiteRtElementTypeUInt8 = kTfLiteUInt8,
-  kLiteRtElementTypeUInt16 = kTfLiteUInt16,
-  kLiteRtElementTypeUInt32 = kTfLiteUInt32,
-  kLiteRtElementTypeUInt64 = kTfLiteUInt64,
-  kLiteRtElementTypeFloat16 = kTfLiteFloat16,
-  kLiteRtElementTypeBFloat16 = kTfLiteBFloat16,
-  kLiteRtElementTypeFloat32 = kTfLiteFloat32,
-  kLiteRtElementTypeFloat64 = kTfLiteFloat64,
-  kLiteRtElementTypeComplex64 = kTfLiteComplex64,
-  kLiteRtElementTypeComplex128 = kTfLiteComplex128,
-  kLiteRtElementTypeTfResource = kTfLiteResource,
-  kLiteRtElementTypeTfString = kTfLiteString,
-  kLiteRtElementTypeTfVariant = kTfLiteVariant,
-} LiteRtElementType;
-
-// Tensor whose rank is dynamic.
-typedef struct {
-  // The primitive element type of the constituent data.
-  LiteRtElementType element_type;
-} LiteRtUnrankedTensorType;
-
-inline bool LiteRtIsSameUnrankedTensorType(
-    const LiteRtUnrankedTensorType* type1,
-    const LiteRtUnrankedTensorType* type2) {
-  return type1->element_type == type2->element_type;
-}
-
-// Tensor whose rank is static but dimensions may be dynamic.
-typedef struct {
-  // The primitive element type of the constituent data.
-  LiteRtElementType element_type;
-
-  // Shape information.
-  LiteRtLayout layout;
-} LiteRtRankedTensorType;
-
-// The identifier for tensor type union.
-typedef enum {
-  // Type with fixed rank and possibly dynamic dimensions.
-  kLiteRtRankedTensorType = 0,
-
-  // Type with dynamic rank.
-  kLiteRtUnrankedTensorType = 1,
-} LiteRtTensorTypeId;
-
 // Get type identifier from tensor.
 LiteRtStatus LiteRtGetTensorTypeId(LiteRtTensor tensor,
                                    LiteRtTensorTypeId* type_id);
@@ -110,38 +53,6 @@ LiteRtStatus LiteRtGetRankedTensorType(
     LiteRtTensor tensor, LiteRtRankedTensorType* ranked_tensor_type);
 
 // QUANTIZATION
-
-// Schema for tensors quantized with one set of q-params.
-typedef struct {
-  // Scaling factor.
-  float scale;
-
-  // The value that float:0 maps to in q-space.
-  int64_t zero_point;
-} LiteRtQuantizationPerTensor;
-
-// Schema for tensors quantized with one set of q-params per channel.
-typedef struct {
-  int32_t quantized_dimension;
-  uint64_t num_channels;
-  float* scales;
-  int64_t* zero_points;
-} LiteRtQuantizationPerChannel;
-
-// The identifier for quantization scheme type union.
-typedef enum {
-  // Tag for tensors without quantization.
-  kLiteRtQuantizationNone = 0,
-
-  // Basic quantization, one set of q-params per tensor.
-  kLiteRtQuantizationPerTensor = 1,
-
-  // [NOT IMPLEMENTED YET] Q-params for each element accross a single dimension.
-  kLiteRtQuantizationPerChannel = 2,
-
-  // [NOT IMPLEMENTED YET] Q-params across blocks of fixed size (e.g. 2048).
-  kLiteRtQuantizationBlockWise = 3,
-} LiteRtQuantizationTypeId;
 
 // Get the identifier for the type of quantization for a given tensor.
 LiteRtStatus LiteRtGetQuantizationTypeId(LiteRtTensor tensor,
@@ -157,24 +68,6 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
     LiteRtQuantizationPerChannel* per_channel_quantization);
 
 // EDGES
-
-// Information about the graph node that defines a tensor.
-typedef struct LiteRtTensorDefiningOp {
-  // The defining op itself.
-  LiteRtOp op;
-
-  // The op output index that defines the specific tensor.
-  LiteRtParamIndex op_output_index;
-} LiteRtTensorDefiningOp;
-
-// Information about a reference to a tensor in the graph.
-typedef struct LiteRtTensorUserOp {
-  // The referring op itself.
-  LiteRtOp op;
-
-  // Index of which operand the op refers to a specific tensor on.
-  LiteRtParamIndex op_input_index;
-} LiteRtTensorUserOp;
 
 // Get all the ops that reference given tensor, and at what operand index.
 LiteRtStatus LiteRtGetNumTensorUses(LiteRtTensor tensor,
@@ -214,6 +107,9 @@ LiteRtStatus LiteRtGetWeightsBufferId(LiteRtWeights weights,
 
 // Get code corresponding to operation type for given op.
 LiteRtStatus LiteRtGetOpCode(LiteRtOp op, LiteRtOpCode* code);
+
+// Get custom code for given op, returns error if op is not a custom op.
+LiteRtStatus LiteRtGetCustomCode(LiteRtOp op, const char** code);
 
 // Get input tensors of given op.
 LiteRtStatus LiteRtGetNumOpInputs(LiteRtOp op, LiteRtParamIndex* num_inputs);
@@ -280,6 +176,16 @@ LiteRtStatus LiteRtGetSignatureInputName(LiteRtSignature signature,
                                          LiteRtParamIndex input_idx,
                                          const char** input_name);
 
+// Get the input tensor for the given signature and input name.
+LiteRtStatus LiteRtGetSignatureInputTensor(LiteRtSignature signature,
+                                           const char* input_name,
+                                           LiteRtTensor* tensor);
+
+// Get the input tensor for the given signature and input index.
+LiteRtStatus LiteRtGetSignatureInputTensorByIndex(LiteRtSignature signature,
+                                                  LiteRtParamIndex input_idx,
+                                                  LiteRtTensor* tensor);
+
 // Get the number of outputs for the given signature.
 LiteRtStatus LiteRtGetNumSignatureOutputs(LiteRtSignature signature,
                                           LiteRtParamIndex* num_outputs);
@@ -290,6 +196,16 @@ LiteRtStatus LiteRtGetNumSignatureOutputs(LiteRtSignature signature,
 LiteRtStatus LiteRtGetSignatureOutputName(LiteRtSignature signature,
                                           LiteRtParamIndex output_idx,
                                           const char** output_name);
+
+// Get the output tensor for the given signature and output name.
+LiteRtStatus LiteRtGetSignatureOutputTensor(LiteRtSignature signature,
+                                            const char* output_name,
+                                            LiteRtTensor* tensor);
+
+// Get the output tensor for the given signature and output index.
+LiteRtStatus LiteRtGetSignatureOutputTensorByIndex(LiteRtSignature signature,
+                                                   LiteRtParamIndex output_idx,
+                                                   LiteRtTensor* tensor);
 
 //
 // LiteRtModel
@@ -307,6 +223,13 @@ LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
 LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
                                     const void** metadata_buffer,
                                     size_t* metadata_buffer_size);
+
+// Add metadata to the model. LiteRtModel copies key and metadata internally. It
+// doesn't take ownership of the key and metadata, so users can free them after
+// this API call.
+LiteRtStatus LiteRtAddModelMetadata(LiteRtModel model, const char* metadata_key,
+                                    const void* metadata_buffer,
+                                    size_t metadata_buffer_size);
 
 // Get the index of the entry subgraph.
 // TODO: b/365299994 - Figure out signatures.
@@ -346,12 +269,16 @@ LiteRtStatus LiteRtPushOp(LiteRtOpList op_list, LiteRtOp op,
 // Serialization related functions
 //
 
-// Options for model serialization.
-typedef struct LiteRtModelSerializationOptions {
-  // Alignment for bytecode assets that are appended to the model.
-  // Alignment is enforced relative to the first byte of the flatbuffer.
-  size_t bytecode_alignment;
-} LiteRtModelSerializationOptions;
+// Serializes model to valid tflite flatbuffer bytes with signatures.
+//
+// This destroys the model before it returns unless destroy_model is false.
+// Caller takes ownership of `buf`. Flatbuffers are packed into their arrays
+// back to front, so the valid flatbuffer is buf[offset, size]. See the above
+// options for more details.
+LiteRtStatus LiteRtSerializeModelWithSignatures(
+    LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
+    bool destroy_model, char** signatures, LiteRtParamIndex num_signatures,
+    LiteRtModelSerializationOptions options);
 
 // Serializes model to valid tflite flatbuffer bytes.
 //

@@ -16,9 +16,9 @@
 
 #include <utility>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/core/model/model.h"
@@ -91,6 +91,10 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeFloat32;
     case tflite::TensorType_FLOAT16:
       return kLiteRtElementTypeFloat16;
+    case tflite::TensorType_BFLOAT16:
+      return kLiteRtElementTypeBFloat16;
+    case tflite::TensorType_COMPLEX64:
+      return kLiteRtElementTypeComplex64;
     case tflite::TensorType_INT32:
       return kLiteRtElementTypeInt32;
     case tflite::TensorType_UINT32:
@@ -107,6 +111,8 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeUInt8;
     case tflite::TensorType_INT4:
       return kLiteRtElementTypeInt4;
+    case tflite::TensorType_INT2:
+      return kLiteRtElementTypeInt2;
     default:
       return kLiteRtElementTypeNone;
   }

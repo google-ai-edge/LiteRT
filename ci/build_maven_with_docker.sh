@@ -32,6 +32,7 @@ if [ ! -d /root_dir ]; then
     -e RELEASE_VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}" \
     -e BAZEL_CONFIG_FLAGS="${BAZEL_CONFIG_FLAGS}" \
     -e BUILD_LITERT_KOTLIN_API="${BUILD_LITERT_KOTLIN_API}" \
+    -e USE_LOCAL_TF="${USE_LOCAL_TF}" \
     --entrypoint /script_dir/build_maven_with_docker.sh tflite-builder
 
   echo "Output can be found here:"
@@ -40,14 +41,13 @@ if [ ! -d /root_dir ]; then
   exit 0
 else
   # Running inside docker container, download the SDK first.
+  cd /root_dir
   licenses=('y' 'y' 'y' 'y' 'y' 'y' 'y')
   printf '%s\n' "${licenses[@]}" | sdkmanager --licenses
   sdkmanager \
     "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
     "platform-tools" \
     "platforms;android-${ANDROID_API_LEVEL}"
-
-  cd /third_party_tensorflow
 
   # Run configure.
   configs=(
@@ -58,13 +58,12 @@ else
     'Y'
     '/usr/lib/llvm-18/bin/clang'
     '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
-    'y'
+    'Y'
     '/android/sdk'
   )
   printf '%s\n' "${configs[@]}" | ./configure
-  cp .tf_configure.bazelrc /root_dir
+  cat .litert_configure.bazelrc
 
-  cd /root_dir
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
   bash /script_dir/build_android_package.sh
 

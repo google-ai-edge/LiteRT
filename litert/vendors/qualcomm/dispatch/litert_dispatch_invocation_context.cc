@@ -35,9 +35,9 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -154,10 +154,7 @@ LiteRtDispatchInvocationContextT::Create(
 
   auto configs = QnnManager::DefaultContextConfigs();
 
-  // TODO: Add profiling_level as an option & related test code with different
-  // profiling level after having option interface
-  auto profiling_level = ::qnn::Profiling::kOff;
-
+  auto profiling_level = qnn.GetOptions().GetProfiling();
   Qnn_ProfileHandle_t profile_handle = nullptr;
   if (profiling_level != ::qnn::Profiling::kOff) {
     if (auto status = qnn.Api()->profileCreate(
@@ -408,7 +405,7 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
     return Unexpected(status, "Failed to lock the tensor buffer");
   }
   auto uint16_data = absl::MakeSpan(static_cast<const std::uint16_t*>(mem_addr),
-                                    bytes / sizeof(std::int16_t));
+                                    bytes / sizeof(std::uint16_t));
   std::vector<std::int16_t> int16_data;
   qnn::ConvertDataFromUInt16toInt16(uint16_data, int16_data);
   std::memcpy(mem_addr, int16_data.data(), bytes);

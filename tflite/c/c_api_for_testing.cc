@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/c/c_api_for_testing.h"
 
+#include <cstdint>
+
 #include "tflite/c/c_api_internal.h"
 
 extern "C" {

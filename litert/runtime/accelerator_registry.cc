@@ -17,14 +17,28 @@
 #include <cstddef>
 #include <utility>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_shared_library.h"
 #include "litert/runtime/accelerator.h"
 
 namespace litert::internal {
+namespace {
+
+const char* GetAcceleratorName(LiteRtAcceleratorT* accelerator) {
+  const char* name = nullptr;
+  if (accelerator && accelerator->GetName) {
+    accelerator->GetName(accelerator, &name);
+  }
+  return name;
+}
+
+}  // namespace
 
 void AcceleratorRegistry::DestroyAccelerator(LiteRtAcceleratorT* accelerator) {
+  LITERT_LOG(LITERT_INFO, "DestroyAccelerator: ptr=%p, name=%s", accelerator,
+             GetAcceleratorName(accelerator));
   if (accelerator && accelerator->ReleaseData) {
     accelerator->env = nullptr;
     accelerator->ReleaseData(accelerator->data);
@@ -34,6 +48,8 @@ void AcceleratorRegistry::DestroyAccelerator(LiteRtAcceleratorT* accelerator) {
 
 Expected<LiteRtAcceleratorT*> AcceleratorRegistry::RegisterAccelerator(
     Ptr accelerator) {
+  LITERT_LOG(LITERT_INFO, "RegisterAccelerator: ptr=%p, name=%s",
+             accelerator.get(), GetAcceleratorName(accelerator.get()));
   if (!accelerator) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Cannot register a null accelerator.");

@@ -18,13 +18,13 @@
 #include <string>
 
 #include "neuron/api/NeuronAdapter.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -75,7 +75,7 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
       if (tensor_type.ElementType() == ElementType::Int4) {
         // Unpack Int4 into Int8
         new_bytes = num_element * sizeof(int8_t);
-        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes))
+        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes));
         LITERT_LOG(LITERT_INFO, "\nUnpack Int4 into Int8, new bytes: %d",
                    new_bytes);
         LITERT_RETURN_IF_ERROR(UnpackDenseInt4IntoInt8(
@@ -84,7 +84,7 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
       } else if (tensor_type.ElementType() == ElementType::Int64) {
         // Cast Int64 into Int32
         new_bytes = num_element * sizeof(int32_t);
-        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes))
+        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes));
         LITERT_LOG(LITERT_INFO, "\nCast Int64 into Int32, new bytes: %d",
                    new_bytes);
         LITERT_RETURN_IF_ERROR(CastInt64IntoInt32(

@@ -41,7 +41,7 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options);
 // type erased options.
 const char* LiteRtQualcommOptionsGetIdentifier();
 
-// Attempt to retrieve qualcomm options from the opaque options. Fails unlesss
+// Attempt to retrieve qualcomm options from the opaque options. Fails unless
 // the opaque options are of another type.
 LiteRtStatus LiteRtQualcommOptionsGet(LiteRtOpaqueOptions options,
                                       LiteRtQualcommOptions* options_data);
@@ -109,6 +109,26 @@ LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
 LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
     LiteRtQualcommOptions options, int32_t** ids, uint32_t* number_of_ids);
 
+// When using short conv hmx, one might have better performance, but convolution
+// that have short depth and/or weights that are not symmetric could exhibit
+// inaccurate results.
+
+LiteRtStatus LiteRtQualcommOptionsSetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool use_conv_hmx);
+
+LiteRtStatus LiteRtQualcommOptionsGetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool* use_conv_hmx);
+
+// When using fold relu, one might have better performance. This optimization is
+// correct when quantization ranges for convolution are equal to or are subset
+// of the Relu operation.
+
+LiteRtStatus LiteRtQualcommOptionsSetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool use_fold_relu);
+
+LiteRtStatus LiteRtQualcommOptionsGetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool* use_fold_relu);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 // htp_performance_mode
@@ -148,6 +168,7 @@ typedef enum LiteRtQualcommOptionsProfiling {
   kLiteRtQualcommProfilingBasic,
   kLiteRtQualcommProfilingDetailed,
   kLiteRtQualcommProfilingLinting,
+  kLiteRtQualcommProfilingOptrace,
 } LiteRtQualcommOptionsProfiling;
 
 LiteRtStatus LiteRtQualcommOptionsSetProfiling(
@@ -155,6 +176,44 @@ LiteRtStatus LiteRtQualcommOptionsSetProfiling(
 
 LiteRtStatus LiteRtQualcommOptionsGetProfiling(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
+
+LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char* ir_json_dir);
+
+LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char** ir_json_dir);
+
+LiteRtStatus LiteRtQualcommOptionsSetDlcDir(LiteRtQualcommOptions options,
+                                            const char* dlc_dir);
+
+LiteRtStatus LiteRtQualcommOptionsGetDlcDir(LiteRtQualcommOptions options,
+                                            const char** dlc_dir);
+
+LiteRtStatus LiteRtQualcommOptionsSetVtcmSize(LiteRtQualcommOptions options,
+                                              uint32_t vtcm_size);
+
+LiteRtStatus LiteRtQualcommOptionsGetVtcmSize(LiteRtQualcommOptions options,
+                                              uint32_t* vtcm_size);
+
+LiteRtStatus LiteRtQualcommOptionsSetNumHvxThreads(
+    LiteRtQualcommOptions options, uint32_t num_hvx_threads);
+
+LiteRtStatus LiteRtQualcommOptionsGetNumHvxThreads(
+    LiteRtQualcommOptions options, uint32_t* num_hvx_threads);
+
+typedef enum LiteRtQualcommOptionsOptimizationLevel {
+  kHtpOptimizeForInference = 0,
+  kHtpOptimizeForPrepare,
+  kHtpOptimizeForInferenceO3,
+} LiteRtQualcommOptionsOptimizationLevel;
+
+LiteRtStatus LiteRtQualcommOptionsSetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel optimization_level);
+
+LiteRtStatus LiteRtQualcommOptionsGetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel* optimization_level);
 
 #ifdef __cplusplus
 }  // extern "C"

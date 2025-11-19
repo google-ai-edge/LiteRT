@@ -40,6 +40,10 @@ ABSL_DECLARE_FLAG(bool, mediatek_enable_l1_cache_optimizations);
 ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
                   mediatek_optimization_hint);
 
+ABSL_DECLARE_FLAG(bool, mediatek_disable_dla_dir_removal);
+
+ABSL_DECLARE_FLAG(std::string, mediatek_dla_dir);
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error);
@@ -74,10 +78,11 @@ std::string AbslUnparseFlag(
 
 namespace litert::mediatek {
 
-Expected<MediatekOptions> MediatekOptionsFromFlags();
-
-#endif
+// Updates the provided MediatekOptions based on the values of the
+// Mediatek-specific command-line flags defined in this file.
+Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options);
 
 }  // namespace litert::mediatek
 
+#endif  // INCLUDE_MEDIATEK_COMPILE_FLAGS || INCLUDE_MEDIATEK_RUNTIME_FLAGS
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_MEDIATEK_FLAGS_H_

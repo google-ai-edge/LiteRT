@@ -18,8 +18,8 @@
 #include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/interpreter.h"
@@ -55,7 +55,7 @@ std::string GetTfliteFilePath(absl::string_view filename);
 // Gets a full path given a path relative to the litert directory.
 std::string GetLiteRtPath(absl::string_view rel_path);
 
-Model LoadTestFileModel(absl::string_view filename);
+ExtendedModel LoadTestFileModel(absl::string_view filename);
 
 class TflRuntime {
  public:

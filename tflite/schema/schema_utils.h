@@ -15,6 +15,6 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_SCHEMA_SCHEMA_UTILS_H_
 #define TENSORFLOW_LITE_SCHEMA_SCHEMA_UTILS_H_
 
-#include "tensorflow/compiler/mlir/lite/schema/schema_utils.h"  // IWYU pragma: keep
+#include "tflite/converter/schema/schema_utils.h"  // IWYU pragma: keep
 
 #endif  // TENSORFLOW_LITE_SCHEMA_SCHEMA_UTILS_H_

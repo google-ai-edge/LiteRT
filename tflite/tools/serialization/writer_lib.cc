@@ -31,15 +31,15 @@ limitations under the License.
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "flatbuffers/string.h"  // from @flatbuffers
 #include "flatbuffers/vector.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/schema/schema_conversion_utils.h"
+#include "tflite/converter/schema/schema_conversion_utils.h"
 #include "tflite/context_util.h"
 #include "tflite/core/c/common.h"
 #include "tflite/interpreter.h"
 #if FLATBUFFERS_LITTLEENDIAN == 0
 #include "tflite/core/model_builder.h"
 #endif
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
-#include "tensorflow/compiler/mlir/lite/tools/versioning/op_version.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
+#include "tflite/converter/tools/versioning/op_version.h"
 #include "tflite/core/subgraph.h"
 #include "tflite/tools/serialization/enum_mapping.h"
 #include "tflite/version.h"

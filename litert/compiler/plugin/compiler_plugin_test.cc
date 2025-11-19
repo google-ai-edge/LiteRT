@@ -16,6 +16,7 @@
 
 #include <array>
 #include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -23,10 +24,12 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/options/litert_compiler_options.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_op_options.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/compiler_options.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
@@ -39,19 +42,69 @@ namespace {
 
 using testing::UniqueTestDirectory;
 
-constexpr absl::string_view kTestPluginSearchPath =
-    "third_party/odml/litert/litert/vendors/examples";
+constexpr absl::string_view kTestPluginSearchPath = "vendors/examples";
 
 constexpr absl::string_view kTestManufacturer = "ExampleSocManufacturer";
 constexpr absl::string_view kTestModels = "ExampleSocModel";
 
+using testing::GetLiteRtPath;
+
 TEST(CompilerPluginTest, LoadTestPlugin) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   ASSERT_EQ(plugins->size(), 1);
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
   ASSERT_EQ(plugins->front().SocModels().size(), 1);
   EXPECT_EQ(plugins->front().SocModels().front(), kTestModels);
+}
+
+TEST(CompilerPluginTest, FindTestPluginOk) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)}));
+  EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
+}
+
+TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
+  auto litert_options = Options::Create();
+  auto compiler_options = CompilerOptions::Create();
+  compiler_options->SetPartitionStrategy(
+      kLiteRtCompilerOptionsPartitionStrategyDefault);
+  litert_options->AddOpaqueOptions(std::move(*compiler_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr, litert_options->Get()));
+  EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
+}
+
+TEST(CompilerPluginTest, GetOptionsFromTestPluginOk) {
+  auto litert_options = Options::Create();
+  auto compiler_options = CompilerOptions::Create();
+  compiler_options->SetPartitionStrategy(
+      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+  litert_options->AddOpaqueOptions(std::move(*compiler_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr, litert_options->Get()));
+
+  auto compiler_options_from_plugin = plugin.CompilerOptions();
+  LiteRtCompilerOptionsPartitionStrategy strategy;
+  auto status = LiteRtGetCompilerOptionsPartitionStrategy(
+      *compiler_options_from_plugin, &strategy);
+  EXPECT_EQ(status, kLiteRtStatusOk);
+  EXPECT_EQ(strategy, kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+}
+
+TEST(CompilerPluginTest, FindTestPluginNotFound) {
+  auto plugin =
+      CompilerPlugin::FindPlugin("not_a_soc", {kTestPluginSearchPath});
+  EXPECT_FALSE(plugin);
 }
 
 TEST(CompilerPluginTest, LoadTestPluginWithMalformed) {
@@ -65,8 +118,9 @@ TEST(CompilerPluginTest, LoadTestPluginWithMalformed) {
 }
 
 TEST(CompilerPluginTest, MultipleValidPlugins) {
-  auto plugins = CompilerPlugin::LoadPlugins(
-      {kTestPluginSearchPath, kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath),
+                                   GetLiteRtPath(kTestPluginSearchPath)});
 
   ASSERT_EQ(plugins->size(), 2);
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
@@ -74,7 +128,8 @@ TEST(CompilerPluginTest, MultipleValidPlugins) {
 }
 
 TEST(CompilerPluginTest, MoveAssign) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   ASSERT_EQ(plugins->size(), 1);
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
@@ -85,7 +140,8 @@ TEST(CompilerPluginTest, MoveAssign) {
 }
 
 TEST(CompilerPluginTest, MoveConstruct) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   ASSERT_EQ(plugins->size(), 1);
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
@@ -96,7 +152,8 @@ TEST(CompilerPluginTest, MoveConstruct) {
 }
 
 TEST(CompilerPluginTest, SocModels) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
 
@@ -105,7 +162,8 @@ TEST(CompilerPluginTest, SocModels) {
 }
 
 TEST(CompilerPluginTest, Partition) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
 
@@ -118,7 +176,8 @@ TEST(CompilerPluginTest, Partition) {
 }
 
 TEST(CompilerPluginTest, Compile) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
 
@@ -140,13 +199,14 @@ TEST(CompilerPluginTest, Compile) {
 }
 
 TEST(CompilerPluginTest, Dump) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
 
   std::stringstream dump;
   Dump(plugins->front(), dump);
 
-  ASSERT_EQ(dump.view(),
+  ASSERT_EQ(dump.str(),
             "SocManufacturer: ExampleSocManufacturer\nSocModels: { "
             "ExampleSocModel }\n");
 }
@@ -155,7 +215,8 @@ TEST(PartitionModelTest, Simple) {
   auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
   auto& model = *model_wrap.Get();
 
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   auto& plugin = plugins->front();
 
@@ -197,7 +258,8 @@ TEST(PartitionModelTest, MultiSubgraph) {
   auto model_wrap = testing::LoadTestFileModel("multi_subgraph_mul.tflite");
   auto& model = *model_wrap.Get();
 
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   auto& plugin = plugins->front();
 
@@ -220,7 +282,8 @@ TEST(PartitionModelTest, MultiSubgraphWithSelectedSubgraphs) {
   auto model_wrap = testing::LoadTestFileModel("multi_subgraph_mul.tflite");
   auto& model = *model_wrap.Get();
 
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   auto& plugin = plugins->front();
 
@@ -275,7 +338,8 @@ TEST(PartitionModelTest, CstMultiSubgraph) {
 }
 
 TEST(ApplyTest, Simple) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
   ASSERT_TRUE(model_wrap);
@@ -299,7 +363,8 @@ TEST(ApplyTest, WithPartition) {
   auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
   auto& model = *model_wrap.Get();
 
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   auto& plugin = plugins->front();
 
@@ -320,7 +385,8 @@ TEST(ApplyTest, WithPartition) {
 }
 
 TEST(ApplyTest, MultiSubgraph) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
   ASSERT_EQ(plugins->size(), 1);
   auto model_wrap = testing::LoadTestFileModel("multi_subgraph_mul.tflite");
   ASSERT_TRUE(model_wrap);
@@ -357,10 +423,11 @@ TEST(ApplyTest, ApplyPlugins) {
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
 
+  const std::string plugin_search_path = GetLiteRtPath(kTestPluginSearchPath);
   const std::array environment_options = {
       litert::Environment::Option{
           /*.tag=*/litert::Environment::OptionTag::CompilerPluginLibraryDir,
-          /*.value=*/kTestPluginSearchPath,
+          /*.value=*/plugin_search_path.c_str(),
       },
   };
   auto env = litert::Environment::Create(environment_options);
@@ -386,11 +453,40 @@ TEST(ApplyTest, ApplyPlugins) {
   EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
 }
 
+TEST(ApplyTest, ApplyLoadedPlugins) {
+  auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+
+  LiteRtHwAccelerators compilation_options = static_cast<LiteRtHwAccelerators>(
+      kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
+      kLiteRtHwAcceleratorNpu);
+  auto result = litert::internal::ApplyPlugins(&model, compilation_options,
+                                               *plugins, /*mutated=*/nullptr);
+  ASSERT_TRUE(result);
+
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+
+  auto& subgraph = *model.MainSubgraph();
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+
+  auto* op = subgraph.Ops().front();
+
+  EXPECT_EQ(op->OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_TRUE(model.FindOpAsset(op));
+
+  EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
+}
+
 TEST(PartitionTest, MappedCompositeOp) {
   auto model_wrap = testing::LoadTestFileModel("rms_norm_composite.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
@@ -405,7 +501,8 @@ TEST(PartitionTest, InlineDecomposition) {
   auto model_wrap = testing::LoadTestFileModel("unsupported_composite.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
@@ -425,7 +522,8 @@ TEST(PartitionTest,
       testing::LoadTestFileModel("unsupported_composite_2.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
@@ -448,7 +546,8 @@ TEST(PartitionTest, InlineDecompositionWithProducerConsumer) {
       testing::LoadTestFileModel("unsupported_composite_3.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
@@ -473,7 +572,8 @@ TEST(PartitionTest, InlineDecompositionWithUnsupportedProducerConsumer) {
       testing::LoadTestFileModel("unsupported_composite_4.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
@@ -497,7 +597,8 @@ TEST(PartitionTest, SimpleNpuCallComposite) {
   auto model_wrap = testing::LoadTestFileModel("simple_composite.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   auto* decomp = model.Subgraphs()[1];
 
@@ -517,7 +618,8 @@ TEST(PartitionTest, MultiNpuCallComposite) {
   auto model_wrap = testing::LoadTestFileModel("multi_composite.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   ASSERT_EQ(model.NumSubgraphs(), 4);
   auto* decomp1 = model.Subgraphs()[1];
@@ -580,7 +682,8 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   auto model_wrap = testing::LoadTestFileModel("nested_composite.tflite");
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
 
   ASSERT_EQ(model.NumSubgraphs(), 3);
 
@@ -594,6 +697,28 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   const auto& sgs = partition_result->second.Subgraphs();
   ASSERT_EQ(sgs.size(), 1);
   ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
+}
+
+TEST(PartitionModelTest, PartitionIsland) {
+  auto model_wrap = testing::LoadTestFileModel("island_partial.tflite");
+  auto& model = *model_wrap.Get();
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+
+  auto partition_result = PartitionModel(plugin, model);
+  ASSERT_TRUE(partition_result);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+
+  const auto& [ops, new_model] = *partition_result;
+
+  EXPECT_EQ(ops.size(), 2);
+
+  EXPECT_EQ(new_model.NumSubgraphs(), 2);
+  EXPECT_EQ(new_model.Subgraphs().at(0)->Ops().size(), 3);
+  EXPECT_EQ(new_model.Subgraphs().at(1)->Ops().size(), 1);
 }
 
 }  // namespace

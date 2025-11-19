@@ -1,0 +1,13 @@
+{
+   "features":
+   {
+      "enable_input_output_flow_events": true,
+      "enable_sequencer_flow_events": true,
+      "htp_json": true,
+      "runtrace": true,
+      "memory_info": true,
+      "traceback": true,
+      "qhas_schema": true,
+      "qhas_json": true
+   }
+}

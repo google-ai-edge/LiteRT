@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
@@ -25,6 +28,7 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_options",
+        "//litert/c:litert_rewriter",
     ],
 )
 
@@ -34,10 +38,10 @@ cc_library(
     deps = [
         ":litert_compiler_plugin",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_options",
+        "//litert/c:litert_rewriter",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -52,7 +56,7 @@ cc_library(
     ],
     deps = [
         # only depend on the headers, not the implementation.
-        "//litert/c:litert_dispatch_headers",
+        "//litert/c/internal:litert_dispatch_headers",
     ],
 )
 

@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 
 namespace litert::google_tensor {
 namespace {
@@ -34,9 +35,9 @@ TEST(TruncationTypeFlagTest, Parse) {
   LiteRtGoogleTensorOptionsTruncationType value;
 
   {
-    static constexpr absl::string_view kLevel = "unspecified";
+    static constexpr absl::string_view kLevel = "auto";
     static constexpr LiteRtGoogleTensorOptionsTruncationType kLevelEnum =
-        kLiteRtGoogleTensorFloatTruncationTypeUnspecified;
+        kLiteRtGoogleTensorFloatTruncationTypeAuto;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kLevel, AbslUnparseFlag(value));
@@ -52,7 +53,7 @@ TEST(TruncationTypeFlagTest, Parse) {
   }
 
   {
-    static constexpr absl::string_view kLevel = "bf16";
+    static constexpr absl::string_view kLevel = "bfloat16";
     static constexpr LiteRtGoogleTensorOptionsTruncationType kLevelEnum =
         kLiteRtGoogleTensorFloatTruncationTypeBfloat16;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));

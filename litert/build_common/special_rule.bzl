@@ -14,11 +14,11 @@
 
 """External versions of LiteRT build rules that differ outside of Google."""
 
-def lite_rt_friends():
+def litert_friends():
     """Internal visibility for packages outside of LiteRT code location.
 
     Return the package group declaration for internal code locations that need
-    visibility to LiteRT APIs"""
+    visibility to all LiteRT APIs"""
 
     return []
 
@@ -40,5 +40,37 @@ def gles_linkopts():
             "-lGLESv3",
             "-lEGL",
         ],
+        "//conditions:default": [],
+    })
+
+def litert_android_linkopts():
+    return select({
+        "//litert:litert_android_no_jni": ["-lnativewindow"],
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    })
+
+def litert_metal_opts():
+    return select({
+        "@platforms//os:ios": ["-ObjC++"],
+        "@platforms//os:macos": ["-ObjC++"],
+        "//conditions:default": [],
+    })
+
+def litert_metal_linkopts():
+    """This is a no-op outside of Google."""
+    return []
+
+def litert_metal_deps_without_gpu_environment():
+    return select({
+        "@platforms//os:ios": ["//tflite/delegates/gpu/metal:metal_device"],
+        "@platforms//os:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//conditions:default": [],
+    })
+
+def litert_metal_deps():
+    return litert_metal_deps_without_gpu_environment() + select({
+        "@platforms//os:ios": ["//litert/runtime:metal_info"],
+        "@platforms//os:macos": ["//litert/runtime:metal_info"],
         "//conditions:default": [],
     })

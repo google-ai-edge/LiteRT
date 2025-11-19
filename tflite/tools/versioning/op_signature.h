@@ -15,7 +15,7 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_TOOLS_VERSIONING_OP_SIGNATURE_H_
 #define TENSORFLOW_LITE_TOOLS_VERSIONING_OP_SIGNATURE_H_
 
-#include "tensorflow/compiler/mlir/lite/tools/versioning/op_signature.h"  // iwyu pragma: export
+#include "tflite/converter/tools/versioning/op_signature.h"  // iwyu pragma: export
 #include "tflite/core/c/common.h"
 
 namespace tflite {

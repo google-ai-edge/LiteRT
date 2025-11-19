@@ -16,6 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -44,10 +45,7 @@ litert_dynamic_lib(
         "-fdata-sections",
     ],
     export_litert_only = True,
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + [
+    linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_Qualcomm.so",
         "-Wl,-lc++abi",
     ],
@@ -55,16 +53,16 @@ litert_dynamic_lib(
     so_name = "libLiteRtDispatch_Qualcomm.so",
     visibility = ["//litert:litert_public"],
     deps = [
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_logging",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c:litert_options",
+        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/vendors/cc:options_helper",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_element_type",
-        "//litert/cc:litert_environment_options",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -92,13 +90,11 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_api",
-        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
-        "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
-        "//litert/cc:litert_options",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
         "//litert/test:matchers",

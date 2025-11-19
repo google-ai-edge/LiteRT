@@ -18,8 +18,8 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"

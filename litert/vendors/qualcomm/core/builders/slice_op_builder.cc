@@ -38,12 +38,12 @@ std::vector<OpWrapper> BuildSliceOp(
   }
 
   const auto input_rank = input_tensor.GetRank();
-  auto begin_data = begin_tensor.GetStaticTensorData<int32_t>();
+  auto begin_data = begin_tensor.GetTensorData<int32_t>();
   if (!begin_data.has_value()) {
     QNN_LOG_ERROR("Get begin_data failed.");
     return res;
   }
-  auto size_data = size_tensor.GetStaticTensorData<int32_t>();
+  auto size_data = size_tensor.GetTensorData<int32_t>();
   if (!size_data.has_value()) {
     QNN_LOG_ERROR("Get size_data failed.");
     return res;

@@ -509,6 +509,8 @@ const char* TfLiteTypeGetName(TfLiteType type) {
       return "VARIANT";
     case kTfLiteInt4:
       return "INT4";
+    case kTfLiteInt2:
+      return "INT2";
   }
   return "Unknown type";
 }
@@ -648,5 +650,9 @@ TfLiteRunStep TfLiteTensorGetShapeKnownStep(const TfLiteTensor* t) {
   }
   return kTfLiteRunStepUnknown;
 }
+
+// Returns a sentinel value to be used as the user_data field of a TfLiteNode
+// when the kernel initialization fails.
+void* TfLiteKernelInitFailed() { return reinterpret_cast<void*>(-1); }
 
 }  // extern "C"

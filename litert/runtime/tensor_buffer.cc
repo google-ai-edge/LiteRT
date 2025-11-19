@@ -16,38 +16,54 @@
 
 #include <stdlib.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/core/util/tensor_type_util.h"
-#include "litert/runtime/ahwb_buffer.h"
-#include "litert/runtime/dmabuf_buffer.h"
+#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
-#include "litert/runtime/fastrpc_buffer.h"
-#include "litert/runtime/gl_buffer.h"
-#include "litert/runtime/gl_texture.h"
-#include "litert/runtime/ion_buffer.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "litert/c/litert_gl_types.h"
+#include "litert/runtime/gl_buffer.h"
+#include "litert/runtime/gl_texture.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_ION_SUPPORT
+#include "litert/runtime/ion_buffer.h"
+#endif  // LITERT_HAS_ION_SUPPORT
+
+#if LITERT_HAS_FASTRPC_SUPPORT
+#include "litert/runtime/fastrpc_buffer.h"
+#endif  // LITERT_HAS_FASTRPC_SUPPORT
+
+#if LITERT_HAS_DMABUF_SUPPORT
+#include "litert/runtime/dmabuf_buffer.h"
+#endif  // LITERT_HAS_DMABUF_SUPPORT
+
+#if LITERT_HAS_AHWB_SUPPORT
+#include "litert/runtime/ahwb_buffer.h"
+#endif  // LITERT_HAS_AHWB_SUPPORT
 
 using litert::BufferTypeToString;
 using litert::Expected;
@@ -59,6 +75,10 @@ template <typename T>
 void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
   vec.assign(array, array + array_size);
 }
+
+// CFI builds don't like directly passing free() as a function pointer, so wrap
+// in another function.
+void FreeHostMemory(void* ptr) { litert_aligned_free(ptr); }
 
 }  // namespace
 
@@ -158,6 +178,34 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
       // internal gl texture is auto-disposed by the
       // litert::internal::GlTexture destructor.
       break;
+    case kLiteRtTensorBufferTypeWebGpuBuffer:
+    case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+      // internal webgpu buffer is auto-disposed by the
+      // litert::internal::CustomBuffer destructor.
+      break;
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
+      // internal metal buffer is auto-disposed by the
+      // litert::internal::MetalMemory destructor.
+      break;
+    case kLiteRtTensorBufferTypeVulkanBuffer:
+    case kLiteRtTensorBufferTypeVulkanBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanTexture:
+    case kLiteRtTensorBufferTypeVulkanTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanImageBuffer:
+    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanBufferPacked:
+      // internal vulkan memory is auto-disposed by the
+      // litert::internal::VulkanMemory destructor.
+      break;
   }
 }
 
@@ -182,15 +230,26 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOnHostMemory(
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
+  return CreateManagedOnHostMemory(tensor_type, buffer_size,
+                                   LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+}
+
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedOnHostMemory(
+    const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+    size_t alignment) {
   void* host_memory_ptr;
-  if (auto rc = posix_memalign(
-          &host_memory_ptr, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT, buffer_size);
+  if (auto rc = posix_memalign(&host_memory_ptr, alignment,
+                               buffer_size + XNN_EXTRA_BYTES);
+
       rc) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate aligned memory");
   }
+  std::memset(static_cast<uint8_t*>(host_memory_ptr) + buffer_size, 0,
+              XNN_EXTRA_BYTES);
 
-  LiteRtHostMemoryDeallocator deallocator = litert_aligned_free;
+  LiteRtHostMemoryDeallocator deallocator = FreeHostMemory;
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferT::Ptr tensor_buffer,
       CreateFromHostMemory(
@@ -201,6 +260,7 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
   return std::move(tensor_buffer);
 }
 
+#if LITERT_HAS_AHWB_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromAhwb(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     AHardwareBuffer* ahwb, size_t ahwb_offset,
@@ -230,7 +290,9 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedAhwbBuffer(
   return CreateFromAhwb(env, tensor_type, buffer.ahwb, /*ahwb_offset=*/0,
                         /*deallocator=*/litert::internal::AhwbBuffer::Free);
 }
+#endif  // LITERT_HAS_AHWB_SUPPORT
 
+#if LITERT_HAS_ION_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromIonBuffer(
     const LiteRtRankedTensorType& tensor_type, void* ion_buffer_addr,
     int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
@@ -271,7 +333,9 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedIonBuffer(
                              /*ion_buffer_offset=*/0,
                              litert::internal::IonBuffer::Free);
 }
+#endif  // LITERT_HAS_ION_SUPPORT
 
+#if LITERT_HAS_DMABUF_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromDmaBufBuffer(
     const LiteRtRankedTensorType& tensor_type, void* dmabuf_buffer_addr,
     int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
@@ -312,7 +376,9 @@ LiteRtTensorBufferT::CreateManagedDmaBufBuffer(
                                 buffer_size, /*dmabuf_buffer_offset=*/0,
                                 litert::internal::DmaBufBuffer::Free);
 }
+#endif  // LITERT_HAS_DMABUF_SUPPORT
 
+#if LITERT_HAS_FASTRPC_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromFastRpcBuffer(
     const LiteRtRankedTensorType& tensor_type, void* fastrpc_buffer_addr,
     int fastrpc_buffer_fd, size_t fastrpc_buffer_size,
@@ -353,6 +419,7 @@ LiteRtTensorBufferT::CreateManagedFastRpcBuffer(
                                  buffer_size, /*fastrpc_buffer_offset=*/0,
                                  litert::internal::FastRpcBuffer::Free);
 }
+#endif  // LITERT_HAS_FASTRPC_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
@@ -383,6 +450,69 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+// TODO b/412405854 - Add CreateFromWebGpuBuffer to support zero-copy scenarios
+// of WebGPU buffer.
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, tensor_type, buffer_type, buffer_size, packed_size);
+  if (!buffer) {
+    return Unexpected(buffer.Error());
+  }
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(*buffer));
+  return tensor_buffer;
+}
+
+// TODO b/426869066 - Add CreateFromMetalMemory to support zero-copy scenarios
+// of Metal memory.
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, tensor_type, buffer_type, buffer_size, packed_size);
+  if (!buffer) {
+    return Unexpected(buffer.Error());
+  }
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(*buffer));
+  return tensor_buffer;
+}
+
+// TODO b/426869066 - Add CreateFromVulkanMemory to support zero-copy scenarios
+// of Vulkan memory.
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedVulkanMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(auto packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, tensor_type, buffer_type, buffer_size, packed_size);
+  if (!buffer) {
+    return Unexpected(buffer.Error());
+  }
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(*buffer));
+  return tensor_buffer;
+}
+
+#if LITERT_HAS_OPENGL_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
@@ -422,21 +552,73 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
                                   deallocator));
   return tensor_buffer;
 }
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  // Use CustomBuffer::Wrap to create a non-owning wrapper
+  LITERT_ASSIGN_OR_RETURN(litert::internal::CustomBuffer custom_buffer,
+                          litert::internal::CustomBuffer::Wrap(
+                              env, tensor_type, buffer_type, metal_buffer,
+                              buffer_size, packed_size));
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(custom_buffer));
+  return tensor_buffer;
+}
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
+  return CreateManagedWithAlignment(env, buffer_type, tensor_type, buffer_size,
+                                    LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+}
+
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedWithAlignment(
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+    size_t alignment) {
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeHostMemory:
-      return CreateManagedOnHostMemory(tensor_type, buffer_size);
+      return CreateManagedOnHostMemory(tensor_type, buffer_size, alignment);
     case kLiteRtTensorBufferTypeAhwb:
+#if LITERT_HAS_AHWB_SUPPORT
       return CreateManagedAhwbBuffer(env, tensor_type, buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "AHardwareBuffer is not supported.");
+#endif
     case kLiteRtTensorBufferTypeIon:
+#if LITERT_HAS_ION_SUPPORT
       return CreateManagedIonBuffer(tensor_type, buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "ION buffer is not supported.");
+#endif
     case kLiteRtTensorBufferTypeDmaBuf:
+#if LITERT_HAS_DMABUF_SUPPORT
       return CreateManagedDmaBufBuffer(tensor_type, buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "DMA-BUF buffer is not supported.");
+#endif
     case kLiteRtTensorBufferTypeFastRpc:
+#if LITERT_HAS_FASTRPC_SUPPORT
       return CreateManagedFastRpcBuffer(tensor_type, buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "FastRPC buffer is not supported.");
+#endif
     case kLiteRtTensorBufferTypeOpenClBuffer:
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
@@ -453,12 +635,46 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
 #endif  // LITERT_HAS_OPENCL_SUPPORT
     }
     case kLiteRtTensorBufferTypeGlBuffer: {
+#if LITERT_HAS_OPENGL_SUPPORT
       return CreateManagedGlBuffer(env, tensor_type, buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "OpenGL buffer is not supported.");
+#endif
     }
     case kLiteRtTensorBufferTypeGlTexture: {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "LiteRT does not support managed GL textures.");
     }
+    case kLiteRtTensorBufferTypeWebGpuBuffer:
+    case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
+      return CreateManagedWebGpuBuffer(env, tensor_type, buffer_type,
+                                       buffer_size);
+    }
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked: {
+      return CreateManagedMetalMemory(env, tensor_type, buffer_type,
+                                      buffer_size);
+    }
+    case kLiteRtTensorBufferTypeVulkanBuffer:
+    case kLiteRtTensorBufferTypeVulkanBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanTexture:
+    case kLiteRtTensorBufferTypeVulkanTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanImageBuffer:
+    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+      return CreateManagedVulkanMemory(env, tensor_type, buffer_type,
+                                       buffer_size);
+    }
+    case kLiteRtTensorBufferTypeUnknown:
     default:
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected tensor type");
@@ -572,6 +788,7 @@ LiteRtTensorBufferT::GetOpenClMemory() {
   if (IsOpenClMemory(buffer_type_)) {
     return &std::get<litert::internal::OpenClMemory>(buffer_);
   }
+#if LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
   if (buffer_type_ == kLiteRtTensorBufferTypeAhwb) {
     if (auto it =
             memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
@@ -596,6 +813,8 @@ LiteRtTensorBufferT::GetOpenClMemory() {
                    "Failed to insert CL buffer into memory backed buffers"));
     return &std::get<litert::internal::OpenClMemory>(it->second);
   }
+#endif
+#if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
   if (buffer_type_ == kLiteRtTensorBufferTypeGlBuffer) {
     if (auto it =
             memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
@@ -620,6 +839,7 @@ LiteRtTensorBufferT::GetOpenClMemory() {
                    "Failed to insert CL buffer into memory backed buffers"));
     return &std::get<litert::internal::OpenClMemory>(it->second);
   }
+#endif
   return Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
       absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
@@ -628,6 +848,7 @@ LiteRtTensorBufferT::GetOpenClMemory() {
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_OPENGL_SUPPORT
 Expected<litert::internal::GlTexture*> LiteRtTensorBufferT::GetGlTexture() {
   if (buffer_type_ != kLiteRtTensorBufferTypeGlTexture) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -672,6 +893,17 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
                       BufferTypeToString(kLiteRtTensorBufferTypeGlBuffer),
                       BufferTypeToString(buffer_type_)));
 }
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+Expected<litert::internal::CustomBuffer*>
+LiteRtTensorBufferT::GetCustomBuffer() {
+  if (IsWebGpuMemory(buffer_type_) || IsVulkanMemory(buffer_type_) ||
+      IsMetalMemory(buffer_type_)) {
+    return &std::get<litert::internal::CustomBuffer>(buffer_);
+  }
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "Unexpected tensor buffer type");
+}
 
 Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_RETURN_IF_ERROR(is_locked_ == false,
@@ -692,9 +924,14 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
       return host_buffer;
     }
     case kLiteRtTensorBufferTypeAhwb: {
+#if LITERT_HAS_AHWB_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto ahwb_buffer, GetAhwbBuffer());
       return litert::internal::AhwbBuffer::Lock(
           ahwb_buffer, event_ != nullptr ? event_.get() : nullptr);
+#else
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "AHardwareBuffer is not supported");
+#endif
     }
     case kLiteRtTensorBufferTypeIon: {
       LITERT_ASSIGN_OR_ABORT(auto ion_buffer, GetIonBuffer());
@@ -736,9 +973,35 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
                         "OpenGL buffers are not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
     }
-    default:
+    case kLiteRtTensorBufferTypeWebGpuBuffer:
+    case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanBuffer:
+    case kLiteRtTensorBufferTypeVulkanBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanTexture:
+    case kLiteRtTensorBufferTypeVulkanTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanImageBuffer:
+    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+      LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+      LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
+                              custom_buffer->Lock(mode));
+      return host_memory_ptr;
+    }
+    case kLiteRtTensorBufferTypeGlTexture:
+    case kLiteRtTensorBufferTypeUnknown: {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Unexpected tensor buffer type");
+    }
   }
 }
 
@@ -749,8 +1012,12 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
   is_locked_ = false;
   switch (buffer_type()) {
     case kLiteRtTensorBufferTypeAhwb: {
+#if LITERT_HAS_AHWB_SUPPORT
       auto ahwb = std::get<AhwbBuffer>(buffer_).ahwb;
       return litert::internal::AhwbBuffer::Unlock(ahwb);
+#else
+      return {};
+#endif
     }
     case kLiteRtTensorBufferTypeOpenClBuffer:
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
@@ -776,7 +1043,35 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
                         "OpenGL buffers are not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
     }
-    default:
+    case kLiteRtTensorBufferTypeWebGpuBuffer:
+    case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanBuffer:
+    case kLiteRtTensorBufferTypeVulkanBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanTexture:
+    case kLiteRtTensorBufferTypeVulkanTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanImageBuffer:
+    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+      LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+      return custom_buffer->Unlock();
+    }
+    case kLiteRtTensorBufferTypeHostMemory:
+    case kLiteRtTensorBufferTypeIon:
+    case kLiteRtTensorBufferTypeDmaBuf:
+    case kLiteRtTensorBufferTypeFastRpc:
+    case kLiteRtTensorBufferTypeGlTexture:
+    case kLiteRtTensorBufferTypeUnknown: {
       return {};
+    }
   }
 }

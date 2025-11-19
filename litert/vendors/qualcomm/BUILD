@@ -16,7 +16,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_lib", "litert_test")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qnn")
 
@@ -29,17 +30,12 @@ cc_library(
     name = "common",
     hdrs = ["common.h"],
     deps = [
-        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-litert_lib(
-    name = "qnn_log",
-    srcs = ["qnn_log.cc"],
-    hdrs = ["qnn_log.h"],
-    deps = [
+        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
         "@qairt//:qnn_lib_headers",
     ],
 )
@@ -49,14 +45,13 @@ cc_library(
     hdrs = ["qnn_manager.h"],
     deps = [
         ":common",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/vendors/qualcomm/core:common",
-        "//litert/vendors/qualcomm/core/backends:htp_device_config",
-        "//litert/vendors/qualcomm/core/backends:htp_perf_control",
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -74,19 +69,18 @@ litert_cc_lib_with_qnn(
     ungrte = True,
     deps = [
         ":common",
-        ":qnn_log",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/core:dynamic_loading",
         "//litert/vendors/qualcomm/core:common",
-        "//litert/vendors/qualcomm/core/backends:htp_device_config",
-        "//litert/vendors/qualcomm/core/backends:htp_perf_control",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
+        "//litert/vendors/qualcomm/core/backends:ir_backend",
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
@@ -96,6 +90,14 @@ litert_cc_lib_with_qnn(
 litert_test(
     name = "qnn_manager_test",
     srcs = ["qnn_manager_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
     linkstatic = True,
     tags = [
         "no-remote-exec",
@@ -131,11 +133,10 @@ cc_library(
     hdrs = ["context_binary_info.h"],
     deps = [
         ":qnn_manager",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ],
 )

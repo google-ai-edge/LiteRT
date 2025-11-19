@@ -54,6 +54,9 @@ typedef uint64_t ThrSqContainerHandle;
 // Handle that represent a Buffer.
 typedef uint64_t ThrBufferHandle;
 
+// Handle that represents a Fence.
+typedef uint64_t ThrFenceHandle;
+
 // String ID of a graph edge.
 // The `ThrEdgeId` used in SB APIs does not require persistent memory after API
 // usage.
@@ -63,6 +66,9 @@ typedef const char* ThrEdgeId;
 // The `ThrNodeId` used in SB APIs does not require persistent memory after API
 // usage.
 typedef const char* ThrNodeId;
+
+// String ID of a node interface's input or output.
+typedef const char* ThrNodeInterfaceId;
 
 enum ThrEdgeType : int {
   kThrEdgeNoType = 0,
@@ -74,6 +80,35 @@ enum ThrNodeType : int {
   kThrNodeNoType = 0,
   kThrNodeTypeDsp = 1,  // Node for DSP. a function SQ is supported.
   kThrNodeTypeNpu = 2,  // Node for NPU. a ML model SQ is supported.
+  kThrNodeTypeCpu = 3,  // Node for CPU. a TFLite model SQ is supported.
+};
+
+// Indicates the type of fence referred to by a file descriptor (fd).
+//
+// In general, `kThrFenceTypeVendorPreferred` should be used by default to
+// afford implementations maximum flexibility with respect to the underlying
+// fence implementation. For example, specifying this type may allow an
+// implementation to utilize a proprietary fence, which generally have superior
+// performance characteristics.
+//
+// However, support for other fence types is maintained for cases where
+// compatibility with external libraries is mandatory.
+enum ThrFenceType : int {
+  kThrFenceNoType = 0,  // Invalid value.
+  kThrFenceTypeDma = 1,
+  kThrFenceTypeEventFd = 2,
+  kThrFenceTypeVendorPreferred = 3,
+};
+
+// Describes how arguments passed to this node should be internally mapped to
+// the invocation interface.
+enum ThrNodeInterfaceBindingMode : int {
+  kThrNodeInterfaceBindingModeNoType = 0,      // invalid value.
+  kThrNodeInterfaceBindingModePositional = 1,  // e.g. `d, e = f(a, b, c)`
+  kThrNodeInterfaceBindingModeNamed =
+      2,  // e.g. `d = f(arg2=b, arg1=a)['out_y23']`
+  kThrNodeInterfaceBindingModeIndexed =
+      3,  // e.g. `(0)d, (1)e = f((0)a, (1)b, (2)c)`
 };
 
 enum ThrStatus : int {
@@ -86,7 +121,7 @@ enum ThrSqContainerType : int {
   kThrSqContainerNoType = 0,
   kThrSqContainerTypeFunctionLibrary = 1,  // Shared Library
   kThrSqContainerTypeMlModel = 2,          // Vendor specific ML model
-  kThrSqContainerTypeTflite = 1000,        // TFLite model. Experimental
+  kThrSqContainerTypeTflite = 1000,        // TFLite model.
 };
 
 // Loading types of a SQ container.
@@ -166,6 +201,7 @@ struct ThrInvocationMetrics {
 // - Graph Builder
 // - SchedulingQuantum Management
 // - Buffer Management
+// - Fence Management
 // - InvocationContext
 //
 // Note: SouthBound API doesn't provide thread-safety except async API which
@@ -240,20 +276,66 @@ ThrStatus thrGraphDelete(ThrGraph* graph);
 // unique on the given `ThrGraph` object.
 ThrStatus thrGraphAddEdge(ThrGraph* graph, ThrEdgeId edge_id, ThrEdgeType type);
 
-// Adds a compute (SchedulingQuantum) node to the given `ThrGraph` object. The
-// given `ThrNodeId` should be unique on the given `ThrGraph` object.
+// Adds a node to the given `ThrGraph` object.
+//
+// The given `ThrNodeId` must be unique on the given `ThrGraph` object.
+//
+// The node is implicitly assigned a binding mode of
+// `kThrNodeInterfaceBindingModePositional`.
 ThrStatus thrGraphAddSqNode(ThrGraph* graph, ThrNodeId node_id,
                             ThrNodeType type);
 
-// Set input edges of the given node.
-// Can be called multiple times for multiple inputs.
+// Has identical semantics to `thrGraphAddSqNode`, but allows for the
+// specification of the node's binding mode.
+ThrStatus thrGraphAddSqNodeWithInterfaceBindingMode(
+    ThrGraph* graph, ThrNodeId node_id, ThrNodeType type,
+    ThrNodeInterfaceBindingMode binding_mode);
+
+// Set an input edge of the given node.
+//
+// This API must be called once for each input edge of the given node.
+//
+// NOTE: the given node must have binding mode
+// `kThrNodeInterfaceBindingModePositional`.
 ThrStatus thrGraphConnectNodeInput(ThrGraph* graph, ThrNodeId node_id,
                                    ThrEdgeId edge_id);
 
-// Set output edges of the given node.
-// Can be called multiple time for multiple outputs.
+// Has identical semantics to `thrGraphConnectNodeInput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeNamed`.
+ThrStatus thrGraphConnectNodeInputWithPortName(ThrGraph* graph,
+                                               ThrNodeId node_id,
+                                               ThrEdgeId edge_id,
+                                               ThrNodeInterfaceId port_id);
+
+// Has identical semantics to `thrGraphConnectNodeInput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeIndexed`.
+ThrStatus thrGraphConnectNodeInputWithPortIndex(ThrGraph* graph,
+                                                ThrNodeId node_id,
+                                                ThrEdgeId edge_id,
+                                                unsigned int port_index);
+
+// Set an output edge of the given node.
+//
+// This API must be called once for each output edge of the given node.
+//
+// NOTE: the given node must have binding mode
+// `kThrNodeInterfaceBindingModePositional`.
 ThrStatus thrGraphConnectNodeOutput(ThrGraph* graph, ThrNodeId node_id,
                                     ThrEdgeId edge_id);
+
+// Has identical semantics to `thrGraphConnectNodeOutput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeNamed`.
+ThrStatus thrGraphConnectNodeOutputWithPortName(ThrGraph* graph,
+                                                ThrNodeId node_id,
+                                                ThrEdgeId edge_id,
+                                                ThrNodeInterfaceId port_id);
+
+// Has identical semantics to `thrGraphConnectNodeOutput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeIndexed`.
+ThrStatus thrGraphConnectNodeOutputWithPortIndex(ThrGraph* graph,
+                                                 ThrNodeId node_id,
+                                                 ThrEdgeId edge_id,
+                                                 unsigned int port_index);
 
 // Set input edges of the given `ThrGraph`.
 // Can be called multiple time for multiple inputs.
@@ -350,6 +432,17 @@ ThrStatus thrLoadSqContainerFile(ThrContext* context, ThrSqContainerType type,
 // before the associated `ThrContext` is deleted by `thrContextDelete` API.
 ThrStatus thrUnloadSqContainer(ThrContext* context,
                                ThrSqContainerHandle handle);
+
+// Pins the resources of the SqContainer associated with the given
+// `ThrSqContainerHandle`. This can be used to preload the resources of the
+// SqContainer and prevent them from being released when they are not in use.
+// Note: Pinning a pinned SqContainer is a no-op.
+ThrStatus thrPinSqContainer(ThrContext* context, ThrSqContainerHandle handle);
+
+// Unpins the resources of the SqContainer associated with the given
+// `ThrSqContainerHandle`.
+// Note: Unpinning an unpinned SqContainer is a no-op.
+ThrStatus thrUnpinSqContainer(ThrContext* context, ThrSqContainerHandle handle);
 
 // Assigns a SchedulingQuantum for the node of `ThrNodeId`.
 // `func_name` needs to be provided for a DSP function.
@@ -468,6 +561,29 @@ inline ThrStatus thrRegisterBufferAhwbWithOffset(ThrContext* context,
 // API before the associated `ThrContext` is deleted by `thrContextDelete` API.
 ThrStatus thrUnregisterBuffer(ThrContext* context, ThrBufferHandle handle);
 
+// --------------------------------------------------------------------------
+// Fence Management APIs.
+
+// Registers the given `fence_fd` of type `type` to the given `ThrContext`.
+//
+// Implementations are required to dup `fence_fd` internally. Accordingly, the
+// caller must close `fence_fd`.
+ThrStatus thrRegisterFence(ThrContext* context, ThrFenceType type,
+                           int fence_fd, ThrFenceHandle* handle);
+
+// Unregisters the registered fence associated with the given `ThrFenceHandle`.
+//
+// Implementations are required to close the duped fd internally.
+//
+// Note: the registered `ThrFenceHandle` must be unregistered via this API prior
+// to deleting `context`.
+ThrStatus thrUnregisterFence(ThrContext* context, ThrFenceHandle handle);
+
+// Get a dup of the fence's fd.
+ThrStatus thrFenceGetDupFd(ThrContext* context, ThrFenceHandle handle,
+                           int* fence_fd);
+
+// --------------------------------------------------------------------------
 // InvocationContext APIs
 // These APIs are used to control the execution of the graph.
 //
@@ -510,6 +626,17 @@ ThrStatus thrInvocationContextDetachBuffer(ThrInvocationContext* icontext,
 ThrStatus thrInvocationContextPrepareForInvoke(ThrInvocationContext* icontext,
                                                bool create_output_sync_fence);
 
+// Has identical semantics to `thrInvocationContextPrepareForInvoke`, but allows
+// for the specification of the output fence type. As such,
+// `thrInvocationContextGetOutputBufferFence` must be used to retrieve the
+// output fence.
+//
+// Notes on `output_fence_type`:
+//  - cannot be `kThrFenceTypeEventFd`.
+//  - if `kThrFenceNoType`, then no output fence is created.
+ThrStatus thrInvocationContextPrepareForInvoke2(ThrInvocationContext* icontext,
+                                                ThrFenceType output_fence_type);
+
 // Expects the user has already attached the required arguments. Can be called
 // again to re-invoke the executor, but only after the previous invocation has
 // completed.
@@ -548,10 +675,19 @@ ThrStatus thrInvocationContextCancel(ThrInvocationContext* icontext);
 ThrStatus thrInvocationContextAttachInputBufferSyncFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, int fence_fd);
 
+// Has identical semantics to `thrInvocationContextAttachInputBufferSyncFence`,
+// but takes a fence handle rather than a raw fd. As such, `handle` must
+// be detached via `thrInvocationContextDetachInputBufferFence`.
+ThrStatus thrInvocationContextAttachInputBufferFence(
+    ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle handle);
+
 // Detaches the given sync fence from the graph input edge.
-//
 ThrStatus thrInvocationContextDetachInputBufferSyncFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, int fence_fd);
+
+// Detaches the given fence from the graph input edge.
+ThrStatus thrInvocationContextDetachInputBufferFence(
+    ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle handle);
 
 // Returns an output sync fence to the graph output edge. When graph execution
 // is finished, the sync fence will be fired.
@@ -559,6 +695,14 @@ ThrStatus thrInvocationContextDetachInputBufferSyncFence(
 // Note: User needs to close the returned fd when no longer in use.
 ThrStatus thrInvocationContextGetOutputBufferSyncFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, int* fence_fd);
+
+// Has identical semantics to `thrInvocationContextGetOutputBufferSyncFence`,
+// but returns a fence handle rather than a raw fd.
+//
+// Note: the returned fence handle must be unregistered via
+// `thrUnregisterFence`.
+ThrStatus thrInvocationContextGetOutputBufferFence(
+    ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle* handle);
 
 // InvocationContext ScratchPad APIs
 //

@@ -207,4 +207,33 @@ TEST_F(LiteRtCpuOptionsFieldsTest,
               IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
+TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackWeightCacheDescriptor) {
+  const int expected_fd = 1234;
+  int fd;
+
+  // Avoid a no-op test.
+  LITERT_EXPECT_OK(
+      LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(cpu_options_, &fd));
+  ASSERT_NE(fd, expected_fd);
+
+  // Actual test.
+  LITERT_EXPECT_OK(LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
+      cpu_options_, expected_fd));
+  LITERT_EXPECT_OK(
+      LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(cpu_options_, &fd));
+  ASSERT_EQ(fd, expected_fd);
+}
+
+TEST_F(LiteRtCpuOptionsFieldsTest,
+       SetXNNPackWeightCacheFailsIfBothPathAndDescriptorAreSet) {
+  const absl::string_view path = "a/path/to/the/cache";
+  const int fd = 1234;
+
+  LITERT_EXPECT_OK(
+      LiteRtSetCpuOptionsXnnPackWeightCachePath(cpu_options_, path.data()));
+  EXPECT_THAT(
+      LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(cpu_options_, fd),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
 }  // namespace

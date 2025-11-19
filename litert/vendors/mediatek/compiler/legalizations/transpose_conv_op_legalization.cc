@@ -17,11 +17,11 @@
 #include <cstdint>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_options.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -52,7 +52,7 @@ Expected<void> LegalizeTransposeConvOp(
   CHECK_OP_IDX_AND_RETURN_ERROR(weight_tensor_id);
   input_indices.push_back(*weight_tensor_id);
 
-  // if there's on bias input, add a zero bias
+  // if there's no bias input, add a zero bias
   if (op.Inputs().size() < 4) {
     if (!op.Inputs()[0].HasWeights()) {
       return Error(kLiteRtStatusErrorRuntimeFailure,

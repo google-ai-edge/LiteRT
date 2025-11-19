@@ -35,8 +35,8 @@ limitations under the License.
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "flatbuffers/string.h"  // from @flatbuffers
 #include "flatbuffers/util.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/schema/schema_conversion_utils.h"
-#include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
+#include "tflite/converter/schema/schema_conversion_utils.h"
+#include "tflite/converter/schema/schema_generated.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"
 #include "tflite/experimental/genai/genai_ops.h"

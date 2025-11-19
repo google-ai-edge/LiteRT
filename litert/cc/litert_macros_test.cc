@@ -19,9 +19,11 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_logging.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_logging.h"
 #include "litert/test/matchers.h"
 
 namespace litert {
@@ -181,7 +183,7 @@ TEST(LiteRtAssignOrReturnTest, MoveOnlyVariableAssignmentWorks) {
 }
 
 TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
-  const Expected<int> InvalidArgumentError =
+  Expected<int> InvalidArgumentError =
       Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument));
 
   int canary_value = 0;
@@ -211,7 +213,7 @@ TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
 }
 
 TEST(LiteRtAssignOrReturnTest, AllowsStructuredBindings) {
-  const Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
+  Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
   auto Function = [&]() -> Expected<std::pair<int, const char*>> {
     LITERT_ASSIGN_OR_RETURN((auto [i, c]), e);
     EXPECT_EQ(i, e.Value().first);
@@ -227,7 +229,7 @@ TEST(LiteRtAbortIfErrorTest, DoesntDieWithSuccessValues) {
 }
 
 TEST(LiteRtAbortIfErrorTest, DiesWithErrorValue) {
-  const Expected<int> InvalidArgumentError = Expected<int>(
+  Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
@@ -245,14 +247,14 @@ TEST(LiteRtAssignOrAbortTest, WorksWithValidExpected) {
 }
 
 TEST(LiteRtAssignOrAbortTest, AllowsStructuredBindings) {
-  const Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
+  Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
   LITERT_ASSIGN_OR_ABORT((auto [i, c]), e);
   EXPECT_EQ(i, e.Value().first);
   EXPECT_EQ(c, e.Value().second);
 }
 
 TEST(LiteRtAssignOrAbortTest, DiesWithError) {
-  const Expected<int> InvalidArgumentError = Expected<int>(
+  Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError),
@@ -265,7 +267,7 @@ TEST(LiteRtAssignOrAbortTest, DiesWithError) {
 }
 
 TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
-  const Expected<int> InvalidArgumentError = Expected<int>(
+  Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
@@ -333,6 +335,38 @@ TEST(LiteRtErrorStatusBuilderTest, CastToLiteRtStatusLogsError) {
   intercepted_logs << log_interceptor;
   EXPECT_THAT(intercepted_logs.str(), HasSubstr("Failed a subcall."));
   EXPECT_THAT(intercepted_logs.str(), HasSubstr("An error message."));
+}
+
+TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatus) {
+  auto error = []() -> absl::Status {
+    LITERT_RETURN_IF_ERROR(
+        Unexpected(kLiteRtStatusErrorInvalidArgument, "An error message."));
+    return absl::OkStatus();
+  }();
+  EXPECT_FALSE(error.ok());
+  EXPECT_EQ(error.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(error.message(), HasSubstr("An error message."));
+}
+
+TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatusOr) {
+  auto error_1 = []() -> absl::StatusOr<int> {
+    LITERT_RETURN_IF_ERROR(
+        Unexpected(kLiteRtStatusErrorInvalidArgument, "An error message."));
+    return 1;
+  }();
+  EXPECT_FALSE(error_1.ok());
+  EXPECT_EQ(error_1.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(error_1.status().message(), HasSubstr("An error message."));
+
+  auto error_2 = []() -> absl::StatusOr<int> {
+    LITERT_ASSIGN_OR_RETURN(
+        auto v, Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                         "An error message.")));
+    return v;
+  }();
+  EXPECT_FALSE(error_2.ok());
+  EXPECT_EQ(error_2.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(error_2.status().message(), HasSubstr("An error message."));
 }
 
 }  // namespace

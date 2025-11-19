@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_copts", "tflite_linkopts")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_stable_tflite_abi", "cc_test_with_tflite")
 

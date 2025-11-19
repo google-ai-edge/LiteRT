@@ -1,11 +1,13 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert/vendors/qualcomm:__subpackages__"],
+    default_visibility = ["//litert:__subpackages__"],
 )
 
 cc_library(
@@ -19,6 +21,7 @@ cc_library(
     hdrs = ["tensor_pool.h"],
     deps = [
         "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
@@ -32,6 +35,7 @@ cc_test(
     ],
     deps = [
         ":tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@com_google_googletest//:gtest_main",
@@ -53,6 +57,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 

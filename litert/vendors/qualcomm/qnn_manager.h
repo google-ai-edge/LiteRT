@@ -28,20 +28,17 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"  // IWYU pragma: keep
-#include "litert/cc/litert_shared_library.h"
 #include "litert/vendors/qualcomm/common.h"
-#include "litert/vendors/qualcomm/core/backends/htp_device_config.h"
-#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "System/QnnSystemContext.h"  // from @qairt
@@ -89,12 +86,10 @@ class QnnManager {
   ~QnnManager();
 
   static Expected<Ptr> Create(
-      absl::Span<const QnnBackend_Config_t*> configs,
       const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt,
       std::optional<::qnn::SocInfo> soc_info = std::nullopt);
 
-  static absl::Span<const QnnBackend_Config_t*> DefaultBackendConfigs();
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
   // Get resolved function pointers for qnn sdk calls. Nullptr if functions
@@ -114,7 +109,8 @@ class QnnManager {
 
   // Create a context handle for compilation.
   Expected<ContextHandle> CreateContextHandle(
-      absl::Span<const QnnContext_Config_t*> configs);
+      absl::Span<const QnnContext_Config_t*> configs,
+      ::qnn::Profiling profiling_level);
 
   // Create a context handle for inference, from a given bytecode.
   Expected<ContextHandle> CreateContextHandle(
@@ -136,13 +132,14 @@ class QnnManager {
 
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.
-  Qnn_BackendHandle_t& BackendHandle() { return backend_handle_; }
+  Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
+
+  const ::qnn::Options& GetOptions() const { return options_; }
 
  private:
   QnnManager() = default;
 
-  LiteRtStatus Init(absl::Span<const QnnBackend_Config_t*> configs,
-                    std::optional<std::string> shared_library_dir,
+  LiteRtStatus Init(std::optional<std::string> shared_library_dir,
                     std::optional<::qnn::SocInfo> soc_info,
                     const ::qnn::Options& options);
 
@@ -163,31 +160,16 @@ class QnnManager {
   // Resolve all available QNN SDK functions from (already) loaded so. If
   // multiple providers are found, selects the first one with a suitable
   // version. Fails if none can be found.
-  LiteRtStatus ResolveApi();
+  LiteRtStatus ResolveApi(Qnn_Version_t expected_qnn_version);
 
   // Resolve all available QNN SDK functions from (already) loaded so. If
   // multiple providers are found, selects the first one with a suitable
   // version. Fails if none can be found.
   LiteRtStatus ResolveSystemApi();
 
-  // Get qnn log handle. Nullptr if logCreate has not been successfully called.
-  Qnn_LogHandle_t& LogHandle() { return log_handle_; }
-
   // Get qnn device handle. Nullptr if deviceCreate has not been successfully
   // called.
-  Qnn_DeviceHandle_t& DeviceHandle() { return device_handle_; }
-
-  // Signal QNN SDK to free any memory related to the device. Does nothing
-  // if deviceCreate has not been called.
-  LiteRtStatus FreeDevice();
-
-  // Signal QNN SDK to free any memory related to logging. Does nothing
-  // if logCreate has not been called.
-  LiteRtStatus FreeLogging();
-
-  // Signal QNN SDK to free any memory related to backend. Does nothing
-  // if backendCreate has not been called.
-  LiteRtStatus FreeBackend();
+  Qnn_DeviceHandle_t DeviceHandle() { return backend_->GetDeviceHandle(); }
 
   // Handle to the shared library that implements the API. The library is
   // released when the manager is destroyed.
@@ -200,15 +182,9 @@ class QnnManager {
   const QnnInterface_t* interface_ = nullptr;
   const QnnSystemInterface_t* system_interface_ = nullptr;
 
-  Qnn_LogHandle_t log_handle_ = nullptr;
-  Qnn_BackendHandle_t backend_handle_ = nullptr;
-  Qnn_DeviceHandle_t device_handle_ = nullptr;
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[6];  // V75
-  std::unique_ptr<::qnn::HtpDeviceConfig> htp_device_config_;
-  std::vector<QnnDevice_Config_t> device_configs_;
-  // For dispatch options
-  std::unique_ptr<PerfControl> perf_control_{nullptr};
-  const QnnDevice_PlatformInfo_t* device_platform_info_ = nullptr;
+  std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
+  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
+  ::qnn::Options options_;
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because
@@ -222,6 +198,8 @@ class QnnManager::ContextHandle {
         profile_(profile),
         free_fn_(free_fn),
         profile_free_fn_(profile_free_fn) {}
+
+  ContextHandle() = default;
 
   ~ContextHandle() {
     if (profile_ && profile_free_fn_) {
@@ -254,6 +232,7 @@ class QnnManager::ContextHandle {
   ContextHandle& operator=(const ContextHandle& other) = delete;
 
   Qnn_ContextHandle_t get() const noexcept { return context_handle_; }
+  Qnn_ProfileHandle_t get_profile_handle() const noexcept { return profile_; }
   explicit operator bool() const noexcept { return context_handle_ != nullptr; }
 
  private:

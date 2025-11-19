@@ -22,22 +22,30 @@
 #include <iterator>
 #include <list>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"  // IWYU pragma: export
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/litert_logging.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_logging.h"
+#include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -366,6 +374,27 @@ class LiteRtTensorT {
   const TensorType& Type() const { return tensor_type_; }
   TensorType& Type() { return tensor_type_; }
 
+  // Get ranked type directly.
+  ::litert::Expected<LiteRtRankedTensorType> Ranked() const {
+    if (Type().first == kLiteRtRankedTensorType) {
+      return Type().second.ranked_tensor_type;
+    }
+    return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
+                           "Tensor type is not ranked");
+  }
+
+  // Number of elements in the tensor.
+  size_t NumElements() const {
+    auto ranked = Ranked();
+    if (!ranked) {
+      return 0;
+    }
+    const auto& dims = ranked->layout.dimensions;
+    return static_cast<size_t>(std::accumulate(
+        std::cbegin(dims), std::cend(dims), 1,
+        std::multiplies<std::remove_reference_t<decltype(dims[0])>>()));
+  }
+
   // Set the tensor type.
   template <class Arg>
   void SetType(Arg&& arg) {
@@ -469,6 +498,10 @@ class LiteRtOpT {
   // Get any custom options attached to this op. Empty if there are none.
   litert::BufferRef<uint8_t> CustomOptions() const { return custom_options_; }
 
+  // Op index. (For internal debugging only)
+  void SetOpIndex(uint32_t op_index) { op_index_ = op_index; }
+  uint32_t OpIndex() const { return op_index_; }
+
   // Attach custom opaque optins to this op.
   template <class... Args>
   void SetCustomOptions(Args&&... args) {
@@ -485,6 +518,20 @@ class LiteRtOpT {
   // Set the op code.
   void SetOpCode(LiteRtOpCode litert_op_code) {
     litert_op_code_ = litert_op_code;
+  }
+
+  // Get the custom code if the op is a custom op.
+  ::litert::Expected<absl::string_view> CustomCode() const {
+    if (OpCode() != kLiteRtOpCodeTflCustom) {
+      return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
+                             "Op code is not custom");
+    }
+    return absl::string_view(custom_code_);
+  }
+
+  // Set the custom code.
+  void SetCustomCode(std::string custom_code) {
+    custom_code_ = std::move(custom_code);
   }
 
   // IR is generally, default constructible and movable but not copyable.
@@ -527,6 +574,10 @@ class LiteRtOpT {
 
   std::vector<LiteRtTensor> inputs_;
   std::vector<LiteRtTensor> outputs_;
+
+  std::string custom_code_;
+
+  uint32_t op_index_;
 
   // TFLITE
   int32_t tfl_op_code_ind_ = litert::internal::kDispatchOpCodeTflInd;
@@ -636,6 +687,20 @@ class LiteRtSubgraphT {
     return tensors_.RemoveIf(pred);
   }
 
+  // Transfers the ownership of ops from the given allocator to this subgraph.
+  // Ops are appended in order.
+  void TransferOpsFrom(LiteRtOpT::Alloc& other, size_t index) {
+    ops_.TransferFrom(other, index);
+  }
+  // Transfers the ownership of tensors from the given allocator to this
+  // subgraph. Tensors are appended in order.
+  void TransferTensorsFrom(LiteRtTensorT::Alloc& other) {
+    tensors_.TransferFrom(other);
+  }
+
+  LiteRtOpT::Alloc& OpsAllocation() { return ops_; }
+  LiteRtTensorT::Alloc& TensorsAllocation() { return tensors_; }
+
   // IR is generally, default constructible and movable but not copyable.
   LiteRtSubgraphT() = default;
   LiteRtSubgraphT(::litert::internal::BufferManager* buffer_manager)
@@ -679,17 +744,61 @@ class LiteRtSignatureT {
       "<placeholder signature>";
 
   LiteRtSignatureT(LiteRtSubgraph subgraph, StrVec input_names,
-                   StrVec output_names, std::string key)
+                   std::vector<LiteRtTensor> input_tensors, StrVec output_names,
+                   std::vector<LiteRtTensor> output_tensors, std::string key)
       : key_(std::move(key)),
         subgraph_(subgraph),
         input_names_(std::move(input_names)),
-        output_names_(std::move(output_names)) {}
+        input_tensors_(std::move(input_tensors)),
+        output_names_(std::move(output_names)),
+        output_tensors_(std::move(output_tensors)) {
+    ABSL_DCHECK_EQ(input_names_.size(), input_tensors_.size());
+    ABSL_DCHECK_EQ(output_names_.size(), output_tensors_.size());
+    for (size_t i = 0; i < input_names_.size(); ++i) {
+      input_name_to_tensor_.emplace(input_names_[i], input_tensors_[i]);
+    }
+    for (size_t i = 0; i < output_names_.size(); ++i) {
+      output_name_to_tensor_.emplace(output_names_[i], output_tensors_[i]);
+    }
+  }
 
   // String named inputs for called subgraph.
   const StrVec& InputNames() const { return input_names_; }
 
   // String named outputs for called subgraph.
   const StrVec& OutputNames() const { return output_names_; }
+
+  // Get the input tensor at the given index.
+  LiteRtTensor GetInputTensor(size_t index) const {
+    return input_tensors_.at(index);
+  }
+
+  // Get the output tensor at the given index.
+  LiteRtTensor GetOutputTensor(size_t index) const {
+    return output_tensors_.at(index);
+  }
+
+  // Find the input tensor with the given name.
+  ::litert::Expected<LiteRtTensor> FindInputTensor(
+      absl::string_view name) const {
+    if (auto it = input_name_to_tensor_.find(std::string(name));
+        it != input_name_to_tensor_.end()) {
+      return it->second;
+    }
+    return ::litert::Unexpected(kLiteRtStatusErrorNotFound,
+                                "Signature input alias not found");
+  }
+
+  // Find the output tensor with the given name.
+  ::litert::Expected<LiteRtTensor> FindOutputTensor(
+      absl::string_view name) const {
+    if (auto it = output_name_to_tensor_.find(std::string(name));
+        it != output_name_to_tensor_.end()) {
+      return it->second;
+    }
+    return ::litert::Unexpected(kLiteRtStatusErrorNotFound,
+                                "Signature output alias not found");
+  }
 
   // Get the callable subgraph.
   const LiteRtSubgraphT& GetSubgraph() const { return *subgraph_; }
@@ -702,8 +811,11 @@ class LiteRtSignatureT {
     const auto key_eq = key_ == other.key_;
     const auto subgraph_eq = subgraph_ == other.subgraph_;
     const auto input_names_eq = input_names_ == other.input_names_;
+    const auto input_tensors_eq = input_tensors_ == other.input_tensors_;
     const auto output_names_eq = output_names_ == other.output_names_;
-    return key_eq && subgraph_eq && input_names_eq && output_names_eq;
+    const auto output_tensors_eq = output_tensors_ == other.output_tensors_;
+    return key_eq && subgraph_eq && input_names_eq && input_tensors_eq &&
+           output_names_eq && output_tensors_eq;
   }
 
   // IR is generally, default constructible and movable but not copyable.
@@ -719,12 +831,84 @@ class LiteRtSignatureT {
   LiteRtSubgraph subgraph_;
 
   StrVec input_names_;
+  std::vector<LiteRtTensor> input_tensors_;
+  std::unordered_map<std::string, LiteRtTensor> input_name_to_tensor_;
   StrVec output_names_;
+  std::vector<LiteRtTensor> output_tensors_;
+  std::unordered_map<std::string, LiteRtTensor> output_name_to_tensor_;
 };
 
 // Make a basic signature from information in the given subgraph. Used with the
 // main subgraph when no explicit signatures have been authored.
 LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph);
+
+// Rewriter (Experimental feature)
+
+// The LiteRtRewriterT class provides an interface to build and modify
+// LiteRtSubgraphT instances in a transactional manner. It allows for the
+// creation of new tensors and operators, cloning existing ones, and marking
+// operators for erasure. Changes are accumulated within the rewriter and
+// applied to a target subgraph only when ApplyChanges() is called. This ensures
+// atomic updates to the graph structure.
+
+class LiteRtRewriterT {
+ public:
+  LiteRtRewriterT() = default;
+  LiteRtRewriterT(const LiteRtRewriterT&) = delete;
+  LiteRtRewriterT(LiteRtRewriterT&&) = default;
+  LiteRtRewriterT& operator=(const LiteRtRewriterT&) = delete;
+  LiteRtRewriterT& operator=(LiteRtRewriterT&&) = default;
+
+  // Get the subgraph that is being rewritten.
+  LiteRtSubgraphT& Subgraph() { return subgraph_; }
+
+  // Returns the set of ops that are marked for erases.
+  absl::flat_hash_set<LiteRtOp> Erases() const { return erases_; }
+
+  // Builds a new LiteRt tensor owned by the rewriter.
+  LiteRtTensorT& BuildTensor(const LiteRtWeightsT& weights,
+                             Quantization quantization, TensorType tensor_type,
+                             std::optional<std::string> name = std::nullopt);
+
+  // Builds a new LiteRt tensor owned by the rewriter, clone of src.
+  LiteRtTensorT& BuildTensor(const LiteRtTensorT& src);
+
+  // Builds a new LiteRt op owned by the rewriter.
+  LiteRtOpT& BuildOp(LiteRtOpCode code, std::vector<LiteRtTensor> inputs,
+                     std::vector<LiteRtTensor> outputs);
+
+  // Builds a new LiteRt op owned by the rewriter, clone of src.
+  LiteRtOpT& BuildOp(LiteRtOpT& src, std::vector<LiteRtTensor> inputs,
+                     std::vector<LiteRtTensor> outputs);
+
+  // Checks if op is allocated in rewriter.
+  bool IsOpAllocated(LiteRtOp op) const { return allocated_ops_.contains(op); }
+
+  // Checks if tensor is allocated in rewriter.
+  bool IsTensorAllocated(LiteRtTensor tensor) const {
+    return allocated_tensors_.contains(tensor);
+  }
+
+  // Transactionally erases an op, changes won't be applied until ApplyChanges
+  // is called.
+  void EraseOp(LiteRtOp opToErase);
+
+  // Applies all changes to the given subgraph, that was recorded by the
+  // rewriter.
+  //
+  // Note: This internal function is intentionally not exposed to the public
+  // API, to avoid users from accidentally applying changes mid-computation.
+  void ApplyChanges(LiteRtSubgraphT* subgraph_to_apply);
+
+ private:
+  // Subgraph to hold the IR.
+  LiteRtSubgraphT subgraph_;
+
+  // Records of transactions.
+  absl::flat_hash_set<LiteRtOp> erases_;
+  absl::flat_hash_set<LiteRtTensor> allocated_tensors_;
+  absl::flat_hash_set<LiteRtOp> allocated_ops_;
+};
 
 //
 // Model
@@ -794,7 +978,7 @@ class LiteRtModelT {
 
   // Transfers given subgraphs into this model. New subgraphs are appended.
   void TransferSubgraphsFrom(LiteRtSubgraphT::Alloc&& subgraphs) {
-    // TODO: Consider mergeing buffer managers here.
+    // TODO: Consider merging buffer managers here.
     subgraphs_.TransferFrom(std::move(subgraphs));
   }
 
@@ -851,7 +1035,7 @@ class LiteRtModelT {
   template <class... Args>
   LiteRtStatus PushMetadata(absl::string_view key, Args&&... args) {
     if (metadata_.find(std::string(key)) != metadata_.end()) {
-      return kLiteRtStatusErrorInvalidArgument;
+      return kLiteRtStatusErrorAlreadyExists;
     }
     const auto buf_id = Buffers()->RegisterOwnedBuffer(
         ::litert::OwningBufferRef<uint8_t>(std::forward<Args>(args)...));
@@ -869,6 +1053,11 @@ class LiteRtModelT {
       return std::get<BufferManager*>(buffer_manager_);
     }
   }
+
+  // Records the original source path of the model, if known.
+  void SetSourcePath(std::string path) { source_path_ = path; }
+
+  const std::optional<std::string>& SourcePath() const { return source_path_; }
 
   // Attach an asset to the given op. An asset is a non-tensor buffer
   // that is used by the op. Assets may be referenced by multiple ops.
@@ -939,6 +1128,7 @@ class LiteRtModelT {
   // TFLITE
   TflOpCodes tfl_operator_codes_;
   TflFlatbuffer tfl_flatbuffer_;
+  std::optional<std::string> source_path_;
 };
 
 // Get the build stamp from the model if it exists.
@@ -980,6 +1170,86 @@ void SetTflOpCodes(LiteRtModelT& litert_model, Arg&& arg) {
   litert_model.tfl_operator_codes_ = std::forward<Arg>(arg);
 }
 
+// Model graph stuff
+// using IrMapping = absl::flat_hash_map<LiteRtTensor, LiteRtTensor>;
+
+// CLONING
+
+// Clones the basic data between tensors (like name and data) but not
+// things related to incoming/outgoing edges (users, defining op) or weights.
+void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest);
+
+// Clones the basic data between ops (like op code and options) but
+// things related to incoming/outgoing edges (input/output tensors).
+void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest);
+
+// Same as clone to, but allocates a the dest tensor into given subgraph.
+LiteRtTensorT& MakeClone(LiteRtSubgraphT& parent, const LiteRtTensorT& src);
+
+// Same as clone to, but allocates a the dest op into given subgraph.
+LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src);
+
+// OBSERVERS
+
+// Checks if tensor is input to given op, return its index if so.
+std::optional<LiteRtParamIndex> FindInput(const LiteRtOpT& op,
+                                          const LiteRtTensorT& tensor);
+
+// Checks if tensor is output to given op, return its index if so.
+std::optional<LiteRtParamIndex> FindOutput(const LiteRtOpT& op,
+                                           const LiteRtTensorT& tensor);
+
+// Checks if tensor is input to given subgraph, return its index if so.
+std::optional<LiteRtParamIndex> FindInput(const LiteRtSubgraphT& subgraph,
+                                          const LiteRtTensorT& tensor);
+
+// Checks if tensor is output to given subgraph, return its index if so.
+std::optional<LiteRtParamIndex> FindOutput(const LiteRtSubgraphT& subgraph,
+                                           const LiteRtTensorT& tensor);
+
+// Check if tensor is part of subgraph IO.
+bool IsIO(const LiteRtSubgraphT& subgraph, const LiteRtTensorT& tensor);
+
+using UseIndices =
+    absl::InlinedVector<LiteRtParamIndex, kExpectedMaxNumOfTensorUses>;
+
+// Checks if tensor is used by op, return the use inds for each use of tensor by
+// op (there may be multiple). These are the indexes to call
+// LiteRtTensorT::GetUse with.
+UseIndices FindUseInds(const LiteRtTensorT& tensor, const LiteRtOpT& op);
+
+// Is this tensor a constant tensor?
+bool IsConstant(const LiteRtTensorT& tensor);
+
+// Is this tensor a subgraph input tensor?
+bool IsSubgraphInput(const LiteRtTensorT& tensor);
+
+// MUTATORS
+
+// Attaches the pre-allocated tensor to be an input of given op.
+void AttachInput(LiteRtTensor tensor, LiteRtOpT& op);
+
+// Attaches the pre-allocated tensor to be an output of given op.
+void AttachOutput(LiteRtTensor tensor, LiteRtOpT& op);
+
+// Remove the input edge from an op. Return the disconnected tensor.
+LiteRtTensor DisconnectInput(LiteRtOpT& op, LiteRtParamIndex input_ind);
+
+// Remove an output edge from an op. Return the disconnected tensor.
+LiteRtTensor DisconnectOutput(LiteRtOpT& op, LiteRtParamIndex output_ind);
+
+// Remove all incoming and outgoing edges from this op. This can prep nodes
+// for removal in DCE.
+void Drop(LiteRtOpT& litert_op);
+
+// Run very naive dead code elimination. Removes only ops/tensors that have no
+// in/out edges. Ops are handled first. Ignores subgraph IO. Not recursive and
+// does only one pass. Returns if the graph was modified.
+// NOTE: This de-allocates removed objects, only use when references to these
+// objects will not be used.
+// TODO: Update this with complete work-list based approach.
+bool DCE(LiteRtSubgraphT& subgraph);
+
 }  // namespace litert::internal
 
 //
@@ -1011,6 +1281,16 @@ class LiteRtOpListT {
 //
 // Traversal Utils
 //
+
+namespace litert::internal {
+
+// Does graph consist of only disptach ops.
+bool IsFullyCompiled(const LiteRtModelT& graph);
+
+// Does graph consist of any ops compiled for NPU.
+bool HasAnyCompiled(const LiteRtModelT& graph);
+
+}  // namespace litert::internal
 
 // Apply func to all the IR in the given model. Iteration behavior is determined
 // by the callback signature.
@@ -1052,6 +1332,10 @@ void ForEachIr(LiteRtModel model, F func) {
       }
     }
   }
+}
+template <class F>
+void ForEachIr(const LiteRtModelT& model, F func) {
+  return ForEachIr(const_cast<LiteRtModel>(&model), func);
 }
 
 //
@@ -1116,12 +1400,22 @@ void AbslStringify(Sink& sink, const LiteRtOpT* op) {
 namespace absl {
 
 template <class Sink>
-void AbslStringify(Sink& sink, const absl::Span<LiteRtOp>& ops) {
+void StringifyLiteRtOpImpl(Sink& sink, const absl::Span<const LiteRtOp>& ops) {
   for (auto it = ops.begin(); it < ops.end() - 1; ++it) {
     sink.Append(absl::StrFormat("%v", **it));
     sink.Append("/");
   }
   sink.Append(absl::StrFormat("%v", *ops.back()));
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const absl::Span<const LiteRtOp>& ops) {
+  StringifyLiteRtOpImpl(sink, ops);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const absl::Span<LiteRtOp>& ops) {
+  StringifyLiteRtOpImpl(sink, ops);
 }
 
 }  // namespace absl
@@ -1178,6 +1472,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
     case tflite::BuiltinOptions_AddOptions: {
       const auto* add_opts = opts.AsAddOptions();
       absl::Format(&sink, "%v", add_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SubOptions: {
+      const auto* sub_opts = opts.AsSubOptions();
+      absl::Format(&sink, "%v", sub_opts);
       break;
     }
     default:
@@ -1239,6 +1538,22 @@ void AbslStringify(Sink& sink, const AddOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const AddOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SubOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pot = opts.pot_scale_int16;
+  if (pot) {
+    b("pot", pot);
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SubOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

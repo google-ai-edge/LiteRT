@@ -1,6 +1,8 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -30,7 +32,9 @@ cc_library(
     hdrs = ["miscs.h"],
     deps = [
         ":log",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -43,6 +47,8 @@ cc_test(
         ":log",
         ":miscs",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
+        "//litert/vendors/qualcomm/core/backends:ir_backend",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -51,4 +57,18 @@ litert_device_exec(
     name = "utils_device_test",
     backend_id = "qualcomm",
     target = ":utils_test",
+)
+
+cc_library(
+    name = "qnn_model",
+    srcs = ["qnn_model.cc"],
+    hdrs = ["qnn_model.h"],
+    deps = [
+        ":log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
 )

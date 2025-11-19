@@ -53,6 +53,7 @@ LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptionsConst options,
                                              uint32_t* flags);
 
 // Sets the XNNPack weight cache file path used by the CPU accelerator.
+// Weight cache file path and descriptor must not both be set.
 // The `path` string is owned by the caller and must outlive the `options`
 // object.
 LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
@@ -63,6 +64,16 @@ LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
 // LiteRtSetCpuOptionsXnnPackWeightCachePath() API.
 LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCachePath(
     LiteRtCpuOptionsConst options, const char** path);
+
+// Sets the XNNPack weight cache file descriptor used by the CPU accelerator.
+// Weight cache file path and descriptor must not both be set.
+LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    LiteRtCpuOptions options, int fd);
+
+// Gets the XNNPack weight cache file descriptor used by the CPU accelerator.
+LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    LiteRtCpuOptionsConst options, int* fd);
+
 
 #ifdef __cplusplus
 }  // extern "C"

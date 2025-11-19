@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 
 package(
@@ -38,20 +40,27 @@ cc_library_with_testonly_vis(
         ":ir_allocator",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_c_types_printing",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_logging",
+        "//litert/cc/internal:litert_c_types_printing",
+        "//litert/cc/internal:litert_consts",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_logging",
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/core/c:private_c_api_types",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
@@ -86,18 +95,17 @@ cc_library(
         ":buffer_manager",
         ":flatbuffer_to_litert",
         ":model",
-        ":model_graph",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
@@ -121,18 +129,18 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_model_predicates",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_model_predicates",
         "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:test_models",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
         "//tflite/schema:schema_fbs_with_mutable",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -144,7 +152,7 @@ cc_library(
         ":litert_to_flatbuffer",
         ":model",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -154,7 +162,6 @@ cc_library(
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs_with_mutable",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -165,7 +172,8 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_model_types",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/core/util:flatbuffer_tools",
@@ -178,7 +186,7 @@ cc_test(
     srcs = ["flatbuffer_to_litert_test.cc"],
     deps = [
         ":flatbuffer_to_litert",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -239,8 +247,8 @@ cc_library(
     deps = [
         ":flatbuffer_to_litert",
         ":model",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_detail",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_detail",
         "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/types:span",
     ],
@@ -263,35 +271,14 @@ cc_test(
     ],
 )
 
-cc_library_with_testonly_vis(
-    name = "model_graph",
-    srcs = ["model_graph.cc"],
-    hdrs = [
-        "model_graph.h",
-    ],
-    deps = [
-        ":model",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_consts",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/log:absl_check",
-    ],
-)
-
 cc_library(
     name = "graph_validation",
     srcs = ["graph_validation.cc"],
     hdrs = ["graph_validation.h"],
     deps = [
         ":model",
-        ":model_graph",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_detail",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_detail",
     ],
 )
 
@@ -312,7 +299,6 @@ cc_test(
         ":graph_validation",
         ":ir_allocator",
         ":model",
-        ":model_graph",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "@com_google_absl//absl/strings:string_view",
@@ -324,6 +310,10 @@ cc_test(
 cc_test(
     name = "model_buffer_test",
     srcs = ["model_buffer_test.cc"],
+    copts = select({
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":model",
         ":model_buffer",
@@ -337,13 +327,15 @@ cc_test(
         "//tflite:model_builder",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
+        "//tflite/converter:allocation",
         "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-    ],
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }),
 )
 
 cc_test(
@@ -354,6 +346,22 @@ cc_test(
         "//litert/cc:litert_buffer_ref",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "rewriter_test",
+    srcs = ["rewriter_test.cc"],
+    deps = [
+        ":buffer_manager",
+        ":model",
+        ":model_serialize",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

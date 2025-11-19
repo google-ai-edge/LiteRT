@@ -13,16 +13,16 @@
 // limitations under the License.
 #include "litert/c/options/litert_mediatek_options.h"
 
+#include <cstdint>
 #include <memory>
+#include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_detail.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
+#include "litert/core/cache/hash_util.h"
+
 struct LiteRtMediatekOptionsT {
   LiteRtMediatekOptionsNeronSDKVersionType neron_sdk_version =
       kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
@@ -32,7 +32,10 @@ struct LiteRtMediatekOptionsT {
   bool l1_cache_optimizations = false;
   LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint =
       kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
+  bool disable_dla_dir_removal = false;
+  std::string mediatek_dla_dir;
 };
+
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -46,6 +49,18 @@ LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
         delete reinterpret_cast<LiteRtMediatekOptions>(payload);
       },
       options));
+
+  auto mtk_hash = [](const void* payload) -> uint64_t {
+    const LiteRtMediatekOptionsT* options =
+        reinterpret_cast<const LiteRtMediatekOptionsT*>(payload);
+    uint64_t ans = 0;
+    litert::HashCombine(
+        ans, options->neron_sdk_version, options->gemma_compiler_optimizations,
+        options->performance_mode, options->l1_cache_optimizations,
+        options->optimization_hint);
+    return ans;
+  };
+  LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, mtk_hash));
 
   options_data.release();
   return kLiteRtStatusOk;
@@ -181,6 +196,52 @@ LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
   }
 
   *optimization_hint = options->optimization_hint;
+
+  return kLiteRtStatusOk;
+}
+
+
+// disable_dla_dir_removal ---------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetDisableDlaDirRemoval(
+    LiteRtMediatekOptions options, bool disable_dla_dir_removal) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->disable_dla_dir_removal = disable_dla_dir_removal;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetDisableDlaDirRemoval(
+    LiteRtMediatekOptions options, bool* disable_dla_dir_removal) {
+  if (disable_dla_dir_removal == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *disable_dla_dir_removal = options->disable_dla_dir_removal;
+
+  return kLiteRtStatusOk;
+}
+
+// mediatek_dla_dir -------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetMediatekDlaDir(
+    LiteRtMediatekOptions options, const char* mediatek_dla_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->mediatek_dla_dir = mediatek_dla_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetMediatekDlaDir(
+    LiteRtMediatekOptions options, const char** mediatek_dla_dir) {
+  if (options == nullptr || mediatek_dla_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *mediatek_dla_dir = options->mediatek_dla_dir.c_str();
 
   return kLiteRtStatusOk;
 }

@@ -25,7 +25,7 @@
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
-#include "litert/cc/litert_consts.h"
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -91,6 +91,8 @@ inline constexpr std::optional<absl::Span<const uint32_t>> StridesSpan(
 // Tensor layout. C++ equivalent to LiteRtLayout.
 class Layout {
  public:
+  using Dim = int32_t;
+
   constexpr Layout()
       : lrt_layout_{/*.rank=*/0, /*.has_strides=*/false, /*.dimensions=*/{},
                     /*.strides=*/{}} {}
@@ -115,7 +117,7 @@ class Layout {
 
   uint32_t Rank() const { return lrt_layout_.rank; }
 
-  absl::Span<const int32_t> Dimensions() const {
+  absl::Span<const Dim> Dimensions() const {
     return absl::MakeSpan(lrt_layout_.dimensions, Rank());
   }
 

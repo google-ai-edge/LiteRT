@@ -59,6 +59,16 @@ LiteRtStatus LiteRtAddCustomOpKernelOption(
     const LiteRtCustomOpKernel* custom_op_kernel,
     void* custom_op_kernel_user_data);
 
+// Adds an external tensor binding to the given options.
+//
+// Note: `data` is owned by the caller and must outlive the lifetime of the
+// CompiledModel.
+// `size_bytes` must match the tensor's expected size.
+LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
+                                            const char* signature_name,
+                                            const char* tensor_name, void* data,
+                                            int size_bytes);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

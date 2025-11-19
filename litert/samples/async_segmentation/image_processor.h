@@ -18,7 +18,6 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_SAMPLES_ASYNC_SEGMENTATION_IMAGE_PROCESSOR_H_
 
 #include <stdbool.h>
-
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -27,10 +26,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
-
-struct RGBAColor {
-  float r, g, b, a;
-};
+#include "litert/samples/async_segmentation/image_utils.h"
 
 class ImageProcessor {
  public:

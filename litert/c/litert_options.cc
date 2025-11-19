@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/litert_options.h"
+#include <cstddef>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 #include "litert/core/options.h"
 
 #define LRT_CHECK_NON_NULL(handle)                          \
@@ -37,14 +35,23 @@ LiteRtStatus LiteRtCreateOptions(LiteRtOptions* options) {
   return kLiteRtStatusOk;
 }
 
-void LiteRtDestroyOptions(LiteRtOptions options) { delete options; }
+void LiteRtDestroyOptions(LiteRtOptions options) {
+  if (options && options->options) {
+    LiteRtDestroyOpaqueOptions(options->options);
+  }
+  delete options;
+}
 
 LiteRtStatus LiteRtSetOptionsHardwareAccelerators(
     LiteRtOptions options, LiteRtHwAcceleratorSet hardware_accelerators) {
   LRT_CHECK_NON_NULL(options);
   if ((hardware_accelerators &
        (kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
-        kLiteRtHwAcceleratorNpu)) != hardware_accelerators) {
+        kLiteRtHwAcceleratorNpu
+#ifdef __EMSCRIPTEN__
+        | kLiteRtHwAcceleratorWebNn
+#endif  // __EMSCRIPTEN__
+        )) != hardware_accelerators) {
     LITERT_LOG(LITERT_ERROR,
                "Invalid bitfield value for hardware accelerator set: %d.",
                hardware_accelerators);
@@ -66,8 +73,8 @@ LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions opaque_options) {
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(opaque_options);
-  LITERT_RETURN_IF_ERROR(options->options.Append(
-      litert::OpaqueOptions(opaque_options, litert::OwnHandle::kNo)));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtAppendOpaqueOptions(&(options->options), opaque_options));
   return kLiteRtStatusOk;
 }
 
@@ -79,7 +86,7 @@ LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions* opaque_options) {
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(opaque_options);
-  *opaque_options = options->options.Get();
+  *opaque_options = options->options;
   return kLiteRtStatusOk;
 }
 
@@ -97,6 +104,22 @@ LiteRtStatus LiteRtAddCustomOpKernelOption(
       /*.user_data=*/custom_op_kernel_user_data,
       /*.op_kernel=*/*custom_op_kernel,
   });
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
+                                            const char* signature_name,
+                                            const char* tensor_name, void* data,
+                                            size_t size_bytes) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(signature_name);
+  LRT_CHECK_NON_NULL(tensor_name);
+  LRT_CHECK_NON_NULL(data);
+  options->external_tensor_bindings.push_back(
+      {/*.signature_name =*/signature_name,
+       /*.tensor_name =*/tensor_name,
+       /*.data =*/data,
+       /*.size_bytes =*/size_bytes});
   return kLiteRtStatusOk;
 }
 

@@ -10,6 +10,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "litert/vendors/qualcomm/core/backends/htp_backend.h"
+#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -142,13 +144,28 @@ TEST(MiscTests, ConvertDataFromUInt16toInt16) {
   EXPECT_EQ(int16_data[3], 3);
 }
 
-TEST(MiscTests, IsStrEndsWith) {
-  EXPECT_TRUE(IsStrEndsWith("example_dump", "_dump"));
-  EXPECT_FALSE(IsStrEndsWith("example_dump", "_dumps"));
-  EXPECT_TRUE(IsStrEndsWith("test_dump", "_dump"));
-  EXPECT_FALSE(IsStrEndsWith("test", "_dump"));
-  EXPECT_TRUE(IsStrEndsWith("_dump", "_dump"));
-  EXPECT_FALSE(IsStrEndsWith("dump", "_dump"));
+TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
+  DLHandle handle = ::qnn::CreateDLHandle("/invalid/path/to/libQnn.so");
+  auto api = ::qnn::ResolveQnnApi(
+      handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());
+
+  ASSERT_EQ(api, nullptr);
+}
+
+TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
+  DLHandle handle = ::qnn::CreateDLHandle(::qnn::HtpBackend::GetLibraryName());
+  auto api = ::qnn::ResolveQnnApi(
+      handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());
+
+  ASSERT_NE(api, nullptr);
+}
+
+TEST(MiscTests, DISABLED_LoadIrBackendApiTest) {
+  DLHandle handle = ::qnn::CreateDLHandle(::qnn::IrBackend::GetLibraryName());
+  auto api = ::qnn::ResolveQnnApi(
+      handle.get(), ::qnn::IrBackend::GetExpectedBackendVersion());
+
+  ASSERT_NE(api, nullptr);
 }
 
 }  // namespace qnn

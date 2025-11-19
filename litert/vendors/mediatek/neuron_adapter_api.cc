@@ -16,6 +16,7 @@
 
 #include <dlfcn.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,10 +25,12 @@
 
 #include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
+#include "litert/c/options/litert_mediatek_options.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_shared_library.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
 #define LOAD_SYMB(S, H)                                                   \
@@ -57,6 +60,8 @@ litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
     return status.Error();
   }
 
+  LITERT_RETURN_IF_ERROR(neuron_adapter_api->GetNeuronVersion());
+
   return neuron_adapter_api;
 }
 
@@ -68,6 +73,11 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
 
   // Add preinstalled libraries for system partition applications.
   so_paths.push_back("libneuronusdk_adapter.mtk.so");
+  // Check if the device need to use higher version of usdk.
+  auto magic_number = GetNeuroPilotMagicNumber();
+  if (magic_number && magic_number.Value() >= kMinMagicNumberForNeuronService) {
+    so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
+  }
   so_paths.push_back("libneuron_adapter_mgvi.so");
 
   // Add the library from the provided shared lib directory if available.
@@ -85,6 +95,9 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
       break;
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
       sdk_path = "third_party/neuro_pilot/v8_latest/host/lib";
+      break;
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9:
+      sdk_path = "third_party/neuro_pilot/v9_latest/host/lib";
       break;
     default:
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
@@ -169,6 +182,8 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
             api_->compilation_set_l1_memory_size_kb);
   LOAD_SYMB(NeuronCompilation_setOptimizationHint,
             api_->compilation_set_optimization_hint);
+  LOAD_SYMB(NeuronCompilation_getSupportedOperations,
+            api_->compilation_get_supported_opertations);
 
   LITERT_LOG(LITERT_INFO, "NeuronAdapter symbols loaded");
   return {};
@@ -216,6 +231,79 @@ Expected<NeuronExecutionPtr> NeuronAdapterApi::CreateExecution(
                          "Failed to create execution");
   }
   return NeuronExecutionPtr{execution, api().execution_free};
+}
+
+litert::Expected<void> NeuronAdapterApi::GetNeuronVersion() {
+  if (api().get_version(&runtime_version_) != NEURON_NO_ERROR) {
+    LITERT_LOG(LITERT_ERROR, "Fail to get neuron api version");
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to get neuron api version");
+  }
+  LITERT_LOG(LITERT_INFO, "Neuron api version: %d.%d.%d",
+             static_cast<int>(runtime_version_.major),
+             static_cast<int>(runtime_version_.minor),
+             static_cast<int>(runtime_version_.patch));
+  return {};
+}
+
+bool NeuronAdapterApi::IsFeatureEnabled(NeuronFeatureType feature) const {
+  if (feature < 0 || feature >= NEURON_FEATURE_COUNT) {
+    return false;
+  }
+
+  auto is_version_greater = [this](const NeuronRuntimeVersion& min_ver) {
+    if (runtime_version_.major > min_ver.major) return true;
+    if (runtime_version_.major < min_ver.major) return false;
+    if (runtime_version_.minor > min_ver.minor) return true;
+    if (runtime_version_.minor < min_ver.minor) return false;
+    if (runtime_version_.patch >= min_ver.patch) return true;
+    return false;
+  };
+
+  return is_version_greater(kNeuronFeatureMinVersion[feature]);
+}
+
+litert::Expected<int32_t> NeuronAdapterApi::GetNeuroPilotMagicNumber() {
+  std::string lib_path = "libneuron_sys_util.mtk.so";
+  // Load library
+  auto maybe_dlib = SharedLibrary::Load(lib_path, RtldFlags::Default());
+  if (!maybe_dlib.HasValue()) {
+    LITERT_LOG(LITERT_INFO, "libneuron_sys_util.mtk.so not found");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "libneuron_sys_util.mtk.so not found");
+  }
+  SharedLibrary& lib = maybe_dlib.Value();
+
+  if (!lib.Loaded()) {
+    return litert::Error(kLiteRtStatusErrorDynamicLoading,
+                         "Failed to load neuron_sys_util shared library");
+  }
+
+  // Load symbol
+  using GetMagicNumberFunc = int (*)(int32_t*);
+  auto maybe_func =
+      lib.LookupSymbol<void*>("NeuronService_getNeuroPilotMagicNumber");
+  if (!maybe_func.HasValue()) {
+    lib.Close();
+    return litert::Error(kLiteRtStatusErrorDynamicLoading,
+                         "NeuronService_getNeuroPilotMagicNumber not found in "
+                         "neuron_sys_util.mtk.so");
+  }
+  auto get_magic_number =
+      reinterpret_cast<GetMagicNumberFunc>(maybe_func.Value());
+
+  // Get magic number
+  int32_t magic_number = 0;
+  int ret = get_magic_number(&magic_number);
+  lib.Close();
+  if (ret != 0) {
+    return litert::Error(
+        kLiteRtStatusErrorDynamicLoading,
+        "NeuronService_getNeuroPilotMagicNumber returns an error");
+  }
+  LITERT_LOG(LITERT_INFO, "Magic number: %d", magic_number);
+
+  return magic_number;
 }
 
 }  // namespace mediatek

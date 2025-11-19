@@ -14,6 +14,7 @@
 
 #include "litert/c/litert_opaque_options.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -24,6 +25,7 @@ struct LiteRtOpaqueOptionsT {
   std::string payload_identifier;
   std::unique_ptr<void, void (*)(void*)> payload_data;
   LiteRtOpaqueOptionsT* next = nullptr;
+  LiteRtOpaqueOptionsHashFunc payload_hash_func = nullptr;
 
   LiteRtOpaqueOptionsT(std::string payload_identifier_, void* payload_data_,
                        void (*payload_destructor_)(void*))
@@ -118,5 +120,28 @@ LiteRtStatus LiteRtPopOpaqueOptions(LiteRtOpaqueOptions* options) {
     LiteRtDestroyOpaqueOptions(*last);
     *last = nullptr;
   }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetOpaqueOptionsHash(
+    LiteRtOpaqueOptions options,
+    LiteRtOpaqueOptionsHashFunc payload_hash_func) {
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->payload_hash_func = payload_hash_func;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options,
+                                        uint64_t* hash) {
+  if (!options || !hash) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!options->payload_hash_func) {
+    // Hash function not set for these options.
+    return kLiteRtStatusErrorUnsupported;
+  }
+  *hash = options->payload_hash_func(options->payload_data.get());
   return kLiteRtStatusOk;
 }

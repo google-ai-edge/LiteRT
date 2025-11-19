@@ -54,6 +54,9 @@ TEST(BenchmarkLiteRtModelQualcommTest, NPUAcceleration_JIT) {
   params.Set<std::string>(
       "compiler_plugin_library_path",
       "/data/local/tmp/runfiles/litert/");
+  params.Set<std::string>(
+      "compiler_cache_path",
+      "/data/local/tmp/runfiles/litert/");
   BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
 
   EXPECT_EQ(benchmark.Run(), kTfLiteOk);

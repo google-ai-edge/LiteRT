@@ -25,6 +25,9 @@
 #include "litert/cc/litert_layout.h"
 
 constexpr const char* kModelFileName = "simple_model.tflite";
+constexpr const char* kDynamicModelFileName = "dynamic_add_model.tflite";
+constexpr const char* kConstantOutputTensorModelFileName =
+    "constant_output_tensor.tflite";
 constexpr const char* kNpuModelFileName = "simple_model_npu.tflite";
 constexpr const char* kQualcommModelFileName = "simple_model_qualcomm.bin";
 constexpr const char* kQualcommUInt16ModelFileName =
@@ -32,6 +35,7 @@ constexpr const char* kQualcommUInt16ModelFileName =
 constexpr const char* kGoogleTensorModelFileName =
     "simple_model_google_tensor.bin";
 constexpr const char* kMediaTekModelFileName = "simple_model_mtk.bin";
+constexpr const char* kOpenvinoModelBlobFileName = "ov_model_add1d_FP32.blob";
 
 constexpr const int32_t kTestInput0Dimensions[] = {2};
 constexpr const int32_t kNumTestInput0Dimensions =

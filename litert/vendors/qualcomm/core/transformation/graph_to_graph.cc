@@ -9,6 +9,7 @@
 
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/transformation/embedding_gemma.h"
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
@@ -155,6 +156,8 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
     Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
               OptimizeMHAPrefill);
   }
+
+  // Mask Gemma Optimization
   const std::vector<QnnOpCode> gemma3_mask = {
       QnnOpCode::kElementWiseNot,
       QnnOpCode::kCast,
@@ -163,5 +166,60 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
   };
   Transform(validate_op_config, ops, tensor_pool, gemma3_mask,
             TransformQuantizeInMask);
+
+  // Embedding Gemma Optimization
+  const std::vector<QnnOpCode> embedding_gemma = {
+      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseAdd,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kReshape,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kReshape,
+  };
+  Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
+            TransformEmbeddingGemma);
+
+  // Fast Vlm Optimization
+  const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
+      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kConcat,
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseAdd,
+      QnnOpCode::kReshape,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseAdd,
+      QnnOpCode::kReshape,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kReshape};
+  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
+            OptimizeMHAFastVlmPrefill);
+
+  // Attention Optimization
+  const std::vector<QnnOpCode> attn = {
+      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseSelect,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kTranspose,
+  };
+  Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
 }
 }  // namespace qnn

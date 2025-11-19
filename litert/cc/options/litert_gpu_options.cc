@@ -15,10 +15,9 @@
 #include "litert/cc/options/litert_gpu_options.h"
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_gpu_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
@@ -45,20 +44,28 @@ LiteRtStatus GpuOptions::EnableBenchmarkMode(bool enabled) {
   return LiteRtSetGpuOptionsBenchmarkMode(Get(), enabled);
 }
 
+Expected<void> GpuOptions::SetBackend(Backend backend) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetGpuOptionsGpuBackend(
+      Get(), static_cast<LiteRtGpuBackend>(backend)));
+  return {};
+}
+
 LiteRtStatus GpuOptions::EnableAllowSrcQuantizedFcConvOps(bool enabled) {
   return LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
       Get(), enabled);
 }
 
-LiteRtStatus GpuOptions::SetDelegatePrecision(
-    LiteRtDelegatePrecision precision) {
-  return LiteRtSetGpuAcceleratorCompilationOptionsPrecision(Get(), precision);
+Expected<void> GpuOptions::SetPrecision(Precision precision) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetGpuAcceleratorCompilationOptionsPrecision(
+      Get(), static_cast<LiteRtDelegatePrecision>(precision)));
+  return {};
 }
 
-LiteRtStatus GpuOptions::SetBufferStorageType(
-    LiteRtDelegateBufferStorageType type) {
-  return LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(Get(),
-                                                                       type);
+Expected<void> GpuOptions::SetBufferStorageType(BufferStorageType type) {
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(
+          Get(), static_cast<LiteRtDelegateBufferStorageType>(type)));
+  return {};
 }
 
 LiteRtStatus GpuOptions::SetPreferTextureWeights(bool prefer_texture_weights) {
@@ -88,12 +95,31 @@ LiteRtStatus GpuOptions::SetSerializeExternalTensors(
       Get(), serialize_external_tensors);
 }
 
-LiteRtStatus GpuOptions::EnableNoImmutableExternalTensorsMode(bool enabled) {
-  return LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(Get(), enabled);
+LiteRtStatus GpuOptions::EnableExternalTensorsMode(bool enabled) {
+  return LiteRtSetGpuOptionsExternalTensorsMode(Get(), enabled);
 }
 
 LiteRtStatus GpuOptions::AddExternalTensorPattern(const char* pattern) {
   return LiteRtAddGpuOptionsExternalTensorPattern(Get(), pattern);
+}
+
+Expected<void> GpuOptions::SetPriority(Priority priority) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetGpuOptionsGpuPriority(
+      Get(), static_cast<LiteRtGpuPriority>(priority)));
+  return {};
+}
+
+LiteRtStatus GpuOptions::SetMadviseOriginalSharedTensors(
+    bool madvise_original_shared_tensors) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+      Get(), madvise_original_shared_tensors);
+}
+
+LiteRtStatus GpuOptions::SetNumStepsOfCommandBufferPreparations(
+    int num_steps_of_command_buffer_preparations) {
+  return
+      LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+          Get(), num_steps_of_command_buffer_preparations);
 }
 
 }  // namespace litert

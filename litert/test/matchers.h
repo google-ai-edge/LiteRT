@@ -15,22 +15,43 @@
 #ifndef ODML_LITERT_LITERT_TEST_MATCHERS_H_
 #define ODML_LITERT_LITERT_TEST_MATCHERS_H_
 
+#include <cmath>
+#include <cstddef>
 #include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 // Is equivalent to `ASSERT_THAT(expr, testing::litert::IsOk())`
 #define LITERT_ASSERT_OK(EXPR) ASSERT_THAT((EXPR), ::testing::litert::IsOk())
 
 // Is equivalent to `EXPECT_THAT(expr, testing::litert::IsOk())`
 #define LITERT_EXPECT_OK(EXPR) EXPECT_THAT((EXPR), ::testing::litert::IsOk())
+
+// Is equivalent to `ASSERT_THAT(expr, testing::litert::IsError())`
+#define LITERT_ASSERT_ERROR(EXPR) \
+  ASSERT_THAT((EXPR), ::testing::litert::IsError())
+
+// Is equivalent to `EXPECT_THAT(expr, testing::litert::IsError())`
+#define LITERT_EXPECT_ERROR(EXPR) \
+  EXPECT_THAT((EXPR), ::testing::litert::IsError())
 
 // Checks that the result of `EXPR` (a `litert::Expected` object) is not an
 // error and assigns the value it holds to `DECL` as if:
@@ -52,7 +73,8 @@
   auto&& litert_expected_value_or_error_##LINE = (EXPR);      \
   LITERT_ASSERT_OK(litert_expected_value_or_error_##LINE);    \
   _LITERT_STRIP_PARENS(DECL) =                                \
-      std::move(litert_expected_value_or_error_##LINE.Value());
+      ::litert::ErrorStatusBuilder::ForwardWrappedValue(      \
+          litert_expected_value_or_error_##LINE)
 
 #define LITERT_ASSERT_OK_AND_ASSIGN_HELPER2(LINE, DECL, EXPR) \
   LITERT_ASSERT_OK_AND_ASSIGN_HELPER1(LINE, DECL, EXPR)
@@ -108,6 +130,17 @@ class IsOkMatcher {
         return false;
       }
       return true;
+    }
+
+    bool MatchAndExplainImpl(const absl::Status& value,
+                             testing::MatchResultListener* listener) const {
+      return value.ok();
+    }
+
+    template <class T>
+    bool MatchAndExplainImpl(const absl::StatusOr<T>& value,
+                             testing::MatchResultListener* listener) const {
+      return value.ok();
     }
 
    public:
@@ -323,32 +356,42 @@ inline IsErrorMatcher IsError() {
 }
 
 // Matches `litert::Expected`, `litert::Unexpected`, `litert::Error` and
-// `LiteRtStatus` values that hold a specific error status.
+// `litert::Status` values that hold a specific error status.
 //
 // ```cpp
 // Expected<Something> BuildSomething();
 //
 // // Will fail the test if BuildSomething()'s returned object holds a value or
-// // if the error status is not `kLiteRtStatusErrorSystemError`.
-// EXPECT_THAT(BuildSomething(), IsError(kLiteRtStatusErrorSystemError));
+// // if the error status is not `kErrorSystemError`.
+// EXPECT_THAT(BuildSomething(), IsError(::litert::Status::kErrorSystemError));
 // ```
+inline IsErrorMatcher IsError(::litert::Status status) {
+  return IsErrorMatcher(static_cast<LiteRtStatus>(status),
+                        /*msg=*/std::nullopt);
+}
+
 inline IsErrorMatcher IsError(LiteRtStatus status) {
   return IsErrorMatcher(status, /*msg=*/std::nullopt);
 }
 
-// Matches `litert::Expected` and `LiteRtStatus` values that have a specific
+// Matches `litert::Expected` and `litert::Status` values that have a specific
 // error status and error message.
 //
-// Warning: This will always return `false` for `LiteRtStatus` objects as those
-// do not convey a message.
+// Warning: This will always return `false` for `litert::Status` objects as
+// those do not convey a message.
 //
 // ```cpp
 // Expected<Something> BuildSomething();
 //
 // // Will fail the test if BuildSomething()'s returned object holds a value.
-// EXPECT_THAT(BuildSomething(), IsError(kLiteRtStatusErrorSystemError,
+// EXPECT_THAT(BuildSomething(), IsError(::litert::Status::kErrorSystemError,
 //                                       "System is not initialised"));
 // ```
+inline IsErrorMatcher IsError(::litert::Status status, std::string msg) {
+  return IsErrorMatcher(static_cast<LiteRtStatus>(status), std::move(msg));
+}
+
+[[deprecated("Use the litert::Status version instead.")]]
 inline IsErrorMatcher IsError(LiteRtStatus status, std::string msg) {
   return IsErrorMatcher(status, std::move(msg));
 }
@@ -369,7 +412,6 @@ inline void PrintTo(const LiteRtStatus status, std::ostream* os) {
 // This is defined here instead of with `litert::Expected` because those
 // functions should only be used for testing.
 #if defined(LITERT_DEFINE_GTEST_STATUS_PRINTER) && !defined(GTEST_USE_ABSL)
-#include "absl/strings/str_format.h"  // from @com_google_absl
 
 // GTest documentation explicitly states that functions the those below must
 // live in the same namespace as the classes they are used with so that GTest
@@ -392,5 +434,214 @@ void PrintTo(const Expected<T>& expected, std::ostream* os) {
 }  // namespace litert
 
 #endif
+
+namespace testing::litert {
+
+// Helper for providing polymorphic matcher impl in the below classes.
+template <typename ImplBase, class V>
+class PolyImpl : public ::testing::MatcherInterface<V>, ImplBase {
+ private:
+  using MatchResultListener = ::testing::MatchResultListener;
+
+ public:
+  using is_gtest_matcher = void;
+
+  PolyImpl() = default;
+  explicit PolyImpl(const ImplBase& base) : ImplBase(base) {}
+
+  bool MatchAndExplain(const V& value,
+                       MatchResultListener* listener) const override {
+    return this->MatchAndExplainImpl(value, listener);
+  }
+
+  void DescribeTo(std::ostream* os) const override { this->DescribeToImpl(os); }
+
+  void DescribeNegationTo(std::ostream* os) const override {
+    this->DescribeNegationToImpl(os);
+  }
+};
+
+// Polymorphic matcher for matching the element type for element type
+// carrying types.
+class HasElementTypeMatcher {
+ private:
+  template <typename T>
+  using Matcher = ::testing::Matcher<T>;
+  using MatchResultListener = ::testing::MatchResultListener;
+
+ public:
+  // Implicitly builds and wraps the matcher implementation in a GTest
+  // Matcher object.
+  template <class T>
+  // NOLINTNEXTLINE(*-explicit-constructor): This needs to be implicit.
+  operator Matcher<T>() const {
+    return Matcher<T>(new Impl<const T&>(impl_));
+  }
+
+  explicit HasElementTypeMatcher(LiteRtElementType type) : impl_(type) {}
+
+  class ImplBase {
+   public:
+    using is_gtest_matcher = void;
+
+    ImplBase() = default;
+
+    explicit ImplBase(LiteRtElementType type) : type_(type) {}
+
+    void DescribeToImpl(std::ostream* os) const {
+      if (os) {
+        *os << absl::StreamFormat("has element type %v", type_);
+      }
+    }
+
+    void DescribeNegationToImpl(std::ostream* os) const {
+      if (os) {
+        *os << absl::StreamFormat("does not have element type %v", type_);
+      }
+    }
+
+   protected:
+    bool MatchAndExplainImpl(const LiteRtRankedTensorType& value,
+                             MatchResultListener* listener) const {
+      return value.element_type == type_;
+    }
+
+    bool MatchAndExplainImpl(const ::litert::RankedTensorType& value,
+                             MatchResultListener* listener) const {
+      return MatchAndExplainImpl(LiteRtRankedTensorType(value), listener);
+    }
+
+   private:
+    LiteRtElementType type_;
+  };
+
+  template <class V>
+  using Impl = PolyImpl<ImplBase, V>;
+
+ private:
+  ImplBase impl_;
+};
+
+// Polymorphic matcher for matching the dims for dims carrying types.
+class HasDimsMatcher {
+ private:
+  template <typename T>
+  using Matcher = ::testing::Matcher<T>;
+  using MatchResultListener = ::testing::MatchResultListener;
+
+ public:
+  // Implicitly builds and wraps the matcher implementation in a GTest
+  // Matcher object.
+  template <class T>
+  // NOLINTNEXTLINE(*-explicit-constructor): This needs to be implicit.
+  operator Matcher<T>() const {
+    return Matcher<T>(new Impl<const T&>(impl_));
+  }
+
+  explicit HasDimsMatcher(absl::Span<const int> dims) : impl_(dims) {}
+
+  class ImplBase {
+   public:
+    using is_gtest_matcher = void;
+
+    ImplBase() = default;
+
+    explicit ImplBase(absl::Span<const int> dims)
+        : dims_str_(DimsStr(absl::MakeConstSpan(dims))),
+          dims_(dims.cbegin(), dims.cend()) {}
+
+    void DescribeToImpl(std::ostream* os) const {
+      if (os) {
+        *os << absl::StreamFormat("has dims %s", dims_str_);
+      }
+    }
+
+    void DescribeNegationToImpl(std::ostream* os) const {
+      if (os) {
+        *os << absl::StreamFormat("does not have dims %s", dims_str_);
+      }
+    }
+
+   protected:
+    bool MatchAndExplainImpl(const LiteRtRankedTensorType& value,
+                             MatchResultListener* listener) const {
+      return absl::MakeConstSpan(value.layout.dimensions, value.layout.rank) ==
+             dims_;
+    }
+
+    bool MatchAndExplainImpl(const ::litert::RankedTensorType& value,
+                             MatchResultListener* listener) const {
+      return MatchAndExplainImpl(LiteRtRankedTensorType(value), listener);
+    }
+
+   private:
+    static std::string DimsStr(absl::Span<const int> dims) {
+      return absl::StrFormat("[%s]", absl::StrJoin(dims, ", "));
+    }
+
+    const std::string dims_str_;
+    std::vector<int> dims_;
+  };
+
+  template <class V>
+  using Impl = PolyImpl<ImplBase, V>;
+
+ private:
+  ImplBase impl_;
+};
+
+// Matches the element type if type matched carries it.
+inline auto HasTypeAspect(LiteRtElementType type) {
+  return HasElementTypeMatcher(type);
+}
+
+// Matches the element type if type matched carries it.
+inline auto HasTypeAspect(::litert::ElementType type) {
+  return HasElementTypeMatcher(static_cast<LiteRtElementType>(type));
+}
+
+// Matches the dims if type matched  carries it.
+inline auto HasTypeAspect(absl::Span<const int> dims) {
+  return HasDimsMatcher(dims);
+}
+
+// Matches the element type and dims if matched type carries them.
+template <typename ElementTy>
+auto HasTypeAspect(ElementTy ty, absl::Span<const int> dims) {
+  return ::testing::AllOf(HasTypeAspect(dims), HasTypeAspect(ty));
+}
+
+// Checks that the mean squared error between two spans is less than the
+// provided tolerance.
+//
+// Example:
+//   std::vector<float> v = {1.0f, 1.0f};
+//   std::vector<float> u = {1.0f + 31e-4, 1.0f + 31e-4};
+//   EXPECT_THAT(absl::MakeConstSpan(v),
+//   MeanSquaredError(absl::MakeConstSpan(u)));
+template <typename Exp>
+auto MeanSquaredErrorLt(const Exp& expected, double tol = 1e-5,
+                        double* dump_mse = nullptr) {
+  auto mse = [expected, dump_mse](const auto& actual) -> double {
+    double err = 0.0;
+    auto exp_begin = expected.cbegin();
+    auto actual_begin = actual.cbegin();
+    for (size_t i = 0; i < std::size(expected); ++i) {
+      double actual_val = static_cast<double>(*actual_begin++);
+      double expected_val = static_cast<double>(*exp_begin++);
+      err += std::pow(actual_val - expected_val, 2);
+    }
+    const auto res = err / static_cast<double>(std::size(expected));
+    if (dump_mse) {
+      *dump_mse = res;
+    }
+    return res;
+  };
+  return ::testing::AllOf(::testing::SizeIs(::testing::Gt(0)),
+                          ::testing::SizeIs(std::size(expected)),
+                          ::testing::ResultOf(mse, ::testing::Le(tol)));
+}
+
+}  // namespace testing::litert
 
 #endif  // ODML_LITERT_LITERT_TEST_MATCHERS_H_

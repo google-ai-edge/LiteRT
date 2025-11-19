@@ -36,6 +36,8 @@ enum class Status(val code: Int) {
   ErrorTimeoutExpired(7),
   ErrorWrongVersion(8),
   ErrorUnknown(9),
+  ErrorAlreadyExists(10),
+  ErrorCancelled(11),
 
   // File and loading related errors.
   ErrorFileIO(500),
@@ -55,7 +57,11 @@ enum class Status(val code: Int) {
 
   // Legalization related errors.
   LegalizeNoMatch(2000),
-  ErrorInvalidLegalization(2001);
+  ErrorInvalidLegalization(2001),
+
+  // Transformation related errors.
+  PatternNoMatch(3000),
+  ErrorInvalidTransformation(3001);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_common.h:status_codes)
 

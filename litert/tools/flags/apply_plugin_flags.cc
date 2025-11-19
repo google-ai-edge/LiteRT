@@ -17,6 +17,11 @@
 #include <string>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_compiler_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/options/compiler_options.h"
 #include "litert/tools/flags/flag_types.h"
 
 ABSL_FLAG(std::string, cmd, "partition",
@@ -25,3 +30,50 @@ ABSL_FLAG(std::string, cmd, "partition",
 ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
           "If provides, only the subgraphs with the given indices "
           "are applied with the plugin.");
+
+ABSL_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy,
+          kLiteRtCompilerOptionsPartitionStrategyDefault,
+          "Partition strategy for the compiler.");
+
+// NOLINTBEGIN(*alien-types*)
+// TODO: Move absl parse/unparse function to same file as enum types if
+// it becomes an issue.
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtCompilerOptionsPartitionStrategy* partition_strategy,
+                   std::string* error) {
+  if (text == "default") {
+    *partition_strategy = kLiteRtCompilerOptionsPartitionStrategyDefault;
+    return true;
+  }
+  if (text == "weakly_connected") {
+    *partition_strategy =
+        kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected;
+    return true;
+  }
+  *error = "Unknown partition strategy";
+  return false;
+}
+
+std::string AbslUnparseFlag(
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
+  switch (partition_strategy) {
+    case kLiteRtCompilerOptionsPartitionStrategyDefault:
+      return "default";
+    case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
+      return "weakly_connected";
+  }
+}
+// NOLINTEND(*alien-types*)
+
+namespace litert {
+
+Expected<CompilerOptions> CompilerOptionsFromFlags() {
+  LITERT_ASSIGN_OR_RETURN(auto options, CompilerOptions::Create());
+
+  const auto partition_strategy = absl::GetFlag(FLAGS_partition_strategy);
+  LITERT_RETURN_IF_ERROR(options.SetPartitionStrategy(partition_strategy));
+
+  return options;
+}
+}  // namespace litert

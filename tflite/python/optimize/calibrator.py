@@ -29,7 +29,7 @@ _calibration_wrapper = LazyLoader(
     "_calibration_wrapper",
     globals(),
     (
-        "tensorflow.lite.python.optimize."
+        "tflite.python.optimize."
         "_pywrap_tensorflow_lite_calibration_wrapper"
     ),
 )

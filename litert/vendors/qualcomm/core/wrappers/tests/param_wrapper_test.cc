@@ -201,7 +201,8 @@ TEST(ParamWrapperTest, TensorParamTest) {
                                QuantizeParamsWrapperVariant(),
                                dummy_dims,
                                static_cast<uint32_t>(data_size),
-                               data_ptr};
+                               data_ptr,
+                               true};
 
   TensorParamWrapper tensor_param{"tensor_param", tensor_wrapper};
 

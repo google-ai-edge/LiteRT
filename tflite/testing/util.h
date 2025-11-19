@@ -19,7 +19,11 @@ limitations under the License.
 
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/string_type.h"
-#include "tsl/platform/logging.h"
+
+#ifdef PLATFORM_GOOGLE
+#include "absl/flags/flag.h"
+#include "absl/log/flags.h"
+#endif
 
 namespace tflite {
 

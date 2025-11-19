@@ -1,5 +1,6 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//tflite:build_def.bzl",
     "tflite_cc_library_with_c_headers_test",
@@ -15,8 +16,9 @@ load(
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
+        # "//litert:__subpackages__",  # copybara:uncomment
+        # copybara:uncomment "@org_tensorflow//third_party/odml/litert:__subpackages__",
         "//tflite:__subpackages__",
-        "@org_tensorflow//third_party/odml/litert:__subpackages__",
     ],
     licenses = ["notice"],
 )
@@ -50,8 +52,8 @@ filegroup(
         "c_api_types.h",
         "common.h",
         "operator.h",
+        "//tflite/converter/core/c:lite_headers_filegroup",
         "//tflite/core/async/c:types.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:lite_headers_filegroup",
     ],
     visibility = [
         # Temporary workaround to make visible to litert in OSS (default vis is not transformed correctly.)
@@ -110,6 +112,7 @@ tflite_cc_library_with_c_headers_test(
         "//tflite:version",
         "//tflite/c:c_api_internal",
         "//tflite/c:common_internal",
+        "//tflite/converter:allocation",
         "//tflite/core:create_op_resolver_header",
         "//tflite/core:framework_stable",
         "//tflite/core:signature_runner",
@@ -298,12 +301,13 @@ tflite_cc_library_with_c_headers_test(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     visibility = [
+        # "//litert/litert:__subpackages__",  # copybara:uncomment
+        # copybara:uncomment "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
+        "//tflite/converter/experimental/lrt:__subpackages__",
         "//tflite:__subpackages__",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/lrt:__subpackages__",
-        "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
     ] + c_api_visibility_allowlist(),
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_common",
+        "//tflite/converter/core/c:tflite_common",
     ],
 )
 
@@ -365,7 +369,7 @@ tflite_cc_library_with_c_headers_test(
     deps = [
         ":c_api_types",
         "//tflite:tflite_kernel_use_xnnpack_optional",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_common",
+        "//tflite/converter/core/c:tflite_common",
     ] + select({
         "//tflite:tensorflow_profiler_config": [
             "//tflite:macros",

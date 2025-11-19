@@ -1,0 +1,51 @@
+{
+  "name": "@litertjs/core",
+  "version": "0.2.1",
+  "description": "LiteRT.js package",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/**",
+    "wasm/**"
+  ],
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/packages/core"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --metafile",
+    "lint": "eslint .",
+    "typecheck": "tsc",
+    "bundle-tests": "esbuild --bundle src/litert_web_test.ts --sourcemap --outfile=spec_dist/litert_web_test.js",
+    "test": "npm run bundle-tests && jasmine-browser-runner",
+    "clean": "rimraf .turbo node_modules dist spec_dist",
+    "pack": "npm pack"
+  },
+  "devDependencies": {
+    "@litertjs/eslint-config": "^0.2.1",
+    "@litertjs/tsconfig": "^0.2.1",
+    "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "@types/jasmine": "^5.1.8",
+    "@webgpu/types": "^0.1.54",
+    "esbuild": "^0.23.0",
+    "eslint": "^9.8.0",
+    "jasmine": "^5.8.0",
+    "jasmine-browser-runner": "^3.0.0",
+    "jasmine-core": "^5.8.0",
+    "rimraf": "^6.0.1",
+    "selenium-webdriver": "^4.34.0",
+    "tsup": "^8.2.3",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@litertjs/wasm-utils": "^0.2.1"
+  }
+}

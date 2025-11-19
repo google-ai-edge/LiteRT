@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <type_traits>
+#include <variant>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -28,99 +30,97 @@
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
+// RTTI-free replacement for std::any using std::variant
+using LiteRtVariant =
+    std::variant<std::monostate,     // Empty/None type
+                 bool,               // kLiteRtAnyTypeBool
+                 int8_t,             // kLiteRtAnyTypeInt (small)
+                 int16_t,            // kLiteRtAnyTypeInt (medium)
+                 int32_t,            // kLiteRtAnyTypeInt (large)
+                 int64_t,            // kLiteRtAnyTypeInt (full)
+                 float,              // kLiteRtAnyTypeReal (single)
+                 double,             // kLiteRtAnyTypeReal (double)
+                 const char*,        // kLiteRtAnyTypeString
+                 absl::string_view,  // kLiteRtAnyTypeString (alternative)
+                 const void*,        // kLiteRtAnyTypeVoidPtr
+                 void*               // kLiteRtAnyTypeVoidPtr (non-const)
+                 >;
 
-inline std::any ToStdAny(LiteRtAny litert_any) {
-  std::any res;
+using any = LiteRtVariant;
+
+inline LiteRtVariant ToStdAny(LiteRtAny litert_any) {
   switch (litert_any.type) {
     case kLiteRtAnyTypeNone:
-      break;
+      return std::monostate{};
     case kLiteRtAnyTypeBool:
-      res = litert_any.bool_value;
-      break;
+      return litert_any.bool_value;
     case kLiteRtAnyTypeInt:
-      res = litert_any.int_value;
-      break;
+      return litert_any.int_value;
     case kLiteRtAnyTypeReal:
-      res = litert_any.real_value;
-      break;
+      return litert_any.real_value;
     case kLiteRtAnyTypeString:
-      res = litert_any.str_value;
-      break;
+      return litert_any.str_value;
     case kLiteRtAnyTypeVoidPtr:
-      res = litert_any.ptr_value;
-      break;
+      return const_cast<void*>(litert_any.ptr_value);
+    default:
+      return std::monostate{};
   }
-  return res;
 }
 
-inline Expected<LiteRtAny> ToLiteRtAny(const std::any& any) {
-  LiteRtAny result;
-  if (!any.has_value()) {
-    result.type = kLiteRtAnyTypeNone;
-    return result;
+inline Expected<LiteRtAny> ToLiteRtAny(const LiteRtVariant& var) {
+  return std::visit(
+      [](auto&& arg) -> Expected<LiteRtAny> {
+        using T = std::decay_t<decltype(arg)>;
+        LiteRtAny result;
 
-  } else if (any.type() == typeid(LiteRtAny{}.bool_value)) {
-    result.type = kLiteRtAnyTypeBool;
-    result.bool_value = std::any_cast<decltype(LiteRtAny{}.bool_value)>(any);
-    return result;
-
-  } else if (any.type() == typeid(int8_t)) {
-    result.type = kLiteRtAnyTypeInt;
-    result.int_value = std::any_cast<int8_t>(any);
-    return result;
-
-  } else if (any.type() == typeid(int16_t)) {
-    result.type = kLiteRtAnyTypeInt;
-    result.int_value = std::any_cast<int16_t>(any);
-    return result;
-
-  } else if (any.type() == typeid(int32_t)) {
-    result.type = kLiteRtAnyTypeInt;
-    result.int_value = std::any_cast<int32_t>(any);
-    return result;
-
-  } else if (any.type() == typeid(int64_t)) {
-    result.type = kLiteRtAnyTypeInt;
-    result.int_value = std::any_cast<int64_t>(any);
-    return result;
-
-  } else if (any.type() == typeid(float)) {
-    result.type = kLiteRtAnyTypeReal;
-    result.real_value = std::any_cast<float>(any);
-    return result;
-
-  } else if (any.type() == typeid(double)) {
-    result.type = kLiteRtAnyTypeReal;
-    result.real_value = std::any_cast<double>(any);
-    return result;
-
-  } else if (any.type() == typeid(LiteRtAny{}.str_value)) {
-    result.type = kLiteRtAnyTypeString;
-    result.str_value = std::any_cast<decltype(LiteRtAny{}.str_value)>(any);
-    return result;
-
-  } else if (any.type() == typeid(absl::string_view)) {
-    result.type = kLiteRtAnyTypeString;
-    result.str_value = std::any_cast<absl::string_view>(any).data();
-    return result;
-
-  } else if (any.type() == typeid(LiteRtAny{}.ptr_value)) {
-    result.type = kLiteRtAnyTypeVoidPtr;
-    result.ptr_value = std::any_cast<decltype(LiteRtAny{}.ptr_value)>(any);
-    return result;
-
-  } else {
-    return Error(kLiteRtStatusErrorInvalidArgument,
-                 absl::StrFormat("Invalid argument for ToLiteRtAny, %s",
-                                 any.type().name()));
-  }
+        if constexpr (std::is_same_v<T, std::monostate>) {
+          result.type = kLiteRtAnyTypeNone;
+          return result;
+        } else if constexpr (std::is_same_v<T, bool>) {
+          result.type = kLiteRtAnyTypeBool;
+          result.bool_value = arg;
+          return result;
+        } else if constexpr (std::is_same_v<T, int8_t> ||
+                             std::is_same_v<T, int16_t> ||
+                             std::is_same_v<T, int32_t> ||
+                             std::is_same_v<T, int64_t>) {
+          result.type = kLiteRtAnyTypeInt;
+          result.int_value = static_cast<int64_t>(arg);
+          return result;
+        } else if constexpr (std::is_same_v<T, float> ||
+                             std::is_same_v<T, double>) {
+          result.type = kLiteRtAnyTypeReal;
+          result.real_value = static_cast<double>(arg);
+          return result;
+        } else if constexpr (std::is_same_v<T, const char*>) {
+          result.type = kLiteRtAnyTypeString;
+          result.str_value = arg;
+          return result;
+        } else if constexpr (std::is_same_v<T, absl::string_view>) {
+          result.type = kLiteRtAnyTypeString;
+          result.str_value = arg.data();
+          return result;
+        } else if constexpr (std::is_same_v<T, const void*>) {
+          result.type = kLiteRtAnyTypeVoidPtr;
+          result.ptr_value = arg;
+          return result;
+        } else if constexpr (std::is_same_v<T, void*>) {
+          result.type = kLiteRtAnyTypeVoidPtr;
+          result.ptr_value = arg;
+          return result;
+        } else {
+          return Error(kLiteRtStatusErrorInvalidArgument,
+                       "Invalid type for ToLiteRtAny");
+        }
+      },
+      var);
 }
 
 namespace internal {
 
 inline Expected<void> CheckType(const LiteRtAny& any,
                                 const LiteRtAnyType type) {
-  if (any.type != kLiteRtAnyTypeString) {
+  if (any.type != type) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  absl::StrFormat("Wrong LiteRtAny type. Expected %s, got %s.",
                                  LiteRtAnyTypeToString(type),
@@ -140,7 +140,7 @@ Expected<T> GetInt(const LiteRtAny& any) {
                         std::numeric_limits<T>::lowest(), any.int_value,
                         std::numeric_limits<T>::max()));
   }
-  return any.int_value;
+  return static_cast<T>(any.int_value);
 }
 
 template <class T>
@@ -150,12 +150,11 @@ Expected<T> GetReal(const LiteRtAny& any) {
       any.real_value < std::numeric_limits<T>::lowest()) {
     return Error(
         kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat(
-            "LiteRtAny integer is out of range. %v <= %v <= %v failed.",
-            std::numeric_limits<T>::lowest(), any.real_value,
-            std::numeric_limits<T>::max()));
+        absl::StrFormat("LiteRtAny real is out of range. %v <= %v <= %v",
+                        std::numeric_limits<T>::lowest(), any.real_value,
+                        std::numeric_limits<T>::max()));
   }
-  return any.real_value;
+  return static_cast<T>(any.real_value);
 }
 }  // namespace internal
 

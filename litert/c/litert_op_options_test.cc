@@ -15,12 +15,19 @@
 #include "litert/c/litert_op_options.h"
 
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>  // IWYU pragma: keep
 #include <gtest/gtest.h>
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_model.h"
+#include "litert/core/model/buffer_manager.h"
+#include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -213,11 +220,48 @@ TEST(GetOpOptionTest, TestGetNullReshapeOptions) {
   auto op = ops.front().Get();
 
   const int32_t* new_shape = nullptr;
-  int32_t new_shape_size;
+  int32_t new_shape_size = -1;
 
   EXPECT_THAT(LiteRtGetReshapeNewShapeOption(op, &new_shape, &new_shape_size),
               IsError(kLiteRtStatusErrorInvalidArgument));
-  ASSERT_EQ(new_shape_size, -1);
+  ASSERT_EQ(new_shape_size, -1);  // Remains unchanged in case of error.
+}
+
+TEST(GetOpOptionTest, TestGetReshapeOptions2x3To3x2) {
+  LiteRtModelT model_t;
+  auto& subgraph = model_t.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflReshape);
+
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 3}));
+  op.Inputs().push_back(&tensor);
+
+  int32_t kTensorData[] = {3, 2};
+  LiteRtTensorT tensor2;
+  tensor2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+  auto& weights = tensor2.Weights();
+  weights.SetBufferManager(model_t.Buffers());
+
+  litert::BufferRef<uint8_t> buffer(kTensorData, sizeof(kTensorData));
+  litert::internal::BufferContext context;
+  context.should_append = true;
+  SetWeightsFromUnownedBuffer(weights, std::move(buffer), context);
+
+  op.Inputs().push_back(&tensor2);
+  LiteRtTensorT tensor3;
+  tensor3.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3, 2}));
+  op.Outputs().push_back(&tensor3);
+
+  LiteRtOpT& reshape_op = op;
+  EXPECT_EQ(reshape_op.OpCode(), kLiteRtOpCodeTflReshape);
+  const int32_t* new_shape = nullptr;
+  int32_t new_shape_size = -1;
+  LITERT_ASSERT_OK(
+      LiteRtGetReshapeNewShapeOption(&reshape_op, &new_shape, &new_shape_size));
+  ASSERT_EQ(new_shape_size, 2);
+  ASSERT_EQ(new_shape[0], 3);
+  ASSERT_EQ(new_shape[1], 2);
 }
 
 TEST(GetOpOptionTest, TestGetSumOptions) {
@@ -233,7 +277,7 @@ TEST(GetOpOptionTest, TestGetSumOptions) {
   ASSERT_EQ(keepdims, true);
 }
 
-TEST(GetOpOptionTest, TestGetMaxOptions) {
+TEST(GetOpOptionTest, TestGetReduceMaxOptions) {
   auto model = litert::testing::LoadTestFileModel("simple_reducemax_op.tflite");
   auto subgraph = model.MainSubgraph();
   EXPECT_TRUE(subgraph);
@@ -243,6 +287,45 @@ TEST(GetOpOptionTest, TestGetMaxOptions) {
 
   bool keepdims;
   LITERT_ASSERT_OK(LiteRtGetReduceMaxKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
+}
+
+TEST(GetOpOptionTest, TestGetReduceMinOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_reducemin_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims;
+  LITERT_ASSERT_OK(LiteRtGetReduceMinKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
+}
+
+TEST(GetOpOptionTest, TestGetReduceAnyOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_reduceany_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims;
+  LITERT_ASSERT_OK(LiteRtGetReduceAnyKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
+}
+
+TEST(GetOpOptionTest, TestGetReduceAllOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_reduceall_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims;
+  LITERT_ASSERT_OK(LiteRtGetReduceAllKeepDimsOption(op, &keepdims));
   ASSERT_EQ(keepdims, false);
 }
 
@@ -257,6 +340,19 @@ TEST(GetOpOptionTest, TestGetPackOptions) {
   int32_t axis;
   LITERT_ASSERT_OK(LiteRtGetPackAxisOption(op, &axis));
   ASSERT_EQ(axis, 0);
+}
+
+TEST(GetOpOptionTest, TestGetUnpackOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_unpack_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  int32_t axis;
+  LITERT_ASSERT_OK(LiteRtGetUnpackAxisOption(op, &axis));
+  ASSERT_EQ(axis, 2);
 }
 
 TEST(GetOpOptionTest, TestGetGatherOptions) {

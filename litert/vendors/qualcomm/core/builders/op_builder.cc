@@ -4,12 +4,12 @@
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 
 #include <cstdint>
-#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -214,9 +214,10 @@ OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
           {QNN_OP_UN_PACK, QnnOpCode::kUnPack},
       };
 
-  const auto op_count = ops.size();
-  const auto name = "op_type_" + std::string(op_type) + "_op_count_" +
-                    std::to_string(op_count);
+  // TODO(jiunkaiy): Remove the static op_index to ensure each op has a unique
+  // name.
+  static uint32_t op_index = 0;
+  const auto name = absl::StrCat(op_type, "_", op_index++);
 
   return ops.emplace_back(std::move(name), op_type, code_type_map->at(op_type));
 }
@@ -231,7 +232,7 @@ OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
   return ret;
 }
 
-TensorWrapper& ReplaceOutputTensorForFusedActivation(
+TensorWrapper& CreateFusedActivationInputTensor(
     TensorPool& tensor_pool, const uint32_t fused_activation_function,
     std::vector<TensorWrapperRef>& output_tensors) {
   if (fused_activation_function == FusedActivationNone) {
@@ -245,11 +246,7 @@ TensorWrapper& ReplaceOutputTensorForFusedActivation(
         fused_activation_function);
   }
 
-  TensorWrapper& activation_input =
-      tensor_pool.CloneNativeTensorFrom(output_tensors[0]);
-  TensorWrapper& activation_output = output_tensors[0].get();
-  output_tensors[0] = TensorWrapperRef(activation_input);
-  return activation_output;
+  return tensor_pool.CloneNativeTensorFrom(output_tensors[0]);
 }
 
 void AddFusedActivationNode(std::vector<OpWrapper>& res,

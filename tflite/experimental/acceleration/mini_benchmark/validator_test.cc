@@ -26,7 +26,7 @@ limitations under the License.
 #if FLATBUFFERS_LITTLEENDIAN == 0
 #include "tflite/core/model_builder.h"
 #endif
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 #include "tflite/acceleration/configuration/configuration.pb.h"
 #include "tflite/acceleration/configuration/configuration_generated.h"
 #include "tflite/acceleration/configuration/proto_to_flatbuffer.h"

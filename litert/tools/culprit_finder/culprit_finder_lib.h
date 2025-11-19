@@ -18,6 +18,7 @@
 #include <cassert>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -28,7 +29,7 @@
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
-#include "tflite/profiling/proto/model_runtime_info.proto.h"
+#include "tflite/profiling/proto/model_runtime_info.pb.h"
 #include "tflite/tools/command_line_flags.h"
 #include "tflite/tools/delegates/delegate_provider.h"
 #include "tflite/tools/model_loader.h"
@@ -60,6 +61,9 @@ class CulpritFinder {
   int BinarySearchFindStartNode(int start_node, int end_node);
   // Find the end node of the culprit node range.
   int BinarySearchFindEndNode(int start_node, int end_node);
+
+  // Run the culprit finder linear search.
+  TfLiteStatus RunCulpritFinderLinearSearch();
 
  private:
   // Get the delegate for the given node range. The delegate type and options
@@ -103,7 +107,13 @@ class CulpritFinder {
   // Get the model path from the params.
   std::string GetModelPath();
 
-  // The model metadata for the model.
+  // Make the report for the culprit finder.
+  void MakeReport();
+  // Run the node range analysis for the given node range.
+  TfLiteStatus NodeRangeAnalysis(int start_node, int end_node);
+  // Log the overall stat for the culprit finder.
+  void LogOverallStat(const OverallStat& overall_stat);
+
   std::unique_ptr<ModelMetadata> model_metadata_;
   // The input manager for the model.
   std::unique_ptr<TfliteInputManager> input_manager_;
@@ -121,6 +131,9 @@ class CulpritFinder {
   // Contain delegate-related parameters that are initialized from
   // command-line flags.
   ToolParams params_;
+
+  // A vector of <error_threshold, OverallStat> pairs.
+  std::vector<std::pair<float, OverallStat>> overall_stats_;
 };
 
 }  // namespace litert::tools

@@ -153,6 +153,91 @@ TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetIrJsonDir(qualcomm_options, "tmp/"));
+
+  const char* ir_json_dir;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetIrJsonDir(qualcomm_options, &ir_json_dir));
+  EXPECT_STREQ(ir_json_dir, "tmp/");
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DlcDir) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetDlcDir(qualcomm_options, "tmp/"));
+
+  const char* dlc_dir;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetDlcDir(qualcomm_options, &dlc_dir));
+  EXPECT_STREQ(dlc_dir, "tmp/");
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, VtcmSize) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetVtcmSize(qualcomm_options, 4));
+
+  uint32_t vtcm_size;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetVtcmSize(qualcomm_options, &vtcm_size));
+  EXPECT_EQ(vtcm_size, 4);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HvxThread) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetNumHvxThreads(qualcomm_options, 4));
+
+  uint32_t num_hvx_threads;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetNumHvxThreads(qualcomm_options,
+                                                         &num_hvx_threads));
+  EXPECT_EQ(num_hvx_threads, 4);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, OptimizationLevel) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetOptimizationLevel(
+      qualcomm_options, kHtpOptimizeForPrepare));
+
+  LiteRtQualcommOptionsOptimizationLevel optimization_level;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetOptimizationLevel(
+      qualcomm_options, &optimization_level));
+  EXPECT_EQ(optimization_level, kHtpOptimizeForPrepare);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -176,13 +261,47 @@ TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, UseConvHMX) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetUseConvHMX(qualcomm_options, true));
+
+  bool use_conv_hmx;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetUseConvHMX(qualcomm_options, &use_conv_hmx));
+  EXPECT_TRUE(use_conv_hmx);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, UseFoldReLU) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetUseFoldReLU(qualcomm_options, true));
+
+  bool use_fold_relu;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetUseFoldReLU(qualcomm_options, &use_fold_relu));
+  EXPECT_TRUE(use_fold_relu);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(QualcommOptionsTest, CppApi) {
   auto options = QualcommOptions::Create();
   ASSERT_TRUE(options);
 
-  EXPECT_EQ(options->GetLogLevel(), kLiteRtQualcommLogLevelInfo);
-  options->SetLogLevel(kLiteRtQualcommLogLevelWarn);
-  EXPECT_EQ(options->GetLogLevel(), kLiteRtQualcommLogLevelWarn);
+  EXPECT_EQ(options->GetLogLevel(), QualcommOptions::LogLevel::kInfo);
+  options->SetLogLevel(QualcommOptions::LogLevel::kWarn);
+  EXPECT_EQ(options->GetLogLevel(), QualcommOptions::LogLevel::kWarn);
 
   EXPECT_FALSE(options->GetEnableWeightSharing());
   options->SetEnableWeightSharing(true);
@@ -197,14 +316,14 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetUseQint16AsQuint16());
 
   EXPECT_EQ(options->GetHtpPerformanceMode(),
-            kLiteRtQualcommHtpPerformanceModeDefault);
-  options->SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
+            QualcommOptions::HtpPerformanceMode::kDefault);
+  options->SetHtpPerformanceMode(QualcommOptions::HtpPerformanceMode::kBurst);
   EXPECT_EQ(options->GetHtpPerformanceMode(),
-            kLiteRtQualcommHtpPerformanceModeBurst);
+            QualcommOptions::HtpPerformanceMode::kBurst);
 
-  EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingOff);
-  options->SetProfiling(kLiteRtQualcommProfilingDetailed);
-  EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingDetailed);
+  EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
+  options->SetProfiling(QualcommOptions::Profiling::kDetailed);
+  EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kDetailed);
 
   const std::vector<std::int32_t> kDumpTensorIds{1, 2, 3};
   EXPECT_TRUE(options->GetDumpTensorIds().empty());
@@ -213,6 +332,37 @@ TEST(QualcommOptionsTest, CppApi) {
   for (size_t i = 0; i < kDumpTensorIds.size(); i++) {
     EXPECT_EQ(ids[i], kDumpTensorIds[i]);
   }
+
+  EXPECT_EQ(options->GetIrJsonDir(), "");
+  options->SetIrJsonDir("tmp");
+  EXPECT_EQ(options->GetIrJsonDir(), "tmp");
+
+  EXPECT_EQ(options->GetDlcDir(), "");
+  options->SetDlcDir("tmp");
+  EXPECT_EQ(options->GetDlcDir(), "tmp");
+
+  EXPECT_EQ(options->GetVtcmSize(), 0);
+  options->SetVtcmSize(4);
+  EXPECT_EQ(options->GetVtcmSize(), 4);
+
+  EXPECT_EQ(options->GetNumHvxThreads(), 0);
+  options->SetNumHvxThreads(4);
+  EXPECT_EQ(options->GetNumHvxThreads(), 4);
+
+  EXPECT_EQ(options->GetOptimizationLevel(),
+            QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
+  options->SetOptimizationLevel(
+      QualcommOptions::OptimizationLevel::kOptimizeForPrepare);
+  EXPECT_EQ(options->GetOptimizationLevel(),
+            QualcommOptions::OptimizationLevel::kOptimizeForPrepare);
+
+  EXPECT_TRUE(options->GetUseConvHMX());
+  options->SetUseConvHMX(false);
+  EXPECT_FALSE(options->GetUseConvHMX());
+
+  EXPECT_TRUE(options->GetUseFoldReLU());
+  options->SetUseFoldReLU(false);
+  EXPECT_FALSE(options->GetUseFoldReLU());
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {
@@ -226,6 +376,35 @@ TEST(QualcommOptionsTest, FindFromChain) {
 
   auto qnn_opts_d = FindOpaqueOptions<QualcommOptions>(*options);
   EXPECT_TRUE(qnn_opts_d);
+}
+
+TEST(LiteRtQualcommOptionsTest, Hash) {
+  LiteRtOpaqueOptions options1;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options1));
+  LiteRtOpaqueOptions options2;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options2));
+
+  uint64_t hash1, hash2;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtQualcommOptions qualcomm_options1;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options1, &qualcomm_options1));
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetLogLevel(
+      qualcomm_options1, kLiteRtQualcommLogLevelWarn));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  EXPECT_NE(hash1, hash2);
+
+  LiteRtQualcommOptions qualcomm_options2;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options2, &qualcomm_options2));
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetLogLevel(
+      qualcomm_options2, kLiteRtQualcommLogLevelWarn));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtDestroyOpaqueOptions(options1);
+  LiteRtDestroyOpaqueOptions(options2);
 }
 
 }  // namespace

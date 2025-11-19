@@ -14,36 +14,38 @@
 
 #include "litert/cc/litert_compiled_model.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <iterator>
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
-#include "litert/c/litert_metrics.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_layout.h"
+#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_profiler.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace litert {
 
 Expected<size_t> CompiledModel::FindInputIndex(
     size_t signature_index, absl::string_view input_name) const {
-  LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                          model_.GetSignature(signature_index));
-  const std::vector<absl::string_view>& input_names = signature.InputNames();
-  auto it = std::find(input_names.begin(), input_names.end(), input_name);
+  LITERT_ASSIGN_OR_RETURN(const auto input_names,
+                          model_.GetSignatureInputNames(signature_index));
+  auto it = absl::c_find(input_names, input_name);
   if (it != input_names.end()) {
     return std::distance(input_names.begin(), it);
   }
@@ -52,10 +54,9 @@ Expected<size_t> CompiledModel::FindInputIndex(
 
 Expected<size_t> CompiledModel::FindOutputIndex(
     size_t signature_index, absl::string_view output_name) const {
-  LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                          model_.GetSignature(signature_index));
-  const std::vector<absl::string_view>& output_names = signature.OutputNames();
-  auto it = std::find(output_names.begin(), output_names.end(), output_name);
+  LITERT_ASSIGN_OR_RETURN(const auto output_names,
+                          model_.GetSignatureOutputNames(signature_index));
+  auto it = absl::c_find(output_names, output_name);
   if (it != output_names.end()) {
     return std::distance(output_names.begin(), it);
   }
@@ -63,17 +64,17 @@ Expected<size_t> CompiledModel::FindOutputIndex(
 }
 
 Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
-    LiteRtEnvironment env, const TensorBufferRequirements& buffer_requirements,
+    const Environment& env, const TensorBufferRequirements& buffer_requirements,
     const RankedTensorType& tensor_type) {
   LITERT_ASSIGN_OR_RETURN(
-      const std::vector<LiteRtTensorBufferType>& supported_types,
+      const std::vector<TensorBufferType>& supported_types,
       buffer_requirements.SupportedTypes());
   if (supported_types.empty()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Input doesn't support any tensor buffer types");
   }
   // For simplicity we just pick the first supported tensor buffer type.
-  LiteRtTensorBufferType tensor_buffer_type = supported_types[0];
+  TensorBufferType tensor_buffer_type = supported_types[0];
   LITERT_ASSIGN_OR_RETURN(size_t buffer_size, buffer_requirements.BufferSize());
 
   LITERT_ASSIGN_OR_RETURN(TensorBuffer buffer, TensorBuffer::CreateManaged(
@@ -85,42 +86,65 @@ Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
 Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
     size_t signature_index, absl::string_view tensor_name,
     bool is_input) const {
-  LITERT_ASSIGN_OR_RETURN(Signature signature,
-                          model_.GetSignature(signature_index));
-
-  LITERT_ASSIGN_OR_RETURN(Subgraph subgraph, model_.Subgraph(signature.Key()));
-
-  Expected<Tensor> tensor_expected =
-      is_input ? subgraph.Input(tensor_name) : subgraph.Output(tensor_name);
-  Expected<TensorBufferRequirements> buffer_requirements_expected =
-      is_input ? GetInputBufferRequirements(signature_index, tensor_name)
-               : GetOutputBufferRequirements(signature_index, tensor_name);
-
-  LITERT_ASSIGN_OR_RETURN(const Tensor& tensor, tensor_expected);
-  LITERT_ASSIGN_OR_RETURN(const TensorBufferRequirements& buffer_requirements,
-                          buffer_requirements_expected);
-  LITERT_ASSIGN_OR_RETURN(const RankedTensorType& tensor_type,
-                          tensor.RankedTensorType());
-
-  return CreateBufferImpl(env_, buffer_requirements, tensor_type);
+  Expected<RankedTensorType> tensor_type_expected =
+      is_input ? model_.GetInputTensorType(signature_index, tensor_name)
+               : model_.GetOutputTensorType(signature_index, tensor_name);
+  LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_type, tensor_type_expected);
+  LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
+  if (is_input) {
+    LITERT_ASSIGN_OR_RETURN(
+        TensorBufferRequirements buffer_requirements,
+        GetInputBufferRequirements(signature_index, tensor_name));
+    LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
+                            FindInputIndex(signature_index, tensor_name));
+    LiteRtLayout input_layout;
+    if (LiteRtGetCompiledModelInputTensorLayout(Get(), signature_index,
+                                                tensor_index, &input_layout) ==
+        kLiteRtStatusOk) {
+      Layout runtime_layout(input_layout);
+      tensor_type = RankedTensorType(tensor_type.ElementType(),
+                                     std::move(runtime_layout));
+    }
+    return CreateBufferImpl(env, buffer_requirements, tensor_type);
+  } else {
+    const auto& dims = tensor_type.Layout().Dimensions();
+    if (absl::c_find(dims, -1) != dims.end()) {
+      LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
+                              FindOutputIndex(signature_index, tensor_name));
+      LITERT_ASSIGN_OR_RETURN(
+          std::vector<Layout> runtime_layouts,
+          GetOutputTensorLayouts(signature_index, /*update_allocation=*/true));
+      tensor_type = RankedTensorType(tensor_type.ElementType(),
+                                     std::move(runtime_layouts[tensor_index]));
+      LITERT_ASSIGN_OR_RETURN(
+          const TensorBufferRequirements& refreshed_requirements,
+          GetOutputBufferRequirements(signature_index, tensor_name));
+      return CreateBufferImpl(env, refreshed_requirements, tensor_type);
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          const TensorBufferRequirements& requirements,
+          GetOutputBufferRequirements(signature_index, tensor_name));
+      return CreateBufferImpl(env, requirements, tensor_type);
+    }
+  }
 }
 
 Expected<std::vector<TensorBuffer>> CompiledModel::CreateInputOutputBuffers(
     size_t signature_index, bool is_input) const {
-  LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                          model_.GetSignature(signature_index));
-  LITERT_ASSIGN_OR_RETURN(const Subgraph subgraph,
-                          model_.Subgraph(signature.Key()));
   std::vector<TensorBuffer> tensor_buffers;
-  std::vector<absl::string_view> tensor_names;
+  Expected<std::vector<absl::string_view>> tensor_names;
+  tensor_names = is_input ? model_.GetSignatureInputNames(signature_index)
+                          : model_.GetSignatureOutputNames(signature_index);
+  if (!tensor_names) {
+    return tensor_names.Error();
+  }
+  tensor_buffers.reserve(tensor_names->size());
 
-  tensor_names = is_input ? signature.InputNames() : signature.OutputNames();
-  tensor_buffers.reserve(tensor_names.size());
-
-  for (int i = 0; i < tensor_names.size(); ++i) {
+  for (int i = 0; i < tensor_names->size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         TensorBuffer tensor_buffer,
-        CreateInputOutputBuffer(signature.Key(), tensor_names[i], is_input));
+        CreateInputOutputBuffer(signature_index, tensor_names->at(i),
+                                is_input));
     tensor_buffers.push_back(std::move(tensor_buffer));
   }
 
@@ -174,36 +198,34 @@ Expected<void> CompiledModel::RunMapHelper(
     return Unexpected(kLiteRtStatusErrorNotFound,
                       "Failed to get signature_index");
   }
-  auto subgraph = model_.Subgraph(signature_key);
-  if (!subgraph) {
-    return Unexpected(kLiteRtStatusErrorNotFound, "Failed to get subgraph");
-  }
-  return RunMapWithIndexHelper(*signature_index, *subgraph, input_map,
-                               output_map, async);
+  return RunMapWithIndexHelper(*signature_index, input_map, output_map, async);
 }
 
 Expected<void> CompiledModel::RunMapWithIndexHelper(
-    size_t signature_index, const Subgraph& subgraph,
+    size_t signature_index,
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async) const {
-  auto input_tensors = subgraph.Inputs();
-  size_t num_inputs = input_tensors.size();
+  LITERT_ASSIGN_OR_RETURN(auto input_names,
+                          model_.GetSignatureInputNames(signature_index));
+  size_t num_inputs = input_names.size();
   auto input_buffers_ptr = std::make_unique<LiteRtTensorBuffer[]>(num_inputs);
   for (int i = 0; i < num_inputs; ++i) {
-    absl::string_view input_name = input_tensors[i].Name();
+    absl::string_view input_name = input_names[i];
     auto it = input_map.find(input_name);
+    // if the input is not provided in the input map, we set it to nullptr.
     if (it == input_map.end()) {
-      return Unexpected(kLiteRtStatusErrorNotFound,
-                        "The given map is missing some input TensorBuffers");
+      input_buffers_ptr[i] = nullptr;
+      continue;
     }
     input_buffers_ptr[i] = it->second.Get();
   }
-  auto output_tensors = subgraph.Outputs();
-  size_t num_outputs = output_tensors.size();
+  LITERT_ASSIGN_OR_RETURN(auto output_names,
+                          model_.GetSignatureOutputNames(signature_index));
+  size_t num_outputs = output_names.size();
   auto output_buffers_ptr = std::make_unique<LiteRtTensorBuffer[]>(num_outputs);
   for (int i = 0; i < num_outputs; ++i) {
-    absl::string_view output_name = output_tensors[i].Name();
+    absl::string_view output_name = output_names[i];
     auto it = output_map.find(output_name);
     if (it == output_map.end()) {
       return Unexpected(kLiteRtStatusErrorNotFound,
@@ -215,46 +237,26 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
                        num_outputs, output_buffers_ptr.get(), async);
 }
 
-Expected<void> CompiledModel::StartMetricsCollection(int detail_level) {
-  if (auto status =
-          LiteRtCompiledModelStartMetricsCollection(Get(), detail_level);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to start metrics collection");
-  }
-  return {};
-}
-
-Expected<CompiledModel::Metrics> CompiledModel::StopMetricsCollection() {
-  LiteRtMetrics metrics = nullptr;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateMetrics(&metrics));
-  absl::Cleanup metrics_cleanup = [&metrics] { LiteRtDestroyMetrics(metrics); };
-  LITERT_RETURN_IF_ERROR(
-      LiteRtCompiledModelStopMetricsCollection(Get(), metrics));
-  int num_metrics;
-  LITERT_RETURN_IF_ERROR(LiteRtGetNumMetrics(metrics, &num_metrics));
-
-  std::vector<Metrics::Metric> compiled_model_metrics;
-  compiled_model_metrics.reserve(num_metrics);
-  for (int i = 0; i < num_metrics; ++i) {
-    LiteRtMetric metric;
-    LITERT_RETURN_IF_ERROR(LiteRtGetMetric(metrics, i, &metric));
-    compiled_model_metrics.push_back({metric.name, metric.value});
-  }
-  return CompiledModel::Metrics{.metrics = std::move(compiled_model_metrics)};
-}
-
 Expected<bool> CompiledModel::IsFullyAccelerated() {
   bool fully_accelerated = false;
-  LITERT_RETURN_IF_ERROR(LiteRtCompiledModelIsFullyAccelerated(
-      Get(), &fully_accelerated));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtCompiledModelIsFullyAccelerated(Get(), &fully_accelerated));
   return fully_accelerated;
 }
 
-Expected<bool> CompiledModel::SetProfiler(Profiler& profiler) {
-  if (auto status = LiteRtCompiledModelSetProfiler(Get(), profiler.Get());
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to set profiler");
+bool CompiledModel::CheckCancelledWrapper(void* data) {
+  CompiledModel* model = static_cast<CompiledModel*>(data);
+  if (model && model->check_cancelled_func_) {
+    return model->check_cancelled_func_();
   }
-  return true;
+  return false;
 }
+
+void CompiledModel::SetCancellationFunction(
+    absl::AnyInvocable<bool()> check_cancelled_func) {
+  check_cancelled_func_ = std::move(check_cancelled_func);
+  LiteRtSetCompiledModelCancellationFunction(Get(), this,
+                                             &CheckCancelledWrapper);
+}
+
 }  // namespace litert

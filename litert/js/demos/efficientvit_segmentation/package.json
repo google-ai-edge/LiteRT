@@ -1,0 +1,30 @@
+{
+  "name": "@litertjs/efficientvit_segmentation_demo",
+  "private": "true",
+  "version": "0.2.1",
+  "main": "index.js",
+  "scripts": {
+    "copy-wasm": "mkdirp dist && cp -r `node -e \"console.log(path.join(require.resolve('@litertjs/core/package.json'), '../wasm'))\"` dist/",
+    "copy-static-files": "mkdirp dist && cp -r static dist/ && cp index.html dist/ && npm run copy-wasm",
+    "dev": "rimraf dist && npm run copy-static-files && esbuild --bundle --target=es2020 --watch --outfile=dist/_demo_bin.js --serve --servedir=dist --sourcemap src/index.ts",
+    "build": "rimraf dist && npm run copy-static-files  && esbuild --bundle --target=es2020 --outfile=dist/_demo_bin.js --sourcemap src/index.ts"
+  },
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/demos/efficientvit_segmentation"
+  },
+  "license": "Apache-2.0",
+  "description": "",
+  "dependencies": {
+    "@litertjs/core": "^0.2.1",
+    "@litertjs/tfjs-interop": "^0.2.1",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "esbuild": "^0.23.0",
+    "rimraf": "^6.0.1",
+    "mkdirp": "^3.0.1"
+  }
+}

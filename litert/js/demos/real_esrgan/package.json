@@ -1,0 +1,23 @@
+{
+  "name": "@litertjs/real_esrgan_demo",
+  "private": "true",
+  "version": "0.2.1",
+  "description": "LiteRT.js Image Upscaling Demo",
+  "scripts": {
+    "copy-wasm": "mkdirp dist && cp -r `node -e \"console.log(path.join(require.resolve('@litertjs/core/package.json'), '../wasm'))\"` dist/",
+    "copy-static-files": "mkdirp dist && cp index.html dist/ && npm run copy-wasm",
+    "dev": "rimraf dist && npm run copy-static-files && esbuild --bundle --target=es2020 --watch --outfile=dist/_demo_bin.js --serve --servedir=dist --sourcemap src/image_upscaler.ts",
+    "build": "rimraf dist && npm run copy-static-files  && esbuild --bundle --target=es2020 --outfile=dist/_demo_bin.js --sourcemap src/image_upscaler.ts"
+  },
+  "dependencies": {
+    "@litertjs/core": "^0.2.1",
+    "lit": "^3.1.0"
+  },
+  "devDependencies": {
+    "@litertjs/tsconfig": "^0.2.1",
+    "esbuild": "^0.25.9",
+    "mkdirp": "^3.0.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.0.0"
+  }
+}

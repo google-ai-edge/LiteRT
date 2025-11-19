@@ -26,7 +26,8 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 
 Expected<void> RegisterSharedObjectAccelerator(
     LiteRtEnvironmentT& environment, absl::string_view plugin_path,
-    absl::string_view registration_function_name);
+    absl::string_view registration_function_name,
+    bool try_symbol_already_loaded = true);
 
 }  // namespace litert
 

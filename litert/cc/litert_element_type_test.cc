@@ -32,8 +32,9 @@ class ElementTypeTest : public ::testing::Test {
 TYPED_TEST_SUITE_P(ElementTypeTest);
 
 TYPED_TEST_P(ElementTypeTest, TypeAndSize) {
-  const size_t size = GetByteWidth<GetElementType<TypeParam>()>();
-  EXPECT_EQ(size, this->Size());
+  const auto size = GetByteWidth<GetElementType<TypeParam>()>();
+  const auto width = size.NumBytes();
+  ASSERT_EQ(width, this->Size());
 }
 
 REGISTER_TYPED_TEST_SUITE_P(ElementTypeTest, TypeAndSize);

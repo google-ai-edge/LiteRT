@@ -17,8 +17,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_runtime_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
@@ -49,6 +49,42 @@ Expected<bool> RuntimeOptions::GetShloCompositeInlining() const {
   LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsShloCompositeInlining(
       runtime_options, &shlo_composite_inlining));
   return shlo_composite_inlining;
+}
+
+Expected<void> RuntimeOptions::SetEnableProfiling(
+  bool enable_profiling) {
+LiteRtRuntimeOptions runtime_options;
+LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsEnableProfiling(
+    runtime_options, enable_profiling));
+return {};
+}
+
+Expected<bool> RuntimeOptions::GetEnableProfiling() const {
+LiteRtRuntimeOptions runtime_options;
+LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+bool enable_profiling;
+LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsEnableProfiling(
+    runtime_options, &enable_profiling));
+return enable_profiling;
+}
+
+Expected<void> RuntimeOptions::SetErrorReporterMode(
+    LiteRtErrorReporterMode error_reporter_mode) {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsErrorReporterMode(
+      runtime_options, error_reporter_mode));
+  return {};
+}
+
+Expected<LiteRtErrorReporterMode> RuntimeOptions::GetErrorReporterMode() const {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  LiteRtErrorReporterMode error_reporter_mode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsErrorReporterMode(
+      runtime_options, &error_reporter_mode));
+  return error_reporter_mode;
 }
 
 }  // namespace litert

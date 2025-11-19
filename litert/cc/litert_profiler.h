@@ -19,8 +19,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
@@ -35,16 +35,6 @@ class Profiler
   explicit Profiler(LiteRtProfiler profiler, OwnHandle owned)
       : internal::Handle<LiteRtProfiler, LiteRtDestroyProfiler>(profiler,
                                                                 owned) {}
-
-  // Creates a Profiler instance. The caller takes ownership of the returned
-  // Profiler object. The caller should keep the profiler alive during the model
-  // execution. `size` is the maximum number of events that can be stored in the
-  // profiler.
-  static Expected<Profiler> Create(int size) {
-    LiteRtProfiler profiler;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateProfiler(size, &profiler));
-    return Profiler(profiler, OwnHandle::kYes);
-  }
 
   // Get the number of events.
   Expected<int> GetNumEvents() const {

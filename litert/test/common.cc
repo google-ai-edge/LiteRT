@@ -29,15 +29,20 @@
 #include "absl/base/const_init.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "tflite/kernels/register.h"
+#else
+#include "tflite/mutable_op_resolver.h"
+#endif  // LITERT_NO_BUILTIN_OPS
 
 namespace litert::testing {
 
@@ -46,7 +51,7 @@ Expected<UniqueTestDirectory> UniqueTestDirectory::Create() {
   ABSL_CONST_INIT static absl::Mutex mutex(absl::kConstInit);
 
   // We don't want multiple threads to create the same directory.
-  absl::MutexLock l(&mutex);
+  absl::MutexLock l(mutex);
 
   auto tmp_dir = std::filesystem::temp_directory_path();
   std::random_device dev;
@@ -61,7 +66,7 @@ Expected<UniqueTestDirectory> UniqueTestDirectory::Create() {
     if (std::filesystem::create_directory(path)) {
       LITERT_LOG(LITERT_INFO, "Created unique temporary directory %s",
                  path.c_str());
-      return UniqueTestDirectory(path);
+      return UniqueTestDirectory(path.string());
     }
   }
 
@@ -110,16 +115,20 @@ std::string GetLiteRtPath(absl::string_view rel_path) {
   }
 }
 
-Model LoadTestFileModel(absl::string_view filename) {
-  LITERT_ASSIGN_OR_ABORT(auto model,
-                         Model::CreateFromFile(GetTestFilePath(filename)));
+ExtendedModel LoadTestFileModel(absl::string_view filename) {
+  LITERT_ASSIGN_OR_ABORT(
+      auto model, ExtendedModel::CreateFromFile(GetTestFilePath(filename)));
   return model;
 }
 
 Expected<TflRuntime::Ptr> TflRuntime::CreateFromFlatBuffer(
     internal::FlatbufferWrapper::Ptr flatbuffer) {
   ::tflite::Interpreter::Ptr interp;
+#if !defined(LITERT_NO_BUILTIN_OPS)
   tflite::ops::builtin::BuiltinOpResolver resolver;
+#else
+  tflite::MutableOpResolver resolver;
+#endif
   tflite::InterpreterBuilder(flatbuffer->FlatbufferModel(), resolver)(&interp);
   if (interp == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure);

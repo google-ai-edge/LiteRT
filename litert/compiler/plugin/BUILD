@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:special_rule.bzl", "litert_metal_linkopts", "litert_metal_opts")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
@@ -21,25 +25,34 @@ cc_library(
     name = "compiler_plugin",
     srcs = ["compiler_plugin.cc"],
     hdrs = ["compiler_plugin.h"],
+    copts = litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
     deps = [
         ":algo",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
+        "//litert/c:litert_rewriter",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_op_options",
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/core:build_stamp",
         "//litert/core:dynamic_loading",
         "//litert/core:environment",
         "//litert/core:filesystem",
+        "//litert/core:options",
         "//litert/core:version",
         "//litert/core/model",
+        "//litert/core/util:perfetto_profiling",
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/c:litert_compiler_plugin_api",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
@@ -49,39 +62,84 @@ cc_library(
     ],
 )
 
-# copybara:uncomment_begin(no OSS for unique-test-directory)
-# cc_test(
-#     name = "compiler_plugin_test",
-#     srcs = ["compiler_plugin_test.cc"],
-#     data = [
-#         "//litert/test:mlir_test_data",
-#         "//litert/vendors/examples:example_plugin_so",
-#     ],
-#     tags = [
-#         # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
-#         "noasan",
-#         "nomsan",
-#         "nosan",
-#         "notsan",
-#     ],
-#     deps = [
-#         ":compiler_plugin",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/strings:string_view",
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_op_code",
-#         "//litert/cc:litert_op_options",
-#         "//litert/cc/internal:litert_environment",
-#         "//litert/core:build_stamp",
-#         "//litert/core:filesystem",
-#         "//litert/core/model",
-#         "//litert/core/model:model_serialize",
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/tools:dump",
-#     ],
-# )
-# copybara:uncomment_end
+cc_test(
+    name = "compiler_plugin_test",
+    srcs = ["compiler_plugin_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    # Workaround to disable mismatched-size-delete.
+    # A compiler plugin uses `libLiteRtRuntimeCApi.so` but `compiler_plugin` is a static library for runtime.
+    # So mixing of the two will cause mismatched-size-delete error.
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    deps = [
+        ":compiler_plugin",
+        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
+        # "@com_google_googletest//:gtest_main_no_heapcheck",
+        # copybara:uncomment_end_and_comment_begin
+        "@com_google_googletest//:gtest_main",
+        # copybara:comment_end
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/cc/options:compiler_options",
+        "//litert/cc:litert_environment",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options_testonly",
+        "//litert/core:build_stamp",
+        "//litert/core:filesystem",
+        "//litert/core/model",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/tools:dump",
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_transformation_test",
+    srcs = ["compiler_plugin_transformation_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+        # TODO(yunandrew): Re-enable once the test is fixed.
+        "notap",
+    ],
+    deps = [
+        ":compiler_plugin",
+        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
+        # "@com_google_googletest//:gtest_main_no_heapcheck",
+        # copybara:uncomment_end_and_comment_begin
+        "@com_google_googletest//:gtest_main",
+        # copybara:comment_end
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/test:common",
+    ],
+)
 
 cc_library(
     name = "algo",
@@ -90,13 +148,12 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_detail",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
         "//litert/core:insert_order_map",
         "//litert/core/model",
-        "//litert/core/model:model_graph",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
@@ -113,8 +170,8 @@ cc_test(
         ":algo",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_model_predicates",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_model_predicates",
         "//litert/core/model",
         "//litert/core/model:graph_validation",
         "//litert/core/model:model_serialize",

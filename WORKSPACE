@@ -19,11 +19,26 @@ rules_shell_dependencies()
 
 rules_shell_toolchains()
 
-# Java rules
 http_archive(
-    name = "rules_java",
-    sha256 = "c73336802d0b4882e40770666ad055212df4ea62cfa6edf9cb0f9d29828a0934",
-    url = "https://github.com/bazelbuild/rules_java/releases/download/5.3.5/rules_java-5.3.5.tar.gz",
+    name = "rules_platform",
+    sha256 = "0aadd1bd350091aa1f9b6f2fbcac8cd98201476289454e475b28801ecf85d3fd",
+    urls = [
+        "https://github.com/bazelbuild/rules_platform/releases/download/0.1.0/rules_platform-0.1.0.tar.gz",
+    ],
+)
+
+# Download coremltools of the same version of tensorflow, but with a custom patchcmd until
+# tensorflow is updated to do the same patchcmd.
+http_archive(
+    name = "coremltools",
+    build_file = "@//third_party/coremltools:coremltools.BUILD",
+    patch_cmds = [
+        # Append "mlmodel/format/" to the import path of all proto files.
+        "sed -i -e 's|import public \"|import public \"mlmodel/format/|g' mlmodel/format/*.proto",
+    ],
+    sha256 = "37d4d141718c70102f763363a8b018191882a179f4ce5291168d066a84d01c9d",
+    strip_prefix = "coremltools-8.0",
+    url = "https://github.com/apple/coremltools/archive/8.0.tar.gz",
 )
 
 # Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
@@ -31,11 +46,9 @@ load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
 tensorflow_source_repo(
     name = "org_tensorflow",
-    sha256 = "",
-    strip_prefix = "tensorflow-master",
-    urls = [
-        "https://github.com/tensorflow/tensorflow/archive/master.tar.gz",
-    ],
+    sha256 = "9b453eb4762d2db3579865df07c0de500b095189d80b4abbb6b5dacca0cda9cd",
+    strip_prefix = "tensorflow-061041963ead867e8f47fb63e153db3e61e3b20b",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/061041963ead867e8f47fb63e153db3e61e3b20b.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -68,6 +81,7 @@ python_init_repositories(
         "3.10": "@org_tensorflow//:requirements_lock_3_10.txt",
         "3.11": "@org_tensorflow//:requirements_lock_3_11.txt",
         "3.12": "@org_tensorflow//:requirements_lock_3_12.txt",
+        "3.13": "@org_tensorflow//:requirements_lock_3_13.txt",
     },
 )
 
@@ -103,8 +117,28 @@ load(
 
 python_wheel_version_suffix_repository(name = "tf_wheel_version_suffix")
 
+# Toolchains for ML projects hermetic builds.
+# Details: https://github.com/google-ml-infra/rules_ml_toolchain
+http_archive(
+    name = "rules_ml_toolchain",
+    sha256 = "9dbee8f24cc1b430bf9c2a6661ab70cbca89979322ddc7742305a05ff637ab6b",
+    strip_prefix = "rules_ml_toolchain-545c80f1026d526ea9c7aaa410bf0b52c9a82e74",
+    urls = [
+        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/545c80f1026d526ea9c7aaa410bf0b52c9a82e74.tar.gz",
+    ],
+)
+
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_json_init_repository.bzl",
+    "@rules_ml_toolchain//cc/deps:cc_toolchain_deps.bzl",
+    "cc_toolchain_deps",
+)
+
+cc_toolchain_deps()
+
+register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_x86_64")
+
+load(
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_json_init_repository.bzl",
     "cuda_json_init_repository",
 )
 
@@ -116,7 +150,7 @@ load(
     "CUDNN_REDISTRIBUTIONS",
 )
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_redist_init_repositories.bzl",
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_redist_init_repositories.bzl",
     "cuda_redist_init_repositories",
     "cudnn_redist_init_repository",
 )
@@ -130,21 +164,21 @@ cudnn_redist_init_repository(
 )
 
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_configure.bzl",
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_configure.bzl",
     "cuda_configure",
 )
 
 cuda_configure(name = "local_config_cuda")
 
 load(
-    "@local_xla//third_party/nccl/hermetic:nccl_redist_init_repository.bzl",
+    "@rules_ml_toolchain//third_party/nccl/hermetic:nccl_redist_init_repository.bzl",
     "nccl_redist_init_repository",
 )
 
 nccl_redist_init_repository()
 
 load(
-    "@local_xla//third_party/nccl/hermetic:nccl_configure.bzl",
+    "@rules_ml_toolchain//third_party/nccl/hermetic:nccl_configure.bzl",
     "nccl_configure",
 )
 
@@ -153,6 +187,18 @@ nccl_configure(name = "local_config_nccl")
 load("//third_party/tqdm:workspace.bzl", tqdm = "repo")
 
 tqdm()
+
+load("//third_party/dawn:workspace.bzl", dawn = "repo")
+
+dawn()
+
+load("//third_party/lark:workspace.bzl", lark = "repo")
+
+lark()
+
+load("//third_party/xdsl:workspace.bzl", xdsl = "repo")
+
+xdsl()
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
@@ -182,6 +228,33 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.1.3/rules_kotlin-v2.1.3.tar.gz",
 )
 
+# Sentencepiece
+http_archive(
+    name = "sentencepiece",
+    build_file = "@//:BUILD.sentencepiece",
+    patch_cmds = [
+        # Empty config.h seems enough.
+        "touch config.h",
+        # Replace third_party/absl/ with absl/ in *.h and *.cc files.
+        "sed -i -e 's|#include \"third_party/absl/|#include \"absl/|g' *.h *.cc",
+        # Replace third_party/darts_clone/ with include/ in *.h and *.cc files.
+        "sed -i -e 's|#include \"third_party/darts_clone/|#include \"include/|g' *.h *.cc",
+    ],
+    patches = ["@//:PATCH.sentencepiece"],
+    sha256 = "9970f0a0afee1648890293321665e5b2efa04eaec9f1671fcf8048f456f5bb86",
+    strip_prefix = "sentencepiece-0.2.0/src",
+    url = "https://github.com/google/sentencepiece/archive/refs/tags/v0.2.0.tar.gz",
+)
+
+# Darts Clone
+http_archive(
+    name = "darts_clone",
+    build_file = "@//:BUILD.darts_clone",
+    sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
+    strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
+    url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
+)
+
 load("@rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")
 
 kotlin_repositories()  # if you want the default. Otherwise see custom kotlinc distribution below
@@ -193,6 +266,12 @@ kt_register_toolchains()  # to use the default toolchain, otherwise see toolchai
 load("//third_party/stblib:workspace.bzl", stblib = "repo")
 
 stblib()
+
+# TEST DATA ########################################################################################
+
+load("//third_party/models:workspace.bzl", "models")
+
+models()
 
 # VENDOR SDKS ######################################################################################
 
@@ -219,3 +298,11 @@ google_tensor()
 load("//third_party/litert_gpu:workspace.bzl", "litert_gpu")
 
 litert_gpu()
+
+# INTEL OPENVINO ---------------------------------------------------------------------------------
+load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
+
+openvino_configure(
+    name = "intel_openvino",
+    build_file = "//third_party/intel_openvino:openvino.bazel",
+)

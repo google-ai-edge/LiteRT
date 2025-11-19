@@ -23,7 +23,7 @@ limitations under the License.
 #include <new>
 #include <type_traits>
 
-#include "tensorflow/compiler/mlir/lite/core/api/error_reporter.h"
+#include "tflite/converter/core/api/error_reporter.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/c/common.h"
 #include "tflite/schema/schema_generated.h"
@@ -147,6 +147,11 @@ TfLiteStatus ParseDequantize(const Operator* op, ErrorReporter* error_reporter,
 
 TfLiteStatus ParseDiv(const Operator* op, ErrorReporter* error_reporter,
                       BuiltinDataAllocator* allocator, void** builtin_data);
+
+TfLiteStatus ParseDynamicUpdateSlice(const Operator* op,
+                                     ErrorReporter* error_reporter,
+                                     BuiltinDataAllocator* allocator,
+                                     void** builtin_data);
 
 TfLiteStatus ParseElu(const Operator* op, ErrorReporter* error_reporter,
                       BuiltinDataAllocator* allocator, void** builtin_data);

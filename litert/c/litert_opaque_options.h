@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_OPAQUE_OPTIONS_H_
 #define ODML_LITERT_LITERT_C_LITERT_OPAQUE_OPTIONS_H_
 
+#include <stdint.h>
+
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
@@ -72,6 +74,23 @@ LiteRtStatus LiteRtAppendOpaqueOptions(LiteRtOpaqueOptions* options,
 // parameter `options`.
 LiteRtStatus LiteRtPopOpaqueOptions(LiteRtOpaqueOptions* options);
 
+// A hash function that takes the payload data as input and returns a 64-bit
+// hash.
+typedef uint64_t (*LiteRtOpaqueOptionsHashFunc)(const void* payload_data);
+
+// Sets the payload hash function for the first item in the given `options`
+// list. The hash function takes the payload data as input and returns a 64-bit
+// hash.
+LiteRtStatus LiteRtSetOpaqueOptionsHash(
+    LiteRtOpaqueOptions options, LiteRtOpaqueOptionsHashFunc payload_hash_func);
+
+// Computes and returns the payload hash for the first item in the given
+// `options` list.
+//
+// Returns `kLiteRtStatusErrorUnsupported` if no hash function has been set
+// for the given `options` via `LiteRtSetOpaqueOptionsPayloadHashFunc`.
+LiteRtStatus LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options,
+                                        uint64_t* hash);
 #ifdef __cplusplus
 }  // extern "C"
 #endif

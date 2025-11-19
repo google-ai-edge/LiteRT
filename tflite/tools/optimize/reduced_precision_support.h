@@ -17,7 +17,7 @@ limitations under the License.
 
 #include <string>
 
-#include "tensorflow/compiler/mlir/lite/tools/optimize/reduced_precision_metadata.h"
+#include "tflite/converter/tools/optimize/reduced_precision_metadata.h"
 
 namespace tflite {
 namespace optimize {

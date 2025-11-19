@@ -3,6 +3,7 @@ load(
     "tf_cc_test",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -27,6 +28,9 @@ cc_library(
     deps = [
         ":types",
         "//tflite/c:c_api_types",
+        "//tflite/converter/delegates/flex:allowlisted_flex_ops_lib",
+        "//tflite/converter/tools/versioning",
+        "//tflite/converter/tools/versioning:op_signature",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "//tflite/toco:graph_transformations",
@@ -37,9 +41,6 @@ cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/memory",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/delegates/flex:allowlisted_flex_ops_lib",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning:op_signature",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
@@ -115,6 +116,9 @@ cc_library(
         "//tflite:schema_fbs_version",
         "//tflite:util",
         "//tflite/c:c_api_types",
+        "//tflite/converter/quantization/lite/toco_legacy:quantize_weights",
+        "//tflite/converter/schema:schema_conversion_utils",
+        "//tflite/converter/tools/versioning",
         "//tflite/schema:schema_fbs",
         "//tflite/toco:model",
         "//tflite/toco:toco_port",
@@ -122,9 +126,6 @@ cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy:quantize_weights",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning",
         "@org_tensorflow//tensorflow/core:lib_proto_parsing",
         "@org_tensorflow//tensorflow/core/platform:status",
     ],
@@ -139,13 +140,13 @@ tf_cc_test(
         ":export",
         ":operator",
         ":types",
+        "//tflite/converter/schema:schema_utils",
         "//tflite/schema:schema_fbs",
         "//tflite/toco:model",
         "@com_google_absl//absl/log",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
         "@local_xla//xla/tsl/protobuf:error_codes_proto_impl_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils",
         "@org_tensorflow//tensorflow/core:lib_proto_parsing",
         "@org_tensorflow//tensorflow/core:ops",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
@@ -166,6 +167,7 @@ cc_library(
         ":operator",
         ":types",
         "//tflite:framework",
+        "//tflite/converter/schema:schema_utils",
         "//tflite/core:framework",
         "//tflite/core/tools:verifier",
         "//tflite/schema:schema_fbs",
@@ -175,7 +177,6 @@ cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils",
     ],
 )
 
@@ -190,13 +191,13 @@ tf_cc_test(
     deps = [
         ":import",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/schema:schema_fbs",
         "//tflite/toco:model",
         "//tflite/toco:model_flags_proto_cc",
         "//tflite/toco:toco_port",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
         "@org_tensorflow//tensorflow/core:ops",
     ],
 )

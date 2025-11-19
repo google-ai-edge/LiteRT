@@ -3,6 +3,7 @@ load(
     "tf_cc_test",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],

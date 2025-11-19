@@ -27,7 +27,7 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "flatbuffers/verifier.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/api/op_resolver.h"
 #include "tflite/core/api/verifier.h"

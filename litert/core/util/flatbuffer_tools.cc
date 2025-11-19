@@ -21,8 +21,8 @@
 
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/cc/litert_macros.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"
-#include "tensorflow/compiler/mlir/lite/core/model_builder_base.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/converter/core/model_builder_base.h"
 
 #ifndef NDEBUG
 // Make flatbuffers verifier `assert` in debug mode.
@@ -309,10 +309,10 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
-    absl::string_view path) {
+    absl::string_view path, bool allow_modifications) {
   auto error_reporter = tflite::DefaultErrorReporter();
-  auto allocation =
-      tflite::GetAllocationFromFile(path.data(), error_reporter);
+  auto allocation = tflite::GetAllocationFromFile(path.data(), error_reporter,
+                                                  allow_modifications);
   return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
 }
 

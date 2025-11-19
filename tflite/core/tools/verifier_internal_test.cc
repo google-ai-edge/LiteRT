@@ -23,7 +23,7 @@ limitations under the License.
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "flatbuffers/vector.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/schema/schema_conversion_utils.h"
+#include "tflite/converter/schema/schema_conversion_utils.h"
 #include "tflite/c/common.h"
 #include "tflite/mutable_op_resolver.h"
 #include "tflite/op_resolver.h"

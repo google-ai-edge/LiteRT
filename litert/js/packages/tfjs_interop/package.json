@@ -1,0 +1,44 @@
+{
+  "name": "@litertjs/tfjs-interop",
+  "version": "0.2.1",
+  "description": "Tensorflow.js interop for LiteRT.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/**"
+  ],
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/packages/tfjs_interop"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --metafile",
+    "lint": "eslint .",
+    "typecheck": "tsc",
+    "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf dist",
+    "pack": "npm pack"
+  },
+  "peerDependencies": {
+    "@litertjs/core": "^0.2.1",
+    "@tensorflow/tfjs-core": "^4.22.0"
+  },
+  "devDependencies": {
+    "@litertjs/core": "^0.2.1",
+    "@litertjs/tsconfig": "^0.2.1",
+    "@litertjs/eslint-config": "^0.2.1",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
+    "@webgpu/types": "^0.1.54",
+    "esbuild": "^0.23.0",
+    "eslint": "^9.8.0",
+    "tsup": "^8.2.3",
+    "typescript": "^5.5.4"
+  }
+}

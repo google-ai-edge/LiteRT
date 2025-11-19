@@ -9,12 +9,13 @@ load(
     "tf_opts_nortti_if_mobile",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:build_def.bzl", "tflite_copts")
 load("//tflite:special_rules.bzl", "internal_visibility_allowlist")
 load("//tflite/delegates/flex:build_def.bzl", "tflite_flex_cc_library", "tflite_flex_shared_library")
 
 default_visibility = [
-    "@org_tensorflow//tensorflow/compiler/mlir/lite:__subpackages__",
+    "//tflite/converter:__subpackages__",
     "//tflite/android:__subpackages__",
     "//tflite/toco/tflite:__subpackages__",
 ]
@@ -269,6 +270,7 @@ cc_library(
     name = "subgraph_resource",
     hdrs = ["subgraph_resource.h"],
     compatible_with = get_compatible_with_portable(),
+    copts = if_android(["-Wno-private-header"]),
     features = tf_features_nolayering_check_if_ios(),
     deps = [
         "//tflite:cc_api_experimental",
@@ -295,6 +297,7 @@ tf_cc_test(
         ":delegate",
         ":delegate_data",
         ":test_util",
+        "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/delegates/utils:simple_delegate",
         "//tflite/kernels:kernel_util",
@@ -379,11 +382,12 @@ tf_cc_test(
     srcs = [
         "allowlisted_flex_ops_test.cc",
     ],
+    extra_copts = if_android(["-Wno-private-header"]),
     features = tf_features_nolayering_check_if_ios(),
     deps = [
         ":delegate",
+        "//tflite/converter/delegates/flex:allowlisted_flex_ops_lib",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/delegates/flex:allowlisted_flex_ops_lib",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([

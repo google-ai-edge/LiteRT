@@ -20,13 +20,12 @@
 #include <string>
 #include <utility>
 
-#include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_qualcomm_options.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/model/model.h"
@@ -51,10 +50,13 @@ const auto kSupportedOps =
                     "simple_abs_op.tflite",
                     "simple_add_fused_relu_n1_1_op.tflite",
                     "simple_add_op.tflite",
+                    "simple_arg_max_op.tflite",
+                    "simple_arg_min_op.tflite",
                     "simple_average_poll_2d.tflite",
                     "simple_average_pool_2d_fused_relu.tflite",
                     "simple_batch_matmul_op.tflite",
                     "simple_cast_op.tflite",
+                    "simple_ceil_op.tflite",
                     "simple_concatenation_fused_relu6_op.tflite",
                     "simple_concatenation_op.tflite",
                     "simple_conv_2d_fused_relu_op.tflite",
@@ -68,9 +70,11 @@ const auto kSupportedOps =
                     "simple_div_fused_tanh.tflite",
                     "simple_div_op.tflite",
                     "simple_dynamic_update_slice_op.tflite",
+                    "simple_elu_op.tflite",
                     "simple_embedding_lookup_op.tflite",
                     "simple_equal_op.tflite",
                     "simple_exp_op.tflite",
+                    "simple_floor_op.tflite",
                     "simple_floor_div.tflite",
                     "simple_fully_connected_fused_relu6_op.tflite",
                     "simple_fully_connected_op.tflite",
@@ -83,37 +87,59 @@ const auto kSupportedOps =
                     "simple_less_op.tflite",
                     "simple_log_op.tflite",
                     "simple_logical_and_op.tflite",
+                    "simple_logical_or_op.tflite",
                     "simple_logistic.tflite",
+                    "simple_log_softmax_op.tflite",
                     "simple_max_pool_2d.tflite",
                     "simple_max_pool_2d_fused_relu.tflite",
                     "simple_mean_op.tflite",
+                    "simple_mirror_pad_reflect_op.tflite",
+                    "simple_mirror_pad_symmetric_op.tflite",
                     "simple_mul_fused_relu.tflite",
                     "simple_mul_op.tflite",
+                    "simple_neg_op.tflite",
                     "simple_not_equal.tflite",
                     "simple_pack_op.tflite",
                     "simple_pad.tflite",
                     "simple_pad_v2.tflite",
                     "simple_reducemax_op.tflite",
+                    "simple_reducemin_op.tflite",
+                    "simple_reduceall_op.tflite",
+                    "simple_reduceany_op.tflite",
                     "simple_relu_op.tflite",
+                    "simple_relu1_op.tflite",
+                    "simple_relu0to1_op.tflite",
                     "simple_reshape_op.tflite",
                     "simple_resize_bilinear_op.tflite",
                     "simple_resize_nearest_neighbor_op.tflite",
                     "simple_reverse_op.tflite",
+                    "simple_round_op.tflite",
                     "simple_rsqrt_op.tflite",
                     "simple_select_op.tflite",
                     "simple_select_v2_op.tflite",
+                    "simple_sign_op.tflite",
                     "simple_sin_op.tflite",
                     "simple_slice_op.tflite",
                     "simple_softmax_op.tflite",
+                    "simple_scatter_nd_op.tflite",
                     "simple_space_to_depth_op.tflite",
                     "simple_split_op.tflite",
+                    "simple_strided_slice_op.tflite",
+                    "simple_sqrt_op.tflite",
                     "simple_sub_fused_relu_N1_1_op.tflite",
                     "simple_sub_op.tflite",
                     "simple_sum_op.tflite",
                     "simple_tanh_op.tflite",
+                    "simple_tile_op.tflite",
+                    "simple_topk_op.tflite",
                     "simple_transpose_conv_fused_tanh.tflite",
                     "simple_transpose_conv_op.tflite",
                     "simple_transpose_op.tflite",
+                    "simple_unpack_op.tflite",
+                    "simple_prelu_op.tflite",
+                    "simple_l2_norm.tflite",
+                    "l2_norm_composite.tflite",
+                    "simple_group_norm_op.tflite",
                     kFeedForwardModel,
                     kKeyEinsumModel,
                     kQueryEinsumModel,
@@ -153,7 +179,7 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 9);
+  ASSERT_EQ(num_supported_soc_models, 10);
 
   const char* config_id;
   LITERT_ASSERT_OK(
@@ -212,12 +238,10 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
 
-  auto qnn_opts = qualcomm::QualcommOptions::Create();
+  auto qnn_opts = opts->GetQualcommOptions();
   ASSERT_TRUE(qnn_opts);
-  qnn_opts->SetLogLevel(kLiteRtQualcommLogLevelError);
+  qnn_opts->SetLogLevel(qualcomm::QualcommOptions::LogLevel::kError);
   qnn_opts->SetEnableWeightSharing(false);
-
-  ASSERT_TRUE(opts->AddOpaqueOptions(std::move(*qnn_opts)));
 
   auto plugin = CreatePlugin(/*env=*/nullptr, opts->Get());
   auto model = testing::LoadTestFileModel("one_mul.tflite");

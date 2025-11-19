@@ -1,0 +1,12 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "LiteRT.js",
+  "entryPoints": [
+    "packages/core",
+    "packages/tfjs_interop",
+    "packages/wasm_utils"
+  ],
+  "entryPointStrategy": "packages",
+  "includeVersion": true,
+  "exclude": ["**/*_test.ts"]
+}

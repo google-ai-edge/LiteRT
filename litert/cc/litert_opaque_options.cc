@@ -14,28 +14,43 @@
 
 #include "litert/cc/litert_opaque_options.h"
 
+#include <cstdint>
 #include <string>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert {
-namespace {}  // namespace
 
 Expected<OpaqueOptions> FindOpaqueOptions(
     OpaqueOptions& options, const std::string& payload_identifier) {
-  Expected<OpaqueOptions> chain(OpaqueOptions(options.Get(), OwnHandle::kNo));
+  Expected<OpaqueOptions> chain(
+      OpaqueOptions::WrapCObject(options.Get(), OwnHandle::kNo));
   while (chain) {
     // TODO: lukeboyer - Error out in all the cases where there isn't
     // a valid identifier.
     const auto next_id = chain->GetIdentifier();
     if (next_id && *next_id == payload_identifier) {
-      return OpaqueOptions(chain->Get(), OwnHandle::kNo);
+      return OpaqueOptions::WrapCObject(chain->Get(), OwnHandle::kNo);
     }
     chain = chain->Next();
   }
   return Error(kLiteRtStatusErrorInvalidArgument);
+}
+
+Expected<void> OpaqueOptions::SetHash(
+    LiteRtOpaqueOptionsHashFunc payload_hash_func) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(Get(), payload_hash_func));
+  return {};
+}
+
+Expected<uint64_t> OpaqueOptions::Hash() const {
+  uint64_t hash;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsHash(Get(), &hash));
+  return hash;
 }
 
 }  // namespace litert

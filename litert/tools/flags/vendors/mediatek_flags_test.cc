@@ -57,54 +57,71 @@ TEST(NeronSDKVersionTypeFlagTest, Parse) {
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kVersion, absl::UnparseFlag(value));
   }
+
+  {
+    static constexpr absl::string_view kVersion = "version9";
+    static constexpr LiteRtMediatekOptionsNeronSDKVersionType kLevelEnum =
+        kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9;
+    EXPECT_TRUE(absl::ParseFlag(kVersion, &value, &error));
+    EXPECT_EQ(value, kLevelEnum);
+    EXPECT_EQ(kVersion, absl::UnparseFlag(value));
+  }
 }
 
-TEST(MediatekOptionsFromFlagsTest, DefaultValue) {
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+TEST(UpdateMediatekOptionsFromFlagsTest, DefaultValue) {
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8);
   EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
   EXPECT_EQ(
       options.Value().GetPerformanceMode(),
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
+  EXPECT_EQ(options.Value().GetMediatekDlaDir(), "");
 }
 
-TEST(MediatekOptionsFromFlagsTest, SetFlagToVersion7) {
+TEST(UpdateMediatekOptionsFromFlagsTest, SetFlagToVersion7) {
   absl::SetFlag(&FLAGS_mediatek_sdk_version_type,
                 kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
 }
 
-TEST(MediatekOptionsFromFlagsTest, SetEnableGemmaCompilerOptimizationsToTrue) {
+TEST(UpdateMediatekOptionsFromFlagsTest,
+     SetEnableGemmaCompilerOptimizationsToTrue) {
   absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, true);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_TRUE(options.Value().GetEnableGemmaCompilerOptimizations());
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, false);
 }
 
-TEST(MediatekOptionsFromFlagsTest, SetEnableGemmaCompilerOptimizationsToFalse) {
+TEST(UpdateMediatekOptionsFromFlagsTest,
+     SetEnableGemmaCompilerOptimizationsToFalse) {
   // Explicitly set to false (even though it's the default) to ensure it's
   // picked up
   absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, false);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
 }
 
-TEST(MediatekOptionsFromFlagsTest, SetPerformanceMode) {
+TEST(UpdateMediatekOptionsFromFlagsTest, SetPerformanceMode) {
   absl::SetFlag(
       &FLAGS_mediatek_performance_mode_type,
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetPerformanceMode(),
             kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
   // Reset flag to default to avoid affecting other tests
@@ -113,35 +130,78 @@ TEST(MediatekOptionsFromFlagsTest, SetPerformanceMode) {
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
 }
 
-TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToTrue) {
+TEST(UpdateMediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToTrue) {
   absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, true);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_TRUE(options.Value().GetEnableL1CacheOptimizations());
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
 }
 
-TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToFalse) {
+TEST(UpdateMediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToFalse) {
   // Explicitly set to false (even though it's the default) to ensure it's
   // picked up
   absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_FALSE(options.Value().GetEnableL1CacheOptimizations());
 }
 
-TEST(MediatekOptionsFromFlagsTest, SetOptimizationHint) {
+TEST(UpdateMediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToTrue) {
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, true);
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetDisableDlaDirRemoval());
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
+}
+
+TEST(UpdateMediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToFalse) {
+  // Explicitly set to false (even though it's the default) to ensure it's
+  // picked up
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_FALSE(options.Value().GetDisableDlaDirRemoval());
+}
+
+TEST(UpdateMediatekOptionsFromFlagsTest, SetOptimizationHint) {
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
                 kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetOptimizationHint(),
             kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
                 kLiteRtMediatekNeuronAdapterOptimizationHintNormal);
+}
+
+TEST(UpdateMediatekOptionsFromFlagsTest, SetMediatekDlaDir) {
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "/data/local/tmp");
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetMediatekDlaDir(), "/data/local/tmp");
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "");
+}
+
+TEST(UpdateMediatekOptionsFromFlagsTest, SetMediatekDlaDirMalformed) {
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "this is not a path");
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetMediatekDlaDir(), "this is not a path");
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "");
 }
 
 TEST(NeuronAdapterPerformanceModeFlagTest, Malformed) {

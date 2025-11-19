@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:public"],
@@ -23,8 +25,7 @@ cc_library(
     srcs = ["litert_wrapper_utils.cc"],
     hdrs = ["litert_wrapper_utils.h"],
     deps = [
-        "//litert/c:litert_tensor_buffer",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "@com_google_absl//absl/strings:string_view",
         "@local_xla//third_party/python_runtime:headers",
     ],

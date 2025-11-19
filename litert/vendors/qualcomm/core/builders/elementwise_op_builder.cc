@@ -84,6 +84,21 @@ std::vector<OpWrapper> BuildElementwiseSinOp(
   return res;
 }
 
+std::vector<OpWrapper> BuildElementwiseCeilOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_CEIL);
+
+  return res;
+}
+
 std::vector<OpWrapper> BuildElementwiseCosOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
@@ -98,6 +113,21 @@ std::vector<OpWrapper> BuildElementwiseCosOp(
   return res;
 }
 
+std::vector<OpWrapper> BuildElementwiseHardSwishOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  OpWrapper& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_NEURON_OPERATION_HARD_SWISH);
+
+  return res;
+}
+
 std::vector<OpWrapper> BuildElementwiseRsqrtOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
@@ -107,6 +137,18 @@ std::vector<OpWrapper> BuildElementwiseRsqrtOp(
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
+  elementwise_op.AddOutputTensor(outputs[0]);
+
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseSqrtOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SQUARE_ROOT);
+  elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);
 
   return res;
@@ -226,6 +268,36 @@ std::vector<OpWrapper> BuildElementwiseMaximumOp(
   return res;
 }
 
+std::vector<OpWrapper> BuildElementwiseEluOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  OpWrapper& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_NEURON_OPERATION_ELU);
+
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseFloorOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_FLOOR);
+
+  return res;
+}
+
 std::vector<OpWrapper> BuildElementwiseFloorDivOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
@@ -254,6 +326,23 @@ std::vector<OpWrapper> BuildElementwiseNotEqualOp(
   elementwise_op.AddScalarParam<std::uint32_t>(
       QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
       QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL);
+
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseOrOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  for (const auto& input : inputs) {
+    elementwise_op.AddInputTensor(input);
+  }
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_OR);
 
   return res;
 }
@@ -376,4 +465,50 @@ std::vector<OpWrapper> BuildElementwiseAbsOp(
 
   return res;
 }
+
+std::vector<OpWrapper> BuildElementwiseNegOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NEG);
+
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseRoundOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ROUND);
+
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseSignOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_SIGN);
+
+  return res;
+}
+
 }  // namespace qnn

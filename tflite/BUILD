@@ -3,6 +3,8 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_google", "if_not_windows", "if_oss", "tf_cc_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_cc_shared_object", "tflite_copts", "tflite_copts_warnings", "tflite_linkopts_no_undefined", "tflite_self_contained_libs_test_suite")
 load("//tflite:special_rules.bzl", "SPECIAL_RULES_DEPS", "internal_visibility_allowlist", "tflite_internal_cc_3p_api_deps_src_all_visibility_allowlist", "tflite_portable_test_suite")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "alias_with_tflite", "cc_library_with_tflite", "cc_test_with_tflite")
@@ -112,6 +114,10 @@ filegroup(
     name = "tflite_internal_cc_3p_api_deps_src_all",
     srcs = [
         ":tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter:tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter/core/api:tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter/core/c:tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter/schema:tflite_internal_cc_3p_api_deps_src",
         "//tflite/core:macros.h",
         "//tflite/core/acceleration/configuration/c:tflite_internal_cc_3p_api_deps_src",
         "//tflite/core/api:tflite_internal_cc_3p_api_deps_src",
@@ -119,10 +125,6 @@ filegroup(
         "//tflite/kernels:tflite_internal_cc_3p_api_deps_src",
         "//tflite/kernels/internal:tflite_internal_cc_3p_api_deps_src",
         "//tflite/schema:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:tflite_internal_cc_3p_api_deps_src",
     ],
     visibility = tflite_internal_cc_3p_api_deps_src_all_visibility_allowlist(),
 )
@@ -482,13 +484,13 @@ cc_library(
     name = "allocation",
     hdrs = [
         "allocation.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation.h",
+        "//tflite/converter:allocation.h",
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts_warnings(),
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:error_reporter",
+        "//tflite/converter:allocation",
+        "//tflite/converter/core/api:error_reporter",
     ],
 )
 
@@ -880,9 +882,9 @@ cc_library(
     copts = tflite_copts_warnings(),
     deps = [
         ":string",
+        "//tflite/converter:string_utils",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:string_utils",
     ],
 )
 

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 
 package(
@@ -36,19 +38,18 @@ cc_library_with_testonly_vis(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_consts",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/core:filesystem",
+        "//litert/cc/internal:litert_consts",
         "//tflite:model_builder",
         "//tflite:stderr_reporter",
+        "//tflite/converter:allocation",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
@@ -100,4 +101,37 @@ cc_test(
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+config_setting(
+    name = "litert_perfetto_enabled",
+    values = {
+        "define": "LITERT_PERFETTO_PROFILING=1",
+    },
+    visibility = ["//visibility:private"],
+)
+
+alias(
+    name = "perfetto_profiling",
+    actual = select({
+        ":litert_perfetto_enabled": ":perfetto_profiling_real",
+        "//conditions:default": ":perfetto_profiling_stub",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "perfetto_profiling_real",
+    srcs = ["perfetto_profiling.cc"],
+    hdrs = ["perfetto_profiling.h"],
+    defines = ["LITERT_PERFETTO_ENABLED"],
+    visibility = ["//visibility:private"],
+    # copybara:uncomment deps = ["//third_party/perfetto:libperfetto_client_experimental"],
+)
+
+cc_library(
+    name = "perfetto_profiling_stub",
+    srcs = ["perfetto_profiling.cc"],
+    hdrs = ["perfetto_profiling.h"],
+    visibility = ["//visibility:private"],
 )

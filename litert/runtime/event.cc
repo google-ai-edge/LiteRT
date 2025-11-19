@@ -44,17 +44,18 @@ using litert::Expected;
 Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
   if (type == LiteRtEventTypeSyncFenceFd) {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
-    struct pollfd fds = {
+    pollfd fds = {
         .fd = fd,
         .events = POLLIN,
     };
 
     int ret;
     do {
-      ret = ::poll(&fds, 1, timeout_in_ms);
+      ret = poll(&fds, 1, timeout_in_ms);
       if (ret == 1) {
         break;
-      } else if (ret == 0) {
+      }
+      if (ret == 0) {
         return Error(kLiteRtStatusErrorTimeoutExpired, "Timeout expired");
       }
     } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
@@ -69,7 +70,8 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
     return Error(kLiteRtStatusErrorUnsupported,
                  "LiteRtEventWait not implemented for this platform");
 #endif
-  } else if (type == LiteRtEventTypeOpenCl) {
+  }
+  if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
     cl_int res = tflite::gpu::cl::clWaitForEvents(/*num_events=*/1,
                                                   /*event_list=*/&opencl_event);
@@ -89,9 +91,7 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
 
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
 namespace {
-inline bool IsFdValid(int fd) {
-  return ::fcntl(fd, F_GETFD) != -1 || errno != EBADF;
-}
+bool IsFdValid(int fd) { return fcntl(fd, F_GETFD) != -1 || errno != EBADF; }
 }  // namespace
 #endif
 
@@ -99,7 +99,7 @@ LiteRtEventT::~LiteRtEventT() {
   if (type == LiteRtEventTypeSyncFenceFd) {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
     if (owns_fd && IsFdValid(fd)) {
-      ::close(fd);
+      close(fd);
     }
 #endif
   } else if (type == LiteRtEventTypeEglSyncFence ||
@@ -107,7 +107,7 @@ LiteRtEventT::~LiteRtEventT() {
 #if LITERT_HAS_OPENGL_SUPPORT
 
     auto gpu_env = env->GetGpuEnvironment();
-    EGLDisplay display = (*gpu_env)->getEglDisplay();
+    EGLDisplay display = (*gpu_env)->GetEglDisplay();
     if (display == EGL_NO_DISPLAY) {
       LITERT_LOG(LITERT_ERROR,
                  "Cannot destroy EGL sync: EGL display is EGL_NO_DISPLAY");
@@ -127,17 +127,21 @@ LiteRtEventT::~LiteRtEventT() {
     if (destroy_success == EGL_FALSE) {
       LITERT_LOG(LITERT_ERROR,
                  "EGL sync destroy failed: eglDestroySyncKHR failed");
-      return;
     }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+  } else if (type == LiteRtEventTypeOpenCl) {
+#if LITERT_HAS_OPENCL_SUPPORT
+    tflite::gpu::cl::clReleaseEvent(opencl_event);
+#endif  // LITERT_HAS_OPENCL_SUPPORT
   }
 }
 
-litert::Expected<int> LiteRtEventT::GetSyncFenceFd() {
+Expected<int> LiteRtEventT::GetSyncFenceFd() {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
   if (type == LiteRtEventTypeSyncFenceFd) {
     return fd;
-  } else if (type == LiteRtEventTypeEglNativeSyncFence) {
+  }
+  if (type == LiteRtEventTypeEglNativeSyncFence) {
     return litert::Unexpected(
         kLiteRtStatusErrorInvalidArgument,
         "Querying of sync fence fd(EGL_SYNC_NATIVE_FENCE_FD_ANDROID) is not "
@@ -176,7 +180,7 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
     LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
     cl_int res;
     cl_event user_event = tflite::gpu::cl::clCreateUserEvent(
-        gpu_env->getContext()->context(), &res);
+        gpu_env->GetContext()->context(), &res);
     if (res != CL_SUCCESS) {
       return Error(
           kLiteRtStatusErrorRuntimeFailure,
@@ -192,10 +196,11 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
         kLiteRtStatusErrorUnsupported,
         "Creating managed OpenCL event is not supported on this platform");
 #endif
-  } else if (type == LiteRtEventTypeEglSyncFence) {
+  }
+  if (type == LiteRtEventTypeEglSyncFence) {
 #if LITERT_HAS_OPENGL_SUPPORT
     LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
-    EGLDisplay display = gpu_env->getEglDisplay();
+    EGLDisplay display = gpu_env->GetEglDisplay();
     LITERT_RETURN_IF_ERROR(display != EGL_NO_DISPLAY,
                            litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                               "Failed to get EGL display"));
@@ -223,10 +228,11 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
                  "Creating managed EGLSyncFence event is not supported on this "
                  "platform");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-  } else if (type == LiteRtEventTypeEglNativeSyncFence) {
+  }
+  if (type == LiteRtEventTypeEglNativeSyncFence) {
 #if LITERT_HAS_OPENGL_SUPPORT
     LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
-    EGLDisplay display = gpu_env->getEglDisplay();
+    EGLDisplay display = gpu_env->GetEglDisplay();
     LITERT_RETURN_IF_ERROR(display != EGL_NO_DISPLAY,
                            litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                               "Failed to get EGL display"));
@@ -268,19 +274,20 @@ Expected<bool> LiteRtEventT::IsSignaled() const {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
   LITERT_RETURN_IF_ERROR(fd >= 0) << "Invalid fd";
 
-  struct pollfd fds = {
+  pollfd fds = {
       .fd = fd,
       .events = POLLIN,
   };
 
   int ret;
   do {
-    ret = ::poll(&fds, 1, /*timeout_in_ms=*/0);
+    ret = poll(&fds, 1, /*timeout_in_ms=*/0);
     if (ret == 1) {
       LITERT_RETURN_IF_ERROR((fds.revents & POLLERR) == 0) << "POLLERR error";
       LITERT_RETURN_IF_ERROR((fds.revents & POLLNVAL) == 0) << "POLLNVAL error";
       return true;
-    } else if (ret == 0) {
+    }
+    if (ret == 0) {
       return false;
     }
   } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
@@ -304,10 +311,11 @@ Expected<int> LiteRtEventT::DupFd() const {
                "LiteRT does not have sync fence support enabled.");
 
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
-  } else if (type == LiteRtEventTypeEglNativeSyncFence) {
+  }
+  if (type == LiteRtEventTypeEglNativeSyncFence) {
 #if LITERT_HAS_OPENGL_SUPPORT
     LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
-    EGLDisplay display = gpu_env->getEglDisplay();
+    EGLDisplay display = gpu_env->GetEglDisplay();
     static auto* egl_dup_native_fence_fd_android =
         reinterpret_cast<decltype(&eglDupNativeFenceFDANDROID)>(
             eglGetProcAddress("eglDupNativeFenceFDANDROID"));
@@ -332,12 +340,12 @@ Expected<int> LiteRtEventT::DupFd() const {
       absl::StrFormat("DupFd is not supported for this event type: %d", type));
 }
 
-litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
-                                                          EGLSyncKHR egl_sync) {
+Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
+                                                  EGLSyncKHR egl_sync) {
 #if LITERT_HAS_OPENGL_SUPPORT
   LITERT_RETURN_IF_ERROR(egl_sync != EGL_NO_SYNC_KHR);
   LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
-  EGLDisplay display = gpu_env->getEglDisplay();
+  EGLDisplay display = gpu_env->GetEglDisplay();
   LITERT_RETURN_IF_ERROR(display != EGL_NO_DISPLAY);
   static auto* egl_get_sync_attrib_khr =
       reinterpret_cast<decltype(&eglGetSyncAttribKHR)>(
@@ -355,13 +363,13 @@ litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
                          "eglGetSyncAttribKHR: Failed to get EGL sync type"));
   if (sync_type == EGL_SYNC_FENCE_KHR) {
     return LiteRtEventTypeEglSyncFence;
-  } else if (sync_type == EGL_SYNC_NATIVE_FENCE_ANDROID) {
-    return LiteRtEventTypeEglNativeSyncFence;
-  } else {
-    return litert::Unexpected(
-        kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("EGL sync type %d is not supported", sync_type));
   }
+  if (sync_type == EGL_SYNC_NATIVE_FENCE_ANDROID) {
+    return LiteRtEventTypeEglNativeSyncFence;
+  }
+  return litert::Unexpected(
+      kLiteRtStatusErrorInvalidArgument,
+      absl::StrFormat("EGL sync type %d is not supported", sync_type));
 #else
   return Error(kLiteRtStatusErrorUnsupported,
                "LiteRT does not have OpenGL support enabled.");

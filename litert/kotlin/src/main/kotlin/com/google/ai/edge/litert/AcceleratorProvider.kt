@@ -50,7 +50,7 @@ interface NpuCompatibilityChecker {
         }
       }
 
-    // Medatek SOCs are only supported on Android 15 devices (API level 35), for now.
+    // Each Medatek SOC only have one supported API level for now.
     internal val SUPPORTED_MEDIATEK_SOCS =
       setOf(
         Triple("Mediatek", "MT6878", 35),
@@ -59,6 +59,7 @@ interface NpuCompatibilityChecker {
         Triple("Mediatek", "MT6985", 35),
         Triple("Mediatek", "MT6989", 35),
         Triple("Mediatek", "MT6991", 35),
+        Triple("Mediatek", "MT6993", 36),
       )
 
     /** Mediatek NPU compatibility checker. */
@@ -74,11 +75,30 @@ interface NpuCompatibilityChecker {
         }
       }
 
+    internal val SUPPORTED_GOOGLE_SOCS =
+      setOf(Pair("Google", "Tensor G3"), Pair("Google", "Tensor G4"), Pair("Google", "Tensor G5"))
+
+    /** Google Tensor NPU compatibility checker. */
+    val GoogleTensor =
+      object : NpuCompatibilityChecker {
+        override fun isDeviceSupported(): Boolean {
+          // Google Tensor NPU is only supported on Android 16+ devices (API level 36).
+          if (Build.VERSION.SDK_INT >= 36) {
+            // BP2A is the only Android 16 build ID that does not support NPU.
+            return SUPPORTED_GOOGLE_SOCS.contains(Pair(Build.SOC_MANUFACTURER, Build.SOC_MODEL)) &&
+              !Build.ID.startsWith("BP2A")
+          }
+          return false
+        }
+      }
+
     /** Default NPU compatibility checker for all vendors. */
     val Default =
       object : NpuCompatibilityChecker {
         override fun isDeviceSupported(): Boolean {
-          return Qualcomm.isDeviceSupported() || Mediatek.isDeviceSupported()
+          return Qualcomm.isDeviceSupported() ||
+            Mediatek.isDeviceSupported() ||
+            GoogleTensor.isDeviceSupported()
         }
       }
   }

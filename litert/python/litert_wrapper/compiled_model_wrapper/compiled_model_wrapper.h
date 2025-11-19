@@ -19,9 +19,9 @@
 
 #include <string>
 
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_model.h"
 
 namespace litert {
 namespace compiled_model_wrapper {
@@ -77,7 +77,7 @@ class CompiledModelWrapper {
       const char* dispatch_library_path, int hardware_accel,
       std::string* out_error);
 
-  CompiledModelWrapper(litert::Environment env, litert::Model model,
+  CompiledModelWrapper(litert::Environment env, litert::ExtendedModel model,
                        litert::CompiledModel compiled);
 
   ~CompiledModelWrapper();
@@ -146,7 +146,7 @@ class CompiledModelWrapper {
 
   // Member variables holding the LiteRT C++ objects.
   litert::Environment environment_;
-  litert::Model model_;
+  ExtendedModel model_;
   litert::CompiledModel compiled_model_;
 
   // Python buffer object to keep it alive for models created from buffer

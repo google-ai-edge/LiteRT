@@ -221,18 +221,18 @@ LiteRtStatus LiteRtDispatchAssignNodeFunction(
   return kLiteRtStatusErrorUnsupported;
 }
 
-LiteRtStatus LiteRtDispatchAnnotateGraph(LiteRtDispatchGraph graph,
+LiteRtStatus LiteRtDispatchAnnotateGraph(LiteRtDispatchGraph* graph,
                                          const char* key, const char* value) {
   return kLiteRtStatusErrorUnsupported;
 }
 
-LiteRtStatus LiteRtDispatchAnnotateNode(LiteRtDispatchGraph graph,
+LiteRtStatus LiteRtDispatchAnnotateNode(LiteRtDispatchGraph* graph,
                                         LiteRtDispatchNodeId node_id,
                                         const char* key, const char* value) {
   return kLiteRtStatusErrorUnsupported;
 }
 
-LiteRtStatus LiteRtDispatchAnnotateEdge(LiteRtDispatchGraph graph,
+LiteRtStatus LiteRtDispatchAnnotateEdge(LiteRtDispatchGraph* graph,
                                         LiteRtDispatchEdgeId edge_id,
                                         const char* key, const char* value) {
   return kLiteRtStatusErrorUnsupported;
@@ -241,5 +241,11 @@ LiteRtStatus LiteRtDispatchAnnotateEdge(LiteRtDispatchGraph graph,
 LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextGetGraph(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph) {
   return kLiteRtStatusErrorUnsupported;
 }

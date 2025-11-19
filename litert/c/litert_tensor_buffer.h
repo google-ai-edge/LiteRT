@@ -19,40 +19,17 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
-#if LITERT_HAS_AHWB_SUPPORT
-#include <android/hardware_buffer.h>
-#else
-// Define a place holder AHardwareBuffer struct just to enable compilation.
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
-typedef struct AHardwareBuffer AHardwareBuffer;
-#ifdef __cplusplus
-}  // extern "C"
-#endif  // __cplusplus
-#endif  // LITERT_HAS_AHWB_SUPPORT
-
-#ifdef __cplusplus
-extern "C" {
-#endif  // __cplusplus
-
-#define LITERT_HOST_MEMORY_BUFFER_ALIGNMENT 64
-
-typedef void (*LiteRtHostMemoryDeallocator)(void* addr);
-typedef void (*LiteRtAhwbDeallocator)(AHardwareBuffer* ahwb);
-typedef void (*LiteRtIonDeallocator)(void* ion_buffer_addr);
-typedef void (*LiteRtDmaBufDeallocator)(void* dmabuf_buffer_addr);
-typedef void (*LiteRtFastRpcDeallocator)(void* fastrpc_buffer_addr);
-typedef void (*LiteRtOpenClDeallocator)(void* opencl_buffer_addr);
-typedef void (*LiteRtGlBufferDeallocator)(void* gl_buffer_addr);
-typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
 
 // /////////////////////////////////////////////////////////////////////////////
 // TensorBuffers.
@@ -219,6 +196,37 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
     LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
     LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer);
 
+#if LITERT_HAS_WEBGPU_SUPPORT
+// Return an error if the backing buffer is not a WebGpu buffer.
+LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+// Create a tensor buffer from an existing Metal memory of a given size, with
+// optional metal memory buffer deallocator (it can be NULL).
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// releasing the object. NULL deallocator means that the Metal buffer is not
+// managed by the tensor buffer and therefore must be released separately by the
+// caller.
+LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer);
+
+// Return an error if the backing buffer is not a Metal memory.
+LiteRtStatus LiteRtGetTensorBufferMetalMemory(LiteRtTensorBuffer tensor_buffer,
+                                              HwMemoryHandle* hw_memory_handle);
+#endif  // LITERT_HAS_METAL_SUPPORT
+
+#if LITERT_HAS_VULKAN_SUPPORT
+// Return an error if the backing buffer is not a Vulkan device memory.
+LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
+#endif  // LITERT_HAS_VULKAN_SUPPORT
+
 // Create a managed TensorBuffer for a given size and type.
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
@@ -227,6 +235,15 @@ LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
     LiteRtTensorBuffer* buffer);
+
+// Create a managed TensorBuffer from buffer requirements.
+// This function will use the alignment specified in the requirements.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
+LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements requirements, LiteRtTensorBuffer* buffer);
 
 // Create a duplicate of the current tensor buffer. It will increase the
 // reference count of a managed tensor buffer. And the number decreases when
@@ -269,13 +286,6 @@ LiteRtStatus LiteRtSetTensorBufferEvent(LiteRtTensorBuffer tensor_buffer,
 // buffer and deallocate such event.
 LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer);
 
-// Lock mode for tensor buffer.
-typedef enum {
-  kLiteRtTensorBufferLockModeRead = 0,
-  kLiteRtTensorBufferLockModeWrite = 1,
-  kLiteRtTensorBufferLockModeReadWrite = 2,
-} LiteRtTensorBufferLockMode;
-
 // Lock a tensor buffer and map it to host memory, potentially synchronizing on
 // an event that was previously attached to the tensor buffer with
 // `LiteRtSetTensorBufferEvent`.
@@ -300,7 +310,7 @@ LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer buffer);
 void LiteRtDestroyTensorBuffer(LiteRtTensorBuffer buffer);
 
 #ifdef __cplusplus
-}
+}  // extern "C"
 #endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_H_

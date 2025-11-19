@@ -39,6 +39,15 @@ void LiteRtDestroyEnvironment(LiteRtEnvironment environment);
 LiteRtStatus LiteRtGetEnvironmentOptions(LiteRtEnvironment environment,
                                          LiteRtEnvironmentOptions* options);
 
+// Add options to the existing environment. When overwrite is true, the options
+// will overwrite all existing options with the same tags. When overwrite is
+// false, an error will be returned if the option already exists in the
+// environment.
+LiteRtStatus LiteRtAddEnvironmentOptions(LiteRtEnvironment environment,
+                                         int num_options,
+                                         const LiteRtEnvOption* options,
+                                         bool overwrite);
+
 // Create a LiteRT GPU environment with options.
 // The given `environment` takes ownership of the created GPU environment.
 // This API is usually called by the GPU accelerator implementation to set GPU
@@ -50,16 +59,20 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
                                         const LiteRtEnvOption* options);
 
 // Returns whether the environment supports CL/GL interop.
-LiteRtStatus LiteRtSupportsClGlInterop(LiteRtEnvironment environment,
-                                       bool* is_supported);
+LiteRtStatus LiteRtEnvironmentSupportsClGlInterop(LiteRtEnvironment environment,
+                                                  bool* is_supported);
 
 // Returns whether the environment supports AHWB/CL interop.
-LiteRtStatus LiteRtSupportsAhwbClInterop(LiteRtEnvironment environment,
-                                         bool* is_supported);
+LiteRtStatus LiteRtEnvironmentSupportsAhwbClInterop(
+    LiteRtEnvironment environment, bool* is_supported);
 
 // Returns whether the environment supports AHWB/GL interop.
-LiteRtStatus LiteRtSupportsAhwbGlInterop(LiteRtEnvironment environment,
-                                         bool* is_supported);
+LiteRtStatus LiteRtEnvironmentSupportsAhwbGlInterop(
+    LiteRtEnvironment environment, bool* is_supported);
+
+// Returns whether the environment has a GPU environment.
+void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
+                                        bool* has_gpu_environment);
 
 #ifdef __cplusplus
 }

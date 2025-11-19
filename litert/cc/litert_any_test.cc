@@ -14,35 +14,39 @@
 
 #include "litert/cc/litert_any.h"
 
-#include <any>
 #include <cstdint>
+#include <variant>
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "litert/c/litert_any.h"
 #include "litert/test/matchers.h"
 
 TEST(Any, ConversionNone) {
-  EXPECT_FALSE(
-      litert::ToStdAny(LiteRtAny{/*.type=*/kLiteRtAnyTypeNone}).has_value());
+  auto variant = litert::ToStdAny(LiteRtAny{/*.type=*/kLiteRtAnyTypeNone});
+  EXPECT_TRUE(std::holds_alternative<std::monostate>(variant));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto any, litert::ToLiteRtAny(std::any()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto any,
+                              litert::ToLiteRtAny(litert::LiteRtVariant{}));
   ASSERT_EQ(any.type, kLiteRtAnyTypeNone);
 }
 
 TEST(Any, ConversionBool) {
-  ASSERT_EQ(std::any_cast<bool>(litert::ToStdAny(LiteRtAny{
-                /*.type=*/kLiteRtAnyTypeBool, {/*.bool_value=*/true}})),
-            true);
-  ASSERT_EQ(std::any_cast<bool>(litert::ToStdAny(LiteRtAny{
-                /*.type=*/kLiteRtAnyTypeBool, {/*.bool_value=*/false}})),
-            false);
+  auto variant_true = litert::ToStdAny(
+      LiteRtAny{/*.type=*/kLiteRtAnyTypeBool, {/*.bool_value=*/true}});
+  ASSERT_TRUE(std::holds_alternative<bool>(variant_true));
+  ASSERT_EQ(std::get<bool>(variant_true), true);
+
+  auto variant_false = litert::ToStdAny(
+      LiteRtAny{/*.type=*/kLiteRtAnyTypeBool, {/*.bool_value=*/false}});
+  ASSERT_TRUE(std::holds_alternative<bool>(variant_false));
+  ASSERT_EQ(std::get<bool>(variant_false), false);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto any_true,
-                              litert::ToLiteRtAny(std::any(true)));
+                              litert::ToLiteRtAny(litert::LiteRtVariant(true)));
   ASSERT_EQ(any_true.type, kLiteRtAnyTypeBool);
   ASSERT_EQ(any_true.bool_value, true);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto any_false,
-                              litert::ToLiteRtAny(std::any(false)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto any_false, litert::ToLiteRtAny(litert::LiteRtVariant(false)));
   ASSERT_EQ(any_false.type, kLiteRtAnyTypeBool);
   ASSERT_EQ(any_false.bool_value, false);
 }
@@ -51,29 +55,31 @@ TEST(Any, ConversionInt) {
   LiteRtAny litert_any;
   litert_any.type = kLiteRtAnyTypeInt;
   litert_any.int_value = 1234;
-  ASSERT_EQ(std::any_cast<int64_t>(litert::ToStdAny(litert_any)), 1234);
+  auto variant = litert::ToStdAny(litert_any);
+  ASSERT_TRUE(std::holds_alternative<int64_t>(variant));
+  ASSERT_EQ(std::get<int64_t>(variant), 1234);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       const auto any_int8,
-      litert::ToLiteRtAny(std::any(static_cast<int8_t>(12))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(static_cast<int8_t>(12))));
   ASSERT_EQ(any_int8.type, kLiteRtAnyTypeInt);
   ASSERT_EQ(any_int8.int_value, 12);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       const auto any_int16,
-      litert::ToLiteRtAny(std::any(static_cast<int16_t>(1234))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(static_cast<int16_t>(1234))));
   ASSERT_EQ(any_int16.type, kLiteRtAnyTypeInt);
   ASSERT_EQ(any_int16.int_value, 1234);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       const auto any_int32,
-      litert::ToLiteRtAny(std::any(static_cast<int16_t>(1234))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(static_cast<int32_t>(1234))));
   ASSERT_EQ(any_int32.type, kLiteRtAnyTypeInt);
   ASSERT_EQ(any_int32.int_value, 1234);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       const auto any_int64,
-      litert::ToLiteRtAny(std::any(static_cast<int16_t>(1234))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(static_cast<int64_t>(1234))));
   ASSERT_EQ(any_int64.type, kLiteRtAnyTypeInt);
   ASSERT_EQ(any_int64.int_value, 1234);
 }
@@ -82,17 +88,19 @@ TEST(Any, ConversionReal) {
   LiteRtAny litert_any;
   litert_any.type = kLiteRtAnyTypeReal;
   litert_any.real_value = 123.4;
-  ASSERT_EQ(std::any_cast<double>(litert::ToStdAny(litert_any)), 123.4);
+  auto variant = litert::ToStdAny(litert_any);
+  ASSERT_TRUE(std::holds_alternative<double>(variant));
+  ASSERT_EQ(std::get<double>(variant), 123.4);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       const auto any_float,
-      litert::ToLiteRtAny(std::any(static_cast<float>(1.2))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(static_cast<float>(1.2))));
   ASSERT_EQ(any_float.type, kLiteRtAnyTypeReal);
   EXPECT_NEAR(any_float.real_value, 1.2, 1e-7);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       const auto any_double,
-      litert::ToLiteRtAny(std::any(static_cast<double>(1.2))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(static_cast<double>(1.2))));
   ASSERT_EQ(any_double.type, kLiteRtAnyTypeReal);
   EXPECT_NEAR(any_double.real_value, 1.2, 1e-7);
 }
@@ -102,11 +110,13 @@ TEST(Any, ConversionString) {
   LiteRtAny litert_any;
   litert_any.type = kLiteRtAnyTypeString;
   litert_any.str_value = kTestString;
-  ASSERT_EQ(std::any_cast<const char*>(litert::ToStdAny(litert_any)),
-            kTestString);
+  auto variant = litert::ToStdAny(litert_any);
+  ASSERT_TRUE(std::holds_alternative<const char*>(variant));
+  ASSERT_EQ(std::get<const char*>(variant), kTestString);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(const auto any_char_p,
-                              litert::ToLiteRtAny(std::any("test")));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      const auto any_char_p,
+      litert::ToLiteRtAny(litert::LiteRtVariant("test")));
   ASSERT_EQ(any_char_p.type, kLiteRtAnyTypeString);
   EXPECT_STREQ(any_char_p.str_value, "test");
 }
@@ -116,10 +126,13 @@ TEST(Any, ConversionPtr) {
   LiteRtAny litert_any;
   litert_any.type = kLiteRtAnyTypeVoidPtr;
   litert_any.ptr_value = kTestPtr;
-  ASSERT_EQ(std::any_cast<const void*>(litert::ToStdAny(litert_any)), kTestPtr);
+  auto variant = litert::ToStdAny(litert_any);
+  // Note: ToStdAny returns void* not const void*, so we check for void*
+  ASSERT_TRUE(std::holds_alternative<void*>(variant));
+  ASSERT_EQ(std::get<void*>(variant), const_cast<void*>(kTestPtr));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(const auto any_ptr,
-                              litert::ToLiteRtAny(std::any(kTestPtr)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      const auto any_ptr, litert::ToLiteRtAny(litert::LiteRtVariant(kTestPtr)));
   ASSERT_EQ(any_ptr.type, kLiteRtAnyTypeVoidPtr);
   EXPECT_EQ(any_ptr.ptr_value, kTestPtr);
 }

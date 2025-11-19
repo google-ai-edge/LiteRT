@@ -17,15 +17,37 @@
 
 #include <stddef.h>
 
+#include "litert/build_common/build_config.h"  // IWYU pragma: keep
+
+
+
+// Define LITERT_WINDOWS_OS if the current OS is Windows.
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || \
+    defined(__NT__) || defined(_WIN64)
+#define LITERT_WINDOWS_OS 1
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
+
+// Define LITERT_CAPI_EXPORT macro to export a function properly with a shared
+// library.
+#if defined(LITERT_WINDOWS_OS)
+#ifdef LITERT_COMPILE_LIBRARY
+#define LITERT_CAPI_EXPORT __declspec(dllexport)
+#else
+#define LITERT_CAPI_EXPORT __declspec(dllimport)
+#endif  // LITERT_COMPILE_LIBRARY
+#else
+#define LITERT_CAPI_EXPORT __attribute__((visibility("default")))
+#endif  // LITERT_WINDOWS_OS
 
 // Declares canonical opaque type.
 
 #ifdef __cplusplus
 #define LITERT_DEFINE_HANDLE(name) \
-  typedef class name##T* name;    \
+  typedef class name##T* name;     \
   typedef const class name##T* name##Const
 #else  // __cplusplus
 #define LITERT_DEFINE_HANDLE(name) \
@@ -34,11 +56,14 @@ extern "C" {
 #endif  // __cplusplus
 
 #define LITERT_DEFINE_HANDLE_STRUCT(name) \
-  typedef struct name##T* name;    \
+  typedef struct name##T* name;           \
   typedef const struct name##T* name##Const
 
 // LiteRT Accelerator object. (litert_accelerator.h)
 LITERT_DEFINE_HANDLE(LiteRtAccelerator);
+// LiteRT DelegateWrapper object. (litert_delegate_wrapper.h).
+// This wraps a TF Lite delegate (TfLiteOpaqueDelegate*).
+LITERT_DEFINE_HANDLE(LiteRtDelegateWrapper);
 // LiteRT CompiledModel object. (litert_compiled_model.h)
 LITERT_DEFINE_HANDLE(LiteRtCompiledModel);
 // LiteRT Environment object. (litert_environment.h)
@@ -66,6 +91,8 @@ LITERT_DEFINE_HANDLE(LiteRtSignature);
 LITERT_DEFINE_HANDLE(LiteRtModel);
 // Append only list of ops.  (litert_model.h)
 LITERT_DEFINE_HANDLE(LiteRtOpList);
+// LiteRT Rewriter object. (litert_rewriter.h)
+LITERT_DEFINE_HANDLE(LiteRtRewriter);
 // Representations of an custom op.  (litert_op_options.h)
 LITERT_DEFINE_HANDLE(LiteRtOp);
 // A linked list of type erased opaque options. These are added to the
@@ -79,12 +106,9 @@ LITERT_DEFINE_HANDLE(LiteRtTensorBuffer);
 LITERT_DEFINE_HANDLE(LiteRtTensorBufferRequirements);
 // LiteRT Profiler object. (litert_profiler.h)
 LITERT_DEFINE_HANDLE(LiteRtProfiler);
-
-#if __ANDROID_API__ >= 26
-#define LITERT_HAS_AHWB_SUPPORT 1
-#else
-#define LITERT_HAS_AHWB_SUPPORT 0
-#endif  // __ANDROID_API__ >= 26
+// LiteRT ExternalLiteRtBufferContext object.
+// (litert_external_litert_buffer_context.h)
+LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 
 #if defined(__linux__) || defined(__ANDROID__)
 #define LITERT_HAS_SYNC_FENCE_SUPPORT 1
@@ -93,30 +117,105 @@ LITERT_DEFINE_HANDLE(LiteRtProfiler);
 #endif
 
 #if defined(__ANDROID__)
-#define LITERT_HAS_ION_SUPPORT 1
-#define LITERT_HAS_DMABUF_SUPPORT 1
-#define LITERT_HAS_FASTRPC_SUPPORT 1
-#define LITERT_HAS_OPENGL_SUPPORT 1
-#define LITERT_HAS_OPENCL_SUPPORT_DEFAULT 1
+#define LITERT_HAS_AHWB_SUPPORT_DEFAULT 1
+#define LITERT_HAS_OPENGL_SUPPORT_DEFAULT 1
+#define LITERT_HAS_ION_SUPPORT_DEFAULT 1
+#define LITERT_HAS_DMABUF_SUPPORT_DEFAULT 1
+#define LITERT_HAS_FASTRPC_SUPPORT_DEFAULT 1
 // copybara:comment_begin(google-only)
 #elif defined(GOOGLE_UNSUPPORTED_OS_LOONIX)
-#define LITERT_HAS_ION_SUPPORT 0
-#define LITERT_HAS_DMABUF_SUPPORT 1
-#define LITERT_HAS_FASTRPC_SUPPORT 0
-#define LITERT_HAS_OPENCL_SUPPORT_DEFAULT 1
+#define LITERT_HAS_OPENGL_SUPPORT_DEFAULT 0
+#define LITERT_HAS_ION_SUPPORT_DEFAULT 0
+#define LITERT_HAS_DMABUF_SUPPORT_DEFAULT 1
+#define LITERT_HAS_FASTRPC_SUPPORT_DEFAULT 0
 // copybara:comment_end
 #else
-#define LITERT_HAS_ION_SUPPORT 0
-#define LITERT_HAS_DMABUF_SUPPORT 0
-#define LITERT_HAS_FASTRPC_SUPPORT 0
+#define LITERT_HAS_AHWB_SUPPORT_DEFAULT 0
+#define LITERT_HAS_OPENGL_SUPPORT_DEFAULT 0
+#define LITERT_HAS_ION_SUPPORT_DEFAULT 0
+#define LITERT_HAS_DMABUF_SUPPORT_DEFAULT 0
+#define LITERT_HAS_FASTRPC_SUPPORT_DEFAULT 0
+#endif
+
+#if defined(__APPLE__)
+#define LITERT_HAS_METAL_SUPPORT_DEFAULT 1
+#define LITERT_HAS_OPENCL_SUPPORT_DEFAULT 0
+#define LITERT_HAS_VULKAN_SUPPORT_DEFAULT 0
+#else
+#define LITERT_HAS_METAL_SUPPORT_DEFAULT 0
 #define LITERT_HAS_OPENCL_SUPPORT_DEFAULT 1
-#define LITERT_HAS_OPENGL_SUPPORT 0
+#define LITERT_HAS_VULKAN_SUPPORT_DEFAULT 1
+#endif
+
+#define LITERT_HAS_WEBGPU_SUPPORT_DEFAULT 1
+
+#if defined(LITERT_DISABLE_NPU)
+#define LITERT_DISABLE_AHWB_SUPPORT
+#define LITERT_DISABLE_ION_SUPPORT
+#define LITERT_DISABLE_DMABUF_SUPPORT
+#define LITERT_DISABLE_FASTRPC_SUPPORT
+#endif
+
+#if defined(LITERT_DISABLE_GPU)
+#define LITERT_DISABLE_METAL_SUPPORT
+#define LITERT_DISABLE_OPENCL_SUPPORT
+#define LITERT_DISABLE_WEBGPU_SUPPORT
+#define LITERT_DISABLE_VULKAN_SUPPORT
+#define LITERT_DISABLE_OPENGL_SUPPORT
+#endif
+
+#if defined(LITERT_DISABLE_METAL_SUPPORT)
+#define LITERT_HAS_METAL_SUPPORT 0
+#else
+#define LITERT_HAS_METAL_SUPPORT LITERT_HAS_METAL_SUPPORT_DEFAULT
 #endif
 
 #if defined(LITERT_DISABLE_OPENCL_SUPPORT)
 #define LITERT_HAS_OPENCL_SUPPORT 0
 #else
 #define LITERT_HAS_OPENCL_SUPPORT LITERT_HAS_OPENCL_SUPPORT_DEFAULT
+#endif
+
+#if defined(LITERT_DISABLE_WEBGPU_SUPPORT)
+#define LITERT_HAS_WEBGPU_SUPPORT 0
+#else
+#define LITERT_HAS_WEBGPU_SUPPORT LITERT_HAS_WEBGPU_SUPPORT_DEFAULT
+#endif
+
+#if defined(LITERT_DISABLE_VULKAN_SUPPORT)
+#define LITERT_HAS_VULKAN_SUPPORT 0
+#else
+#define LITERT_HAS_VULKAN_SUPPORT LITERT_HAS_VULKAN_SUPPORT_DEFAULT
+#endif
+
+#if defined(LITERT_DISABLE_OPENGL_SUPPORT)
+#define LITERT_HAS_OPENGL_SUPPORT 0
+#else
+#define LITERT_HAS_OPENGL_SUPPORT LITERT_HAS_OPENGL_SUPPORT_DEFAULT
+#endif
+
+#if defined(LITERT_DISABLE_AHWB_SUPPORT)
+#define LITERT_HAS_AHWB_SUPPORT 0
+#else
+#define LITERT_HAS_AHWB_SUPPORT LITERT_HAS_AHWB_SUPPORT_DEFAULT
+#endif
+
+#if defined(LITERT_DISABLE_ION_SUPPORT)
+#define LITERT_HAS_ION_SUPPORT 0
+#else
+#define LITERT_HAS_ION_SUPPORT LITERT_HAS_ION_SUPPORT_DEFAULT
+#endif
+
+#if defined(LITERT_DISABLE_DMABUF_SUPPORT)
+#define LITERT_HAS_DMABUF_SUPPORT 0
+#else
+#define LITERT_HAS_DMABUF_SUPPORT LITERT_HAS_DMABUF_SUPPORT_DEFAULT
+#endif
+
+#if defined(LITERT_DISABLE_FASTRPC_SUPPORT)
+#define LITERT_HAS_FASTRPC_SUPPORT 0
+#else
+#define LITERT_HAS_FASTRPC_SUPPORT LITERT_HAS_FASTRPC_SUPPORT_DEFAULT
 #endif
 
 #define LITERT_API_VERSION_MAJOR 0
@@ -150,6 +249,10 @@ typedef enum {
   kLiteRtStatusErrorTimeoutExpired = 7,
   kLiteRtStatusErrorWrongVersion = 8,
   kLiteRtStatusErrorUnknown = 9,
+  kLiteRtStatusErrorAlreadyExists = 10,
+
+  // Inference progression errors.
+  kLiteRtStatusCancelled = 100,
 
   // File and loading related errors.
   kLiteRtStatusErrorFileIO = 500,
@@ -170,8 +273,15 @@ typedef enum {
   // Legalization related errors.
   kLiteRtStatusLegalizeNoMatch = 2000,
   kLiteRtStatusErrorInvalidLegalization = 2001,
+
+  // Transformation related errors.
+  kLiteRtStatusPatternNoMatch = 3000,
+  kLiteRtStatusInvalidTransformation = 3001,
 } LiteRtStatus;
-// LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes)
+// LINT.ThenChange(
+//   ../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes,
+//   ../cc/litert_common.h:status_codes
+// )
 
 // Returns a string describing the status value.
 const char* LiteRtGetStatusString(LiteRtStatus status);
@@ -181,6 +291,9 @@ typedef enum : int {
   kLiteRtHwAcceleratorCpu = 1 << 0,
   kLiteRtHwAcceleratorGpu = 1 << 1,
   kLiteRtHwAcceleratorNpu = 1 << 2,
+#if defined(__EMSCRIPTEN__)
+  kLiteRtHwAcceleratorWebNn = 1 << 3,
+#endif  // __EMSCRIPTEN__
 } LiteRtHwAccelerators;
 
 typedef enum {
@@ -188,6 +301,13 @@ typedef enum {
   kLiteRtDelegatePrecisionFp16 = 1,
   kLiteRtDelegatePrecisionFp32 = 2,
 } LiteRtDelegatePrecision;
+
+typedef enum {
+  kLiteRtGpuPriorityDefault = 0,
+  kLiteRtGpuPriorityLow = 1,
+  kLiteRtGpuPriorityNormal = 2,
+  kLiteRtGpuPriorityHigh = 3,
+} LiteRtGpuPriority;
 
 // Storage type needed by buffers to be allocated in the GPU delegate.
 // Default means the storage type will be automatically determined by the
@@ -197,6 +317,32 @@ typedef enum {
   kLiteRtDelegateBufferStorageTypeBuffer = 1,
   kLiteRtDelegateBufferStorageTypeTexture2D = 2,
 } LiteRtDelegateBufferStorageType;
+
+// Lock mode for tensor buffer.
+typedef enum {
+  kLiteRtTensorBufferLockModeRead = 0,
+  kLiteRtTensorBufferLockModeWrite = 1,
+  kLiteRtTensorBufferLockModeReadWrite = 2,
+} LiteRtTensorBufferLockMode;
+
+// Backend option of GPU Accelerator.
+// No need to specify on iOS or Metal since there is only one backend.
+typedef enum {
+  kLiteRtGpuBackendAutomatic = 0,
+  kLiteRtGpuBackendOpenCl = 1,
+  kLiteRtGpuBackendWebGpu = 2,
+  kLiteRtGpuBackendOpenGl = 3,  // Experimental, do not use.
+} LiteRtGpuBackend;
+
+// Error reporter mode enum
+typedef enum LiteRtErrorReporterMode {
+  // No error reporting (errors are ignored)
+  kLiteRtErrorReporterModeNone = 0,
+  // Default stderr error reporter
+  kLiteRtErrorReporterModeStderr = 1,
+  // Buffer error reporter that collects errors for later retrieval
+  kLiteRtErrorReporterModeBuffer = 2,
+} LiteRtErrorReporterMode;
 
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int LiteRtHwAcceleratorSet;

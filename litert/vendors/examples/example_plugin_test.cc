@@ -18,9 +18,9 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/litert_model.h"
+#include "litert/c/litert_rewriter.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -79,7 +79,9 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
-  ASSERT_EQ(byte_code_string, "Partition_0_with_2_muls:");
+  ASSERT_EQ(byte_code_string,
+            "inputs:0,1\noutputs:3\ntensors:[2x2],[2x2],[2x2],[2x2]\nops:mul(0,"
+            "0)(2)~mul(2,1)(3)");
 
   LiteRtParamIndex byte_code_idx;
   const void* op_data;
@@ -90,9 +92,20 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
-  ASSERT_EQ(op_data_string, "Partition_0");
+  ASSERT_EQ(op_data_string, "partition_0");
 
   LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestCallDummyPlugin, RegisterAllTransformations) {
+  auto plugin = CreatePlugin();
+  LiteRtTransformation* transformations;
+  LiteRtParamIndex num_transformations;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  ASSERT_EQ(num_transformations, 2);
+  ASSERT_STREQ(transformations[0].name, "MyTransformation0");
+  ASSERT_EQ(transformations[0].benefit, 100);
 }
 
 }  // namespace

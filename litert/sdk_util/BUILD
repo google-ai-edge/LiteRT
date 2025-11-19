@@ -135,7 +135,7 @@ litert_test(
     ],
     ungrte = True,
     deps = [
-        "//litert/cc:litert_logging",
+        "//litert/cc/internal:litert_logging",
         "//litert/test:common",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",

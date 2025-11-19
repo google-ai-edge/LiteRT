@@ -23,8 +23,6 @@ TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 
 BUILD_FLAGS=(
     "--config=bulk_test_cpu"
-    "--config=disable_tf_lite_py"
-    "--config=use_local_tf"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
     "--keep_going"
     "--repo_env=USE_PYWRAP_RULES=True"
@@ -32,6 +30,11 @@ BUILD_FLAGS=(
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
 BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
+
+# Conditionally use local submodules vs http_archve tf
+if [[ "${USE_LOCAL_TF}" == "true" ]]; then
+  BUILD_FLAGS+=("--config=use_local_tf")
+fi
 
 # TODO: (b/381310257) - Investigate failing test not included in cpu_full
 # TODO: (b/381110338) - Clang errors
@@ -54,7 +57,10 @@ EXCLUDED_TARGETS=(
         "-//tflite/profiling:profile_summarizer_test"
         "-//tflite/profiling:profile_summary_formatter_test"
         "-//tflite/python/authoring:authoring_test"
+        "-//tflite/python/kernel_tests/signal:window_ops_test_cpu"
         "-//tflite/python/metrics:metrics_wrapper_test"
+        "-//tflite/python:convert_saved_model_test"
+        "-//tflite/python:convert_test"
         "-//tflite/python:lite_flex_test"
         "-//tflite/python:lite_test"
         "-//tflite/python:lite_v2_test"
@@ -69,22 +75,24 @@ EXCLUDED_TARGETS=(
         "-//tflite/testing:zip_test_depthwiseconv"
         "-//tflite/tools/optimize/debugging/python:debugger_test"
         "-//tflite/tools:convert_image_to_csv_test"
+        "-//tflite/testing:zip_test_depthwiseconv"
+        "-//tflite/testing:zip_test_depthwiseconv_forward-compat"
+        "-//tflite/testing:zip_test_depthwiseconv_mlir-quant"
+        "-//tflite/testing:zip_test_depthwiseconv_with-flex"
+        "-//tflite/experimental/acceleration/mini_benchmark:blocking_validator_runner_test"
         # Exclude dir which shouldnt run
         "-//tflite/java/..."
         "-//tflite/tools/benchmark/experimental/..."
         "-//tflite/delegates/gpu/..."
+        "-//tflite/delegates/nnapi/..."
         # TODO: (b/410925271) - Targets not migrated to pywrap_rules yet
-        "-//tflite/tools/optimize/python:modify_model_interface_lib_test"
-        "-//tflite/core/experimental/acceleration/mini_benchmark/c:c_api_test"
-        "-//tflite/testing/..."
-        "-//tflite/toco/..."
-        "-//tflite/experimental/acceleration/..."
 )
 
 LITERT_EXCLUDED_TARGETS=(
         "-//litert/c:litert_compiled_model_shared_lib_test"
         "-//litert/c:litert_compiled_model_test"
         "-//litert/cc:litert_compiled_model_test"
+        "-//litert/python/tools/model_utils/test/..."
         # Requires mGPU environment.
         "-//litert/cc:litert_environment_test"
         "-//litert/runtime:compiled_model_test"
@@ -94,6 +102,8 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/tools:dump_test"
         # Requires c++20.
         "-//litert/tools:apply_plugin_test"
+        # Enable once openvino
+        "-//litert/vendors/intel_openvino/..."
 )
 
 

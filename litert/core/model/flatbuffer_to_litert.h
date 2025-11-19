@@ -16,7 +16,7 @@
 #define ODML_LITERT_LITERT_CORE_MODEL_FLATBUFFER_TO_LITERT_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"

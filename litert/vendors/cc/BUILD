@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_public"],
@@ -21,64 +24,9 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_macros",
         "//litert/vendors/c:litert_compiler_plugin",
-    ],
-)
-
-cc_library(
-    name = "conversion",
-    hdrs = ["conversion.h"],
-    deps = [
-        ":backend_ir",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-        "@com_google_absl//absl/container:flat_hash_map",
-    ],
-)
-
-cc_library(
-    name = "backend_ir",
-    hdrs = ["backend_ir.h"],
-    deps = ["//litert/c:litert_common"],
-)
-
-cc_library(
-    name = "partition_with_capabilities",
-    hdrs = ["partition_with_capabilities.h"],
-    deps = [
-        ":conversion",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_model",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-    ],
-)
-
-cc_library(
-    name = "convert_graph",
-    hdrs = ["convert_graph.h"],
-    deps = [
-        ":conversion",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-    ],
-)
-
-cc_library(
-    name = "ir_types",
-    hdrs = ["ir_types.h"],
-    deps = [
-        ":backend_ir",
-        ":conversion",
-        "//litert/cc:litert_expected",
     ],
 )
 
@@ -86,56 +34,24 @@ cc_library(
     name = "options_helper",
     hdrs = ["options_helper.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_options",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/internal:litert_handle",
     ],
 )
 
-cc_test(
-    name = "partition_with_capabilities_test",
-    srcs = ["partition_with_capabilities_test.cc"],
+cc_library(
+    name = "namespace_heuristics",
+    srcs = ["namespace_heuristics.cc"],
+    hdrs = ["namespace_heuristics.h"],
     deps = [
-        ":partition_with_capabilities",
-        "//litert/c:litert_model",
         "//litert/c:litert_op_code",
-        "//litert/cc:litert_model",
-        "//litert/core/model:model_graph_testonly",
-        "//litert/core/model:model_testonly",
-        "//litert/core/util:flatbuffer_tools_testonly",
-        "//litert/vendors/examples:example_conversion_impl",
-        "//litert/vendors/examples:example_ir",
-        "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
-    ],
-)
-
-cc_test(
-    name = "convert_graph_test",
-    srcs = ["convert_graph_test.cc"],
-    deps = [
-        ":backend_ir",
-        ":convert_graph",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_model",
-        "//litert/core/model:model_graph_testonly",
-        "//litert/core/model:model_testonly",
-        "//litert/core/util:flatbuffer_tools_testonly",
-        "//litert/test:matchers",
-        "//litert/vendors/examples:example_conversion_impl",
-        "//litert/vendors/examples:example_ir",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
     ],
 )
 
@@ -144,13 +60,12 @@ cc_test(
     srcs = ["options_helper_test.cc"],
     deps = [
         ":options_helper",
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_options",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/internal:litert_handle",
         "@com_google_googletest//:gtest_main",
     ],
 )

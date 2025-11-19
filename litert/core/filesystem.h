@@ -32,11 +32,17 @@ namespace litert::internal {
 // Append all given subpaths together (e.g. os.path.join).
 std::string Join(const std::vector<absl::string_view>& paths);
 
+// Returns the stem of the given path.
+std::string Stem(absl::string_view path);
+
 // Make a new empty file at the given path.
 void Touch(absl::string_view path);
 
 // Does this file exist.
 bool Exists(absl::string_view path);
+
+// Is this a directory.
+bool IsDir(absl::string_view path);
 
 // Get size of file.
 Expected<size_t> Size(absl::string_view path);
@@ -44,6 +50,21 @@ Expected<size_t> Size(absl::string_view path);
 // Load the bytes of the file at given path.
 Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path);
 
+// List all files in the directory at the given path.
+Expected<std::vector<std::string>> ListDir(absl::string_view path);
+
+// Get filename from path string.
+Expected<std::string> Filename(absl::string_view path);
+
+// Make a new directory at the given path.
+Expected<void> MkDir(absl::string_view path);
+
+// Get the parent directory of the given path.
+Expected<std::string> Parent(absl::string_view path);
+
+Expected<void> RmDir(std::string path_to_remove);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_FILESYSTEM_H_
+

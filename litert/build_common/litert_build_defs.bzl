@@ -18,6 +18,12 @@
 # load("//devtools/build_cleaner/skylark:build_defs.bzl", "register_extension_info")
 # copybara:uncomment_end
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 ####################################################################################################
 # Util
 
@@ -26,6 +32,22 @@ _SO_EXT = ".so"
 _SHARED_LIB_SUFFIX = "_so"
 
 # Public
+
+def if_oss(oss_value, google_value = []):  # buildifier: disable=unused-variable
+    """Returns one of the arguments based on the non-configurable build env.
+
+    Specifically, it does not return a `select`, and can be used to e.g.
+    compute elements of list attributes.
+    """
+    return oss_value  # copybara:comment_replace return google_value
+
+def if_google(google_value, oss_value = []):  # buildifier: disable=unused-variable
+    """Returns one of the arguments based on the non-configurable build env.
+
+    Specifically, it does not return a `select`, and can be used to e.g.
+    compute elements of list attributes.
+    """
+    return oss_value  # copybara:comment_replace return google_value
 
 def make_linkopt(opt):
     return "-Wl,{}".format(opt)
@@ -71,7 +93,7 @@ def absolute_label(label, package_name = None):
     Returns:
       The absolute label.
     """
-    if label.startswith("//"):
+    if label.startswith("//") or label.startswith("@"):
         if ":" in label:
             return label
         return "%s:%s" % (label, label.rsplit("/", 1)[-1])
@@ -93,6 +115,12 @@ def _valid_so_name(name):
 
 def _make_target_ref(name):
     return ":{}".format(name)
+
+def commandline_flag_copts():
+    return select({
+        "@org_tensorflow//tensorflow:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
+        "//conditions:default": [],
+    })
 
 ####################################################################################################
 # Explicitly Link System Libraries ("ungrte")
@@ -139,7 +167,10 @@ def export_lrt_only_script():
 def export_lrt_only_linkopt():
     return select({
         "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
-        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:android": [
+            "-Wl,-z,max-page-size=16384",
+            _EXPORT_LRT_ONLY_LINKOPT_LINUX,
+        ],
         "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
         "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
         "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
@@ -181,6 +212,34 @@ def export_lrt_runtime_only_linkopt():
         "//conditions:default": [],
     }) + symbol_opts()
 
+_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX = "//litert/build_common:export_litert_tflite_runtime_linux.lds"
+_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN = "//litert/build_common:export_litert_tflite_runtime_darwin.lds"
+_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX = make_linkopt("--version-script=$(location {})".format(_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX))
+_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(location {})".format(_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN))
+
+def export_lrt_tflite_runtime_script():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "//conditions:default": [],
+    })
+
+def export_lrt_tflite_runtime_linkopt():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
+            "-Wl,-z,max-page-size=16384",
+            _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX,
+        ],
+        "@org_tensorflow//tensorflow:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "//conditions:default": [],
+    }) + symbol_opts()
+
 ####################################################################################################
 # Macros
 
@@ -195,23 +254,32 @@ def _litert_base(
 
     Args:
       rule: The underlying rule to use (e.g., cc_test, cc_library).
-      ungrte: Whether to link against system libraries ("ungrte").
+      ungrte: Whether to link against system libraries ("ungrte"). Even if
+      ungrte is set to true by the library, ungrte might not happen. An
+      additional build flag "ungrte" will also be inspected to determine whether
+      the behavior should occur. The default behavior without specifying the
+      build flag is to always ungrte.
       **cc_rule_kwargs: Keyword arguments to pass to the underlying rule.
     """
+
+    _DEFAULT_LINK_OPTS = ["-Wl,--disable-new-dtags"]
+
+    _UNGRTE_LINK_OPTS = [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64]
 
     if ungrte:
         append_rule_kwargs(
             cc_rule_kwargs,
-            linkopts = select({
-                "@org_tensorflow//tensorflow:linux_x86_64": [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64] + ["-Wl,--disable-new-dtags"],
+            linkopts = selects.with_or({
+                ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
                 "@org_tensorflow//tensorflow:macos": [],
-                "//conditions:default": ["-Wl,--disable-new-dtags"],
+                "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
             }),
         )
+
     else:
         append_rule_kwargs(
             cc_rule_kwargs,
-            linkopts = ["-Wl,--disable-new-dtags"],
+            linkopts = _DEFAULT_LINK_OPTS,
         )
 
     rule(**cc_rule_kwargs)
@@ -221,6 +289,7 @@ def _litert_base(
 def litert_test(
         ungrte = False,
         use_sys_malloc = False,
+        no_main = False,
         **cc_test_kwargs):
     """
     LiteRT test rule.
@@ -228,19 +297,21 @@ def litert_test(
     Args:
       ungrte: Whether to link against system libraries ("ungrte").
       use_sys_malloc: Whether to use the system malloc.
+      no_main: Whether to use the default main function.
       **cc_test_kwargs: Keyword arguments to pass to the underlying rule.
     """
     if use_sys_malloc:
         # copybara:uncomment cc_test_kwargs["malloc"] = "//base:system_malloc"
         pass
 
-    append_rule_kwargs(
-        cc_test_kwargs,
-        deps = ["@com_google_googletest//:gtest_main"],
-    )
+    if not no_main:
+        append_rule_kwargs(
+            cc_test_kwargs,
+            deps = ["@com_google_googletest//:gtest_main"],
+        )
 
     _litert_base(
-        native.cc_test,
+        cc_test,
         ungrte,
         **cc_test_kwargs
     )
@@ -256,7 +327,7 @@ def litert_lib(
       **cc_lib_kwargs: Keyword arguments to pass to the underlying rule.
     """
     _litert_base(
-        native.cc_library,
+        cc_library,
         ungrte,
         **cc_lib_kwargs
     )
@@ -281,7 +352,7 @@ def litert_bin(
         )
 
     _litert_base(
-        native.cc_binary,
+        cc_binary,
         ungrte,
         **cc_bin_kwargs
     )
@@ -329,8 +400,7 @@ def litert_dynamic_lib(
     if export_litert_only:
         user_link_flags = export_lrt_only_linkopt()
         additional_linker_inputs = export_lrt_only_script()
-
-    native.cc_shared_library(
+    cc_shared_library(
         name = shared_lib_name,
         shared_lib_name = so_name,
         user_link_flags = user_link_flags,
@@ -387,7 +457,7 @@ def cc_library_with_testonly_vis(
         name,
         vis = "//litert:litert_internal_users",
         testonly_vis = "//litert:litert_public",
-        rule = native.cc_library,
+        rule = cc_library,
         **rule_kwargs):
     """
     Defines a cc_library with different visibilities for normal and testonly targets.

@@ -1,4 +1,5 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -33,12 +34,12 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//tflite:version",
+        "//tflite/converter/schema:schema_utils",
         "//tflite/core:model_builder",
         "//tflite/core/api:error_reporter",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/public:release_version",
     ],

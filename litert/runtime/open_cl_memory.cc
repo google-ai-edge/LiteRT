@@ -23,8 +23,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -41,8 +40,9 @@
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #include "tflite/delegates/gpu/cl/util.h"
 
-namespace litert {
-namespace internal {
+#if LITERT_HAS_OPENCL_SUPPORT
+
+namespace litert::internal {
 
 template Expected<float*> OpenClMemory::Lock<float>(
     LiteRtTensorBufferLockMode mode);
@@ -51,20 +51,12 @@ template Expected<char*> OpenClMemory::Lock<char>(
 template Expected<void> OpenClMemory::Unlock<float>();
 template Expected<void> OpenClMemory::Unlock<char>();
 
-LockState ToLockState(LiteRtTensorBufferLockMode mode) {
-  switch (mode) {
-    case kLiteRtTensorBufferLockModeRead:
-      return LockState::kRead;
-    case kLiteRtTensorBufferLockModeWrite:
-      return LockState::kWrite;
-    case kLiteRtTensorBufferLockModeReadWrite:
-      return LockState::kReadWrite;
-  }
-}
-
 template <typename T>
 Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   LITERT_RETURN_IF_ERROR(lock_state_ == LockState::kUnlocked,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "The OpenCL memory is already locked."));
@@ -92,9 +84,10 @@ Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
                         "Failed to allocate aligned memory");
     }
   }
-  if (lock_state == LockState::kRead || lock_state == LockState::kReadWrite) {
+  if (lock_state == LockState::kReadLocked ||
+      lock_state == LockState::kReadWriteLocked) {
     if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-      LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
+      LITERT_RETURN_IF_ERROR(gpu_env_->GetCommandQueue()
                                  ->EnqueueReadBuffer(GetMemoryPtr(),
                                                      cpu_buffer_size_, data_,
                                                      /*async=*/false)
@@ -113,15 +106,18 @@ Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
 
 template <typename T>
 Expected<void> OpenClMemory::Unlock() {
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   LITERT_RETURN_IF_ERROR(lock_state_ != LockState::kUnlocked,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "The OpenCL memory is already unlocked."));
   absl::Cleanup unlock = [this] { lock_state_ = LockState::kUnlocked; };
-  if (lock_state_ == LockState::kWrite ||
-      lock_state_ == LockState::kReadWrite) {
+  if (lock_state_ == LockState::kWriteLocked ||
+      lock_state_ == LockState::kReadWriteLocked) {
     if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-      LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
+      LITERT_RETURN_IF_ERROR(gpu_env_->GetCommandQueue()
                                  ->EnqueueWriteBuffer(GetMemoryPtr(),
                                                       cpu_buffer_size_, data_,
                                                       /*async=*/true)
@@ -147,6 +143,9 @@ bool OpenClMemory::IsSupported() {
 Expected<OpenClMemory> OpenClMemory::Alloc(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes_size) {
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   if (gpu_env == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "OpenCL is not supported");
@@ -155,7 +154,7 @@ Expected<OpenClMemory> OpenClMemory::Alloc(
   if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
     tflite::gpu::cl::Buffer buffer;
     LITERT_RETURN_IF_ERROR(tflite::gpu::cl::CreateReadWriteBuffer(
-                               bytes_size, gpu_env->getContext(), &buffer)
+                               bytes_size, gpu_env->GetContext(), &buffer)
                                .ok());
     return Expected<OpenClMemory>(gpu_env, tensor_type, buffer_type,
                                   std::move(buffer));
@@ -185,7 +184,7 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
       0,
   };
 
-  cl_context context = gpu_env->getContext()->context();
+  cl_context context = gpu_env->GetContext()->context();
   LITERT_RETURN_IF_ERROR(IsAhwbToClInteropSupported(),
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "clImportMemoryARM is not supported"));
@@ -210,7 +209,10 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
 Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     GlBuffer& gl_buffer) {
-  tflite::gpu::cl::CLContext* context = gpu_env->getContext();
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
+  tflite::gpu::cl::CLContext* context = gpu_env->GetContext();
   cl_int error;
   cl_mem buffer = tflite::gpu::cl::clCreateFromGLBuffer(
       context->context(), CL_MEM_READ_WRITE, gl_buffer.id(), &error);
@@ -225,5 +227,6 @@ Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
                       std::move(cl_buffer));
 }
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT

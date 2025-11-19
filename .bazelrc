@@ -40,13 +40,30 @@
 #
 # Default build options. These are applied first and unconditionally.
 
+build --incompatible_enable_cc_toolchain_resolution
+build --repo_env USE_HERMETIC_CC_TOOLCHAIN=1
+
+# TODO: Migrate for https://github.com/bazelbuild/bazel/issues/7260
+build:clang_local --noincompatible_enable_cc_toolchain_resolution
+build:clang_local --noincompatible_enable_android_toolchain_resolution
+build:clang_local --repo_env USE_HERMETIC_CC_TOOLCHAIN=1
+
 build --repo_env=USE_PYWRAP_RULES=True
 build --copt=-DGRPC_BAZEL_BUILD
+build --cxxopt=-std=gnu++17
+build --cxxopt=-fpermissive
 build --host_copt=-DGRPC_BAZEL_BUILD
+build --host_cxxopt=-fpermissive
 build --action_env=GRPC_BAZEL_RUNTIME=1
 build --repo_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb
 build --action_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb
-build --repo_env=RULES_PYTHON_ENABLE_PYSTAR=0
+
+# Some targets have the same py source file, but use different
+# configurations via `requires-` tags. This results in an action
+# conflict when precompiling. Disable to avoid that problem.
+# See https://github.com/bazel-contrib/rules_python/issues/2445
+build --@rules_python//python/config_settings:precompile=force_disabled
+
 # Do not do this. This is how gRPC builds itself by default, but we don't want
 # that as it would link protobuf into its own set of dynamic libraries, which
 # would conflict with our protobuf linkage.
@@ -107,11 +124,16 @@ build --incompatible_enforce_config_setting_visibility
 # TODO: also enable this flag after fixing the visibility violations
 # build --incompatible_config_setting_private_default_visibility
 
+# Compiler MLIR Builds
+common --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=ai_edge_litert.mlir.
+common --copt=-DNB_DOMAIN=litert
+
 # Default options should come above this line.
 
 # Android configs. Bazel needs to have --cpu and --fat_apk_cpu both set to the
 # target CPU to build transient dependencies correctly. See
 # https://docs.bazel.build/versions/master/user-manual.html#flag--fat_apk_cpu
+build:android --config=clang_local
 build:android --crosstool_top=//external:android/crosstool
 build:android --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
 build:android_arm --config=android
@@ -158,12 +180,15 @@ build:macos --config=apple-toolchain
 
 # Use cc toolchains from apple_support for Apple builds (ios, macos, etc).
 # https://github.com/bazelbuild/apple_support/tree/master?tab=readme-ov-file#bazel-6-setup
+build:apple-toolchain --config=clang_local
 build:apple-toolchain --apple_crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --host_crosstool_top=@local_config_apple_cc//:toolchain
 
 # Settings for MacOS on ARM CPUs.
+build:macos_arm64 --config=macos
 build:macos_arm64 --cpu=darwin_arm64
+build:macos_arm64 --cxxopt=-std=gnu++17
 build:macos_arm64 --macos_minimum_os=11.0
 build:macos_arm64 --platforms=@build_bazel_apple_support//configs/platforms:darwin_arm64
 
@@ -264,8 +289,11 @@ build:linux --copt=-Wno-gnu-offsetof-extensions
 
 
 # Toolchain and CUDA options for Linux CPU builds
-build:release_cpu_linux --crosstool_top="@local_config_cuda//crosstool:toolchain"
-build:release_cpu_linux --repo_env=TF_SYSROOT="/dt9"
+# TODO: Below config is not needed please don't use it and remove it.
+build:release_cpu_linux --incompatible_enable_cc_toolchain_resolution
+#build:release_cpu_linux --config=clang_local
+#build:release_cpu_linux --crosstool_top="@local_config_cuda//crosstool:toolchain"
+#build:release_cpu_linux --repo_env=TF_SYSROOT="/dt9"
 
 # Linux ARM64 specific options
 build:linux_arm64 --copt="-mtune=generic" --copt="-march=armv8-a" --copt="-O3"
@@ -338,6 +366,8 @@ build:linux --cxxopt=-std=c++17
 build:linux --host_cxxopt=-std=c++17
 build:macos --cxxopt=-std=c++17
 build:macos --host_cxxopt=-std=c++17
+build:macos_arm64 --cxxopt=-std=c++17
+build:macos_arm64 --host_cxxopt=-std=c++17
 build:windows --cxxopt=/std:c++20
 build:windows --host_cxxopt=/std:c++20
 
@@ -415,6 +445,7 @@ build:ios     --define=with_xla_support=false
 common --experimental_repo_remote_exec
 
 # TFLite build configs for generic embedded Linux
+build:elinux --config=clang_local
 build:elinux --crosstool_top=@local_config_embedded_arm//:toolchain
 build:elinux --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
 build:elinux_aarch64 --config=elinux
@@ -428,7 +459,8 @@ build:elinux_armhf --copt -mfp16-format=ieee
 # Config-specific options should come above this line.
 
 # Load rc file written by ./configure.
-try-import %workspace%/.tf_configure.bazelrc
+# Fail on missing litert configure. It must exist for clang to be properly configured.
+import %workspace%/.litert_configure.bazelrc
 try-import %workspace%/xla_configure.bazelrc
 
 # Load rc file with user-specific options.
@@ -445,10 +477,8 @@ build --config=v2
 build:litert_prefixes --define=litert_prefixes="external/org_tensorflow/"
 build --config=litert_prefixes
 
-# Options to disable generating api v2 under tensorflow/lite/python.
-# This is not on by default and don't use this flag during wheel generation.
-# Remove the flag once tf/lite is fully separated from tf.
-build:disable_tf_lite_py --define=disable_tf_lite_py=true
+# Disables generating api v2 under the submodule tensorflow/lite/python.
+build --define=disable_tf_lite_py=true
 
 # Config to use a gcs bucket as remote cache.
 build:public_cache --remote_cache="https://storage.googleapis.com/litert-bazel-artifacts" --remote_upload_local_results=false
@@ -495,10 +525,6 @@ build:rbe_linux --host_linkopt=-lm
 
 build:rbe_linux_cpu --config=rbe_linux
 # Linux cpu and cuda builds share the same toolchain now.
-build:rbe_linux_cpu --host_crosstool_top="@local_config_cuda//crosstool:toolchain"
-build:rbe_linux_cpu --crosstool_top="@local_config_cuda//crosstool:toolchain"
-build:rbe_linux_cpu --extra_toolchains="@local_config_cuda//crosstool:toolchain-linux-x86_64"
-build:rbe_linux_cpu --repo_env=CC="/usr/lib/llvm-18/bin/clang"
 build:rbe_linux_cpu --extra_execution_platforms="@ml_build_config_platform//:platform"
 build:rbe_linux_cpu --host_platform="@ml_build_config_platform//:platform"
 build:rbe_linux_cpu --platforms="@ml_build_config_platform//:platform"
@@ -507,6 +533,13 @@ build:rbe_linux_cpu --copt=-Wno-error=unused-command-line-argument
 # These you may need to change for your own GCP project.
 common:rbe_linux_cpu --remote_instance_name=projects/tensorflow-testing/instances/default_instance
 # END LITERT REMOTE BUILD EXECUTION OPTIONS
+
+build:rbe_linux_cpu_clang_local --config=rbe_linux_cpu
+build:rbe_linux_cpu_clang_local --config=clang_local
+build:rbe_linux_cpu_clang_local --host_crosstool_top="@local_config_cuda//crosstool:toolchain"
+build:rbe_linux_cpu_clang_local --crosstool_top="@local_config_cuda//crosstool:toolchain"
+build:rbe_linux_cpu_clang_local --extra_toolchains="@local_config_cuda//crosstool:toolchain-linux-x86_64"
+build:rbe_linux_cpu_clang_local --repo_env=CC="/usr/lib/llvm-18/bin/clang"
 
 # Filters used when building in bulk in cpu.
 build:bulk_build_cpu --build_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-v1only
@@ -525,10 +558,7 @@ test:bulk_test_cpu --build_tests_only
 # TODO: b/397625618 Enable bzlmod
 common --noenable_bzlmod
 
-# TODO: Migrate for https://github.com/bazelbuild/bazel/issues/7260
-common --noincompatible_enable_cc_toolchain_resolution
-common --noincompatible_enable_android_toolchain_resolution
-
+# BEGIN-INTERNAL
 # Flags for tensorflow source rules to use local_repository rather than http_archive.
 # NOTE: due to bazel caching, when switching from http_archive to local_repository,
 # do a bazel clean --expunge --async before building or use the
@@ -537,3 +567,4 @@ build:use_local_tf --action_env=USE_LOCAL_TF=true
 build:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
 test:use_local_tf --action_env=USE_LOCAL_TF=true
 test:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
+# END-INTERNAL

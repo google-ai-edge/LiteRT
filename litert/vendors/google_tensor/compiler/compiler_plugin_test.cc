@@ -24,6 +24,7 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -35,7 +36,7 @@ namespace {
 using ::litert::google_tensor::GoogleTensorOptions;
 
 TEST(TestGoogleTensorPlugin, GetConfigInfo) {
-  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "GoogleTensor");
+  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Google");
 
   auto plugin = CreatePlugin();
 
@@ -47,17 +48,17 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
   const char* soc_model_name;
   LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0,
                                                             &soc_model_name));
-  ASSERT_STREQ(soc_model_name, "g5");
+  ASSERT_STREQ(soc_model_name, "Tensor_G5");
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
   LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, model.Subgraph(0)->Get(),
-      &selected_op_list));
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 4);
@@ -70,8 +71,8 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "g5", model.Get(), &compiled));
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
+                                               model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
@@ -95,19 +96,19 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
 
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto google_tensor_options,
-                              GoogleTensorOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetGoogleTensorOptions());
   google_tensor_options.SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
-  LITERT_ASSERT_OK(options.AddOpaqueOptions(std::move(google_tensor_options)));
 
-  auto plugin = CreatePlugin(env.GetOptions()->Get(), options.Get());
+  auto plugin = CreatePlugin(env_options.Get(), options.Get());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "P25", model.Get(), &compiled));
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
+                                               model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;

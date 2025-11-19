@@ -61,6 +61,10 @@ def parse_args() -> argparse.Namespace:
       "--py_src", help="single source file for the wheel", action="append"
   )
   parser.add_argument(
+      "--structured_deps", help="single structured dep for the wheel",
+      action="append"
+  )
+  parser.add_argument(
       "--package_data", help="single source data for the wheel", action="append"
   )
   parser.add_argument(
@@ -91,8 +95,8 @@ def create_empty_init_files(dst_dir: str) -> None:
 def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
   create_empty_init_files(dst_dir)
 
-  if meta_dict:
-    with open(os.path.join(dst_dir, "__init__.py"), "w") as f:
+  with open(os.path.join(dst_dir, "__init__.py"), "w") as f:
+    if meta_dict:
       for key, value in meta_dict.items():
         f.write(f'{key} = "{value}"\n')
 
@@ -119,11 +123,40 @@ def prepare_build_tree(tree_path, args, project_name: str):
   for src in args.src:
     shutil.copyfile(src, os.path.join(src_dir, os.path.basename(src)))
 
-  for src in args.py_src:
-    dest = os.path.join(src_dir, src.removeprefix("litert/python/"))
+  for src in args.py_src or []:
+    if src.startswith("litert/python/"):
+      src_path = src.removeprefix("litert/python/")
+    elif src.startswith("bazel-out/"):
+      src_path = src.split("litert/python/")[-1]
+    else:
+      raise ValueError(f"Unsupported source file: {src}")
+    dest = os.path.join(src_dir, src_path)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    shutil.copyfile(
-        src, os.path.join(src_dir, src.removeprefix("litert/python/"))
+    shutil.copyfile(src, os.path.join(src_dir, src_path))
+
+  structured_deps_pairs = []
+  relpath_set = set()
+  if args.structured_deps:
+    for dep in args.structured_deps:
+      relative_path = dep.removeprefix("bazel-out/k8-opt/bin/")
+      structured_deps_pairs.append((dep, relative_path))
+      relpath_set.add(relative_path.split(os.sep)[0])
+
+  # Create directory structure for structured deps
+  dir_set = set()
+  for _, relative_path in structured_deps_pairs:
+    dir_set.add(os.path.dirname(relative_path))
+  for dir_name in dir_set:
+    os.makedirs(os.path.join(tree_path, dir_name), exist_ok=True)
+
+  # Copy structured deps
+  for original_path, relative_path in structured_deps_pairs:
+    shutil.copyfile(original_path, os.path.join(tree_path, relative_path))
+
+  # create empty init files for structured deps
+  for relative_path in relpath_set:
+    create_init_files(
+        os.path.join(tree_path, relative_path)
     )
 
   meta_dict = construct_meta_dict(args)
@@ -131,17 +164,18 @@ def prepare_build_tree(tree_path, args, project_name: str):
   create_init_files(src_dir, meta_dict)
 
   # Copy package data files to the build tree, after filling the __init__.
-  for src in args.package_data:
-    def get_dest(file_path: str):
-      delimiter = "litert/"
-      index = file_path.find(delimiter)
-      if index != -1:
-        return file_path[index + len(delimiter):]
-      else:
-        return file_path
-    dest = os.path.join(src_dir, get_dest(src))
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    shutil.copyfile(src, dest)
+  if args.package_data is not None:
+    for src in args.package_data:
+      def get_dest(file_path: str):
+        delimiter = "litert/"
+        index = file_path.find(delimiter)
+        if index != -1:
+          return file_path[index + len(delimiter):]
+        else:
+          return file_path
+      dest = os.path.join(src_dir, get_dest(src))
+      os.makedirs(os.path.dirname(dest), exist_ok=True)
+      shutil.copyfile(src, dest)
 
 
 def build_pyproject_wheel(

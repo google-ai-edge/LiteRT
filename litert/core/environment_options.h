@@ -27,7 +27,8 @@ class LiteRtEnvironmentOptionsT {
   LiteRtEnvironmentOptionsT() = default;
 
   litert::Expected<LiteRtAny> GetOption(LiteRtEnvOptionTag tag) const;
-  litert::Expected<void> SetOption(LiteRtEnvOption option);
+  litert::Expected<void> SetOption(LiteRtEnvOption option,
+                                   bool overwrite = false);
 
  private:
   std::unordered_map<LiteRtEnvOptionTag, LiteRtAny> options_;

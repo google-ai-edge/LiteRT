@@ -17,10 +17,10 @@
 
 #include <cstdint>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 #define MAX_OEM_OP_STRING_LEN 100
@@ -30,6 +30,7 @@ namespace litert::mediatek {
 // Bit mask for tensor flags.
 enum {
   NN_TENSOR_FLAG_USE_INT8_ASYMM_SIGNED = 1U << 2,
+  NN_TENSOR_FLAG_USE_INVALID_TENSOR_TYPE = 1U << 5,
 };
 
 using NeuronTensorType = int32_t;

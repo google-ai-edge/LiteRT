@@ -46,13 +46,13 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtAny context_id,
-      litert::ToLiteRtAny(
-          std::any(reinterpret_cast<int64_t>(env.context().context()))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.context().context()))));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtAny queue_id,
-      litert::ToLiteRtAny(
-          std::any(reinterpret_cast<int64_t>(env.queue()->queue()))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.queue()->queue()))));
 
   const std::array<LiteRtEnvOption, 2> environment_options = {
       LiteRtEnvOption{
@@ -69,8 +69,8 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
   auto singleton_env =
       litert::internal::GpuEnvironment::Create(litert_envt->get());
   ASSERT_TRUE(singleton_env);
-  EXPECT_EQ((*singleton_env)->getContext()->context(), env.context().context());
-  EXPECT_EQ((*singleton_env)->getCommandQueue()->queue(), env.queue()->queue());
+  EXPECT_EQ((*singleton_env)->GetContext()->context(), env.context().context());
+  EXPECT_EQ((*singleton_env)->GetCommandQueue()->queue(), env.queue()->queue());
 }
 
 }  // namespace

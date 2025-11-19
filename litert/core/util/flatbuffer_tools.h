@@ -25,10 +25,10 @@
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_consts.h"
 #include "litert/cc/litert_expected.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/model_builder.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -259,7 +259,8 @@ class FlatbufferWrapper {
 
   // TODO Don't return a unique_ptr, this can just be a move only type, all the
   // fields are unique_ptrs. Load flatbuffer from file.
-  static Expected<Ptr> CreateFromTflFile(absl::string_view path);
+  static Expected<Ptr> CreateFromTflFile(absl::string_view path,
+                                         bool allow_modifications = false);
 
   // The caller must ensure that the buffer remains valid for the lifetime of
   // the model.
@@ -280,6 +281,11 @@ class FlatbufferWrapper {
   // Underlying model object.
   const ::tflite::FlatBufferModel& FlatbufferModel() const {
     return *fb_model_;
+  }
+
+  // Underlying model object.
+  const ::tflite::FlatBufferModel* FlatbufferModelPtr() const {
+    return fb_model_.get();
   }
 
   // Packed schema object.

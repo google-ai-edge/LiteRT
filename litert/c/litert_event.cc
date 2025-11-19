@@ -18,11 +18,17 @@
 
 #include <cstdint>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/event.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
+#include <CL/cl.h>
+#include <CL/cl_platform.h>
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +57,11 @@ LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
       .type = LiteRtEventTypeOpenCl,
       .opencl_event = cl_event,
   };
+  cl_int res = tflite::gpu::cl::clRetainEvent(cl_event);
+  if (res != CL_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to retain OpenCL event: %d", res);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   return kLiteRtStatusOk;
 #else
   return kLiteRtStatusErrorUnsupported;

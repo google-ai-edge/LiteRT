@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_environment.h"
@@ -69,11 +70,14 @@ class MyCustomOpKernel : public CustomOpKernel {
     LITERT_ASSIGN_OR_RETURN(size_t num_elements,
                             tensor_type.Layout().NumElements());
     LITERT_ASSIGN_OR_RETURN(auto input0_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(inputs[0]));
+                            TensorBufferScopedLock::Create<float>(
+                                inputs[0], TensorBuffer::LockMode::kRead));
     LITERT_ASSIGN_OR_RETURN(auto input1_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(inputs[1]));
+                            TensorBufferScopedLock::Create<float>(
+                                inputs[1], TensorBuffer::LockMode::kRead));
     LITERT_ASSIGN_OR_RETURN(auto output_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(outputs[0]));
+                            TensorBufferScopedLock::Create<float>(
+                                outputs[0], TensorBuffer::LockMode::kWrite));
 
     const float* input0 = input0_lock_and_addr.second;
     const float* input1 = input1_lock_and_addr.second;
@@ -99,18 +103,17 @@ TEST(CompiledModelTest, CustomOp) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-
   LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   MyCustomOpKernel my_custom_op_kernel;
   ASSERT_TRUE(options.AddCustomOpKernel(my_custom_op_kernel));
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model, options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
 
   // Create and fill input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
@@ -131,7 +134,8 @@ TEST(CompiledModelTest, CustomOp) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];

@@ -32,11 +32,23 @@ std::vector<OpWrapper> BuildElementwiseSinOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+std::vector<OpWrapper> BuildElementwiseCeilOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
 std::vector<OpWrapper> BuildElementwiseCosOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+std::vector<OpWrapper> BuildElementwiseHardSwishOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
 std::vector<OpWrapper> BuildElementwiseRsqrtOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
+std::vector<OpWrapper> BuildElementwiseSqrtOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
@@ -68,11 +80,23 @@ std::vector<OpWrapper> BuildElementwiseMaximumOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+std::vector<OpWrapper> BuildElementwiseEluOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
+std::vector<OpWrapper> BuildElementwiseFloorOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
 std::vector<OpWrapper> BuildElementwiseFloorDivOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
 std::vector<OpWrapper> BuildElementwiseNotEqualOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
+std::vector<OpWrapper> BuildElementwiseOrOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
@@ -105,6 +129,18 @@ std::vector<OpWrapper> BuildElementwiseLogOp(
     const std::vector<TensorWrapperRef>& outputs);
 
 std::vector<OpWrapper> BuildElementwiseAbsOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
+std::vector<OpWrapper> BuildElementwiseNegOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
+std::vector<OpWrapper> BuildElementwiseRoundOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+
+std::vector<OpWrapper> BuildElementwiseSignOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 

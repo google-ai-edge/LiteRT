@@ -14,6 +14,7 @@
 
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
+#define INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
 
 #include <algorithm>
@@ -29,9 +30,12 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/random/random.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -41,17 +45,21 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/tensor_utils.h"
 #include "tflite/profiling/time.h"
 
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
-ABSL_FLAG(std::string, dispatch_library_dir, "",
+ABSL_FLAG(std::string, dispatch_library_dir, "/data/local/tmp/run_model_test",
           "Path to the dispatch library.");
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
           "Path to the compiler plugin library. Only for JIT compilation.");
-ABSL_FLAG(std::string, accelerator, "cpu", "Which backend to use.");
+ABSL_FLAG(std::string, accelerator, "cpu",
+          "Which backend to use. Comma delimited string of accelerators (e.g. "
+          "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU if they are "
+          "specified in this flag.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
@@ -62,23 +70,36 @@ ABSL_FLAG(size_t, sample_size, 5,
           "of tensor.");
 ABSL_FLAG(size_t, iterations, 1,
           "The number of iterations the graph will execute.");
+ABSL_FLAG(bool, language_model, false,
+          "Whether the model is a language model,"
+          " so that the input tensors will be reasonable.");
+ABSL_FLAG(bool, enable_on_device_compilation_caching, false,
+          "Whether to enable on device compilation caching.");
+constexpr absl::string_view kCompilerCacheDir =
+    "/data/local/tmp/litert_compiler_cache";
 
 namespace litert {
 namespace {
 
-using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
-using ::litert::mediatek::MediatekOptionsFromFlags;
-using ::litert::qualcomm::QualcommOptionsFromFlags;
+using ::litert::google_tensor::UpdateGoogleTensorOptionsFromFlags;
+using ::litert::intel_openvino::UpdateIntelOpenVinoOptionsFromFlags;
+using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
+using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
 
-LiteRtHwAccelerators GetAccelerator() {
-  const auto accelerator = absl::GetFlag(FLAGS_accelerator);
-  if (accelerator == "gpu") {
-    return kLiteRtHwAcceleratorGpu;
-  } else if (accelerator == "npu") {
-    return kLiteRtHwAcceleratorNpu;
-  } else {
-    return kLiteRtHwAcceleratorCpu;
+litert::HwAcceleratorSet GetAccelerator() {
+  const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
+  litert::HwAcceleratorSet accelerators(
+      static_cast<int>(litert::HwAccelerators::kNone));
+  for (absl::string_view accelerator : absl::StrSplit(accelerator_str, ',')) {
+    if (accelerator == "gpu") {
+      accelerators |= litert::HwAccelerators::kGpu;
+    } else if (accelerator == "npu") {
+      accelerators |= litert::HwAccelerators::kNpu;
+    } else if (accelerator == "cpu") {
+      accelerators |= litert::HwAccelerators::kCpu;
+    }
   }
+  return accelerators;
 }
 
 Expected<Environment> GetEnvironment() {
@@ -97,6 +118,11 @@ Expected<Environment> GetEnvironment() {
     environment_options.push_back(litert::Environment::Option{
         litert::Environment::OptionTag::CompilerPluginLibraryDir,
         absl::string_view(compiler_plugin_library_dir)});
+    if (absl::GetFlag(FLAGS_enable_on_device_compilation_caching)) {
+      environment_options.push_back(litert::Environment::Option{
+          litert::Environment::OptionTag::CompilerCacheDir,
+          kCompilerCacheDir.data()});
+    }
   }
 
   return Environment::Create(absl::MakeConstSpan(environment_options));
@@ -105,16 +131,30 @@ Expected<Environment> GetEnvironment() {
 Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(GetAccelerator());
-  if (auto qnn_opts = QualcommOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*qnn_opts));
-  }
-  if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*google_tensor_opts));
-  }
-  if (auto mediatek_opts = MediatekOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*mediatek_opts));
-  }
+  LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
+  LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
+  LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
+                          options.GetGoogleTensorOptions());
+  LITERT_RETURN_IF_ERROR(
+      UpdateGoogleTensorOptionsFromFlags(google_tensor_opts));
+  LITERT_ASSIGN_OR_RETURN(auto& intel_openvino_opts,
+                          options.GetIntelOpenVinoOptions());
+  LITERT_RETURN_IF_ERROR(
+      UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts));
+  LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+  LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
   return options;
+}
+
+// Helper function to get the total number of elements in a tensor.
+Expected<size_t> GetTotalElements(const TensorBuffer& buffer) {
+  LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
+  const auto& layout = type.Layout();
+  size_t total_elements = 1;
+  for (size_t d = 0; d < layout.Rank(); ++d) {
+    total_elements *= layout.Dimensions()[d];
+  }
+  return total_elements;
 }
 
 // Fills a tensor buffer with sample data based on element type
@@ -122,14 +162,9 @@ Expected<void> FillInputBuffer(TensorBuffer& buffer) {
   if (!absl::GetFlag(FLAGS_compare_numerical)) {
     return {};
   }
-  LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
 
-  // Calculate the total number of elements from dimensions
-  const auto& layout = type.Layout();
-  size_t total_elements = 1;
-  for (size_t d = 0; d < layout.Rank(); ++d) {
-    total_elements *= layout.Dimensions()[d];
-  }
+  LITERT_ASSIGN_OR_RETURN(const size_t total_elements,
+                          GetTotalElements(buffer));
 
   // Always treat input as float and fill with rotating values from 0.0 to 0.9
   std::vector<float> data(total_elements);
@@ -142,7 +177,60 @@ Expected<void> FillInputBuffer(TensorBuffer& buffer) {
   return buffer.Write<float>(absl::MakeConstSpan(data));
 }
 
-// Using tensor utility functions from the tensor_utils.h header
+// Fills input buffers for a language model with sample data.
+Expected<void> FillLanguageModelInputBuffers(
+    absl::Span<TensorBuffer> input_buffers) {
+  if (input_buffers.size() < 3) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Language model requires at least 3 input tensors.");
+  }
+
+  // 1. First tensor: Randomized token IDs with padding.
+  auto& token_buffer = input_buffers[0];
+  LITERT_ASSIGN_OR_RETURN(const size_t max_length,
+                          GetTotalElements(token_buffer));
+
+  // Generate a random sequence length between 1 and max_length.
+  absl::BitGen gen;
+  // Ensure sequence_length is at least 1.
+  size_t sequence_length =
+      absl::uniform_int_distribution<size_t>(1, max_length)(gen);
+
+  // Distribution for token IDs in the range [0, 30521].
+  absl::uniform_int_distribution<int32_t> token_dist(0, 30521);
+
+  // Initialize with 0s for padding.
+  std::vector<int32_t> token_data(max_length, 0);
+  for (size_t i = 0; i < sequence_length; ++i) {
+    token_data[i] = token_dist(gen);
+  }
+  LITERT_RETURN_IF_ERROR(
+      token_buffer.Write<int32_t>(absl::MakeConstSpan(token_data)));
+
+  // 2. Second tensor: Attention mask (1s for tokens, 0s for padding).
+  auto& mask_buffer = input_buffers[1];
+  LITERT_ASSIGN_OR_RETURN(const size_t mask_length,
+                          GetTotalElements(mask_buffer));
+  if (mask_length != max_length) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Token ID and mask tensors must have the same length.");
+  }
+  std::vector<int32_t> mask_data(max_length, 0);
+  // Set 1s for the valid tokens.
+  std::fill(mask_data.begin(), mask_data.begin() + sequence_length, 1);
+  LITERT_RETURN_IF_ERROR(
+      mask_buffer.Write<int32_t>(absl::MakeConstSpan(mask_data)));
+
+  // 3. Third tensor: All zeros.
+  auto& third_buffer = input_buffers[2];
+  LITERT_ASSIGN_OR_RETURN(const size_t third_length,
+                          GetTotalElements(third_buffer));
+  std::vector<int32_t> third_data(third_length, 0);
+  LITERT_RETURN_IF_ERROR(
+      third_buffer.Write<int32_t>(absl::MakeConstSpan(third_data)));
+
+  return {};
+}
 
 // Function to print tensor buffer information and data
 Expected<void> PrintTensorBuffer(TensorBuffer& buffer,
@@ -211,17 +299,14 @@ Expected<void> RunModel() {
                  "Model filename is empty. Use --graph to provide it.");
   }
 
-  ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
-  LITERT_ASSIGN_OR_RETURN(auto model,
-                          Model::CreateFromFile(absl::GetFlag(FLAGS_graph)));
-
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model,
-                          CompiledModel::Create(env, model, options));
+  ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model,
+      CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
 
-  LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
 
@@ -230,14 +315,27 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto input_buffers,
                           compiled_model.CreateInputBuffers(signature_index));
 
-  // Fill input buffers with sample data
-  for (size_t i = 0; i < input_buffers.size(); ++i) {
-    auto& buffer = input_buffers[i];
-    LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
+  if (!absl::GetFlag(FLAGS_language_model)) {  // non-language model
+    // Fill input buffers with sample data
+    for (size_t i = 0; i < input_buffers.size(); ++i) {
+      auto& buffer = input_buffers[i];
+      LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
 
-    // Print tensor info and data if requested
+      // Print tensor info and data if requested
+      if (absl::GetFlag(FLAGS_print_tensors)) {
+        LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Input", i));
+      }
+    }
+  } else {
+    // language model, hard assumption on tensor order here TODO: generalize
+    // when we find other examples
+    LITERT_RETURN_IF_ERROR(
+        FillLanguageModelInputBuffers(absl::MakeSpan(input_buffers)));
+    // Also print the tensor info and data if requested
     if (absl::GetFlag(FLAGS_print_tensors)) {
-      LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Input", i));
+      for (size_t i = 0; i < input_buffers.size(); ++i) {
+        LITERT_RETURN_IF_ERROR(PrintTensorBuffer(input_buffers[i], "Input", i));
+      }
     }
   }
 

@@ -35,17 +35,58 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus EnableInfiniteFloatCapping(bool enabled);
   LiteRtStatus EnableBenchmarkMode(bool enabled);
   LiteRtStatus EnableAllowSrcQuantizedFcConvOps(bool enabled);
-  LiteRtStatus SetDelegatePrecision(LiteRtDelegatePrecision precision);
-  LiteRtStatus SetBufferStorageType(LiteRtDelegateBufferStorageType type);
+
+  enum class Precision : int {
+    kDefault = kLiteRtDelegatePrecisionDefault,
+    kFp16 = kLiteRtDelegatePrecisionFp16,
+    kFp32 = kLiteRtDelegatePrecisionFp32,
+  };
+  Expected<void> SetPrecision(Precision precision);
+
+  enum class BufferStorageType : int {
+    kDefault = kLiteRtDelegateBufferStorageTypeDefault,
+    kBuffer = kLiteRtDelegateBufferStorageTypeBuffer,
+    kTexture2D = kLiteRtDelegateBufferStorageTypeTexture2D,
+  };
+  Expected<void> SetBufferStorageType(BufferStorageType type);
+
   LiteRtStatus SetPreferTextureWeights(bool prefer_texture_weights);
   LiteRtStatus SetSerializationDir(const char* serialization_dir);
   LiteRtStatus SetModelCacheKey(const char* model_cache_key);
   LiteRtStatus SetSerializeProgramCache(bool serialize_program_cache);
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
-  // TODO - b/421905729: Change name to EnableNoExternalTensorsMode
-  // with the next API updates.
-  LiteRtStatus EnableNoImmutableExternalTensorsMode(bool enabled);
+  LiteRtStatus EnableExternalTensorsMode(bool enabled);
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
+
+  enum class Backend : int {
+    kAutomatic = kLiteRtGpuBackendAutomatic,
+    kOpenCl = kLiteRtGpuBackendOpenCl,
+    kWebGpu = kLiteRtGpuBackendWebGpu,
+    kOpenGl = kLiteRtGpuBackendOpenGl,
+  };
+  Expected<void> SetBackend(Backend backend);
+
+  enum class Priority : int {
+    kDefault = kLiteRtGpuPriorityDefault,
+    kLow = kLiteRtGpuPriorityLow,
+    kNormal = kLiteRtGpuPriorityNormal,
+    kHigh = kLiteRtGpuPriorityHigh,
+  };
+  Expected<void> SetPriority(Priority priority);
+
+  LiteRtStatus SetMadviseOriginalSharedTensors(
+      bool madvise_original_shared_tensors);
+
+  // Sets the number of steps to prepare WebGPU command buffers in advance.
+  // 0 (default value) = No command buffer preparation in advance. It must be 0
+  //     when any GPU resource bindings are changed during inference.
+  // 1 = Prepare one step ahead assuming that all the gpu resource bindings are
+  //     the same as the previous step.
+  // 2 = Prepare two steps ahead. It can be used when gpu resource bindings are
+  //     the same as the previous previous step, e.g. LLM inferences which swaps
+  //     input and output KV caches.
+  LiteRtStatus SetNumStepsOfCommandBufferPreparations(
+      int num_steps_of_command_buffer_preparations);
 };
 
 }  // namespace litert

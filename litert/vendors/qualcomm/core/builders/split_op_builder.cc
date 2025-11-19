@@ -33,7 +33,7 @@ std::vector<OpWrapper> BuildSplitOp(
   }
 
   const TensorWrapper& input_tensor = inputs[kInputIndex];
-  auto axis_data = axis_tensor.GetStaticTensorData<int32_t>();
+  auto axis_data = axis_tensor.GetTensorData<int32_t>();
   if (!axis_data.has_value()) {
     QNN_LOG_ERROR("Get axis_data failed.");
     return res;

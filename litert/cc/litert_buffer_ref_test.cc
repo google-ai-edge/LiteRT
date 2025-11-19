@@ -28,6 +28,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 
 using litert::BufferRef;
+using litert::MakeBufferRef;
 using litert::Mallocator;
 using litert::MutableBufferRef;
 using litert::Newlocator;
@@ -327,6 +328,23 @@ TEST(OwningBufferRefTest, Assign) {
   buf.WriteInto("SOME");
   EXPECT_EQ(buf.StrView(), "SOMERawBuffer");
   EXPECT_EQ(FbBufToStr(const_buf), "SomeRawBuffer");
+}
+
+TEST(OwningBufferRefTest, MakeBufferRefInitList) {
+  auto buf = MakeBufferRef<int32_t>({1, 2, 3});
+  EXPECT_EQ(buf.Size(), sizeof(int32_t) * 3);
+  EXPECT_THAT(absl::MakeConstSpan(reinterpret_cast<int32_t*>(buf.Data()),
+                                  buf.Size() / sizeof(int32_t)),
+              ElementsAreArray({1, 2, 3}));
+}
+
+TEST(OwningBufferRefTest, MakeBufferRefInitIter) {
+  std::vector<int32_t> data = {1, 2, 3};
+  auto buf = MakeBufferRef(data.begin(), data.end());
+  EXPECT_EQ(buf.Size(), sizeof(int32_t) * 3);
+  EXPECT_THAT(absl::MakeConstSpan(reinterpret_cast<int32_t*>(buf.Data()),
+                                  buf.Size() / sizeof(int32_t)),
+              ElementsAreArray({1, 2, 3}));
 }
 
 }  // namespace

@@ -19,7 +19,7 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"

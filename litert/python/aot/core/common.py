@@ -36,7 +36,9 @@ MODULE_ROOT = ".".join([
 ])
 
 
-def get_resource(litert_relative_path: pathlib.Path) -> pathlib.Path:
+def get_resource(
+    litert_relative_path: pathlib.Path, is_dir=False
+) -> pathlib.Path:
   """Returns the path to a resource in the Litert workspace."""
   try:
     resource_root = resources.files(_WORKSPACE_PREFIX)
@@ -45,7 +47,7 @@ def get_resource(litert_relative_path: pathlib.Path) -> pathlib.Path:
   litert_resource = resource_root.joinpath(
       _LITERT_ROOT, str(litert_relative_path)
   )
-  if not litert_resource.is_file():
+  if not is_dir and not litert_resource.is_file():
     raise FileNotFoundError(f"Resource {litert_resource} does not exist.")
   return pathlib.Path(str(litert_resource))
 

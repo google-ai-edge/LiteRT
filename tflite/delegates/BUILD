@@ -14,6 +14,8 @@
 # ==============================================================================
 
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_copts", "tflite_linkopts")
 load("//tflite:special_rules.bzl", "tflite_portable_test_suite")
 
@@ -127,6 +129,8 @@ cc_test(
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:version",
+        "//tflite/converter/experimental/remat:metadata_util",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/c:c_api_experimental",
         "//tflite/core/c:c_api_types",
@@ -137,8 +141,6 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/remat:metadata_util",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 

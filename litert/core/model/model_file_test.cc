@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -27,7 +28,7 @@
 // through flatbuffer_tools.h via model.h) have the same #ifdef, thus this line
 // need to be put at the top to ensure we get the "mutable" version.
 #if 1
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 #endif
 
 #include <unordered_map>
@@ -38,13 +39,14 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
-#include "litert/cc/litert_model_predicates.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/graph_validation.h"
@@ -69,7 +71,7 @@ using ::testing::Values;
 using ::testing::litert::IsError;
 using ::testing::litert::IsOkAndHolds;
 
-using ModelFactory = std::function<Expected<Model>()>;
+using ModelFactory = std::function<Expected<ExtendedModel>()>;
 
 static constexpr absl::string_view kAddSimple = "add_simple.tflite";
 static constexpr absl::string_view kAddCst = "add_cst.tflite";
@@ -91,8 +93,8 @@ GetTestBufferCache() {
 }
 
 // Load a model, then serialize and re-load. Used to test serialization.
-Expected<Model> LoadModelThroughRoundTrip(absl::string_view filename) {
-  auto model = Model::CreateFromFile(GetTestFilePath(filename));
+Expected<ExtendedModel> LoadModelThroughRoundTrip(absl::string_view filename) {
+  auto model = ExtendedModel::CreateFromFile(GetTestFilePath(filename));
   if (!model) {
     return model.Error();
   }
@@ -114,7 +116,7 @@ Expected<Model> LoadModelThroughRoundTrip(absl::string_view filename) {
   LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
       cached_buf.Data(), cached_buf.Size(), &result));
 
-  return Model::CreateFromOwnedHandle(result);
+  return ExtendedModel::CreateFromOwnedHandle(result);
 }
 
 ModelFactory MakeRoundTripFactory(absl::string_view filename) {
@@ -122,7 +124,9 @@ ModelFactory MakeRoundTripFactory(absl::string_view filename) {
 }
 
 ModelFactory MakeLoadFactory(absl::string_view filename) {
-  return [=]() { return Model::CreateFromFile(GetTestFilePath(filename)); };
+  return [=]() {
+    return ExtendedModel::CreateFromFile(GetTestFilePath(filename));
+  };
 }
 
 // Test fixture parameterized by a file path to test model.
@@ -136,7 +140,7 @@ class TestWithModelPath : public ::testing::TestWithParam<absl::string_view> {
 // Test fixture pareterized by a function that loads a model.
 class TestWithModelFactory : public ::testing::TestWithParam<ModelFactory> {
  protected:
-  Expected<Model> LoadModel() { return GetParam()(); }
+  Expected<ExtendedModel> LoadModel() { return GetParam()(); }
 };
 
 // Simple tests
@@ -247,8 +251,14 @@ TEST(ModelSerializeTest, WithSignature) {
   static constexpr char kOutput[] = "bar";
   static constexpr char kKey[] = "newKey";
 
-  LiteRtSignatureT signature(litert_model.MainSubgraph(), {kInput}, {kOutput},
-                             kKey);
+  LiteRtSubgraph subgraph = litert_model.MainSubgraph();
+  std::vector<std::string> input_names = {kInput};
+  std::vector<LiteRtTensor> input_tensors = {subgraph->Inputs()[0]};
+  std::vector<std::string> output_names = {kOutput};
+  std::vector<LiteRtTensor> output_tensors = {subgraph->Outputs()[0]};
+  LiteRtSignatureT signature(subgraph, std::move(input_names),
+                             std::move(input_tensors), std::move(output_names),
+                             std::move(output_tensors), kKey);
   litert_model.EmplaceSignature(std::move(signature));
 
   auto serialized = SerializeModel(std::move(*model.Get()));
@@ -344,6 +354,66 @@ TEST(ModelLoadTest, WithOffsetTensorBuffer) {
     EXPECT_EQ(tensor->Weights().GetBufferManager(),
               litert_model->get()->Buffers());
   }
+}
+
+TEST(ModelTestCApi, Int2) {
+  auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
+  ASSERT_TRUE(model);
+
+  const auto& litert_model = *model->Get();
+  const auto& int2_tensor = litert_model.Subgraph(0).Tensor(2);
+
+  const auto& int2_type = int2_tensor.Type().second.ranked_tensor_type;
+  const auto rank = int2_type.layout.rank;
+  EXPECT_EQ(int2_type.element_type, kLiteRtElementTypeInt2);
+
+  size_t num_elements = 1;
+  for (int i = 0; i < rank; ++i) {
+    num_elements *= int2_type.layout.dimensions[i];
+  }
+
+  const auto& weights = int2_tensor.Weights();
+  const auto num_bytes = weights.Buffer().Size();
+  EXPECT_EQ(num_bytes, std::ceil(num_elements / 4.0f));
+
+  const auto& [int2_quant_id, int2_quant_detail] = int2_tensor.Qparams();
+  ASSERT_EQ(int2_quant_id, kLiteRtQuantizationPerChannel);
+  const auto q_dim = int2_quant_detail.per_channel.quantized_dimension;
+  const auto num_channels = int2_quant_detail.per_channel.num_channels;
+  ASSERT_EQ(num_channels, int2_type.layout.dimensions[q_dim]);
+
+  EXPECT_THAT(absl::MakeConstSpan(int2_quant_detail.per_channel.zero_points,
+                                  num_channels),
+              Each(0));
+}
+
+TEST(ModelTestCCApi, Int2) {
+  auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
+  ASSERT_TRUE(model);
+
+  const auto& litert_model = *model;
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto sg, litert_model.MainSubgraph());
+  const auto ops = sg.Ops();
+
+  const auto& fc = ops[1];
+  ASSERT_EQ(fc.Code(), kLiteRtOpCodeTflFullyConnected);
+
+  const auto inputs = fc.Inputs();
+  const auto& int2_tensor = inputs[1];
+
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto rtt, int2_tensor.RankedTensorType());
+  ASSERT_EQ(rtt.ElementType(), ElementType::Int2);
+  const auto& layout = rtt.Layout();
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto num_elements, layout.NumElements());
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto num_bytes, rtt.Bytes());
+  EXPECT_EQ(num_bytes, std::ceil(num_elements / 4.0f));
+  ASSERT_TRUE(int2_tensor.IsConstant());
+
+  const auto q_params = int2_tensor.PerChannelQuantization();
+  const auto q_dim = q_params.quantized_dimension;
+  const auto num_channels = q_params.num_channels;
+  ASSERT_EQ(num_channels, layout.Dimensions()[q_dim]);
+  EXPECT_THAT(absl::MakeConstSpan(q_params.zero_points, num_channels), Each(0));
 }
 
 TEST(ModelSerializeTest, WithOffsetTensorBuffer) {
@@ -750,6 +820,42 @@ TEST(ModelSerializeTest, TransferAndSerializeOffsetBuffers) {
 
   auto serialized = SerializeModel(std::move(other));
   ASSERT_TRUE(serialized);
+}
+
+TEST(ModelSerializeTest,
+     LoadModelWithBytecodeThenAddMetadataSerializationSuccess) {
+  static constexpr absl::string_view kMetadataKey = "metadata_key";
+  static constexpr absl::string_view kMetadataValue = "metadata_value";
+  static constexpr absl::string_view kNpuModelPath = "simple_model_npu.tflite";
+
+  auto model = litert::testing::LoadTestFileModel(kNpuModelPath);
+  ASSERT_TRUE(model);
+  LITERT_ASSERT_OK(
+      model.AddMetadata(kMetadataKey.data(), kMetadataValue.data()));
+
+  auto serialized = SerializeModel(std::move(*model.Get()));
+  EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
+
+  // Reload model using the cached buffer.
+  LiteRtModel result_model = nullptr;
+  EXPECT_EQ(LiteRtCreateModelFromBuffer(serialized->Data(), serialized->Size(),
+                                        &result_model),
+            kLiteRtStatusOk);
+
+  // Check dispatch op is present.
+  ASSERT_TRUE(result_model);
+  const auto& op = result_model->MainSubgraph()->Ops().front();
+  auto custom_op_code = GetCustomOpCode(*result_model, *op);
+  ASSERT_TRUE(custom_op_code.has_value());
+  EXPECT_EQ(*custom_op_code, "DISPATCH_OP");
+
+  // Check metadata is present.
+  const void* metadata;
+  size_t metadata_size;
+  LITERT_ASSERT_OK(LiteRtGetModelMetadata(result_model, kMetadataKey.data(),
+                                          &metadata, &metadata_size));
+  EXPECT_EQ(BufferRef(metadata, metadata_size).StrView(), kMetadataValue);
+  LiteRtDestroyModel(result_model);
 }
 
 // Tests that explicitly check litert graph structure.

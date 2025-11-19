@@ -89,14 +89,32 @@ TEST(ModelTest, EmplaceSubgraph) {
 TEST(ModelTest, Signature) {
   static constexpr absl::string_view kSignatureName = "MY_SIGNATURE";
 
-  const std::vector<std::string> inputs = {"input_1", "input_2"};
-  const std::vector<std::string> outputs = {"output_1"};
-
   LiteRtModelT model;
   auto& subgraph = model.EmplaceSubgraph();
 
-  auto& signature = model.EmplaceSignature(&subgraph, inputs, outputs,
-                                           std::string(kSignatureName));
+  std::vector<std::string> inputs = {"input_1", "input_2"};
+  std::vector<LiteRtTensor> input_tensors;
+  input_tensors.reserve(inputs.size());
+  for (const auto& name : inputs) {
+    auto& tensor = subgraph.EmplaceTensor();
+    tensor.SetName(name);
+    subgraph.Inputs().push_back(&tensor);
+    input_tensors.push_back(&tensor);
+  }
+
+  std::vector<std::string> outputs = {"output_1"};
+  std::vector<LiteRtTensor> output_tensors;
+  output_tensors.reserve(outputs.size());
+  for (const auto& name : outputs) {
+    auto& tensor = subgraph.EmplaceTensor();
+    tensor.SetName(name);
+    subgraph.Outputs().push_back(&tensor);
+    output_tensors.push_back(&tensor);
+  }
+
+  auto& signature =
+      model.EmplaceSignature(&subgraph, inputs, input_tensors, outputs,
+                             output_tensors, std::string(kSignatureName));
 
   auto found_signature = model.FindSignature(kSignatureName);
   ASSERT_TRUE(found_signature);
@@ -108,6 +126,82 @@ TEST(ModelTest, SignatureDNE) {
   LiteRtModelT model;
   auto found_signature = model.FindSignature(kSignatureName);
   EXPECT_FALSE(found_signature);
+}
+
+TEST(ModelTest, SignatureAllowsDistinctInputOutputAliases) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+
+  auto& tensor = subgraph.EmplaceTensor();
+  tensor.SetName("tensor_internal");
+  subgraph.Inputs().push_back(&tensor);
+  subgraph.Outputs().push_back(&tensor);
+
+  std::vector<std::string> input_names = {"alias_in"};
+  std::vector<LiteRtTensor> input_tensors = {&tensor};
+  std::vector<std::string> output_names = {"alias_out"};
+  std::vector<LiteRtTensor> output_tensors = {&tensor};
+
+  auto& signature = model.EmplaceSignature(
+      &subgraph, std::move(input_names), std::move(input_tensors),
+      std::move(output_names), std::move(output_tensors), "sig");
+
+  const auto& sig_inputs = signature.InputNames();
+  ASSERT_EQ(sig_inputs.size(), 1);
+  EXPECT_EQ(sig_inputs[0], "alias_in");
+  const auto& sig_outputs = signature.OutputNames();
+  ASSERT_EQ(sig_outputs.size(), 1);
+  EXPECT_EQ(sig_outputs[0], "alias_out");
+
+  auto input_tensor = signature.FindInputTensor("alias_in");
+  ASSERT_TRUE(input_tensor.HasValue());
+  auto output_tensor = signature.FindOutputTensor("alias_out");
+  ASSERT_TRUE(output_tensor.HasValue());
+  EXPECT_EQ(*input_tensor, *output_tensor);
+}
+
+TEST(ModelTest, SignatureMaintainsAliasesPerSignature) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+
+  auto& tensor = subgraph.EmplaceTensor();
+  tensor.SetName("tensor_internal");
+  subgraph.Inputs().push_back(&tensor);
+
+  std::vector<std::string> input_names_sig1 = {"alias_sig1"};
+  std::vector<LiteRtTensor> input_tensors_sig1 = {&tensor};
+  std::vector<std::string> output_names_sig1 = {};
+  std::vector<LiteRtTensor> output_tensors_sig1 = {};
+  model.EmplaceSignature(
+      &subgraph, std::move(input_names_sig1), std::move(input_tensors_sig1),
+      std::move(output_names_sig1), std::move(output_tensors_sig1), "sig1");
+
+  std::vector<std::string> input_names_sig2 = {"alias_sig2"};
+  std::vector<LiteRtTensor> input_tensors_sig2 = {&tensor};
+  std::vector<std::string> output_names_sig2 = {};
+  std::vector<LiteRtTensor> output_tensors_sig2 = {};
+  model.EmplaceSignature(
+      &subgraph, std::move(input_names_sig2), std::move(input_tensors_sig2),
+      std::move(output_names_sig2), std::move(output_tensors_sig2), "sig2");
+
+  auto sig1 = model.FindSignature("sig1");
+  ASSERT_TRUE(sig1);
+  auto sig2 = model.FindSignature("sig2");
+  ASSERT_TRUE(sig2);
+
+  const auto& sig1_inputs = sig1->get().InputNames();
+  ASSERT_EQ(sig1_inputs.size(), 1);
+  EXPECT_EQ(sig1_inputs[0], "alias_sig1");
+
+  const auto& sig2_inputs = sig2->get().InputNames();
+  ASSERT_EQ(sig2_inputs.size(), 1);
+  EXPECT_EQ(sig2_inputs[0], "alias_sig2");
+
+  auto tensor_sig1 = sig1->get().FindInputTensor("alias_sig1");
+  ASSERT_TRUE(tensor_sig1.HasValue());
+  auto tensor_sig2 = sig2->get().FindInputTensor("alias_sig2");
+  ASSERT_TRUE(tensor_sig2.HasValue());
+  EXPECT_EQ(*tensor_sig1, *tensor_sig2);
 }
 
 TEST(ModelTest, AttachExternalBufferToOp) {
@@ -166,6 +260,7 @@ TEST(ModelSubgraphTest, Input) {
   LiteRtSubgraphT subgraph;
   subgraph.Inputs().push_back(&tensor);
   EXPECT_EQ(&subgraph.Input(0), subgraph.Inputs().front());
+  EXPECT_EQ(tensor.NumElements(), 0);
 }
 
 TEST(ModelSubgraphTest, Output) {
@@ -187,6 +282,26 @@ TEST(ModelSubgraphTest, EmplaceOp) {
   auto& op = subgraph.EmplaceOp();
   ASSERT_EQ(subgraph.Ops().size(), 1);
   EXPECT_THAT(subgraph.Ops(), ElementsAreArray({&op}));
+}
+
+TEST(ModelSubgraphTest, TransferOpsFrom) {
+  LiteRtSubgraphT subgraph;
+  LiteRtSubgraphT other_subgraph;
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  other_subgraph.TransferOpsFrom(subgraph.OpsAllocation(), 0);
+  EXPECT_EQ(subgraph.Ops().size(), 0);
+  EXPECT_EQ(other_subgraph.Ops().size(), 1);
+  EXPECT_EQ(other_subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflAdd);
+}
+
+TEST(ModelSubgraphTest, TransferTensorsFrom) {
+  LiteRtSubgraphT subgraph;
+  LiteRtSubgraphT other_subgraph;
+  subgraph.EmplaceTensor();
+  other_subgraph.TransferTensorsFrom(subgraph.TensorsAllocation());
+  EXPECT_EQ(subgraph.Tensors().size(), 0);
+  EXPECT_EQ(other_subgraph.Tensors().size(), 1);
 }
 
 //
@@ -622,9 +737,9 @@ TEST(PrintingTest, TflOptions) {
 
 TEST(PrintingTest, TflOptionsNoPrinter) {
   TflOptions opts;
-  opts.type = ::tflite::BuiltinOptions_SubOptions;
-  ::tflite::SubOptionsT add_opts;
-  opts.Set(std::move(add_opts));
+  opts.type = ::tflite::BuiltinOptions_NONE;
+  ::tflite::FullyConnectedOptionsT no_opts;
+  opts.Set(std::move(no_opts));
   EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
 }
 
@@ -658,6 +773,20 @@ TEST(PrintingTest, TflAddOptionsPointer) {
   add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
   add_opts.pot_scale_int16 = true;
   EXPECT_EQ(absl::StrFormat("%v", &add_opts), "{fa=RELU6,pot=true}");
+}
+
+TEST(PrintingTest, TflSubOptions) {
+  ::tflite::SubOptionsT sub_opts;
+  sub_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  sub_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", sub_opts), "{fa=RELU6,pot=true}");
+}
+
+TEST(PrintingTest, TflSubOptionsPointer) {
+  ::tflite::SubOptionsT sub_opts;
+  sub_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  sub_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", &sub_opts), "{fa=RELU6,pot=true}");
 }
 
 TEST(PrintingTest, Subgraph) {

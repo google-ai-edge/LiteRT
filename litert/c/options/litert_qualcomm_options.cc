@@ -19,12 +19,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/cache/hash_util.h"
 
 struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsLogLevel log_level = kLiteRtQualcommLogLevelInfo;
@@ -32,9 +34,17 @@ struct LiteRtQualcommOptionsT {
   bool use_htp_preference = false;
   bool use_qint16_as_quint16 = false;
   bool enable_weight_sharing = false;
+  bool use_conv_hmx = true;
+  bool use_fold_relu = true;
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
+  std::string ir_json_dir;
+  std::string dlc_dir;
+  std::uint32_t vtcm_size = 0;
+  std::uint32_t num_hvx_threads = 0;
+  LiteRtQualcommOptionsOptimizationLevel optimization_level =
+      kHtpOptimizeForInferenceO3;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -50,6 +60,20 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
         delete reinterpret_cast<LiteRtQualcommOptions>(payload);
       },
       options));
+
+  auto qti_hash = [](const void* payload) -> uint64_t {
+    const LiteRtQualcommOptionsT* options =
+        reinterpret_cast<const LiteRtQualcommOptionsT*>(payload);
+    uint64_t ans = 0;
+    litert::HashCombine(
+        ans, options->log_level, options->profiling,
+        options->use_htp_preference, options->use_qint16_as_quint16,
+        options->enable_weight_sharing, options->htp_performance_mode,
+        options->ir_json_dir, options->dlc_dir, options->vtcm_size,
+        options->num_hvx_threads, options->optimization_level);
+    return ans;
+  };
+  LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, qti_hash));
 
   options_data.release();
   return kLiteRtStatusOk;
@@ -100,6 +124,30 @@ LiteRtStatus LiteRtQualcommOptionsGetLogLevel(
   }
 
   *log_level = options->log_level;
+
+  return kLiteRtStatusOk;
+}
+
+// Profiling -------------------------------------------------------------------
+
+LiteRtStatus LiteRtQualcommOptionsSetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling profiling) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->profiling = profiling;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling) {
+  if (options == nullptr || profiling == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *profiling = options->profiling;
 
   return kLiteRtStatusOk;
 }
@@ -197,6 +245,50 @@ LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtQualcommOptionsSetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool use_conv_hmx) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->use_conv_hmx = use_conv_hmx;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool* use_conv_hmx) {
+  if (use_conv_hmx == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *use_conv_hmx = options->use_conv_hmx;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool use_fold_relu) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->use_fold_relu = use_fold_relu;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool* use_fold_relu) {
+  if (use_fold_relu == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *use_fold_relu = options->use_fold_relu;
+
+  return kLiteRtStatusOk;
+}
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 LiteRtStatus LiteRtQualcommOptionsSetHtpPerformanceMode(
@@ -223,24 +315,114 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtQualcommOptionsSetProfiling(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling profiling) {
+LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char* ir_json_dir) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  options->profiling = profiling;
+  options->ir_json_dir = ir_json_dir;
 
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtQualcommOptionsGetProfiling(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling) {
-  if (options == nullptr || profiling == nullptr) {
+LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char** ir_json_dir) {
+  if (options == nullptr || ir_json_dir == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  *profiling = options->profiling;
+  *ir_json_dir = options->ir_json_dir.c_str();
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetDlcDir(LiteRtQualcommOptions options,
+                                            const char* dlc_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dlc_dir = dlc_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDlcDir(LiteRtQualcommOptions options,
+                                            const char** dlc_dir) {
+  if (options == nullptr || dlc_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dlc_dir = options->dlc_dir.c_str();
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetVtcmSize(LiteRtQualcommOptions options,
+                                              std::uint32_t vtcm_size) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->vtcm_size = vtcm_size;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetVtcmSize(LiteRtQualcommOptions options,
+                                              std::uint32_t* vtcm_size) {
+  if (options == nullptr || vtcm_size == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *vtcm_size = options->vtcm_size;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetNumHvxThreads(
+    LiteRtQualcommOptions options, std::uint32_t num_hvx_threads) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->num_hvx_threads = num_hvx_threads;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetNumHvxThreads(
+    LiteRtQualcommOptions options, std::uint32_t* num_hvx_threads) {
+  if (options == nullptr || num_hvx_threads == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *num_hvx_threads = options->num_hvx_threads;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel optimization_level) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->optimization_level = optimization_level;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel* optimization_level) {
+  if (options == nullptr || optimization_level == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *optimization_level = options->optimization_level;
 
   return kLiteRtStatusOk;
 }

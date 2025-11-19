@@ -27,8 +27,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_environment.h"
@@ -195,12 +195,16 @@ Expected<std::vector<CompilerPlugin>> LoadAllPlugins(Context& ctx) {
 Expected<CompilerPlugin> LoadPlugin(Context& ctx) {
   auto plugins = LoadAllPlugins(ctx);
   if (!plugins) {
+    LITERT_LOG(LITERT_ERROR, "Failed to load plugins: %s",
+               plugins.Error().Message().c_str());
     return plugins.Error();
   }
 
   ctx.Dump().Start("Select Plugin");
 
   for (auto& plugin : *plugins) {
+    ctx.Dump().Labeled() << absl::StreamFormat("Trying plugin: %s\n",
+                                               plugin.SocManufacturer());
     if (plugin.SocManufacturer() == ctx.Run().soc_manufacturer) {
       ctx.Dump().Labeled() << absl::StreamFormat("Selected plugin for: %s\n",
                                                  plugin.SocManufacturer());
@@ -472,6 +476,13 @@ LiteRtStatus Apply(Context& ctx) {
 }  // namespace
 
 LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run) {
+  if (auto status = run->options.Build(); !status) {
+    run->dump_out.Get().get()
+        << "Failed to build options, Error: " << status.Error().Message()
+        << "\n";
+    return status.Error().Status();
+  }
+
   Context context(std::move(run));
   DumpPreamble(context.Dump());
 

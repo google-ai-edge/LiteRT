@@ -32,7 +32,7 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissive
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
-      --config=use_local_tf"
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   rpi0)
     BAZEL_FLAGS="--config=elinux_armhf
@@ -40,19 +40,22 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissivec
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
-      --config=use_local_tf"
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   aarch64)
     BAZEL_FLAGS="--config=release_arm64_linux
       --define tensorflow_mkldnn_contraction_kernel=0
       --copt=-O3
-      --config=use_local_tf"
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   native)
-    BAZEL_FLAGS="--copt=-O3 --copt=-march=native --config=use_local_tf"
+    BAZEL_FLAGS="--copt=-O3
+      --copt=-march=native
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   *)
-    BAZEL_FLAGS="--copt=-O3 --config=use_local_tf"
+    BAZEL_FLAGS="--copt=-O3
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
 esac
 
@@ -62,6 +65,11 @@ fi
 
 if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:nightly_iso_date=${NIGHTLY_RELEASE_DATE}"
+fi
+
+# Conditionally use local submodules vs http_archve tf
+if [[ "${USE_LOCAL_TF}" == "true" ]]; then
+  BUILD_FLAGS+=("--config=use_local_tf")
 fi
 
 # Set linkopt for arm64 architecture, and remote_cache for x86_64.
@@ -79,7 +87,7 @@ case "${ARCH}" in
     ;;
 esac
 
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
 # Move the wheel file to the root directory since it is not accessible from the
@@ -93,20 +101,20 @@ find "./dist/"
 
 if [ "${TEST_MANYLINUX_COMPLIANCE}" = "true" ]; then
   echo "Testing manylinux compliance..."
-  bazel ${BAZEL_STARTUP_OPTIONS} test -c opt --config=monolithic --config=nogcp --config=nonccl \
+  bazel ${BAZEL_STARTUP_OPTIONS} test -c opt \
     ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:manylinux_compliance_test
 fi
 
 # Vendor SDKs
 
 ## Qualcomm SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_qualcomm*.tar.gz dist/
 
 ## Mediatek SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/

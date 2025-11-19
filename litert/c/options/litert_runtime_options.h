@@ -68,6 +68,26 @@ LiteRtStatus LiteRtSetRuntimeOptionsShloCompositeInlining(
 LiteRtStatus LiteRtGetRuntimeOptionsShloCompositeInlining(
     LiteRtRuntimeOptions options, bool* shlo_composite_inlining);
 
+// Sets the profiling flag in runtime options. The options is
+// being modified in the this setter method.
+LiteRtStatus LiteRtSetRuntimeOptionsEnableProfiling(
+  LiteRtRuntimeOptions options, bool enable_profiling);
+
+// Gets the profiling flag from runtime options. Reads the
+// value from the options and writes it to the pointer.
+LiteRtStatus LiteRtGetRuntimeOptionsEnableProfiling(
+  LiteRtRuntimeOptions options, bool* enable_profiling);
+
+// Sets the error reporter mode in runtime options. The options is
+// being modified in the this setter method.
+LiteRtStatus LiteRtSetRuntimeOptionsErrorReporterMode(
+    LiteRtRuntimeOptions options, LiteRtErrorReporterMode error_reporter_mode);
+
+// Gets the error reporter mode from runtime options. Reads the
+// value from the options and writes it to the pointer.
+LiteRtStatus LiteRtGetRuntimeOptionsErrorReporterMode(
+    LiteRtRuntimeOptions options, LiteRtErrorReporterMode* error_reporter_mode);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
