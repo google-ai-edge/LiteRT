@@ -111,7 +111,6 @@ EXPORTS
   LiteRtGetRuntimeOptionsEnableProfiling
   LiteRtGetRuntimeOptionsErrorReporterMode
   LiteRtGetRuntimeOptionsIdentifier
-  LiteRtGetRuntimeOptionsShloCompositeInlining
   LiteRtGetSignatureInputName
   LiteRtGetSignatureInputTensor
   LiteRtGetSignatureInputTensorByIndex
@@ -240,7 +239,6 @@ EXPORTS
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetRuntimeOptionsEnableProfiling
   LiteRtSetRuntimeOptionsErrorReporterMode
-  LiteRtSetRuntimeOptionsShloCompositeInlining
   LiteRtUnlockTensorBuffer
   LiteRtUnwrapDelegate
   LiteRtWrapDelegate
