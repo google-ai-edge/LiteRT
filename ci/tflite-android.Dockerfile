@@ -10,7 +10,8 @@ RUN apt-get update && \
 ENV ANDROID_SDK_FILENAME commandlinetools-linux-13114758_latest.zip
 ENV ANDROID_SDK_URL https://dl.google.com/android/repository/${ANDROID_SDK_FILENAME}
 ENV ANDROID_API_LEVEL 35
-ENV ANDROID_NDK_API_LEVEL 26
+# 21 is required for LiteRT v1 packages.
+ENV ANDROID_NDK_API_LEVEL 21
 ENV ANDROID_SDK_API_LEVEL 35
 
 # Build Tools Version liable to change.
