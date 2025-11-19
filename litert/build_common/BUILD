@@ -55,6 +55,7 @@ config_setting(
 
 config_setting(
     name = "build_include_gpu",
+    define_values = {"litert_build_include": "gpu"},
     flag_values = {":build_include": "gpu"},
 )
 
