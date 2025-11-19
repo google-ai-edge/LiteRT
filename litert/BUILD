@@ -27,7 +27,7 @@ package(
 # Access to LiteRT C API is controlled by :litert_c_users.
 
 # Users with access to the LiteRT C++ API linked dynamically (litert/cc/dynamic_runtime).
-# Requires linking against libLiteRtRuntimeCApi.so.
+# Requires linking against libLiteRt.so.
 # For statically linked C++ API, use :litert_cc_users_static_link.
 #
 # Note: External users should use litert/cc:litert_api_with_dynamic_runtime which is litert_public.

@@ -1126,7 +1126,7 @@ cc_library(
 # Visibility: litert_public
 # -----------------------------------------------------------------------------
 
-# User facing C/C++ API target that depends on the dynamic runtime `libLiteRtRuntimeCApi.so`.
+# User facing C/C++ API target that depends on the dynamic runtime `libLiteRt.so`.
 cc_library(
     name = "litert_api_with_dynamic_runtime",
     hdrs = [

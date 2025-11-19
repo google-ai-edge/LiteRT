@@ -76,7 +76,7 @@ cc_library(
         "//litert/runtime:accelerator",
         "//litert/runtime:accelerator_registry",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 
@@ -133,7 +133,7 @@ cc_library(
         "//litert/core:environment",
         "//litert/runtime:tensor_buffer_registry",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 

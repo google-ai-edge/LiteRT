@@ -255,7 +255,7 @@ def litert_device_script(
             buildable_libs.append(lib)
         elif backend.dispatch and backend.dispatch in lib:
             buildable_libs.append(lib)
-        elif "libLiteRtRuntimeCApi.so" in lib:
+        elif "libLiteRt.so" in lib:
             buildable_libs.append(lib)
         else:
             extra_device_libs.append(lib)

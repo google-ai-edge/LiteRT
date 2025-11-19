@@ -98,7 +98,7 @@ if [[ -n "$check_host" ]]; then
   done
   check_file "$(find_host_plugin)" "find_host_plugin" "Example.so"
   check_file "$(find_host_dispatch)" "find_host_dispatch" "Example.so"
-  check_file "$(find_host_runtime_lib)" "find_host_runtime_lib" "libLiteRtRuntimeCApi.so"
+  check_file "$(find_host_runtime_lib)" "find_host_runtime_lib" "libLiteRt.so"
   echo "Running host bin..."
   $(host_bin) "${bin_args[@]}"
 fi
@@ -111,7 +111,7 @@ if [[ -n "$check_device" ]]; then
   done
   check_file "$(find_device_plugin)" "find_device_plugin" "Example.so"
   check_file "$(find_device_dispatch)" "find_device_dispatch" "Example.so"
-  check_file "$(find_device_runtime_lib)" "find_device_runtime_lib" "libLiteRtRuntimeCApi.so"
+  check_file "$(find_device_runtime_lib)" "find_device_runtime_lib" "libLiteRt.so"
 fi
 
 

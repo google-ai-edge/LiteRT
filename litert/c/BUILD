@@ -123,7 +123,7 @@ cc_library(
         ":litert_common",
         "//litert/runtime:metrics",
     ],
-    # Keep symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 
@@ -153,7 +153,7 @@ cc_library(
         ],
         "//conditions:default": [],
     }),
-    # Keep symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 
@@ -441,7 +441,7 @@ cc_library(
         "//tflite/c:c_api_types",
         "@com_google_absl//absl/types:span",
     ],
-    # Keep symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 
@@ -472,7 +472,7 @@ cc_test(
     ],
 )
 
-# The same test as `litert_compiled_model_test` but using the shared library `libLiteRtRuntimeCApi.so`.
+# The same test as `litert_compiled_model_test` but using the shared library `libLiteRt.so`.
 cc_test(
     name = "litert_compiled_model_shared_lib_test",
     srcs = ["litert_compiled_model_test.cc"],
@@ -655,13 +655,13 @@ cc_library(
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
-# Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
+# Build `litert/c:litert_runtime_c_api_so` for `libLiteRt.so`.
 cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
-    shared_lib_name = "libLiteRtRuntimeCApi.so",
+    shared_lib_name = "libLiteRt.so",
     user_link_flags = export_lrt_runtime_only_linkopt() + [
-        "-Wl,-soname=libLiteRtRuntimeCApi.so",
+        "-Wl,-soname=libLiteRt.so",
     ] + litert_android_linkopts(),
     deps = [":litert_runtime_c_api_so_shim"],
 )
@@ -669,7 +669,7 @@ cc_shared_library(
 macos_dylib(
     name = "build_litert_runtime_c_api_dylib",
     exported_symbols_lists = export_lrt_runtime_only_script(),
-    linkopts = ["-install_name @rpath/libLiteRtRuntimeCApi.dylib"],
+    linkopts = ["-install_name @rpath/libLiteRt.dylib"],
     minimum_os_version = LITERT_MIN_MACOS_VERSION,
     deps = LITERT_C_API_COMMON_DEPS,
 )
@@ -677,12 +677,12 @@ macos_dylib(
 copy_file(
     name = "litert_runtime_c_api_dylib",
     src = ":build_litert_runtime_c_api_dylib",
-    target = "libLiteRtRuntimeCApi.dylib",
+    target = "libLiteRt.dylib",
 )
 
-# Target for windows libLiteRtRuntimeCApi.dll.
+# Target for windows libLiteRt.dll.
 cc_binary(
-    name = "libLiteRtRuntimeCApi",
+    name = "libLiteRt",
     linkshared = 1,
     tags = [
         "nobuilder",
@@ -697,7 +697,7 @@ cc_binary(
 
 alias(
     name = "litert_runtime_c_api_dll",
-    actual = ":libLiteRtRuntimeCApi",
+    actual = ":libLiteRt",
 )
 
 filegroup(
@@ -706,7 +706,7 @@ filegroup(
     output_group = "interface_library",
 )
 
-# Import library to link libLiteRtRuntimeCApi.dll.
+# Import library to link libLiteRt.dll.
 cc_import(
     name = "litert_runtime_c_api_dll_import",
     interface_library = ":litert_runtime_c_api_dll_interface_lib",
@@ -755,7 +755,7 @@ cc_library(
     ],
 )
 
-# Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
+# Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRt.so`.
 # Warning:Don't build it together with `litert_runtime_c_api_so` in one command.
 # When bazel analyzed the build graph, it detected that two different actions would
 # produce the same output file path. This violates bazel's fundamental principle that
@@ -763,7 +763,7 @@ cc_library(
 cc_shared_library(
     name = "litert_tflite_runtime_c_api_so",
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
-    shared_lib_name = "libLiteRtRuntimeCApi.so",
+    shared_lib_name = "libLiteRt.so",
     tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
     user_link_flags = export_lrt_tflite_runtime_linkopt() + litert_android_linkopts(),
     deps = [":litert_tflite_runtime_c_api_so_shim"],
@@ -777,14 +777,14 @@ SELECT_LITERT_RUNTIME_C_API_SO = select({
     "//conditions:default": [":litert_runtime_c_api_so"],
 })
 
-# Allows referring to the above as a target with the name :libLiteRtRuntimeCApi.so.
+# Allows referring to the above as a target with the name :libLiteRt.so.
 filegroup(
-    name = "libLiteRtRuntimeCApi.so",
+    name = "libLiteRt.so",
     srcs = SELECT_LITERT_RUNTIME_C_API_SO,
 )
 
 # Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
-# resolve the symbols, not from libLiteRtRuntimeCApi.so.
+# resolve the symbols, not from libLiteRt.so.
 config_setting(
     name = "resolve_symbols_in_exec",
     define_values = {"resolve_symbols_in_exec": "true"},
@@ -796,7 +796,7 @@ filegroup(
     visibility = ["//litert/cc:__pkg__"],
 )
 
-# This is cc_library target based on `libLiteRtRuntimeCApi.so`.
+# This is cc_library target based on `libLiteRt.so`.
 cc_library(
     name = "litert_runtime_c_api_shared_lib",
     srcs = SELECT_LITERT_RUNTIME_C_API_SO,

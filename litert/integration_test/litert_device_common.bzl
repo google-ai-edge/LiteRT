@@ -109,7 +109,7 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
     """
 
     libs = libs + [
-        ("//litert/c:libLiteRtRuntimeCApi.so", "LD_LIBRARY_PATH"),
+        ("//litert/c:libLiteRt.so", "LD_LIBRARY_PATH"),
     ]
     libs_agg = []
     env_paths = {}

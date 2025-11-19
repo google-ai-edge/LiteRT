@@ -5,7 +5,7 @@ This folder contains C APIs of LiteRT Next.
 The C API is LiteRT's most fundamental API and is primarily used to implement
 the user-facing C++ API. The C API was developed to provide ABI stability.
 This means that when the LiteRT runtime is distributed as
-`libLiteRtRuntimeCApi.so`, it helps ensure that user applications remain
+`libLiteRt.so`, it helps ensure that user applications remain
 compatible and run smoothly even when using different versions of the runtime.
 
 NOTE: C API is not the recommended option for general application developments.

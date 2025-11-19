@@ -56,7 +56,7 @@ return an error.
 * Introduced target `litert/cc:litert_api_with_dynamic_runtime`
   This is a convenience Bazel target contains LiteRt C++ and C APIs. Users
   of this library are responsible to bundle LiteRT C API Runtime
-  `libLiteRtRuntimeCApi.so`.
+  `libLiteRt.so`.
 * C++ APIs that need LiteRT C API Runtime are moved to
   litert/cc/dynamic_runtime/
   Note: This is for internal usage. If you want to use dynamic API, use

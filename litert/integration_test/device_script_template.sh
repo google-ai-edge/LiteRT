@@ -149,7 +149,7 @@ function find_device_dispatch() {
 # Locate the runtime so directory for host if one has been packaged with this library.
 function find_host_runtime_lib() {
   for file in $(host_libs); do
-    if [[ "$file" == *"libLiteRtRuntimeCApi.so" ]]; then
+    if [[ "$file" == *"libLiteRt.so" ]]; then
       echo "$file"
     fi
   done
@@ -158,7 +158,7 @@ function find_host_runtime_lib() {
 # Locate the runtime so directory for device if one has been packaged with this library.
 function find_device_runtime_lib() {
   for file in $(device_libs); do
-    if [[ "$file" == *"libLiteRtRuntimeCApi.so" ]]; then
+    if [[ "$file" == *"libLiteRt.so" ]]; then
       echo "$file"
     fi
   done

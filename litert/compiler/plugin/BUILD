@@ -71,7 +71,7 @@ cc_test(
         "//litert/vendors/examples:example_plugin_so",
     ],
     # Workaround to disable mismatched-size-delete.
-    # A compiler plugin uses `libLiteRtRuntimeCApi.so` but `compiler_plugin` is a static library for runtime.
+    # A compiler plugin uses `libLiteRt.so` but `compiler_plugin` is a static library for runtime.
     # So mixing of the two will cause mismatched-size-delete error.
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [

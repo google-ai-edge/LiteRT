@@ -119,7 +119,7 @@ usage() {
 build() {
   print_info "Building the LiteRt C library with Bazel..."
   bazel build ${BUILD_FLAGS} \
-      //litert/c:libLiteRtRuntimeCApi.so
+      //litert/c:libLiteRt.so
 
   print_info "Build command: ${BUILD_FLAGS} ${TARGET}"
   print_info "Building target for ${ANDROID_CONFIG} with Bazel..."
@@ -143,7 +143,7 @@ push() {
   adb push --sync "${local_binary_path}" "${DEVICE_BINARY_PATH}"
   adb push --sync "${TOKENIZER_MODEL}" "${DEVICE_DIR}/${TOKENIZER_MODEL##*/}"
   adb push --sync "${EMBEDDER_MODEL}" "${DEVICE_DIR}/${EMBEDDER_MODEL##*/}"
-  adb push --sync "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_LD_LIBRARY_PATH}"
+  adb push --sync "${C_LIBRARY_LOCATION}/libLiteRt.so" "${DEVICE_LD_LIBRARY_PATH}"
 
   if [[ "${PUSH_GPU_LIBS}" == "true" ]]; then
     print_info "Pushing GPU accelerator library..."

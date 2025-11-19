@@ -241,7 +241,7 @@ echo "Pushed segmentation models."
 
 # Push c api shared library
 LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/"
-adb push --sync "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_BASE_DIR}/"
+adb push --sync "${C_LIBRARY_LOCATION}/libLiteRt.so" "${DEVICE_BASE_DIR}/"
 echo "Pushed c api shared library."
 
 # Push gpu accelerator shared library

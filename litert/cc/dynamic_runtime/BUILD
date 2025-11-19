@@ -63,7 +63,7 @@ LITERT_C_API_DEPS = [
     "//tflite/kernels:builtin_ops",
 ]
 
-### LiteRT C++ APIs which will use libLiteRtRuntimeCApi.so.
+### LiteRT C++ APIs which will use libLiteRt.so.
 #
 # Note: If you uses any one of the following classes, you should use
 # //litert/c:litert_runtime_c_api_shared_lib for C APIs.

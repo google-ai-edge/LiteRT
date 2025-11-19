@@ -91,7 +91,7 @@ cc_library(
         "//litert/core/cache:hash_util",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 
@@ -181,7 +181,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 
@@ -196,7 +196,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 
@@ -211,7 +211,7 @@ cc_library(
         "//litert/core:options",
         "//litert/runtime:litert_runtime_options",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
 )
 

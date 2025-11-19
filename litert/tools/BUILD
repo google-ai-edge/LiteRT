@@ -46,8 +46,8 @@ GPU_ACCELERATOR_DEPS = select({
     "//conditions:default": [],
 })
 
-# This user library should depend on libLiteRtRuntimeCapi.so to allow
-# CompilerPlugin to use the same libLiteRtRuntimeCapi.so
+# This user library should depend on libLiteRt.so to allow
+# CompilerPlugin to use the same libLiteRt.so
 cc_library(
     name = "apply_plugin_runtimecapi",
     srcs = ["apply_plugin.cc"],
@@ -77,7 +77,7 @@ cc_test(
         "//litert/vendors/examples:example_plugin_so",
     ],
     # Workaround to disable mismatched-size-delete.
-    # This test uses`libLiteRtRuntimeCApi.so` with some system components.
+    # This test uses`libLiteRt.so` with some system components.
     # So mixing of the two will cause mismatched-size-delete error.
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [
