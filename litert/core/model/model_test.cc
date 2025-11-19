@@ -737,9 +737,9 @@ TEST(PrintingTest, TflOptions) {
 
 TEST(PrintingTest, TflOptionsNoPrinter) {
   TflOptions opts;
-  opts.type = ::tflite::BuiltinOptions_SubOptions;
-  ::tflite::SubOptionsT add_opts;
-  opts.Set(std::move(add_opts));
+  opts.type = ::tflite::BuiltinOptions_NONE;
+  ::tflite::FullyConnectedOptionsT no_opts;
+  opts.Set(std::move(no_opts));
   EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
 }
 
@@ -773,6 +773,20 @@ TEST(PrintingTest, TflAddOptionsPointer) {
   add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
   add_opts.pot_scale_int16 = true;
   EXPECT_EQ(absl::StrFormat("%v", &add_opts), "{fa=RELU6,pot=true}");
+}
+
+TEST(PrintingTest, TflSubOptions) {
+  ::tflite::SubOptionsT sub_opts;
+  sub_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  sub_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", sub_opts), "{fa=RELU6,pot=true}");
+}
+
+TEST(PrintingTest, TflSubOptionsPointer) {
+  ::tflite::SubOptionsT sub_opts;
+  sub_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  sub_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", &sub_opts), "{fa=RELU6,pot=true}");
 }
 
 TEST(PrintingTest, Subgraph) {
