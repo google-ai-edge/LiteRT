@@ -26,7 +26,105 @@ package(
     ],
 )
 
-# LiteRt's compliance test suite (CTS).
+# SUITES ###########################################################################################
+
+litert_define_ats(
+    name = "cpu_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    dont_register = [
+        "hf_all_minilm_l6_v2",
+        "u2net_lite",
+        "whisper_tiny_decoder",
+        "yolo11n",
+    ],
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "example_ats",
+    backend = "example",
+    compile_only_suffix = "_aot",
+    do_register = [
+        "sub.*f32",
+        "mul.*f32",
+    ],
+    dont_register = [
+        "ExtraModel",
+    ],
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "qualcomm_ats",
+    backend = "qualcomm",
+    compile_only_suffix = "_aot",
+    do_register = [
+        "SingleOp",
+        "hf_all_minilm_l6_v2",
+        "hf_mobilevit_small",
+        "qai_hub_midas",
+        "qai_hub_real_esrgan_x4plus",
+        "torchvision_mobilenet_v2",
+        "u2net_lite",
+        "torchvision_resnet18",
+        "torchvision_squeezenet1_1",
+        "whisper_tiny_encoder",
+        "yamnet",
+        "yolo11n",
+    ],
+    dont_register = [
+        "hf_all_minilm_l6_v2",
+        "whisper_tiny_decoder",
+        ".*5d.*",
+        ".*6d.*",
+    ],
+    extra_flags = [
+        "--data_seed=42",
+        "--qualcomm_optimization_level=O3",
+        "--qualcomm_use_htp_preference=true",
+        "--qualcomm_htp_performance_mode=burst",
+        "--qualcomm_log_level=info",
+        "--qualcomm_use_fold_relu=true",
+        "--qualcomm_use_conv_hmx=true",
+    ],
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "mediatek_ats",
+    backend = "mediatek",
+    compile_only_suffix = "_aot",
+    do_register = [
+        "SingleOp",
+        "hf_mobilevit_small",
+        "qai_hub_midas",
+        "torchvision_mobilenet_v2",
+        "u2net_lite",
+        "torchvision_resnet18",
+        "torchvision_squeezenet1_1",
+        "yamnet",
+        "yolo11n",
+    ],
+    dont_register = [
+        ".*5d.*",
+        ".*6d.*",
+        "whisper_tiny_decoder",
+        "whisper_tiny_encoder",
+        "hf_all_minilm_l6_v2",
+        "qai_hub_real_esrgan_x4plus",
+    ],
+    extra_flags = [
+        "--data_seed=42",
+        "--mediatek_enable_gemma_compiler_optimizations=true",
+        "--mediatek_performance_mode_type=turbo_boost",
+        "--mediatek_optimization_hint=low_latency",
+        "--mediatek_enable_l1_cache_optimizations=true",
+    ],
+    jit_suffix = "",
+)
+
+# SOURCE CODES #####################################################################################
 
 litert_test(
     name = "ats",
@@ -347,77 +445,7 @@ cc_library(
     ],
 )
 
-# PRE-CONFIGURED CTS SUITES ########################################################################
-
 make_download_model_provider(
     name = "ats_models_provider",
     url = "https://storage.googleapis.com/litert/ats_models.tar.gz",
-)
-
-litert_define_ats(
-    name = "cpu_ats",
-    backend = "cpu",
-    compile_only_suffix = None,
-    dont_register = [
-        "hf_all_minilm_l6_v2",
-        "u2net_lite",
-        "whisper_tiny_decoder",
-        "yolo11n",
-    ],
-    jit_suffix = "",
-)
-
-litert_define_ats(
-    name = "example_ats",
-    backend = "example",
-    compile_only_suffix = "_aot",
-    do_register = [
-        "sub.*f32",
-        "mul.*f32",
-    ],
-    dont_register = [
-        "ExtraModel",
-    ],
-    jit_suffix = "",
-)
-
-litert_define_ats(
-    name = "qualcomm_ats",
-    backend = [
-        "qualcomm",  # V75: :qualcomm_ats
-        "qualcomm_v79",  # V79: :qualcomm_v79_ats,
-    ],
-    compile_only_suffix = "_aot",
-    do_register = [
-        "SingleOp",
-        "hf_all_minilm_l6_v2",
-        "hf_mobilevit_small",
-        "qai_hub_midas",
-        "qai_hub_real_esrgan_x4plus",
-        "torchvision_mobilenet_v2",
-        "u2net_lite",
-        "torchvision_resnet18",
-        "torchvision_squeezenet1_1",
-        "whisper_tiny_encoder",
-        "yamnet",
-        "yolo11n",
-    ],
-    dont_register = [
-        # Model negative filter.
-        "hf_all_minilm_l6_v2",
-        "whisper_tiny_decoder",
-        # Single op negative filter.
-        ".*5d.*",
-        ".*6d.*",
-    ],
-    extra_flags = [
-        "--data_seed=42",
-        "--qualcomm_optimization_level=O3",
-        "--qualcomm_use_htp_preference=true",
-        "--qualcomm_htp_performance_mode=burst",
-        "--qualcomm_log_level=info",
-        "--qualcomm_use_fold_relu=true",
-        "--qualcomm_use_conv_hmx=true",
-    ],
-    jit_suffix = "",
 )
