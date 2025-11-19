@@ -59,6 +59,11 @@ config_setting(
 )
 
 config_setting(
+    name = "build_include_gpu_define",
+    define_values = {"litert_build_include": "gpu"},
+)
+
+config_setting(
     name = "build_include_npu",
     flag_values = {":build_include": "npu"},
 )
@@ -93,6 +98,7 @@ selects.config_setting_group(
     name = "build_include_gpu_enabled",
     match_any = [
         ":build_include_gpu",
+        ":build_include_gpu_define",
         ":build_include_gpu_npu",
     ],
 )
@@ -126,6 +132,7 @@ genrule(
     name = "build_config_header",
     srcs = select({
         ":build_include_gpu": ["config/build_config_gpu.h"],
+        ":build_include_gpu_define": ["config/build_config_gpu.h"],
         ":build_include_npu": ["config/build_config_npu.h"],
         ":build_include_gpu_npu": ["config/build_config_gpu_npu.h"],
         ":build_include_cpu_only": ["config/build_config_cpu_only.h"],
