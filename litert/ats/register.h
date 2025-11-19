@@ -65,8 +65,10 @@ class RegisterFunctor {
                    test_graph.Error().Message().c_str());
         continue;
       }
-      auto names = NamesForNextTest(test_id_, options_, Fixture::Name(),
-                                    Logic::Name(), test_graph.Value()->Graph());
+      auto names = NamesForNextTest(
+          test_id_, options_,
+          absl::StrFormat("%s_%s", "SingleOp", Fixture::Name()), Logic::Name(),
+          test_graph.Value()->Graph());
       if (!names) {
         continue;
       }
