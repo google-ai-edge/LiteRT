@@ -73,6 +73,20 @@ TEST(BufferManagerTest, RegisterWithContext) {
   EXPECT_EQ(managed_context.get().should_append, true);
 }
 
+TEST(BufferManagerTest, GetOwnedBufferOk) {
+  BufferManager manager;
+  OwningBufferRef<uint8_t> buffer(kData);
+  const auto id = manager.RegisterOwnedBuffer(std::move(buffer));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto managed_buffer, manager.GetOwnedBuffer(id));
+  EXPECT_EQ(managed_buffer.StrView(), kData);
+}
+
+TEST(BufferManagerTest, GetNonExistingBufferError) {
+  BufferManager manager;
+  const auto id = 123;
+  EXPECT_FALSE(manager.GetOwnedBuffer(id));
+}
+
 }  // namespace
 
 }  // namespace litert::internal

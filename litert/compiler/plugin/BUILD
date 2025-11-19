@@ -30,11 +30,11 @@ cc_library(
     deps = [
         ":algo",
         "//litert/c:litert_any",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
-        "//litert/c:litert_rewriter",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_buffer_ref",
