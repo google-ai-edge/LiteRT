@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""tfl.cast operation definition."""
+"""tfl.hard_swish operation definition."""
 
 from xdsl import irdl
 
@@ -22,52 +22,62 @@ from . import _utils
 
 SSAValue = irdl.SSAValue
 
-
 # pylint: disable=redefined-builtin
-@core.register_mlir_transform("tfl.cast")
+
+
+@core.register_mlir_transform("tfl.hard_swish")
 @core.overload_cls_attrs
 @irdl.irdl_op_definition
-class CastOp(core.MlirOpBase):
-  """Cast operator.
+class HardSwishOp(core.MlirOpBase):
+  """Hardswish activation function.
 
-  Casts input from input type to output type.
+  Computes hard-swish activation function f(x) -> (x * relu6(x+3))/6
+  element-wise.
   """
 
-  name = "tfl.cast"
+  name = "tfl.hard_swish"
 
   input = irdl.operand_def()
   output = irdl.result_def()
 
-  # No attributes defined in the spec.
-
   def __init__(
       self,
       input: SSAValue | core.MlirOpBase,
-      result_type: core.MlirTypeBase | str,
+      result_type: core.MlirTypeBase | None = None,
       *,
       location=None,
   ):
-    input_val = SSAValue.get(input)
-    if isinstance(result_type, str):
-      assert isinstance(input_val.type, mlir.RankedTensorType)
-      result_type = mlir.RankedTensorType(
-          input_val.type.shape,
-          result_type,
-      )
+    input = SSAValue.get(input)
+
+    result_types = [result_type or self._infer_result_type(input)]
 
     super().__init__(
-        operands=[input_val],
-        result_types=[result_type],
+        operands=[input],
+        result_types=result_types,
         location=location,
-        attributes={},
     )
+
+  def _infer_result_type(
+      self,
+      input: SSAValue | core.MlirOpBase,
+  ):
+    input_type = _utils.get_tensor_type(input)
+    return mlir.RankedTensorType(input_type.shape, input_type.element_type)
 
   @classmethod
   def overload_cls_attrs(cls):
-    # No attributes to overload.
     return {}
 
 
-@_utils.op_builder_wraps(CastOp)
-def cast(*args, **kwargs):
-  return CastOp(*args, **kwargs).output
+def hard_swish(
+    input: SSAValue | core.MlirOpBase,
+    result_type: core.MlirTypeBase | None = None,
+    *,
+    location=None,
+):
+  """Hardswish activation function.
+
+  Computes hard-swish activation function f(x) -> (x * relu6(x+3))/6
+  element-wise.
+  """
+  return HardSwishOp(input, result_type=result_type, location=location).output
