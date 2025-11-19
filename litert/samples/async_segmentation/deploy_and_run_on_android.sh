@@ -27,6 +27,7 @@ usage() {
     echo "Usage: $0 --accelerator=[gpu|npu|cpu] --phone=[s24|s25] <binary_build_path>"
     echo "  --accelerator : Specify the accelerator to use (gpu, npu, or cpu). Defaults to cpu if not provided."
     echo "  --phone       : Specify the phone model (e.g., s24, s25) to select the correct NPU libraries. Defaults to s25."
+    echo "  --jit         : Specify whether to use JIT compilation (true or false). Only used for NPU. Defaults to false."
     echo "  <binary_build_path> : The path to the binary build directory (e.g., bazel-bin/)."
     exit 1
 }
@@ -39,7 +40,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 # Parse options
-TEMP=$(getopt -o '' --long accelerator:,phone:,use_gl_buffers,host_npu_lib:,host_npu_dispatch_lib: -- "$@")
+TEMP=$(getopt -o '' --long accelerator:,phone:,use_gl_buffers,jit,host_npu_lib:,host_npu_dispatch_lib:,host_npu_compiler_lib: -- "$@")
 if [ $? -ne 0 ]; then
     echo "Error parsing options." >&2
     usage
@@ -49,8 +50,10 @@ eval set -- "$TEMP"
 unset TEMP
 
 USE_GL_BUFFERS=false
+USE_JIT=false
 HOST_NPU_LIB=""
 HOST_NPU_DISPATCH_LIB=""
+HOST_NPU_COMPILER_LIB=""
 
 while true; do
     case "$1" in
@@ -72,12 +75,20 @@ while true; do
             USE_GL_BUFFERS=true
             shift
             ;;
+        '--jit')
+            USE_JIT=true
+            shift
+            ;;
         '--host_npu_lib')
             HOST_NPU_LIB="$2"
             shift 2
             ;;
         '--host_npu_dispatch_lib')
             HOST_NPU_DISPATCH_LIB="$2"
+            shift 2
+            ;;
+        '--host_npu_compiler_lib')
+            HOST_NPU_COMPILER_LIB="$2"
             shift 2
             ;;
         '--')
@@ -141,6 +152,13 @@ if [[ -z "$HOST_NPU_DISPATCH_LIB" ]]; then
     echo "Defaulting to internal dispatch library path."
     HOST_NPU_DISPATCH_LIB="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert/vendors/qualcomm/dispatch"
 fi
+if [[ "$USE_JIT" == "true" ]]; then
+    echo "Using NPU JIT compilation."
+    if [[ -z "$HOST_NPU_COMPILER_LIB" ]]; then
+        HOST_NPU_COMPILER_LIB="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert/vendors/qualcomm/compiler"
+    fi
+fi
+
 # Qualcomm NPU library path
 LD_LIBRARY_PATH="${DEVICE_NPU_LIBRARY_DIR}/"
 ADSP_LIBRARY_PATH="${DEVICE_NPU_LIBRARY_DIR}/"
@@ -169,7 +187,7 @@ esac
 
 # --- Model Selection ---
 MODEL_FILENAME="selfie_multiclass_256x256.tflite"
-if [[ "$ACCELERATOR" == "npu" ]]; then
+if [[ "$ACCELERATOR" == "npu" && "$USE_JIT" == "false" ]]; then
     if [[ "$PHONE" == "s24" ]]; then
         MODEL_FILENAME="selfie_multiclass_256x256_SM8650.tflite"
     elif [[ "$PHONE" == "s25" ]]; then
@@ -245,6 +263,12 @@ adb push "${HOST_NPU_LIB}/aarch64-android/libQnnSystem.so" "${DEVICE_NPU_LIBRARY
 adb push "${HOST_NPU_LIB}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 adb push "${HOST_NPU_LIB}/${QNN_SKEL_PATH_ARCH}/unsigned/${QNN_SKEL_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU libraries."
+
+# Push NPU compiler library
+if [[ "$USE_JIT" == "true" ]]; then
+    adb push "${HOST_NPU_COMPILER_LIB}/libLiteRtCompilerPlugin_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+    echo "Pushed NPU compiler library."
+fi
 fi
 
 # Set execute permissions
@@ -267,6 +291,9 @@ fi
 
 if [[ "$ACCELERATOR" == "npu" ]]; then
     FULL_COMMAND="cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\" ${RUN_COMMAND}"
+    if [[ "$USE_JIT" == "true" ]]; then
+        FULL_COMMAND="${FULL_COMMAND} true"
+    fi
 else
     FULL_COMMAND="cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ${RUN_COMMAND}"
 fi

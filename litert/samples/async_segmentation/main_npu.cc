@@ -36,9 +36,10 @@
 #include "litert/samples/async_segmentation/timing_utils.h"
 
 int main(int argc, char* argv[]) {
-  if (argc != 4) {
+  if (argc < 4) {
     std::cerr << "Usage: " << argv[0]
-              << " <model_path> <input_image_path> <output_image_path>"
+              << " <model_path> <input_image_path> <output_image_path> "
+                 "[use_jit (true|false)]"
               << std::endl;
     return 1;
   }
@@ -46,6 +47,14 @@ int main(int argc, char* argv[]) {
   const std::string model_path = argv[1];
   const std::string input_file = argv[2];
   const std::string output_file = argv[3];
+  const std::string use_jit_arg = argc > 4 ? argv[4] : "false";
+  bool use_jit = false;
+  if (use_jit_arg == "true") {
+    use_jit = true;
+  } else if (use_jit_arg != "false") {
+    std::cerr << "Warning: Unknown value for use_jit '" << use_jit_arg
+              << "'. Defaulting to false." << std::endl;
+  }
 
   std::vector<RGBAColor> mask_colors = {
       {1.0f, 0.0f, 0.0f, 0.1f}, {0.0f, 1.0f, 0.0f, 0.1f},
@@ -66,6 +75,12 @@ int main(int argc, char* argv[]) {
       litert::Environment::OptionTag::DispatchLibraryDir,
       absl::string_view("/data/local/tmp/async_segmentation_android/npu/"),
   });
+  if (use_jit) {
+    environment_options.push_back(litert::Environment::Option{
+        litert::Environment::OptionTag::CompilerPluginLibraryDir,
+        absl::string_view("/data/local/tmp/async_segmentation_android/npu/"),
+    });
+  }
   LITERT_ASSIGN_OR_ABORT(
       auto env, litert::Environment::Create(std::move(environment_options)));
 

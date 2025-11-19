@@ -121,6 +121,7 @@ cc_binary(
         ":shader_files",
         ":test_images",
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+        "//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so",
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
         "@qairt//:lib/aarch64-android/libQnnHtp.so",
         "@qairt//:lib/aarch64-android/libQnnHtpPrepare.so",
