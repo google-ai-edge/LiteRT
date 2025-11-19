@@ -50,11 +50,14 @@ def _prepare_repo_files(ctx):
         fail("A URL must be specified if local repo is not enabled.")
 
     else:
+        file_type = "tar.gz"  # MTK gives us .gz instead of .tar.gz
+        if "windows" in ctx.os.name.lower():
+            file_type = "zip"
         ctx.download_and_extract(
             url = ctx.attr.url,
             auth = get_auth(ctx, [ctx.attr.url]),
             stripPrefix = ctx.attr.strip_prefix,
-            type = "tar.gz",  # MTK gives us .gz instead of .tar.gz
+            type = file_type
         )
 
     if ctx.attr.symlink_mapping:
