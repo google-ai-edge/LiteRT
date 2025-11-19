@@ -769,16 +769,6 @@ class CompiledModel
     return Create(env, model, compilation_options);
   }
 
-  [[deprecated("Use the version that takes litert::HwAcceleratorSet instead.")]]
-  static Expected<CompiledModel> Create(
-      litert::Environment& env, const litert::Model& model,
-      LiteRtHwAccelerators hardware_accelerators) {
-    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
-    compilation_options.SetHardwareAccelerators(
-        static_cast<HwAccelerators>(hardware_accelerators));
-    return Create(env, model, compilation_options);
-  }
-
   // Creates a CompiledModel instance.
   //
   // `model_owned` indicates whether the provided `litert_model` handle is owned
