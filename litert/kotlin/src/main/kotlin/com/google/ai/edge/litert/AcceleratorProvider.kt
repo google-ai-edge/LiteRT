@@ -69,8 +69,14 @@ interface NpuCompatibilityChecker {
       object : NpuCompatibilityChecker {
         override fun isDeviceSupported(): Boolean {
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val model =
+              if (Build.SOC_MODEL.endsWith("(ENG)")) {
+                Build.SOC_MODEL.substring(0, Build.SOC_MODEL.length - 5)
+              } else {
+                Build.SOC_MODEL
+              }
             return SUPPORTED_MEDIATEK_SOCS.contains(
-              Triple(Build.SOC_MANUFACTURER, Build.SOC_MODEL, Build.VERSION.SDK_INT)
+              Triple(Build.SOC_MANUFACTURER, model, Build.VERSION.SDK_INT)
             )
           }
           return false
