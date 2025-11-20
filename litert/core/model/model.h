@@ -1479,6 +1479,10 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", sub_opts);
       break;
     }
+    case tflite::BuiltinOptions_NONE: {
+      absl::Format(&sink, "{}");
+      break;
+    }
     default:
       absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
       break;
@@ -1490,6 +1494,10 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
   // NOTE: Printers for specific options will be added on an as needed basis.
   const auto type = opts.type;
   switch (type) {
+    case tflite::BuiltinOptions_NONE: {
+      absl::Format(&sink, "{}");
+      break;
+    }
     default:
       absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
       break;

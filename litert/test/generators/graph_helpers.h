@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -68,10 +67,14 @@ struct OpDetails {
   explicit OpDetails(Args... args)
       : options(OptionsT{{}, std::forward<Args>(args)...}) {}
 
+  OpDetails() = default;
+
   TflOptions MakeTflOptions() const {
     TflOptions res;
     res.type = FbTypes::kBuiltinOptions;
-    res.Set(OptionsT(options));
+    if constexpr (FbTypes::kHasOptions) {
+      res.Set(OptionsT(options));
+    }
     return res;
   }
 
