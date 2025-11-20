@@ -134,7 +134,6 @@ genrule(
         ":build_include_gpu": ["config/build_config_gpu.h"],
         ":build_include_gpu_define": ["config/build_config_gpu.h"],
         ":build_include_npu": ["config/build_config_npu.h"],
-        ":build_include_gpu_npu": ["config/build_config_gpu_npu.h"],
         ":build_include_cpu_only": ["config/build_config_cpu_only.h"],
         "//conditions:default": ["config/build_config_gpu_npu.h"],
     }),
