@@ -21,13 +21,7 @@
 #include "litert/cc/litert_opaque_options.h"
 namespace litert {
 // RuntimeOptions is a wrapper around LiteRtRuntimeOptions. It is used to
-// configure the runtime options of LiteRt runtime. Such as the shlo
-// composite inlining flag.
-// Example usage:
-//   ASSIGN_OR_RETURN(RuntimeOptions options, RuntimeOptions::Create());
-//   options.SetShloCompositeInlining(true);
-//   ASSIGN_OR_RETURN(bool shlo_composite_inlining,
-//                    options.GetShloCompositeInlining());
+// configure the runtime options of LiteRt runtime.
 class RuntimeOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
@@ -37,8 +31,6 @@ class RuntimeOptions : public OpaqueOptions {
   static Expected<RuntimeOptions> Create();
   static Expected<RuntimeOptions> Create(OpaqueOptions& original);
 
-  Expected<void> SetShloCompositeInlining(bool shlo_composite_inlining);
-  Expected<bool> GetShloCompositeInlining() const;
   Expected<void> SetEnableProfiling(bool enable_profiling);
   Expected<bool> GetEnableProfiling() const;
   Expected<void> SetErrorReporterMode(

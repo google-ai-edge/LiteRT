@@ -33,17 +33,5 @@ TEST(RuntimeOptions, CreateAndOwnedHandle) {
   EXPECT_TRUE(options.IsOwned());
 }
 
-TEST(RuntimeOptions, CheckShloCompositeInliningDefaultValue) {
-  LITERT_ASSERT_OK_AND_ASSIGN(RuntimeOptions options, RuntimeOptions::Create());
-  EXPECT_THAT(options.GetShloCompositeInlining(), IsOkAndHolds(false));
-}
-
-TEST(RuntimeOptions, SetAndGetNumThreadsWorks) {
-  LITERT_ASSERT_OK_AND_ASSIGN(RuntimeOptions options, RuntimeOptions::Create());
-
-  LITERT_EXPECT_OK(options.SetShloCompositeInlining(true));
-  EXPECT_THAT(options.GetShloCompositeInlining(), IsOkAndHolds(true));
-}
-
 }  // namespace
 }  // namespace litert

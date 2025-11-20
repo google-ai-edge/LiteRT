@@ -220,8 +220,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     if (auto runtime_options = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
             opaque_options, LiteRtRuntimeOptionsT::Identifier());
         runtime_options) {
-      interpreter_options.SetShloCompositeInlining(
-          (*runtime_options)->shlo_composite_inlining);
+      interpreter_options.SetShloCompositeInlining(true);
       if ((*runtime_options)->enable_profiling) {
         profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
       }

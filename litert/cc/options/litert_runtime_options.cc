@@ -33,24 +33,6 @@ Expected<RuntimeOptions> RuntimeOptions::Create() {
   return RuntimeOptions(options, OwnHandle::kYes);
 }
 
-Expected<void> RuntimeOptions::SetShloCompositeInlining(
-    bool shlo_composite_inlining) {
-  LiteRtRuntimeOptions runtime_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsShloCompositeInlining(
-      runtime_options, shlo_composite_inlining));
-  return {};
-}
-
-Expected<bool> RuntimeOptions::GetShloCompositeInlining() const {
-  LiteRtRuntimeOptions runtime_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-  bool shlo_composite_inlining;
-  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsShloCompositeInlining(
-      runtime_options, &shlo_composite_inlining));
-  return shlo_composite_inlining;
-}
-
 Expected<void> RuntimeOptions::SetEnableProfiling(
   bool enable_profiling) {
 LiteRtRuntimeOptions runtime_options;

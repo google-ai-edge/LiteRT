@@ -41,29 +41,4 @@ TEST(LiteRtRuntimeOptionsTest, CreateWorks) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-
-TEST(LiteRtRuntimeOptionsFieldsTest, SetGetShloCompositeInlining) {
-  LiteRtOpaqueOptions opaque_options = nullptr;
-  LITERT_ASSERT_OK(LiteRtCreateRuntimeOptions(&opaque_options));
-  LiteRtRuntimeOptions runtime_options = nullptr;
-  LITERT_ASSERT_OK(LiteRtFindRuntimeOptions(opaque_options, &runtime_options));
-
-  bool shlo_composite_inlining = false;
-  LITERT_ASSERT_OK(
-      LiteRtSetRuntimeOptionsShloCompositeInlining(runtime_options, true));
-
-  LITERT_ASSERT_OK(LiteRtGetRuntimeOptionsShloCompositeInlining(
-      runtime_options, &shlo_composite_inlining));
-  EXPECT_EQ(shlo_composite_inlining, true);
-
-  LITERT_ASSERT_OK(
-      LiteRtSetRuntimeOptionsShloCompositeInlining(runtime_options, false));
-
-  LITERT_ASSERT_OK(LiteRtGetRuntimeOptionsShloCompositeInlining(
-      runtime_options, &shlo_composite_inlining));
-  EXPECT_EQ(shlo_composite_inlining, false);
-
-  LiteRtDestroyOpaqueOptions(opaque_options);
-}
-
 }  // namespace
