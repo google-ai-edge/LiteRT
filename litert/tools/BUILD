@@ -17,7 +17,8 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
-load("//litert/integration_test:litert_device.bzl", "litert_device_test")
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
+load("//litert/integration_test:litert_device_common.bzl", "dispatch_device_rlocation", "plugin_device_rlocation")
 load("//litert/tools:tool_test.bzl", "runfile_path", "tool_test")
 
 package(
@@ -461,6 +462,9 @@ cc_library(
 cc_binary(
     name = "run_model",
     srcs = ["run_model.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     deps = [
         ":tensor_utils",
         "//litert/c:litert_common",
@@ -484,9 +488,32 @@ cc_binary(
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
     ] + GPU_ACCELERATOR_DEPS,
 )
+
+[
+    litert_device_exec(
+        name = "run_model_device_{}".format(backend),
+        backend_id = backend,
+        exec_args = [
+            "--dispatch_library_dir={}".format(dispatch_device_rlocation(backend)),
+            "--compiler_plugin_library_dir={}".format(plugin_device_rlocation(backend)),
+            "--accelerator=npu",
+        ],
+        local_suffix = "",
+        remote_suffix = None,
+        target = ":run_model",
+    )
+    for backend in [
+        "qualcomm",
+        "qualcomm_v79",
+        "mediatek",
+        "cpu",
+        "example",
+    ]
+]
 
 NUMERICS_CHECK_DEPS = [
     "@com_google_absl//absl/flags:flag",
