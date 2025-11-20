@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/core/scoped_file.h"
+#include "litert/cc/internal/scoped_file.h"
 
 #include <cstddef>
 

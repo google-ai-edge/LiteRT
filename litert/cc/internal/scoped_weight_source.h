@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_CORE_SCOPED_WEIGHT_SOURCE_H_
-#define ODML_LITERT_LITERT_CORE_SCOPED_WEIGHT_SOURCE_H_
+#ifndef ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_WEIGHT_SOURCE_H_
+#define ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_WEIGHT_SOURCE_H_
 
 #include <cstdint>
 #include <string>
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "litert/core/scoped_file.h"
+#include "litert/cc/internal/scoped_file.h"
 
 namespace litert {
 
@@ -31,7 +31,6 @@ struct ScopedWeightSection {
   uint64_t length = 0;
 };
 
-// TODO(b/460595508): Move this along with ScopedFile to a cc/internal.
 // Holds the ScopedFile handle plus all group sections that can be sliced out of
 // it to satisfy external weight loads.
 struct ScopedWeightSource {
@@ -54,4 +53,4 @@ struct ScopedWeightSource {
 
 }  // namespace litert
 
-#endif  // ODML_LITERT_LITERT_CORE_SCOPED_WEIGHT_SOURCE_H_
+#endif  // ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_WEIGHT_SOURCE_H_

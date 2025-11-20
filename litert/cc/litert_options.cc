@@ -28,7 +28,7 @@
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
-#include "litert/core/scoped_file.h"
+#include "litert/cc/internal/scoped_file.h"
 
 namespace litert {
 

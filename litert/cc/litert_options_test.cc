@@ -23,8 +23,8 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"
-#include "litert/core/scoped_file.h"
-#include "litert/core/scoped_weight_source.h"
+#include "litert/cc/internal/scoped_file.h"
+#include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/test/matchers.h"
 
 namespace litert {

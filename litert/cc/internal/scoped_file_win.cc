@@ -23,7 +23,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/core/scoped_file.h"
+#include "litert/cc/internal/scoped_file.h"
 
 namespace litert {
 namespace {

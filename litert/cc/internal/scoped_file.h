@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CORE_SCOPED_FILE_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CORE_SCOPED_FILE_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
 
 #if defined(_WIN32)
 #include <Windows.h>
@@ -109,4 +109,4 @@ class ScopedFile {
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_SCOPED_FILE_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
