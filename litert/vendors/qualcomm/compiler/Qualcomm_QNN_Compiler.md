@@ -129,3 +129,4 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflTranspose` | Legalized to `QNN_OP_TRANSPOSE`. |
 | `kLiteRtOpCodeTflTransposeConv` | Legalized to `QNN_OP_TRANSPOSE_CONV_2D`. Supports fused activation. For data types other than `QNN_DATATYPE_UFIXED_POINT_8` and `QNN_DATATYPE_SFIXED_POINT_8`, weights are transposed using `QNN_OP_TRANSPOSE`. |
 | `kLiteRtOpCodeTflUnpack` | Legalized to `QNN_OP_UN_PACK`. |
+| `kLiteRtOpCodeShloComposite` | Supports `RmsNorm` (legalized to `QNN_OP_RMS_NORM`), `GroupNorm` (legalized to `QNN_OP_GROUP_NORM`), and `L2Norm` (legalized to `QNN_OP_L2_NORM`). |

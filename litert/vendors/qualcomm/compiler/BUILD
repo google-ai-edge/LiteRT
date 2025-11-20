@@ -75,6 +75,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers",
     ],
 )
 
@@ -174,6 +175,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:gather_op_builder",
         "//litert/vendors/qualcomm/core/builders:gathernd_op_builder",
         "//litert/vendors/qualcomm/core/builders:gelu_op_builder",
+        "//litert/vendors/qualcomm/core/builders:group_norm_op_builder",
         "//litert/vendors/qualcomm/core/builders:l2_norm_op_builder",
         "//litert/vendors/qualcomm/core/builders:leaky_relu_op_builder",
         "//litert/vendors/qualcomm/core/builders:log_softmax_op_builder",
