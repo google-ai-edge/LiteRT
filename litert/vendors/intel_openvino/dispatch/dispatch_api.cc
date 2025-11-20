@@ -46,6 +46,8 @@ LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus DispatchDestroy() { return kLiteRtStatusOk; }
+
 // Return the vendor id of the Dispatch API runtime.
 // This function returns a pointer to a statically allocated string that is the
 // ID of vendor providing the Dispatch API runtime.
@@ -309,6 +311,7 @@ namespace {
 
 LiteRtDispatchInterface TheInterface = {
     .initialize = litert::openvino::DispatchInitialize,
+    .destroy = litert::openvino::DispatchDestroy,
     .get_vendor_id = litert::openvino::DispatchGetVendorId,
     .get_build_id = litert::openvino::DispatchGetBuildId,
     .get_capabilities = litert::openvino::DispatchGetCapabilities,

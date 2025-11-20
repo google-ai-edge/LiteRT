@@ -49,6 +49,9 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
     if (device_context_) {
       (void)LiteRtDispatchDeviceContextDestroy(device_context_);
     }
+    if (has_dispatch_runtime_) {
+      (void)LiteRtDispatchDestroy();
+    }
   }
 
   static TfLiteOpaqueDelegate* Create(

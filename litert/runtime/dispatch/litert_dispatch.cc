@@ -132,7 +132,7 @@ LiteRtStatus LiteRtDispatchInitialize(
   LITERT_ASSIGN_OR_RETURN(
       *DispatchSharedLibrary,
       litert::SharedLibrary::Load(shared_lib_path,
-                                  litert::RtldFlags::Now().Local()));
+                                  litert::RtldFlags::Now().Local().NoDelete()));
 
   using LiteRtDispatchGetApi_t = LiteRtStatus (*)(LiteRtDispatchApi*);
   LITERT_ASSIGN_OR_RETURN(
@@ -154,6 +154,15 @@ LiteRtStatus LiteRtDispatchInitialize(
     IsTheApiInitialized = true;
   }
   return status;
+}
+
+LiteRtStatus LiteRtDispatchDestroy() {
+  if (!IsTheApiInitialized) {
+    return kLiteRtStatusOk;
+  }
+  TheApi.interface->destroy();
+  IsTheApiInitialized = false;
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtDispatchGetApiVersion(LiteRtApiVersion* api_version) {

@@ -291,10 +291,16 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus Destroy() {
+  TheQnnManager.reset();
+  return kLiteRtStatusOk;
+}
+
 // /////////////////////////////////////////////////////////////////////////////
 
 LiteRtDispatchInterface TheInterface = {
     /*.initialize=*/Initialize,
+    /*.destroy=*/Destroy,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,
     /*.get_capabilities=*/GetCapabilities,
