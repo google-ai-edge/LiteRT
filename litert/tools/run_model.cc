@@ -56,6 +56,8 @@ ABSL_FLAG(std::string, dispatch_library_dir, "/data/local/tmp/run_model_test",
           "Path to the dispatch library.");
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
           "Path to the compiler plugin library. Only for JIT compilation.");
+ABSL_FLAG(std::string, compiler_cache_dir, "",
+          "Path to the compiler cache directory. Only for JIT compilation.");
 ABSL_FLAG(std::string, accelerator, "cpu",
           "Which backend to use. Comma delimited string of accelerators (e.g. "
           "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU if they are "
@@ -73,10 +75,6 @@ ABSL_FLAG(size_t, iterations, 1,
 ABSL_FLAG(bool, language_model, false,
           "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
-ABSL_FLAG(bool, enable_on_device_compilation_caching, false,
-          "Whether to enable on device compilation caching.");
-constexpr absl::string_view kCompilerCacheDir =
-    "/data/local/tmp/litert_compiler_cache";
 
 namespace litert {
 namespace {
@@ -118,10 +116,11 @@ Expected<Environment> GetEnvironment() {
     environment_options.push_back(litert::Environment::Option{
         litert::Environment::OptionTag::CompilerPluginLibraryDir,
         absl::string_view(compiler_plugin_library_dir)});
-    if (absl::GetFlag(FLAGS_enable_on_device_compilation_caching)) {
+    const auto compiler_cache_dir = absl::GetFlag(FLAGS_compiler_cache_dir);
+    if (!compiler_cache_dir.empty()) {
       environment_options.push_back(litert::Environment::Option{
           litert::Environment::OptionTag::CompilerCacheDir,
-          kCompilerCacheDir.data()});
+          absl::string_view(compiler_cache_dir)});
     }
   }
 
