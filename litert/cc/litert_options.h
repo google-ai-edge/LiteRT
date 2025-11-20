@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_options.h"
@@ -36,6 +37,8 @@
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
+#include "litert/core/scoped_file.h"
+#include "litert/core/scoped_weight_source.h"
 
 namespace litert {
 
@@ -53,6 +56,13 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   friend class CompiledModelNext;
   friend LiteRtStatus tools::ApplyPlugin(
       std::unique_ptr<tools::ApplyPluginRun> run);
+
+  // A weight section contains the offset and length of a contiguous region
+  // inside a ScopedFile that backs a single external buffer group.
+  // This map then provides the mapping between the group name and its
+  // section.
+  using ScopedWeightSectionMap =
+      absl::flat_hash_map<std::string, ScopedWeightSection>;
 
   Options() = default;
 
@@ -129,6 +139,10 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
         Get(), signature_name.c_str(), tensor_name.c_str(), data, size_bytes));
     return {};
   }
+
+  // Registers a ScopedFile that contains all external buffer groups.
+  Expected<void> SetExternalWeightScopedFile(ScopedFile scoped_file,
+                                             ScopedWeightSectionMap sections);
 
   // Returns the reference to the GPU options. User will use this function to
   // set the GPU options.

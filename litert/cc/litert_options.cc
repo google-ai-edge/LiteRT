@@ -28,6 +28,7 @@
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
+#include "litert/core/scoped_file.h"
 
 namespace litert {
 
@@ -94,6 +95,37 @@ Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), intel_openvino_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), runtime_options_));
   return {};
+}
+
+Expected<void> Options::SetExternalWeightScopedFile(
+    ScopedFile scoped_file, ScopedWeightSectionMap sections) {
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+  if (!scoped_file.IsValid()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Scoped file handle must be valid");
+  }
+  if (sections.empty()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "At least one external buffer group must be provided");
+  }
+  for (const auto& [name, section] : sections) {
+    if (section.length == 0) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Section length must be positive for group " + name);
+    }
+  }
+  auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(Get());
+  if (!options_impl) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Options handle must not be null");
+  }
+  options_impl->scoped_weight_source = std::make_unique<ScopedWeightSource>(
+      std::move(scoped_file), std::move(sections));
+  return {};
+#else
+  return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                    "LiteRT was built without external weight loader support");
+#endif
 }
 
 }  // namespace litert
