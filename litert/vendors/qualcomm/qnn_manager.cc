@@ -114,15 +114,13 @@ QnnManager::~QnnManager() = default;
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
              path.data());
-  LITERT_ASSIGN_OR_RETURN(
-      lib_, SharedLibrary::Load(path, GetRtldFlags()));
+  LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(path, GetRtldFlags()));
   LITERT_LOG(LITERT_INFO, "Loaded qnn shared library", "");
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  auto lib_system_or =
-      SharedLibrary::Load(path, GetRtldFlags());
+  auto lib_system_or = SharedLibrary::Load(path, GetRtldFlags());
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
@@ -358,10 +356,10 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
     LITERT_LOG(LITERT_INFO, "Adding shared library dir to path: %s",
                shared_library_dir->c_str());
 
+    // Always overwrite the environment variable as we want to use the
+    // provided library paths only.
     static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
-    if (getenv(kAdsp) == nullptr) {
-      setenv(kAdsp, shared_library_dir->data(), /*overwrite=*/1);
-    }
+    setenv(kAdsp, shared_library_dir->data(), /*overwrite=*/1);
 
     // TODO: Put dynamic loading module in cc or vendor/cc.
     litert::internal::PutLibOnLdPath(*shared_library_dir,
