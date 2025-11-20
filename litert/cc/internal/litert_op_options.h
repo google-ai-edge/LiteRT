@@ -148,7 +148,6 @@ struct CompositeOptions : public OpOptions {
   static constexpr absl::string_view kNpuCall = "odml.npu_call";
   static constexpr absl::string_view kRmsNorm = "odml.rms_norm";
   static constexpr absl::string_view kL2Norm = "odml.l2_norm";
-  static constexpr absl::string_view kGroupNorm = "odml.group_norm";
 
   // The root op.
   LiteRtOp op;

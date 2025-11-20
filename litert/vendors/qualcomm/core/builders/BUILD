@@ -446,20 +446,6 @@ cc_library(
 )
 
 cc_library(
-    name = "group_norm_op_builder",
-    srcs = ["group_norm_op_builder.cc"],
-    hdrs = ["group_norm_op_builder.h"],
-    deps = [
-        ":op_builder",
-        "//litert/vendors/qualcomm/core:tensor_pool",
-        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-cc_library(
     name = "l2_norm_op_builder",
     srcs = ["l2_norm_op_builder.cc"],
     hdrs = ["l2_norm_op_builder.h"],
