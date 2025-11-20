@@ -34,6 +34,7 @@ class SocModel(StrEnum):
   SM8550 = "SM8550"
   SM8650 = "SM8650"
   SM8750 = "SM8750"
+  SM8850 = "SM8850"
 
 
 class SocManufacturer(StrEnum):
