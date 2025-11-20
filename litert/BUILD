@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:special_rule.bzl", "litert_friends")
+load("//litert/build_common:special_rule.bzl", "litert_cc_users", "litert_friends")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -23,7 +23,7 @@ package(
 
 # Controls visibility into LiteRT C++ and C APIs.
 # Access to LiteRT C++ API is controlled by :litert_cc_users_dynamic_link and
-# :litert_cc_users_static_link. Access to LiteRT C++ API implies access to LiteRT C API.
+# :litert_cc_users_static_link.
 # Access to LiteRT C API is controlled by :litert_c_users.
 
 # Users with access to the LiteRT C++ API linked dynamically (litert/cc/dynamic_runtime).
@@ -53,7 +53,7 @@ package_group(
         # When litert_link_capi_so=false
         "//ci/tools/...",
         # copybara:uncomment "//third_party/odml/litert/tensor/...",
-    ] + litert_friends(),
+    ] + litert_cc_users() + litert_friends(),
 )
 
 # Users with access to the LiteRT C++ API linked statically (i.e. litert/cc/).
@@ -78,7 +78,7 @@ package_group(
         "//litert/core/model/...",
         "//litert/test/...",
         "//litert/tools/...",
-    ] + litert_friends(),
+    ] + litert_cc_users() + litert_friends(),
 )
 
 # All packages with visibility to the internal APIs

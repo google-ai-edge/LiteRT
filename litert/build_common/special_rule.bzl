@@ -14,6 +14,14 @@
 
 """External versions of LiteRT build rules that differ outside of Google."""
 
+def litert_cc_users():
+    """Visibility to LiteRT C++ API.
+
+    Return the package group declaration for internal code locations that need
+    visibility to LiteRT C++ API."""
+
+    return []
+
 def litert_friends():
     """Internal visibility for packages outside of LiteRT code location.
 
