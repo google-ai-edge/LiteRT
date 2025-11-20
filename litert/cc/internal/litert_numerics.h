@@ -23,9 +23,12 @@
 #include <limits>
 #include <type_traits>
 
+#include "Eigen/Core"  // from @eigen_archive
 #include "litert/cc/internal/litert_detail.h"
 
 namespace litert {
+
+using fp16_t = Eigen::half;
 
 template <typename T>
 struct NumericLimits {
@@ -107,5 +110,12 @@ using NumberLike =
     std::bool_constant<std::is_floating_point_v<T> || std::is_integral_v<T>>;
 
 }  // namespace litert
+
+namespace std {
+
+template <>
+struct is_floating_point<::litert::fp16_t> : std::true_type {};
+
+}  // namespace std
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_NUMERICS_H_

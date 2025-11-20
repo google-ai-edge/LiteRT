@@ -298,6 +298,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_numerics",
         "//litert/cc/internal:litert_rng",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
