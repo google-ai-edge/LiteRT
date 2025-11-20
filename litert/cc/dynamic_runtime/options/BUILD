@@ -177,7 +177,6 @@ cc_library(
     srcs = ["//litert/cc/options:litert_intel_openvino_options.cc"],
     hdrs = ["//litert/cc/options:litert_intel_openvino_options.h"],
     deps = [
-        "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
