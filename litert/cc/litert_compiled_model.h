@@ -71,7 +71,7 @@ class LlmLiteRtCompiledModelExecutorBase;
 }  // namespace lm
 
 // The CompiledModel is a higher level inference API. It is created by
-// provided model with compilation options. Internally, it instantiates runtime
+// providing model with compilation options. Internally, it instantiates runtime
 // and applies Delegates mapped to the compilation options.
 // It also supports getting BufferRequirements to create input/output
 // TensorBuffers, and it allows to invoke the model with the input/output

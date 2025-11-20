@@ -35,7 +35,7 @@
 
 namespace litert {
 
-// SimpleTensor. C++ equivalent of LiteRtTenso with limited functionality.
+// SimpleTensor. C++ equivalent of LiteRtTensor with limited functionality.
 class SimpleTensor : public internal::NonOwnedHandle<LiteRtTensor> {
  public:
   explicit SimpleTensor(LiteRtTensor tensor) : NonOwnedHandle(tensor) {}
