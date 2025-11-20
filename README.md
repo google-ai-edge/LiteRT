@@ -16,15 +16,20 @@ platforms, via efficient conversion, runtime, and optimization
 LiteRT continues the legacy of TensorFlow Lite as the trusted, high-performance
 runtime for on-device AI.
 
-LiteRT V2 (aka Next as announced at Google IO '25), introduced a new set of
+LiteRT V1 supports the TensorFlow Lite APIs, and is the recommended
+solution for existing apps using those older APIs.
+
+LiteRT V2 (aka Next as announced at Google IO '25), introduces a new set of
 APIs, featuring advanced GPU/NPU acceleration, delivering superior performance,
 and making on-device ML inference easier than ever.
 
-### 🚀 Status: Alpha
+### 🚀 Status: General Availability (for V1) / Alpha (for V2)
 
+- LiteRT V1 supports the TensorFlow Lite API, and its release status is
+  is [general availability](https://support.google.com/a/answer/11202276?hl=en).
 - LiteRT V2 is an alpha release and under active development.
-- Join **LiteRT NPU Early access program**:
-  [g.co/ai/LiteRT-NPU-EAP](https://g.co/ai/LiteRT-NPU-EAP)
+- Early adopters can join the **LiteRT NPU Early access program**:
+  [g.co/ai/LiteRT-NPU-EAP](https://g.co/ai/LiteRT-NPU-EAP).
 
 ### 🌟 What's New
 
@@ -157,14 +162,14 @@ deployment. Our product strategies are:
 
 ## 🗺 What's Next:
 
-**Beta by Dec 2025:**
+**V2 Beta by Dec 2025:**
 
 - Achieve feature parity with TensorFlow Lite
 - Expand GPU backend support
 - Proactively increase ML and GenAI model coverage
 - Broader LiteRT Runtime/Converter upgrades from TensorFlow Lite
 
-**General Availability by Google IO, May 2026**
+**V2 General Availability by Google IO, May 2026**
 
 ## 🙌 Contributing
 
