@@ -93,7 +93,7 @@ def litert_define_ats(
 
     for b in backend:
         # TODO: Unify local workdir paths for scripting.
-        version_suffix = "_" + version_target_suffix(b)
+        version_suffix = "_" + version_target_suffix(b) if version_target_suffix(b) else ""
 
         init_run_args = ["--extra_models={}".format("/data/local/tmp/runfiles/user/tmp/litert_extras")]
         if is_npu_backend(b):
