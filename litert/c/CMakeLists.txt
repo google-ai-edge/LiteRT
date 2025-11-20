@@ -19,7 +19,6 @@ set(LITERT_C_API_SOURCES
     internal/litert_accelerator.cc
     internal/litert_accelerator_registration.cc
     internal/litert_delegate_wrapper.cc
-    internal/litert_logging.cc
     internal/litert_tensor_buffer_registry.cc
     litert_common.cc
     litert_compiled_model.cc
@@ -38,6 +37,29 @@ set(LITERT_C_API_SOURCES
     litert_tensor_buffer_requirements.cc
 )
 
+# Logging library (shared between core and C API)
+add_library(litert_logging STATIC internal/litert_logging.cc)
+
+target_include_directories(litert_logging
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
+        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+)
+
+target_link_libraries(litert_logging
+    PUBLIC
+        tensorflow-lite
+        absl::strings
+        absl::string_view
+)
+
+# Platform-specific dependencies
+if(LITERT_PLATFORM_ANDROID)
+    target_link_libraries(litert_logging PUBLIC ${LOG_LIB})
+endif()
+
 # Core C API library (static)
 add_library(litert_c_api STATIC ${LITERT_C_API_SOURCES})
 
@@ -54,12 +76,16 @@ target_include_directories(litert_c_api
 
 target_link_libraries(litert_c_api
     PUBLIC
+        litert_core
+        litert_core_model
+        litert_logging
         absl::status
         absl::statusor
         absl::strings
         absl::span
         absl::flat_hash_map
         flatbuffers::flatbuffers
+        tensorflow-lite
     PRIVATE
         Threads::Threads
 )
@@ -240,15 +266,6 @@ target_link_libraries(litert_runtime_c_api_static
         ${_litert_runtime_c_api_private_archives}
 )
 
-# TFLite archives so downstream shared libraries don't miss any symbols.
-if(UNIX AND NOT APPLE)
-  target_link_libraries(litert_runtime_c_api_static
-      INTERFACE
-        -Wl,--whole-archive
-        ${_litert_runtime_c_api_private_archives}
-        -Wl,--no-whole-archive)
-endif()
-
 # Propagate platform GL/Metal requirements to consumers when statically linking
 if(APPLE)
   target_link_libraries(litert_runtime_c_api_static
@@ -299,3 +316,4 @@ if(LITERT_PLATFORM_ANDROID)
     find_library(ANDROID_GLESV2_LIB GLESv2)
     target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE ${LOG_LIB} android log nativewindow ${ANDROID_EGL_LIB} ${ANDROID_GLESV3_LIB} ${ANDROID_GLESV2_LIB})
 endif()
+

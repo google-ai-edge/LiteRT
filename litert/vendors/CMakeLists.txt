@@ -260,3 +260,4 @@ endif()
 if(LITERT_ENABLE_QUALCOMM)
   _litert_add_dispatch_so(Qualcomm "qualcomm/dispatch" "Qualcomm")
 endif()
+
