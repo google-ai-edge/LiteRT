@@ -342,6 +342,8 @@ cc_test(
     srcs = ["signature_runner_test.cc"],
     data = [
         "//tflite:testdata/multi_signatures.bin",
+        "//tflite:testdata/no_signatures.bin",
+        "//tflite:testdata/no_signatures_no_tensor_names.bin",
         "//tflite:testdata/reverse_signature_model.bin",
     ],
     deps = [
