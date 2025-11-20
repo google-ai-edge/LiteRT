@@ -450,8 +450,26 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-// TODO b/412405854 - Add CreateFromWebGpuBuffer to support zero-copy scenarios
-// of WebGPU buffer.
+#if LITERT_HAS_WEBGPU_SUPPORT
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, WGPUBuffer buffer, size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  LITERT_ASSIGN_OR_RETURN(
+      litert::internal::CustomBuffer custom_buffer,
+      litert::internal::CustomBuffer::Wrap(env, tensor_type, buffer_type,
+                                           buffer, buffer_size, packed_size));
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(custom_buffer));
+  return tensor_buffer;
+}
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,

@@ -27,16 +27,15 @@
 #include "webgpu/webgpu.h"  // from @dawn
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -305,6 +304,121 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResources) {
   EXPECT_TRUE(input_buffers[1].IsWebGpuMemory());
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Execute model.
+  compiled_model.Run(input_buffers, output_buffers);
+
+  // Check model output.
+  auto output_names = signatures[0].OutputNames();
+  EXPECT_EQ(output_names.size(), 1);
+  EXPECT_EQ(output_names.at(0), "tfl.add");
+  EXPECT_TRUE(output_buffers[0].IsWebGpuMemory());
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+}
+
+TEST(CompiledModelWebGpuTest, ShareWebGpuResourcesExternalBuffer) {
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  auto webgpu_env = std::make_unique<ml_drift::webgpu::ExecutionEnvironment>(
+#if defined(__APPLE__)
+      wgpu::BackendType::Metal
+#elif defined(_WIN32)
+      wgpu::BackendType::D3D12
+#elif defined(__EMSCRIPTEN__)
+      wgpu::BackendType::WebGPU
+#else
+      wgpu::BackendType::Vulkan
+#endif
+  );
+
+  auto status = webgpu_env->Initialize({.enable_host_mapped_pointer = true});
+  ASSERT_OK(status);
+
+  const std::vector<litert::Environment::Option> environment_options = {
+      litert::Environment::Option{
+          litert::Environment::OptionTag::WebGpuDevice,
+          reinterpret_cast<int64_t>(webgpu_env->device().Get()),
+      },
+      litert::Environment::Option{
+          litert::Environment::OptionTag::WebGpuQueue,
+          reinterpret_cast<int64_t>(webgpu_env->queue().Get()),
+      },
+  };
+  auto env =
+      litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  ASSERT_TRUE(env);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      CreateGpuOptions({false, GpuOptions::Precision::kDefault,
+                        GpuOptions::BufferStorageType::kDefault}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, compiled_model.GetSignatures());
+  EXPECT_EQ(signatures.size(), 1);
+
+  // Create a tensor buffer from the existing WebGPU buffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tensor_type0,
+                              compiled_model.GetInputTensorType(
+                                  /*signature_index=*/0, /*tensor_index=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input0_bytes, input_tensor_type0.Bytes());
+  EXPECT_EQ(input0_bytes, 8);
+  wgpu::BufferDescriptor mappable_buffer_desc0{
+      .usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst |
+               wgpu::BufferUsage::Storage,
+      .size = input0_bytes,
+  };
+  wgpu::Buffer wgpu_buffer0 =
+      webgpu_env->device().CreateBuffer(&mappable_buffer_desc0);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto webpu_tensor_buffer0,
+      litert::TensorBuffer::CreateFromWebGpuBuffer(
+          *env, input_tensor_type0, TensorBufferType::kWebGpuBufferPacked,
+          wgpu_buffer0.Get(), input0_bytes));
+  EXPECT_TRUE(webpu_tensor_buffer0.IsWebGpuMemory());
+  ASSERT_TRUE(webpu_tensor_buffer0.Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tensor_type1,
+                              compiled_model.GetInputTensorType(
+                                  /*signature_index=*/0, /*tensor_index=*/1));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input1_bytes, input_tensor_type1.Bytes());
+  EXPECT_EQ(input1_bytes, 8);
+  wgpu::BufferDescriptor mappable_buffer_desc1{
+      .usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst |
+               wgpu::BufferUsage::Storage,
+      .size = input1_bytes,
+  };
+  wgpu::Buffer wgpu_buffer1 =
+      webgpu_env->device().CreateBuffer(&mappable_buffer_desc1);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto webpu_tensor_buffer1,
+      litert::TensorBuffer::CreateFromWebGpuBuffer(
+          *env, input_tensor_type1, TensorBufferType::kWebGpuBufferPacked,
+          wgpu_buffer1.Get(), input1_bytes));
+  EXPECT_TRUE(webpu_tensor_buffer1.IsWebGpuMemory());
+  ASSERT_TRUE(webpu_tensor_buffer1.Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  std::vector<TensorBuffer> input_buffers;
+  input_buffers.push_back(std::move(webpu_tensor_buffer0));
+  input_buffers.push_back(std::move(webpu_tensor_buffer1));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Execute model.
   compiled_model.Run(input_buffers, output_buffers);

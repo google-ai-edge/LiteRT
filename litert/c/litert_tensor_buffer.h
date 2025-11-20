@@ -27,6 +27,10 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
+#if LITERT_HAS_WEBGPU_SUPPORT
+typedef struct WGPUBufferImpl* WGPUBuffer;
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
@@ -197,6 +201,19 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
     LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer);
 
 #if LITERT_HAS_WEBGPU_SUPPORT
+// Create a tensor buffer from an existing WebGPU memory of a given size, with
+// optional WebGPU memory buffer deallocator (it can be NULL).
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// releasing the object. NULL deallocator means that the Metal buffer is not
+// managed by the tensor buffer and therefore must be released separately by the
+// caller.
+LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, WGPUBuffer wgpu_buffer,
+    size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer);
+
 // Return an error if the backing buffer is not a WebGpu buffer.
 LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);

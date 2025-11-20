@@ -42,6 +42,9 @@
 #else
 typedef struct _cl_mem* cl_mem;
 #endif
+#if LITERT_HAS_WEBGPU_SUPPORT
+typedef struct WGPUBufferImpl* WGPUBuffer;
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 namespace litert {
 
@@ -101,6 +104,12 @@ class TensorBuffer
       const Environment& env, const RankedTensorType& tensor_type,
       LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
       size_t size_bytes, LiteRtGLint layer);
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+  static Expected<TensorBuffer> CreateFromWebGpuBuffer(
+      const Environment& env, const RankedTensorType& tensor_type,
+      TensorBufferType buffer_type, WGPUBuffer buffer, size_t size_bytes);
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
   static Expected<TensorBuffer> CreateFromMetalBuffer(

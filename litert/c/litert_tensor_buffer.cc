@@ -338,6 +338,22 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
+LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, WGPUBuffer wgpu_buffer,
+    size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer) {
+  if (!tensor_type || !tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
+                          LiteRtTensorBufferT::CreateFromWebGpuBuffer(
+                              env, *tensor_type, buffer_type, wgpu_buffer,
+                              wgpu_buffer_size));
+  *tensor_buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
+
 // Return an error if the backing buffer is not a WebGpu buffer.
 LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
