@@ -238,6 +238,9 @@ void AbslStringify(Sink& sink, const LiteRtOpCode& code) {
     case kLiteRtOpCodeTflCumsum:
       op_code_str = "tfl.cumsum";
       break;
+    case kLiteRtOpCodeTflRelu0To1:
+      op_code_str = "tfl.relu_0_to_1";
+      break;
     default:
       op_code_str = ::litert::kNoPrinterTag;
       break;
