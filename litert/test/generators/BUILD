@@ -121,6 +121,44 @@ cc_test(
 )
 
 cc_library(
+    name = "unary",
+    testonly = True,
+    hdrs = ["unary.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_c_types_printing",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "unary_test",
+    srcs = ["unary_test.cc"],
+    deps = [
+        ":common",
+        ":unary",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_rng",
+        "//litert/test:matchers",
+        "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "extra_model",
     testonly = True,
     hdrs = ["extra_model.h"],
@@ -179,5 +217,6 @@ cc_library(
         ":common",
         ":extra_model",
         ":no_op",
+        ":unary",
     ],
 )
