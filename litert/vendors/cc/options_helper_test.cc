@@ -14,6 +14,7 @@
 
 #include "litert/vendors/cc/options_helper.h"
 
+#include <cstdlib>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -33,9 +34,10 @@ class SimpleOptions : public OpaqueOptions {
 
   static Expected<SimpleOptions> Create() {
     LiteRtOpaqueOptions options;
+    int* payload = static_cast<int*>(std::malloc(sizeof(int)));
+    *payload = 1;
     LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-        Discriminator(), new int(1),
-        [](void* d) { delete reinterpret_cast<int*>(d); }, &options));
+        Discriminator(), payload, [](void* d) { std::free(d); }, &options));
     return SimpleOptions(options, OwnHandle::kYes);
   }
 
@@ -57,9 +59,10 @@ class SimpleOptions2 : public OpaqueOptions {
 
   static Expected<SimpleOptions2> Create() {
     LiteRtOpaqueOptions options;
+    int* payload = static_cast<int*>(std::malloc(sizeof(int)));
+    *payload = 1;
     LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-        Discriminator(), new int(1),
-        [](void* d) { delete reinterpret_cast<int*>(d); }, &options));
+        Discriminator(), payload, [](void* d) { std::free(d); }, &options));
     return SimpleOptions2(options, OwnHandle::kYes);
   }
 
