@@ -31,6 +31,8 @@ interface NpuCompatibilityChecker {
   companion object {
     internal val SUPPORTED_QUALCOMM_SOCS =
       setOf(
+        Pair("QTI", "SM8850"), // Xiaomi 17 Pro Max
+        Pair("Qualcomm", "SM8850"), // Xiaomi 17 Pro Max
         Pair("QTI", "SM8750"), // Samsung S25
         Pair("Qualcomm", "SM8750"), // Samsung S25
         Pair("QTI", "SM8650"), // Samsung S24
