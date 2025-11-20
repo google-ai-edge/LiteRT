@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -64,14 +65,19 @@ struct OpDetails {
  public:
   using OptionsT = typename FbTypes::OptionsT;
 
-  template <typename... Args>
+  template <typename... Args, typename = std::enable_if<FbTypes::kHasOptions>>
   explicit OpDetails(Args... args)
       : options(OptionsT{{}, std::forward<Args>(args)...}) {}
+
+  template <typename = std::enable_if<!FbTypes::kHasOptions>>
+  explicit OpDetails() {}
 
   TflOptions MakeTflOptions() const {
     TflOptions res;
     res.type = FbTypes::kBuiltinOptions;
-    res.Set(OptionsT(options));
+    if constexpr (FbTypes::kHasOptions) {
+      res.Set(OptionsT(options));
+    }
     return res;
   }
 
