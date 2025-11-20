@@ -21,6 +21,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -52,18 +53,33 @@ struct FbOpTraits {
   using OptionsT = Options;
   static constexpr tflite::BuiltinOperator kBuiltinOperator = BuiltinOperator;
   static constexpr tflite::BuiltinOptions kBuiltinOptions = BuiltinOptions;
+  static constexpr bool kHasOptions = !std::is_same_v<Options, std::monostate>;
 };
+
+template <::tflite::BuiltinOperator BuiltinOperator>
+using FbOpTraitsNoOptions =
+    FbOpTraits<std::monostate, BuiltinOperator, tflite::BuiltinOptions_NONE>;
 
 // Selects the appropriate fb traits based on the op code.
 // TODO finish for other op codes.
+// clang-format off
 template <LiteRtOpCode OpCode>
 using FbOpTypes =
-    SelectT<std::bool_constant<OpCode == kLiteRtOpCodeTflAdd>,
+    SelectT<
+        std::bool_constant<OpCode == kLiteRtOpCodeTflAdd>,
             FbOpTraits<tflite::AddOptionsT, tflite::BuiltinOperator_ADD,
                        tflite::BuiltinOptions_AddOptions>,
-            std::bool_constant<OpCode == kLiteRtOpCodeTflSub>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflSub>,
             FbOpTraits<tflite::SubOptionsT, tflite::BuiltinOperator_SUB,
-                       tflite::BuiltinOptions_SubOptions>>;
+                       tflite::BuiltinOptions_SubOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflRelu>,
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_RELU>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflRelu6>,
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_RELU6>
+          >;
+// clang-format on
+static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
+static_assert(!FbOpTypes<kLiteRtOpCodeTflRelu>::kHasOptions);
 
 // Traits defined by individual test logics. Each generator should provide
 // one of these as a public member type. Upstream glue code will use these types
