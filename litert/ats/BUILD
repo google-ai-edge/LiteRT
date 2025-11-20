@@ -154,6 +154,7 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
+        "@eigen_archive//:eigen3",
     ],
 )
 
