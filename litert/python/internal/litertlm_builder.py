@@ -121,6 +121,17 @@ class _SectionObject:
   data_reader: Callable[[], bytes]
 
 
+@enum.unique
+class LlmModelType(enum.StrEnum):
+  """LLM model type for the LiteRT LM model."""
+
+  GENERIC = "generic"
+  GEMMA3N = "gemma3n"
+  GEMMA3 = "gemma3"
+  QWEN3 = "qwen3"
+  QWEN2P5 = "qwen2p5"
+
+
 LitertLmFileBuilderT = TypeVar(
     "LitertLmFileBuilderT", bound="LitertLmFileBuilder"
 )

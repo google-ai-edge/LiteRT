@@ -1,0 +1,44 @@
+// Copyright 2025 The ODML Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// TODO(b/445163709): Remove this module once litert_lm publishes a pypi
+// package.
+
+syntax = "proto3";
+
+package litert.lm.proto;
+
+// A union of token ids and token strings, representing single semantic meaning.
+//
+// Single semantic meaning might be represented by single token id or multiple
+// token ids, depending on the tokenizer. For example, in Gemma3N
+// <start_of_turn> represent the start of turn, and can be represented by a
+// single token id 105. And some models use multiple token ids to represent
+// the end of sentence, signaling to terminate the model decoding.
+//
+// Note some models do not have valid string representation
+// for all tokens, e.g. Gemma3, Gemma3N. Where the <bos> token id is 2, but the
+// "<bos>" string would not map to the same token id. In such case, we use
+// token_ids to represent the token instead of token_str.
+message TokenUnion {
+  oneof token_union {
+    TokenIds token_ids = 1;
+    string token_str = 2;
+  }
+}
+
+// A list of token ids.
+message TokenIds {
+  repeated int32 ids = 1;
+}

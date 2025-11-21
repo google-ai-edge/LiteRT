@@ -78,6 +78,9 @@ enum AnySectionDataType: ubyte {
   SP_Tokenizer, // A SentencePiece Tokenizer.
   LlmMetadataProto, // A litert.lm.proto.LlmMetadata Protobuf.
   HF_Tokenizer_Zlib, // A HuggingFace Tokenizer's JSON config (zlib compressed).
+  TFLiteWeights, // A external weight file for a tflite.Model. This is used
+                 // together with TFLiteModel section to form a complete
+                 // tflite.Model with weights.
 }
 
 // Section offsets and datatype

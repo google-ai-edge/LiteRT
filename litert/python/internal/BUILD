@@ -40,9 +40,38 @@ py_proto_library(
 )
 
 proto_library(
+    name = "llm_model_type_proto",
+    srcs = [
+        "llm_model_type.proto",
+    ],
+    deps = [
+        ":token_proto",
+    ],
+)
+
+py_proto_library(
+    name = "llm_model_type_py_pb2",
+    deps = [":llm_model_type_proto"],
+)
+
+proto_library(
+    name = "token_proto",
+    srcs = ["token.proto"],
+)
+
+py_proto_library(
+    name = "token_py_pb2",
+    deps = [":token_proto"],
+)
+
+proto_library(
     name = "llm_metadata_proto",
     srcs = ["llm_metadata.proto"],
-    deps = [":sampler_params_proto"],
+    deps = [
+        ":llm_model_type_proto",
+        ":sampler_params_proto",
+        ":token_proto",
+    ],
 )
 
 py_proto_library(
