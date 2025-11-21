@@ -332,6 +332,24 @@ def litert_lib(
         **cc_lib_kwargs
     )
 
+def litert_test_lib(
+        ungrte = False,
+        **cc_lib_kwargs):
+    """
+    LiteRT test library rule.
+    """
+    append_rule_kwargs(
+        cc_lib_kwargs,
+        deps = ["@com_google_googletest//:gtest_main"],
+    )
+
+    _litert_base(
+        cc_library,
+        ungrte,
+        testonly = True,
+        **cc_lib_kwargs
+    )
+
 def litert_bin(
         ungrte = False,
         export_litert_only = False,

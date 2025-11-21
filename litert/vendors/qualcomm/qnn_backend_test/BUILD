@@ -1,7 +1,7 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test", "litert_test_lib", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -9,9 +9,9 @@ package(
 )
 
 litert_test(
-    name = "qnn_backend_test",
+    name = "qnn_model_test",
     srcs = [
-        "qnn_backend_test.cc",
+        "qnn_model_test.cc",
     ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": [],
@@ -31,15 +31,22 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
+        ":test_utils",
+        "//litert/vendors/qualcomm/core:common",
+    ],
+)
+
+litert_test_lib(
+    name = "test_utils",
+    srcs = ["test_utils.cc"],
+    hdrs = ["test_utils.h"],
+    ungrte = True,
+    deps = [
         "//litert/test:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
-        "//litert/vendors/qualcomm/core/builders:relu_op_builder",
-        "//litert/vendors/qualcomm/core/builders:topk_op_builder",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:qnn_model",
-        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "@qairt//:qnn_lib_headers",
     ],
 )
