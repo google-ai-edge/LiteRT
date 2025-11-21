@@ -224,10 +224,7 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   )
 
   if(UNIX AND NOT APPLE)
-        target_link_options(${TGT} PRIVATE "-Wl,-soname=libLiteRtDispatch_${OUTPUT_BASENAME}.so"
-          -Wl,--whole-archive)
-        target_link_libraries(${TGT} PRIVATE litert_runtime_c_api_static)
-        target_link_options(${TGT} PRIVATE -Wl,--no-whole-archive)
+    target_link_options(${TGT} PRIVATE "-Wl,-soname=libLiteRtDispatch_${OUTPUT_BASENAME}.so")
   endif()
 endfunction()
 
@@ -260,3 +257,4 @@ endif()
 if(LITERT_ENABLE_QUALCOMM)
   _litert_add_dispatch_so(Qualcomm "qualcomm/dispatch" "Qualcomm")
 endif()
+
