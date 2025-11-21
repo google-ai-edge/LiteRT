@@ -49,8 +49,8 @@ target_link_libraries(litert_core
         absl::flat_hash_map
         absl::flat_hash_set
         flatbuffers::flatbuffers
+        litert_logging
     PRIVATE
-        litert_c_api
         Threads::Threads
 )
 

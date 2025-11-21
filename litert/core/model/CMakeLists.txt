@@ -45,8 +45,6 @@ target_link_libraries(litert_core_model
         absl::strings
         absl::span
         flatbuffers::flatbuffers
-    PRIVATE
-        litert_c_api
 )
 
 # We need the schema_generated.h from TFLite
