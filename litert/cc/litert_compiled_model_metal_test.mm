@@ -15,6 +15,8 @@
 #import <Metal/Metal.h>
 #import <XCTest/XCTest.h>
 #import <XCTest/XCTestAssertions.h>
+#import "third_party/odml/litert/litert/test/metal_test_helper.h"
+
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -28,6 +30,8 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+
+using litert::TensorBuffer;
 
 namespace {
 litert::Expected<litert::Options> CreateGpuOptions(bool external_tensors_mode) {
@@ -44,9 +48,6 @@ const float kTolerance = 1e-5;
 
 @interface BasicMetalTest : NSObject
 
-// Returns the file path of the model file in the bundle.
-+ (NSString *)getModelFilePath:(NSString *)modelName;
-
 // Tests the model with the given external tensors mode configuration.
 //
 // @param externalTensorsMode Whether to use external tensors mode.
@@ -56,23 +57,11 @@ const float kTolerance = 1e-5;
 
 @implementation BasicMetalTest
 
-+ (NSString *)getModelFilePath:(NSString *)modelName {
-  // Get the bundle for the current test class
-  NSBundle *bundle = [NSBundle bundleForClass:[self class]];
-  // Construct the full path to the model file
-  NSString *modelFilePath = [bundle pathForResource:modelName ofType:@"tflite"];
-  if (!modelFilePath) {
-    XCTFail(@"Could not find model file in bundle.");
-    return nil;
-  }
-  return modelFilePath;
-}
-
 + (void)testBasicMetalTest:(BOOL)externalTensorsMode {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   XCTAssertTrue(env);
 
-  NSString *modelFilePath = [self getModelFilePath:@"simple_model"];
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_model"];
   XCTAssertNotNil(modelFilePath);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(externalTensorsMode));
@@ -106,20 +95,11 @@ const float kTolerance = 1e-5;
   XCTAssertEqual(output_names.size(), 1);
   XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add");
   XCTAssertTrue(output_buffers[0].IsMetalMemory());
-  {
-    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
-        output_buffers[0], litert::TensorBuffer::LockMode::kRead);
-    XCTAssertTrue(lock_and_addr);
-    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
-    for (auto i = 0; i < kTestOutputSize; ++i) {
-      LITERT_LOG(LITERT_INFO, "Result: %f\t%f", output[i], kTestOutputTensor[i]);
-    }
-    XCTAssertTrue(testing::Matches(testing::Pointwise(
-        testing::FloatNear(kTolerance), absl::MakeConstSpan(kTestOutputTensor, kTestOutputSize)))(
-        output));
-  }
-
-  return;
+  litert::TensorBuffer *output_buffer = &output_buffers.at(0);
+  [MetalTestHelper checkTensorBufferFloatOutput:output_buffer
+                             withExpectedOutput:kTestOutputTensor
+                               withElementCount:kTestOutputSize
+                                  withTolerance:kTolerance];
 }
 
 @end
@@ -148,7 +128,7 @@ const float kTolerance = 1e-5;
   auto env = litert::Environment::Create({});
   XCTAssertTrue(env);
 
-  NSString *modelFilePath = [BasicMetalTest getModelFilePath:@"simple_model"];
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_model"];
   XCTAssertNotNil(modelFilePath);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
@@ -170,7 +150,7 @@ const float kTolerance = 1e-5;
 }
 
 - (void)testCompiledModelGpuPartialDelegation {
-  NSString *modelFilePath = [BasicMetalTest getModelFilePath:@"simple_cast_and_add_op"];
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_cast_and_add_op"];
   XCTAssertNotNil(modelFilePath);
 
   auto env = litert::Environment::Create({});
@@ -213,19 +193,12 @@ const float kTolerance = 1e-5;
   XCTAssertEqual(output_names.size(), 1);
   XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add1");
   XCTAssertTrue(output_buffers[0].IsMetalMemory());
-  {
-    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
-        output_buffers[0], litert::TensorBuffer::LockMode::kRead);
-    XCTAssertTrue(lock_and_addr);
-    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
-    float expected_output[2] = {12.0f, 23.0f};
-    for (auto i = 0; i < kTestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << expected_output[i];
-    }
-    XCTAssertTrue(testing::Matches(testing::Pointwise(
-        testing::FloatNear(kTolerance), absl::MakeConstSpan(expected_output, kTestOutputSize)))(
-        output));
-  }
+
+  float kExpectedOutput[2] = {12.0f, 23.0f};
+  [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[0]
+                             withExpectedOutput:kExpectedOutput
+                               withElementCount:2
+                                  withTolerance:kTolerance];
 }
 
 - (void)testCompiledModelGpuBasicAdd3dCstInt32 {
@@ -233,7 +206,7 @@ const float kTolerance = 1e-5;
   constexpr const int32_t kInt32TestOutputTensor[] = {11, 22, 33, 44, 55, 66};
   constexpr const size_t kInt32TestInput0Size = 6;
   constexpr const size_t kInt32TestOutputSize = 6;
-  NSString *modelFilePath = [BasicMetalTest getModelFilePath:@"simple_add3d_cst_int32"];
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_add3d_cst_int32"];
   XCTAssertNotNil(modelFilePath);
 
   auto env = litert::Environment::Create({});
@@ -264,16 +237,86 @@ const float kTolerance = 1e-5;
   XCTAssertEqual(output_names.size(), 1);
   XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add");
   XCTAssertTrue(output_buffers[0].IsMetalMemory());
-  {
-    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const int32_t>(
-        output_buffers[0], litert::TensorBuffer::LockMode::kRead);
-    XCTAssertTrue(lock_and_addr);
-    auto output = absl::MakeSpan(lock_and_addr->second, kInt32TestOutputSize);
-    for (auto i = 0; i < kInt32TestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kInt32TestOutputTensor[i];
+  [MetalTestHelper checkTensorBufferInt32Output:&output_buffers[0]
+                             withExpectedOutput:kInt32TestOutputTensor
+                               withElementCount:kInt32TestOutputSize];
+}
+
+- (void)testCompiledModelGpuConstantOutputTensor {
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"constant_output_tensor"];
+  XCTAssertNotNil(modelFilePath);
+
+  auto env = litert::Environment::Create({});
+  XCTAssertTrue(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model, litert::CompiledModel::Create(*env, modelFilePath.UTF8String, options));
+
+  XCTAssertEqual(compiled_model.GetNumSignatures(), 1);
+
+  // Create input and output buffers
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, compiled_model.CreateInputBuffers());
+  XCTAssertEqual(input_buffers.size(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
+  XCTAssertEqual(output_buffers.size(), 2);  // normal_output and constant_output
+
+  // Set input values
+  const float input_data[] = {5.0f, 10.0f};
+  XCTAssertTrue(input_buffers[0].Write<float>(absl::MakeConstSpan(input_data, 2)));
+
+  // Run the model
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  // Note: TFLite might reorder outputs - check which is which by size
+  // The constant output has 4 elements, the normal output has 2 elements
+  int constant_output_idx = -1;
+  int normal_output_idx = -1;
+
+  // Determine which output is which based on size
+  for (int i = 0; i < 2; i++) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto size, output_buffers[i].Size());
+    if (size == 4 * sizeof(float)) {
+      constant_output_idx = i;
+    } else if (size == 2 * sizeof(float)) {
+      normal_output_idx = i;
     }
-    XCTAssertTrue(testing::Matches(testing::Pointwise(
-        testing::Eq(), absl::MakeConstSpan(kInt32TestOutputTensor, kInt32TestOutputSize)))(output));
+  }
+
+  ASSERT_NE(constant_output_idx, -1) << "Could not find constant output";
+  ASSERT_NE(normal_output_idx, -1) << "Could not find normal output";
+
+  {
+    const float kNormalExpectedOutput[] = {10.0f, 20.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[normal_output_idx]
+                               withExpectedOutput:kNormalExpectedOutput
+                                 withElementCount:2
+                                    withTolerance:kTolerance];
+
+    const float kConstantExpectedOutput[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[constant_output_idx]
+                               withExpectedOutput:kConstantExpectedOutput
+                                 withElementCount:4
+                                    withTolerance:kTolerance];
+  }
+
+  // Run again with different input to verify constant output doesn't change
+  const float input_data2[] = {100.0f, 200.0f};
+  XCTAssertTrue(input_buffers[0].Write<float>(absl::MakeConstSpan(input_data2, 2)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  {
+    const float kNormalExpectedOutput[] = {200.0f, 400.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[normal_output_idx]
+                               withExpectedOutput:kNormalExpectedOutput
+                                 withElementCount:2
+                                    withTolerance:kTolerance];
+
+    const float kConstantExpectedOutput[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[constant_output_idx]
+                               withExpectedOutput:kConstantExpectedOutput
+                                 withElementCount:4
+                                    withTolerance:kTolerance];
   }
 }
 

@@ -514,6 +514,7 @@ litert_device_test(
 #     testonly = True,
 #     srcs = [":litert_compiled_model_metal_test.mm"],
 #     data = [
+#         "//litert/test:testdata/constant_output_tensor.tflite",
 #         "//litert/test:testdata/simple_add3d_cst_int32.tflite",
 #         "//litert/test:testdata/simple_cast_and_add_op.tflite",
 #         "//litert/test:testdata/simple_model.tflite",
@@ -534,6 +535,7 @@ litert_device_test(
 #         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
 #         "//litert/test:common",
 #         "//litert/test:matchers",
+#         "//litert/test:metal_test_helper",
 #         "//litert/test:simple_model",
 #     ],
 # )
@@ -1091,6 +1093,7 @@ cc_library(
 #         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
 #         "//litert/test:common",
 #         "//litert/test:matchers",
+#         "//litert/test:metal_test_helper",
 #         "//litert/test:simple_model",
 #         "//tflite/delegates/gpu/metal:metal_device",
 #     ],
