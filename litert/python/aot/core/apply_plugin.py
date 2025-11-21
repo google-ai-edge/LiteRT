@@ -29,8 +29,8 @@ from litert.python.aot.core import types
 _BINARY = pathlib.Path("tools/apply_plugin_main")
 
 _RE_PARTITION_STATS = re.compile(
-    r"PartitionSubgraph: (\d+), selected num ops: (\d+), from totoal ops:"
-    r" (\d+), num partitions: (\d+)"
+    r"Partitioned subgraph<(\d+)>, selected (\d+) ops, from a total of "
+    r"(\d+) ops. resulted in (\d+) partitions."
 )
 
 
