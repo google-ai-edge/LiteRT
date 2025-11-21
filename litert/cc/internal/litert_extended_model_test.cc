@@ -14,7 +14,6 @@
 
 #include "litert/cc/internal/litert_extended_model.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -24,9 +23,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -247,6 +248,30 @@ TEST(CcModelTest, AddMetadataGetMetadataOutsideOfScopeSuccess) {
   EXPECT_EQ(absl::string_view(reinterpret_cast<const char*>(metadata.data()),
                               metadata.size()),
             kExpectedData);
+}
+
+TEST(CcModelTest, SerializeModelSuccess) {
+  auto flatbuffer = internal::FlatbufferWrapper::CreateFromTflFile(
+      testing::GetTestFilePath("one_mul.tflite"));
+
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+  auto serialization_options = SerializationOptions::Defaults();
+  serialization_options.bytecode_alignment = 1;
+  auto serialized = model.Serialize(serialization_options);
+  ASSERT_TRUE(serialized.HasValue());
+  // TODO:(yunandrew) add check for serialized size
+}
+
+TEST(CcModelTest, SerializePreCompiledModelHasSameSizeAsOriginal) {
+  auto flatbuffer = internal::FlatbufferWrapper::CreateFromTflFile(
+      testing::GetTestFilePath("simple_add_op.sm8750.tflite"));
+
+  auto model = testing::LoadTestFileModel("simple_add_op.sm8750.tflite");
+  auto serialization_options = SerializationOptions::Defaults();
+  serialization_options.bytecode_alignment = 1;
+  auto serialized = model.Serialize(serialization_options);
+  ASSERT_TRUE(serialized.HasValue());
+  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
 }
 
 }  // namespace
