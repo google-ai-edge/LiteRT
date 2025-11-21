@@ -68,7 +68,7 @@ class FullyConnectedOp(core.MlirOpBase):
     result_types = (
         [result_type]
         if result_type is not None
-        else [self._infer_result_type(input, filter, bias)]
+        else [self._infer_result_type(input, filter, bias, keep_num_dims)]
     )
 
     operands = [input, filter, bias]
@@ -90,12 +90,38 @@ class FullyConnectedOp(core.MlirOpBase):
       self,
       input: SSAValue | core.MlirOpBase,
       filter: SSAValue | core.MlirOpBase,
-      bias: SSAValue | core.MlirOpBase | None = None,
+      bias: SSAValue | core.MlirOpBase | None,
+      keep_num_dims: mlir.BoolAttr,
   ):
-    raise NotImplementedError(
-        "Cannot infer result type for FullyConnectedOp. Please specify"
-        " result_type."
-    )
+    del bias  # Unused.
+    input_type = _utils.get_tensor_type(input)
+    filter_type = _utils.get_tensor_type(filter)
+    keep_num_dims_val = _utils.to_bool(keep_num_dims)
+
+    # TFLite FullyConnected filter shape is [out_channels, in_channels]
+    if len(filter_type.shape) != 2:
+      raise ValueError("Filter must be a rank 2 tensor.")
+
+    out_channels = filter_type.shape[0]
+    input_shape = list(input_type.shape)
+
+    if keep_num_dims_val:
+      # If keep_num_dims is true, the rank is preserved.
+      # The last dimension is replaced by out_channels.
+      output_shape = input_shape
+      output_shape[-1] = out_channels
+    else:
+      # If keep_num_dims is false, input is flattened to 2D [batch, in_channels]
+      # batch is the product of all input dimensions except the last one.
+      batch_dim = 1
+      for d in input_shape[:-1]:
+        if d == -1:
+          batch_dim = -1
+          break
+        batch_dim *= d
+      output_shape = [batch_dim, out_channels]
+
+    return mlir.RankedTensorType(output_shape, input_type.element_type)
 
   @classmethod
   def overload_cls_attrs(cls):
