@@ -16,8 +16,8 @@
 
 #include <jni.h>
 
-#include <any>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
@@ -25,15 +25,14 @@
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 
 namespace {
 
-using litert::Environment;
-using litert::jni::ThrowLiteRtException;
+using ::litert::Environment;
+using ::litert::jni::ThrowLiteRtException;
 
 // Converts a LiteRtHwAccelerators to the value used in the Kotlin enum.
 int ToJniAccelerator(LiteRtHwAcceleratorSet accelerator) {
@@ -87,16 +86,19 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
                          litert_env.Error().Message());
     return 0;
   }
-  return reinterpret_cast<jlong>(litert_env->Release());
+
+  auto* litert_env_ptr = new Environment(std::move(*litert_env));
+  return reinterpret_cast<jlong>(litert_env_ptr);
 }
 
 JNIEXPORT jintArray JNICALL
 Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
     JNIEnv* env, jclass clazz, jlong handle) {
-  auto litert_env = reinterpret_cast<LiteRtEnvironment>(handle);
+  auto litert_env = reinterpret_cast<Environment*>(handle);
+  ABSL_CHECK(litert_env != nullptr);
 
   LiteRtParamIndex size;
-  auto status = LiteRtGetNumAccelerators(litert_env, &size);
+  auto status = LiteRtGetNumAccelerators(litert_env->Get(), &size);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to get number of accelerators.");
     ThrowLiteRtException(env, status, "Failed to get number of accelerators.");
@@ -107,7 +109,7 @@ Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
   accelerators.reserve(size);
   for (LiteRtParamIndex i = 0; i < size; ++i) {
     LiteRtAccelerator accelerator;
-    status = LiteRtGetAccelerator(litert_env, i, &accelerator);
+    status = LiteRtGetAccelerator(litert_env->Get(), i, &accelerator);
     if (status != kLiteRtStatusOk) {
       LITERT_LOG(LITERT_ERROR, "Failed to get accelerator.");
       continue;
@@ -128,7 +130,7 @@ Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
 
 JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_Environment_nativeDestroy(
     JNIEnv* env, jclass clazz, jlong handle) {
-  LiteRtDestroyEnvironment(reinterpret_cast<LiteRtEnvironment>(handle));
+  delete reinterpret_cast<Environment*>(handle);
 }
 
 #ifdef __cplusplus

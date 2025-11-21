@@ -105,10 +105,9 @@ cc_library(
     hdrs = ["src/main/jni/litert_tensor_buffer_jni.h"],
     deps = [
         ":litert_jni_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/internal:litert_handle",
         "//tflite/java/jni",
         "@com_google_absl//absl/types:span",
     ],

@@ -63,6 +63,7 @@ using ::litert::Layout;
 using ::litert::Options;
 using ::litert::OwnHandle;
 using ::litert::RankedTensorType;
+using ::litert::TensorBuffer;
 using ::litert::Unexpected;
 using ::litert::jni::CompiledModelWrapper;
 using ::litert::jni::ThrowLiteRtException;
@@ -516,9 +517,8 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
       AAsset_getLength(model_asset));
   AAsset_close(model_asset);
 
-  auto litert_env_c = reinterpret_cast<LiteRtEnvironment>(env_handle);
-  ABSL_CHECK(litert_env_c != nullptr);
-  auto litert_env = Environment::WrapCObject(litert_env_c, OwnHandle::kNo);
+  auto litert_env = reinterpret_cast<Environment*>(env_handle);
+  ABSL_CHECK(litert_env != nullptr);
 
   auto compilation_options =
       CreateOptions(env, accelerators, cpu_options_keys, cpu_options_values,
@@ -532,7 +532,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
   }
 
   auto compiled_model =
-      CompiledModel::Create(litert_env, buffer, *compilation_options);
+      CompiledModel::Create(*litert_env, buffer, *compilation_options);
   if (!compiled_model) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compiled model: %s",
                compiled_model.Error().Message().c_str());
@@ -552,9 +552,8 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
     jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
     jobjectArray gpu_options_values) {
-  auto litert_env_c = reinterpret_cast<LiteRtEnvironment>(env_handle);
-  ABSL_CHECK(litert_env_c != nullptr);
-  auto litert_env = Environment::WrapCObject(litert_env_c, OwnHandle::kNo);
+  auto litert_env = reinterpret_cast<Environment*>(env_handle);
+  ABSL_CHECK(litert_env != nullptr);
 
   auto compilation_options =
       CreateOptions(env, accelerators, cpu_options_keys, cpu_options_values,
@@ -570,7 +569,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
   AUTO_CLEANUP_JNI_STRING(env, file_path);
   ABSL_CHECK(file_path_str != nullptr);
   auto compiled_model =
-      CompiledModel::Create(litert_env, file_path_str, *compilation_options);
+      CompiledModel::Create(*litert_env, file_path_str, *compilation_options);
   if (!compiled_model) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compiled model: %s",
                compiled_model.Error().Message().c_str());
@@ -602,7 +601,8 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
                          tensor_buffer.Error().Message());
     return 0;
   }
-  return reinterpret_cast<jlong>(std::move(tensor_buffer->Release()));
+  auto* tensor_buffer_ptr = new TensorBuffer(std::move(*tensor_buffer));
+  return reinterpret_cast<jlong>(tensor_buffer_ptr);
 }
 
 JNIEXPORT jobject JNICALL
@@ -646,7 +646,8 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffer(
                          tensor_buffer.Error().Message());
     return 0;
   }
-  return reinterpret_cast<jlong>(std::move(tensor_buffer->Release()));
+  auto* tensor_buffer_ptr = new TensorBuffer(std::move(*tensor_buffer));
+  return reinterpret_cast<jlong>(tensor_buffer_ptr);
 }
 
 JNIEXPORT jobject JNICALL
@@ -688,8 +689,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffers(
   std::vector<jlong> input_tensor_buffers;
   input_tensor_buffers.reserve(tensor_buffers->size());
   for (int i = 0; i < tensor_buffers->size(); ++i) {
-    input_tensor_buffers.push_back(
-        reinterpret_cast<jlong>(std::move(tensor_buffers->at(i).Release())));
+    auto* tensor_buffer_ptr =
+        new TensorBuffer(std::move(tensor_buffers->at(i)));
+    input_tensor_buffers.push_back(reinterpret_cast<jlong>(tensor_buffer_ptr));
   }
   jlongArray handles_array = env->NewLongArray(tensor_buffers->size());
   env->SetLongArrayRegion(handles_array, 0, tensor_buffers->size(),
@@ -715,8 +717,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffersBySignature
   std::vector<jlong> input_tensor_buffers;
   input_tensor_buffers.reserve(tensor_buffers->size());
   for (int i = 0; i < tensor_buffers->size(); ++i) {
-    input_tensor_buffers.push_back(
-        reinterpret_cast<jlong>(std::move(tensor_buffers->at(i).Release())));
+    auto* tensor_buffer_ptr =
+        new TensorBuffer(std::move(tensor_buffers->at(i)));
+    input_tensor_buffers.push_back(reinterpret_cast<jlong>(tensor_buffer_ptr));
   }
   jlongArray handles_array = env->NewLongArray(tensor_buffers->size());
   env->SetLongArrayRegion(handles_array, 0, tensor_buffers->size(),
@@ -741,8 +744,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffers(
   std::vector<jlong> output_tensor_buffers;
   output_tensor_buffers.reserve(tensor_buffers->size());
   for (int i = 0; i < tensor_buffers->size(); ++i) {
-    output_tensor_buffers.push_back(
-        reinterpret_cast<jlong>(std::move(tensor_buffers->at(i).Release())));
+    auto* tensor_buffer_ptr =
+        new TensorBuffer(std::move(tensor_buffers->at(i)));
+    output_tensor_buffers.push_back(reinterpret_cast<jlong>(tensor_buffer_ptr));
   }
   jlongArray handles_array = env->NewLongArray(tensor_buffers->size());
   env->SetLongArrayRegion(handles_array, 0, tensor_buffers->size(),
@@ -768,8 +772,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffersBySignatur
   std::vector<jlong> output_tensor_buffers;
   output_tensor_buffers.reserve(tensor_buffers->size());
   for (int i = 0; i < tensor_buffers->size(); ++i) {
-    output_tensor_buffers.push_back(
-        reinterpret_cast<jlong>(std::move(tensor_buffers->at(i).Release())));
+    auto* tensor_buffer_ptr =
+        new TensorBuffer(std::move(tensor_buffers->at(i)));
+    output_tensor_buffers.push_back(reinterpret_cast<jlong>(tensor_buffer_ptr));
   }
   jlongArray handles_array = env->NewLongArray(tensor_buffers->size());
   env->SetLongArrayRegion(handles_array, 0, tensor_buffers->size(),
@@ -787,10 +792,11 @@ JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_CompiledModel_nativeRun(
   std::vector<litert::TensorBuffer> input_buffer_vector;
   input_buffer_vector.reserve(num_inputs);
   for (int i = 0; i < num_inputs; ++i) {
-    auto litert_tensor_buffer =
-        reinterpret_cast<LiteRtTensorBuffer>(input_buffers_array[i]);
+    auto* litert_tensor_buffer =
+        reinterpret_cast<TensorBuffer*>(input_buffers_array[i]);
+    // TODO(niuchl): Use TensorBuffer* when it's possible.
     input_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer, litert::OwnHandle::kNo));
+        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
   }
 
   auto num_outputs = env->GetArrayLength(output_buffers);
@@ -798,10 +804,10 @@ JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_CompiledModel_nativeRun(
   std::vector<litert::TensorBuffer> output_buffer_vector;
   output_buffer_vector.reserve(num_outputs);
   for (int i = 0; i < num_outputs; ++i) {
-    auto litert_tensor_buffer =
-        reinterpret_cast<LiteRtTensorBuffer>(output_buffers_array[i]);
+    auto* litert_tensor_buffer =
+        reinterpret_cast<TensorBuffer*>(output_buffers_array[i]);
     output_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer, litert::OwnHandle::kNo));
+        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
   }
   auto result = compiled_model.Run(signature_index, input_buffer_vector,
                                    output_buffer_vector);
@@ -824,10 +830,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignature(
   std::vector<litert::TensorBuffer> input_buffer_vector;
   input_buffer_vector.reserve(num_inputs);
   for (int i = 0; i < num_inputs; ++i) {
-    auto litert_tensor_buffer =
-        reinterpret_cast<LiteRtTensorBuffer>(input_buffers_array[i]);
+    auto* litert_tensor_buffer =
+        reinterpret_cast<TensorBuffer*>(input_buffers_array[i]);
     input_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer, litert::OwnHandle::kNo));
+        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
   }
 
   auto num_outputs = env->GetArrayLength(output_buffers);
@@ -835,10 +841,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignature(
   std::vector<litert::TensorBuffer> output_buffer_vector;
   output_buffer_vector.reserve(num_outputs);
   for (int i = 0; i < num_outputs; ++i) {
-    auto litert_tensor_buffer =
-        reinterpret_cast<LiteRtTensorBuffer>(output_buffers_array[i]);
+    auto* litert_tensor_buffer =
+        reinterpret_cast<TensorBuffer*>(output_buffers_array[i]);
     output_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer, litert::OwnHandle::kNo));
+        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
@@ -871,9 +877,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
   AUTO_CLEANUP_JNI_LONG_ARRAY(env, input_buffers);
   for (int i = 0; i < input_keys_size; ++i) {
     auto key = input_keys_vector[i];
-    auto buffer = reinterpret_cast<LiteRtTensorBuffer>(input_buffers_array[i]);
-    input_buffer_map[key] =
-        litert::TensorBuffer::WrapCObject(buffer, litert::OwnHandle::kNo);
+    auto* buffer = reinterpret_cast<TensorBuffer*>(input_buffers_array[i]);
+    input_buffer_map[key] = litert::TensorBuffer::WrapCObject(
+        buffer->Get(), litert::OwnHandle::kNo);
   }
 
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, output_keys);
@@ -883,9 +889,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
   AUTO_CLEANUP_JNI_LONG_ARRAY(env, output_buffers);
   for (int i = 0; i < output_keys_size; ++i) {
     auto key = output_keys_vector[i];
-    auto buffer = reinterpret_cast<LiteRtTensorBuffer>(output_buffers_array[i]);
-    output_buffer_map[key] =
-        litert::TensorBuffer::WrapCObject(buffer, litert::OwnHandle::kNo);
+    auto* buffer = reinterpret_cast<TensorBuffer*>(output_buffers_array[i]);
+    output_buffer_map[key] = litert::TensorBuffer::WrapCObject(
+        buffer->Get(), litert::OwnHandle::kNo);
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
