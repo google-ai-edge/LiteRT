@@ -91,6 +91,9 @@ class CpuAccelerator final
       LiteRtGetCpuOptionsXNNPackFlags(cpu_options, &xnn_options.flags);
       LITERT_RETURN_IF_ERROR(LiteRtGetCpuOptionsXnnPackWeightCachePath(
           cpu_options, &xnn_options.weight_cache_file_path));
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
+              cpu_options, &xnn_options.weight_cache_file_descriptor));
     }
     TfLiteOpaqueDelegate* xnnpack_delegate =
         TfLiteXNNPackDelegateCreate(&xnn_options);
