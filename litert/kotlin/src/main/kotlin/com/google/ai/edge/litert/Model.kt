@@ -52,65 +52,6 @@ constructor(val elementType: ElementType, val layout: Layout? = null) {
   }
 }
 
-/** Model represents a LiteRT model file. */
-class Model private constructor(handle: Long) : JniHandle(handle) {
-
-  protected override fun destroy() {
-    nativeDestroy(handle)
-  }
-
-  fun getInputTensorType(inputName: String, signature: String? = null): TensorType {
-    assertNotDestroyed()
-
-    return nativeGetInputTensorType(handle, inputName, signature)
-  }
-
-  fun getOutputTensorType(outputName: String, signature: String? = null): TensorType {
-    assertNotDestroyed()
-
-    return nativeGetOutputTensorType(handle, outputName, signature)
-  }
-
-  companion object {
-    init {
-      System.loadLibrary("litert_jni")
-    }
-
-    @Throws(LiteRtException::class)
-    @JvmStatic
-    fun load(assetManager: AssetManager, assetName: String): Model {
-      return Model(nativeLoadAsset(assetManager, assetName))
-    }
-
-    @Throws(LiteRtException::class)
-    @JvmStatic
-    fun load(filePath: String): Model {
-      return Model(nativeLoadFile(filePath))
-    }
-
-    @JvmStatic
-    private external fun nativeLoadAsset(assetManager: AssetManager, assetName: String): Long
-
-    @JvmStatic private external fun nativeLoadFile(filePath: String): Long
-
-    @JvmStatic private external fun nativeDestroy(handle: Long)
-
-    @JvmStatic
-    private external fun nativeGetInputTensorType(
-      handle: Long,
-      inputName: String,
-      signature: String?,
-    ): TensorType
-
-    @JvmStatic
-    private external fun nativeGetOutputTensorType(
-      handle: Long,
-      outputName: String,
-      signature: String?,
-    ): TensorType
-  }
-}
-
 /** Class that represents a compiled LiteRT model. */
 class CompiledModel
 private constructor(

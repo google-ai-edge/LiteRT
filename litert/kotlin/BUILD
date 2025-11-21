@@ -63,32 +63,8 @@ cc_library(
     name = "litert_model_wrapper",
     hdrs = ["src/main/jni/litert_model_wrapper.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_library(
-    name = "litert_model_jni",
-    srcs = ["src/main/jni/litert_model_jni.cc"],
-    hdrs = [
-        "src/main/jni/litert_model_jni.h",
-    ],
-    deps = [
-        ":litert_jni_common",
-        ":litert_model_wrapper",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_layout",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//tflite/java/jni",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -98,7 +74,6 @@ cc_library(
     hdrs = ["src/main/jni/litert_compiled_model_jni.h"],
     deps = [
         ":litert_jni_common",
-        ":litert_model_jni",
         ":litert_model_wrapper",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -149,7 +124,6 @@ cc_library(
 #     deps = [
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
-#         ":litert_model_jni",
 #         ":litert_tensor_buffer_jni",
 #     ],
 # )
@@ -165,7 +139,6 @@ tflite_jni_binary(
     deps = [
         ":litert_compiled_model_jni",
         ":litert_environment_jni",
-        ":litert_model_jni",
         ":litert_tensor_buffer_jni",
     ],
 )

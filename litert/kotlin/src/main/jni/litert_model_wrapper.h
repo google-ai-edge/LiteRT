@@ -18,52 +18,11 @@
 #include <cstdint>
 #include <utility>
 
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
 
 namespace litert {
 namespace jni {
-
-// Wrapper to keep model and its buffer alive together
-struct ModelWrapper {
-  LiteRtModel model = nullptr;
-  litert::OwningBufferRef<uint8_t> buffer;  // For models loaded from assets
-
-  explicit ModelWrapper(LiteRtModel m) : model(m) {}
-  ModelWrapper(LiteRtModel m, litert::OwningBufferRef<uint8_t>&& b)
-      : model(m), buffer(std::move(b)) {}
-
-  ~ModelWrapper() {
-    if (model) {
-      LiteRtDestroyModel(model);
-      model = nullptr;
-    }
-  }
-
-  // Disable copy to prevent double-free
-  ModelWrapper(const ModelWrapper&) = delete;
-  ModelWrapper& operator=(const ModelWrapper&) = delete;
-
-  // Allow move
-  ModelWrapper(ModelWrapper&& other) noexcept
-      : model(other.model), buffer(std::move(other.buffer)) {
-    other.model = nullptr;
-  }
-
-  ModelWrapper& operator=(ModelWrapper&& other) noexcept {
-    if (this != &other) {
-      if (model) {
-        LiteRtDestroyModel(model);
-      }
-      model = other.model;
-      buffer = std::move(other.buffer);
-      other.model = nullptr;
-    }
-    return *this;
-  }
-};
 
 // Wrapper to keep compiled model and its buffer alive together
 struct CompiledModelWrapper {
