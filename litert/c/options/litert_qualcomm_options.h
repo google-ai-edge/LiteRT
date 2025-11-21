@@ -215,6 +215,22 @@ LiteRtStatus LiteRtQualcommOptionsGetOptimizationLevel(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsOptimizationLevel* optimization_level);
 
+typedef enum LiteRtQualcommOptionsGraphPriority {
+  kLiteRTQualcommGraphPriorityDefault = 0,
+  kLiteRTQualcommGraphPriorityLow,
+  kLiteRTQualcommGraphPriorityNormal,
+  kLiteRTQualcommGraphPriorityNormalHigh,
+  kLiteRTQualcommGraphPriorityHigh,
+} LiteRtQualcommOptionsGraphPriority;
+
+LiteRtStatus LiteRtQualcommOptionsSetGraphPriority(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGraphPriority graph_priority);
+
+LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGraphPriority* graph_priority);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

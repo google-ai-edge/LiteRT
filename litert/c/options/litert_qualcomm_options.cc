@@ -45,6 +45,8 @@ struct LiteRtQualcommOptionsT {
   std::uint32_t num_hvx_threads = 0;
   LiteRtQualcommOptionsOptimizationLevel optimization_level =
       kHtpOptimizeForInferenceO3;
+  LiteRtQualcommOptionsGraphPriority graph_priority =
+      kLiteRTQualcommGraphPriorityDefault;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -423,6 +425,30 @@ LiteRtStatus LiteRtQualcommOptionsGetOptimizationLevel(
   }
 
   *optimization_level = options->optimization_level;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetGraphPriority(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGraphPriority graph_priority) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->graph_priority = graph_priority;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGraphPriority* graph_priority) {
+  if (options == nullptr || graph_priority == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *graph_priority = options->graph_priority;
 
   return kLiteRtStatusOk;
 }
