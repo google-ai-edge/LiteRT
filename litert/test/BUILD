@@ -14,6 +14,8 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
 
@@ -318,6 +320,24 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# objc_library(
+#     name = "metal_test_helper",
+#     testonly = True,
+#     srcs = ["metal_test_helper.mm"],
+#     hdrs = ["metal_test_helper.h"],
+#     deps = [
+#         ":common",
+#         ":matchers",
+#         "@com_google_absl//absl/types:span",
+#         "//third_party/apple_frameworks:XCTest",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_tensor_buffer",
+#     ],
+# )
+# copybara:uncomment_end
 
 exports_files(
     srcs = [
