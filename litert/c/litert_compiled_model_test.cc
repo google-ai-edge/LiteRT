@@ -187,10 +187,10 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
   // (?, 2, 3) => (1, 2, 3)
   const int new_dims[] = {1, 2, 3};
-  LITERT_ASSERT_OK(LiteRtCompiledModelResizeInputTensor(compiled_model,
-                                                        /*signature_index=*/0,
-                                                        /*input_index=*/0,
-                                                        new_dims, 3));
+  LITERT_ASSERT_OK(LiteRtCompiledModelResizeInputTensor(
+      compiled_model,
+      /*signature_index=*/0,
+      /*input_index=*/0, new_dims, /*dims_size=*/3));
 
   // Get new buffer requirements after resize
   LiteRtTensorBufferRequirements requirements;
@@ -262,6 +262,10 @@ TEST(CompiledModelTest, ResizeInputTensorWithStaticModel) {
                                            /*signature_index=*/0,
                                            /*input_index=*/0, new_dims, 3),
       kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtCompiledModelResizeInputTensorNonStrict(
+                compiled_model, /*signature_index=*/0,
+                /*input_index=*/0, new_dims, 3),
+            kLiteRtStatusOk);
 
   // Cleanup
   LiteRtDestroyCompiledModel(compiled_model);

@@ -285,6 +285,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     signature_keys_.push_back(default_signature_key);
   }
 
+  signature_needs_allocation_.clear();
+
   auto get_tensor_id =
       [tflite_interpreter = std::ref(*interp_)](
           const TfLiteOpaqueTensor* target_tensor) -> TfLiteTensorIdentifier {
@@ -898,12 +900,17 @@ Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(
                       "Failed to get signature runner");
   }
   if (update_allocation) {
-    if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
-      if (error_reporter_) {
-        error_reporter_->Report("Failed to allocate tensors for execution");
+    LITERT_ASSIGN_OR_RETURN(bool needs_allocation,
+                            SignatureNeedsAllocation(runner));
+    if (needs_allocation) {
+      if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
+        if (error_reporter_) {
+          error_reporter_->Report("Failed to allocate tensors for execution");
+        }
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to allocate tensors");
       }
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to allocate tensors");
+      LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(runner));
     }
   }
   auto output_names = runner->subgraph_output_names();
@@ -973,6 +980,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       if (runner->ResizeInputTensor(
               tensor_name, std::vector<int>(buffer_shape.begin(),
                                             buffer_shape.end())) == kTfLiteOk) {
+        LITERT_RETURN_IF_ERROR(MarkSignatureNeedsAllocation(runner));
         LITERT_LOG(LITERT_INFO, "Automatically resized input tensor %s",
                    tensor_name ? tensor_name : "<unnamed>");
       } else {
@@ -1241,6 +1249,7 @@ Expected<void> LiteRtCompiledModelT::Run(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate tensors");
   }
+  LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(runner));
 
   // Relay the intended async execution mode to DelegateKernel of Accelerator.
   buffer_context_->SetAsyncExecutionMode(async);
@@ -1446,6 +1455,19 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
 
 litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensor(
     size_t signature_index, size_t input_index, absl::Span<const int> dims) {
+  return ResizeInputTensorImpl(signature_index, input_index, dims,
+                               /*strict_mode=*/true);
+}
+
+litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensorNonStrict(
+    size_t signature_index, size_t input_index, absl::Span<const int> dims) {
+  return ResizeInputTensorImpl(signature_index, input_index, dims,
+                               /*strict_mode=*/false);
+}
+
+litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
+    size_t signature_index, size_t input_index, absl::Span<const int> dims,
+    bool strict_mode) {
   if (signature_index >= signature_keys_.size()) {
     return litert::Unexpected(
         kLiteRtStatusErrorIndexOOB,
@@ -1472,39 +1494,64 @@ litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensor(
   }
 
   // Get current tensor shape.
-  const TfLiteIntArray* current_shape_array =
+  if (dims.empty()) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "New shape must not be empty.");
+  }
+  for (int dim : dims) {
+    if (dim <= 0) {
+      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                "Dimensions must be positive.");
+    }
+  }
+
+  // Fast path: nothing to do if the runtime shape already matches the request.
+  const TfLiteIntArray* runtime_shape = input_tensor->dims;
+  if (runtime_shape && runtime_shape->size == static_cast<int>(dims.size())) {
+    bool identical = true;
+    for (size_t i = 0; i < dims.size(); ++i) {
+      if (runtime_shape->data[i] != dims[i]) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) {
+      return {};
+    }
+  }
+
+  const TfLiteIntArray* signature_shape =
       (input_tensor->dims_signature && input_tensor->dims_signature->size > 0)
           ? input_tensor->dims_signature
           : input_tensor->dims;
 
-  if (!current_shape_array) {
+  if (!signature_shape) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
                               "Failed to get current shape.");
   }
-  absl::Span<const int> current_shape =
-      absl::MakeConstSpan(current_shape_array->data, current_shape_array->size);
 
-  if (current_shape.size() != dims.size()) {
-    return litert::Unexpected(
-        kLiteRtStatusErrorInvalidArgument,
-        "New shape rank does not match current shape rank.");
-  }
-
-  // Check if the tensor has dynamic dimensions and if the new dims are
-  // compatible with the current one.
-  bool has_dynamic_shape = false;
-  for (size_t i = 0; i < current_shape.size(); ++i) {
-    if (current_shape[i] == -1) {
-      has_dynamic_shape = true;
-    } else if (current_shape[i] != dims[i]) {
+  if (strict_mode) {
+    if (signature_shape->size != dims.size()) {
       return litert::Unexpected(
           kLiteRtStatusErrorInvalidArgument,
-          "New shape is not compatible with current shape.");
+          "New shape rank does not match current shape rank.");
     }
-  }
-  if (!has_dynamic_shape) {
-    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Tensor does not have a dynamic shape.");
+
+    bool has_dynamic_shape = false;
+    for (size_t i = 0; i < dims.size(); ++i) {
+      const int signature_dim = signature_shape->data[i];
+      if (signature_dim == -1) {
+        has_dynamic_shape = true;
+      } else if (signature_dim != dims[i]) {
+        return litert::Unexpected(
+            kLiteRtStatusErrorInvalidArgument,
+            "New shape is not compatible with current shape.");
+      }
+    }
+    if (!has_dynamic_shape) {
+      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                "Tensor does not have a dynamic shape.");
+    }
   }
 
   // Resize the input tensor using TFLite's SignatureRunner API
@@ -1515,10 +1562,29 @@ litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensor(
                               "Failed to resize input tensor");
   }
 
-  // Clear cached buffer requirements for all tensors since output and
-  // intermediate tensors may change shape after an explicit resize.
   cpu_buffer_requirements_.clear();
+  return MarkSignatureNeedsAllocation(runner);
+}
+
+Expected<void> LiteRtCompiledModelT::MarkSignatureNeedsAllocation(
+    const tflite::SignatureRunner* runner) {
+  signature_needs_allocation_[runner] = true;
   return {};
+}
+
+Expected<void> LiteRtCompiledModelT::MarkSignatureAllocationUpToDate(
+    const tflite::SignatureRunner* runner) {
+  signature_needs_allocation_[runner] = false;
+  return {};
+}
+
+Expected<bool> LiteRtCompiledModelT::SignatureNeedsAllocation(
+    const tflite::SignatureRunner* runner) const {
+  auto iter = signature_needs_allocation_.find(runner);
+  if (iter == signature_needs_allocation_.end()) {
+    return true;
+  }
+  return iter->second;
 }
 
 // Error reporter APIs implementation

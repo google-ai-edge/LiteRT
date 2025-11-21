@@ -197,9 +197,8 @@ TEST(CompiledModelTest, BasicSignatureIndex) {
       TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg0"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      const auto input_buffer_types_arg0,
-      input_buffer_requirements_arg0.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto input_buffer_types_arg0,
+                              input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
               ElementsAre(TensorBufferType::kHostMemory));
 
@@ -966,6 +965,22 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   auto output = absl::MakeSpan(lock_and_addr.second, 2);
   constexpr float kExpectedOutput[] = {2.0f, 3.0f};
   EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kExpectedOutput));
+}
+
+TEST(CompiledModelTest, ResizeInputTensorNonStrictAllowsStaticShapes) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
+
+  const std::vector<int> new_dims = {4545};
+  LITERT_ASSERT_ERROR(compiled_model.ResizeInputTensor(
+      /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
+  LITERT_ASSERT_OK(compiled_model.ResizeInputTensorNonStrict(
+      /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
 }
 
 }  // namespace

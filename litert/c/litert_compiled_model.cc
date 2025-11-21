@@ -232,6 +232,16 @@ LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelResizeInputTensorNonStrict(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const int* dims, size_t dims_size) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(compiled_model->ResizeInputTensorNonStrict(
+      signature_index, input_index, absl::MakeConstSpan(dims, dims_size)));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompiledModelResizeInputTensor(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index, const int* dims, size_t dims_size) {

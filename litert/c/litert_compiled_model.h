@@ -204,8 +204,9 @@ LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
 // Resizes the specified input tensor to support dynamic shapes.
 //
 // This function allows resizing input tensors at runtime, similar to TFLite's
-// ResizeInputTensor API. After calling this function, the compiled model will
-// reallocate internal buffers as needed to accommodate the new tensor shape.
+// ResizeInputTensorStrict API. After calling this function, the compiled model
+// will reallocate internal buffers as needed to accommodate the new tensor
+// shape.
 //
 // Parameters:
 // - compiled_model: the target `LiteRtCompiledModel` object.
@@ -225,6 +226,16 @@ LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
 // - kLiteRtStatusErrorUnimplemented: Dynamic shape is not supported for the
 //   given model or delegate.
 LiteRtStatus LiteRtCompiledModelResizeInputTensor(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const int* dims, size_t dims_size);
+
+// Resizes the specified input tensor without requiring dynamic dimensions in
+// the tensor signature. This mirrors TFLite's non-strict resize API and should
+// be paired with LiteRtGetCompiledModelOutputTensorLayouts(...,
+// /*update_allocation=*/true) to propagate shape changes to outputs.
+//
+// Parameters are identical to LiteRtCompiledModelResizeInputTensor.
+LiteRtStatus LiteRtCompiledModelResizeInputTensorNonStrict(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index, const int* dims, size_t dims_size);
 

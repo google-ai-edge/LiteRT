@@ -182,6 +182,13 @@ class LiteRtCompiledModelT {
                                            size_t input_index,
                                            absl::Span<const int> dims);
 
+  // Resizes the specified input tensor without strict validation. This mirrors
+  // TFLite's non-strict resize API and allows resizing tensors that do not have
+  // dynamic dimensions in their signature.
+  litert::Expected<void> ResizeInputTensorNonStrict(size_t signature_index,
+                                                    size_t input_index,
+                                                    absl::Span<const int> dims);
+
   // Returns the external buffer context which contains dispatch annotations.
   LiteRtExternalLiteRtBufferContextT* GetBufferContext() {
     return buffer_context_.get();
@@ -351,6 +358,23 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  litert::Expected<void> ResizeInputTensorImpl(size_t signature_index,
+                                               size_t input_index,
+                                               absl::Span<const int> dims,
+                                               bool strict_mode);
+
+  // Marks that the given signature needs tensor allocation.
+  litert::Expected<void> MarkSignatureNeedsAllocation(
+      const tflite::SignatureRunner* runner);
+
+  // Marks that the given signature's tensor allocation is up to date.
+  litert::Expected<void> MarkSignatureAllocationUpToDate(
+      const tflite::SignatureRunner* runner);
+
+  // Returns true if the given signature needs tensor allocation.
+  litert::Expected<bool> SignatureNeedsAllocation(
+      const tflite::SignatureRunner* runner) const;
+
 #if !defined(LITERT_DISABLE_NPU)
   // Applies the plugins to the model and caches the compiled model if
   // compilation caching is enabled. Returns true if the compiled model is
@@ -411,6 +435,10 @@ class LiteRtCompiledModelT {
   // GetSignatureRunner() which is expensive.
   absl::flat_hash_map<absl::string_view, tflite::SignatureRunner*>
       signature_runners_;
+
+  // Map to track which signature needs allocation.
+  absl::flat_hash_map<const tflite::SignatureRunner*, bool>
+      signature_needs_allocation_;
 
   // The ExternalLiteRtBufferContext used to register tensor buffers with
   // Delegates.

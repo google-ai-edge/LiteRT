@@ -107,25 +107,17 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
     }
     return CreateBufferImpl(env, buffer_requirements, tensor_type);
   } else {
-    const auto& dims = tensor_type.Layout().Dimensions();
-    if (absl::c_find(dims, -1) != dims.end()) {
-      LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
-                              FindOutputIndex(signature_index, tensor_name));
-      LITERT_ASSIGN_OR_RETURN(
-          std::vector<Layout> runtime_layouts,
-          GetOutputTensorLayouts(signature_index, /*update_allocation=*/true));
-      tensor_type = RankedTensorType(tensor_type.ElementType(),
-                                     std::move(runtime_layouts[tensor_index]));
-      LITERT_ASSIGN_OR_RETURN(
-          const TensorBufferRequirements& refreshed_requirements,
-          GetOutputBufferRequirements(signature_index, tensor_name));
-      return CreateBufferImpl(env, refreshed_requirements, tensor_type);
-    } else {
-      LITERT_ASSIGN_OR_RETURN(
-          const TensorBufferRequirements& requirements,
-          GetOutputBufferRequirements(signature_index, tensor_name));
-      return CreateBufferImpl(env, requirements, tensor_type);
-    }
+    LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
+                            FindOutputIndex(signature_index, tensor_name));
+    LITERT_ASSIGN_OR_RETURN(
+        std::vector<Layout> runtime_layouts,
+        GetOutputTensorLayouts(signature_index, /*update_allocation=*/true));
+    tensor_type = RankedTensorType(tensor_type.ElementType(),
+                                   std::move(runtime_layouts[tensor_index]));
+    LITERT_ASSIGN_OR_RETURN(
+        const TensorBufferRequirements& requirements,
+        GetOutputBufferRequirements(signature_index, tensor_name));
+    return CreateBufferImpl(env, requirements, tensor_type);
   }
 }
 
