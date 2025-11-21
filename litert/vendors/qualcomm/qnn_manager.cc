@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -359,7 +360,15 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
     // Always overwrite the environment variable as we want to use the
     // provided library paths only.
     static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
-    setenv(kAdsp, shared_library_dir->data(), /*overwrite=*/1);
+    const char* adsp_library_path = getenv(kAdsp);
+    if (adsp_library_path == nullptr) {
+      setenv(kAdsp, shared_library_dir->data(), /*overwrite=*/1);
+    } else {
+      auto new_adsp_library_path =
+          absl::StrCat(shared_library_dir.value(), ";", adsp_library_path);
+      setenv(kAdsp, new_adsp_library_path.c_str(), /*overwrite=*/1);
+    }
+    LITERT_LOG(LITERT_DEBUG, "ADSP_LIBRARY_PATH: %s", getenv(kAdsp));
 
     // TODO: Put dynamic loading module in cc or vendor/cc.
     litert::internal::PutLibOnLdPath(*shared_library_dir,
