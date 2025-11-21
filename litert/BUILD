@@ -119,12 +119,10 @@ package_group(
         ":litert_internal_users",
     ],
     packages = [
-        "//litert/vendors/...",
         "//litert/kotlin/...",
         "//litert/rust/...",
+        "//litert/vendors/...",
         "//third_party/odml/litert/tensor/...",
-        # TODO(b/454666070): Below targets should be removed after we remove their use of C headers.
-        # copybara:uncomment "//platforms/darwinn/...",
     ],
 )
 
