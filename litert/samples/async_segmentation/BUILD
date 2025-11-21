@@ -65,7 +65,6 @@ cc_binary(
         ":model_files",
         ":shader_files",
         ":test_images",
-        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
     ],
     linkopts = litert_android_linkopts() + gles_linkopts(),
     deps = [
@@ -91,7 +90,6 @@ cc_binary(
         ":model_files",
         ":shader_files",
         ":test_images",
-        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
         "@litert_gpu//:jni/arm64-v8a/libLiteRtOpenClAccelerator.so",  # copybara:comment
         # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so",
     ],
@@ -120,7 +118,6 @@ cc_binary(
         ":model_files",
         ":shader_files",
         ":test_images",
-        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
         "//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so",
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
         "@qairt//:lib/aarch64-android/libQnnHtp.so",

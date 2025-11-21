@@ -37,14 +37,11 @@
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
-#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_cpu_options.h"
@@ -204,7 +201,7 @@ Expected<std::vector<float>> GetEmbedding(
     std::vector<TensorBuffer>& output_buffers,
     const std::vector<int>& token_ids) {
   if (input_buffers.size() != 1) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(::litert::Status::kErrorInvalidArgument,
                       "Expected 1 input tensor for embedder");
   }
 
@@ -213,7 +210,7 @@ Expected<std::vector<float>> GetEmbedding(
   LITERT_RETURN_IF_ERROR(embedder_model->Run(input_buffers, output_buffers));
 
   if (output_buffers.size() != 1) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(::litert::Status::kErrorInvalidArgument,
                       "Expected 1 output tensor for embedder");
   }
   auto& output_tensor = output_buffers[0];
