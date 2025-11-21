@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#import <Metal/Metal.h>
 #import <XCTest/XCTest.h>
 #import <XCTest/XCTestAssertions.h>
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -41,28 +42,40 @@ litert::Expected<litert::Options> CreateGpuOptions(bool external_tensors_mode) {
 
 const float kTolerance = 1e-5;
 
-@interface LitertCompiledModelMetalTest : XCTestCase
+@interface BasicMetalTest : NSObject
+
+// Returns the file path of the model file in the bundle.
++ (NSString *)getModelFilePath:(NSString *)modelName;
+
+// Tests the model with the given external tensors mode configuration.
+//
+// @param externalTensorsMode Whether to use external tensors mode.
++ (void)testBasicMetalTest:(BOOL)externalTensorsMode;
+
 @end
 
-@implementation LitertCompiledModelMetalTest
+@implementation BasicMetalTest
 
-- (void)testCompiledModelMetalGpuEnvironment {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
-
++ (NSString *)getModelFilePath:(NSString *)modelName {
   // Get the bundle for the current test class
   NSBundle *bundle = [NSBundle bundleForClass:[self class]];
-
   // Construct the full path to the model file
-  NSString *modelFilePath = [bundle pathForResource:@"simple_model" ofType:@"tflite"];
-
+  NSString *modelFilePath = [bundle pathForResource:modelName ofType:@"tflite"];
   if (!modelFilePath) {
     XCTFail(@"Could not find model file in bundle.");
-    return;
+    return nil;
   }
+  return modelFilePath;
+}
 
++ (void)testBasicMetalTest:(BOOL)externalTensorsMode {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   XCTAssertTrue(env);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/true));
+  NSString *modelFilePath = [self getModelFilePath:@"simple_model"];
+  XCTAssertNotNil(modelFilePath);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(externalTensorsMode));
   XCTAssertTrue(options);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model, litert::CompiledModel::Create(env, modelFilePath.UTF8String, options));
@@ -76,8 +89,8 @@ const float kTolerance = 1e-5;
   // // Fill model inputs.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, compiled_model.GetSignatureInputNames());
   XCTAssertEqual(input_names.size(), 2);
-  XCTAssertEqual(input_names.at(0), "arg0");
-  XCTAssertEqual(input_names.at(1), "arg1");
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(0).data()], @"arg0");
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(1).data()], @"arg1");
   XCTAssertTrue(input_buffers[0].IsMetalMemory());
   XCTAssertTrue(
       input_buffers[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
@@ -91,7 +104,7 @@ const float kTolerance = 1e-5;
   // Check model output.
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, compiled_model.GetSignatureOutputNames());
   XCTAssertEqual(output_names.size(), 1);
-  XCTAssertEqual(output_names.at(0), "tfl.add");
+  XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add");
   XCTAssertTrue(output_buffers[0].IsMetalMemory());
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
@@ -107,6 +120,161 @@ const float kTolerance = 1e-5;
   }
 
   return;
+}
+
+@end
+
+@interface LitertCompiledModelMetalTest : XCTestCase
+@end
+
+@implementation LitertCompiledModelMetalTest
+
+- (void)testCompiledModelGpuBasic {
+  [BasicMetalTest testBasicMetalTest:false];
+}
+
+- (void)testCompiledModelGpuBasic2nd {
+  // Run the test twice to verify that the GPU environment is shared between two CompiledModel
+  // instances.
+  [BasicMetalTest testBasicMetalTest:false];
+}
+
+- (void)testCompiledModelGpuExternalTensorsMode {
+  // Test the model with external tensors mode enabled.
+  [BasicMetalTest testBasicMetalTest:true];
+}
+
+- (void)testCompiledModelGpuEnvironment {
+  auto env = litert::Environment::Create({});
+  XCTAssertTrue(env);
+
+  NSString *modelFilePath = [BasicMetalTest getModelFilePath:@"simple_model"];
+  XCTAssertNotNil(modelFilePath);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model, litert::CompiledModel::Create(*env, modelFilePath.UTF8String, options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env->GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto metal_device_id,
+                              env_options.GetOption(litert::EnvironmentOptions::Tag::kMetalDevice));
+  id<MTLDevice> metal_device = (__bridge id<MTLDevice>)(std::get<void *>(metal_device_id));
+  XCTAssertNotNil(metal_device);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto metal_command_queue_id,
+      env_options.GetOption(litert::EnvironmentOptions::Tag::kMetalCommandQueue));
+  id<MTLCommandQueue> command_queue =
+      (__bridge id<MTLCommandQueue>)(std::get<void *>(metal_command_queue_id));
+  XCTAssertNotNil(command_queue);
+}
+
+- (void)testCompiledModelGpuPartialDelegation {
+  NSString *modelFilePath = [BasicMetalTest getModelFilePath:@"simple_cast_and_add_op"];
+  XCTAssertNotNil(modelFilePath);
+
+  auto env = litert::Environment::Create({});
+  XCTAssertTrue(env);
+
+  litert::HwAcceleratorSet accelerator_flags =
+      litert::HwAccelerators::kGpu | litert::HwAccelerators::kCpu;
+  auto compilation_options = litert::Options::Create();
+  compilation_options->SetHardwareAccelerators(accelerator_flags);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      litert::CompiledModel::Create(*env, modelFilePath.UTF8String, *compilation_options));
+
+  XCTAssertEqual(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, compiled_model.CreateInputBuffers());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
+
+  // Fill model inputs.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, compiled_model.GetSignatureInputNames());
+  XCTAssertEqual(input_names.size(), 3);
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(0).data()], @"arg0");
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(1).data()], @"arg1");
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(2).data()], @"arg2");
+  XCTAssertTrue(input_buffers[0].IsMetalMemory());
+  XCTAssertTrue(
+      input_buffers[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  XCTAssertTrue(input_buffers[1].IsMetalMemory());
+  XCTAssertTrue(
+      input_buffers[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+  int64_t arg2_data[1] = {1};
+  XCTAssertTrue(input_buffers[2].Write<int64_t>(absl::MakeConstSpan(arg2_data, 1)));
+
+  // Execute model.
+  compiled_model.Run(input_buffers, output_buffers);
+
+  // Check model output.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, compiled_model.GetSignatureOutputNames());
+  XCTAssertEqual(output_names.size(), 1);
+  XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add1");
+  XCTAssertTrue(output_buffers[0].IsMetalMemory());
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], litert::TensorBuffer::LockMode::kRead);
+    XCTAssertTrue(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    float expected_output[2] = {12.0f, 23.0f};
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << expected_output[i];
+    }
+    XCTAssertTrue(testing::Matches(testing::Pointwise(
+        testing::FloatNear(kTolerance), absl::MakeConstSpan(expected_output, kTestOutputSize)))(
+        output));
+  }
+}
+
+- (void)testCompiledModelGpuBasicAdd3dCstInt32 {
+  constexpr const int32_t kInt32TestInput0Tensor[] = {1, 2, 3, 4, 5, 6};
+  constexpr const int32_t kInt32TestOutputTensor[] = {11, 22, 33, 44, 55, 66};
+  constexpr const size_t kInt32TestInput0Size = 6;
+  constexpr const size_t kInt32TestOutputSize = 6;
+  NSString *modelFilePath = [BasicMetalTest getModelFilePath:@"simple_add3d_cst_int32"];
+  XCTAssertNotNil(modelFilePath);
+
+  auto env = litert::Environment::Create({});
+  XCTAssertTrue(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model, litert::CompiledModel::Create(*env, modelFilePath.UTF8String, options));
+
+  XCTAssertEqual(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, compiled_model.CreateInputBuffers());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
+
+  // Fill model inputs.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, compiled_model.GetSignatureInputNames());
+  XCTAssertEqual(input_names.size(), 1);
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(0).data()], @"arg0");
+  XCTAssertTrue(input_buffers[0].IsMetalMemory());
+  XCTAssertTrue(input_buffers[0].Write<int32_t>(
+      absl::MakeConstSpan(kInt32TestInput0Tensor, kInt32TestInput0Size)));
+
+  // Execute model.
+  compiled_model.Run(input_buffers, output_buffers);
+
+  // Check model output.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, compiled_model.GetSignatureOutputNames());
+  XCTAssertEqual(output_names.size(), 1);
+  XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add");
+  XCTAssertTrue(output_buffers[0].IsMetalMemory());
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const int32_t>(
+        output_buffers[0], litert::TensorBuffer::LockMode::kRead);
+    XCTAssertTrue(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kInt32TestOutputSize);
+    for (auto i = 0; i < kInt32TestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kInt32TestOutputTensor[i];
+    }
+    XCTAssertTrue(testing::Matches(testing::Pointwise(
+        testing::Eq(), absl::MakeConstSpan(kInt32TestOutputTensor, kInt32TestOutputSize)))(output));
+  }
 }
 
 @end

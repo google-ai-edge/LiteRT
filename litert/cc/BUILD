@@ -513,7 +513,11 @@ litert_device_test(
 #     name = "litert_compiled_model_metal_test",
 #     testonly = True,
 #     srcs = [":litert_compiled_model_metal_test.mm"],
-#     data = ["//litert/test:testdata/simple_model.tflite"],
+#     data = [
+#         "//litert/test:testdata/simple_add3d_cst_int32.tflite",
+#         "//litert/test:testdata/simple_cast_and_add_op.tflite",
+#         "//litert/test:testdata/simple_model.tflite",
+#     ],
 #     deps = [
 #         ":litert_common",
 #         ":litert_compiled_model",
