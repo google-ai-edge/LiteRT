@@ -514,7 +514,6 @@ litert_device_test(
 #     testonly = True,
 #     srcs = [":litert_compiled_model_metal_test.mm"],
 #     data = ["//litert/test:testdata/simple_model.tflite"],
-#     tags = ["notap"],
 #     deps = [
 #         ":litert_common",
 #         ":litert_compiled_model",
@@ -1096,7 +1095,6 @@ cc_library(
 # macos_unit_test(
 #     name = "litert_tensor_buffer_test_cc_macos",
 #     minimum_os_version = LITERT_MIN_MACOS_VERSION,
-#     tags = ["notap"],
 #     deps = [":LitertTensorBufferTestLibrary"],
 # )
 #
@@ -1114,7 +1112,6 @@ cc_library(
 # macos_unit_test(
 #     name = "litert_compiled_model_metal_test_cc_macos",
 #     minimum_os_version = LITERT_MIN_MACOS_VERSION,
-#     tags = ["notap"],
 #     deps = [":litert_compiled_model_metal_test"],
 # )
 #
