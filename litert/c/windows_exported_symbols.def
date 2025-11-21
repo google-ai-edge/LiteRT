@@ -24,6 +24,7 @@ EXPORTS
   LiteRtCompiledModelIsFullyAccelerated
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
+  LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
   LiteRtCreateCpuOptions
