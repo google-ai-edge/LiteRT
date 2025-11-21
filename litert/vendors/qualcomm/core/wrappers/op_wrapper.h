@@ -26,6 +26,40 @@ class OpWrapper final {
 
   OpWrapper& operator=(const OpWrapper& other);
 
+  bool operator==(const OpWrapper& other) const {
+    CHECK_VALUE_EQ(op_code_, other.op_code_, "Op code in OpWrapper");
+    CHECK_STR_EQ(type_name_, other.type_name_, "Op type name in OpWrapper");
+
+    if (input_tensors_.size() != other.input_tensors_.size()) {
+      QNN_LOG_ERROR(
+          "Size of input tensor mismatch. Input: %zu, Other input: %zu",
+          input_tensors_.size(), other.input_tensors_.size());
+      return false;
+    }
+    for (size_t i = 0; i < input_tensors_.size(); ++i) {
+      if (input_tensors_[i].get() != other.input_tensors_[i].get()) {
+        QNN_LOG_ERROR("Content of input tensor at [%zu] mismatch.", i);
+        return false;
+      }
+    }
+
+    if (output_tensors_.size() != other.output_tensors_.size()) {
+      QNN_LOG_ERROR(
+          "Size of output tensor mismatch. Output: %zu, Other output: %zu",
+          output_tensors_.size(), other.output_tensors_.size());
+      return false;
+    }
+    for (size_t i = 0; i < output_tensors_.size(); ++i) {
+      if (output_tensors_[i].get() != other.output_tensors_[i].get()) {
+        QNN_LOG_ERROR("Content of output tensor at [%zu] mismatch.", i);
+        return false;
+      }
+    }
+
+    return scalar_params_ == other.scalar_params_ &&
+           tensor_params_ == other.tensor_params_;
+  }
+
   OpWrapper(OpWrapper&& other);
 
   ~OpWrapper();

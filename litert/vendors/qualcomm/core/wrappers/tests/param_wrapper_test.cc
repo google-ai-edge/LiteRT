@@ -186,6 +186,36 @@ TEST(ScalarParamWrapperTest, QuantizedInt32ParamTest) {
   EXPECT_EQ(int32_quant_qnn_param.scalarParam.int32Value, value);
 }
 
+using ScalarParams = std::tuple<Qnn_DataType_t, bool>;
+class ScalarParamEqualTest : public ::testing::TestWithParam<ScalarParams> {};
+TEST_P(ScalarParamEqualTest, EqualityOperator) {
+  auto [data_type, expected_equal] = GetParam();
+
+  if (data_type == QNN_DATATYPE_INT_32) {
+    qnn::ScalarParamWrapper wrapper1{"param", int32_t{-2147483648}, true};
+    qnn::ScalarParamWrapper wrapper2{"param", int32_t{-2147483647}, true};
+
+    EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+  } else if (data_type == QNN_DATATYPE_FLOAT_32) {
+    qnn::ScalarParamWrapper wrapper1{"param", 1.5f, false};
+    qnn::ScalarParamWrapper wrapper2{"param", 1.5f, false};
+
+    EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+  } else if (data_type == QNN_DATATYPE_BOOL_8) {
+    qnn::ScalarParamWrapper wrapper1{"param", true, false};
+    qnn::ScalarParamWrapper wrapper2{"param", true, false};
+
+    EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+  }
+}
+INSTANTIATE_TEST_SUITE_P(ScalarParamWrapperTest, ScalarParamEqualTest,
+                         ::testing::Values(
+                             // Data value
+                             ScalarParams{QNN_DATATYPE_INT_32, false},
+                             // Data type
+                             ScalarParams{QNN_DATATYPE_FLOAT_32, true},
+                             ScalarParams{QNN_DATATYPE_BOOL_8, true}));
+
 TEST(ParamWrapperTest, TensorParamTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   std::vector<std::uint8_t> data = {1, 2, 3};
@@ -229,5 +259,23 @@ TEST(ParamWrapperTest, TensorParamTest) {
     EXPECT_EQ(ref_data[i], data[i]);
   }
 }
+
+TEST(TensorParamWrapperTest, EqualityOperator) {
+  std::vector<uint8_t> data(3, 1);
+  qnn::TensorWrapper tensor{"",
+                            QNN_TENSOR_TYPE_APP_WRITE,
+                            QNN_DATATYPE_UFIXED_POINT_8,
+                            QuantizeParamsWrapperVariant(),
+                            {1, 1, 3},
+                            static_cast<uint32_t>(data.size()),
+                            data.data(),
+                            true};
+
+  qnn::TensorParamWrapper param1{"tensor_param", tensor};
+  qnn::TensorParamWrapper param2{"tensor_param", tensor};
+
+  EXPECT_TRUE(param1 == param2);
+}
+
 }  // namespace
 }  // namespace qnn
