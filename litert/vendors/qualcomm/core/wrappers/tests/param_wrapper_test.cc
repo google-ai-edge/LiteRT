@@ -186,6 +186,18 @@ TEST(ScalarParamWrapperTest, QuantizedInt32ParamTest) {
   EXPECT_EQ(int32_quant_qnn_param.scalarParam.int32Value, value);
 }
 
+TEST(ScalarParamWrapperTest, EqualityOperatorTest) {
+  constexpr std::int32_t value1 = -2147483648;
+  ScalarParamWrapper quant_param1{"quant_param1", value1, true};
+  constexpr std::int32_t value2 = -2147483647;
+  ScalarParamWrapper quant_param2{"quant_param2", value2, true};
+  ScalarParamWrapper quant_param3(quant_param1);
+
+  EXPECT_FALSE(quant_param1 == quant_param2);
+  EXPECT_TRUE(quant_param1 == quant_param3);
+  EXPECT_FALSE(quant_param2 == quant_param3);
+}
+
 TEST(ParamWrapperTest, TensorParamTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   std::vector<std::uint8_t> data = {1, 2, 3};
@@ -228,6 +240,65 @@ TEST(ParamWrapperTest, TensorParamTest) {
   for (size_t i = 0; i < data.size(); i++) {
     EXPECT_EQ(ref_data[i], data[i]);
   }
+}
+
+TEST(ParamWrapperTest, EqualityOperatorTest) {
+  std::vector<std::uint32_t> dummy_dims1 = {1, 1, 3};
+  std::vector<std::uint32_t> dummy_dims2 = {1, 1, 3};
+  std::vector<std::uint32_t> dummy_dims3 = {1, 1, 4};
+
+  std::vector<std::uint8_t> data1 = {1, 2, 3};
+  std::vector<std::uint8_t> data2 = {1, 2, 3};
+  std::vector<std::uint8_t> data3 = {1, 2, 3, 4};
+
+  void* data_ptr1 = reinterpret_cast<void*>(data1.data());
+  const auto data_size1 =
+      std::accumulate(dummy_dims1.begin(), dummy_dims1.end(),
+                      sizeof(decltype(data1)::value_type), std::multiplies<>());
+  void* data_ptr2 = reinterpret_cast<void*>(data2.data());
+  const auto data_size2 =
+      std::accumulate(dummy_dims2.begin(), dummy_dims2.end(),
+                      sizeof(decltype(data2)::value_type), std::multiplies<>());
+  void* data_ptr3 = reinterpret_cast<void*>(data3.data());
+  const auto data_size3 =
+      std::accumulate(dummy_dims3.begin(), dummy_dims3.end(),
+                      sizeof(decltype(data3)::value_type), std::multiplies<>());
+
+  TensorWrapper tensor_wrapper1{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims1,
+                                static_cast<uint32_t>(data_size1),
+                                data_ptr1,
+                                true};
+
+  TensorWrapper tensor_wrapper2{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims2,
+                                static_cast<uint32_t>(data_size2),
+                                data_ptr2,
+                                true};
+
+  TensorWrapper tensor_wrapper3{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims3,
+                                static_cast<uint32_t>(data_size3),
+                                data_ptr3,
+                                true};
+  TensorParamWrapper tensor_param1{"tensor_param", tensor_wrapper1};
+  TensorParamWrapper tensor_param2{"tensor_param", tensor_wrapper2};
+  TensorParamWrapper tensor_param3{"tensor_param", tensor_wrapper3};
+  TensorParamWrapper tensor_param4(tensor_param1);
+
+  EXPECT_TRUE(tensor_param1 == tensor_param2);
+  EXPECT_FALSE(tensor_param1 == tensor_param3);
+  EXPECT_FALSE(tensor_param2 == tensor_param3);
+  EXPECT_TRUE(tensor_param1 == tensor_param4);
 }
 }  // namespace
 }  // namespace qnn

@@ -514,5 +514,59 @@ TEST(TensorWrapperTest, QnnTensorNoCopyTest) {
     EXPECT_EQ(ref_data[i], data[i]);
   }
 }
+
+TEST(TensorWrapperTest, EqualityOperatorTest) {
+  std::vector<std::uint32_t> dummy_dims1 = {1, 1, 3};
+  std::vector<std::uint32_t> dummy_dims2 = {1, 1, 3};
+  std::vector<std::uint32_t> dummy_dims3 = {1, 1, 4};
+
+  std::vector<std::uint8_t> data1 = {1, 2, 3};
+  std::vector<std::uint8_t> data2 = {1, 2, 3};
+  std::vector<std::uint8_t> data3 = {1, 2, 3, 4};
+
+  void* data_ptr1 = reinterpret_cast<void*>(data1.data());
+  const auto data_size1 =
+      std::accumulate(dummy_dims1.begin(), dummy_dims1.end(),
+                      sizeof(decltype(data1)::value_type), std::multiplies<>());
+  void* data_ptr2 = reinterpret_cast<void*>(data2.data());
+  const auto data_size2 =
+      std::accumulate(dummy_dims2.begin(), dummy_dims2.end(),
+                      sizeof(decltype(data2)::value_type), std::multiplies<>());
+  void* data_ptr3 = reinterpret_cast<void*>(data3.data());
+  const auto data_size3 =
+      std::accumulate(dummy_dims3.begin(), dummy_dims3.end(),
+                      sizeof(decltype(data3)::value_type), std::multiplies<>());
+
+  TensorWrapper tensor_wrapper1{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims1,
+                                static_cast<uint32_t>(data_size1),
+                                data_ptr1,
+                                true};
+
+  TensorWrapper tensor_wrapper2{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims2,
+                                static_cast<uint32_t>(data_size2),
+                                data_ptr2,
+                                true};
+
+  TensorWrapper tensor_wrapper3{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims3,
+                                static_cast<uint32_t>(data_size3),
+                                data_ptr3,
+                                true};
+
+  EXPECT_TRUE(tensor_wrapper1 == tensor_wrapper2);
+  EXPECT_FALSE(tensor_wrapper1 == tensor_wrapper3);
+  EXPECT_FALSE(tensor_wrapper2 == tensor_wrapper3);
+}
 }  // namespace
 }  // namespace qnn

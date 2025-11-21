@@ -40,6 +40,12 @@ TEST(UndefinedQuantizeParamsWrapperTest, MoveConstructorTest) {
   EXPECT_EQ(dst.quantizationEncoding, QNN_QUANTIZATION_ENCODING_UNDEFINED);
 }
 
+TEST(UndefinedQuantizeParamsWrapperTest, EqualityOperatorTest) {
+  UndefinedQuantizeParamsWrapper wrapper1;
+  UndefinedQuantizeParamsWrapper wrapper2(wrapper1);
+  EXPECT_TRUE(wrapper1 == wrapper2);
+}
+
 TEST(ScaleOffsetQuantizeParamsWrapperTest, ConstructorTest) {
   float scale = 1.5f;
   std::int32_t zero_point = 10;
@@ -85,6 +91,33 @@ TEST(ScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   EXPECT_FLOAT_EQ(wrapper.GetScale(), scale);
   EXPECT_EQ(wrapper.GetZeroPoint(), zero_point);
   EXPECT_EQ(wrapper.GetOffset(), -zero_point);
+}
+
+TEST(ScaleOffsetQuantizeParamsWrapperTest, QnnConstructorTest) {
+  ScaleOffsetQuantizeParamsWrapper wrapper1(1.5f, 10);
+  Qnn_QuantizeParams_t dst1 = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper1.CloneTo(dst1);
+  ScaleOffsetQuantizeParamsWrapper wrapper2(dst1.scaleOffsetEncoding);
+  Qnn_QuantizeParams_t dst2 = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper1.CloneTo(dst2);
+  EXPECT_EQ(dst1.encodingDefinition, dst2.encodingDefinition);
+  EXPECT_EQ(dst1.quantizationEncoding, dst2.quantizationEncoding);
+  EXPECT_FLOAT_EQ(dst1.scaleOffsetEncoding.scale,
+                  dst2.scaleOffsetEncoding.scale);
+  EXPECT_EQ(dst1.scaleOffsetEncoding.offset, dst2.scaleOffsetEncoding.offset);
+}
+
+TEST(ScaleOffsetQuantizeParamsWrapperTest, EqualityOperatorTest) {
+  float scale1 = 1.5f;
+  std::int32_t zero_point1 = 10;
+  ScaleOffsetQuantizeParamsWrapper wrapper1(scale1, zero_point1);
+  float scale2 = 1.6f;
+  std::int32_t zero_point2 = 10;
+  ScaleOffsetQuantizeParamsWrapper wrapper2(scale2, zero_point2);
+  ScaleOffsetQuantizeParamsWrapper wrapper3(wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper3);
+  EXPECT_TRUE(wrapper2 == wrapper3);
 }
 
 TEST(AxisScaleOffsetQuantizeParamsWrapperTest, ConstructorTest) {
@@ -148,6 +181,7 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, MoveConstructorTest) {
               -zero_points[i]);
   }
 }
+
 TEST(AxisScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   std::int32_t axis = 1;
   std::vector<float> scales = {1.5f, 2.5f};
@@ -159,20 +193,6 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   std::vector<std::int32_t> zero_points_out;
   wrapper.GetZeroPoints(zero_points_out);
   EXPECT_EQ(zero_points, zero_points_out);
-}
-
-TEST(ScaleOffsetQuantizeParamsWrapperTest, QnnConstructorTest) {
-  ScaleOffsetQuantizeParamsWrapper wrapper1(1.5f, 10);
-  Qnn_QuantizeParams_t dst1 = QNN_QUANTIZE_PARAMS_INIT;
-  wrapper1.CloneTo(dst1);
-  ScaleOffsetQuantizeParamsWrapper wrapper2(dst1.scaleOffsetEncoding);
-  Qnn_QuantizeParams_t dst2 = QNN_QUANTIZE_PARAMS_INIT;
-  wrapper1.CloneTo(dst2);
-  EXPECT_EQ(dst1.encodingDefinition, dst2.encodingDefinition);
-  EXPECT_EQ(dst1.quantizationEncoding, dst2.quantizationEncoding);
-  EXPECT_FLOAT_EQ(dst1.scaleOffsetEncoding.scale,
-                  dst2.scaleOffsetEncoding.scale);
-  EXPECT_EQ(dst1.scaleOffsetEncoding.offset, dst2.scaleOffsetEncoding.offset);
 }
 
 TEST(AxisScaleOffsetQuantizeParamsWrapperTest, QnnConstructorTest) {
@@ -196,5 +216,55 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, QnnConstructorTest) {
               dst2.axisScaleOffsetEncoding.scaleOffset[i].offset);
   }
 }
+
+TEST(AxisScaleOffsetQuantizeParamsWrapperTest, EqualityOperatorTest) {
+  std::int32_t axis1 = 1;
+  std::vector<float> scales1 = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points1 = {10, 20};
+  AxisScaleOffsetQuantizeParamsWrapper wrapper1(axis1, scales1, zero_points1);
+  std::int32_t axis2 = 1;
+  std::vector<float> scales2 = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points2 = {10, 30};
+  AxisScaleOffsetQuantizeParamsWrapper wrapper2(axis2, scales2, zero_points2);
+  AxisScaleOffsetQuantizeParamsWrapper wrapper3(wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper3);
+  EXPECT_TRUE(wrapper2 == wrapper3);
+}
+
+TEST(BwScaleOffsetQuantizeParamsWrapperTest, EqualityOperatorTest) {
+  std::uint32_t bitwidth1 = 32;
+  float scale1 = 1.5f;
+  std::int32_t zero_point1 = 10;
+  BwScaleOffsetQuantizeParamsWrapper wrapper1(bitwidth1, scale1, zero_point1);
+  std::uint32_t bitwidth2 = 64;
+  float scale2 = 1.5f;
+  std::int32_t zero_point2 = 10;
+  BwScaleOffsetQuantizeParamsWrapper wrapper2(bitwidth2, scale2, zero_point2);
+  BwScaleOffsetQuantizeParamsWrapper wrapper3(wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper3);
+  EXPECT_TRUE(wrapper2 == wrapper3);
+}
+
+TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, EqualityOperatorTest) {
+  std::uint32_t bitwidth1 = 32;
+  std::int32_t axis1 = 1;
+  std::vector<float> scales1 = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points1 = {10, 20};
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper1(bitwidth1, axis1, scales1,
+                                                  zero_points1);
+  std::uint32_t bitwidth2 = 32;
+  std::int32_t axis2 = 1;
+  std::vector<float> scales2 = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points2 = {10, 30};
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper2(bitwidth2, axis2, scales2,
+                                                  zero_points2);
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper3(wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper3);
+  EXPECT_TRUE(wrapper2 == wrapper3);
+}
+
 }  // namespace
 }  // namespace qnn

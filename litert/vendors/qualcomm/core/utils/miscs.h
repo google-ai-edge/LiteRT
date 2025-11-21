@@ -20,9 +20,44 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 namespace qnn {
+namespace {
+#define CHECK_STR_EQ(INPUT, GOLDEN, MSG)                                       \
+  do {                                                                         \
+    const char* _input = (INPUT);                                              \
+    const char* _golden = (GOLDEN);                                            \
+    if ((_input == nullptr && _golden != nullptr) ||                           \
+        (_input != nullptr && _golden == nullptr) ||                           \
+        (_input && _golden && std::strcmp(_input, _golden) != 0)) {            \
+      QNN_LOG_ERROR("%s mismatch. Input: %s, Golden: %s", MSG,                 \
+                    _input ? _input : "(null)", _golden ? _golden : "(null)"); \
+      return false;                                                            \
+    }                                                                          \
+  } while (0)
+
+#define CHECK_VALUE_EQ(INPUT, GOLDEN, MSG)                         \
+  do {                                                             \
+    if (INPUT != GOLDEN) {                                         \
+      QNN_LOG_ERROR("%s mismatch. Input: %lld, Golden: %lld", MSG, \
+                    (long long)(INPUT), (long long)(GOLDEN));      \
+      return false;                                                \
+    }                                                              \
+  } while (0)
+
+#define CHECK_TYPE_EQ(INPUT, GOLDEN, MSG)                        \
+  do {                                                           \
+    if (INPUT != GOLDEN) {                                       \
+      QNN_LOG_ERROR("%s mismatch. Input: %#x, Golden: %#x", MSG, \
+                    (unsigned)(INPUT), (unsigned)(GOLDEN));      \
+      return false;                                              \
+    }                                                            \
+  } while (0)
+
+}  // namespace
+
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
 
@@ -77,5 +112,16 @@ inline const QNN_INTERFACE_VER_TYPE* ResolveQnnApi(
 #endif  // !defined(_WIN32)
 
 std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name);
+
+inline bool CompareConfig(const Qnn_OpConfigV1_t& input,
+                          const Qnn_OpConfigV1_t& golden) {
+  CHECK_STR_EQ(input.packageName, golden.packageName, "Op package name");
+  CHECK_STR_EQ(input.typeName, golden.typeName, "Op type name");
+  CHECK_VALUE_EQ(input.numOfParams, golden.numOfParams, "Number of op params");
+  CHECK_VALUE_EQ(input.numOfInputs, golden.numOfInputs, "Number of op inputs");
+  CHECK_VALUE_EQ(input.numOfOutputs, golden.numOfOutputs,
+                 "Number of op outputs");
+  return true;
+}
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
