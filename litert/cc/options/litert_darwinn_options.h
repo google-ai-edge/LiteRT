@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_CC_OPTIONS_DARWINN_OPTIONS_H_
-#define ODML_LITERT_LITERT_CC_OPTIONS_DARWINN_OPTIONS_H_
+#ifndef ODML_LITERT_LITERT_CC_OPTIONS_LITERT_DARWINN_OPTIONS_H_
+#define ODML_LITERT_LITERT_CC_OPTIONS_LITERT_DARWINN_OPTIONS_H_
 
 #include <cstdint>
 
@@ -67,4 +67,4 @@ class DarwinnRuntimeOptions : public OpaqueOptions {
 
 }  // namespace litert
 
-#endif  // ODML_LITERT_LITERT_CC_OPTIONS_DARWINN_OPTIONS_H_
+#endif  // ODML_LITERT_LITERT_CC_OPTIONS_LITERT_DARWINN_OPTIONS_H_

@@ -29,7 +29,7 @@
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
-#include "litert/cc/options/compiler_options.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/options/darwinn_options.h"
-
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -23,6 +21,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_darwinn_options.h"
 
 namespace litert {
 namespace google_tensor {

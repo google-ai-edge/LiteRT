@@ -33,7 +33,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/options/darwinn_options.h"
+#include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/cc/options_helper.h"

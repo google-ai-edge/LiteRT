@@ -28,7 +28,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/options/darwinn_options.h"
+#include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"

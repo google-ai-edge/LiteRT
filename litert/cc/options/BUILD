@@ -60,9 +60,9 @@ cc_test(
 )
 
 cc_library(
-    name = "compiler_options",
-    srcs = ["compiler_options.cc"],
-    hdrs = ["compiler_options.h"],
+    name = "litert_compiler_options",
+    srcs = ["litert_compiler_options.cc"],
+    hdrs = ["litert_compiler_options.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
@@ -76,10 +76,10 @@ cc_library(
 )
 
 cc_test(
-    name = "compiler_options_test",
-    srcs = ["compiler_options_test.cc"],
+    name = "litert_compiler_options_test",
+    srcs = ["litert_compiler_options_test.cc"],
     deps = [
-        ":compiler_options",
+        ":litert_compiler_options",
         "//litert/c/options:litert_compiler_options",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
@@ -267,9 +267,9 @@ cc_test(
 )
 
 cc_library(
-    name = "darwinn_options",
-    srcs = ["darwinn_options.cc"],
-    hdrs = ["darwinn_options.h"],
+    name = "litert_darwinn_options",
+    srcs = ["litert_darwinn_options.cc"],
+    hdrs = ["litert_darwinn_options.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_darwinn_runtime_options",
@@ -283,10 +283,10 @@ cc_library(
 )
 
 cc_test(
-    name = "darwinn_options_test",
-    srcs = ["darwinn_options_test.cc"],
+    name = "litert_darwinn_options_test",
+    srcs = ["litert_darwinn_options_test.cc"],
     deps = [
-        ":darwinn_options",
+        ":litert_darwinn_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",

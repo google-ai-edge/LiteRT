@@ -1206,10 +1206,11 @@ cc_library(
         # C++ Common Options API targets.
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/dynamic_runtime/options:litert_compiler_options",
         "//litert/cc/dynamic_runtime/options:litert_cpu_options",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
-        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/cc/dynamic_runtime/options:litert_intel_openvino_options",
+        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         # Other (static) C++ API targets.
         ":litert_any",

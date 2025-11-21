@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_COMPILER_OPTIONS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_COMPILER_OPTIONS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_compiler_options.h"
@@ -42,4 +42,4 @@ class CompilerOptions : public OpaqueOptions {
 };
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_COMPILER_OPTIONS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_

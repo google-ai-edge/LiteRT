@@ -83,7 +83,7 @@ litert_dynamic_lib(
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:darwinn_options",
+        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
         "//litert/vendors/cc:options_helper",
     ],
 )
@@ -161,7 +161,7 @@ cc_test(
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:darwinn_options",
+        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
         "//litert/cc/internal:litert_handle",
         "@com_google_googletest//:gtest_main",
     ],

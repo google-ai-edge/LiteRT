@@ -14,7 +14,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include "litert/cc/options/compiler_options.h"
+#include "litert/cc/options/litert_compiler_options.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"

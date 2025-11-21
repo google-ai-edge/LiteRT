@@ -92,7 +92,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/options:litert_compiler_options",
-        "//litert/cc/options:compiler_options",
+        "//litert/cc/options:litert_compiler_options",
         "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_op_options",
         "//litert/cc:litert_opaque_options",

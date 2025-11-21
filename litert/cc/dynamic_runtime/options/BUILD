@@ -229,9 +229,9 @@ cc_test(
 )
 
 cc_library(
-    name = "darwinn_options",
-    srcs = ["//litert/cc/options:darwinn_options.cc"],
-    hdrs = ["//litert/cc/options:darwinn_options.h"],
+    name = "litert_darwinn_options",
+    srcs = ["//litert/cc/options:litert_darwinn_options.cc"],
+    hdrs = ["//litert/cc/options:litert_darwinn_options.h"],
     deps = [
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -249,14 +249,33 @@ cc_library(
 )
 
 cc_test(
-    name = "darwinn_options_test",
-    srcs = ["//litert/cc/options:darwinn_options_test.cc"],
+    name = "litert_darwinn_options_test",
+    srcs = ["//litert/cc/options:litert_darwinn_options_test.cc"],
     deps = [
-        ":darwinn_options",
+        ":litert_darwinn_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_library(
+    name = "litert_compiler_options",
+    srcs = ["//litert/cc/options:litert_compiler_options.cc"],
+    hdrs = ["//litert/cc/options:litert_compiler_options.h"],
+    deps = [
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )

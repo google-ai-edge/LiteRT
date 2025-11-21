@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/options/darwinn_options.h"
+#include "litert/cc/options/litert_darwinn_options.h"
 
 #include <utility>
 

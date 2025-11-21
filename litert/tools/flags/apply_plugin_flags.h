@@ -21,7 +21,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/options/compiler_options.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/tools/flags/flag_types.h"
 
 ABSL_DECLARE_FLAG(std::string, cmd);
