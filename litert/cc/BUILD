@@ -819,7 +819,7 @@ cc_library(
     hdrs = ["litert_ranked_tensor_type.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_cc_users_static_link",
+        # "//litert:litert_public",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end

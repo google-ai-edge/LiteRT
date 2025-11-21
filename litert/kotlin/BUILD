@@ -60,14 +60,26 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_model_wrapper",
+    hdrs = ["src/main/jni/litert_model_wrapper.h"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc/dynamic_runtime:litert_compiled_model",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "litert_model_jni",
     srcs = ["src/main/jni/litert_model_jni.cc"],
     hdrs = [
         "src/main/jni/litert_model_jni.h",
-        "src/main/jni/litert_model_wrapper.h",
     ],
     deps = [
         ":litert_jni_common",
+        ":litert_model_wrapper",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
@@ -87,14 +99,27 @@ cc_library(
     deps = [
         ":litert_jni_common",
         ":litert_model_jni",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        ":litert_model_wrapper",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/dynamic_runtime/options:litert_cpu_options",
+        "//litert/cc/dynamic_runtime/options:litert_gpu_options",
         "//litert/cc/internal:litert_handle",
         "//tflite/java/jni",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -179,7 +204,7 @@ kt_android_library(
     manifest = "src/main/AndroidManifest.xml",
     visibility = ["//visibility:public"],
     deps = [
-        ":litert_kotlin_api_native_deps",  # buildcleaner: keep
+        ":litert_kotlin_api_native_deps",  # unuseddeps: keep
         "@litert_maven//:androidx_lifecycle_lifecycle_common",
         "@litert_maven//:com_google_android_play_ai_delivery",
         "@litert_maven//:com_google_guava_guava",

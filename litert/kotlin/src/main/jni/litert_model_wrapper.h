@@ -21,6 +21,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_compiled_model.h"
 
 namespace litert {
 namespace jni {
@@ -62,6 +63,24 @@ struct ModelWrapper {
     }
     return *this;
   }
+};
+
+// Wrapper to keep compiled model and its buffer alive together
+struct CompiledModelWrapper {
+  litert::CompiledModel compiled_model;
+  litert::OwningBufferRef<uint8_t> buffer;  // For models loaded from assets
+
+  explicit CompiledModelWrapper(litert::CompiledModel&& m)
+      : compiled_model(std::move(m)) {}
+  CompiledModelWrapper(litert::CompiledModel&& m,
+                       litert::OwningBufferRef<uint8_t>&& b)
+      : compiled_model(std::move(m)), buffer(std::move(b)) {}
+
+  ~CompiledModelWrapper() = default;
+
+  // Disable copy to prevent double-free
+  CompiledModelWrapper(const CompiledModelWrapper&) = delete;
+  CompiledModelWrapper& operator=(const CompiledModelWrapper&) = delete;
 };
 
 }  // namespace jni

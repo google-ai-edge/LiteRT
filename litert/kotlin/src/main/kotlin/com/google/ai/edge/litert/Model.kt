@@ -115,9 +115,7 @@ class Model private constructor(handle: Long) : JniHandle(handle) {
 class CompiledModel
 private constructor(
   handle: Long,
-  private val model: Model,
   private val env: Environment,
-  private val modelManaged: Boolean = false,
   private val envManaged: Boolean = false,
 ) : JniHandle(handle) {
 
@@ -224,39 +222,39 @@ private constructor(
   }
 
   @Throws(LiteRtException::class)
-  fun createInputBuffer(inputName: String, signature: String? = null): TensorBuffer {
+  fun createInputBuffer(inputName: String, signature: String = ""): TensorBuffer {
     assertNotDestroyed()
 
-    val tb = nativeCreateInputBuffer(handle, model.handle, signature, inputName)
+    val tb = nativeCreateInputBuffer(handle, signature, inputName)
     return TensorBuffer(tb)
   }
 
   @Throws(LiteRtException::class)
   fun getInputBufferRequirements(
     inputName: String,
-    signature: String? = null,
+    signature: String = "",
   ): TensorBufferRequirements {
     assertNotDestroyed()
 
-    return nativeGetInputBufferRequirements(handle, model.handle, signature, inputName)
+    return nativeGetInputBufferRequirements(handle, signature, inputName)
   }
 
   @Throws(LiteRtException::class)
-  fun createOutputBuffer(outputName: String, signature: String? = null): TensorBuffer {
+  fun createOutputBuffer(outputName: String, signature: String = ""): TensorBuffer {
     assertNotDestroyed()
 
-    val tb = nativeCreateOutputBuffer(handle, model.handle, signature, outputName)
+    val tb = nativeCreateOutputBuffer(handle, signature, outputName)
     return TensorBuffer(tb)
   }
 
   @Throws(LiteRtException::class)
   fun getOutputBufferRequirements(
     outputName: String,
-    signature: String? = null,
+    signature: String = "",
   ): TensorBufferRequirements {
     assertNotDestroyed()
 
-    return nativeGetOutputBufferRequirements(handle, model.handle, signature, outputName)
+    return nativeGetOutputBufferRequirements(handle, signature, outputName)
   }
 
   @Throws(LiteRtException::class)
@@ -264,7 +262,7 @@ private constructor(
   fun createInputBuffers(signatureIndex: Int = 0): List<TensorBuffer> {
     assertNotDestroyed()
 
-    val handles = nativeCreateInputBuffers(handle, model.handle, signatureIndex)
+    val handles = nativeCreateInputBuffers(handle, signatureIndex)
     return handles.map { TensorBuffer(it) }
   }
 
@@ -272,7 +270,7 @@ private constructor(
   fun createInputBuffers(signature: String): List<TensorBuffer> {
     assertNotDestroyed()
 
-    val handles = nativeCreateInputBuffersBySignature(handle, model.handle, signature)
+    val handles = nativeCreateInputBuffersBySignature(handle, signature)
     return handles.map { TensorBuffer(it) }
   }
 
@@ -281,7 +279,7 @@ private constructor(
   fun createOutputBuffers(signatureIndex: Int = 0): List<TensorBuffer> {
     assertNotDestroyed()
 
-    val handles = nativeCreateOutputBuffers(handle, model.handle, signatureIndex)
+    val handles = nativeCreateOutputBuffers(handle, signatureIndex)
     return handles.map { TensorBuffer(it) }
   }
 
@@ -289,7 +287,7 @@ private constructor(
   fun createOutputBuffers(signature: String): List<TensorBuffer> {
     assertNotDestroyed()
 
-    val handles = nativeCreateOutputBuffersBySignature(handle, model.handle, signature)
+    val handles = nativeCreateOutputBuffersBySignature(handle, signature)
     return handles.map { TensorBuffer(it) }
   }
 
@@ -319,7 +317,6 @@ private constructor(
 
     nativeRun(
       handle,
-      model.handle,
       signatureIndex,
       inputs.map { it.handle }.toLongArray(),
       outputs.map { it.handle }.toLongArray(),
@@ -332,7 +329,6 @@ private constructor(
 
     nativeRunBySignature(
       handle,
-      model.handle,
       signature,
       inputs.map { it.handle }.toLongArray(),
       outputs.map { it.handle }.toLongArray(),
@@ -343,13 +339,12 @@ private constructor(
   fun run(
     inputs: Map<String, TensorBuffer>,
     outputs: Map<String, TensorBuffer>,
-    signature: String? = null,
+    signature: String = "",
   ) {
     assertNotDestroyed()
 
     nativeRunBySignatureWithMap(
       handle,
-      model.handle,
       signature,
       inputs.keys.toTypedArray(),
       inputs.values.map { it.handle }.toLongArray(),
@@ -358,11 +353,20 @@ private constructor(
     )
   }
 
-  protected override fun destroy() {
+  fun getInputTensorType(inputName: String, signature: String = ""): TensorType {
+    assertNotDestroyed()
+
+    return nativeGetInputTensorType(handle, inputName, signature)
+  }
+
+  fun getOutputTensorType(outputName: String, signature: String = ""): TensorType {
+    assertNotDestroyed()
+
+    return nativeGetOutputTensorType(handle, outputName, signature)
+  }
+
+  override fun destroy() {
     nativeDestroy(handle)
-    if (modelManaged) {
-      model.close()
-    }
     if (envManaged) {
       env.close()
     }
@@ -373,49 +377,72 @@ private constructor(
       System.loadLibrary("litert_jni")
     }
 
-    private fun create(
-      model: Model,
+    private fun createFromAsset(
+      assetManager: AssetManager,
+      assetName: String,
       options: Options = Options.CPU,
       optionalEnv: Environment? = null,
-      modelManaged: Boolean,
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
       val accelerators =
-        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU)
-        // If NPU is the only accelerator, CPU is added to support partially compiled models.
-        // TODO(niuchl): Document this behavior in the AOT flow.
-        setOf(Accelerator.NPU, Accelerator.CPU)
-        else options.accelerators
+        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU) {
+          // If NPU is the only accelerator, CPU is added to support partially compiled models.
+          // TODO(niuchl): Document this behavior in the AOT flow.
+          setOf(Accelerator.NPU, Accelerator.CPU)
+        } else {
+          options.accelerators
+        }
 
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
       return CompiledModel(
-        nativeCreate(
+        nativeCreateFromAsset(
           env.handle,
-          model.handle,
+          assetManager,
+          assetName,
           accelerators.map { it.value }.toIntArray(),
           cpuOptionsMap.keys.map { it.value }.toIntArray(),
           cpuOptionsMap.values.toTypedArray(),
           gpuOptionsMap.keys.map { it.value }.toIntArray(),
           gpuOptionsMap.values.toTypedArray(),
         ),
-        model,
         env,
-        modelManaged,
         envManaged,
       )
     }
 
-    @Throws(LiteRtException::class)
-    @JvmOverloads
-    @JvmStatic
-    fun create(
-      model: Model,
+    private fun createFromFile(
+      filePath: String,
       options: Options = Options.CPU,
       optionalEnv: Environment? = null,
+      envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
-      return create(model, options, optionalEnv, modelManaged = false)
+      val env = optionalEnv ?: Environment.create()
+      val accelerators =
+        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU) {
+          // If NPU is the only accelerator, CPU is added to support partially compiled models.
+          // TODO(niuchl): Document this behavior in the AOT flow.
+          setOf(Accelerator.NPU, Accelerator.CPU)
+        } else {
+          options.accelerators
+        }
+
+      val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
+      val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
+      return CompiledModel(
+        nativeCreateFromFile(
+          env.handle,
+          filePath,
+          accelerators.map { it.value }.toIntArray(),
+          cpuOptionsMap.keys.map { it.value }.toIntArray(),
+          cpuOptionsMap.values.toTypedArray(),
+          gpuOptionsMap.keys.map { it.value }.toIntArray(),
+          gpuOptionsMap.values.toTypedArray(),
+        ),
+        env,
+        envManaged,
+      )
     }
 
     @Throws(LiteRtException::class)
@@ -427,7 +454,7 @@ private constructor(
       options: Options = Options.CPU,
       optionalEnv: Environment? = null,
     ): CompiledModel {
-      return create(Model.load(assetManager, assetName), options, optionalEnv, modelManaged = true)
+      return createFromAsset(assetManager, assetName, options, optionalEnv)
     }
 
     @Throws(LiteRtException::class)
@@ -438,13 +465,25 @@ private constructor(
       options: Options = Options.CPU,
       optionalEnv: Environment? = null,
     ): CompiledModel {
-      return create(Model.load(filePath), options, optionalEnv, modelManaged = true)
+      return createFromFile(filePath, options, optionalEnv)
     }
 
     @JvmStatic
-    private external fun nativeCreate(
+    private external fun nativeCreateFromAsset(
       envHandle: Long,
-      modelHandle: Long,
+      assetManager: AssetManager,
+      assetName: String,
+      accelerators: IntArray,
+      cpuOptionsKeys: IntArray,
+      cpuOptionsValues: Array<String>,
+      gpuOptionsKeys: IntArray,
+      gpuOptionsValues: Array<String>,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeCreateFromFile(
+      envHandle: Long,
+      filePath: String,
       accelerators: IntArray,
       cpuOptionsKeys: IntArray,
       cpuOptionsValues: Array<String>,
@@ -455,67 +494,58 @@ private constructor(
     @JvmStatic
     private external fun nativeCreateInputBuffer(
       compiledModelHandle: Long,
-      modelHandle: Long,
-      signature: String?,
+      signature: String,
       inputName: String,
     ): Long
 
     @JvmStatic
     private external fun nativeGetInputBufferRequirements(
       compiledModelHandle: Long,
-      modelHandle: Long,
-      signature: String?,
+      signature: String,
       inputName: String,
     ): TensorBufferRequirements
 
     @JvmStatic
     private external fun nativeCreateOutputBuffer(
       compiledModelHandle: Long,
-      modelHandle: Long,
-      signature: String?,
+      signature: String,
       outputName: String,
     ): Long
 
     @JvmStatic
     private external fun nativeGetOutputBufferRequirements(
       compiledModelHandle: Long,
-      modelHandle: Long,
-      signature: String?,
+      signature: String,
       outputName: String,
     ): TensorBufferRequirements
 
     @JvmStatic
     private external fun nativeCreateInputBuffers(
       compiledModelHandle: Long,
-      modelHandle: Long,
       signatureIndex: Int,
     ): LongArray
 
     @JvmStatic
     private external fun nativeCreateInputBuffersBySignature(
       compiledModelHandle: Long,
-      modelHandle: Long,
       signature: String,
     ): LongArray
 
     @JvmStatic
     private external fun nativeCreateOutputBuffers(
       compiledModelHandle: Long,
-      modelHandle: Long,
       signatureIndex: Int,
     ): LongArray
 
     @JvmStatic
     private external fun nativeCreateOutputBuffersBySignature(
       compiledModelHandle: Long,
-      modelHandle: Long,
       signature: String,
     ): LongArray
 
     @JvmStatic
     private external fun nativeRun(
       compiledModelHandle: Long,
-      modelHandle: Long,
       signatureIndex: Int,
       inputBuffers: LongArray,
       outputBuffers: LongArray,
@@ -524,7 +554,6 @@ private constructor(
     @JvmStatic
     private external fun nativeRunBySignature(
       compiledModelHandle: Long,
-      modelHandle: Long,
       signature: String,
       inputBuffers: LongArray,
       outputBuffers: LongArray,
@@ -533,13 +562,26 @@ private constructor(
     @JvmStatic
     private external fun nativeRunBySignatureWithMap(
       compiledModelHandle: Long,
-      modelHandle: Long,
-      signature: String?,
+      signature: String,
       inputKeys: Array<String>,
       inputBuffers: LongArray,
       outputKeys: Array<String>,
       outputBuffers: LongArray,
     )
+
+    @JvmStatic
+    private external fun nativeGetInputTensorType(
+      handle: Long,
+      inputName: String,
+      signature: String,
+    ): TensorType
+
+    @JvmStatic
+    private external fun nativeGetOutputTensorType(
+      handle: Long,
+      outputName: String,
+      signature: String,
+    ): TensorType
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }
