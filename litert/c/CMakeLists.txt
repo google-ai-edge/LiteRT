@@ -266,15 +266,6 @@ target_link_libraries(litert_runtime_c_api_static
         ${_litert_runtime_c_api_private_archives}
 )
 
-# TFLite archives so downstream shared libraries don't miss any symbols.
-if(UNIX AND NOT APPLE)
-  target_link_libraries(litert_runtime_c_api_static
-      INTERFACE
-        -Wl,--whole-archive
-        ${_litert_runtime_c_api_private_archives}
-        -Wl,--no-whole-archive)
-endif()
-
 # Propagate platform GL/Metal requirements to consumers when statically linking
 if(APPLE)
   target_link_libraries(litert_runtime_c_api_static
@@ -325,3 +316,4 @@ if(LITERT_PLATFORM_ANDROID)
     find_library(ANDROID_GLESV2_LIB GLESv2)
     target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE ${LOG_LIB} android log nativewindow ${ANDROID_EGL_LIB} ${ANDROID_GLESV3_LIB} ${ANDROID_GLESV2_LIB})
 endif()
+
