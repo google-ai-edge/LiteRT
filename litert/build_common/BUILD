@@ -29,7 +29,9 @@ bool_flag(
 
 string_flag(
     name = "build_include",
+    # LINT.IfChange(string_flag_default)
     build_setting_default = "gpu,npu",
+    # LINT.ThenChange(./BUILD:build_config_header_default)
     values = [
         "gpu",
         "npu",
@@ -134,9 +136,12 @@ genrule(
         ":build_include_gpu": ["config/build_config_gpu.h"],
         ":build_include_gpu_define": ["config/build_config_gpu.h"],
         ":build_include_npu": ["config/build_config_npu.h"],
-        ":build_include_gpu_npu": ["config/build_config_gpu_npu.h"],
         ":build_include_cpu_only": ["config/build_config_cpu_only.h"],
+        # Note: build_include_gpu_npu is removed to avoid illegal ambiguous match error b/w
+        # build_include_gpu_define (define flag) and build_include_gpu_npu (string flag w/ default).
+        # LINT.IfChange(build_config_header_default).
         "//conditions:default": ["config/build_config_gpu_npu.h"],
+        # LINT.ThenChange(./BUILD:string_flag_default)
     }),
     outs = ["build_config.h"],
     cmd = "cp $< $@",
