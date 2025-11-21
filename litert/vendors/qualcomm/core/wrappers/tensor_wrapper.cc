@@ -174,6 +174,40 @@ Qnn_DataType_t TensorWrapper::GetDataType() const {
   return qnn_tensor_.v2.dataType;
 }
 
+bool TensorWrapper::operator==(const TensorWrapper& other) const {
+  // Compare the address
+  if (this == &other) {
+    return true;
+  }
+
+  // Compare the value
+  if (qnn_tensor_.version != other.qnn_tensor_.version) return false;
+  if (qnn_tensor_.v2.type != other.qnn_tensor_.v2.type) return false;
+  if (qnn_tensor_.v2.dataFormat != other.qnn_tensor_.v2.dataFormat)
+    return false;
+  if (qnn_tensor_.v2.dataType != other.qnn_tensor_.v2.dataType) return false;
+  if (qnn_tensor_.v2.rank != other.qnn_tensor_.v2.rank) return false;
+  if (!std::equal(qnn_tensor_.v2.dimensions,
+                  qnn_tensor_.v2.dimensions + qnn_tensor_.v2.rank,
+                  other.qnn_tensor_.v2.dimensions))
+    return false;
+  if (qnn_tensor_.v2.memType != other.qnn_tensor_.v2.memType) return false;
+  if (qnn_tensor_.v2.clientBuf.dataSize !=
+      other.qnn_tensor_.v2.clientBuf.dataSize)
+    return false;
+  // Since the clientBuf may store different data types (e.g., float,
+  // int32_t), and type-aware comparison could fail or misinterpret
+  // padding/alignment, compare client buffer contents byte-by-byte to
+  // ensure we have an exact match.
+  if (std::memcmp(qnn_tensor_.v2.clientBuf.data,
+                  other.qnn_tensor_.v2.clientBuf.data,
+                  qnn_tensor_.v2.clientBuf.dataSize) != 0)
+    return false;
+
+  // Compare quantize params
+  return quantize_params_ == other.quantize_params_;
+}
+
 void TensorWrapper::CloneTo(Qnn_Tensor_t& dst) const { dst = qnn_tensor_; }
 
 std::uint32_t TensorWrapper::GetRank() const { return qnn_tensor_.v2.rank; }

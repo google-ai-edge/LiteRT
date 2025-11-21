@@ -209,5 +209,208 @@ TEST(OpWrapperTest, ChangeOpName) {
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
 }
 
+TensorWrapper CreateTensor(const std::vector<uint32_t>& dims, uint8_t val) {
+  std::vector<uint8_t> data(
+      std::accumulate(dims.begin(), dims.end(), 1u, std::multiplies<>()), val);
+  return TensorWrapper("", QNN_TENSOR_TYPE_APP_WRITE,
+                       QNN_DATATYPE_UFIXED_POINT_8,
+                       QuantizeParamsWrapperVariant(), dims,
+                       static_cast<uint32_t>(data.size()), data.data(), true);
+}
+
+TEST(OpWrapperEqualityOperatorTest, TypeName) {
+  std::vector<uint32_t> dims = {1, 1, 3};
+  auto input = CreateTensor(dims, 1);
+  auto output = input;
+
+  qnn::OpWrapper op1{"op", "TYPE_A", QnnOpCode::kUnknown};
+  op1.AddInputTensor(input);
+  op1.AddOutputTensor(output);
+  op1.AddScalarParam<std::uint8_t>("param", 255, false);
+  op1.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op2{"op", "TYPE_A", QnnOpCode::kUnknown};
+  op2.AddInputTensor(input);
+  op2.AddOutputTensor(output);
+  op2.AddScalarParam<std::uint8_t>("param", 255, false);
+  op2.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op3{"op", "TYPE_B", QnnOpCode::kUnknown};
+  op3.AddInputTensor(input);
+  op3.AddOutputTensor(output);
+  op3.AddScalarParam<std::uint8_t>("param", 255, false);
+  op3.AddTensorParam("tensor_param", output);
+
+  EXPECT_TRUE(op1 == op2);
+  EXPECT_FALSE(op1 == op3);
+}
+
+TEST(OpWrapperEqualityOperatorTest, OpCode) {
+  std::vector<uint32_t> dims = {1, 1, 3};
+  auto input = CreateTensor(dims, 1);
+  auto output = input;
+
+  qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kElementWiseAdd};
+  op1.AddInputTensor(input);
+  op1.AddOutputTensor(output);
+  op1.AddScalarParam<std::uint8_t>("param", 255, false);
+  op1.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op2{"op", "OP_TYPE", QnnOpCode::kElementWiseAdd};
+  op2.AddInputTensor(input);
+  op2.AddOutputTensor(output);
+  op2.AddScalarParam<std::uint8_t>("param", 255, false);
+  op2.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op3{"op", "OP_TYPE", QnnOpCode::kElementWiseMultiply};
+  op3.AddInputTensor(input);
+  op3.AddOutputTensor(output);
+  op3.AddScalarParam<std::uint8_t>("param", 255, false);
+  op3.AddTensorParam("tensor_param", output);
+
+  EXPECT_TRUE(op1 == op2);
+  EXPECT_FALSE(op1 == op3);
+}
+
+TEST(OpWrapperEqualityOperatorTest, InputDims) {
+  std::vector<uint32_t> dims1 = {1, 1, 3};
+  std::vector<uint32_t> dims2 = {1, 1, 4};
+  auto input1 = CreateTensor(dims1, 1);
+  auto input2 = CreateTensor(dims2, 1);
+  auto output = input1;
+
+  qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op1.AddInputTensor(input1);
+  op1.AddOutputTensor(output);
+  op1.AddScalarParam<std::uint8_t>("param", 255, false);
+  op1.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op2{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op2.AddInputTensor(input1);
+  op2.AddOutputTensor(output);
+  op2.AddScalarParam<std::uint8_t>("param", 255, false);
+  op2.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op3{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op3.AddInputTensor(input2);
+  op3.AddOutputTensor(output);
+  op3.AddScalarParam<std::uint8_t>("param", 255, false);
+  op3.AddTensorParam("tensor_param", output);
+
+  EXPECT_TRUE(op1 == op2);
+  EXPECT_FALSE(op1 == op3);
+}
+
+TEST(OpWrapperEqualityOperatorTest, ScalarParam) {
+  std::vector<uint32_t> dims = {1, 1, 3};
+  auto input = CreateTensor(dims, 1);
+  auto output = input;
+
+  qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op1.AddInputTensor(input);
+  op1.AddOutputTensor(output);
+  op1.AddScalarParam<std::uint8_t>("param", 255, false);
+  op1.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op2{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op2.AddInputTensor(input);
+  op2.AddOutputTensor(output);
+  op2.AddScalarParam<std::uint8_t>("param", 255, false);
+  op2.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op3{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op3.AddInputTensor(input);
+  op3.AddOutputTensor(output);
+  op3.AddScalarParam<std::uint8_t>("param", 252, false);
+  op3.AddTensorParam("tensor_param", output);
+
+  EXPECT_TRUE(op1 == op2);
+  EXPECT_FALSE(op1 == op3);
+}
+
+TEST(OpWrapperEqualityOperatorTest, TensorParam) {
+  std::vector<uint32_t> dims = {1, 1, 3};
+  auto input = CreateTensor(dims, 1);
+  auto output = input;
+  auto tensor_param_diff = CreateTensor(dims, 2);
+
+  qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op1.AddInputTensor(input);
+  op1.AddOutputTensor(output);
+  op1.AddScalarParam<std::uint8_t>("param", 255, false);
+  op1.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op2{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op2.AddInputTensor(input);
+  op2.AddOutputTensor(output);
+  op2.AddScalarParam<std::uint8_t>("param", 255, false);
+  op2.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op3{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op3.AddInputTensor(input);
+  op3.AddOutputTensor(output);
+  op3.AddScalarParam<std::uint8_t>("param", 255, false);
+  op3.AddTensorParam("tensor_param", tensor_param_diff);
+
+  EXPECT_TRUE(op1 == op2);
+  EXPECT_FALSE(op1 == op3);
+}
+
+TEST(OpWrapperEqualityOperatorTest, InputSize) {
+  std::vector<uint32_t> dims = {1, 1, 3};
+  auto input = CreateTensor(dims, 1);
+  auto output = input;
+
+  qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op1.AddInputTensor(input);
+  op1.AddOutputTensor(output);
+  op1.AddScalarParam<std::uint8_t>("param", 255, false);
+  op1.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op2{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op2.AddInputTensor(input);
+  op2.AddOutputTensor(output);
+  op2.AddScalarParam<std::uint8_t>("param", 255, false);
+  op2.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op3{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op3.AddInputTensor(input);
+  op3.AddInputTensor(input);
+  op3.AddOutputTensor(output);
+  op3.AddScalarParam<std::uint8_t>("param", 255, false);
+  op3.AddTensorParam("tensor_param", output);
+
+  EXPECT_TRUE(op1 == op2);
+  EXPECT_FALSE(op1 == op3);
+}
+
+TEST(OpWrapperEqualityOperatorTest, InputData) {
+  std::vector<uint32_t> dims = {1, 1, 3};
+  auto input1 = CreateTensor(dims, 1);
+  auto input2 = CreateTensor(dims, 2);
+  auto output = input1;
+
+  qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op1.AddInputTensor(input1);
+  op1.AddOutputTensor(output);
+  op1.AddScalarParam<std::uint8_t>("param", 255, false);
+  op1.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op2{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op2.AddInputTensor(input1);
+  op2.AddOutputTensor(output);
+  op2.AddScalarParam<std::uint8_t>("param", 255, false);
+  op2.AddTensorParam("tensor_param", output);
+
+  qnn::OpWrapper op3{"op", "OP_TYPE", QnnOpCode::kUnknown};
+  op3.AddInputTensor(input2);
+  op3.AddOutputTensor(output);
+  op3.AddScalarParam<std::uint8_t>("param", 255, false);
+  op3.AddTensorParam("tensor_param", output);
+
+  EXPECT_TRUE(op1 == op2);
+  EXPECT_FALSE(op1 == op3);
+}
+
 }  // namespace
 }  // namespace qnn
