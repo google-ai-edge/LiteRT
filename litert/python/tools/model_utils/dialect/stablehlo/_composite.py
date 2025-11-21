@@ -42,11 +42,11 @@ class CompositeOp(core.MlirOpBase):
   decomposition = irdl.opt_attr_def(mlir.MlirAttribute)
 
   @property
-  def composte_name(self) -> str:
+  def composite_name(self) -> str:
     return self.attributes["name"].data
 
-  @composte_name.setter
-  def composte_name(self, name: str | mlir.StringAttr):
+  @composite_name.setter
+  def composite_name(self, name: str | mlir.StringAttr):
     self.attributes["name"] = mlir.StringAttr(name)
 
   @property
