@@ -13,22 +13,23 @@
 // limitations under the License.
 
 #import "third_party/odml/litert/litert/cc/litert_tensor_buffer.h"
+
+#import <Metal/Metal.h>
 #import <XCTest/XCTest.h>
 #import <XCTest/XCTestAssertions.h>
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_types.h"
+
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_platform_support.h"
+#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/runtime/tensor_buffer.h"
+#include "litert/test/common.h"
+#include "litert/test/matchers.h"
+#include "litert/test/testdata/simple_model_test_vectors.h"
 #import "third_party/tensorflow/lite/delegates/gpu/metal/metal_device.h"
 
 @interface LitertTensorBufferTest : XCTestCase
@@ -37,32 +38,50 @@
 @implementation LitertTensorBufferTest
 
 constexpr const float kTensorData[] = {10, 20, 30, 40};
-
 constexpr const int32_t kTensorDimensions[] = {sizeof(kTensorData) / sizeof(kTensorData[0])};
-
 constexpr const LiteRtRankedTensorType kTestTensorType = {
     /*.element_type=*/kLiteRtElementTypeFloat32, ::litert::BuildLayout(kTensorDimensions)};
+const float kTolerance = 1e-5;
+
+// Returns the file path of the model file in the bundle.
++ (NSString *)pathForModelWithName:(NSString *)modelName {
+  // Get the bundle for the current test class
+  NSBundle *bundle = [NSBundle bundleForClass:[self class]];
+  // Construct the full path to the model file
+  NSString *modelFilePath = [bundle pathForResource:modelName ofType:@"tflite"];
+  if (!modelFilePath) {
+    XCTFail(@"Could not find model file in bundle.");
+    return nil;
+  }
+  return modelFilePath;
+}
+
+// Create LiteRt environment with metal options.
+- (litert::Environment)createEnvironmentWithMetalDevice:
+    (tflite::gpu::metal::MetalDevice *)metal_device {
+  std::vector<litert::Environment::Option> environment_options;
+  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
+                                 .value = (__bridge const void *)(metal_device->device())});
+
+  id<MTLCommandQueue> command_queue = [metal_device->device() newCommandQueue];
+  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
+                                 .value = (__bridge const void *)(command_queue)});
+  auto env = litert::Environment::Create(environment_options);
+  XCTAssertTrue(env);
+  return std::move(*env);
+}
 
 - (void)testTensorBufferMetalMemory {
   XCTAssertTrue(litert::HasMetalSupport());
 
   auto metal_device = tflite::gpu::metal::MetalDevice();
-  // Create LiteRt environment from metal options.
-  std::vector<litert::Environment::Option> environment_options;
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
-                                 .value = (__bridge const void *)(metal_device.device())});
-
-  id<MTLCommandQueue> command_queue = [metal_device.device() newCommandQueue];
-
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
-                                 .value = (__bridge const void *)(command_queue)});
-  auto env = litert::Environment::Create(environment_options);
+  litert::Environment env = [self createEnvironmentWithMetalDevice:&metal_device];
 
   const litert::RankedTensorType kTensorType(kTestTensorType);
   constexpr auto kTensorBufferType = litert::TensorBufferType::kMetalBuffer;
 
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(*env, kTensorBufferType, kTensorType,
-                                                           sizeof(kTensorData));
+  auto tensor_buffer =
+      litert::TensorBuffer::CreateManaged(env, kTensorBufferType, kTensorType, sizeof(kTensorData));
 
   auto tensor_buffer_type = tensor_buffer->BufferType();
   XCTAssertTrue(tensor_buffer_type);
@@ -99,47 +118,84 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   }
 }
 
-- (void)testTensorBufferCreateFromMetalMemory {
+// Create a TensorBuffer from the native Metal buffer for the given input index.
+//
+// @param input_index The index of the input tensor in the compiled_model.
+// @param env The LiteRt environment.
+// @param metal_device The Metal device.
+// @param compiled_model The compiled model.
+// @return The created TensorBuffer.
+- (litert::TensorBuffer)createManagedTensorBufferForInput:(int)input_index
+                                          withEnvironment:(litert::Environment *)env
+                                          withMetalDevice:
+                                              (tflite::gpu::metal::MetalDevice *)metal_device
+                                        withCompiledModel:(litert::CompiledModel *)compiled_model {
+  auto input_tensor_type = compiled_model->GetInputTensorType(
+      /*signature_index=*/0, input_index);
+  auto bytes = input_tensor_type->Bytes();
+  // Create a native Metal buffer.
+  id<MTLBuffer> metal_buffer =
+      [metal_device->device() newBufferWithLength:*bytes options:MTLResourceStorageModeShared];
+  // Create a TensorBuffer from the native Metal buffer.
+  auto tensor_buffer = litert::TensorBuffer::CreateFromMetalBuffer(
+      *env, *input_tensor_type, litert::TensorBufferType::kMetalBufferPacked,
+      (__bridge void *)metal_buffer, *bytes);
+  XCTAssertTrue(tensor_buffer);
+  return std::move(*tensor_buffer);
+}
+
+- (void)testTensorBufferCreateFromMetalBuffer {
   XCTAssertTrue(litert::HasMetalSupport());
 
   auto metal_device = tflite::gpu::metal::MetalDevice();
-  // Create LiteRt environment from metal options.
-  std::vector<litert::Environment::Option> environment_options;
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
-                                 .value = (__bridge const void *)(metal_device.device())});
+  litert::Environment env = [self createEnvironmentWithMetalDevice:&metal_device];
 
-  id<MTLCommandQueue> command_queue = [metal_device.device() newCommandQueue];
+  NSString *modelFilePath = [LitertTensorBufferTest pathForModelWithName:@"simple_model"];
+  XCTAssertNotNil(modelFilePath);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      litert::CompiledModel::Create(env, modelFilePath.UTF8String, litert::HwAccelerators::kGpu));
 
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
-                                 .value = (__bridge const void *)(command_queue)});
-  auto env = litert::Environment::Create(environment_options);
+  litert::TensorBuffer tensor_buffer0 = [self createManagedTensorBufferForInput:0
+                                                                withEnvironment:&env
+                                                                withMetalDevice:&metal_device
+                                                              withCompiledModel:&compiled_model];
+  litert::TensorBuffer tensor_buffer1 = [self createManagedTensorBufferForInput:1
+                                                                withEnvironment:&env
+                                                                withMetalDevice:&metal_device
+                                                              withCompiledModel:&compiled_model];
 
-  const litert::RankedTensorType kTensorType(kTestTensorType);
-  constexpr auto kTensorBufferType = litert::TensorBufferType::kMetalBuffer;
+  XCTAssertTrue(tensor_buffer0.IsMetalMemory());
+  XCTAssertTrue(
+      tensor_buffer0.Write<float>(absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
 
-  // Create a managed buffer
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(*env, kTensorBufferType, kTensorType,
-                                                           sizeof(kTensorData));
-  XCTAssertTrue(tensor_buffer);
+  XCTAssertTrue(tensor_buffer0.IsMetalMemory());
+  XCTAssertTrue(
+      tensor_buffer1.Write<float>(absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
-  // Get the native handle from the managed buffer.
-  auto metal_buffer = tensor_buffer->GetMetalBuffer();
-  XCTAssertTrue(metal_buffer);
+  std::vector<litert::TensorBuffer> input_buffers;
+  input_buffers.push_back(std::move(tensor_buffer0));
+  input_buffers.push_back(std::move(tensor_buffer1));
 
-  // Create a tensor buffer from the existing metal buffer.
-  auto metal_buffer_created = litert::TensorBuffer::CreateFromMetalBuffer(
-      *env, kTensorType, kTensorBufferType, *metal_buffer, sizeof(kTensorData));
-  XCTAssertTrue(metal_buffer_created);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
 
-  // Check properties of the wrapped buffer
-  auto tensor_buffer_type = metal_buffer_created->BufferType();
-  XCTAssertTrue(tensor_buffer_type);
-  XCTAssertEqual(*tensor_buffer_type, kTensorBufferType);
+  // Execute model.
+  compiled_model.Run(input_buffers, output_buffers);
 
-  // Check that the wrapped buffer has the same native handle as the original buffer.
-  auto metal_buffer_new_ptr = metal_buffer_created->GetMetalBuffer();
-  XCTAssertTrue(metal_buffer_new_ptr);
-  XCTAssertEqual(*metal_buffer_new_ptr, *metal_buffer);
+  // Check model output.
+  XCTAssertTrue(output_buffers[0].IsMetalMemory());
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], litert::TensorBuffer::LockMode::kRead);
+    XCTAssertTrue(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    XCTAssertTrue(testing::Matches(testing::Pointwise(
+        testing::FloatNear(kTolerance), absl::MakeConstSpan(kTestOutputTensor, kTestOutputSize)))(
+        output));
+  }
 }
 
 @end
