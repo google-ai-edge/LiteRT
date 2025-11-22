@@ -122,7 +122,6 @@ package_group(
         "//litert/kotlin/...",
         "//litert/rust/...",
         "//litert/vendors/...",
-        "//third_party/odml/litert/tensor/...",
     ],
 )
 
