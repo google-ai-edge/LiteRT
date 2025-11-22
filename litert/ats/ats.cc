@@ -74,11 +74,29 @@ void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
+void RegisterUnary(const AtsConf& options, size_t& test_id, size_t iters,
+                   typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Unary,
+      SizeListC<1, 2, 3, 4, 5, 6>,
+      TypeList<float>,
+      OpCodeListC<
+          kLiteRtOpCodeTflRelu,
+          kLiteRtOpCodeTflRelu6,
+          kLiteRtOpCodeTflRelu0To1>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
   RegisterNoOp<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBinaryNoBroadcast<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterUnary<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

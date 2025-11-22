@@ -66,6 +66,9 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
     case kLiteRtElementTypeBool:
       dtype_str = "i1";
       break;
+    case kLiteRtElementTypeFloat16:
+      dtype_str = "f16";
+      break;
     default:
       dtype_str = ::litert::kNoPrinterTag;
       break;
@@ -237,6 +240,9 @@ void AbslStringify(Sink& sink, const LiteRtOpCode& code) {
       break;
     case kLiteRtOpCodeTflCumsum:
       op_code_str = "tfl.cumsum";
+      break;
+    case kLiteRtOpCodeTflRelu0To1:
+      op_code_str = "tfl.relu_0_to_1";
       break;
     default:
       op_code_str = ::litert::kNoPrinterTag;
