@@ -255,6 +255,7 @@ if(QAIRT_HEADERS_DIR AND NOT LITERT_ENABLE_QUALCOMM)
   set(LITERT_ENABLE_QUALCOMM ON CACHE BOOL "" FORCE)
 endif()
 if(LITERT_ENABLE_QUALCOMM)
-  _litert_add_dispatch_so(Qualcomm "qualcomm/dispatch" "Qualcomm")
+  # Use modular CMake structure for Qualcomm
+  add_subdirectory(qualcomm)
 endif()
 

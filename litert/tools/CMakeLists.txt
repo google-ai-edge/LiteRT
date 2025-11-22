@@ -112,6 +112,31 @@ target_link_libraries(litert_npu_numerics_check
 # Add flags
 add_subdirectory(flags)
 
+# Common libraries for tools that use TFLite
+set(LITERT_TOOL_COMMON_LIBS
+    litert_c_api
+    litert_cc_api
+    litert_cc_internal
+    litert_cc_options
+    litert_compiler_plugin
+    litert_core
+    litert_core_model
+    litert_runtime
+)
+
+set(ABSEIL_TOOL_LIBS
+    absl::flags
+    absl::flags_parse
+    absl::log
+    absl::log_internal_check_op
+    absl::log_internal_message
+    absl::random_random
+    absl::string_view
+    absl::span
+    absl::status
+    absl::statusor
+)
+
 # run_model
 add_executable(run_model
     run_model.cc
@@ -124,30 +149,37 @@ target_include_directories(run_model
         ${TENSORFLOW_SOURCE_DIR}
 )
 
+# Platform-aware linking
+if(ANDROID OR APPLE)
+
 target_link_libraries(run_model
     PRIVATE
         litert_tool_display
-        litert_c_api
-        litert_cc_api
-        litert_cc_internal
-        litert_cc_options
-        litert_core
-        litert_core_model
-        litert_runtime
-        tensorflow-lite
         litert_tool_flags_google_tensor
         litert_tool_flags_intel_openvino
         litert_tool_flags_mediatek
         litert_tool_flags_qualcomm
-        absl::flags
-        absl::flags_parse
-        absl::random_random
-        absl::log
-        absl::log_internal_check_op
-        absl::string_view
-        absl::span
+        ${LITERT_TOOL_COMMON_LIBS}
+        tensorflow-lite
+        ${ABSEIL_TOOL_LIBS}
         Threads::Threads
 )
+else()
+    target_link_libraries(run_model
+        PRIVATE
+            litert_tool_display
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            Threads::Threads
+            tensorflow-lite
+            "-Wl,--start-group"
+            ${ABSEIL_TOOL_LIBS}
+            ${LITERT_TOOL_COMMON_LIBS}
+            "-Wl,--end-group"
+    )
+endif()
 
 # analyze_model
 add_executable(analyze_model
@@ -161,10 +193,14 @@ target_include_directories(analyze_model
         ${TENSORFLOW_SOURCE_DIR}
 )
 
+# Platform-aware linking for analyze_model
+if(ANDROID OR APPLE)
+
 target_link_libraries(analyze_model
     PRIVATE
         litert_dump
         litert_tool_display
+        litert_c_api
         litert_core
         litert_core_model
         tensorflow-lite
@@ -174,6 +210,25 @@ target_link_libraries(analyze_model
         absl::status
         absl::statusor
 )
+else()
+    target_link_libraries(analyze_model
+        PRIVATE
+            Threads::Threads
+            tensorflow-lite
+            "-Wl,--start-group"
+            litert_dump
+            litert_tool_display
+            litert_c_api
+            litert_core
+            litert_core_model
+            absl::flags
+            absl::flags_parse
+            absl::log
+            absl::status
+            absl::statusor
+            "-Wl,--end-group"
+    )
+endif()
 
 # apply_plugin
 add_executable(apply_plugin_main
@@ -187,8 +242,12 @@ target_include_directories(apply_plugin_main
         ${TENSORFLOW_SOURCE_DIR}
 )
 
+# Platform-aware linking
+if(ANDROID OR APPLE)
+
 target_link_libraries(apply_plugin_main
     PRIVATE
+        litert_tool_display
         litert_apply_plugin
         litert_dump
         litert_tool_flags_apply_plugin
@@ -197,20 +256,32 @@ target_link_libraries(apply_plugin_main
         litert_tool_flags_intel_openvino
         litert_tool_flags_mediatek
         litert_tool_flags_qualcomm
-
-        litert_tool_display
-        litert_core
-        litert_core_model
-        litert_runtime
+        ${LITERT_TOOL_COMMON_LIBS}
         tensorflow-lite
-        absl::flags
-        absl::flags_parse
-        absl::log
-        absl::log_internal_check_op
-        absl::status
-        absl::statusor
-)
+        ${ABSEIL_TOOL_LIBS}
+        Threads::Threads
+    )
+else()
 
+    target_link_libraries(apply_plugin_main
+        PRIVATE
+            litert_tool_flags_apply_plugin
+            litert_tool_flags_common
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            Threads::Threads
+            tensorflow-lite
+            "-Wl,--start-group"
+            litert_tool_display
+            litert_apply_plugin
+            litert_dump
+            ${ABSEIL_TOOL_LIBS}
+            ${LITERT_TOOL_COMMON_LIBS}
+            "-Wl,--end-group"
+    )
+endif()
 # Platform-specific configurations for all executables
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(run_model PRIVATE ${LOG_LIB})
