@@ -386,6 +386,28 @@ litert_device_test(
 #     ],
 # )
 #
+# # Same as above, but for SDK 23 devices. NPU is not included as it requires 31+.
+# guitar_workflow_test(
+#     name = "litert_guitar_device_integration_tests_kotlin_sdk_23",
+#     auto_deps = [
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
+#     ],
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_cpu_mh_guitar_test(
+#                 sdk_version = 23,
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
 # copybara:uncomment_end
 
 exports_files(
