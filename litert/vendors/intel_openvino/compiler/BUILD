@@ -73,8 +73,14 @@ litert_bin(
     deps = [
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_options",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/vendors/cc:options_helper",
         "@com_google_absl//absl/strings:str_format",
@@ -100,10 +106,10 @@ litert_lib(
     hdrs = [
         "graph_iterator.h",
     ],
-    copts = [
-        "-Wno-unused-variable",
-        "-fexceptions",
-    ],
+    copts = ["-fexceptions"] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-Wno-unused-variable"],
+    }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":decoder",

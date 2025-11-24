@@ -302,7 +302,4 @@ litert_gpu()
 # INTEL OPENVINO ---------------------------------------------------------------------------------
 load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 
-openvino_configure(
-    name = "intel_openvino",
-    build_file = "//third_party/intel_openvino:openvino.bazel",
-)
+openvino_configure()
