@@ -15,6 +15,7 @@
 
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_android_library", "flatbuffer_cc_library", "flatbuffer_java_library")
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "tf_gpu_tests_tags")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -187,6 +188,7 @@ cc_library(
     name = "android_info",
     srcs = ["android_info.cc"],
     hdrs = ["android_info.h"],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         "@com_google_absl//absl/status",
     ],
