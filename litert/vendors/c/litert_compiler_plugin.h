@@ -123,7 +123,7 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetNumCompiledResultCalls(
 // graph before partition and compilation.
 //
 // Experimental: Unstable ABI, function signature is subject to change.
-LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns);
 
