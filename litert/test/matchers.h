@@ -391,7 +391,6 @@ inline IsErrorMatcher IsError(::litert::Status status, std::string msg) {
   return IsErrorMatcher(static_cast<LiteRtStatus>(status), std::move(msg));
 }
 
-[[deprecated("Use the litert::Status version instead.")]]
 inline IsErrorMatcher IsError(LiteRtStatus status, std::string msg) {
   return IsErrorMatcher(status, std::move(msg));
 }
