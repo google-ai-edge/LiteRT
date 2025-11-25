@@ -452,9 +452,9 @@ TEST(MHAOptimization, Gemma3Prefill) {
     ASSERT_EQ(op_wrappers[8 + sha_size * i].GetOpCode(), QnnOpCode::kSoftmax);
     ASSERT_EQ(op_wrappers[9 + sha_size * i].GetOpCode(),
               QnnOpCode::kStridedSlice);
-    ASSERT_EQ(op_wrappers[10 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
-    ASSERT_EQ(op_wrappers[11 + sha_size * i].GetOpCode(),
+    ASSERT_EQ(op_wrappers[10 + sha_size * i].GetOpCode(),
               QnnOpCode::kStridedSlice);
+    ASSERT_EQ(op_wrappers[11 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
     ASSERT_EQ(op_wrappers[12 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
     ASSERT_EQ(op_wrappers[13 + sha_size * i].GetOpCode(),
               QnnOpCode::kElementWiseAdd);
@@ -682,9 +682,9 @@ TEST(MHAOptimization, Gemma3Decode) {
     ASSERT_EQ(op_wrappers[6 + sha_size * i].GetOpCode(), QnnOpCode::kSoftmax);
     ASSERT_EQ(op_wrappers[7 + sha_size * i].GetOpCode(),
               QnnOpCode::kStridedSlice);
-    ASSERT_EQ(op_wrappers[8 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
-    ASSERT_EQ(op_wrappers[9 + sha_size * i].GetOpCode(),
+    ASSERT_EQ(op_wrappers[8 + sha_size * i].GetOpCode(),
               QnnOpCode::kStridedSlice);
+    ASSERT_EQ(op_wrappers[9 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
     ASSERT_EQ(op_wrappers[10 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
     ASSERT_EQ(op_wrappers[11 + sha_size * i].GetOpCode(),
               QnnOpCode::kElementWiseAdd);
