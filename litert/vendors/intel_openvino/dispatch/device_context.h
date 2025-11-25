@@ -21,14 +21,14 @@
 #include <unordered_map>
 
 #include "openvino/runtime/tensor.hpp"
-#if !defined(LITERT_WINDOWS_OS)
+#include "litert/c/litert_common.h"
+#ifndef LITERT_WINDOWS_OS
 #include <sys/mman.h>
 #endif
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
 #include "openvino/runtime/remote_context.hpp"
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
