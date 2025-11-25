@@ -919,25 +919,44 @@ size_t OptimizeMHATinyGemmaPrefillPattern0(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  const auto& mul = ops[start_index + 0];
-  const auto& transpose_0 = ops[start_index + 1];
-  const auto& reshape_0 = ops[start_index + 2];
-  const auto& matmul_k0 = ops[start_index + 3];
-  const auto& matmul_k1 = ops[start_index + 4];
-  const auto& concat = ops[start_index + 5];
-  const auto& add_0 = ops[start_index + 8];
-  const auto& softmax = ops[start_index + 9];
-  const auto& slice_0 = ops[start_index + 10];
-  const auto& slice_1 = ops[start_index + 11];
-  const auto& matmul_v0 = ops[start_index + 12];
-  const auto& matmul_v1 = ops[start_index + 13];
-  const auto& add_1 = ops[start_index + 14];
-  const auto& reshape_1 = ops[start_index + 15];
-  const auto& transpose_1 = ops[start_index + 16];
-  const auto& reshape_2 = ops[start_index + 17];
+  constexpr size_t mul_index = 0;
+  constexpr size_t transpose_0_index = 1;
+  constexpr size_t reshape_0_index = 2;
+  constexpr size_t matmul_k0_index = 3;
+  constexpr size_t matmul_k1_index = 4;
+  constexpr size_t concat_index = 5;
+  constexpr size_t concat_mask_index = 6;
+  constexpr size_t reshape_mask_index = 7;
+  constexpr size_t add_0_index = 8;
+  constexpr size_t softmax_index = 9;
+  constexpr size_t slice_0_index = 10;
+  constexpr size_t slice_1_index = 11;
+  constexpr size_t matmul_v0_index = 12;
+  constexpr size_t matmul_v1_index = 13;
+  constexpr size_t add_1_index = 14;
+  constexpr size_t reshape_1_index = 15;
+  constexpr size_t transpose_1_index = 16;
+  constexpr size_t reshape_2_index = 17;
 
-  const auto& mask_concat = ops[start_index + 6];
-  const auto& mask_reshape = ops[start_index + 7];
+  const auto& mul = ops[start_index + mul_index];
+  const auto& transpose_0 = ops[start_index + transpose_0_index];
+  const auto& reshape_0 = ops[start_index + reshape_0_index];
+  const auto& matmul_k0 = ops[start_index + matmul_k0_index];
+  const auto& matmul_k1 = ops[start_index + matmul_k1_index];
+  const auto& concat = ops[start_index + concat_index];
+  const auto& add_0 = ops[start_index + add_0_index];
+  const auto& softmax = ops[start_index + softmax_index];
+  const auto& slice_0 = ops[start_index + slice_0_index];
+  const auto& slice_1 = ops[start_index + slice_1_index];
+  const auto& matmul_v0 = ops[start_index + matmul_v0_index];
+  const auto& matmul_v1 = ops[start_index + matmul_v1_index];
+  const auto& add_1 = ops[start_index + add_1_index];
+  const auto& reshape_1 = ops[start_index + reshape_1_index];
+  const auto& transpose_1 = ops[start_index + transpose_1_index];
+  const auto& reshape_2 = ops[start_index + reshape_2_index];
+
+  const auto& mask_concat = ops[start_index + concat_mask_index];
+  const auto& mask_reshape = ops[start_index + reshape_mask_index];
   if (mask_concat.GetOutputTensor(0) != mask_reshape.GetInputTensor(0) ||
       mask_reshape.GetOutputTensor(0) != add_0.GetInputTensor(1)) {
     return 1;
@@ -968,8 +987,10 @@ size_t OptimizeMHATinyGemmaPrefillPattern0(
                std::make_move_iterator(new_ops.begin()),
                std::make_move_iterator(new_ops.end()));
     // Only keep mask_concat and mask_reshape
-    ops.erase(ops.begin() + start_index + 8, ops.begin() + start_index + 18);
-    ops.erase(ops.begin() + start_index, ops.begin() + start_index + 6);
+    ops.erase(ops.begin() + start_index + add_0_index,
+              ops.begin() + start_index + pattern_size);
+    ops.erase(ops.begin() + start_index,
+              ops.begin() + start_index + concat_mask_index);
     return step_size;
   }
   QNN_LOG_WARNING(
@@ -981,22 +1002,38 @@ size_t OptimizeMHATinyGemmaPrefillPattern1(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  const auto& mul = ops[start_index + 0];
-  const auto& transpose_0 = ops[start_index + 1];
-  const auto& reshape_0 = ops[start_index + 2];
-  const auto& matmul_k0 = ops[start_index + 3];
-  const auto& matmul_k1 = ops[start_index + 4];
-  const auto& concat = ops[start_index + 5];
-  const auto& add_0 = ops[start_index + 6];
-  const auto& softmax = ops[start_index + 7];
-  const auto& slice_0 = ops[start_index + 8];
-  const auto& slice_1 = ops[start_index + 9];
-  const auto& matmul_v0 = ops[start_index + 10];
-  const auto& matmul_v1 = ops[start_index + 11];
-  const auto& add_1 = ops[start_index + 12];
-  const auto& reshape_1 = ops[start_index + 13];
-  const auto& transpose_1 = ops[start_index + 14];
-  const auto& reshape_2 = ops[start_index + 15];
+  constexpr size_t mul_index = 0;
+  constexpr size_t transpose_0_index = 1;
+  constexpr size_t reshape_0_index = 2;
+  constexpr size_t matmul_k0_index = 3;
+  constexpr size_t matmul_k1_index = 4;
+  constexpr size_t concat_index = 5;
+  constexpr size_t add_0_index = 6;
+  constexpr size_t softmax_index = 7;
+  constexpr size_t slice_0_index = 8;
+  constexpr size_t slice_1_index = 9;
+  constexpr size_t matmul_v0_index = 10;
+  constexpr size_t matmul_v1_index = 11;
+  constexpr size_t add_1_index = 12;
+  constexpr size_t reshape_1_index = 13;
+  constexpr size_t transpose_1_index = 14;
+  constexpr size_t reshape_2_index = 15;
+  const auto& mul = ops[start_index + mul_index];
+  const auto& transpose_0 = ops[start_index + transpose_0_index];
+  const auto& reshape_0 = ops[start_index + reshape_0_index];
+  const auto& matmul_k0 = ops[start_index + matmul_k0_index];
+  const auto& matmul_k1 = ops[start_index + matmul_k1_index];
+  const auto& concat = ops[start_index + concat_index];
+  const auto& add_0 = ops[start_index + add_0_index];
+  const auto& softmax = ops[start_index + softmax_index];
+  const auto& slice_0 = ops[start_index + slice_0_index];
+  const auto& slice_1 = ops[start_index + slice_1_index];
+  const auto& matmul_v0 = ops[start_index + matmul_v0_index];
+  const auto& matmul_v1 = ops[start_index + matmul_v1_index];
+  const auto& add_1 = ops[start_index + add_1_index];
+  const auto& reshape_1 = ops[start_index + reshape_1_index];
+  const auto& transpose_1 = ops[start_index + transpose_1_index];
+  const auto& reshape_2 = ops[start_index + reshape_2_index];
 
   std::vector<OpWrapper> new_ops;
   if (!OptimizeMHATinyGemmaPrefill(
