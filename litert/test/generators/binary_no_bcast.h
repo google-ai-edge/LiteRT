@@ -44,6 +44,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
+#include "litert/test/generators/reference.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -172,6 +173,7 @@ class BinaryNoBroadcast : public TestGraph {
               std::begin(p.shape));
     return p;
   }
+
   static Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
     const std::vector<int32_t> dims(params.shape.begin(), params.shape.end());
 
@@ -189,6 +191,7 @@ class BinaryNoBroadcast : public TestGraph {
     return SingleOpModel<kOpCode>(inputs, outputs, kFa,
                                   /*pot_scale_int16=*/false);
   }
+
   Expected<void> ReferenceImpl(
       const typename Traits::ReferenceInputs& inputs,
       const typename Traits::ReferenceOutputs& outputs) const {
@@ -199,10 +202,15 @@ class BinaryNoBroadcast : public TestGraph {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "lhs, rhs, and output must have the same dimensions");
     }
-    for (auto i = 0; i < lhs.NumElements(); ++i) {
-      output.data[i] = ReferenceOperator()(lhs.data[i], rhs.data[i]);
-    }
-    return {};
+    // TODO: The reference computation supports broadcasting, but this test
+    // class won't generate broadcasted ops yet. Set a random number of
+    // dimensions to 1 in "GenerateParams" to achieve this.
+    ElementWiseComputation ref;
+    return ref.InShape(lhs.dimensions.begin(), lhs.dimensions.end())
+        .InShape(rhs.dimensions.begin(), rhs.dimensions.end())
+        .OutShape(lhs.dimensions.begin(), lhs.dimensions.end())
+        .Compute(ReferenceOperator(), output.data.data(), lhs.data.data(),
+                 rhs.data.data());
   }
 
   Params params_;
