@@ -29,7 +29,6 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "Eigen/Core"  // from @eigen_archive
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
@@ -42,6 +41,7 @@ limitations under the License.
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/string_util.h"
 #include "tflite/testing/util.h"
+#include "tflite/types/half.h"
 #include "tflite/util.h"
 
 #ifdef __APPLE__
@@ -272,7 +272,7 @@ TEST(BasicInterpreter, CheckResize) {
   const uint8_t uint8s[] = {3, 4};
   const int64_t int64s[] = {6, -7};
   const int16_t int16s[] = {8, -9};
-  const Eigen::half float16s[] = {Eigen::half(-3.f), Eigen::half(-4.f)};
+  const half float16s[] = {half(-3.f), half(-4.f)};
 
   struct {
     TfLiteType type;
