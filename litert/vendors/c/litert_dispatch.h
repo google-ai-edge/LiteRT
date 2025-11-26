@@ -65,12 +65,6 @@ typedef struct LiteRtMemBuffer {
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInitialize(
     LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
 
-// Destroy the Dispatch API runtime.
-//
-// This function should be called after calling any other Dispatch API
-// functions.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDestroy();
-
 // Return the version of the Dispatch API runtime.
 LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchGetApiVersion(LiteRtApiVersion* api_version);
