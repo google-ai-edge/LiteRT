@@ -175,7 +175,7 @@ export async function cpuTensorToGpuTensor(
       // Cast is needed to avoid 'SharedArrayBuffer' in the type.
       cpuTensorData.buffer as ArrayBuffer,
       cpuTensorData.byteOffset,
-      cpuTensorData.length,
+      cpuTensorData.length / typedArrayConstructor.BYTES_PER_ELEMENT,
   );
 
   // Create a staging buffer we can write to.
