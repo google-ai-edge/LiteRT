@@ -20,6 +20,7 @@ load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
