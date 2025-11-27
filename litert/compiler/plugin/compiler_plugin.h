@@ -126,7 +126,7 @@ class CompilerPlugin {
   Expected<CompiledResult> Compile(LiteRtModel partitions,
                                    absl::string_view soc_model = "");
 
-  // Register all transformations to the rewriter object owned by this plugin.
+  // Register all transformations to the builder object owned by this plugin.
   Expected<void> RegisterAllTransformations();
 
   Expected<void> GreedyPatternMatchAndRewrite(LiteRtModelT& model);

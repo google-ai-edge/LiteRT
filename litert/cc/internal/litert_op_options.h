@@ -115,7 +115,6 @@ enum ActivationFunctionType : uint32_t {
   kActivationFunctionTypeMax = kActivationFunctionTypeSignBit,
 };
 
-
 using FullyConnectedOptionsWeightsFormat = uint32_t;
 enum FullyConnectedOptionsWeightsFormatType : uint32_t {
   kFullyConnectedOptionsWeightsFormatDefault = 0,
@@ -175,6 +174,7 @@ struct AddOptions : public OpOptions {
   LiteRtOp op;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 // Struct to hold LiteRt BatchMatmul op.

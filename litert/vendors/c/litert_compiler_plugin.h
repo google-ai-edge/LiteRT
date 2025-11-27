@@ -17,8 +17,8 @@
 
 #include <stddef.h>
 
+#include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_rewriter.h"
 
 #ifdef __cplusplus
 extern "C" {

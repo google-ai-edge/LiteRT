@@ -12,23 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/internal/litert_rewriter.h"
+#include "litert/cc/internal/litert_builder.h"
 
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert {
 
-Expected<Tensor> Rewriter::BuildTensor(const RankedTensorSpec& spec) const {
+Expected<Tensor> Builder::BuildTensor(const RankedTensorSpec& spec) const {
   // tensor holds the newly created tensor.
   LiteRtTensor tensor;
   LiteRtRankedTensorType ranked_tensor_type_litert =
@@ -52,31 +52,30 @@ Expected<Tensor> Rewriter::BuildTensor(const RankedTensorSpec& spec) const {
     litert_per_channel_quantization = *spec.per_channel_quantization;
     quantization_type_id = kLiteRtQuantizationPerChannel;
   }
-  internal::AssertOk(LiteRtRewriterBuildTensor, kLiteRtRankedTensorType,
-                     ranked_tensor_type_litert, LiteRtUnrankedTensorType(),
-                     litert_weights, quantization_type_id,
-                     litert_per_tensor_quantization,
-                     litert_per_channel_quantization, this->Get(),
+  internal::AssertOk(LiteRtBuilderBuildTensor, Get(),
+                     kLiteRtRankedTensorType, ranked_tensor_type_litert,
+                     LiteRtUnrankedTensorType(), litert_weights,
+                     quantization_type_id, litert_per_tensor_quantization,
+                     litert_per_channel_quantization,
                      spec.tensor_name.value_or("").c_str(), &tensor);
   return Tensor(tensor);
 }
 
-Expected<Tensor> Rewriter::BuildScalar(LiteRtElementType element_type,
-                                       std::optional<std::string> name) const {
+Expected<Tensor> Builder::BuildScalar(LiteRtElementType element_type,
+                                      std::optional<std::string> name) const {
   LiteRtTensor tensor;
   LiteRtUnrankedTensorType unranked_tensor_type;
   unranked_tensor_type.element_type = element_type;
-  internal::AssertOk(LiteRtRewriterBuildTensor, kLiteRtUnrankedTensorType,
-                     LiteRtRankedTensorType(), unranked_tensor_type,
-                     LiteRtWeights(), kLiteRtQuantizationNone,
-                     LiteRtQuantizationPerTensor(),
-                     LiteRtQuantizationPerChannel(), this->Get(),
-                     name.value_or("").c_str(), &tensor);
+  internal::AssertOk(
+      LiteRtBuilderBuildTensor, Get(), kLiteRtUnrankedTensorType,
+      LiteRtRankedTensorType(), unranked_tensor_type, LiteRtWeights(),
+      kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
+      LiteRtQuantizationPerChannel(), name.value_or("").c_str(), &tensor);
   return Tensor(tensor);
 }
 
-Op Rewriter::BuildOp(LiteRtOpCode op_code, OpInputs& inputs,
-                     OpOutputs& outputs) const {
+Op Builder::BuildOp(LiteRtOpCode op_code, OpInputs& inputs,
+                    OpOutputs& outputs) const {
   LiteRtOp litert_op;
   std::vector<LiteRtTensor> input_tensors;
   input_tensors.reserve(inputs.size());
@@ -88,9 +87,10 @@ Op Rewriter::BuildOp(LiteRtOpCode op_code, OpInputs& inputs,
   for (const auto& output : outputs) {
     output_tensors.push_back(output.Get());
   }
-  internal::AssertOk(LiteRtRewriterBuildOp, op_code, input_tensors.size(),
-                     input_tensors.data(), output_tensors.size(),
-                     output_tensors.data(), this->Get(), &litert_op);
+  internal::AssertOk(LiteRtBuilderBuildOp, Get(), op_code,
+                     input_tensors.size(), input_tensors.data(),
+                     output_tensors.size(), output_tensors.data(), &litert_op);
   return Op(litert_op);
 }
+
 }  // namespace litert
