@@ -45,6 +45,14 @@ LiteRtStatus LiteRtRewriterBuildTensor(
     LiteRtQuantizationPerChannel per_channel_quantization,
     LiteRtRewriter rewriter, const char* name, LiteRtTensor* new_tensor);
 
+// Builds weights for a tensor. Rewriter will take the ownership of the data,
+// the built weights will be owned by the tensor before calling ApplyChanges().
+LiteRtStatus LiteRtRewriterBuildWeights(const uint8_t* data,
+                                        LiteRtParamIndex size,
+                                        LiteRtTensor tensor,
+                                        LiteRtRewriter rewriter,
+                                        LiteRtWeights* new_weights);
+
 // Creates a new OP within the graph being rewritten.
 // This function takes the OP code, input tensors, and output tensors
 // to construct a new op in the graph.
