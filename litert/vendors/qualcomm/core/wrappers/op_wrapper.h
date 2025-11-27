@@ -58,9 +58,10 @@ class OpWrapper final {
 
   void SwapOutputs(OpWrapper& other);
 
-  void UpdateTensors(
-      const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
-      const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs);
+  // Updates input and output tensors if the provided TensorWrapper pointers
+  // are not nullptr. Otherwise, retains the current TensorWrapper instances.
+  void UpdateTensors(const std::vector<const TensorWrapper*>& inputs,
+                     const std::vector<const TensorWrapper*>& outputs);
 
   void ClearTensorParams();
 
