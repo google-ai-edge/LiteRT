@@ -23,9 +23,10 @@
 #include <utility>
 #include <vector>
 
-#include "absl/flags/flag.h"  // from @com_google_absl
-#include "absl/flags/parse.h"  // from @com_google_absl
+#include "absl/flags/flag.h"          // from @com_google_absl
+#include "absl/flags/parse.h"         // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
