@@ -46,6 +46,39 @@ def _prepare_repo_files(ctx):
             else:
                 ctx.extract(sdk_path_from_env, stripPrefix = ctx.attr.strip_prefix)
 
+    elif ctx.attr.packages:
+        # Support multiple packages with individual configurations
+        # packages is a JSON string that needs to be parsed
+        packages = json.decode(ctx.attr.packages)
+        host_os = ctx.os.name.lower()
+
+        for package in packages:
+            # Check if this package is for the current OS
+            package_host_os = package.get("host_os", "").lower()
+
+            # If host_os is specified, only download if it matches the host OS
+            if package_host_os and package_host_os not in host_os:
+                continue
+
+            file_type = package.get("file_extension", "tar.gz")
+            url = package.get("url")
+            strip_prefix = package.get("strip_prefix", ctx.attr.strip_prefix or "")
+
+            if not url:
+                fail("Each package must have a 'url' field")
+
+            ctx.download_and_extract(
+                url = url,
+                auth = get_auth(ctx, [url]),
+                stripPrefix = strip_prefix,
+                type = file_type,
+            )
+
+            # Apply package-specific symlink mappings
+            symlink_mapping = package.get("symlink_mapping", {})
+            for dst, src in symlink_mapping.items():
+                ctx.symlink(src, dst)
+
     elif not ctx.attr.url:
         fail("A URL must be specified if local repo is not enabled.")
 
@@ -108,6 +141,20 @@ configurable_repo = repository_rule(
             doc = """
             The url to the hosted litert repo archive to download. This must be a tarball.
             This may be unspecified if local path approach is used.
+            """,
+            mandatory = False,
+        ),
+        "packages": attr.string(
+            doc = """
+            JSON-encoded list of package configurations, where each package is a dict with:
+            - url: (required) The URL to download
+            - host_os: (optional) Host OS filter (e.g., "windows", "linux", "mac").
+                       Only download if this matches the host OS. If omitted, always download.
+            - file_extension: (optional) File type (default: "tar.gz")
+            - strip_prefix: (optional) Prefix to strip when extracting
+            - symlink_mapping: (optional) Dict of symlinks to create for this package
+
+            Must be a valid JSON string. Use json.encode() to create it.
             """,
             mandatory = False,
         ),
