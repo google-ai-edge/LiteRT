@@ -71,3 +71,36 @@ litert_test(
         "@qairt//:qnn_lib_headers",
     ],
 )
+
+litert_test(
+    name = "fully_connected_int2_test",
+    srcs = [
+        "fully_connected_int2_test.cc",
+    ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "no-remote-exec",
+        "nobuilder",
+        "notap",
+    ],
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:fully_connected_op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@qairt//:qnn_lib_headers",
+    ],
+)

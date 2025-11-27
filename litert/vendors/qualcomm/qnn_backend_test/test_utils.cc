@@ -9,6 +9,7 @@
 #include <string_view>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
@@ -62,5 +63,29 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
                       qnn_manager_ptr_->Api(), context_handle_.get());
 
   std::swap(qnn_model_, qnn_model);
+}
+
+void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
+                               std::vector<std::uint8_t>& dst) {
+  // The source vector size must be a multiple of 4.
+  assert(src.size() % 4 == 0);
+
+  dst.clear();
+  dst.reserve(src.size() / 4);
+
+  // Process the source vector in chunks of 4.
+  for (size_t i = 0; i < src.size(); i += 4) {
+    // Mask each int8_t to get its 2-bit representation, discarding sign bits.
+    // Mask: 0000 0011
+    std::uint8_t num1 = src[i] & 0x03;
+    std::uint8_t num2 = src[i + 1] & 0x03;
+    std::uint8_t num3 = src[i + 2] & 0x03;
+    std::uint8_t num4 = src[i + 3] & 0x03;
+
+    // Combine the four 2-bit numbers into a single byte.
+    // num4 is placed in the most significant bits, num1 in the least.
+    std::uint8_t byte = num1 | (num2 << 2) | (num3 << 4) | (num4 << 6);
+    dst.emplace_back(byte);
+  }
 }
 }  // namespace litert::qnn
