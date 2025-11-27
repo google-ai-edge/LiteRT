@@ -209,5 +209,39 @@ TEST(OpWrapperTest, ChangeOpName) {
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
 }
 
+TEST(OpWrapperTest, UpdateTensor) {
+  TensorWrapper original_input_0{};
+  TensorWrapper original_input_1{};
+  TensorWrapper original_output_0{};
+  TensorWrapper original_output_1{};
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper.AddInputTensor(original_input_0);
+  op_wrapper.AddInputTensor(original_input_1);
+  op_wrapper.AddOutputTensor(original_output_0);
+  op_wrapper.AddOutputTensor(original_output_1);
+
+  ASSERT_TRUE(&op_wrapper.GetInputTensor(0) == &original_input_0);
+  ASSERT_TRUE(&op_wrapper.GetInputTensor(1) == &original_input_1);
+  ASSERT_TRUE(&op_wrapper.GetOutputTensor(0) == &original_output_0);
+  ASSERT_TRUE(&op_wrapper.GetOutputTensor(1) == &original_output_1);
+
+  // Failed to update tensors because of the incorrect size of input and output
+  // tensors.
+  op_wrapper.UpdateTensors({nullptr}, {nullptr});
+  ASSERT_TRUE(&op_wrapper.GetInputTensor(0) == &original_input_0);
+  ASSERT_TRUE(&op_wrapper.GetInputTensor(1) == &original_input_1);
+  ASSERT_TRUE(&op_wrapper.GetOutputTensor(0) == &original_output_0);
+  ASSERT_TRUE(&op_wrapper.GetOutputTensor(1) == &original_output_1);
+
+  TensorWrapper modified_input_1{};
+  TensorWrapper modified_output_0{};
+  op_wrapper.UpdateTensors({nullptr, &modified_input_1},
+                           {&modified_output_0, nullptr});
+  ASSERT_TRUE(&op_wrapper.GetInputTensor(0) == &original_input_0);
+  ASSERT_TRUE(&op_wrapper.GetInputTensor(1) == &modified_input_1);
+  ASSERT_TRUE(&op_wrapper.GetOutputTensor(0) == &modified_output_0);
+  ASSERT_TRUE(&op_wrapper.GetOutputTensor(1) == &original_output_1);
+}
+
 }  // namespace
 }  // namespace qnn
