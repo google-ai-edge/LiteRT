@@ -58,6 +58,15 @@ jobs:
           export CC_OPT_FLAGS='-Wno-sign-compare'
           python3 configure.py
 
+      - name: Install Android NDK r27
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+
+      - name: Export ANDROID_NDK_HOME
+        run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
       - name: Set up cache keys
         id: cache-keys
         run: |
@@ -122,6 +131,18 @@ jobs:
           )
 
           bazel test --disk_cache=~/.cache/bazel-linux "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
+
+      - name: Build Intel OpenVINO plugin for Linux
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-linux \
+            //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so \
+            //litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so
+
+      - name: Build Intel OpenVINO plugin for Android
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-android --config=android_x86_64 \
+            //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so \
+            //litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so
 
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
