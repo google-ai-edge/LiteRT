@@ -44,12 +44,14 @@ litert_dynamic_lib(
     ],
     target_compatible_with = select({
         "@platforms//os:linux": [],
+        "@platforms//os:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
+        "//third_party/darwinn/litert:__subpackages__",
     ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -100,6 +102,7 @@ cc_test(
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
         "@platforms//os:linux": [],
+        "@platforms//os:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
