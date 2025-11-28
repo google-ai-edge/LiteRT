@@ -45,12 +45,6 @@ typedef enum {
   kLiteRtEnvOptionTagMagicNumberConfigs = 16,
   kLiteRtEnvOptionTagMagicNumberVerifications = 17,
   kLiteRtEnvOptionTagCompilerCacheDir = 18,
-  // Singleton ML Drift WebGPU/Dawn instance required for shared libraries not
-  // to create their own instances.
-  kLiteRtEnvOptionTagWebGpuInstance = 19,
-  // Dawn procedure table pointer for shared libraries to populate their tables
-  // with the shared procedures instead of their own procedures.
-  kLiteRtEnvOptionTagWebGpuProcs = 20,
 } LiteRtEnvOptionTag;
 
 typedef struct {
