@@ -137,6 +137,12 @@ void Options::SetOptimizationLevel(OptimizationLevel optimization_level) {
   optimization_level_ = optimization_level;
 }
 
+GraphPriority Options::GetGraphPriority() const { return graph_priority_; }
+
+void Options::SetGraphPriority(GraphPriority graph_priority) {
+  graph_priority_ = graph_priority;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -154,15 +160,17 @@ IrJsonDir: %s\n\
 DlcDir: %s\n\
 VtcmSize: %d\n\
 HvxThread: %d\n\
-OptimizationLevel: %d\n";  // NOLINT
+OptimizationLevel: %d\n\
+GraphPriority: %d\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
-  return absl::StrFormat(
-      kQnnOptionsDumpFormat, log_level_, profiling_, use_htp_preference_,
-      use_qint16_as_quint16_, enable_weight_sharing_, use_conv_hmx_,
-      use_fold_relu_, htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
-      dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_);
+  return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
+                         use_htp_preference_, use_qint16_as_quint16_,
+                         enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
+                         htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
+                         dlc_dir_, vtcm_size_, num_hvx_threads_,
+                         optimization_level_, graph_priority_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }
