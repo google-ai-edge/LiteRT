@@ -14,6 +14,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,68 +23,29 @@
 #include "litert/cc/litert_expected.h"
 
 namespace litert::google_tensor {
-// Type definition for a function pointer to an ABI stable function
-// used to compile a Flatbuffer model.
-//
-// Functions of this type are expected to:
-// @param tfl_buffer_data Pointer to the serialized TFLite model flatbuffer.
-// @param tfl_buffer_size Size of the flatbuffer.
-// @param soc_model_data Pointer to the string identifying the SOC model
-//        (e.g., "g4", "g5", etc.).
-// @param soc_model_size Length of the SOC model string.
-// @param options LiteRTOpaqueOptions to pass the compiler options.
-// @param compiled_code_data On success, will be set to point to a newly
-//        allocated buffer containing the compiled code. The caller takes
-//        ownership of this buffer and is responsible for freeing it
-//        (e.g., using a companion *FreeCompiledCode() function).
-// @param compiled_code_size On success, will be set to the size of the
-//        buffer pointed to by *compiled_code_data.
-// @param out_error_message On failure, may be set to point to a newly allocated
-//        NULL-terminated string containing an error message. The caller
-//        takes ownership of this string and is responsible for freeing it
-//        (e.g., using a companion *FreeErrorMessage() function).
-// @return bool indicating whether the compilation was successful or not.
-typedef bool (*Compile)(const char* tfl_buffer_data, size_t tfl_buffer_size,
-                        const char* soc_model_data, size_t soc_model_size,
-                        LiteRtOpaqueOptions options, char*** compiled_code_data,
-                        size_t** compiled_code_sizes, size_t* num_bytecodes,
-                        char** out_error_message);
-typedef void (*CompilerFreeCompiledCode)(char** compiled_code_data,
-                                         size_t* compiled_code_sizes,
-                                         size_t num_bytecodes);
-typedef void (*CompilerFreeErrorMessage)(char* error_message);
 
 // This class adapts the google tensor compiler API for dynamic loading.
 class Adapter {
  public:
   // A smart pointer for managing TensorAdapter objects.
   using Ptr = std::unique_ptr<Adapter>;
-  struct Api;
 
-  Adapter();
-  ~Adapter();
+  Adapter() = default;
+  virtual ~Adapter() = default;
 
   // Creates a new TensorAdapter and loads the compiler API symbols.
   static litert::Expected<Ptr> Create(
       std::optional<std::string> shared_library_dir);
 
-  // Returns a reference to the loaded API.
-  const Api& api() const { return *api_; }
+  virtual Expected<void> Compile(
+      const char* tfl_buffer_data, size_t tfl_buffer_size,
+      const char* soc_model_data, size_t soc_model_size,
+      LiteRtOpaqueOptions options, char*** compiled_code_data,
+      size_t** compiled_code_sizes, size_t* num_bytecodes) = 0;
 
- private:
-  // Loads the symbols from the compiler library.
-  litert::Expected<void> LoadSymbols(
-      std::optional<std::string> shared_library_dir);
-
-  void* dlib_handle_ = nullptr;
-  std::unique_ptr<Api> api_;
-};
-
-struct Adapter::Api {
-  // The function pointer to the compiler wrapper API.
-  Compile compile = nullptr;
-  CompilerFreeCompiledCode free_compiled_code = nullptr;
-  CompilerFreeErrorMessage free_error_message = nullptr;
+  virtual void FreeCompiledCode(char** compiled_code_data,
+                                size_t* compiled_code_sizes,
+                                size_t num_bytecodes) = 0;
 };
 
 }  // namespace litert::google_tensor
