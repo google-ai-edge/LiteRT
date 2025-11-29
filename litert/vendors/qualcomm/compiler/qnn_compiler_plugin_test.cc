@@ -82,6 +82,7 @@ const auto kSupportedOps =
                     "simple_gather_op.tflite",
                     "simple_gelu_op.tflite",
                     "simple_greater_op.tflite",
+                    "simple_group_norm_op.tflite",
                     "simple_hard_swish_op.tflite",
                     "simple_leaky_relu_op.tflite",
                     "simple_less_op.tflite",
@@ -155,7 +156,8 @@ const auto kSupportedOps =
                     kQQueryEinsum16x8Model,
                     kQKeyEinsum16x8Model,
                     kQVauleEinsum16x8Model,
-                    kQAttnVecEinsum16x8Model
+                    kQAttnVecEinsum16x8Model,
+                    "simple_group_norm_op.tflite"
                     );
 
 const auto kSupportedSocModels = Values(
