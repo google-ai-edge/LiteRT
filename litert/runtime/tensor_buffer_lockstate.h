@@ -35,6 +35,7 @@ inline LockState ToLockState(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferLockModeReadWrite:
       return LockState::kReadWriteLocked;
   }
+  return LockState::kUnlocked;
 }
 
 }  // namespace litert::internal
