@@ -698,7 +698,7 @@ TEST(CompiledModelTest, ConstantOutputTensor) {
       CompiledModel compiled_model,
       CompiledModel::Create(
           env, testing::GetTestFilePath(kConstantOutputTensorModelFileName),
-          HwAccelerators::kCpu));
+          HwAccelerators::kGpu));
 
   // Get signatures
   EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
