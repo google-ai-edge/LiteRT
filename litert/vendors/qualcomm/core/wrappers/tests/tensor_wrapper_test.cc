@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -457,62 +458,87 @@ TEST(TensorWrapperTest, ConstQnnTensorPerTensorQuantConstructTest) {
   EXPECT_EQ(ref.v2.clientBuf.data, qnn_tensor.v2.clientBuf.data);
 }
 
-TEST(TensorWrapperTest, QnnTensorNoCopyTest) {
-  std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
-  std::vector<std::uint8_t> data = {1, 2, 3};
-  void* data_ptr = static_cast<void*>(data.data());
-  const auto data_size =
-      std::accumulate(dummy_dims.begin(), dummy_dims.end(),
-                      sizeof(decltype(data)::value_type), std::multiplies<>());
-
-  TensorWrapper tensor_wrapper{"",
-                               QNN_TENSOR_TYPE_APP_WRITE,
-                               QNN_DATATYPE_UFIXED_POINT_8,
-                               QuantizeParamsWrapperVariant(),
-                               dummy_dims,
-                               static_cast<uint32_t>(data_size),
-                               data_ptr,
-                               false};
-
-  Qnn_Tensor_t cloned;
-  tensor_wrapper.CloneTo(cloned);
-  EXPECT_EQ(cloned.version, QNN_TENSOR_VERSION_2);
-  EXPECT_EQ(cloned.v2.id, 0);
-  EXPECT_EQ(cloned.v2.type, QNN_TENSOR_TYPE_APP_WRITE);
-  EXPECT_EQ(cloned.v2.dataFormat, QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER);
-  EXPECT_EQ(cloned.v2.dataType, QNN_DATATYPE_UFIXED_POINT_8);
-  EXPECT_EQ(cloned.v2.quantizeParams.encodingDefinition,
+template <typename T>
+void ValidateTensor(const Qnn_Tensor_t& tensor,
+                    const Qnn_DataType_t expected_datatype,
+                    const std::vector<uint32_t>& expected_dims,
+                    const std::vector<T>& expected_data) {
+  EXPECT_EQ(tensor.version, QNN_TENSOR_VERSION_2);
+  EXPECT_EQ(tensor.v2.id, 0);
+  EXPECT_EQ(tensor.v2.type, QNN_TENSOR_TYPE_APP_WRITE);
+  EXPECT_EQ(tensor.v2.dataFormat, QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER);
+  EXPECT_EQ(tensor.v2.dataType, expected_datatype);
+  EXPECT_EQ(tensor.v2.quantizeParams.encodingDefinition,
             QNN_DEFINITION_UNDEFINED);
-  ASSERT_EQ(cloned.v2.rank, dummy_dims.size());
-  for (size_t i = 0; i < cloned.v2.rank; i++) {
-    EXPECT_EQ(cloned.v2.dimensions[i], dummy_dims[i]);
-  }
-  EXPECT_EQ(cloned.v2.memType, QNN_TENSORMEMTYPE_RAW);
-  ASSERT_EQ(cloned.v2.clientBuf.dataSize, data_size);
-  const auto* cloned_data =
-      static_cast<const std::uint8_t*>(cloned.v2.clientBuf.data);
-  for (size_t i = 0; i < data.size(); i++) {
-    EXPECT_EQ(cloned_data[i], data[i]);
+  EXPECT_EQ(tensor.v2.memType, QNN_TENSORMEMTYPE_RAW);
+
+  // Validate dimensions.
+  ASSERT_EQ(tensor.v2.rank, expected_dims.size());
+  EXPECT_THAT(std::vector<uint32_t>(tensor.v2.dimensions,
+                                    tensor.v2.dimensions + tensor.v2.rank),
+              ::testing::ElementsAreArray(expected_dims));
+
+  // Validate data buffer.
+  ASSERT_EQ(tensor.v2.clientBuf.dataSize, expected_data.size() * sizeof(T));
+  const auto* tensor_data_ptr = static_cast<const T*>(tensor.v2.clientBuf.data);
+  EXPECT_THAT(
+      std::vector<T>(tensor_data_ptr, tensor_data_ptr + expected_data.size()),
+      ::testing::ElementsAreArray(expected_data));
+}
+
+template <typename T, bool is_int4 = false>
+void RunQnnTensorImplicitCopyTest(Qnn_DataType_t datatype) {
+  const std::vector<std::uint32_t> kDims = {1, 1, 4};
+  std::vector<T> data = {1, 2, 3, 4};
+  if constexpr (is_int4) {
+    std::vector<int8_t> packed_data;
+    packed_data.reserve(data.size() / 2);
+    for (size_t i = 0; i < data.size() / 2; ++i) {
+      uint8_t low_nibble = data[i * 2] & 0x0F;
+      uint8_t high_nibble = data[i * 2 + 1] & 0x0F;
+      packed_data.emplace_back((high_nibble << 4) | low_nibble);
+    }
+    data = packed_data;
   }
 
-  Qnn_Tensor_t& ref = tensor_wrapper.GetQnnTensor();
-  EXPECT_EQ(ref.version, QNN_TENSOR_VERSION_2);
-  EXPECT_EQ(ref.v2.id, 0);
-  EXPECT_EQ(ref.v2.type, QNN_TENSOR_TYPE_APP_WRITE);
-  EXPECT_EQ(ref.v2.dataFormat, QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER);
-  EXPECT_EQ(ref.v2.dataType, QNN_DATATYPE_UFIXED_POINT_8);
-  EXPECT_EQ(ref.v2.quantizeParams.encodingDefinition, QNN_DEFINITION_UNDEFINED);
-  ASSERT_EQ(ref.v2.rank, dummy_dims.size());
-  for (size_t i = 0; i < ref.v2.rank; i++) {
-    EXPECT_EQ(ref.v2.dimensions[i], dummy_dims[i]);
-  }
-  EXPECT_EQ(ref.v2.memType, QNN_TENSORMEMTYPE_RAW);
-  ASSERT_EQ(ref.v2.clientBuf.dataSize, data_size);
-  const auto* ref_data =
-      static_cast<const std::uint8_t*>(ref.v2.clientBuf.data);
-  for (size_t i = 0; i < data.size(); i++) {
-    EXPECT_EQ(ref_data[i], data[i]);
+  const auto data_size = data.size() * sizeof(T);
+  const void* data_ptr = static_cast<const void*>(data.data());
+
+  TensorWrapper tensor_wrapper{"",       QNN_TENSOR_TYPE_APP_WRITE,
+                               datatype, QuantizeParamsWrapperVariant(),
+                               kDims,    static_cast<uint32_t>(data_size),
+                               data_ptr, false};
+
+  Qnn_Tensor_t cloned_tensor;
+  tensor_wrapper.CloneTo(cloned_tensor);
+  Qnn_Tensor_t& ref_tensor = tensor_wrapper.GetQnnTensor();
+  if constexpr (is_int4) {
+    std::vector<std::int8_t> int8_data;
+    ConvertDataFromInt4ToInt8(data.data(), int8_data, data.size());
+    ValidateTensor(cloned_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims,
+                   int8_data);
+    ValidateTensor(ref_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims, int8_data);
+  } else {
+    ValidateTensor(cloned_tensor, datatype, kDims, data);
+    ValidateTensor(ref_tensor, datatype, kDims, data);
   }
 }
+
+TEST(TensorWrapperDatatypeTest, UFIXED_POINT_8) {
+  RunQnnTensorImplicitCopyTest<std::uint8_t>(QNN_DATATYPE_UFIXED_POINT_8);
+}
+TEST(TensorWrapperDatatypeTest, SFIXED_POINT_8) {
+  RunQnnTensorImplicitCopyTest<std::int8_t>(QNN_DATATYPE_SFIXED_POINT_8);
+}
+TEST(TensorWrapperDatatypeTest, UFIXED_POINT_16) {
+  RunQnnTensorImplicitCopyTest<std::uint16_t>(QNN_DATATYPE_UFIXED_POINT_16);
+}
+TEST(TensorWrapperDatatypeTest, SFIXED_POINT_16) {
+  RunQnnTensorImplicitCopyTest<std::int16_t>(QNN_DATATYPE_SFIXED_POINT_16);
+}
+TEST(TensorWrapperDatatypeTest, SFIXED_POINT_4) {
+  RunQnnTensorImplicitCopyTest<std::int8_t, true>(QNN_DATATYPE_SFIXED_POINT_4);
+}
+
 }  // namespace
 }  // namespace qnn
