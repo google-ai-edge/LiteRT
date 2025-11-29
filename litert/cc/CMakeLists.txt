@@ -21,6 +21,7 @@ add_library(litert_cc_api STATIC
     internal/litert_rewriter.cc
     internal/litert_shared_library.cc
     internal/litert_tensor_buffer_utils.cc
+    internal/litert_extended_model.cc
     litert_compiled_model.cc
     litert_macros.cc
     litert_model.cc
