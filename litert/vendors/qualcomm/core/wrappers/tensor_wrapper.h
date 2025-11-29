@@ -112,7 +112,45 @@ class TensorWrapper final {
 
   ~TensorWrapper();
 
-  bool operator==(const TensorWrapper& other) const { return this == &other; }
+  bool operator==(const TensorWrapper& other) const {
+    // Compare the address
+    if (this == &other) {
+      return true;
+    }
+
+    // Compare the value
+    CHECK_VALUE_EQ(qnn_tensor_.version, other.qnn_tensor_.version,
+                   "Tensor version");
+    CHECK_TYPE_EQ(qnn_tensor_.v2.type, other.qnn_tensor_.v2.type,
+                  "Tensor type");
+    CHECK_VALUE_EQ(qnn_tensor_.v2.dataFormat, other.qnn_tensor_.v2.dataFormat,
+                   "Data format");
+    CHECK_TYPE_EQ(qnn_tensor_.v2.dataType, other.qnn_tensor_.v2.dataType,
+                  "Data type");
+    CHECK_VALUE_EQ(qnn_tensor_.v2.rank, other.qnn_tensor_.v2.rank, "Rank");
+    for (size_t i = 0; i < qnn_tensor_.v2.rank; i++) {
+      CHECK_VALUE_EQ(qnn_tensor_.v2.dimensions[i],
+                     other.qnn_tensor_.v2.dimensions[i],
+                     ("Dimension of rank[" + std::to_string(i) + "]").c_str());
+    }
+    CHECK_TYPE_EQ(qnn_tensor_.v2.memType, other.qnn_tensor_.v2.memType,
+                  "Memory type");
+    CHECK_VALUE_EQ(qnn_tensor_.v2.clientBuf.dataSize,
+                   other.qnn_tensor_.v2.clientBuf.dataSize,
+                   "Data size of client buffer");
+    for (size_t i = 0; i < qnn_tensor_.v2.clientBuf.dataSize; i++) {
+      CHECK_VALUE_EQ(
+          reinterpret_cast<const std::uint8_t*>(
+              qnn_tensor_.v2.clientBuf.data)[i],
+          reinterpret_cast<const std::uint8_t*>(
+              other.qnn_tensor_.v2.clientBuf.data)[i],
+          ("Data of client buffer[" + std::to_string(i) + "]").c_str());
+    }
+    CHECK_VALUE_EQ(qnn_tensor_.v2.isProduced, other.qnn_tensor_.v2.isProduced,
+                   "Tensor.isProduced");
+
+    return true;
+  }
 
   bool operator!=(const TensorWrapper& other) const { return this != &other; }
 

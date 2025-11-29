@@ -13,6 +13,7 @@ cc_library(
     srcs = ["quantize_params_wrapper.cc"],
     hdrs = ["quantize_params_wrapper.h"],
     deps = [
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],

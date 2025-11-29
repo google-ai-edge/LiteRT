@@ -209,5 +209,131 @@ TEST(OpWrapperTest, ChangeOpName) {
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
 }
 
+TEST(OpWrapperTest, EqualityOperatorTest) {
+  std::vector<std::uint32_t> dummy_dims1 = {1, 1, 3};
+  std::vector<std::uint32_t> dummy_dims2 = {1, 1, 3};
+  std::vector<std::uint32_t> dummy_dims3 = {1, 1, 4};
+
+  std::vector<std::uint8_t> data1 = {1, 2, 3};
+  std::vector<std::uint8_t> data2 = {1, 2, 3};
+  std::vector<std::uint8_t> data3 = {1, 2, 3, 4};
+
+  void* data_ptr1 = reinterpret_cast<void*>(data1.data());
+  const auto data_size1 =
+      std::accumulate(dummy_dims1.begin(), dummy_dims1.end(),
+                      sizeof(decltype(data1)::value_type), std::multiplies<>());
+  void* data_ptr2 = reinterpret_cast<void*>(data2.data());
+  const auto data_size2 =
+      std::accumulate(dummy_dims2.begin(), dummy_dims2.end(),
+                      sizeof(decltype(data2)::value_type), std::multiplies<>());
+  void* data_ptr3 = reinterpret_cast<void*>(data3.data());
+  const auto data_size3 =
+      std::accumulate(dummy_dims3.begin(), dummy_dims3.end(),
+                      sizeof(decltype(data3)::value_type), std::multiplies<>());
+
+  TensorWrapper tensor_wrapper1{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims1,
+                                static_cast<uint32_t>(data_size1),
+                                data_ptr1,
+                                true};
+
+  TensorWrapper tensor_wrapper2{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_SFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims2,
+                                static_cast<uint32_t>(data_size2),
+                                data_ptr2,
+                                true};
+
+  TensorWrapper tensor_wrapper3{"",
+                                QNN_TENSOR_TYPE_APP_WRITE,
+                                QNN_DATATYPE_UFIXED_POINT_8,
+                                QuantizeParamsWrapperVariant(),
+                                dummy_dims3,
+                                static_cast<uint32_t>(data_size3),
+                                data_ptr3,
+                                true};
+
+  std::uint8_t value1 = 255;
+  OpWrapper op_wrapper1{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper1.AddInputTensor(tensor_wrapper1);
+  op_wrapper1.AddOutputTensor(tensor_wrapper1);
+  op_wrapper1.AddScalarParam("uint8_param", value1, false);
+  op_wrapper1.AddTensorParam("tensor_param", tensor_wrapper1);
+
+  OpWrapper op_wrapper2{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper2.AddInputTensor(tensor_wrapper1);
+  op_wrapper2.AddOutputTensor(tensor_wrapper1);
+  op_wrapper2.AddScalarParam("uint8_param", value1, false);
+  op_wrapper2.AddTensorParam("tensor_param", tensor_wrapper1);
+  EXPECT_TRUE(op_wrapper1 == op_wrapper2);
+
+  float float_value = 3.14f;
+  OpWrapper op_wrapper3{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper3.AddInputTensor(tensor_wrapper1);
+  op_wrapper3.AddOutputTensor(tensor_wrapper1);
+  op_wrapper3.AddScalarParam("float_param", float_value, false);
+  op_wrapper3.AddTensorParam("tensor_param", tensor_wrapper1);
+  EXPECT_FALSE(op_wrapper1 == op_wrapper3);
+  EXPECT_FALSE(op_wrapper2 == op_wrapper3);
+
+  std::uint8_t value2 = 252;
+  OpWrapper op_wrapper4{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper4.AddInputTensor(tensor_wrapper1);
+  op_wrapper4.AddOutputTensor(tensor_wrapper1);
+  op_wrapper4.AddScalarParam("uint8_param", value2, false);
+  op_wrapper4.AddTensorParam("tensor_param", tensor_wrapper1);
+  EXPECT_FALSE(op_wrapper1 == op_wrapper4);
+  EXPECT_FALSE(op_wrapper2 == op_wrapper4);
+  EXPECT_FALSE(op_wrapper3 == op_wrapper4);
+
+  OpWrapper op_wrapper5{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper5.AddInputTensor(tensor_wrapper2);
+  op_wrapper5.AddOutputTensor(tensor_wrapper2);
+  op_wrapper5.AddScalarParam("uint8_param", value1, false);
+  op_wrapper5.AddTensorParam("tensor_param", tensor_wrapper2);
+  EXPECT_FALSE(op_wrapper1 == op_wrapper5);
+  EXPECT_FALSE(op_wrapper2 == op_wrapper5);
+  EXPECT_FALSE(op_wrapper3 == op_wrapper5);
+  EXPECT_FALSE(op_wrapper4 == op_wrapper5);
+
+  OpWrapper op_wrapper6{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper6.AddInputTensor(tensor_wrapper3);
+  op_wrapper6.AddOutputTensor(tensor_wrapper3);
+  op_wrapper6.AddScalarParam("uint8_param", value1, false);
+  op_wrapper6.AddTensorParam("tensor_param", tensor_wrapper3);
+  EXPECT_FALSE(op_wrapper1 == op_wrapper6);
+  EXPECT_FALSE(op_wrapper2 == op_wrapper6);
+  EXPECT_FALSE(op_wrapper3 == op_wrapper6);
+  EXPECT_FALSE(op_wrapper4 == op_wrapper6);
+  EXPECT_FALSE(op_wrapper5 == op_wrapper6);
+
+  OpWrapper op_wrapper7{"name", "OP_TYPE", QnnOpCode::kElementWiseAdd};
+  op_wrapper7.AddInputTensor(tensor_wrapper1);
+  op_wrapper7.AddInputTensor(tensor_wrapper1);
+  op_wrapper7.AddOutputTensor(tensor_wrapper1);
+  EXPECT_FALSE(op_wrapper1 == op_wrapper7);
+  EXPECT_FALSE(op_wrapper2 == op_wrapper7);
+  EXPECT_FALSE(op_wrapper3 == op_wrapper7);
+  EXPECT_FALSE(op_wrapper4 == op_wrapper7);
+  EXPECT_FALSE(op_wrapper5 == op_wrapper7);
+  EXPECT_FALSE(op_wrapper6 == op_wrapper7);
+
+  OpWrapper op_wrapper8{"name", "OP_TYPE", QnnOpCode::kElementWiseMultiply};
+  op_wrapper8.AddInputTensor(tensor_wrapper1);
+  op_wrapper8.AddInputTensor(tensor_wrapper1);
+  op_wrapper8.AddOutputTensor(tensor_wrapper1);
+  EXPECT_FALSE(op_wrapper1 == op_wrapper8);
+  EXPECT_FALSE(op_wrapper2 == op_wrapper8);
+  EXPECT_FALSE(op_wrapper3 == op_wrapper8);
+  EXPECT_FALSE(op_wrapper4 == op_wrapper8);
+  EXPECT_FALSE(op_wrapper5 == op_wrapper8);
+  EXPECT_FALSE(op_wrapper6 == op_wrapper8);
+  EXPECT_FALSE(op_wrapper7 == op_wrapper8);
+}
 }  // namespace
 }  // namespace qnn
