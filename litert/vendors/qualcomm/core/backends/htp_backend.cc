@@ -123,13 +123,23 @@ bool HtpBackend::Init(const Options& options,
 
   // Device Handle
   std::vector<QnnDevice_CustomConfig_t> device_custom_configs;
-  QnnHtpDevice_CustomConfig_t* htp_device_custom_config =
+  QnnHtpDevice_CustomConfig_t* htp_device_custom_config_soc =
       &AllocateHtpDeviceConfig();
-  htp_device_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
-  htp_device_custom_config->socModel =
+  htp_device_custom_config_soc->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
+  htp_device_custom_config_soc->socModel =
       static_cast<uint32_t>(soc_info_.soc_model);
   device_custom_configs.emplace_back(
-      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config));
+      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config_soc));
+
+  // Hardcode pd session to unsigned pd to prevent unexpected change in QNN.
+  QnnHtpDevice_CustomConfig_t* htp_device_custom_config_pd =
+      &AllocateHtpDeviceConfig();
+  htp_device_custom_config_pd->option = QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD;
+  htp_device_custom_config_pd->useSignedProcessDomain.useSignedProcessDomain =
+      false;
+  htp_device_custom_config_pd->useSignedProcessDomain.deviceId = 0;
+  device_custom_configs.emplace_back(
+      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config_pd));
 
 #ifdef __ANDROID__
   std::vector<QnnDevice_PlatformInfo_t*> device_platform_infos = {};
