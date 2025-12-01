@@ -59,6 +59,7 @@
 #include "litert/vendors/qualcomm/core/builders/gather_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/group_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
@@ -719,14 +720,21 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
         return kLiteRtStatusErrorInvalidArgument;
       }
       if (info->name == CompositeOptions::kRmsNorm) {
-        // TODO(yunandrew): Support custom epsilon for RMS Norm.
-        float epsilon = 9.99999997E-7;
+        auto attributes_map = info->attributes_map.value();
+        float epsilon = attributes_map["epsilon"].AsFloat();
         op_wrappers = ::qnn::BuildRmsNormOp(tensor_pool, input_tensors,
                                             output_tensors, epsilon);
       }
+      if (info->name == CompositeOptions::kGroupNorm) {
+        auto attributes_map = info->attributes_map.value();
+        float epsilon = attributes_map["epsilon"].AsFloat();
+        int num_groups = attributes_map["num_groups"].AsInt32();
+        op_wrappers = ::qnn::BuildGroupNormOp(
+            tensor_pool, input_tensors, output_tensors, epsilon, num_groups);
+      }
       if (info->name == CompositeOptions::kL2Norm) {
-        // TODO(jiunkaiy): Support custom epsilon for L2 Norm.
-        float epsilon = 9.99999997E-7;
+        auto attributes_map = info->attributes_map.value();
+        float epsilon = attributes_map["epsilon"].AsFloat();
         op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
                                            output_tensors, epsilon);
       }

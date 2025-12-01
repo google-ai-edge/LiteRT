@@ -22,11 +22,12 @@ EXPORTS
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddOpaqueOptions
   LiteRtCompiledModelIsFullyAccelerated
+  LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
-  LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
+  LiteRtCreateCompilerOptions
   LiteRtCreateCpuOptions
   LiteRtCreateEnvironment
   LiteRtCreateGpuOptions
@@ -39,6 +40,7 @@ EXPORTS
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
   LiteRtCreateTensorBufferFromOpenClMemory
+  LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtDestroyCompiledModel
   LiteRtDestroyEnvironment
   LiteRtDestroyMetrics
@@ -53,6 +55,7 @@ EXPORTS
   LiteRtExternalLiteRtBufferContextGetEnvironment
   LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
   LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
+  LiteRtFindCompilerOptions
   LiteRtFindCpuOptions
   LiteRtFindOpaqueOptionsData
   LiteRtFindRuntimeOptions
@@ -62,11 +65,14 @@ EXPORTS
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
+  LiteRtGetCompilerOptionsIdentifier
+  LiteRtGetCompilerOptionsPartitionStrategy
   LiteRtGetCpuOptionsIdentifier
   LiteRtGetCpuOptionsNumThread
   LiteRtGetCpuOptionsXNNPackFlags
   LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor
   LiteRtGetCpuOptionsXnnPackWeightCachePath
+  LiteRtGetDummyCompilerOptions
   LiteRtGetEnvironmentOptions
   LiteRtGetExternalLiteRtBufferContextTensorBuffer
   LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
@@ -102,12 +108,12 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
-  LiteRtGetOpaqueOptions
-  LiteRtGetOpaqueOptionsHash
-  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetOpCode
   LiteRtGetOpInput
   LiteRtGetOpOutput
+  LiteRtGetOpaqueOptions
+  LiteRtGetOpaqueOptionsHash
+  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetRankedTensorType
   LiteRtGetRuntimeOptionsEnableProfiling
   LiteRtGetRuntimeOptionsErrorReporterMode
@@ -157,6 +163,16 @@ EXPORTS
   LiteRtGoogleTensorOptionsSetShardingIntensity
   LiteRtGoogleTensorOptionsSetTestingFlags
   LiteRtGpuEnvironmentCreate
+  LiteRtIntelOpenVinoOptionsCreate
+  LiteRtIntelOpenVinoOptionsGet
+  LiteRtIntelOpenVinoOptionsGetConfigsMapOption
+  LiteRtIntelOpenVinoOptionsGetDeviceType
+  LiteRtIntelOpenVinoOptionsGetIdentifier
+  LiteRtIntelOpenVinoOptionsGetNumConfigsMapOptions
+  LiteRtIntelOpenVinoOptionsGetPerformanceMode
+  LiteRtIntelOpenVinoOptionsSetConfigsMapOption
+  LiteRtIntelOpenVinoOptionsSetDeviceType
+  LiteRtIntelOpenVinoOptionsSetPerformanceMode
   LiteRtLockTensorBuffer
   LiteRtMediatekOptionsCreate
   LiteRtMediatekOptionsGet
@@ -214,11 +230,13 @@ EXPORTS
   LiteRtSetAcceleratorGetName
   LiteRtSetAcceleratorGetVersion
   LiteRtSetCompiledModelCancellationFunction
+  LiteRtSetCompilerOptionsPartitionStrategy
   LiteRtSetCpuOptionsNumThread
   LiteRtSetCpuOptionsXNNPackFlags
   LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor
   LiteRtSetCpuOptionsXnnPackWeightCachePath
   LiteRtSetDelegateFunction
+  LiteRtSetDummyCompilerOptions
   LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
   LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey

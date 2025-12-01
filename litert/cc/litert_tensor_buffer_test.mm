@@ -29,6 +29,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#import "third_party/odml/litert/litert/test/metal_test_helper.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #import "third_party/tensorflow/lite/delegates/gpu/metal/metal_device.h"
 
@@ -43,18 +44,6 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
     /*.element_type=*/kLiteRtElementTypeFloat32, ::litert::BuildLayout(kTensorDimensions)};
 const float kTolerance = 1e-5;
 
-// Returns the file path of the model file in the bundle.
-+ (NSString *)pathForModelWithName:(NSString *)modelName {
-  // Get the bundle for the current test class
-  NSBundle *bundle = [NSBundle bundleForClass:[self class]];
-  // Construct the full path to the model file
-  NSString *modelFilePath = [bundle pathForResource:modelName ofType:@"tflite"];
-  if (!modelFilePath) {
-    XCTFail(@"Could not find model file in bundle.");
-    return nil;
-  }
-  return modelFilePath;
-}
 
 // Create LiteRt environment with metal options.
 - (litert::Environment)createEnvironmentWithMetalDevice:
@@ -150,7 +139,7 @@ const float kTolerance = 1e-5;
   auto metal_device = tflite::gpu::metal::MetalDevice();
   litert::Environment env = [self createEnvironmentWithMetalDevice:&metal_device];
 
-  NSString *modelFilePath = [LitertTensorBufferTest pathForModelWithName:@"simple_model"];
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_model"];
   XCTAssertNotNil(modelFilePath);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
@@ -184,18 +173,10 @@ const float kTolerance = 1e-5;
 
   // Check model output.
   XCTAssertTrue(output_buffers[0].IsMetalMemory());
-  {
-    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
-        output_buffers[0], litert::TensorBuffer::LockMode::kRead);
-    XCTAssertTrue(lock_and_addr);
-    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
-    for (auto i = 0; i < kTestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
-    }
-    XCTAssertTrue(testing::Matches(testing::Pointwise(
-        testing::FloatNear(kTolerance), absl::MakeConstSpan(kTestOutputTensor, kTestOutputSize)))(
-        output));
-  }
+  [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[0]
+                             withExpectedOutput:kTestOutputTensor
+                               withElementCount:kTestOutputSize
+                                  withTolerance:kTolerance];
 }
 
 @end

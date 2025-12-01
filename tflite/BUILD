@@ -1043,8 +1043,8 @@ cc_test(
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:compatibility",
         "//tflite/testing:util",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest_main",
-        "@eigen_archive//:eigen3",
     ],
 )
 

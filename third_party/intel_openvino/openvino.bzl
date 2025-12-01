@@ -13,26 +13,16 @@
 # limitations under the License.
 """Workspace definition for Openvino."""
 
-def _openvino_native_impl(repository_ctx):
-    openvino_native_dir = repository_ctx.os.environ.get("OPENVINO_NATIVE_DIR")
-    if openvino_native_dir:
-        repository_ctx.symlink(openvino_native_dir, "openvino")
-        build_file_content = repository_ctx.read(repository_ctx.attr.build_file)
-        repository_ctx.file("BUILD", build_file_content)
-    else:
-        # Variable not set, create an empty BUILD file
-        repository_ctx.file("BUILD", "# OPENVINO_NATIVE_DIR not set, skipping OpenVINO setup.")
+load("//litert/sdk_util:repo.bzl", "configurable_repo")
 
-openvino_configure = repository_rule(
-    implementation = _openvino_native_impl,
-    local = True,
-    environ = ["OPENVINO_NATIVE_DIR"],
-    attrs = {
-        # Define an attribute to hold the label of the external BUILD file content
-        "build_file": attr.label(
-            doc = "The label of the BUILD file content to be written.",
-            allow_single_file = True,  # This attribute expects a single file
-            mandatory = True,
-        ),
-    },
-)
+def openvino_configure():
+    configurable_repo(
+        name = "intel_openvino",
+        build_file = "@//third_party/intel_openvino:openvino.bazel",
+        local_path_env = "OPENVINO_NATIVE_DIR",
+        url = "https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.3/windows/openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64.zip",
+        file_extension = "zip",
+        symlink_mapping = {
+            "openvino": "openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64",
+        },
+    )

@@ -460,7 +460,7 @@ build:elinux_armhf --copt -mfp16-format=ieee
 
 # Load rc file written by ./configure.
 # Fail on missing litert configure. It must exist for clang to be properly configured.
-import %workspace%/.litert_configure.bazelrc
+try-import %workspace%/.litert_configure.bazelrc
 try-import %workspace%/xla_configure.bazelrc
 
 # Load rc file with user-specific options.
