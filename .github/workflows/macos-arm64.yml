@@ -100,7 +100,8 @@ jobs:
             -s \
             --cxxopt=-std=c++17 \
             --verbose_failures \
-            //...
+            //litert/core/...\
+            //litert/python/...
 
       - name: Run LiteRT tests
         run: |
