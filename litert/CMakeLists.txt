@@ -111,7 +111,7 @@ include_directories(${LITERT_GENERATED_INCLUDE_DIR})
 # Find TFLite package - we depend on it being built first
 set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/tflite_build" CACHE PATH "Path to TFLite build directory")
 set(TFLITE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tflite" CACHE PATH "Path to TFLite source directory")
-
+add_compile_definitions(ABSL_FLAGS_STRIP_NAMES=0)
 # Check if TFLite has been built
 if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
     if(LITERT_AUTO_BUILD_TFLITE)

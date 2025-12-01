@@ -197,7 +197,6 @@ target_link_libraries(apply_plugin_main
         litert_tool_flags_intel_openvino
         litert_tool_flags_mediatek
         litert_tool_flags_qualcomm
-
         litert_tool_display
         litert_core
         litert_core_model
