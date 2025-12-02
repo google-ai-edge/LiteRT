@@ -28,6 +28,9 @@ using ::testing::Not;
 using ::testing::litert::IsOk;
 
 TEST(Event, DupFdOnNegativeFd) {
+#if !LITERT_HAS_SYNC_FENCE_SUPPORT
+  GTEST_SKIP() << "Skipping test on platform without sync fence support.";
+#endif  // !LITERT_HAS_SYNC_FENCE_SUPPORT
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
@@ -35,6 +38,9 @@ TEST(Event, DupFdOnNegativeFd) {
 }
 
 TEST(Event, IsSignaledOnNegativeFd) {
+#if !LITERT_HAS_SYNC_FENCE_SUPPORT
+  GTEST_SKIP() << "Skipping test on platform without sync fence support.";
+#endif  // !LITERT_HAS_SYNC_FENCE_SUPPORT
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
