@@ -750,3 +750,18 @@ cc_binary(
         "@com_google_absl//absl/strings:str_format",
     ],
 )
+
+cc_binary(
+    name = "metadata_util_main",
+    srcs = ["metadata_util_main.cc"],
+    deps = [
+        ":tool_display",
+        "//litert/c:litert_model_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/core/model",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+    ],
+)
