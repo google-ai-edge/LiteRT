@@ -22,6 +22,7 @@ EXPORTS
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddOpaqueOptions
   LiteRtCompiledModelIsFullyAccelerated
+  LiteRtCompiledModelResizeInputTensor
   LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
