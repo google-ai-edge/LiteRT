@@ -18,23 +18,27 @@
 #include "litert/c/litert_event_type.h"
 #include "litert/cc/internal/litert_platform_support.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/core/environment.h"
 #include "litert/test/matchers.h"
 
 namespace litert {
 namespace {
 
+using ::testing::Not;
+using ::testing::litert::IsOk;
+
 TEST(Event, DupFdOnNegativeFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
-  EXPECT_FALSE(event.DupFd());
+  EXPECT_THAT(event.DupFd(), Not(IsOk()));
 }
 
 TEST(Event, IsSignaledOnNegativeFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
-  EXPECT_FALSE(event.IsSignaled());
+  EXPECT_THAT(event.IsSignaled(), Not(IsOk()));
 }
 
 TEST(Event, CreateManagedEglSyncFence) {
@@ -42,6 +46,10 @@ TEST(Event, CreateManagedEglSyncFence) {
     GTEST_SKIP() << "Skipping test for platforms without OpenGL support.";
   }
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  if (!env.Get()->GetGpuEnvironment().HasValue()) {
+    GTEST_SKIP()
+        << "Skipping test because the GPU environment is not available.";
+  }
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event,
@@ -54,6 +62,10 @@ TEST(Event, CreateManagedEglNativeSyncFence) {
     GTEST_SKIP() << "Skipping test for platforms without OpenGL support.";
   }
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  if (!env.Get()->GetGpuEnvironment().HasValue()) {
+    GTEST_SKIP()
+        << "Skipping test because the GPU environment is not available.";
+  }
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event,
