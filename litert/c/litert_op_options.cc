@@ -1298,6 +1298,21 @@ LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetSqueezeDimsOption(LiteRtOp op,
+                                        const int32_t** squeeze_dims,
+                                        int32_t* num_squeeze_dims) {
+  if (op->OpCode() != kLiteRtOpCodeTflSqueeze) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *squeeze_dims = opts.AsSqueezeOptions()->squeeze_dims.data();
+  *num_squeeze_dims = opts.AsSqueezeOptions()->squeeze_dims.size();
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

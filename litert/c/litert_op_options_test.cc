@@ -741,4 +741,20 @@ TEST(GetOpOptionTest, TestGetSHLOCompositeOptions) {
   ASSERT_EQ(parsed_attributes["meaning_of_life"].AsInt32(), 42);
 }
 
+TEST(GetOpOptionTest, TestGetSqueezeOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_squeeze.tflite");
+  auto subgraph = model.MainSubgraph();
+  ASSERT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  const int32_t* squeeze_dims = nullptr;
+  int32_t num_squeeze_dims = -1;
+  LITERT_ASSERT_OK(
+      LiteRtGetSqueezeDimsOption(op, &squeeze_dims, &num_squeeze_dims));
+  ASSERT_EQ(num_squeeze_dims, 1);
+  ASSERT_EQ(squeeze_dims[0], 1);
+}
+
 }  // namespace

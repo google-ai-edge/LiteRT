@@ -523,6 +523,18 @@ LiteRtStatus LiteRtGetGeluApproximateOption(LiteRtOp op, bool* approximate);
 //==============================================================================
 LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode);
 
+//==============================================================================
+//
+// Get option APIs for LiteRt Squeeze op.
+//  Options:
+// - squeeze_dims : int32_t[]
+// - num_squeeze_dims : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetSqueezeDimsOption(LiteRtOp op,
+                                        const int32_t** squeeze_dims,
+                                        int32_t* num_squeeze_dims);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
