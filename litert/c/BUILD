@@ -662,9 +662,10 @@ cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRt.so",
-    user_link_flags = export_lrt_runtime_only_linkopt() + [
-        "-Wl,-soname=libLiteRt.so",
-    ] + litert_android_linkopts(),
+    user_link_flags = export_lrt_runtime_only_linkopt() + select({
+        "@platforms//os:macos": [],
+        "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
+    }) + litert_android_linkopts(),
     deps = [":litert_runtime_c_api_so_shim"],
 )
 
