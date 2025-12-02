@@ -15,6 +15,7 @@
 
 # Utils package for the stable delegate APIs.
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("//tflite:build_def.bzl", "tflite_cc_shared_object", "tflite_linkopts_no_undefined")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")
 
@@ -24,6 +25,7 @@ cc_library_with_tflite(
     name = "delegate_loader",
     srcs = ["delegate_loader.cc"],
     hdrs = ["delegate_loader.h"],
+    compatible_with = get_compatible_with_portable(),
     generate_opaque_delegate_target = True,
     linkopts = select({
         "@org_tensorflow//tensorflow:windows": [],
@@ -93,6 +95,7 @@ cc_library(
         "//tflite/acceleration/configuration:configuration_fbs_contents-inl.h",
     ],
     hdrs = ["tflite_settings_json_parser.h"],
+    compatible_with = get_compatible_with_portable(),
     visibility = ["//visibility:public"],
     deps = [
         "//tflite/acceleration/configuration:configuration_fbs",
