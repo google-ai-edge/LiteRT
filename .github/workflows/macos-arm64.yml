@@ -100,8 +100,6 @@ jobs:
             -s \
             --cxxopt=-std=c++17 \
             --verbose_failures \
-            //litert/core/...\
-            //litert/c/...\
             //litert/cc/...
 
       - name: Run LiteRT tests
@@ -111,8 +109,6 @@ jobs:
             -s \
             --cxxopt=-std=c++17 \
             --verbose_failures \
-            //litert/core/...\
-            //litert/c/...\
             //litert/cc/...
             
       - name: Remove cache if cache is being refreshed.
