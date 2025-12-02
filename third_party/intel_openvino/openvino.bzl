@@ -16,13 +16,40 @@
 load("//litert/sdk_util:repo.bzl", "configurable_repo")
 
 def openvino_configure():
+    """Configure OpenVINO for multiple platforms."""
+
+    # On Linux hosts, both openvino/ (Linux SDK) and openvino_android/ (Android SDK)
+    # are downloaded. Bazel's select() picks the correct one at build time based on
+    # target platform, enabling Android cross-compilation from Linux.
+    # On Windows hosts, only the Windows SDK is downloaded.
     configurable_repo(
         name = "intel_openvino",
         build_file = "@//third_party/intel_openvino:openvino.bazel",
         local_path_env = "OPENVINO_NATIVE_DIR",
-        url = "https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.3/windows/openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64.zip",
-        file_extension = "zip",
-        symlink_mapping = {
-            "openvino": "openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64",
-        },
+        packages = json.encode([
+            {
+                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.3/windows/openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64.zip",
+                "host_os": "windows",
+                "file_extension": "zip",
+                "symlink_mapping": {
+                    "openvino": "openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64",
+                },
+            },
+            {
+                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.4.0rc2/openvino_toolkit_ubuntu22_2025.4.0.dev20251113_x86_64.tgz",
+                "host_os": "linux",
+                "file_extension": "tgz",
+                "symlink_mapping": {
+                    "openvino": "openvino_toolkit_ubuntu22_2025.4.0.dev20251113_x86_64",
+                },
+            },
+            {
+                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.4.0rc2/openvino_toolkit_android_2025.4.0.dev20251113_x86_64.tgz",
+                "host_os": "linux",
+                "file_extension": "tgz",
+                "symlink_mapping": {
+                    "openvino_android": "openvino_toolkit_android_2025.4.0.dev20251113_x86_64",
+                },
+            },
+        ]),
     )

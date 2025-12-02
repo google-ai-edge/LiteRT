@@ -123,6 +123,12 @@ jobs:
 
           bazel test --disk_cache=~/.cache/bazel-linux "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
 
+      - name: Build Intel OpenVINO plugin for Linux
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-linux \
+            //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so \
+            //litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so
+
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true
