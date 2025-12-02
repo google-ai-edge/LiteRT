@@ -63,6 +63,7 @@ from ._maximum import MaximumOp, maximum
 from ._minimum import MinimumOp, minimum
 from ._relu import ReluOp, relu
 from ._squeeze import SqueezeOp, squeeze
+from ._sqrt import SqrtOp, sqrt
 # TODO(cnchan): Update import style with dialect refactor.
 from .const_bytes_attr import ConstBytesAttr
 from .log import LogOp, log
