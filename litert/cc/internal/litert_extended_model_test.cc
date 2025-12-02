@@ -14,19 +14,24 @@
 
 #include "litert/cc/internal/litert_extended_model.h"
 
-#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -247,6 +252,38 @@ TEST(CcModelTest, AddMetadataGetMetadataOutsideOfScopeSuccess) {
   EXPECT_EQ(absl::string_view(reinterpret_cast<const char*>(metadata.data()),
                               metadata.size()),
             kExpectedData);
+}
+
+TEST(CcModelTest, SerializeModelSuccess) {
+  Expected<std::unique_ptr<internal::FlatbufferWrapper>> flatbuffer =
+      internal::FlatbufferWrapper::CreateFromTflFile(
+          testing::GetTestFilePath("one_mul.tflite"));
+
+  ExtendedModel model = testing::LoadTestFileModel("one_mul.tflite");
+  LiteRtModelSerializationOptions serialization_options =
+      SerializationOptions::Defaults();
+  serialization_options.bytecode_alignment = 1;
+  Expected<OwningBufferRef<uint8_t>> serialized =
+      ExtendedModel::Serialize(std::move(model), serialization_options);
+  ASSERT_TRUE(serialized.HasValue());
+  EXPECT_GT(serialized->Size(), 0);
+  // TODO:(yunandrew) add check for serialized size
+}
+
+TEST(CcModelTest, SerializePreCompiledModelHasSameSizeAsOriginal) {
+  Expected<std::unique_ptr<internal::FlatbufferWrapper>> flatbuffer =
+      internal::FlatbufferWrapper::CreateFromTflFile(
+          testing::GetTestFilePath("simple_add_op.sm8750.tflite"));
+
+  ExtendedModel model =
+      testing::LoadTestFileModel("simple_add_op.sm8750.tflite");
+  LiteRtModelSerializationOptions serialization_options =
+      SerializationOptions::Defaults();
+  serialization_options.bytecode_alignment = 1;
+  Expected<OwningBufferRef<uint8_t>> serialized =
+      ExtendedModel::Serialize(std::move(model), serialization_options);
+  ASSERT_TRUE(serialized.HasValue());
+  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
 }
 
 }  // namespace

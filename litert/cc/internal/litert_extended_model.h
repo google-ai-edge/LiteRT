@@ -35,6 +35,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 
 namespace litert {
@@ -394,6 +395,18 @@ class ExtendedModel : public litert::Model {
       return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
     }
     return signature->OutputNames();
+  }
+
+  // Serializes a model to a buffer. Model would be released after
+  // serialization.
+  static Expected<OwningBufferRef<uint8_t>> Serialize(
+      Model&& model, const LiteRtModelSerializationOptions& options) {
+    OwningBufferRef<uint8_t> buf;
+    auto [data, size, offset] = buf.GetWeak();
+
+    LITERT_RETURN_IF_ERROR(LiteRtSerializeModel(
+        std::move(model.Release()), &data, &size, &offset, true, options));
+    return std::move(buf);
   }
 
  private:

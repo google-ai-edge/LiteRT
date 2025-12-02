@@ -30,6 +30,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
@@ -458,6 +459,30 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   }
   LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
   model->SetSourcePath(std::string(filename));
+
+  // Load bytecode of each dispatch op and attach it to the model.
+  absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
+  for (const LiteRtSubgraph& subgraph : model->Subgraphs()) {
+    for (LiteRtOp op : subgraph->Ops()) {
+      if (op->OpCode() == kLiteRtOpCodeTflCustom) {
+        DispatchOpOptions dispatch_opts =
+            GetDispatchOpOptions(op->CustomOptions());
+        if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {
+          OwningBufferRef<uint8_t> owned_byte_code(
+              GetTflFlatbuffer(*model).AllocBase() +
+                  dispatch_opts.bytecode_offset,
+              dispatch_opts.bytecode_size);
+          const BufferManager::BufferId buf_id =
+              model->Buffers()->RegisterOwnedBuffer(std::move(owned_byte_code));
+          buffer_id_map.insert({dispatch_opts.bytecode_offset, buf_id});
+        }
+
+        model->AttachAssetToOp(op, buffer_id_map[dispatch_opts.bytecode_offset],
+                               std::move(dispatch_opts.name));
+      }
+    }
+  }
+
   return std::move(model);
 }
 

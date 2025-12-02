@@ -20,6 +20,7 @@
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -83,6 +84,8 @@ static constexpr absl::string_view kSimpleMultiSubgraph =
     "multi_subgraph.tflite";
 static constexpr absl::string_view kCstMultiSubgraph =
     "cst_multi_subgraph.tflite";
+static constexpr absl::string_view kPreCompiledModel =
+    "simple_add_op.sm8750.tflite";
 
 // Store buffers to ensure they outlive the models in tests
 static std::unordered_map<std::string, OwningBufferRef<uint8_t>>&
@@ -856,6 +859,20 @@ TEST(ModelSerializeTest,
                                           &metadata, &metadata_size));
   EXPECT_EQ(BufferRef(metadata, metadata_size).StrView(), kMetadataValue);
   LiteRtDestroyModel(result_model);
+}
+
+TEST(ModelLoadSerializeTest, LoadAndSerializeWithBytecode) {
+  Expected<std::unique_ptr<FlatbufferWrapper>> flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kPreCompiledModel));
+  ASSERT_TRUE(flatbuffer);
+
+  ExtendedModel model = litert::testing::LoadTestFileModel(kPreCompiledModel);
+
+  Expected<OwningBufferRef<unsigned char>> serialized =
+      SerializeModel(std::move(*model.Get()));
+  EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
+
+  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
 }
 
 // Tests that explicitly check litert graph structure.
