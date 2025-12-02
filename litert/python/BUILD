@@ -31,14 +31,16 @@ py_strict_library(
     ],
 )
 
+exports_files(["empty.json"])
+
 pywrap_library(
     name = "pywrap_litert",
-    common_lib_def_files_or_filters = select({
-        "@bazel_tools//src/conditions:windows": {
-            "litert/python/pywrap_litert_common": "//tflite/python:pywrap_tflite_common.json",
-        },
-        "//conditions:default": {},
-    }),
+    common_lib_def_files_or_filters = {
+        "litert/python/pywrap_litert_common": select({
+            "@bazel_tools//src/conditions:windows": "//tflite/python:pywrap_tflite_common.json",
+            "//conditions:default": "empty.json",
+        }),
+    },
     common_lib_linkopts = {
         "litert/python/pywrap_litert_common": select({
             "@bazel_tools//src/conditions:windows": [],
