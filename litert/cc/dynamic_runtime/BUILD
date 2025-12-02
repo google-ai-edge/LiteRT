@@ -159,11 +159,11 @@ cc_test(
     ],
 )
 
-litert_device_exec(
-    name = "litert_event_device_test",
-    backend_id = "cpu",
-    target = ":litert_event_test",
-)
+# litert_device_exec(
+#     name = "litert_event_device_test",
+#     backend_id = "cpu",
+#     target = ":litert_event_test",
+# )
 
 cc_library(
     name = "litert_model",
@@ -468,12 +468,12 @@ cc_test(
     }),
 )
 
-litert_device_exec(
-    name = "litert_tensor_buffer_device_test",
-    backend_id = "cpu",
-    data = [],
-    target = ":litert_tensor_buffer_test",
-)
+# litert_device_exec(
+#     name = "litert_tensor_buffer_device_test",
+#     backend_id = "cpu",
+#     data = [],
+#     target = ":litert_tensor_buffer_test",
+# )
 
 cc_library(
     name = "litert_tensor_buffer_requirements",

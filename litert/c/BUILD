@@ -674,6 +674,7 @@ macos_dylib(
     exported_symbols_lists = export_lrt_runtime_only_script(),
     linkopts = ["-install_name @rpath/libLiteRt.dylib"],
     minimum_os_version = LITERT_MIN_MACOS_VERSION,
+    target_compatible_with = ["@platforms//cpu:aarch64"],
     deps = LITERT_C_API_COMMON_DEPS,
 )
 

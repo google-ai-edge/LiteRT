@@ -16,9 +16,10 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_DELEGATES_GPU_GL_PORTABLE_GL31_H_
 #define TENSORFLOW_LITE_DELEGATES_GPU_GL_PORTABLE_GL31_H_
 
+#if !defined(__APPLE__)
 #define HAS_EGL 1
-
 #include <EGL/egl.h>
+#endif  // !defined(__APPLE__)
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 

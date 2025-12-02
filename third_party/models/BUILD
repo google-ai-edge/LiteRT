@@ -25,6 +25,5 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 bzl_library(
     name = "workspace_bzl",
     srcs = ["workspace.bzl"],
-    parse_tests = False,
     visibility = ["//visibility:private"],
 )

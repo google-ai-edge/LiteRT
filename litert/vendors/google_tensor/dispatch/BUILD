@@ -127,7 +127,7 @@ litert_device_test(
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
     features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
+        "@org_tensorflow//tensorflow:android": ["-layering_check"],
         "//conditions:default": [],
     }),
     # TODO: google_tensor team fix visibility for fence deps.
