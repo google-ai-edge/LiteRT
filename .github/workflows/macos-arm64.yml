@@ -101,7 +101,7 @@ jobs:
             --cxxopt=-std=c++17 \
             --verbose_failures \
             //litert/core/...\
-            //litert/python/...
+            //litert/c/...
 
       - name: Run LiteRT tests
         run: |
@@ -111,7 +111,7 @@ jobs:
             --cxxopt=-std=c++17 \
             --verbose_failures \
             //litert/core/...\
-            //litert/python/...
+            //litert/c/...
             
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
