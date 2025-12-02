@@ -339,10 +339,10 @@ TEST(GetOpOptionTest, TestGetPackOptions) {
 
   int32_t axis;
   LITERT_ASSERT_OK(LiteRtGetPackAxisOption(op, &axis));
+  ASSERT_EQ(axis, 0);
 
   int32_t values_count;
   LITERT_ASSERT_OK(LiteRtGetPackValuesCountOption(op, &values_count));
-  ASSERT_EQ(axis, 0);
   ASSERT_EQ(values_count, 4);
 }
 
@@ -357,6 +357,10 @@ TEST(GetOpOptionTest, TestGetUnpackOptions) {
   int32_t axis;
   LITERT_ASSERT_OK(LiteRtGetUnpackAxisOption(op, &axis));
   ASSERT_EQ(axis, 2);
+
+  int32_t num;
+  LITERT_ASSERT_OK(LiteRtGetUnpackNumOption(op, &num));
+  ASSERT_EQ(num, 4);
 }
 
 TEST(GetOpOptionTest, TestGetGatherOptions) {
