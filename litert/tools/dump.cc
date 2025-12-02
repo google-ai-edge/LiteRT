@@ -238,6 +238,12 @@ void Dump(LiteRtOpCode code, std::ostream& out) {
     case kLiteRtOpCodeTflCumsum:
       out << "TFL_CUMSUM";
       break;
+    case kLiteRtOpCodeTflSqueeze:
+      out << "TFL_SQUEEZE";
+      break;
+    case kLiteRtOpCodeTflUnpack:
+      out << "TFL_UNPACK";
+      break;
     default:
       out << "UKNOWN_OP_CODE: " << code;
       break;
