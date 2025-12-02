@@ -205,10 +205,12 @@ LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims);
 //
 // Get option APIs for LiteRt Pack op.
 //  Options:
-// - axisOption : int32_t
+// - axis : int32_t
+// - values_count : int32_t
 //
 //==============================================================================
 LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis);
+LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op, int32_t* values_count);
 
 //==============================================================================
 //

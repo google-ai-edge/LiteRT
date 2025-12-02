@@ -339,7 +339,11 @@ TEST(GetOpOptionTest, TestGetPackOptions) {
 
   int32_t axis;
   LITERT_ASSERT_OK(LiteRtGetPackAxisOption(op, &axis));
+
+  int32_t values_count;
+  LITERT_ASSERT_OK(LiteRtGetPackValuesCountOption(op, &values_count));
   ASSERT_EQ(axis, 0);
+  ASSERT_EQ(values_count, 4);
 }
 
 TEST(GetOpOptionTest, TestGetUnpackOptions) {

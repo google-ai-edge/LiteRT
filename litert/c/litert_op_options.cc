@@ -433,6 +433,19 @@ LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op,
+                                            int32_t* values_count) {
+  if (op->OpCode() != kLiteRtOpCodeTflPack) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *values_count = opts.AsPackOptions()->values_count;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis) {
   if (op->OpCode() != kLiteRtOpCodeTflUnpack) {
     return kLiteRtStatusErrorInvalidArgument;

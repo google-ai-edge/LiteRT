@@ -297,7 +297,6 @@ cc_test(
         "//litert/core/model:buffer_manager",
         "//litert/test:common",
         "//litert/test:matchers",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
     ],
