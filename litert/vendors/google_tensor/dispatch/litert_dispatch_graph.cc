@@ -54,12 +54,6 @@ absl::string_view ThrEdgeIdStr(LiteRtDispatchEdgeId edge_id) {
 
 litert::Expected<void> LiteRtDispatchGraphT::AddNode(
     LiteRtDispatchNodeId node_id, LiteRtDispatchNodeType node_type) {
-  auto thr_graph_add_sq_node = southbound_.api().thr_graph_add_sq_node;
-  if (!thr_graph_add_sq_node) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_add_sq_node not found");
-  }
-
   auto thr_node_id = ThrNodeIdStr(node_id);
   ThrNodeType thr_node_type;
   switch (node_type) {
@@ -75,7 +69,7 @@ litert::Expected<void> LiteRtDispatchGraphT::AddNode(
   }
 
   if (auto status =
-          thr_graph_add_sq_node(thr_graph_, thr_node_id.data(), thr_node_type);
+          thrGraphAddSqNode(thr_graph_, thr_node_id.data(), thr_node_type);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_add_sq_node failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -87,16 +81,10 @@ litert::Expected<void> LiteRtDispatchGraphT::AddNode(
 
 litert::Expected<void> LiteRtDispatchGraphT::AddEdge(
     LiteRtDispatchEdgeId edge_id) {
-  auto thr_graph_add_edge = southbound_.api().thr_graph_add_edge;
-  if (!thr_graph_add_edge) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_add_edge not found");
-  }
-
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
   ThrEdgeType thr_edge_type = kThrEdgeNoType;
   if (auto status =
-          thr_graph_add_edge(thr_graph_, thr_edge_id.data(), thr_edge_type);
+          thrGraphAddEdge(thr_graph_, thr_edge_id.data(), thr_edge_type);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_add_edge failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure, "thr_graph_add_edge failed");
@@ -108,13 +96,6 @@ litert::Expected<void> LiteRtDispatchGraphT::AddEdge(
 litert::Expected<void> LiteRtDispatchGraphT::ConnectNodeInput(
     LiteRtDispatchNodeId node_id, int input_index,
     LiteRtDispatchEdgeId edge_id) {
-  auto thr_graph_connect_node_input =
-      southbound_.api().thr_graph_connect_node_input;
-  if (!thr_graph_connect_node_input) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_connect_node_input not found");
-  }
-
   int next_input_index = NextNodeInputIndex(node_id);
   if (input_index != next_input_index) {
     LITERT_LOG(LITERT_ERROR, "Unexpected input index %d, expected %d",
@@ -124,7 +105,7 @@ litert::Expected<void> LiteRtDispatchGraphT::ConnectNodeInput(
 
   auto thr_node_id = ThrNodeIdStr(node_id);
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thr_graph_connect_node_input(thr_graph_, thr_node_id.data(),
+  if (auto status = thrGraphConnectNodeInput(thr_graph_, thr_node_id.data(),
                                                  thr_edge_id.data());
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_set_input_edge failed: %d", status);
@@ -139,13 +120,6 @@ litert::Expected<void> LiteRtDispatchGraphT::ConnectNodeInput(
 litert::Expected<void> LiteRtDispatchGraphT::ConnectNodeOutput(
     LiteRtDispatchNodeId node_id, int output_index,
     LiteRtDispatchEdgeId edge_id) {
-  auto thr_graph_connect_node_output =
-      southbound_.api().thr_graph_connect_node_output;
-  if (!thr_graph_connect_node_output) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_connect_node_output not found");
-  }
-
   int next_output_index = NextNodeOutputIndex(node_id);
   if (output_index != next_output_index) {
     LITERT_LOG(LITERT_ERROR, "Unexpected output index %d, expected %d",
@@ -155,7 +129,7 @@ litert::Expected<void> LiteRtDispatchGraphT::ConnectNodeOutput(
 
   auto thr_node_id = ThrNodeIdStr(node_id);
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thr_graph_connect_node_output(
+  if (auto status = thrGraphConnectNodeOutput(
           thr_graph_, thr_node_id.data(), thr_edge_id.data());
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_set_output_edge failed: %d", status);
@@ -176,14 +150,8 @@ litert::Expected<void> LiteRtDispatchGraphT::ConnectGraphInput(
     return Error(kLiteRtStatusErrorRuntimeFailure, "Unexpected input index");
   }
 
-  auto thr_graph_set_input_edge = southbound_.api().thr_graph_set_input_edge;
-  if (!thr_graph_set_input_edge) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_set_input_edge not found");
-  }
-
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thr_graph_set_input_edge(thr_graph_, thr_edge_id.data());
+  if (auto status = thrGraphSetInputEdge(thr_graph_, thr_edge_id.data());
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_set_input_edge failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -202,14 +170,8 @@ litert::Expected<void> LiteRtDispatchGraphT::ConnectGraphOutput(
     return Error(kLiteRtStatusErrorRuntimeFailure, "Unexpected output index");
   }
 
-  auto thr_graph_set_output_edge = southbound_.api().thr_graph_set_output_edge;
-  if (!thr_graph_set_output_edge) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_set_output_edge not found");
-  }
-
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thr_graph_set_output_edge(thr_graph_, thr_edge_id.data());
+  if (auto status = thrGraphSetOutputEdge(thr_graph_, thr_edge_id.data());
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_set_output_edge failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -222,12 +184,6 @@ litert::Expected<void> LiteRtDispatchGraphT::ConnectGraphOutput(
 litert::Expected<void> LiteRtDispatchGraphT::AssignNodeFunction(
     LiteRtDispatchNodeId node_id, LiteRtDispatchExecutableHandle exec_handle,
     const char* function_name) {
-  auto thr_graph_assign_sq = southbound_.api().thr_graph_assign_sq;
-  if (!thr_graph_assign_sq) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_assign_sq not found");
-  }
-
   auto thr_node_id = ThrNodeIdStr(node_id);
   ThrSqContainerHandle sq_handle = exec_handle;
   // An empty function name represent no function name being provided and
@@ -235,7 +191,7 @@ litert::Expected<void> LiteRtDispatchGraphT::AssignNodeFunction(
   // will expect a model with a signature. See b/378913220.
   const char* function_name_ptr =
       absl::string_view(function_name).empty() ? nullptr : function_name;
-  if (auto status = thr_graph_assign_sq(thr_graph_, thr_node_id.data(),
+  if (auto status = thrGraphAssignSq(thr_graph_, thr_node_id.data(),
                                         sq_handle, function_name_ptr);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_assign_sq failed: %d", status);
@@ -248,13 +204,7 @@ litert::Expected<void> LiteRtDispatchGraphT::AssignNodeFunction(
 
 litert::Expected<void> LiteRtDispatchGraphT::AnnotateGraph(const char* key,
                                                            const char* value) {
-  auto thr_graph_annotate_graph = southbound_.api().thr_graph_annotate_graph;
-  if (!thr_graph_annotate_graph) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_annotate_graph not found");
-  }
-
-  if (auto status = thr_graph_annotate_graph(thr_graph_, key, value);
+  if (auto status = thrGraphAnnotateGraph(thr_graph_, key, value);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_annotate_graph failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -266,15 +216,9 @@ litert::Expected<void> LiteRtDispatchGraphT::AnnotateGraph(const char* key,
 
 litert::Expected<void> LiteRtDispatchGraphT::AnnotateNode(
     LiteRtDispatchNodeId node_id, const char* key, const char* value) {
-  auto thr_graph_annotate_node = southbound_.api().thr_graph_annotate_node;
-  if (!thr_graph_annotate_node) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_annotate_node not found");
-  }
-
   auto thr_node_id = ThrNodeIdStr(node_id);
   if (auto status =
-          thr_graph_annotate_node(thr_graph_, thr_node_id.data(), key, value);
+          thrGraphAnnotateNode(thr_graph_, thr_node_id.data(), key, value);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_annotate_node failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -286,15 +230,9 @@ litert::Expected<void> LiteRtDispatchGraphT::AnnotateNode(
 
 litert::Expected<void> LiteRtDispatchGraphT::AnnotateEdge(
     LiteRtDispatchEdgeId edge_id, const char* key, const char* value) {
-  auto thr_graph_annotate_edge = southbound_.api().thr_graph_annotate_edge;
-  if (!thr_graph_annotate_edge) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_annotate_edge not found");
-  }
-
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
   if (auto status =
-          thr_graph_annotate_edge(thr_graph_, thr_edge_id.data(), key, value);
+          thrGraphAnnotateEdge(thr_graph_, thr_edge_id.data(), key, value);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_annotate_edge failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,

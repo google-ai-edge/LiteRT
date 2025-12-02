@@ -15,6 +15,7 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -25,8 +26,9 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -36,43 +38,24 @@
 
 using litert::Error;
 using litert::Expected;
-using litert::Unexpected;
 
 LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
-  if (!thr_graphs_.empty()) {
-    auto thr_graph_delete = southbound_.api().thr_graph_delete;
-    if (!thr_graph_delete) {
-      LITERT_LOG(LITERT_ERROR, "thr_graph_delete not found");
-    } else {
-      for (auto* thr_graph : thr_graphs_) {
-        thr_graph_delete(thr_graph);
-      }
-    }
+  for (auto* thr_graph : thr_graphs_) {
+    thrGraphDelete(thr_graph);
   }
 
   if (thr_context_) {
-    auto thr_context_delete = southbound_.api().thr_context_delete;
-    if (!thr_context_delete) {
-      LITERT_LOG(LITERT_ERROR, "thr_context_delete not found");
-    } else {
-      thr_context_delete(thr_context_);
-    }
+    thrContextDelete(thr_context_);
   }
 }
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
-    const litert::google_tensor::Southbound& southbound,
     const litert::DarwinnRuntimeOptions* darwinn_options) {
-  Ptr device_context(new LiteRtDispatchDeviceContextT(southbound));
+  Ptr device_context(new LiteRtDispatchDeviceContextT());
 
-  auto thr_context_create = southbound.api().thr_context_create;
-  if (!thr_context_create) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "thr_context_create not found");
-  }
+  device_context->thr_context_ = thrContextCreate();
 
-  device_context->thr_context_ = thr_context_create();
   // Store Darwinn options to be applied to graphs later
   if (darwinn_options) {
     DarwinnOptionsData options_data;
@@ -169,40 +152,14 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 #endif
 
   ThrBufferHandle thr_buffer_handle;
-
-  if (tensor_buffer_offset == 0) {
-    auto thr_register_buffer = southbound_.api().thr_register_buffer;
-    if (!thr_register_buffer) {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "thr_register_buffer not found");
-    }
-
-    if (auto status = thr_register_buffer(
-            thr_context_, ThrBufferType::kThrBufferTypeAHardwareBuffer, ahwb,
-            tensor_buffer_size, &thr_buffer_handle);
-        status != kThrStatusSuccess) {
-      LITERT_LOG(LITERT_ERROR, "thr_register_buffer failed: %d", status);
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "thr_register_buffer failed");
-    }
-
-  } else {
-    auto thr_register_buffer_with_offset =
-        southbound_.api().thr_register_buffer_with_offset;
-    if (!thr_register_buffer_with_offset) {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "thr_register_buffer_with_offset not found");
-    }
-
-    if (auto status = thr_register_buffer_with_offset(
+  if (auto status = thrRegisterBufferWithOffset(
             thr_context_, ThrBufferType::kThrBufferTypeAHardwareBuffer, ahwb,
             tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
         status != kThrStatusSuccess) {
-      LITERT_LOG(LITERT_ERROR, "thr_register_buffer_with_offset failed: %d",
-                 status);
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "thr_register_buffer_with_offset failed");
-    }
+    LITERT_LOG(LITERT_ERROR, "thr_register_buffer_with_offset failed: %d",
+               status);
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "thr_register_buffer_with_offset failed");
   }
 
   return thr_buffer_handle;
@@ -210,14 +167,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
     LiteRtTensorBufferHandle tensor_buffer_handle) {
-  auto thr_unregister_buffer = southbound_.api().thr_unregister_buffer;
-  if (!thr_unregister_buffer) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_unregister_buffer not found");
-  }
-
   ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thr_unregister_buffer(thr_context_, thr_buffer_handle);
+  if (auto status = thrUnregisterBuffer(thr_context_, thr_buffer_handle);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_unregister_buffer failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -229,18 +180,12 @@ litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
 
 litert::Expected<LiteRtDispatchGraph>
 LiteRtDispatchDeviceContextT::CreateGraph() {
-  auto thr_graph_create = southbound_.api().thr_graph_create;
-  if (!thr_graph_create) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_create not found");
-  }
-
-  ThrGraph* thr_graph = thr_graph_create(thr_context_);
+  ThrGraph* thr_graph = thrGraphCreate(thr_context_);
   if (!thr_graph) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "thr_graph_create failed");
   }
 
-  auto* graph = new LiteRtDispatchGraphT(southbound_, thr_graph, this);
+  auto* graph = new LiteRtDispatchGraphT(thr_graph, this);
 
   // Apply Darwinn options as graph annotations
   if (darwinn_options_.has_value()) {
@@ -319,16 +264,10 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::DestroyGraph(
     LiteRtDispatchGraph graph) {
-  auto thr_graph_delete = southbound_.api().thr_graph_delete;
-  if (!thr_graph_delete) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_delete not found");
-  }
-
   thr_graphs_.erase(graph->thr_graph());
 
   ThrGraph* thr_graph = graph->thr_graph();
-  if (auto status = thr_graph_delete(thr_graph); status != kThrStatusSuccess) {
+  if (auto status = thrGraphDelete(thr_graph); status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_graph_destroy failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure, "thr_graph_destroy failed");
   }
@@ -340,12 +279,6 @@ litert::Expected<void> LiteRtDispatchDeviceContextT::DestroyGraph(
 litert::Expected<LiteRtDispatchExecutableHandle>
 LiteRtDispatchDeviceContextT::LoadExecutable(
     LiteRtDispatchExecutableType type, const LiteRtMemBuffer* bytecode_buffer) {
-  auto thr_load_sq_container = southbound_.api().thr_load_sq_container;
-  if (!thr_load_sq_container) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_load_sq_container not found");
-  }
-
   ThrSqContainerType thr_type;
   switch (type) {
     case kLiteRtDispatchExecutableTypeDspLibrary:
@@ -368,14 +301,14 @@ LiteRtDispatchDeviceContextT::LoadExecutable(
       // memory address right below.
       (bytecode_buffer->offset == 0)) {
     bool lazy_loading = false;
-    status = southbound_.api().thr_load_sq_container_fd(
+    status = thrLoadSqContainerFd(
         thr_context_, thr_type, bytecode_buffer->fd, bytecode_buffer->size,
         lazy_loading, &sq_handle);
   } else {
     auto bytecode_ptr =
         static_cast<const uint8_t*>(bytecode_buffer->base_addr) +
         bytecode_buffer->offset;
-    status = southbound_.api().thr_load_sq_container(
+    status = thrLoadSqContainer(
         thr_context_, thr_type, bytecode_ptr, bytecode_buffer->size,
         &sq_handle);
   }
@@ -390,14 +323,8 @@ LiteRtDispatchDeviceContextT::LoadExecutable(
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnloadExecutable(
     LiteRtDispatchExecutableHandle exec_handle) {
-  auto thr_unload_sq_container = southbound_.api().thr_unload_sq_container;
-  if (!thr_unload_sq_container) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_unload_sq_container not found");
-  }
-
   ThrSqContainerHandle sq_handle = exec_handle;
-  if (auto status = thr_unload_sq_container(thr_context_, sq_handle);
+  if (auto status = thrUnloadSqContainer(thr_context_, sq_handle);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_unload_sq_container failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
