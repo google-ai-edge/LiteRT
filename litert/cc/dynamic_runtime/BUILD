@@ -431,6 +431,10 @@ cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["//litert/cc:litert_tensor_buffer_test.cc"],
     linkopts = litert_android_linkopts(),
+    target_compatible_with = [
+        "@platforms//os:android",
+        "@platforms//os:linux",
+    ],
     deps = [
         ":litert_environment",
         ":litert_event",
@@ -596,6 +600,10 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
+    ],
+    target_compatible_with = [
+        "@platforms//os:android",
+        "@platforms//os:linux",
     ],
     deps = [
         ":litert_compiled_model",
