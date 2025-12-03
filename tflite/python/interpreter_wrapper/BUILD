@@ -79,7 +79,7 @@ config_setting(
 )
 
 pybind_extension(
-    name = "_pywrap_tensorflow_interpreter_wrapper",
+    name = "_pywrap_litert_interpreter_wrapper",
     srcs = [
         "interpreter_wrapper_pybind11.cc",
     ],
@@ -95,7 +95,7 @@ pybind_extension(
     enable_stub_generation = True,
     link_in_framework = True,
     pytype_srcs = [
-        "_pywrap_tensorflow_interpreter_wrapper.pyi",
+        "_pywrap_litert_interpreter_wrapper.pyi",
     ],
     wrap_py_init = True,
     deps = [
