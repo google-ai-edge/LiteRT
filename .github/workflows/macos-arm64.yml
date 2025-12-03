@@ -109,7 +109,9 @@ jobs:
             -s \
             --cxxopt=-std=c++17 \
             --verbose_failures \
-            //litert/cc/...
+            //litert/cc/...\
+            //litert/c/...\
+            //litert/core/...\
             
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
