@@ -205,19 +205,23 @@ LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims);
 //
 // Get option APIs for LiteRt Pack op.
 //  Options:
-// - axisOption : int32_t
+// - axis : int32_t
+// - values_count : int32_t
 //
 //==============================================================================
 LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis);
+LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op, int32_t* values_count);
 
 //==============================================================================
 //
 // Get option APIs for LiteRt Unpack op.
 //  Options:
-// - axisOption : int32_t
+// - axis : int32_t
+// - num : int32_t
 //
 //==============================================================================
 LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis);
+LiteRtStatus LiteRtGetUnpackNumOption(LiteRtOp op, int32_t* num);
 
 //==============================================================================
 //
@@ -518,6 +522,18 @@ LiteRtStatus LiteRtGetGeluApproximateOption(LiteRtOp op, bool* approximate);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt Squeeze op.
+//  Options:
+// - squeeze_dims : int32_t[]
+// - num_squeeze_dims : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetSqueezeDimsOption(LiteRtOp op,
+                                        const int32_t** squeeze_dims,
+                                        int32_t* num_squeeze_dims);
 
 #ifdef __cplusplus
 }

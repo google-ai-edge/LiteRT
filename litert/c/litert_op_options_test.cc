@@ -340,6 +340,10 @@ TEST(GetOpOptionTest, TestGetPackOptions) {
   int32_t axis;
   LITERT_ASSERT_OK(LiteRtGetPackAxisOption(op, &axis));
   ASSERT_EQ(axis, 0);
+
+  int32_t values_count;
+  LITERT_ASSERT_OK(LiteRtGetPackValuesCountOption(op, &values_count));
+  ASSERT_EQ(values_count, 4);
 }
 
 TEST(GetOpOptionTest, TestGetUnpackOptions) {
@@ -353,6 +357,10 @@ TEST(GetOpOptionTest, TestGetUnpackOptions) {
   int32_t axis;
   LITERT_ASSERT_OK(LiteRtGetUnpackAxisOption(op, &axis));
   ASSERT_EQ(axis, 2);
+
+  int32_t num;
+  LITERT_ASSERT_OK(LiteRtGetUnpackNumOption(op, &num));
+  ASSERT_EQ(num, 4);
 }
 
 TEST(GetOpOptionTest, TestGetGatherOptions) {
@@ -731,6 +739,22 @@ TEST(GetOpOptionTest, TestGetSHLOCompositeOptions) {
       flexbuffers::GetRoot(attributes, attributes_size).AsMap();
   ASSERT_STREQ(parsed_attributes["an_attribute"].AsString().c_str(), "foo");
   ASSERT_EQ(parsed_attributes["meaning_of_life"].AsInt32(), 42);
+}
+
+TEST(GetOpOptionTest, TestGetSqueezeOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_squeeze.tflite");
+  auto subgraph = model.MainSubgraph();
+  ASSERT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  const int32_t* squeeze_dims = nullptr;
+  int32_t num_squeeze_dims = -1;
+  LITERT_ASSERT_OK(
+      LiteRtGetSqueezeDimsOption(op, &squeeze_dims, &num_squeeze_dims));
+  ASSERT_EQ(num_squeeze_dims, 1);
+  ASSERT_EQ(squeeze_dims[0], 1);
 }
 
 }  // namespace

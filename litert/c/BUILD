@@ -297,7 +297,6 @@ cc_test(
         "//litert/core/model:buffer_manager",
         "//litert/test:common",
         "//litert/test:matchers",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
     ],
@@ -785,6 +784,7 @@ SELECT_LITERT_RUNTIME_C_API_SO = select({
 filegroup(
     name = "libLiteRt.so",
     srcs = SELECT_LITERT_RUNTIME_C_API_SO,
+    visibility = ["//litert:litert_public"],
 )
 
 # Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs

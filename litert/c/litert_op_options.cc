@@ -433,6 +433,19 @@ LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op,
+                                            int32_t* values_count) {
+  if (op->OpCode() != kLiteRtOpCodeTflPack) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *values_count = opts.AsPackOptions()->values_count;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis) {
   if (op->OpCode() != kLiteRtOpCodeTflUnpack) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -442,6 +455,18 @@ LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *axis = opts.AsUnpackOptions()->axis;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetUnpackNumOption(LiteRtOp op, int32_t* num) {
+  if (op->OpCode() != kLiteRtOpCodeTflUnpack) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num = opts.AsUnpackOptions()->num;
   return kLiteRtStatusOk;
 }
 
@@ -1270,6 +1295,21 @@ LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *mode = opts.AsMirrorPadOptions()->mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSqueezeDimsOption(LiteRtOp op,
+                                        const int32_t** squeeze_dims,
+                                        int32_t* num_squeeze_dims) {
+  if (op->OpCode() != kLiteRtOpCodeTflSqueeze) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *squeeze_dims = opts.AsSqueezeOptions()->squeeze_dims.data();
+  *num_squeeze_dims = opts.AsSqueezeOptions()->squeeze_dims.size();
   return kLiteRtStatusOk;
 }
 
