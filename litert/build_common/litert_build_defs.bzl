@@ -284,7 +284,8 @@ def _litert_base(
         })
     else:
         linkopts = select({
-            "//litert/build_common:linux_x86_64": _DEFAULT_LINK_OPTS_X86_64,
+            "@org_tensorflow//tensorflow:linux_x86_64": _DEFAULT_LINK_OPTS_X86_64,
+            "@org_tensorflow//tensorflow:macos": [],
             "//conditions:default": [],
         })
 
