@@ -56,6 +56,13 @@ LiteRtDispatchDeviceContextT::Create(
 
   device_context->thr_context_ = thrContextCreate();
 
+  if (auto status = thrVendorSetSystemAttributeStr(
+          device_context->thr_context_, "edgetpu_use_tpu_tachyon", "1");
+      status != kThrStatusSuccess) {
+    LITERT_LOG(LITERT_ERROR, "Failed to enable Tachyon");
+    return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to enable Tachyon");
+  }
+
   // Store Darwinn options to be applied to graphs later
   if (darwinn_options) {
     DarwinnOptionsData options_data;
