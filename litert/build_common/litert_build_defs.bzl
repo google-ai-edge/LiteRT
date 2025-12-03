@@ -80,8 +80,11 @@ def make_rpaths(rpaths):
 def append_rule_kwargs(rule_kwargs, **append):
     for k, v in append.items():
         append_to = rule_kwargs.pop(k, [])
-        append_to += v
-        rule_kwargs[k] = append_to
+        if type(v) == "select":
+            rule_kwargs[k] = v + append_to
+        else:
+            append_to += v
+            rule_kwargs[k] = append_to
 
 def absolute_label(label, package_name = None):
     """Get the absolute label for a given label.
