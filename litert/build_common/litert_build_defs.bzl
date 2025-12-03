@@ -81,7 +81,13 @@ def append_rule_kwargs(rule_kwargs, **append):
     for k, v in append.items():
         append_to = rule_kwargs.pop(k, [])
         if type(v) == "select":
-            rule_kwargs[k] = v + append_to
+            selects.with_or(
+                v,
+                {
+                    "//conditions:default": append_to,
+                },
+                rule_kwargs.setdefault(k, []),
+            )
         else:
             append_to += v
             rule_kwargs[k] = append_to
