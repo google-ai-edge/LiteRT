@@ -84,17 +84,23 @@ Expected<void> CheckAts() {
   typename AtsInferenceTest::Capture i_cap;
   typename AtsCompileTest::Capture c_cap;
 
+  LITERT_LOG(INFO) << "Setting up CPU inference options.";
   LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions());
+  LITERT_LOG(INFO) << "Setting up compile options.";
   LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions());
+  LITERT_LOG(INFO) << "Setting up NPU inference options.";
   LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions());
 
   // CPU
   {
+    LITERT_LOG(INFO) << "Registering extra models for CPU.";
     RegisterExtraModels<AtsInferenceTest>(test_id, cpu_inference_options,
                                           i_cap);
+    LITERT_LOG(INFO) << "Registering combinations for CPU (NoOp).";
     RegisterCombinations<AtsInferenceTest, NoOp, SizeListC<1>,
                          TypeList<float, int32_t>>(
         /*iters=*/1, test_id, cpu_inference_options, i_cap);
+    LITERT_LOG(INFO) << "Registering combinations for CPU (BinaryNoBroadcast).";
     RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
                          TypeList<float>,
                          OpCodeListC<kLiteRtOpCodeTflSub, kLiteRtOpCodeTflAdd>>(
@@ -104,6 +110,7 @@ Expected<void> CheckAts() {
   // NPU
 
   {
+    LITERT_LOG(INFO) << "Registering combinations for NPU.";
     RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
                          TypeList<float>, OpCodeListC<kLiteRtOpCodeTflSub>>(
         /*iters=*/1, test_id, npu_inference_options, i_cap);
@@ -112,21 +119,26 @@ Expected<void> CheckAts() {
   // Compile
 
   {
+    LITERT_LOG(INFO) << "Registering combinations for compile.";
     RegisterCombinations<AtsCompileTest, BinaryNoBroadcast, SizeListC<1>,
                          TypeList<float>, OpCodeListC<kLiteRtOpCodeTflSub>>(
         /*iters=*/1, test_id, compile_options, c_cap);
   }
 
   const auto* ut = ::testing::UnitTest::GetInstance();
+  LITERT_LOG(INFO) << "Total tests registered: " << test_id;
   LITERT_ENSURE((ut->total_test_count() == test_id),
                 Error(kLiteRtStatusErrorRuntimeFailure),
                 "Unexpected number of tests.");
 
+  LITERT_LOG(INFO) << "Running all tests.";
   LITERT_ENSURE(!RUN_ALL_TESTS(), Error(kLiteRtStatusErrorRuntimeFailure),
                 "Failed to run all tests.");
+  LITERT_LOG(INFO) << "Finished running all tests.";
 
   // Check inference capture.
   {
+    LITERT_LOG(INFO) << "Checking inference capture.";
     const auto num_extra_models = std::count_if(
         i_cap.Rows().begin(), i_cap.Rows().end(), [](const auto& row) {
           return row.numerics.reference_type == ReferenceType::kCpu;
@@ -140,10 +152,12 @@ Expected<void> CheckAts() {
         i_cap_ok && i_cap.Rows().size() == test_id - 1 && num_extra_models == 1,
         Error(kLiteRtStatusErrorRuntimeFailure),
         "Status capture contains errors.");
+    LITERT_LOG(INFO) << "Inference capture OK.";
   }
 
   // Check compile capture.
   {
+    LITERT_LOG(INFO) << "Checking compile capture.";
     const auto c_cap_ok = std::all_of(
         c_cap.Rows().begin(), c_cap.Rows().end(), [](const auto& row) {
           return row.compilation_detail.status != CompilationStatus::kError;
@@ -152,6 +166,7 @@ Expected<void> CheckAts() {
     LITERT_ENSURE(c_cap_ok && c_cap.Rows().size() == 1,
                   Error(kLiteRtStatusErrorRuntimeFailure),
                   "Status capture contains errors.");
+    LITERT_LOG(INFO) << "Compile capture OK.";
   }
 
   i_cap.Print(std::cerr);
@@ -161,6 +176,7 @@ Expected<void> CheckAts() {
 
   // Check post-test saved models.
   {
+    LITERT_LOG(INFO) << "Checking post-test saved models.";
     LITERT_ASSIGN_OR_RETURN(auto out_files, internal::ListDir(dir.Str()));
     LITERT_ENSURE(out_files.size() == 1,
                   Error(kLiteRtStatusErrorRuntimeFailure),
@@ -172,20 +188,25 @@ Expected<void> CheckAts() {
                   "Unexpected output file name.");
 
     // Check compiled file can be ran.
+    LITERT_LOG(INFO) << "Loading compiled model from " << out_file;
     LITERT_ASSIGN_OR_RETURN(auto model, internal::LoadModelFromFile(out_file));
     LITERT_ENSURE(internal::IsFullyCompiled(*model),
                   Error(kLiteRtStatusErrorRuntimeFailure),
                   "Model is not fully compiled.")
 
+    LITERT_LOG(INFO) << "Creating NPU executor.";
     LITERT_ASSIGN_OR_RETURN(auto exec,
                             NpuCompiledModelExecutor::Create(
                                 *model, npu_inference_options.TargetOptions(),
                                 npu_inference_options.DispatchDir()));
     const auto& subgraph = *model->Subgraphs()[0];
+    LITERT_LOG(INFO) << "Creating inputs for compiled model.";
     LITERT_ASSIGN_OR_RETURN(
         auto inputs, SimpleBuffer::LikeSignature(subgraph.Inputs().begin(),
                                                  subgraph.Inputs().end()));
+    LITERT_LOG(INFO) << "Running compiled model.";
     LITERT_RETURN_IF_ERROR(exec.Run(inputs));
+    LITERT_LOG(INFO) << "Finished running compiled model.";
   }
 
   return {};
