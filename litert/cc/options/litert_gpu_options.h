@@ -87,6 +87,10 @@ class GpuOptions : public litert::OpaqueOptions {
   //     input and output KV caches.
   LiteRtStatus SetNumStepsOfCommandBufferPreparations(
       int num_steps_of_command_buffer_preparations);
+
+  // Sets whether to use Metal argument buffers. WARNING: This is only
+  // applicable to Metal backend.
+  LiteRtStatus SetUseMetalArgumentBuffers(bool use_metal_argument_buffers);
 };
 
 }  // namespace litert

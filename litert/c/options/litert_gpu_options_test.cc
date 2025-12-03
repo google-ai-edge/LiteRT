@@ -290,4 +290,31 @@ TEST(GpuAcceleratorPayload, SetAndGetSerializeExternalTensors) {
   LiteRtDestroyOpaqueOptions(compilation_options);
 }
 
+TEST(GpuAcceleratorPayload, SetAndGetUseMetalArgumentBuffers) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  bool use_metal_argument_buffers = true;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(LiteRtGetGpuOptionsUseMetalArgumentBuffers(
+      &use_metal_argument_buffers, payload));
+  EXPECT_THAT(use_metal_argument_buffers, Eq(false));
+
+  LITERT_EXPECT_OK(
+      LiteRtSetGpuOptionsUseMetalArgumentBuffers(compilation_options, true));
+  LITERT_EXPECT_OK(LiteRtGetGpuOptionsUseMetalArgumentBuffers(
+      &use_metal_argument_buffers, payload));
+  EXPECT_THAT(use_metal_argument_buffers, Eq(true));
+
+  EXPECT_THAT(LiteRtSetGpuOptionsUseMetalArgumentBuffers(nullptr, true),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
 }  // namespace

@@ -267,5 +267,29 @@ TEST(GpuAcceleratorCompilationOptions, SetPreferTextureWeights) {
   EXPECT_EQ(prefer_texture_weights, true);
 }
 
+TEST(GpuOptions, SetUseMetalArgumentBuffersWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+
+  // Check the default value.
+  bool use_metal_argument_buffers = true;
+  LITERT_ASSERT_OK(LiteRtGetGpuOptionsUseMetalArgumentBuffers(
+      &use_metal_argument_buffers, payload));
+  EXPECT_THAT(use_metal_argument_buffers, Eq(false));
+
+  options.SetUseMetalArgumentBuffers(true);
+
+  LITERT_ASSERT_OK(LiteRtGetGpuOptionsUseMetalArgumentBuffers(
+      &use_metal_argument_buffers, payload));
+  EXPECT_THAT(use_metal_argument_buffers, Eq(true));
+
+  options.SetUseMetalArgumentBuffers(false);
+
+  LITERT_ASSERT_OK(LiteRtGetGpuOptionsUseMetalArgumentBuffers(
+      &use_metal_argument_buffers, payload));
+  EXPECT_THAT(use_metal_argument_buffers, Eq(false));
+}
+
 }  // namespace
 }  // namespace litert::ml_drift
