@@ -116,11 +116,6 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtDestroy() {
-  delete static_neuron_adapter;
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus LiteRtGetVendorId(const char** vendor_id) {
   *vendor_id = "MediaTek";
   return kLiteRtStatusOk;
@@ -310,7 +305,6 @@ namespace {
 
 LiteRtDispatchInterface TheInterface = {
     .initialize = litert::mediatek::LiteRtInitialize,
-    .destroy = litert::mediatek::LiteRtDestroy,
     .get_vendor_id = litert::mediatek::LiteRtGetVendorId,
     .get_build_id = litert::mediatek::LiteRtGetBuildId,
     .get_capabilities = litert::mediatek::LiteRtGetCapabilities,
