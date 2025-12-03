@@ -19,8 +19,10 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_options.h"
+#include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -28,7 +30,6 @@
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
-#include "litert/cc/internal/scoped_file.h"
 
 namespace litert {
 
@@ -86,6 +87,10 @@ Expected<RuntimeOptions&> Options::GetRuntimeOptions() {
   return EnsureOption(runtime_options_);
 }
 
+Expected<CompilerOptions&> Options::GetCompilerOptions() {
+  return EnsureOption(compiler_options_);
+}
+
 Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), gpu_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), cpu_options_));
@@ -94,6 +99,7 @@ Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), google_tensor_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), intel_openvino_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), runtime_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), compiler_options_));
   return {};
 }
 
