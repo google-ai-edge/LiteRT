@@ -80,17 +80,28 @@ def make_rpaths(rpaths):
 def append_rule_kwargs(rule_kwargs, **append):
     for k, v in append.items():
         append_to = rule_kwargs.pop(k, [])
-        if type(v) == "select":
-            selects.with_or(
-                v,
-                {
-                    "//conditions:default": append_to,
-                },
-                rule_kwargs.setdefault(k, []),
-            )
-        else:
-            append_to += v
-            rule_kwargs[k] = append_to
+
+        if not v:
+            if append_to:
+                rule_kwargs[k] = append_to
+            continue
+
+        if not append_to:
+            rule_kwargs[k] = v
+            continue
+
+        is_v_select = type(v) == "select"
+        is_append_to_select = type(append_to) == "select"
+
+        if is_v_select and is_append_to_select:
+            rule_kwargs[k] = selects.with_or(v, append_to)
+        elif is_v_select and not is_append_to_select:  # v is select, append_to is list
+            rule_kwargs[k] = v + append_to
+        elif not is_v_select and is_append_to_select:  # v is list, append_to is select
+            v_select = select({"//conditions:default": v})
+            rule_kwargs[k] = selects.with_or(append_to, v_select)
+        else:  # both are lists
+            rule_kwargs[k] = append_to + v
 
 def absolute_label(label, package_name = None):
     """Get the absolute label for a given label.
