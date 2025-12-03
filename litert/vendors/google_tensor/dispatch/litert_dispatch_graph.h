@@ -22,14 +22,11 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 class LiteRtDispatchGraphT {
  public:
-  LiteRtDispatchGraphT(const litert::google_tensor::Southbound& southbound,
-                       ThrGraph* thr_graph,
-                       LiteRtDispatchDeviceContext device_context)
-      : southbound_(southbound),
+  LiteRtDispatchGraphT(ThrGraph* thr_graph,
+                       LiteRtDispatchDeviceContext device_context) :
         thr_graph_(thr_graph),
         device_context_(device_context) {}
 
@@ -115,7 +112,6 @@ class LiteRtDispatchGraphT {
     output_edges_[output_index] = edge_id;
   }
 
-  const litert::google_tensor::Southbound& southbound_;
   ThrGraph* thr_graph_;
   LiteRtDispatchDeviceContext device_context_;
   NextNodeIoIndexMap next_node_input_index_;

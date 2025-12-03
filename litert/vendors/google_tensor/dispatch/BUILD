@@ -29,6 +29,14 @@ package(
 #     outs = ["sb_api.h"],
 #     cmd = "cp $< $@",
 # )
+#
+# genrule(
+#     name = "sb_api_late_binding_cc",
+#     srcs = ["INTERNAL_SB_API_LATE_BINDING"],
+#     outs = ["sb_api_late_binding.cc"],
+#     # Replace g3 header path with that of the copy made above.
+#     cmd = "sed 's|third_party/odml/infra/southbound/sb_api.h|third_party/odml/litert/litert/vendors/google_tensor/dispatch/sb_api.h|g' $< > $@",
+# )
 # copybara:uncomment_end
 
 litert_dynamic_lib(
@@ -38,7 +46,7 @@ litert_dynamic_lib(
         "litert_dispatch_device_context.cc",
         "litert_dispatch_graph.cc",
         "litert_dispatch_invocation_context.cc",
-        "southbound.cc",
+        "sb_api_late_binding.cc",
     ],
     hdrs = [
         "dispatch_api.h",
@@ -48,7 +56,6 @@ litert_dynamic_lib(
         "litert_dispatch_metrics.h",
         "sb_api.h",
         "sb_dispatch_annotations.h",
-        "southbound.h",
     ],
     copts = [
         "-Os",

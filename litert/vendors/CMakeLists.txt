@@ -117,7 +117,7 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     "${SRC_DIR}/*dispatch_device_context.cc"
     "${SRC_DIR}/*dispatch_graph.cc"
     "${SRC_DIR}/*dispatch_invocation_context.cc"
-    "${SRC_DIR}/southbound.cc"
+    "${SRC_DIR}/sb_api_late_binding.cc"
     "${SRC_DIR}/device_context.cc"
     "${SRC_DIR}/invocation_context.cc"
   )

@@ -15,34 +15,28 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
-#include <cstddef>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 
-#include "litert/c/litert_event.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 class LiteRtDispatchInvocationContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
   static litert::Expected<Ptr> CreateFromBytecode(
-      const litert::google_tensor::Southbound& southbound,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
       int num_inputs, int num_outputs);
 
   static litert::Expected<Ptr> CreateFromGraph(
-      const litert::google_tensor::Southbound& southbound,
       LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph);
 
   ~LiteRtDispatchInvocationContextT();
@@ -81,11 +75,9 @@ class LiteRtDispatchInvocationContextT {
 
  private:
   LiteRtDispatchInvocationContextT(
-      const litert::google_tensor::Southbound& southbound,
       ThrInvocationContext* thr_invocation_context,
       LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph)
-      : southbound_(southbound),
-        thr_invocation_context_(thr_invocation_context),
+      : thr_invocation_context_(thr_invocation_context),
         device_context_(device_context),
         graph_(graph) {}
 
@@ -93,7 +85,6 @@ class LiteRtDispatchInvocationContextT {
     exec_handle_ = exec_handle;
   }
 
-  const litert::google_tensor::Southbound& southbound_;
   ThrInvocationContext* thr_invocation_context_;
   LiteRtDispatchDeviceContext device_context_;
   LiteRtDispatchGraph graph_;

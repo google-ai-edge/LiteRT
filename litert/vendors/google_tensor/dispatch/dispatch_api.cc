@@ -16,7 +16,6 @@
 
 #include <cstdio>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 
@@ -30,8 +29,6 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -42,11 +39,9 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 namespace {
 
-litert::google_tensor::Southbound* TheSouthbound;
 char BuildId[256];
 
 LiteRtEnvironmentOptions TheEnvironmntOptions;
@@ -60,19 +55,6 @@ namespace google_tensor {
 // /////////////////////////////////////////////////////////////////////////////
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
-
-std::optional<std::string> GetSharedLibraryDir(
-    LiteRtEnvironmentOptions environment_options) {
-  litert::EnvironmentOptions env_options(environment_options);
-  auto dispatch_lib_dir_any =
-      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (!dispatch_lib_dir_any) {
-    LITERT_LOG(LITERT_INFO, "No dispatch library dir option found: %s",
-               dispatch_lib_dir_any.Error().Message().c_str());
-    return std::nullopt;
-  }
-  return std::string(std::get<const char*>(*dispatch_lib_dir_any));
-}
 
 LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
@@ -92,37 +74,16 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
     LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found, using defaults");
   }
 
-  auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
-
-  if (auto southbound =
-          litert::google_tensor::Southbound::Create(shared_library_dir_opt);
-      !southbound) {
-    LITERT_LOG(LITERT_INFO, "Initialization failure: %s",
-               southbound.Error().Message().c_str());
-    return southbound.Error().Status();
-  } else {
-    TheSouthbound = southbound->release();
-  }
-
-  auto thr_initialize = TheSouthbound->api().thr_initialize;
-  if (!thr_initialize) {
-    LITERT_LOG(LITERT_INFO, "thr_initialize not found");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-  if (auto status = thr_initialize(); status != kThrStatusSuccess) {
+  if (ThrStatus status = thrInitialize(); status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_INFO, "thr_initialize failed: %d", status);
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  auto thr_get_vendor_api_version =
-      TheSouthbound->api().thr_get_vendor_api_version;
-  const char* sb_api_version =
-      thr_get_vendor_api_version ? thr_get_vendor_api_version() : "N.A.";
-  auto thr_get_vendor_id = TheSouthbound->api().thr_get_vendor_id;
-  const char* sb_vendor_id = thr_get_vendor_id ? thr_get_vendor_id() : "N.A.";
+  const char* sb_api_version = thrGetVendorApiVersion();
+  const char* sb_vendor_id = thrGetVendorId();
   snprintf(
       BuildId, sizeof(BuildId),
-      "GoogleTensor Dispatch API version %d.%d.%d, Darwinn API version %s, "
+      "GoogleTensor Dispatch API version %d.%d.%d, SB API version %s, "
       "vendor id: %s",
       LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
       LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
@@ -132,7 +93,6 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
 }
 
 LiteRtStatus Destroy() {
-  delete TheSouthbound;
   return kLiteRtStatusOk;
 }
 
@@ -155,7 +115,7 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
   if (auto result = LiteRtDispatchDeviceContextT::Create(
-          *TheSouthbound, TheDarwinnOptions.get());
+          TheDarwinnOptions.get());
 
       result) {
     *device_context = result->release();
@@ -231,7 +191,7 @@ LiteRtStatus InvocationContextCreate(
     LiteRtDispatchInvocationContext* invocation_context) {
   function_name = "";
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromBytecode(
-          *TheSouthbound, device_context, exec_type, exec_bytecode_buffer,
+          device_context, exec_type, exec_bytecode_buffer,
           function_name, num_inputs, num_outputs);
       result) {
     *invocation_context = result->release();
@@ -581,7 +541,7 @@ LiteRtStatus InvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context) {
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromGraph(
-          *TheSouthbound, device_context, graph);
+          device_context, graph);
       result) {
     *invocation_context = result->release();
     return kLiteRtStatusOk;
