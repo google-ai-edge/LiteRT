@@ -162,7 +162,6 @@ class ErrorStatusBuilder {
   }
 
   void PrintLog() const noexcept {
-#ifndef NDEBUG
     if (ShouldLog()) {
       auto logger = LiteRtGetDefaultLogger();
       LiteRtLogSeverity __min_severity__;
@@ -174,7 +173,6 @@ class ErrorStatusBuilder {
         LiteRtLoggerLog(logger, log_level_, "%s", LogMessage().c_str());
       }
     }
-#endif
   }
 
   // Appends data to the error message.
@@ -358,8 +356,7 @@ class LogBeforeAbort {
 #define LITERT_RETURN_IF_ERROR_2(EXPR, RETURN_VALUE)                     \
   if (auto status = EXPR; ::litert::ErrorStatusBuilder::IsError(status)) \
     if (::litert::ErrorStatusBuilder _(std::move(status)); true)         \
-      if (LITERT_LOG(ERROR) << "Returning error: " << _.LogMessage(); true) \
-        return RETURN_VALUE
+  return RETURN_VALUE
 // NOLINTEND(readability/braces)
 
 #define LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD, \
@@ -376,7 +373,6 @@ class LogBeforeAbort {
   auto&& TMP_VAR = (EXPR);                                                  \
   if (::litert::ErrorStatusBuilder::IsError(TMP_VAR)) {                     \
     [[maybe_unused]] ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));    \
-    LITERT_LOG(ERROR) << "Returning error: " << _.LogMessage();             \
     return RETURN_VALUE;                                                    \
   }                                                                         \
   _LITERT_STRIP_PARENS(DECL) =                                              \
@@ -445,7 +441,7 @@ class LogBeforeAbort {
 
 #define LITERT_ENSURE(cond, status, msg) \
   if (!(cond)) {                         \
-    LITERT_LOG(ERROR) << msg;            \
+    LITERT_LOG(LITERT_ERROR, "%s", msg); \
     return status;                       \
   }
 
