@@ -20,6 +20,8 @@ namespace qnn {
 
 class OpWrapper final {
  public:
+  explicit OpWrapper() = default;
+
   explicit OpWrapper(std::string name, const char* op_type, QnnOpCode op_code);
 
   OpWrapper(const OpWrapper& other);
@@ -29,6 +31,10 @@ class OpWrapper final {
   OpWrapper(OpWrapper&& other);
 
   ~OpWrapper();
+
+  void SetName(std::string name);
+
+  void SetType(const char*op_type, QnnOpCode op_code);
 
   void AddInputTensor(const TensorWrapper& tensor);
 
@@ -63,8 +69,6 @@ class OpWrapper final {
   void UpdateTensors(
       const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
       const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs);
-
-  void ClearTensorParams();
 
   void AddPrefixToName(absl::string_view prefix);
 

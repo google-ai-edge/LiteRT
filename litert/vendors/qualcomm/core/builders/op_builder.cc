@@ -53,6 +53,14 @@ std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
   return result;
 }
 
+std::string GetUniqueOpName(const char* op_type) {
+  // TODO(jiunkaiy): Remove the static op_index to ensure each op has a unique
+  // name.
+  static uint32_t op_index = 0;
+  const auto name = absl::StrCat(op_type, "_", op_index++);
+  return name;
+}
+
 OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
   // TODO(jiunkaiy): Pass QnnOpCode in each opbuilder.
   static std::unordered_map<std::string_view, QnnOpCode>* code_type_map =
@@ -214,11 +222,7 @@ OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
           {QNN_OP_UN_PACK, QnnOpCode::kUnPack},
       };
 
-  // TODO(jiunkaiy): Remove the static op_index to ensure each op has a unique
-  // name.
-  static uint32_t op_index = 0;
-  const auto name = absl::StrCat(op_type, "_", op_index++);
-
+  auto name = GetUniqueOpName(op_type);
   return ops.emplace_back(std::move(name), op_type, code_type_map->at(op_type));
 }
 

@@ -42,10 +42,26 @@ void EXPECT_TENSOR_EQ(Qnn_Tensor_t actual, Qnn_Tensor_t expected) {
   }
 }
 
+TEST(OpWrapperTest, DefaultConstructor) {
+  OpWrapper op_wrapper;
+  EXPECT_EQ(op_wrapper.IsOpCode(QnnOpCode::kUnknown), true);
+  const Qnn_OpConfig_t op_config = op_wrapper.GetOpConfig();
+  EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
+  EXPECT_STREQ(op_config.v1.name, "");
+  EXPECT_STREQ(op_config.v1.packageName, QNN_OP_PACKAGE_NAME_QTI_AISW);
+  EXPECT_EQ(op_config.v1.typeName, nullptr);
+  EXPECT_EQ(op_config.v1.numOfParams, 0);
+  EXPECT_EQ(op_config.v1.params, nullptr);
+  EXPECT_EQ(op_config.v1.numOfInputs, 0);
+  EXPECT_EQ(op_config.v1.inputTensors, nullptr);
+  EXPECT_EQ(op_config.v1.numOfOutputs, 0);
+  EXPECT_EQ(op_config.v1.outputTensors, nullptr);
+}
+
 TEST(OpWrapperTest, SanityTest) {
   OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   EXPECT_EQ(op_wrapper.IsOpCode(QnnOpCode::kUnknown), true);
-  const Qnn_OpConfig_t& op_config = op_wrapper.GetOpConfig();
+  const Qnn_OpConfig_t op_config = op_wrapper.GetOpConfig();
   EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
 
   const Qnn_OpConfigV1_t& op_config_v1 = op_config.v1;
@@ -64,7 +80,7 @@ TEST(OpWrapperTest, MoveCtorSanityTest) {
   OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   OpWrapper moved{std::move(op_wrapper)};
   EXPECT_EQ(moved.IsOpCode(QnnOpCode::kUnknown), true);
-  const Qnn_OpConfig_t& op_config = moved.GetOpConfig();
+  const Qnn_OpConfig_t op_config = moved.GetOpConfig();
   EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
 
   const Qnn_OpConfigV1_t& op_config_v1 = op_config.v1;
@@ -212,6 +228,21 @@ TEST(OpWrapperTest, ChangeOpName) {
   EXPECT_STREQ(op.GetName().data(), "namespace/name");
   op.AddSuffixToName("_new");
   EXPECT_STREQ(op.GetName().data(), "namespace/name_new");
+}
+
+TEST(OpWrapperTest, SetName) {
+  OpWrapper op_wrapper;
+  op_wrapper.SetName("test_name");
+  const Qnn_OpConfig_t op_config = op_wrapper.GetOpConfig();
+  EXPECT_STREQ(op_config.v1.name, "test_name");
+}
+
+TEST(OpWrapperTest, SetType) {
+  OpWrapper op_wrapper;
+  op_wrapper.SetType(QNN_OP_CONV_2D, QnnOpCode::kConv2d);
+  const Qnn_OpConfig_t op_config = op_wrapper.GetOpConfig();
+  EXPECT_TRUE(op_wrapper.IsOpCode(QnnOpCode::kConv2d));
+  EXPECT_EQ(op_config.v1.typeName, QNN_OP_CONV_2D);
 }
 
 }  // namespace

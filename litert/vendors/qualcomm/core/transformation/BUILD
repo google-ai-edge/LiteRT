@@ -90,6 +90,7 @@ cc_library(
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "//litert/vendors/qualcomm/core/builders:pack_op_builder",
         "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//litert/vendors/qualcomm/core/builders:slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
         "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
