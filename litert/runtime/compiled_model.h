@@ -381,7 +381,7 @@ class LiteRtCompiledModelT {
   // initialized from the plugins, false otherwise.
   litert::Expected<bool> ApplyPluginsWithCaching(
       LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
-      LiteRtOptionsT options, LiteRtEnvironmentT& env);
+      LiteRtOptionsT& options, LiteRtEnvironmentT& env);
 
   // Tries to load the model from the cache. Returns true if the model is loaded
   // from the cache, false otherwise.

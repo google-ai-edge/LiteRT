@@ -345,7 +345,7 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
 #if !defined(LITERT_DISABLE_NPU)
 
 Expected<std::vector<litert::internal::CompilerPlugin>> TryGetCompilerPlugins(
-    LiteRtOptionsT options, LiteRtEnvironmentT& env,
+    LiteRtOptionsT& options, LiteRtEnvironmentT& env,
     LiteRtHwAcceleratorSet hw_accelerators) {
   auto option = env.GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir);
   if (!option.has_value() || option->type != kLiteRtAnyTypeString) {
@@ -678,7 +678,7 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
 #if !defined(LITERT_DISABLE_NPU)
 litert::Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
-    LiteRtOptionsT options, LiteRtEnvironmentT& env) {
+    LiteRtOptionsT& options, LiteRtEnvironmentT& env) {
   bool need_reserialization = false;
   compilation_cache_ = MaybeCreateCompilationCache(env);
   std::optional<uint64_t> model_hash = std::nullopt;
