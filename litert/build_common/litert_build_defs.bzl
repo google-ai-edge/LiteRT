@@ -79,29 +79,17 @@ def make_rpaths(rpaths):
 
 def append_rule_kwargs(rule_kwargs, **append):
     for k, v in append.items():
-        append_to = rule_kwargs.pop(k, [])
-
-        if not v:
-            if append_to:
-                rule_kwargs[k] = append_to
-            continue
-
-        if not append_to:
+        append_to = rule_kwargs.pop(k, None)
+        if append_to:
+            # Handle combinations of list and select
+            if type(append_to) == "select" and type(v) != "select":
+                rule_kwargs[k] = append_to + v
+            elif type(append_to) != "select" and type(v) == "select":
+                rule_kwargs[k] = v + append_to
+            else:  # both are lists or both are selects
+                rule_kwargs[k] = append_to + v
+        else:
             rule_kwargs[k] = v
-            continue
-
-        is_v_select = type(v) == "select"
-        is_append_to_select = type(append_to) == "select"
-
-        if is_v_select and is_append_to_select:
-            rule_kwargs[k] = selects.with_or(v, append_to)
-        elif is_v_select and not is_append_to_select:  # v is select, append_to is list
-            rule_kwargs[k] = v + append_to
-        elif not is_v_select and is_append_to_select:  # v is list, append_to is select
-            v_select = select({"//conditions:default": v})
-            rule_kwargs[k] = selects.with_or(append_to, v_select)
-        else:  # both are lists
-            rule_kwargs[k] = append_to + v
 
 def absolute_label(label, package_name = None):
     """Get the absolute label for a given label.
@@ -282,28 +270,28 @@ def _litert_base(
       **cc_rule_kwargs: Keyword arguments to pass to the underlying rule.
     """
 
-    _DEFAULT_LINK_OPTS = select({
-        "//litert/build_common:linux_x86_64": ["-Wl,--disable-new-dtags"],
-        "//conditions:default": [],
-    })
-
+    _DEFAULT_LINK_OPTS_X86_64 = ["-Wl,--disable-new-dtags"]
     _UNGRTE_LINK_OPTS = [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64]
 
     if ungrte:
-        append_rule_kwargs(
-            cc_rule_kwargs,
-            linkopts = selects.with_or({
-                ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
-                "@org_tensorflow//tensorflow:macos": [],
-                "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
-            }),
-        )
-
+        linkopts = selects.with_or({
+            "@org_tensorflow//tensorflow:macos": [],
+            "//litert/build_common:linux_x86_64_ungrte":
+                _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS_X86_64,
+            "//litert/build_common:linux_x86_64_grte":
+                _DEFAULT_LINK_OPTS_X86_64,
+            "//conditions:default": [],
+        })
     else:
-        append_rule_kwargs(
-            cc_rule_kwargs,
-            linkopts = _DEFAULT_LINK_OPTS,
-        )
+        linkopts = select({
+            "//litert/build_common:linux_x86_64": _DEFAULT_LINK_OPTS_X86_64,
+            "//conditions:default": [],
+        })
+
+    append_rule_kwargs(
+        cc_rule_kwargs,
+        linkopts = linkopts,
+    )
 
     rule(**cc_rule_kwargs)
 
