@@ -112,7 +112,7 @@ jobs:
             //litert/cc/...\
             //litert/c/...\
             //litert/core/...\
-            //litert/runtime/...
+            //litert/ats/...
             
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
