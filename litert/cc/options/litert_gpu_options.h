@@ -87,6 +87,23 @@ class GpuOptions : public litert::OpaqueOptions {
   //     input and output KV caches.
   LiteRtStatus SetNumStepsOfCommandBufferPreparations(
       int num_steps_of_command_buffer_preparations);
+
+  // Sets the wait type for synchronous execution mode. It's ignored for
+  // asynchronous execution mode.
+  enum class SyncExecutionModeWaitType : int {
+    // Wait type will be automatically determined by the delegate.
+    kDefault = kLiteRtGpuWaitTypeDefault,
+    // Blocked waiting for GPU to finish.
+    kPassive = kLiteRtGpuWaitTypePassive,
+    // Active busy-waiting for GPU to finish.
+    kActive = kLiteRtGpuWaitTypeActive,
+    // Do not wait for GPU to finish. Relies on other synchronization ways like
+    // barriers or in-order queue. As it's for backward compatibility, not
+    // recommended for new use cases. Use asynchronous execution mode instead.
+    kDoNotWait = kLiteRtGpuWaitTypeDoNotWait,
+  };
+  LiteRtStatus SetSyncExecutionModeWaitType(
+      SyncExecutionModeWaitType wait_type);
 };
 
 }  // namespace litert
