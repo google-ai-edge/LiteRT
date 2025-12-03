@@ -16,12 +16,15 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_DELEGATES_GPU_GL_PORTABLE_GL31_H_
 #define TENSORFLOW_LITE_DELEGATES_GPU_GL_PORTABLE_GL31_H_
 
-#if !defined(__APPLE__)
+#if defined(__APPLE__)
+#include <OpenGL/gl.h>
+#include <OpenGL/glext.h>
+#else
 #define HAS_EGL 1
 #include <EGL/egl.h>
-#endif  // !defined(__APPLE__)
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#endif  // defined(__APPLE__)
 
 #ifdef __ANDROID__
 // Weak-link all GL APIs included from this point on.

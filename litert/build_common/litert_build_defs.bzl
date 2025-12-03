@@ -262,7 +262,10 @@ def _litert_base(
       **cc_rule_kwargs: Keyword arguments to pass to the underlying rule.
     """
 
-    _DEFAULT_LINK_OPTS = ["-Wl,--disable-new-dtags"]
+    _DEFAULT_LINK_OPTS = select({
+        "//litert/build_common:linux_x86_64": ["-Wl,--disable-new-dtags"],
+        "//conditions:default": [],
+    })
 
     _UNGRTE_LINK_OPTS = [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64]
 
