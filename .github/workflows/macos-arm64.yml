@@ -22,7 +22,7 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Mac"
-    runs-on: macos-15-xlarge
+    runs-on: macos-latest
     permissions:
       actions: write  # For gh cache delete.
       contents: write  # For gh release upload.
