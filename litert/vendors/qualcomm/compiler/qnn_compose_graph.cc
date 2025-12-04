@@ -136,7 +136,10 @@ LiteRtStatus ConvertDataType(const litert::ElementType litert_type,
       qnn_type = QNN_DATATYPE_BOOL_8;
       break;
     case litert::ElementType::Int4:
-      qnn_type = QNN_DATATYPE_SFIXED_POINT_4;
+    case litert::ElementType::Int2:
+      // Use QNN_DATATYPE_SFIXED_POINT_8 here since QNN uses this to store 4-bit
+      // or 2-bit quantization data
+      qnn_type = QNN_DATATYPE_SFIXED_POINT_8;
       break;
     case litert::ElementType::Int8:
       qnn_type =
@@ -178,6 +181,8 @@ LiteRtStatus ConvertDataType(const litert::ElementType litert_type,
       qnn_type = QNN_DATATYPE_FLOAT_64;
       break;
     default:
+      LITERT_LOG(LITERT_ERROR, "QNN Unsupported data type, litert type: %d",
+                 litert_type);
       return kLiteRtStatusErrorUnsupported;
   }
   return kLiteRtStatusOk;
@@ -230,6 +235,11 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
         quantize_params.emplace<::qnn::BwScaleOffsetQuantizeParamsWrapper>(
             ::qnn::kQuantBitWidth4, per_tensor_quant.scale,
             per_tensor_quant.zero_point);
+      } else if (ranked_tensor_type->ElementType() ==
+                 litert::ElementType::Int2) {
+        quantize_params.emplace<::qnn::BwScaleOffsetQuantizeParamsWrapper>(
+            ::qnn::kQuantBitWidth2, per_tensor_quant.scale,
+            per_tensor_quant.zero_point);
       } else {
         quantize_params.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(
             per_tensor_quant.scale, per_tensor_quant.zero_point);
@@ -249,6 +259,14 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
             absl::Span<const float>{
                 per_channel_quant.scales,
                 static_cast<size_t>(per_channel_quant.num_channels)},
+            absl::Span<const std::int32_t>{zero_points.data(),
+                                           zero_points.size()});
+      } else if (ranked_tensor_type->ElementType() ==
+                 litert::ElementType::Int2) {
+        quantize_params.emplace<::qnn::BwAxisScaleOffsetQuantizeParamsWrapper>(
+            ::qnn::kQuantBitWidth2, per_channel_quant.quantized_dimension,
+            absl::Span<const float>{per_channel_quant.scales,
+                                    per_channel_quant.num_channels},
             absl::Span<const std::int32_t>{zero_points.data(),
                                            zero_points.size()});
       } else {

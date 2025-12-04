@@ -44,8 +44,8 @@ void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
   }
 }
 
-void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
-                               size_t num_bytes) {
+void ConvertDataFromInt4ToInt8(const void* src, size_t num_bytes,
+                               std::vector<std::int8_t>& dst) {
   dst.clear();
   dst.reserve(num_bytes * 2);
   const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
@@ -57,6 +57,30 @@ void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
     if (upper & 0x08) upper |= 0xF0;
     dst.emplace_back(lower);
     dst.emplace_back(upper);
+  }
+}
+
+void ConvertDataFromInt2ToInt8(const void* src, size_t num_bytes,
+                               std::vector<std::int8_t>& dst) {
+  dst.clear();
+  dst.reserve(num_bytes * 4);
+  const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
+  for (size_t i = 0; i < num_bytes; i++) {
+    std::uint8_t byte = byte_data[i];
+
+    for (size_t j = 0; j < 4; j++) {
+      // Mask: 0000 0011
+      std::int8_t num = byte & 0x03;
+
+      // Perform sign extension on all four numbers
+      // The sign bit for a 2-bit number is the 2nd bit (mask 0x02)
+      // The sign extension mask is 0xFC (binary 1111 1100)
+      if (num & 0x02) num |= 0xFC;
+
+      dst.emplace_back(num);
+
+      byte >>= 2;
+    }
   }
 }
 
