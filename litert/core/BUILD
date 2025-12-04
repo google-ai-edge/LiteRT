@@ -37,6 +37,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
+        "//litert/cc/internal:scoped_weight_source",
     ],
 )
 
