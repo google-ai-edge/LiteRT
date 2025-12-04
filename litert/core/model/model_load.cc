@@ -464,7 +464,8 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
   for (const LiteRtSubgraph& subgraph : model->Subgraphs()) {
     for (LiteRtOp op : subgraph->Ops()) {
-      if (op->OpCode() == kLiteRtOpCodeTflCustom) {
+      if (op->OpCode() == kLiteRtOpCodeTflCustom &&
+          op->CustomOptions().Size() > 0) {
         DispatchOpOptions dispatch_opts =
             GetDispatchOpOptions(op->CustomOptions());
         if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {

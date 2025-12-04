@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("@bazel_skylib//lib:selects.bzl", "selects")
+# copybara:uncomment load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
@@ -29,7 +33,55 @@ package(
 #     outs = ["sb_api.h"],
 #     cmd = "cp $< $@",
 # )
-# copybara:uncomment_end
+#
+# genrule(
+#     name = "sb_api_late_binding_cc",
+#     srcs = ["INTERNAL_SB_PKG:sb_api_late_binding.cc"],
+#     outs = ["sb_api_late_binding.cc"],
+#     # Replace g3 header path with that of the copy made above.
+#     cmd = "sed 's|third_party/odml/infra/southbound/sb_api.h|third_party/odml/litert/litert/vendors/google_tensor/dispatch/sb_api.h|g' $< > $@",
+# )
+#
+# bool_flag(
+#     name = "southbound_static_link",
+#     build_setting_default = False,
+# )
+#
+# config_setting(
+#     name = "southbound_static_link_flag_set",
+#     flag_values = {
+#         ":southbound_static_link": "True",
+#     },
+#     visibility = ["//visibility:private"],
+# )
+#
+# selects.config_setting_group(
+#     name = "southbound_static_link_enable",
+#     match_any = [
+#         ":southbound_static_link_flag_set",
+#         "@org_tensorflow//tensorflow:linux_x86_64",
+#     ],
+# )
+#
+# cc_library(
+#     name = "southbound",
+#     srcs = select({
+#         ":southbound_static_link_enable": [],
+#         "//conditions:default": ["sb_api_late_binding.cc"],
+#     }),
+#     hdrs = ["sb_api.h"],
+#     deps = select({
+#         ":southbound_static_link_enable": ["INTERNAL_SB_PKG:sb_api_impl"],
+#         "//conditions:default": [],
+#     }),
+# )
+# copybara:uncomment_end_and_comment_begin
+cc_library(
+    name = "southbound",
+    srcs = ["sb_api_late_binding.cc"],
+    hdrs = ["sb_api.h"],
+)
+# copybara:comment_end
 
 litert_dynamic_lib(
     name = "dispatch_api",
@@ -38,7 +90,6 @@ litert_dynamic_lib(
         "litert_dispatch_device_context.cc",
         "litert_dispatch_graph.cc",
         "litert_dispatch_invocation_context.cc",
-        "southbound.cc",
     ],
     hdrs = [
         "dispatch_api.h",
@@ -46,9 +97,7 @@ litert_dynamic_lib(
         "litert_dispatch_graph.h",
         "litert_dispatch_invocation_context.h",
         "litert_dispatch_metrics.h",
-        "sb_api.h",
         "sb_dispatch_annotations.h",
-        "southbound.h",
     ],
     copts = [
         "-Os",
@@ -71,6 +120,7 @@ litert_dynamic_lib(
     ],
     visibility = ["//litert:litert_public"],
     deps = [
+        ":southbound",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c/internal:litert_logging",

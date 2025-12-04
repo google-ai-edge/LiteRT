@@ -26,12 +26,12 @@ import numpy as np
 if not os.path.splitext(__file__)[0].endswith(
     os.path.join('tflite_runtime', 'interpreter')):
   # This file is part of tensorflow package.
-  from tflite.python.interpreter_wrapper import _pywrap_tensorflow_interpreter_wrapper as _interpreter_wrapper
+  from tflite.python.interpreter_wrapper import _pywrap_litert_interpreter_wrapper as _interpreter_wrapper
   from tflite.python.metrics import metrics
   from tensorflow.python.util.tf_export import tf_export as _tf_export
 else:
   # This file is part of tflite_runtime package.
-  from tflite_runtime import _pywrap_tensorflow_interpreter_wrapper as _interpreter_wrapper
+  from tflite_runtime import _pywrap_litert_interpreter_wrapper as _interpreter_wrapper
   from tflite_runtime import metrics_portable as metrics
 
   def _tf_export(*x, **kwargs):

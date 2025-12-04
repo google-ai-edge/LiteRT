@@ -24,7 +24,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 namespace litert {
 class DarwinnRuntimeOptions;
@@ -37,7 +36,6 @@ class LiteRtDispatchDeviceContextT {
   ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
-      const litert::google_tensor::Southbound& southbound,
       const litert::DarwinnRuntimeOptions* darwinn_options = nullptr);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
@@ -61,9 +59,8 @@ class LiteRtDispatchDeviceContextT {
   void add_graph(ThrGraph* graph) { thr_graphs_.insert(graph); }
 
  private:
-  explicit LiteRtDispatchDeviceContextT(
-      const litert::google_tensor::Southbound& southbound)
-      : southbound_(southbound) {}
+  LiteRtDispatchDeviceContextT() = default;
+
   // Struct to store Darwinn runtime options for later application
   struct DarwinnOptionsData {
     std::optional<uint32_t> inference_power_state;
@@ -73,7 +70,6 @@ class LiteRtDispatchDeviceContextT {
     bool prefer_coherent = false;
   };
 
-  const litert::google_tensor::Southbound& southbound_;
   ThrContext* thr_context_ = nullptr;
   absl::flat_hash_set<ThrGraph*> thr_graphs_;
   std::optional<DarwinnOptionsData> darwinn_options_;

@@ -46,7 +46,7 @@ py_strict_library(
     compatible_with = get_compatible_with_portable(),
     visibility = ["//visibility:public"],
     deps = [
-        "//tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper",
+        "//tflite/python/interpreter_wrapper:_pywrap_litert_interpreter_wrapper",
         "//tflite/python/metrics",
         "@org_tensorflow//tensorflow/python/util:tf_export",
         "@org_tensorflow//third_party/py/numpy",
@@ -663,7 +663,7 @@ py_strict_library(
     deps = [
         "//tflite/experimental/genai:pywrap_genai_ops",
         "//tflite/python/analyzer_wrapper:_pywrap_analyzer_wrapper",
-        "//tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper",
+        "//tflite/python/interpreter_wrapper:_pywrap_litert_interpreter_wrapper",
         "//tflite/python/metrics:_pywrap_tensorflow_lite_metrics_wrapper",
         "//tflite/python/optimize:_pywrap_tensorflow_lite_calibration_wrapper",
         "//tflite/testing:_pywrap_string_util",

@@ -20,9 +20,9 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -30,7 +30,6 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 using litert::Error;
 using litert::Expected;
@@ -51,7 +50,6 @@ inline constexpr auto Pad(X x, Align align) {
 
 litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::CreateFromBytecode(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -125,7 +123,7 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
     }
   }
 
-  auto invocation_context = CreateFromGraph(southbound, device_context, *graph);
+  auto invocation_context = CreateFromGraph(device_context, *graph);
   if (!invocation_context) {
     return invocation_context.Error();
   }
@@ -137,45 +135,30 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
 
 litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::CreateFromGraph(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph) {
-  auto thr_invocation_context_get = southbound.api().thr_invocation_context_get;
-  if (!thr_invocation_context_get) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_get not found");
-  }
-
   ThrGraph* thr_graph = graph->thr_graph();
   auto thr_icontext =
-      thr_invocation_context_get(thr_graph, device_context->thr_context());
+      thrInvocationContextGet(thr_graph, device_context->thr_context());
   if (!thr_icontext) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "thr_invocation_context_get failed");
   }
 
   device_context->add_graph(thr_graph);
-  return Ptr(new LiteRtDispatchInvocationContextT(southbound, thr_icontext,
+  return Ptr(new LiteRtDispatchInvocationContextT(thr_icontext,
                                                   device_context, graph));
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
-  auto thr_invocation_context_delete =
-      southbound_.api().thr_invocation_context_delete;
-  if (!thr_invocation_context_delete) {
-    LITERT_LOG(LITERT_ERROR, "thr_invocation_context_delete not found");
-  } else {
-    ThrGraph* thr_graph = graph_->thr_graph();
-    if (auto status =
-            thr_invocation_context_delete(thr_graph, thr_invocation_context_);
-        status != kThrStatusSuccess) {
-      LITERT_LOG(LITERT_ERROR, "thr_invocation_context_delete failed: %d",
-                 status);
-    }
+  ThrGraph* thr_graph = graph_->thr_graph();
+  if (auto status =
+          thrInvocationContextDelete(thr_graph, thr_invocation_context_);
+      status != kThrStatusSuccess) {
+    LITERT_LOG(LITERT_ERROR, "thr_invocation_context_delete failed: %d",
+               status);
   }
 
-  if (graph_) {
-    device_context_->DestroyGraph(graph_);
-  }
+  device_context_->DestroyGraph(graph_);
 
   if (exec_handle_) {
     device_context_->UnloadExecutable(*exec_handle_);
@@ -234,23 +217,15 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 namespace {
 
 litert::Expected<void> AttachBufferHelper(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchInvocationContext invocation_context,
     LiteRtDispatchEdgeId edge_id,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
-  auto thr_invocation_context_attach_buffer =
-      southbound.api().thr_invocation_context_attach_buffer;
-  if (!thr_invocation_context_attach_buffer) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_attach_buffer not found");
-  }
-
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
   ThrContext* thr_context = invocation_context->device_context()->thr_context();
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
   ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thr_invocation_context_attach_buffer(
+  if (auto status = thrInvocationContextAttachBuffer(
           thr_icontext, thr_context, thr_edge_id.data(), thr_buffer_handle);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_invocation_context_attach_buffer failed: %d",
@@ -268,7 +243,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (auto result = graph_->InputEdge(graph_input_index); result) {
     auto edge_id = *result;
-    return AttachBufferHelper(southbound_, this, edge_id, tensor_buffer_handle);
+    return AttachBufferHelper(this, edge_id, tensor_buffer_handle);
   } else {
     return result.Error();
   }
@@ -278,7 +253,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (auto result = graph_->OutputEdge(graph_output_index); result) {
     auto edge_id = *result;
-    return AttachBufferHelper(southbound_, this, edge_id, tensor_buffer_handle);
+    return AttachBufferHelper(this, edge_id, tensor_buffer_handle);
   } else {
     return result.Error();
   }
@@ -287,23 +262,15 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 namespace {
 
 litert::Expected<void> DetachTensorBufferHelper(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchInvocationContext invocation_context,
     LiteRtDispatchEdgeId edge_id,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
-  auto thr_invocation_context_detach_buffer =
-      southbound.api().thr_invocation_context_detach_buffer;
-  if (!thr_invocation_context_detach_buffer) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_detach_buffer not found");
-  }
-
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
   ThrContext* thr_context = invocation_context->device_context()->thr_context();
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
   ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thr_invocation_context_detach_buffer(
+  if (auto status = thrInvocationContextDetachBuffer(
           thr_icontext, thr_context, thr_edge_id.data(), thr_buffer_handle);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_invocation_context_detach_buffer failed: %d",
@@ -321,7 +288,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (auto result = graph_->InputEdge(graph_input_index); result) {
     auto edge_id = *result;
-    return DetachTensorBufferHelper(southbound_, this, edge_id,
+    return DetachTensorBufferHelper(this, edge_id,
                                     tensor_buffer_handle);
   } else {
     return result.Error();
@@ -332,7 +299,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (auto result = graph_->OutputEdge(graph_output_index); result) {
     auto edge_id = *result;
-    return DetachTensorBufferHelper(southbound_, this, edge_id,
+    return DetachTensorBufferHelper(this, edge_id,
                                     tensor_buffer_handle);
   } else {
     return result.Error();
@@ -342,19 +309,11 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
 namespace {
 
 litert::Expected<void> PrepareForInvoke(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchInvocationContext invocation_context,
     bool create_output_sync_fence) {
-  auto thr_invocation_context_prepare_for_invoke =
-      southbound.api().thr_invocation_context_prepare_for_invoke;
-  if (!thr_invocation_context_prepare_for_invoke) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_prepare_for_invoke not found");
-  }
-
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
-  if (auto status = thr_invocation_context_prepare_for_invoke(
+  if (auto status = thrInvocationContextPrepareForInvoke(
           thr_icontext, create_output_sync_fence);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR,
@@ -367,18 +326,10 @@ litert::Expected<void> PrepareForInvoke(
 }
 
 litert::Expected<void> InvokeOnce(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchInvocationContext invocation_context) {
-  auto thr_invocation_context_invoke_once =
-      southbound.api().thr_invocation_context_invoke_once;
-  if (!thr_invocation_context_invoke_once) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_invoke_once not found");
-  }
-
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
-  if (auto status = thr_invocation_context_invoke_once(thr_icontext);
+  if (auto status = thrInvocationContextInvokeOnce(thr_icontext);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_invocation_context_invoke_once failed: %d",
                status);
@@ -390,18 +341,10 @@ litert::Expected<void> InvokeOnce(
 }
 
 litert::Expected<void> Wait(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchInvocationContext invocation_context) {
-  auto thr_invocation_context_wait =
-      southbound.api().thr_invocation_context_wait;
-  if (!thr_invocation_context_wait) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_wait not found");
-  }
-
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
-  if (auto status = thr_invocation_context_wait(thr_icontext);
+  if (auto status = thrInvocationContextWait(thr_icontext);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_invocation_context_wait failed: %d", status);
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -414,15 +357,15 @@ litert::Expected<void> Wait(
 }  // namespace
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  if (auto result = PrepareForInvoke(southbound_, this,
+  if (auto result = PrepareForInvoke(this,
                                      /*create_output_sync_fence=*/false);
       !result) {
     return result.Error();
   }
-  if (auto result = InvokeOnce(southbound_, this); !result) {
+  if (auto result = InvokeOnce(this); !result) {
     return result.Error();
   }
-  return Wait(southbound_, this);
+  return Wait(this);
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInputEvent(
@@ -441,16 +384,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInputEvent(
   }
   auto edge_id = *edge;
 
-  auto thr_invocation_context_attach_input_buffer_sync_fence =
-      southbound_.api().thr_invocation_context_attach_input_buffer_sync_fence;
-  if (!thr_invocation_context_attach_input_buffer_sync_fence) {
-    return Error(
-        kLiteRtStatusErrorRuntimeFailure,
-        "thr_invocation_context_attach_input_buffer_sync_fence not found");
-  }
-
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thr_invocation_context_attach_input_buffer_sync_fence(
+  if (auto status = thrInvocationContextAttachInputBufferSyncFence(
           thr_invocation_context_, thr_edge_id.data(), input_fence_fd);
       status != kThrStatusSuccess) {
     LITERT_LOG(
@@ -469,7 +404,6 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInputEvent(
 namespace {
 
 litert::Expected<void> GetOutputEvent(
-    const litert::google_tensor::Southbound& southbound,
     LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
     LiteRtEvent* output_event) {
   auto edge = invocation_context->graph()->OutputEdge(graph_output_index);
@@ -480,19 +414,11 @@ litert::Expected<void> GetOutputEvent(
   }
   auto edge_id = *edge;
 
-  auto thr_invocation_context_get_output_buffer_sync_fence =
-      southbound.api().thr_invocation_context_get_output_buffer_sync_fence;
-  if (!thr_invocation_context_get_output_buffer_sync_fence) {
-    return Error(
-        kLiteRtStatusErrorRuntimeFailure,
-        "thr_invocation_context_get_output_buffer_sync_fence not found");
-  }
-
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
   auto thr_edge_id = ThrEdgeIdStr(edge_id);
   int output_fence_fd;
-  if (auto status = thr_invocation_context_get_output_buffer_sync_fence(
+  if (auto status = thrInvocationContextGetOutputBufferSyncFence(
           thr_icontext, thr_edge_id.data(), &output_fence_fd);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR,
@@ -522,33 +448,25 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::InvokeAsync(
                  "Unexpected number of output events");
   }
 
-  if (auto status = PrepareForInvoke(southbound_, this,
+  if (auto status = PrepareForInvoke(this,
                                      /*create_output_sync_fence=*/true);
       !status) {
     return status.Error();
   }
 
-  if (auto status = InvokeOnce(southbound_, this); !status) {
+  if (auto status = InvokeOnce(this); !status) {
     return status.Error();
   }
 
-  // Deatach input fences.
-  auto thr_invocation_context_detach_input_buffer_sync_fence =
-      southbound_.api().thr_invocation_context_detach_input_buffer_sync_fence;
-  if (!thr_invocation_context_detach_input_buffer_sync_fence) {
-    return Error(
-        kLiteRtStatusErrorRuntimeFailure,
-        "thr_invocation_context_detach_input_buffer_sync_fence not found");
-  }
   for (const auto& p : input_sync_fences_) {
     const auto& thr_edge_id = p.first;
     auto input_fence_fd = p.second;
-    if (auto status = thr_invocation_context_detach_input_buffer_sync_fence(
+    if (auto status = thrInvocationContextDetachInputBufferSyncFence(
             thr_invocation_context_, thr_edge_id.data(), input_fence_fd);
         status != kThrStatusSuccess) {
       return Error(
           kLiteRtStatusErrorRuntimeFailure,
-          "thr_invocation_context_deatch_input_buffer_sync_fence failed");
+          "thr_invocation_context_detach_input_buffer_sync_fence failed");
     }
   }
   input_sync_fences_.clear();
@@ -556,7 +474,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::InvokeAsync(
   // Extract output events.
   for (auto graph_output_index = 0; graph_output_index < num_output_events;
        ++graph_output_index) {
-    if (auto status = GetOutputEvent(southbound_, this, graph_output_index,
+    if (auto status = GetOutputEvent(this, graph_output_index,
                                      &output_events[graph_output_index]);
         !status) {
       LITERT_LOG(LITERT_ERROR, "Failed to get event for output %d",
@@ -570,13 +488,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::InvokeAsync(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::StartMetricsCollection(
     int detail_level) {
-  auto thr_invocation_context_start_metrics_collection =
-      southbound_.api().thr_invocation_context_start_metrics_collection;
-  if (!thr_invocation_context_start_metrics_collection) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_start_metrics_collection not found");
-  }
-  if (auto status = thr_invocation_context_start_metrics_collection(
+  if (auto status = thrInvocationContextStartMetricsCollection(
           thr_invocation_context_, detail_level);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR,
@@ -590,14 +502,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::StartMetricsCollection(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::StopMetricsCollection(
     LiteRtDispatchMetrics* metrics) {
-  auto thr_invocation_context_stop_metrics_collection =
-      southbound_.api().thr_invocation_context_stop_metrics_collection;
-  if (!thr_invocation_context_stop_metrics_collection) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_stop_metrics_collection not found");
-  }
   ThrInvocationMetrics thr_metrics{.version = 0};
-  if (auto status = thr_invocation_context_stop_metrics_collection(
+  if (auto status = thrInvocationContextStopMetricsCollection(
           thr_invocation_context_, &thr_metrics);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR,

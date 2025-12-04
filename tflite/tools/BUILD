@@ -399,6 +399,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core/c:common",
         "//tflite/kernels:kernel_util",
+        "//tflite/types:half",
         "@com_google_absl//absl/types:span",
         "@eigen_archive//:eigen3",
     ],
@@ -411,6 +412,7 @@ cc_test(
     deps = [
         ":utils",
         "//tflite/c:common",
+        "//tflite/types:half",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
