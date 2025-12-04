@@ -28,6 +28,7 @@ package(
         # "//litert/runtime/accelerators:__subpackages__",
         # "//litert/runtime/dispatch:__subpackages__",
         # "//litert/vendors/c:__subpackages__",
+        # "//litert/kotlin:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -121,6 +122,7 @@ cc_library(
         # "//litert/cc/internal:__subpackages__",
         # "//litert/runtime:__subpackages__",
         # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # "//litert/kotlin:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end

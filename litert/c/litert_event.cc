@@ -131,16 +131,16 @@ LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
 }
 
 LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
-                                  litert_custom_event custom_event) {
+                                  LiteRtCustomEvent custom_event) {
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
   if (event->type == LiteRtEventTypeCustom) {
     if (event->custom_event != nullptr &&
-        event->custom_event->release != nullptr) {
-      event->custom_event->release(event->custom_event);
+        event->custom_event->Release != nullptr) {
+      event->custom_event->Release(event->custom_event);
     }
     event->custom_event = custom_event;
-    if (custom_event && custom_event->retain != nullptr) {
-      custom_event->retain(custom_event);
+    if (custom_event && custom_event->Retain != nullptr) {
+      custom_event->Retain(custom_event);
     }
     return kLiteRtStatusOk;
   }
