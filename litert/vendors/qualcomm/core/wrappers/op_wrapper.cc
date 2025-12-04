@@ -124,21 +124,21 @@ void OpWrapper::SwapOutputs(OpWrapper& other) {
 void OpWrapper::ClearTensorParams() { tensor_params_.clear(); }
 
 void OpWrapper::UpdateTensors(
-    const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
-    const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs) {
+    const std::vector<const TensorWrapper*>& inputs,
+    const std::vector<const TensorWrapper*>& outputs) {
   if (inputs.size() != input_tensors_.size() ||
       outputs.size() != output_tensors_.size()) {
     QNN_LOG_WARNING("UpdateTensors skipped due to incorrect tensor count.");
     return;
   }
   for (size_t i = 0; i < inputs.size(); ++i) {
-    if (inputs[i].has_value()) {
-      input_tensors_[i] = inputs[i].value().get();
+    if (inputs[i]) {
+      input_tensors_[i] = *inputs[i];
     }
   }
   for (size_t i = 0; i < outputs.size(); ++i) {
-    if (outputs[i].has_value()) {
-      output_tensors_[i] = outputs[i].value().get();
+    if (outputs[i]) {
+      output_tensors_[i] = *outputs[i];
     }
   }
 }
