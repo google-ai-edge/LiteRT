@@ -1641,13 +1641,9 @@ cc_test(
         ":test_util",
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
-        "//tflite/core/api",
-        "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
-        "@eigen_archive//:eigen3",
-        "@flatbuffers",
     ],
 )
 

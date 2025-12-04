@@ -19,11 +19,11 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 
-#include "fp16.h"  // from @FP16
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 #include "tflite/kernels/internal/reference/dequantize.h"
 #include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/types.h"
+#include "tflite/types/fp16.h"
 
 namespace tflite {
 namespace xnnpack {
