@@ -253,6 +253,7 @@ litert_device_test(
 #     "//litert/runtime:gl_buffer_device_test",
 #     "//litert/cc:litert_compiled_model_qualcomm_test",
 #     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
+#     "//litert/cc:litert_compiled_model_gpu_device_test",
 # ]
 #
 # guitar_workflow_test(
