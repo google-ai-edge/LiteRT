@@ -1,7 +1,7 @@
 # LiteRT
 
 <p align="center">
-  <img src="./g3doc/sources/litert_logo.png" alt="LiteRT Logo" width="250"/>
+  <img src="./g3doc/sources/litert_logo.png" alt="LiteRT Logo"/>
 </p>
 
 Google's on-device framework for high-performance ML & GenAI deployment on edge
@@ -26,10 +26,8 @@ and making on-device ML inference easier than ever.
 ### 🚀 Status: General Availability (for V1) / Alpha (for V2)
 
 - LiteRT V1 supports the TensorFlow Lite API, and its release status is
-  is [general availability](https://support.google.com/a/answer/11202276?hl=en).
+  [general availability](https://support.google.com/a/answer/11202276?hl=en).
 - LiteRT V2 is an alpha release and under active development.
-- Early adopters can join the **LiteRT NPU Early access program**:
-  [g.co/ai/LiteRT-NPU-EAP](https://g.co/ai/LiteRT-NPU-EAP).
 
 ### 🌟 What's New
 
@@ -42,8 +40,9 @@ and making on-device ML inference easier than ever.
   - Efficient I/O buffer handling
 
 - **🤖 Unified NPU Acceleration**: Offer seamless access to NPUs from major
-  chipset providers with a consistent developer experience. LiteRT NPU
-  acceleration is available through an Early Access Program.
+  chipset providers with a consistent developer experience. LiteRT NPU,
+  previously under Early access program is available to all
+  users: https://ai.google.dev/edge/litert/next/npu
 
 - **⚡ Best-in-class GPU Performance**: Use state-of-the-art GPU acceleration for
   on-device ML. The new buffer interoperability enables zero-copy and minimizes
@@ -63,8 +62,8 @@ LiteRT is designed for cross-platform deployment on a wide range of hardware.
 | 🐧 Linux   | ✅          | ✅ WebGPU                | N/A                                                               |
 | 🍎 macOS   | ✅          | ✅ WebGPU<br>✅ Metal                 | ANE\*                                                             |
 | 💻 Windows | ✅          | ✅ WebGPU                | Intel\*                                                           |
-| 🌐 Web     | Coming soon | Coming soon           | Coming soon                                                       |
-| 🧩 IoT     |             |                       | Broadcom\*<br>Raspberry Pi\*                                      |
+| 🌐 Web     | ✅          | ✅ WebGPU                | Coming soon                                                       |
+| 🧩 IoT     |  ✅           | ✅ WebGPU                      | Broadcom\*<br>Raspberry Pi\*                                      |
 
 *\*Coming soon*
 
@@ -130,10 +129,8 @@ get started based on your goals:
 - **Goal**: Accelerate an existing model to run faster and more efficiently
   on-device.
 - **Path**:
-  - Explore the [LiteRT API](https://ai.google.dev/edge/litert/next/overview) to
-    easily leverage hardware acceleration. Learn how to enable the GPU
-    acceleration or the NPU acceleration (NPU EAP:
-    [g.co/ai/LiteRT-NPU-EAP](https://g.co/ai/LiteRT-NPU-EAP)).
+  - Explore the [LiteRT API](https://ai.google.dev/edge/api/litert/c) to
+    easily leverage hardware acceleration.
   - **For working with Generative AI**: Dive into
     [LiteRT LM](https://github.com/google-ai-edge/LiteRT-LM), our specialized
     solution for running GenAI models.
