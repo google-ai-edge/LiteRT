@@ -105,7 +105,8 @@ TensorWrapper::TensorWrapper(
     SetDataType(QNN_DATATYPE_SFIXED_POINT_8);
     std::vector<std::int8_t> int8_data;
     ConvertDataFromInt4ToInt8(data, int8_data, bytes);
-    SetDataBy(GetTensorBytes(), int8_data.data(), copy_data);
+    // Set copy_data to true to prevent loss of int8_data.
+    SetDataBy(GetTensorBytes(), int8_data.data(), true);
   } else {
     SetDataBy(bytes, data, copy_data);
   }
