@@ -41,6 +41,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Bazel
+        uses: setup-bazel/setup-bazel@v4
+        with:
+          bazel-version: '6.4.0'
+
       - name: Configure tensorflow & python path
         run: |
           chmod +x configure.py
@@ -51,7 +56,12 @@ jobs:
           export TF_SET_ANDROID_WORKSPACE=0
           export CC_OPT_FLAGS='-Wno-sign-compare'
           python3 configure.py
-
+          
+      - name: Configure Bazel for macOS
+        run: |
+          echo 'build --macos_sdk_version=14.0' >> .bazelrc
+          echo 'build --apple_sdk_platform=MacOSX' >> .bazelr
+          
       - name : Set up cache keys
         id: cache-keys
         run: |
