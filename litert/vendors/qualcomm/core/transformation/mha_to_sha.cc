@@ -173,7 +173,7 @@ TensorWrapper& BuildSingleSHA(
   auto& matmul_v2_output = tensor_pool.CloneNativeTensorFrom(
       matmul_v2.GetOutputTensor(0), matmul_v2_output_dims);
   EmplaceOpWithIO(new_ops, matmul_v2, {slice_2_output, std::nullopt},
-                  {matmul_v1_output});
+                  {matmul_v2_output});
   // Add 2
   auto& add_2_output = tensor_pool.CloneNativeTensorFrom(
       add_2.GetOutputTensor(0), matmul_v1_output.GetDims());
@@ -384,15 +384,15 @@ std::vector<OpWrapper> TransformToSHA(
   sha_outputs.reserve(num_heads);
   // Create num_heads SHA.
   for (int i = 0; i < num_heads; ++i) {
-    OpWrapper& add_2 = ops[start_index + kAdd2Index];
-    TensorWrapper& mask = const_cast<TensorWrapper&>(add_2.GetInputTensor(1));
+    OpWrapper& add_1 = ops[start_index + kAddIndex];
+    TensorWrapper& mask = const_cast<TensorWrapper&>(add_1.GetInputTensor(1));
     sha_outputs.emplace_back(BuildSingleSHA(
         new_ops, tensor_pool, sha_inputs[i].get(), mask, num_heads, scaling_mul,
         ops[start_index + kMatMulK1Index], ops[start_index + kMatMulK2Index],
-        ops[start_index + kConcatIndex], ops[start_index + kAddIndex],
+        ops[start_index + kConcatIndex], add_1,
         ops[start_index + kSoftmaxIndex], ops[start_index + kSlice1Index],
         ops[start_index + kSlice2Index], ops[start_index + kMatMulV1Index],
-        ops[start_index + kMatMulV2Index], add_2));
+        ops[start_index + kMatMulV2Index], ops[start_index + kAdd2Index]));
   }
   // Concat
   auto concat_dims = mha_output.GetDims();
