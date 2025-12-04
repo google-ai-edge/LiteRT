@@ -20,11 +20,120 @@
 #include <string>
 #include <vector>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif  // defined(__ANDROID__)
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "tflite/core/c/common.h"
-#include "tflite/logger.h"
-#include "tflite/minimal_logging.h"
+
+namespace {
+
+#if defined(__ANDROID__)
+int GetAndroidSeverity(LiteRtLogSeverity severity) {
+  switch (severity) {
+    case kLiteRtLogSeverityVerbose:
+    case kLiteRtLogSeverityInfo:
+      return ANDROID_LOG_INFO;
+    case kLiteRtLogSeverityWarning:
+      return ANDROID_LOG_WARN;
+    case kLiteRtLogSeverityError:
+      return ANDROID_LOG_ERROR;
+    case kLiteRtLogSeveritySilent:
+      return ANDROID_LOG_SILENT;
+    default:
+      return ANDROID_LOG_DEBUG;
+  }
+}
+#endif  // defined(__ANDROID__)
+
+// Helper class for simple platform-specific console logging. Note that we
+// explicitly avoid the convenience of ostream-style logging to minimize binary
+// size impact.
+class MinimalLogger {
+ public:
+  // Logging hook that takes variadic args.
+  static void Log(LiteRtLogSeverity severity, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    LogFormatted(severity, format, args);
+    va_end(args);
+  }
+
+  // Logging hook that takes a formatted va_list.
+  static void LogFormatted(LiteRtLogSeverity severity, const char* format,
+                           va_list args) {
+    if (severity >= MinimalLogger::minimum_log_severity_) {
+#if defined(__ANDROID__)
+      // First log to Android's explicit log(cat) API.
+      va_list args_copy;
+      va_copy(args_copy, args);
+      __android_log_vprint(GetAndroidSeverity(severity), "litert", format,
+                           args_copy);
+      va_end(args_copy);
+
+      // Also print to stderr for standard console applications.
+      fprintf(stderr, "%s: ", GetSeverityName(severity));
+      va_copy(args_copy, args);
+      vfprintf(stderr, format, args_copy);
+      va_end(args_copy);
+      fputc('\n', stderr);
+#else  // defined(__ANDROID__)
+      fprintf(stderr, "%s: ", GetSeverityName(severity));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+      vfprintf(stderr, format, args);
+#pragma clang diagnostic pop
+      fputc('\n', stderr);
+#endif  // defined(__ANDROID__)
+    }
+  }
+
+  // Get the minimum severity level for logging. Default is INFO in prod builds
+  // and VERBOSE in debug builds.
+  // Note: Default is always VERBOSE on Android.
+  static LiteRtLogSeverity GetMinimumLogSeverity() {
+    return MinimalLogger::minimum_log_severity_;
+  }
+
+  // Set the minimum severity level for logging, returning the old severity.
+  static LiteRtLogSeverity SetMinimumLogSeverity(
+      LiteRtLogSeverity new_severity) {
+    LiteRtLogSeverity old_severity = MinimalLogger::minimum_log_severity_;
+    MinimalLogger::minimum_log_severity_ = new_severity;
+    return old_severity;
+  }
+
+ private:
+  static const char* GetSeverityName(LiteRtLogSeverity severity) {
+    switch (severity) {
+      case kLiteRtLogSeverityVerbose:
+        return "VERBOSE";
+      case kLiteRtLogSeverityInfo:
+        return "INFO";
+      case kLiteRtLogSeverityWarning:
+        return "WARNING";
+      case kLiteRtLogSeverityError:
+        return "ERROR";
+      case kLiteRtLogSeveritySilent:
+        return "SILENT";
+      default:
+        return "<Unknown severity>";
+    }
+  }
+  static LiteRtLogSeverity minimum_log_severity_;
+};
+
+#ifndef NDEBUG
+// In debug builds, default is VERBOSE.
+LiteRtLogSeverity MinimalLogger::minimum_log_severity_ =
+    kLiteRtLogSeverityVerbose;
+#else
+// In prod builds, default is INFO.
+LiteRtLogSeverity MinimalLogger::minimum_log_severity_ = kLiteRtLogSeverityInfo;
+#endif
+
+}  // namespace
 
 struct LiteRtLoggerT {
   virtual ~LiteRtLoggerT() = default;
@@ -38,31 +147,19 @@ struct LiteRtLoggerT {
 class LiteRtStandardLoggerT final : public LiteRtLoggerT {
  public:
   LiteRtLogSeverity GetMinSeverity() override {
-    return ConvertSeverity(
-        tflite::logging_internal::MinimalLogger::GetMinimumLogSeverity());
+    return MinimalLogger::GetMinimumLogSeverity();
   }
 
   void SetMinSeverity(LiteRtLogSeverity severity) override {
-    tflite::logging_internal::MinimalLogger::SetMinimumLogSeverity(
-        ConvertSeverity(severity));
+    MinimalLogger::SetMinimumLogSeverity(severity);
   }
 
   void Log(LiteRtLogSeverity severity, const char* format,
            va_list args) override {
-    tflite::logging_internal::MinimalLogger::LogFormatted(
-        ConvertSeverity(severity), format, args);
+    MinimalLogger::LogFormatted(severity, format, args);
   }
 
   const char* GetIdentifier() const override { return "LiteRtDefaultLogger"; }
-
- private:
-  static tflite::LogSeverity ConvertSeverity(LiteRtLogSeverity severity) {
-    return static_cast<tflite::LogSeverity>(severity);
-  }
-
-  static LiteRtLogSeverity ConvertSeverity(tflite::LogSeverity severity) {
-    return static_cast<LiteRtLogSeverity>(severity);
-  }
 };
 
 class LiteRtSinkLoggerT final : public LiteRtLoggerT {
@@ -114,7 +211,7 @@ const char* LiteRtGetLogSeverityName(LiteRtLogSeverity severity) {
     case kLiteRtLogSeveritySilent:
       return "SILENT";
     case kLiteRtLogSeverityDebug:
-      TFL_UNREACHABLE();
+      return "DEBUG";
   }
   return "UNKNOWN";
 }

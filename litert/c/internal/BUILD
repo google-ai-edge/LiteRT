@@ -233,6 +233,10 @@ cc_library(
     name = "litert_logging",
     srcs = ["litert_logging.cc"],
     hdrs = ["litert_logging.h"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "//conditions:default": [],
+    }),
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
@@ -246,8 +250,6 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//tflite:minimal_logging",
-        "//tflite/core/c:private_common",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
