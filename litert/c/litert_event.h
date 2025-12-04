@@ -29,7 +29,7 @@ extern "C" {
 typedef struct _cl_event* cl_event;
 typedef void* EGLSyncKHR;
 
-// Create a LiteRtEvent from a sync fence fd.
+// Creates a LiteRtEvent from a sync fence fd.
 // If owns_fd is true, the LiteRtEvent will own the fd and close it when
 // destroyed.
 //
@@ -56,12 +56,17 @@ LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
                                                EGLSyncKHR egl_sync,
                                                LiteRtEvent* event);
 
-// Create a LiteRtEvent with the given type.
+// Creates a LiteRtEvent with the given type.
 //
 // Caller owns the returned LiteRtEvent. The owner is responsible for
 // calling LiteRtDestroyEvent() to release the object.
 LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
                                       LiteRtEventType type, LiteRtEvent* event);
+
+// Sets a custom event to the LiteRtEvent. Event type must be
+// LiteRtEventTypeCustom.
+LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
+                                  litert_custom_event custom_event);
 
 LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type);
 
@@ -74,16 +79,16 @@ LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync);
 // Pass -1 for timeout_in_ms for indefinite wait.
 LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms);
 
-// Signal the event to notify the waiters.
+// Signals the event to notify the waiters.
 LiteRtStatus LiteRtSignalEvent(LiteRtEvent event);
 
-// Return true if the event is signaled.
+// Returns true if the event is signaled.
 LiteRtStatus LiteRtIsEventSignaled(LiteRtEvent event, bool* is_signaled);
 
 // Returns a dup of the event's sync fence fd.
 LiteRtStatus LiteRtDupFdEvent(LiteRtEvent event, int* dup_fd);
 
-// Destroy a owned LiteRtEvent object.
+// Destroys a owned LiteRtEvent object.
 void LiteRtDestroyEvent(LiteRtEvent event);
 
 #ifdef __cplusplus

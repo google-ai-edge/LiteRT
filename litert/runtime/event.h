@@ -28,6 +28,12 @@ typedef struct _cl_event* cl_event;
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_WEBGPU_SUPPORT
+#define LITERT_HAS_CUSTOM_EVENT_SUPPORT 1
+#else
+#define LITERT_HAS_CUSTOM_EVENT_SUPPORT 0
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
 struct LiteRtEventT {
   LiteRtEnvironment env;
   LiteRtEventType type = LiteRtEventTypeUnknown;
@@ -41,6 +47,10 @@ struct LiteRtEventT {
 #if LITERT_HAS_OPENGL_SUPPORT
   EGLSyncKHR egl_sync;
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  // Custom event set by the client after CreateManaged.
+  litert_custom_event custom_event;
+#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   ~LiteRtEventT();
   litert::Expected<void> Wait(int64_t timeout_in_ms);
   litert::Expected<int> GetSyncFenceFd();

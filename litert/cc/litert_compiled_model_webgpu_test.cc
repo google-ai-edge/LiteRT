@@ -47,17 +47,33 @@ using testing::Pointwise;
 namespace litert {
 namespace {
 
-using TestParams =
-    std::tuple<bool, GpuOptions::Precision, GpuOptions::BufferStorageType>;
+struct TestParams {
+  using TupleType = std::tuple<bool, bool, GpuOptions::Precision,
+                               GpuOptions::BufferStorageType>;
 
-Expected<Options> CreateGpuOptions(const TestParams& params) {
+  bool async;
+  bool external_tensors_mode;
+  GpuOptions::Precision precision;
+  GpuOptions::BufferStorageType buffer_storage_type;
+
+  explicit TestParams(TupleType params)
+      : async(std::get<0>(params)),
+        external_tensors_mode(std::get<1>(params)),
+        precision(std::get<2>(params)),
+        buffer_storage_type(std::get<3>(params)) {}
+};
+
+Expected<Options> CreateGpuOptions(
+    bool external_tensors_mode,
+    GpuOptions::Precision precision,
+    GpuOptions::BufferStorageType buffer_storage_type) {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
   LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
   LITERT_RETURN_IF_ERROR(
-      gpu_options.EnableExternalTensorsMode(std::get<0>(params)));
-  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<1>(params)));
-  LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<2>(params)));
+      gpu_options.EnableExternalTensorsMode(external_tensors_mode));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(precision));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(buffer_storage_type));
   return std::move(options);
 }
 
@@ -70,7 +86,9 @@ TEST_P(ParameterizedTest, Basic) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(GetParam()));
+  auto param = GetParam();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(
+      param.external_tensors_mode, param.precision, param.buffer_storage_type));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
@@ -98,7 +116,15 @@ TEST_P(ParameterizedTest, Basic) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  compiled_model.Run(input_buffers, output_buffers);
+  if (param.async) {
+    bool async = false;
+    auto result = compiled_model.RunAsync(input_buffers, output_buffers, async);
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(async);
+  } else {
+    auto result = compiled_model.Run(input_buffers, output_buffers);
+    EXPECT_TRUE(result);
+  }
 
   // Check model output.
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
@@ -106,6 +132,14 @@ TEST_P(ParameterizedTest, Basic) {
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsWebGpuMemory());
+  if (param.async) {
+    EXPECT_TRUE(output_buffers[0].HasEvent());
+    auto event = output_buffers[0].GetEvent();
+    EXPECT_TRUE(event);
+    auto result = event->IsSignaled();
+    EXPECT_TRUE(result);
+    EXPECT_FALSE(*result);  // Not signaled yet.
+  }
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
         output_buffers[0], TensorBuffer::LockMode::kRead);
@@ -116,21 +150,176 @@ TEST_P(ParameterizedTest, Basic) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+  if (param.async) {
+    auto event = output_buffers[0].GetEvent();
+    EXPECT_TRUE(event);
+    auto result = event->IsSignaled();
+    EXPECT_TRUE(result);
+    // Buffer lock above lets the event be signaled.
+    EXPECT_TRUE(*result);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
     CompiledModelWebGpuTest, ParameterizedTest,
-    ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
-                       ::testing::ValuesIn<GpuOptions::Precision>({
-                           GpuOptions::Precision::kDefault,
-                           GpuOptions::Precision::kFp16,
-                           GpuOptions::Precision::kFp32,
-                       }),
-                       ::testing::ValuesIn<GpuOptions::BufferStorageType>({
-                           GpuOptions::BufferStorageType::kDefault,
-                           GpuOptions::BufferStorageType::kBuffer,
-                           GpuOptions::BufferStorageType::kTexture2D,
-                       })));
+    ::testing::ConvertGenerator<TestParams::TupleType>(::testing::Combine(
+        ::testing::ValuesIn<bool>({false, true}),
+        ::testing::ValuesIn<bool>({false, true}),
+        ::testing::ValuesIn<GpuOptions::Precision>({
+            GpuOptions::Precision::kDefault,
+            GpuOptions::Precision::kFp16,
+            GpuOptions::Precision::kFp32,
+        }),
+        ::testing::ValuesIn<GpuOptions::BufferStorageType>({
+            GpuOptions::BufferStorageType::kDefault,
+            GpuOptions::BufferStorageType::kBuffer,
+            GpuOptions::BufferStorageType::kTexture2D,
+        }))));
+
+#ifdef ADDRESS_SANITIZER
+// Currently, it's working only when --config=asan is given. Without it, it
+// complains about leaks of 56 bytes in 1 object at the end of whole test.
+
+struct PipelineTestParams {
+  using TupleType = std::tuple<bool, bool, bool>;
+
+  bool async_1st_model;
+  bool async_2nd_model;
+  bool external_tensors_mode;
+
+  explicit PipelineTestParams(TupleType params)
+      : async_1st_model(std::get<0>(params)),
+        async_2nd_model(std::get<1>(params)),
+        external_tensors_mode(std::get<2>(params)) {}
+};
+
+class ParameterizedPipelineTest
+    : public ::testing::TestWithParam<PipelineTestParams> {};
+
+TEST_P(ParameterizedPipelineTest, Pipeline) {
+  constexpr const float kTestOutputTensorForPipelineTest[] = {21, 42};
+
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  auto param = GetParam();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(
+      param.external_tensors_mode, GpuOptions::Precision::kDefault,
+      GpuOptions::BufferStorageType::kDefault));
+
+  // Create 1st model.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model_1,
+      CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                            options));
+  EXPECT_EQ(compiled_model_1.GetNumSignatures(), 1);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers_1,
+                              compiled_model_1.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers_1,
+                              compiled_model_1.CreateOutputBuffers());
+
+  // Create 2nd model.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model_2,
+      CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                            options));
+  EXPECT_EQ(compiled_model_2.GetNumSignatures(), 1);
+
+  // One of input buffers of 2nd model is same as output of 1st model.
+  // Set rest of the input buffers of 2nd model same as 1st model's input
+  // buffers.
+  std::vector<TensorBuffer> input_buffers_2(2);
+  LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_2[0],
+                              output_buffers_1[0].Duplicate());
+  LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_2[1],
+                              input_buffers_1[1].Duplicate());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers_2,
+                              compiled_model_2.CreateOutputBuffers());
+
+  // Fill model inputs for 1st model.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model_1.GetSignatureInputNames());
+  EXPECT_EQ(input_names.size(), 2);
+  EXPECT_EQ(input_names.at(0), "arg0");
+  EXPECT_EQ(input_names.at(1), "arg1");
+  EXPECT_TRUE(input_buffers_1[0].IsWebGpuMemory());
+  ASSERT_TRUE(input_buffers_1[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  EXPECT_TRUE(input_buffers_1[1].IsWebGpuMemory());
+  ASSERT_TRUE(input_buffers_1[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Execute 1st model.
+  if (param.async_1st_model) {
+    bool async = false;
+    auto result =
+        compiled_model_1.RunAsync(input_buffers_1, output_buffers_1, async);
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(async);
+  } else {
+    auto result = compiled_model_1.Run(input_buffers_1, output_buffers_1);
+    EXPECT_TRUE(result);
+  }
+
+  // Execute 2nd model.
+  if (param.async_2nd_model) {
+    bool async = false;
+    auto result =
+        compiled_model_2.RunAsync(input_buffers_2, output_buffers_2, async);
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(async);
+  } else {
+    auto result = compiled_model_2.Run(input_buffers_2, output_buffers_2);
+    EXPECT_TRUE(result);
+  }
+
+  // Check 2nd model output.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model_2.GetSignatureOutputNames());
+  EXPECT_EQ(output_names.size(), 1);
+  EXPECT_EQ(output_names.at(0), "tfl.add");
+  EXPECT_TRUE(output_buffers_2[0].IsWebGpuMemory());
+  if (param.async_2nd_model) {
+    EXPECT_TRUE(output_buffers_2[0].HasEvent());
+    auto event = output_buffers_2[0].GetEvent();
+    EXPECT_TRUE(event);
+    auto result = event->IsSignaled();
+    EXPECT_TRUE(result);
+    EXPECT_FALSE(*result);  // Not signaled yet.
+  }
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers_2[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
+                     << kTestOutputTensorForPipelineTest[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5),
+                kTestOutputTensorForPipelineTest));
+  }
+  if (param.async_2nd_model) {
+    auto event = output_buffers_2[0].GetEvent();
+    EXPECT_TRUE(event);
+    auto result = event->IsSignaled();
+    EXPECT_TRUE(result);
+    // Buffer lock above lets the event be signaled.
+    EXPECT_TRUE(*result);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CompiledModelWebGpuTest, ParameterizedPipelineTest,
+    ::testing::ConvertGenerator<PipelineTestParams::TupleType>(
+        ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
+                           ::testing::ValuesIn<bool>({false, true}),
+                           ::testing::ValuesIn<bool>({false, true}))));
+#endif  // MEMORY_SANITIZER
 
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
@@ -141,8 +330,8 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_1,
-      CreateGpuOptions({false, GpuOptions::Precision::kDefault,
-                        GpuOptions::BufferStorageType::kDefault}));
+      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                       GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model_1,
       CompiledModel::Create(*env_1, testing::GetTestFilePath(kModelFileName),
@@ -168,8 +357,8 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_2,
-      CreateGpuOptions({true, GpuOptions::Precision::kFp32,
-                        GpuOptions::BufferStorageType::kTexture2D}));
+      CreateGpuOptions(true, GpuOptions::Precision::kFp32,
+                       GpuOptions::BufferStorageType::kTexture2D));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model_2,
       CompiledModel::Create(*env_2, testing::GetTestFilePath(kModelFileName),
@@ -196,8 +385,8 @@ TEST(CompiledModelWebGpuTest, ConstructMlDriftWebGpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_1,
-      CreateGpuOptions({false, GpuOptions::Precision::kDefault,
-                        GpuOptions::BufferStorageType::kDefault}));
+      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                       GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model_1,
       CompiledModel::Create(*env_1, testing::GetTestFilePath(kModelFileName),
@@ -277,8 +466,8 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResources) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options,
-      CreateGpuOptions({false, GpuOptions::Precision::kDefault,
-                        GpuOptions::BufferStorageType::kDefault}));
+      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                       GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
@@ -360,8 +549,8 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResourcesExternalBuffer) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options,
-      CreateGpuOptions({false, GpuOptions::Precision::kDefault,
-                        GpuOptions::BufferStorageType::kDefault}));
+      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                       GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),

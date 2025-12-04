@@ -86,6 +86,18 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
                  "LiteRtEventWait not implemented for this platform");
 #endif
   }
+  if (type == LiteRtEventTypeCustom) {
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+    if (custom_event && custom_event->wait != nullptr) {
+      custom_event->wait(custom_event, timeout_in_ms);
+      return {};
+    }
+    return Error(kLiteRtStatusErrorRuntimeFailure, "Custom event is not set");
+#else
+    return Error(kLiteRtStatusErrorUnsupported,
+                 "LiteRtEventWait not implemented for this platform");
+#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  }
   return Error(kLiteRtStatusErrorInvalidArgument, "Invalid event type");
 }
 
@@ -133,6 +145,12 @@ LiteRtEventT::~LiteRtEventT() {
 #if LITERT_HAS_OPENCL_SUPPORT
     tflite::gpu::cl::clReleaseEvent(opencl_event);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+  } else if (type == LiteRtEventTypeCustom) {
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+    if (custom_event && custom_event->release != nullptr) {
+      custom_event->release(custom_event);
+    }
+#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   }
 }
 
@@ -167,8 +185,18 @@ Expected<void> LiteRtEventT::Signal() {
                    absl::StrFormat(
                        "clSetUserEventStatus fails with error code %d", res));
     }
+    return {};
   }
 #endif
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  if (type == LiteRtEventTypeCustom) {
+    if (custom_event && custom_event->signal != nullptr) {
+      custom_event->signal(custom_event);
+      return {};
+    }
+    return Error(kLiteRtStatusErrorRuntimeFailure, "Custom event is not set");
+  }
+#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   return Error(kLiteRtStatusErrorInvalidArgument,
                "The event signal is not supported");
 }
@@ -261,12 +289,31 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
                  "on this platform");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   }
+  if (type == LiteRtEventTypeCustom) {
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+    return new LiteRtEventT{
+        .env = env,
+        .type = LiteRtEventTypeCustom,
+        .custom_event = nullptr,  // custom_event will be set by the client.
+    };
+#else
+    return Error(kLiteRtStatusErrorUnsupported,
+                 "Creating managed custom event is not supported on this "
+                 "platform");
+#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  }
 
   return Error(kLiteRtStatusErrorInvalidArgument,
                absl::StrFormat("CreateManaged doesn't support type %d", type));
 }
 
 Expected<bool> LiteRtEventT::IsSignaled() const {
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  if (type == LiteRtEventTypeCustom && custom_event &&
+      custom_event->is_signaled != nullptr) {
+    return static_cast<bool>(custom_event->is_signaled(custom_event));
+  }
+#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   if (type != LiteRtEventTypeSyncFenceFd) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "IsSignaled is not supported for this event type");

@@ -236,6 +236,7 @@ EXPORTS
   LiteRtSetCpuOptionsXNNPackFlags
   LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor
   LiteRtSetCpuOptionsXnnPackWeightCachePath
+  LiteRtSetCustomEvent
   LiteRtSetDelegateFunction
   LiteRtSetDummyCompilerOptions
   LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
