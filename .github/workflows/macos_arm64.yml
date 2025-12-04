@@ -42,7 +42,7 @@ jobs:
           python-version: "3.11"
 
       - name: Setup Bazel
-        uses: setup-bazel/setup-bazel@v4
+        uses: bazel-contrib/setup-bazel@v5
         with:
           bazel-version: '6.4.0'
 
