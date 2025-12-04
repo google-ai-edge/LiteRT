@@ -18,13 +18,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
-#include <utility>
 
+#include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -163,11 +162,13 @@ const auto kSupportedSocModels = Values(
     "SA8295",
     "SA8255",
     "SM8350",
+    "SC8380XP",
     "SM8450",
     "SM8475",
     "SM8550",
     "SM8650",
-    "SM8750"
+    "SM8750",
+    "SM8850"
 );
 // clang-format on
 
@@ -179,7 +180,7 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 10);
+  ASSERT_EQ(num_supported_soc_models, 11);
 
   const char* config_id;
   LITERT_ASSERT_OK(
