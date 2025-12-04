@@ -725,6 +725,28 @@ TEST(PrintingTest, Op) {
             "tfl.add{fa=RELU}(3d_i32<2x2x2>,1d_i32<2>)->(3d_i32<2x2x2>)");
 }
 
+TEST(PrintingTest, OpNoOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflRelu);
+
+  {
+    TflOptions opts;
+    opts.type = ::tflite::BuiltinOptions_NONE;
+    litert::internal::SetTflOptions(op, std::move(opts));
+  }
+
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  op.Inputs().push_back(&tensor);
+
+  LiteRtTensorT tensor3;
+  tensor3.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  op.Outputs().push_back(&tensor3);
+
+  EXPECT_EQ(absl::StrFormat("%v", op),
+            "tfl.relu{}(3d_i32<2x2x2>)->(3d_i32<2x2x2>)");
+}
+
 TEST(PrintingTest, TflOptions) {
   TflOptions opts;
   opts.type = ::tflite::BuiltinOptions_AddOptions;
