@@ -88,8 +88,8 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
   }
   if (type == LiteRtEventTypeCustom) {
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
-    if (custom_event && custom_event->wait != nullptr) {
-      custom_event->wait(custom_event, timeout_in_ms);
+    if (custom_event && custom_event->Wait != nullptr) {
+      custom_event->Wait(custom_event, timeout_in_ms);
       return {};
     }
     return Error(kLiteRtStatusErrorRuntimeFailure, "Custom event is not set");
@@ -147,8 +147,8 @@ LiteRtEventT::~LiteRtEventT() {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   } else if (type == LiteRtEventTypeCustom) {
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
-    if (custom_event && custom_event->release != nullptr) {
-      custom_event->release(custom_event);
+    if (custom_event && custom_event->Release != nullptr) {
+      custom_event->Release(custom_event);
     }
 #endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   }
@@ -188,15 +188,6 @@ Expected<void> LiteRtEventT::Signal() {
     return {};
   }
 #endif
-#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
-  if (type == LiteRtEventTypeCustom) {
-    if (custom_event && custom_event->signal != nullptr) {
-      custom_event->signal(custom_event);
-      return {};
-    }
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Custom event is not set");
-  }
-#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   return Error(kLiteRtStatusErrorInvalidArgument,
                "The event signal is not supported");
 }
@@ -310,8 +301,8 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
 Expected<bool> LiteRtEventT::IsSignaled() const {
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
   if (type == LiteRtEventTypeCustom && custom_event &&
-      custom_event->is_signaled != nullptr) {
-    return static_cast<bool>(custom_event->is_signaled(custom_event));
+      custom_event->IsSignaled != nullptr) {
+    return static_cast<bool>(custom_event->IsSignaled(custom_event));
   }
 #endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   if (type != LiteRtEventTypeSyncFenceFd) {
