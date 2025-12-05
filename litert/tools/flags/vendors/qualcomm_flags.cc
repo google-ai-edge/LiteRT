@@ -254,6 +254,12 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
               kOptimizeForInferenceO3,
           "QNN optimization level");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
+          qualcomm_graph_priority,
+          litert::qualcomm::QualcommOptions::GraphPriority::kDefault,
+          "QNN graph priority, If the option is set to 'default', the "
+          "QNN_PRIORITY_DEFAULT (Equal to QNN_PRIORITY_NORMAL) will be used.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -276,6 +282,48 @@ bool AbslParseFlag(absl::string_view text,
   }
   *error = "Unknown optimization level";
   return false;
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GraphPriority* graph_priority,
+                   std::string* error) {
+  if (text == "default") {
+    *graph_priority = QualcommOptions::GraphPriority::kDefault;
+    return true;
+  }
+  if (text == "low") {
+    *graph_priority = QualcommOptions::GraphPriority::kLow;
+    return true;
+  }
+  if (text == "normal") {
+    *graph_priority = QualcommOptions::GraphPriority::kNormal;
+    return true;
+  }
+  if (text == "normal_high") {
+    *graph_priority = QualcommOptions::GraphPriority::kNormalHigh;
+    return true;
+  }
+  if (text == "high") {
+    *graph_priority = QualcommOptions::GraphPriority::kHigh;
+    return true;
+  }
+  *error = "Unknown graph priority";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority) {
+  switch (graph_priority) {
+    case QualcommOptions::GraphPriority::kDefault:
+      return "default";
+    case QualcommOptions::GraphPriority::kLow:
+      return "low";
+    case QualcommOptions::GraphPriority::kNormal:
+      return "normal";
+    case QualcommOptions::GraphPriority::kNormalHigh:
+      return "normal_high";
+    case QualcommOptions::GraphPriority::kHigh:
+      return "high";
+  }
 }
 
 std::string AbslUnparseFlag(
@@ -351,6 +399,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto optimization_level =
       absl::GetFlag(FLAGS_qualcomm_optimization_level);
   opts.SetOptimizationLevel(optimization_level);
+
+  const auto graph_priority = absl::GetFlag(FLAGS_qualcomm_graph_priority);
+  opts.SetGraphPriority(graph_priority);
 
   const auto use_conv_hmx = absl::GetFlag(FLAGS_qualcomm_use_conv_hmx);
   opts.SetUseConvHMX(use_conv_hmx);
