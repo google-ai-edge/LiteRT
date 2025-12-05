@@ -512,5 +512,124 @@ TEST(PerAxisHybridEmbeddingLookupHybridOpTest, PerAxisSimple4DTestInt4) {
           kTestTolerance)));
 }
 
+TEST(PerAxisHybridEmbeddingLookupHybridOpTest, PerAxisSimple2DTestInt2) {
+  PerAxisHybridEmbeddingLookupOpModel m(
+      /*index_shape=*/{3}, /*weight_shape=*/{3, 4},
+      /*per_channel_quantization_scales=*/{0.001, 0.02, 0.3},
+      /*type=*/TensorType_INT2);
+  m.SetInput({1, 0, 2});
+  m.SetSignedWeight({
+      0.00,
+      -0.001,
+      0.002,
+      0.001,  // Row 0
+      0.02,
+      -0.02,
+      0.00,
+      -0.04,  // Row 1
+      0.3,
+      -0.6,
+      0.0,
+      -0.3,  // Row 2
+  });
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(m.GetOutput<float>(), ElementsAreArray(ArrayFloatNear(
+                                        {
+                                            0.02,
+                                            -0.02,
+                                            0.00,
+                                            -0.04,  // Row 1
+                                            0.00,
+                                            -0.001,
+                                            0.002,
+                                            0.001,  // Row 0
+                                            0.3,
+                                            -0.6,
+                                            0.0,
+                                            -0.3,  // Row 2
+                                        },
+                                        kTestTolerance)));
+}
+
+TEST(PerAxisHybridEmbeddingLookupHybridOpTest, PerAxisSimple3DTestInt2) {
+  PerAxisHybridEmbeddingLookupOpModel m({3}, {3, 2, 2}, {0.001, 0.02, 0.3},
+                                        TensorType_INT2);
+  m.SetInput({1, 0, 2});
+  m.SetSignedWeight({
+      0.00,
+      -0.001,
+      0.002,
+      0.001,  // Row 0
+      0.02,
+      -0.02,
+      0.00,
+      -0.04,  // Row 1
+      0.3,
+      -0.6,
+      0.0,
+      -0.3,  // Row 2
+  });
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(m.GetOutput<float>(), ElementsAreArray(ArrayFloatNear(
+                                        {
+                                            0.02,
+                                            -0.02,
+                                            0.00,
+                                            -0.04,  // Row 1
+                                            0.00,
+                                            -0.001,
+                                            0.002,
+                                            0.001,  // Row 0
+                                            0.3,
+                                            -0.6,
+                                            0.0,
+                                            -0.3,  // Row 2
+                                        },
+                                        kTestTolerance)));
+}
+
+TEST(PerAxisHybridEmbeddingLookupHybridOpTest, PerAxisSimple4DTestInt2) {
+  PerAxisHybridEmbeddingLookupOpModel m({3}, {3, 2, 2, 1}, {0.001, 0.02, 0.3},
+                                        TensorType_INT2);
+  m.SetInput({1, 0, 2});
+  m.SetSignedWeight({
+      0.00,
+      -0.001,
+      0.002,
+      0.001,  // Row 0
+      0.02,
+      -0.02,
+      0.00,
+      -0.04,  // Row 1
+      0.3,
+      -0.6,
+      0.0,
+      -0.3,  // Row 2
+  });
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(m.GetOutput<float>(), ElementsAreArray(ArrayFloatNear(
+                                        {
+                                            0.02,
+                                            -0.02,
+                                            0.00,
+                                            -0.04,  // Row 1
+                                            0.00,
+                                            -0.001,
+                                            0.002,
+                                            0.001,  // Row 0
+                                            0.3,
+                                            -0.6,
+                                            0.0,
+                                            -0.3,  // Row 2
+                                        },
+                                        kTestTolerance)));
+}
+
 }  // namespace
 }  // namespace tflite
