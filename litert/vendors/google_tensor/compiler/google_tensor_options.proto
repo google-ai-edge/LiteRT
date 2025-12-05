@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package third_party.odml.litert.litert.vendors.google_tensor.compiler;
+
+// Added to resolve the java_features warning
+option java_multiple_files = true;
+option java_outer_classname = "GoogleTensorOptions";
+
+enum LiteRtTensorOptionsTruncationType {
+  LITERT_GOOGLE_TENSOR_FLOAT_TRUNCATION_TYPE_AUTO = 0;
+  LITERT_GOOGLE_TENSOR_FLOAT_TRUNCATION_TYPE_NO_TRUNCATION = 1;
+  LITERT_GOOGLE_TENSOR_FLOAT_TRUNCATION_TYPE_BFLOAT16 = 2;
+  LITERT_GOOGLE_TENSOR_FLOAT_TRUNCATION_TYPE_HALF = 3;
+}
+
+enum LiteRtTensorOptionsShardingIntensity {
+  GOOGLE_TENSOR_OPTIONS_SHARDING_INTENSITY_MINIMAL = 0;
+  GOOGLE_TENSOR_OPTIONS_SHARDING_INTENSITY_MODERATE = 1;
+  GOOGLE_TENSOR_OPTIONS_SHARDING_INTENSITY_EXTENSIVE = 2;
+  GOOGLE_TENSOR_OPTIONS_SHARDING_INTENSITY_MAXIMUM = 3;
+}
+
+message OpaqueOption {
+  LiteRtTensorOptionsTruncationType float_truncation_type = 1;
+  bool int64_to_int32_truncation = 2;
+  string output_dir = 3;
+  bool dump_op_timings = 4;
+  bool enable_large_model_support = 5;
+  bool enable_four_bit_compilation = 6;
+  LiteRtTensorOptionsShardingIntensity sharding_intensity = 7;
+  string testing_flags = 8;
+  // Add other options here
+}
+
+message OpaqueOptionsList {
+  repeated OpaqueOption options = 1;
+}
