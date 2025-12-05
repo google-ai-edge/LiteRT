@@ -334,6 +334,7 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":dump",
+        "//litert/c:litert_tensor_buffer",
         "//litert/core/model",
         "//litert/test:common",
         "@com_google_absl//absl/strings:string_view",
