@@ -63,19 +63,21 @@ typedef size_t (*G2GTransform)(
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
 void Transform(std::function<bool(OpWrapper&)> validate_op_config,
-               std::vector<OpWrapper>& ops, TensorPool& tensor_pool,
+               ModelWrapper& model_wrapper,
                const std::vector<QnnOpCode>& pattern_ops,
                G2GTransform custom_transform) {
   auto bad_match_table = CreateBadMatchTable(pattern_ops);
   size_t start_index = 0;
-  while ((start_index + (pattern_ops.size() - 1)) < ops.size()) {
+  while ((start_index + (pattern_ops.size() - 1)) <
+         model_wrapper.GetOps().size()) {
     if (auto pattern_start_index = GetPatternStartIndex(
-            start_index, ops, pattern_ops, bad_match_table);
+            start_index, model_wrapper.GetOps(), pattern_ops, bad_match_table);
         pattern_start_index != -1) {
       start_index =
           pattern_start_index +
-          custom_transform(validate_op_config, ops, pattern_start_index,
-                           tensor_pool, pattern_ops.size());
+          custom_transform(validate_op_config, model_wrapper.GetOps(),
+                           pattern_start_index, model_wrapper.GetTensorPool(),
+                           pattern_ops.size());
     } else {
       break;
     }
@@ -86,7 +88,7 @@ void Transform(std::function<bool(OpWrapper&)> validate_op_config,
 
 // TODO (jiunkaiy): Add more G2G transformation.
 void GraphToGraphTransform(const G2GConfig g2g_option,
-                           std::vector<OpWrapper>& ops, TensorPool& tensor_pool,
+                           ModelWrapper& model_wrapper,
                            std::function<bool(OpWrapper&)> validate_op_config) {
   if (g2g_option == G2GConfig::kOff) {
     return;
@@ -100,14 +102,14 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
         QnnOpCode::kMatMul,
         QnnOpCode::kConvert,
     };
-    Transform(validate_op_config, ops, tensor_pool, matmul_convert_decode,
+    Transform(validate_op_config, model_wrapper, matmul_convert_decode,
               FuseMatMulConvertDecode);
     const std::vector<QnnOpCode> matmul_convert_prefill = {
         QnnOpCode::kMatMul,
         QnnOpCode::kMatMul,
         QnnOpCode::kConvert,
     };
-    Transform(validate_op_config, ops, tensor_pool, matmul_convert_prefill,
+    Transform(validate_op_config, model_wrapper, matmul_convert_prefill,
               FuseMatMulConvertPrefill);
   }
   // MHA Optimization
@@ -128,7 +130,7 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
         QnnOpCode::kElementWiseAdd,
         QnnOpCode::kReshape,
     };
-    Transform(validate_op_config, ops, tensor_pool, gemma3_mha_decode,
+    Transform(validate_op_config, model_wrapper, gemma3_mha_decode,
               OptimizeMHADecode);
   }
   if (g2g_option == G2GConfig::kMHAOptPrefill ||
@@ -153,7 +155,7 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
         QnnOpCode::kTranspose,
         QnnOpCode::kReshape,
     };
-    Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
+    Transform(validate_op_config, model_wrapper, gemma3_mha_prefill,
               OptimizeMHAPrefill);
   }
 
@@ -164,7 +166,7 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
       QnnOpCode::kQuantize,
       QnnOpCode::kElementWiseMultiply,
   };
-  Transform(validate_op_config, ops, tensor_pool, gemma3_mask,
+  Transform(validate_op_config, model_wrapper, gemma3_mask,
             TransformQuantizeInMask);
 
   // Embedding Gemma Optimization
@@ -180,7 +182,7 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
       QnnOpCode::kTranspose,
       QnnOpCode::kReshape,
   };
-  Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
+  Transform(validate_op_config, model_wrapper, embedding_gemma,
             TransformEmbeddingGemma);
 
   // Fast Vlm Optimization
@@ -202,7 +204,7 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
       QnnOpCode::kReshape,
       QnnOpCode::kTranspose,
       QnnOpCode::kReshape};
-  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
+  Transform(validate_op_config, model_wrapper, fast_vlm_mha_prefill,
             OptimizeMHAFastVlmPrefill);
 
   // Attention Optimization
@@ -220,6 +222,6 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
       QnnOpCode::kMatMul,
       QnnOpCode::kTranspose,
   };
-  Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
+  Transform(validate_op_config, model_wrapper, attn, OptimizeMHAAttn);
 }
 }  // namespace qnn

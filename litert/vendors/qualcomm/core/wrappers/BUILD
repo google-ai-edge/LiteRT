@@ -57,3 +57,16 @@ cc_library(
         "@qairt//:qnn_lib_headers",
     ],
 )
+
+cc_library(
+    name = "model_wrapper",
+    srcs = ["model_wrapper.cc"],
+    hdrs = ["model_wrapper.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
