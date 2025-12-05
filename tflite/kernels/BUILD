@@ -167,7 +167,7 @@ cc_library(
         "//tflite/tools/optimize:quantization_utils",
         "//tflite/tools/serialization:writer_lib",
         "//tflite/tools/versioning",
-        "@FP16",
+        "//tflite/types:half",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/base:core_headers",
@@ -574,6 +574,7 @@ cc_test(
         "//tflite:array",
         "//tflite:util",
         "//tflite/core/c:common",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest_main",
     ],
 )
