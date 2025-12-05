@@ -143,6 +143,10 @@ LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     LiteRtOpaqueOptions gpu_accelerator_options,
     int num_steps_of_command_buffer_preparations);
 
+// Sets whether to use Metal argument buffers.
+LiteRtStatus LiteRtSetGpuOptionsUseMetalArgumentBuffers(
+    LiteRtOpaqueOptions gpu_options, bool use_metal_argument_buffers);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -213,6 +217,9 @@ LiteRtStatus
 LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     int* num_steps_of_command_buffer_preparations,
     LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuOptionsUseMetalArgumentBuffers(
+    bool* use_metal_argument_buffers, LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"

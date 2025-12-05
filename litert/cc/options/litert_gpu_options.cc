@@ -122,4 +122,10 @@ LiteRtStatus GpuOptions::SetNumStepsOfCommandBufferPreparations(
           Get(), num_steps_of_command_buffer_preparations);
 }
 
+LiteRtStatus GpuOptions::SetUseMetalArgumentBuffers(
+    bool use_metal_argument_buffers) {
+  return LiteRtSetGpuOptionsUseMetalArgumentBuffers(Get(),
+                                                    use_metal_argument_buffers);
+}
+
 }  // namespace litert
