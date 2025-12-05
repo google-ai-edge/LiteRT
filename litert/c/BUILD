@@ -649,13 +649,6 @@ cc_test(
     deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
 )
 
-# TODO: b/437381008
-cc_library(
-    name = "litert_runtime_c_api_so_shim",
-    linkopts = ["-Wl,--undefined-glob=LiteRt*"],
-    deps = LITERT_C_API_COMMON_DEPS,
-)
-
 # Build `litert/c:litert_runtime_c_api_so` for `libLiteRt.so`.
 cc_shared_library(
     name = "litert_runtime_c_api_so",
@@ -664,7 +657,7 @@ cc_shared_library(
     user_link_flags = export_lrt_runtime_only_linkopt() + [
         "-Wl,-soname=libLiteRt.so",
     ] + litert_android_linkopts(),
-    deps = [":litert_runtime_c_api_so_shim"],
+    deps = LITERT_C_API_COMMON_DEPS,
 )
 
 macos_dylib(
@@ -746,16 +739,6 @@ alias(
 
 exports_files(srcs = ["windows_exported_symbols.def"])
 
-# TODO: b/437381008
-cc_library(
-    name = "litert_tflite_runtime_c_api_so_shim",
-    linkopts = ["-Wl,--undefined-glob=LiteRt*"],
-    deps = LITERT_C_API_COMMON_DEPS + [
-        "//tflite/c:c_api",
-        "//tflite/c:c_api_experimental",
-    ],
-)
-
 # Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRt.so`.
 # Warning:Don't build it together with `litert_runtime_c_api_so` in one command.
 # When bazel analyzed the build graph, it detected that two different actions would
@@ -767,7 +750,10 @@ cc_shared_library(
     shared_lib_name = "libLiteRt.so",
     tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
     user_link_flags = export_lrt_tflite_runtime_linkopt() + litert_android_linkopts(),
-    deps = [":litert_tflite_runtime_c_api_so_shim"],
+    deps = LITERT_C_API_COMMON_DEPS + [
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_experimental",
+    ],
 )
 
 SELECT_LITERT_RUNTIME_C_API_SO = select({
