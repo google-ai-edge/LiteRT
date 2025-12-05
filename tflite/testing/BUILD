@@ -275,6 +275,7 @@ cc_library(
     hdrs = ["split.h"],
     deps = [
         "//tflite:string",
+        "//tflite/types:half",
         "@eigen_archive//:eigen3",
     ],
 )
