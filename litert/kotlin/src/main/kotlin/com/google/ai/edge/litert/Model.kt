@@ -95,10 +95,19 @@ private constructor(
   constructor(
     val constantTensorSharing: Boolean? = null,
     val infiniteFloatCapping: Boolean? = null,
-    val benchmarkMode: Boolean? = null,
     val allowSrcQuantizedFcConvOps: Boolean? = null,
     val precision: Precision? = null,
     val bufferStorageType: BufferStorageType? = null,
+    val preferTextureWeights: Boolean? = null,
+    val serializationDir: String? = null,
+    val modelCacheKey: String? = null,
+    val serializeProgramCache: Boolean? = null,
+    val serializeExternalTensors: Boolean? = null,
+    val externalTensorsMode: Boolean? = null,
+    val externalTensorPattern: String? = null,
+    val backend: Backend? = null,
+    val priority: Priority? = null,
+    val numStepsOfCommandBufferPreparations: Int? = null,
   ) {
     /** Precision for GPU options. */
     enum class Precision constructor(val value: Int) {
@@ -109,19 +118,43 @@ private constructor(
 
     /** Buffer storage type for GPU options. */
     enum class BufferStorageType constructor(val value: Int) {
-      DEFAUTL(0),
+      DEFAULT(0),
       BUFFER(1),
       TEXTURE_2D(2),
+    }
+
+    /** Backend for GPU options. */
+    enum class Backend constructor(val value: Int) {
+      AUTOMATIC(0),
+      OPENCL(1),
+      WEBGPU(2),
+    }
+
+    /** Priority for GPU options. */
+    enum class Priority constructor(val value: Int) {
+      DEFAULT(0),
+      LOW(1),
+      NORMAL(2),
+      HIGH(3),
     }
 
     // Keys for passing the GPU options to the native layer.
     internal enum class Key constructor(val value: Int) {
       CONSTANT_TENSOR_SHARING(0),
       INFINITE_FLOAT_CAPPING(1),
-      BENCHMARK_MODE(2),
-      ALLOW_SRC_QUANTIZED_FC_CONV_OPS(3),
-      PRECISION(4),
-      BUFFER_STORAGE_TYPE(5),
+      ALLOW_SRC_QUANTIZED_FC_CONV_OPS(2),
+      PRECISION(3),
+      BUFFER_STORAGE_TYPE(4),
+      PREFER_TEXTURE_WEIGHTS(5),
+      SERIALIZATION_DIR(6),
+      MODEL_CACHE_KEY(7),
+      SERIALIZE_PROGRAM_CACHE(8),
+      SERIALIZE_EXTERNAL_TENSORS(9),
+      EXTERNAL_TENSORS_MODE(10),
+      EXTERNAL_TENSOR_PATTERN(11),
+      BACKEND(12),
+      PRIORITY(13),
+      NUM_STEPS_OF_COMMAND_BUFFER_PREPARATIONS(14),
     }
 
     // Converts the options to a map, with all values converted to strings.
@@ -133,9 +166,6 @@ private constructor(
       if (infiniteFloatCapping != null) {
         map[Key.INFINITE_FLOAT_CAPPING] = infiniteFloatCapping.toString()
       }
-      if (benchmarkMode != null) {
-        map[Key.BENCHMARK_MODE] = benchmarkMode.toString()
-      }
       if (allowSrcQuantizedFcConvOps != null) {
         map[Key.ALLOW_SRC_QUANTIZED_FC_CONV_OPS] = allowSrcQuantizedFcConvOps.toString()
       }
@@ -144,6 +174,37 @@ private constructor(
       }
       if (bufferStorageType != null) {
         map[Key.BUFFER_STORAGE_TYPE] = bufferStorageType.value.toString()
+      }
+      if (preferTextureWeights != null) {
+        map[Key.PREFER_TEXTURE_WEIGHTS] = preferTextureWeights.toString()
+      }
+      if (serializationDir != null) {
+        map[Key.SERIALIZATION_DIR] = serializationDir
+      }
+      if (modelCacheKey != null) {
+        map[Key.MODEL_CACHE_KEY] = modelCacheKey
+      }
+      if (serializeProgramCache != null) {
+        map[Key.SERIALIZE_PROGRAM_CACHE] = serializeProgramCache.toString()
+      }
+      if (serializeExternalTensors != null) {
+        map[Key.SERIALIZE_EXTERNAL_TENSORS] = serializeExternalTensors.toString()
+      }
+      if (externalTensorsMode != null) {
+        map[Key.EXTERNAL_TENSORS_MODE] = externalTensorsMode.toString()
+      }
+      if (externalTensorPattern != null) {
+        map[Key.EXTERNAL_TENSOR_PATTERN] = externalTensorPattern
+      }
+      if (backend != null) {
+        map[Key.BACKEND] = backend.value.toString()
+      }
+      if (priority != null) {
+        map[Key.PRIORITY] = priority.value.toString()
+      }
+      if (numStepsOfCommandBufferPreparations != null) {
+        map[Key.NUM_STEPS_OF_COMMAND_BUFFER_PREPARATIONS] =
+          numStepsOfCommandBufferPreparations.toString()
       }
       return map.toMap()
     }
@@ -315,7 +376,7 @@ private constructor(
 
   companion object {
     init {
-      System.loadLibrary("litert_jni")
+      System.loadLibrary("LiteRt")
     }
 
     private fun createFromAsset(
