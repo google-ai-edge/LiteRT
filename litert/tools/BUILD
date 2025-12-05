@@ -512,6 +512,35 @@ cc_binary(
     ]
 ]
 
+# Simpler (single source file) version of run_model that only requires the C++ API.
+cc_binary(
+    name = "run_model_simple",
+    srcs = ["run_model_simple.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/random",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 NUMERICS_CHECK_DEPS = [
     "@com_google_absl//absl/flags:flag",
     "@com_google_absl//absl/flags:parse",

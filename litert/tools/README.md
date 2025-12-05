@@ -168,6 +168,11 @@ parameters
 Note: These flags are only available when the tool is built with the
 corresponding vendor support enabled.
 
+## `run_model_simple`
+
+This is simpler version of `run_model` that only has basic CompiledModel usage.
+It only requires single file (run_model_simple.cc) to build.
+
 ## `analyze_model_main`
 
 Inspect the structure of a LiteRT model. It can provide a summary or a detailed
