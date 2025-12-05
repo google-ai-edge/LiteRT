@@ -77,11 +77,6 @@ set(LITERT_CC_HEADERS
     ../cc/litert_tensor_buffer.h
 )
 
-# Set PUBLIC_HEADER property for proper installation
-set_target_properties(litert_cc_api PROPERTIES
-    PUBLIC_HEADER "${LITERT_CC_HEADERS}"
-)
-
 set(LITERT_CC_SRCS
     ../c/internal/litert_logging.cc
     ../cc/internal/litert_tensor_buffer_utils.cc
@@ -106,6 +101,11 @@ set(LITERT_CC_SRCS
 # Core C++ API library
 add_library(litert_cc_api STATIC
     ${LITERT_CC_SRCS}
+)
+
+# Set PUBLIC_HEADER property for proper installation
+set_target_properties(litert_cc_api PROPERTIES
+    PUBLIC_HEADER "${LITERT_CC_HEADERS}"
 )
 
 target_include_directories(litert_cc_api
