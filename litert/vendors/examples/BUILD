@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths", "litert_bin", "litert_lib")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -71,6 +71,94 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+litert_bin(
+    name = "LiteRtCompilerPlugin",
+    srcs = ["example_plugin.cc"],
+    copts = ["-fexceptions"] + select({
+        "//litert/runtime/dispatch:windows_msvc": [
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//litert/runtime/dispatch:windows_lexan": [
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkshared = 1,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":example_common",
+        ":example_transformations",
+        ":litert_compiler_plugin_c_api",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_rewriter",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/cc/internal:litert_op_options",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+litert_lib(
+    name = "litert_compiler_plugin_c_api",
+    hdrs = [
+        "//litert/vendors/c:litert_compiler_plugin.h",
+    ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+    ],
+)
+
+litert_bin(
+    name = "LiteRtDispatch",
+    srcs = ["example_dispatch.cc"],
+    copts = ["-fexceptions"] + select({
+        "//litert/runtime/dispatch:windows_msvc": [
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//litert/runtime/dispatch:windows_lexan": [
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkshared = 1,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":example_common",
+        ":litert_dispatch_api",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc/internal:litert_handle",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+litert_lib(
+    name = "litert_dispatch_api",
+    hdrs = [
+        "//litert/vendors/c:litert_dispatch.h",
+    ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )
 
