@@ -19,6 +19,12 @@ Install CMake 4.0.1 from: https://github.com/kitware/cmake/releases
    cd LiteRT
    ```
 
+1. Place `libLiteRt.so` under litert/cc_sdk
+
+   ```bash
+   cp <path_to_prebuilt_lib>/libLiteRt.so litert/cc_sdk/
+   ```
+
 1. Configure the LiteRT Android build using the provided preset:
 
    ```bash
