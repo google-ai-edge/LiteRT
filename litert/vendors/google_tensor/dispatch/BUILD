@@ -66,9 +66,12 @@ litert_dynamic_lib(
         "-fdata-sections",
     ],
     export_litert_only = True,
-    linkopts = litert_android_linkopts() + [
+    linkopts = litert_android_linkopts() + select({
+        # Distros built on GNU toolchain generally don't ship libc++abi.so.
+        "@org_tensorflow//tensorflow:android": ["-Wl,-lc++abi"],
+        "//conditions:default": [],
+    }) + [
         "-Wl,-soname=libLiteRtDispatch_GoogleTensor.so",
-        "-Wl,-lc++abi",
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_GoogleTensor.so",
