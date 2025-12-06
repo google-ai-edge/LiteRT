@@ -680,5 +680,19 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<MirrorPadOptions>(&op));
 }
 
+TEST(OpOptionsTest, TestSetAddOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
+  {
+    AddOptions options = {};
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    options.op = &op;
+    options.SetOpOptions(&builder);
+  }
+  auto res = GetOptionsAs<AddOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
 }  // namespace
 }  // namespace litert
