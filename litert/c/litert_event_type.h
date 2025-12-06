@@ -31,19 +31,19 @@ typedef enum {
 } LiteRtEventType;
 
 // Custom events managed by the client.
-typedef struct litert_custom_event_t* litert_custom_event;
-struct litert_custom_event_t {
+typedef struct LiteRtCustomEventT* LiteRtCustomEvent;
+struct LiteRtCustomEventT {
   // Retains the custom event, e.g. increases the reference count.
-  void (*retain)(litert_custom_event event);
+  void (*Retain)(LiteRtCustomEvent event);  // NOLINT
   // Releases the custom event, e.g. decreases the reference count.
   // If the reference count reaches 0, the custom event will be destroyed.
-  void (*release)(litert_custom_event event);
-  // Waits for the custom event to be signaled.
-  void (*wait)(litert_custom_event event, int64_t timeout_in_ms);
-  // Signals the custom event to notify the waiters.
-  void (*signal)(litert_custom_event event);
+  void (*Release)(LiteRtCustomEvent event);  // NOLINT
+  // Waits for the custom event to be signaled. How to signal the event is
+  // backend dependent, e.g. emulating within Wait() or wrapping an actual GPU
+  // event signaled by the device.
+  void (*Wait)(LiteRtCustomEvent event, int64_t timeout_in_ms);  // NOLINT
   // Returns 1 if the custom event is signaled, 0 otherwise.
-  int (*is_signaled)(litert_custom_event event);
+  int (*IsSignaled)(LiteRtCustomEvent event);  // NOLINT
 };
 
 #ifdef __cplusplus
