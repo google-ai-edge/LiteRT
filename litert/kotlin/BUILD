@@ -172,6 +172,7 @@ kt_android_library(
         "src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt",
         "src/main/kotlin/com/google/ai/edge/litert/deployment/AiPackModelProvider.kt",
     ],
+    target_compatible_with = ["@org_tensorflow//tensorflow:android"],
     exports_manifest = 1,
     manifest = "src/main/AndroidManifest.xml",
     visibility = ["//visibility:public"],

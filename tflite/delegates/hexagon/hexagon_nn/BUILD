@@ -103,6 +103,7 @@ cc_library(
 android_library(
     name = "hexagon_interface_android",
     exports = [":hexagon_interface_so"],
+    target_compatible_with = ["@org_tensorflow//tensorflow:android"],
 )
 
 exports_files(["version_script.lds"])

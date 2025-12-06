@@ -43,6 +43,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "//litert/runtime:accelerator",
+        "//litert/runtime:metal_info",
     ],
 )
 

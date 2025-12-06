@@ -144,12 +144,23 @@ flatbuffer_cc_library(
 
 flatbuffer_java_library(
     name = "configuration_fbs_java",
-    srcs = [":configuration.fbs"],
+    srcs = select({
+        ":is_android": [":configuration.fbs"],
+        "//conditions:default": [],
+    }),
+)
+
+config_setting(
+    name = "is_android",
+    constraint_values = ["@org_tensorflow//tensorflow:android"],
 )
 
 flatbuffer_android_library(
     name = "configuration_fbs_android",
-    srcs = [":configuration.fbs"],
+    srcs = select({
+        ":is_android": [":configuration.fbs"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

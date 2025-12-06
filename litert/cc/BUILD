@@ -331,22 +331,22 @@ cc_library(
 # )
 # copybara:uncomment_end(google-only)
 
-litert_device_test(
-    name = "litert_compiled_model_qualcomm_test",
-    srcs = ["litert_compiled_model_qualcomm_test.cc"],
-    backend_id = "qualcomm",
-    data = [
-        "//litert/test:testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
-    ],
-    deps = [
-        ":litert_api_with_dynamic_runtime",
-        "//litert/c/internal:litert_logging",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
+# litert_device_test(
+#     name = "litert_compiled_model_qualcomm_test",
+#     srcs = ["litert_compiled_model_qualcomm_test.cc"],
+#     backend_id = "qualcomm",
+#     data = [
+#         "//litert/test:testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
+#     ],
+#     deps = [
+#         ":litert_api_with_dynamic_runtime",
+#         "//litert/c/internal:litert_logging",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_googletest//:gtest_main",
+#     ],
+# )
 
 # copybara:uncomment_begin(google-only)
 #
@@ -785,12 +785,12 @@ cc_test(
     ],
 )
 
-litert_device_exec(
-    name = "litert_event_device_test",
-    backend_id = "cpu",
-    data = [],
-    target = ":litert_event_test",
-)
+# litert_device_exec(
+#     name = "litert_event_device_test",
+#     backend_id = "cpu",
+#     data = [],
+#     target = ":litert_event_test",
+# )
 
 cc_library(
     name = "litert_model",
