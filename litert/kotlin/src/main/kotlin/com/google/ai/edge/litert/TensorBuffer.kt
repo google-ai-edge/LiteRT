@@ -97,7 +97,7 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
 
   companion object {
     init {
-      System.loadLibrary("litert_jni")
+      System.loadLibrary("LiteRt")
     }
 
     @JvmStatic private external fun nativeWriteInt(handle: Long, data: IntArray)

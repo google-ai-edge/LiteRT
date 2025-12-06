@@ -122,4 +122,10 @@ LiteRtStatus GpuOptions::SetNumStepsOfCommandBufferPreparations(
           Get(), num_steps_of_command_buffer_preparations);
 }
 
+LiteRtStatus GpuOptions::SetSyncExecutionModeWaitType(
+    SyncExecutionModeWaitType wait_type) {
+  return LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
+      Get(), static_cast<LiteRtGpuWaitType>(wait_type));
+}
+
 }  // namespace litert
