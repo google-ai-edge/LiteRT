@@ -12,9 +12,12 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/numeric/bits.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/quantize_op_builder.h"
@@ -1441,5 +1444,188 @@ TEST(MHAOptimization, AttentionWithSelect) {
   ASSERT_TRUE(op_wrappers[41].IsOpCode(QnnOpCode::kPack));
 }
 
+TEST(RotQuant, ReshapeHadamardReshape) {
+  // G2G Test case:
+  //
+  // ------------Before------------
+  //              Input
+  //                |
+  //             Reshape0
+  //                |
+  //        HadamardTransform
+  //                |
+  //             Reshape1
+  //                |
+  //              Output
+  //    
+  // ------------After------------
+  //              Input
+  //                |
+  //              Split
+  //             /     \\\
+  //            /       \\\
+  //  HadamardTransform  ...  
+  //            \       ///
+  //             \     ///
+  //              Concat
+  //                |
+  //              Output
+  //
+
+  TensorPool tensor_pool;
+  QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               quant_param, {1, 128, 1152});
+  auto& rot_input = tensor_pool.CloneNativeTensorFrom(input, {1152, 128});
+  auto& rot_output = tensor_pool.CloneNativeTensorFrom(rot_input);
+  auto& output = tensor_pool.CloneNativeTensorFrom(input);
+  std::vector<OpWrapper> op_wrappers =
+      MakeVector(CreateReshapeOp(input, rot_input),
+                 CreateHadamardTransformOp(rot_input, rot_output),
+                 CreateReshapeOp(rot_output, output));
+
+  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOpt;
+  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+  // Check the optimized graph is correct.
+  constexpr std::size_t num_rotation = 1152 / 128;
+  constexpr std::size_t op_size = 2 + num_rotation;
+  ASSERT_EQ(op_wrappers.size(), op_size);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kSplit));
+  for (std::size_t i = 1; i < 1 + num_rotation; ++i) {
+    EXPECT_TRUE(op_wrappers[i].IsOpCode(QnnOpCode::kHadamardTransform));
+  }
+  EXPECT_TRUE(op_wrappers[op_size - 1].IsOpCode(QnnOpCode::kConcat));
+}
+namespace {
+
+// Builds an n*n Sylvester Hadamard matrix with cell magnitude `value`.
+template <std::size_t N>
+constexpr std::array<std::int8_t, N * N> MakeSylvesterHadamard(
+    std::int8_t value) {
+  std::array<std::int8_t, N * N> m{};
+  for (std::uint32_t i = 0; i < N; ++i) {
+    for (std::uint32_t j = 0; j < N; ++j) {
+      const int bits = absl::popcount(i & j);
+      m[i * N + j] = ((bits & 1) == 0) ? +value : -value;
+    }
+  }
+  return m;
+}
+
+}  // namespace
+
+TEST(RotQuant, ConvertFcToHadamardTransform_Sylvester) {
+  // FC with a Sylvester Hadamard weight should be rewritten to a single
+  // HadamardTransform op.
+
+  QuantizeParamsWrapperVariant io_quant_param;
+  io_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  QuantizeParamsWrapperVariant weight_quant_param;
+  weight_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1.0f, 0);
+
+  static constexpr std::uint32_t kDim = 16;
+  static constexpr std::int8_t kHadamardValue = 1;
+  static constexpr auto kHadamardMatrix =
+      MakeSylvesterHadamard<kDim>(kHadamardValue);
+
+  TensorPool tensor_pool;
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               io_quant_param, {1, kDim});
+  auto& weight = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, weight_quant_param, {kDim, kDim},
+      kHadamardMatrix.size() * sizeof(std::int8_t), kHadamardMatrix.data());
+  auto& output = tensor_pool.CloneNativeTensorFrom(input);
+
+  std::vector<OpWrapper> op_wrappers = ::qnn::BuildFullyConnectedOp(
+      tensor_pool, {input, weight}, {output},
+      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false);
+  ASSERT_EQ(op_wrappers.size(), 1u);
+  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kFullyConnected));
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 1u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kHadamardTransform));
+}
+
+TEST(RotQuant, ConvertFcToHadamardTransform_NonHadamardWeight_NoOp) {
+  // FC whose weight is not a Sylvester Hadamard matrix must remain an FC.
+
+  QuantizeParamsWrapperVariant io_quant_param;
+  io_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  QuantizeParamsWrapperVariant weight_quant_param;
+  weight_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1.0f, 0);
+
+  // All-ones weight: violates Sylvester at (i=j=1) where popcount(1) is odd
+  // but cell value is +1.
+  static constexpr std::uint32_t kDim = 16;
+  static constexpr auto kNonHadamard = [] {
+    std::array<std::int8_t, kDim * kDim> a{};
+    for (std::size_t i = 0; i < a.size(); ++i) a[i] = 1;
+    return a;
+  }();
+
+  TensorPool tensor_pool;
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               io_quant_param, {1, kDim});
+  auto& weight = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, weight_quant_param, {kDim, kDim},
+      kNonHadamard.size() * sizeof(std::int8_t), kNonHadamard.data());
+  auto& output = tensor_pool.CloneNativeTensorFrom(input);
+
+  std::vector<OpWrapper> op_wrappers = ::qnn::BuildFullyConnectedOp(
+      tensor_pool, {input, weight}, {output},
+      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false);
+  ASSERT_EQ(op_wrappers.size(), 1u);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 1u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kFullyConnected));
+}
+
+TEST(RotQuant, ConvertFcToHadamardTransform_WithBias_NoOp) {
+  // FC carrying a bias must not be rewritten, since HadamardTransform has no
+  // bias input.
+
+  QuantizeParamsWrapperVariant io_quant_param;
+  io_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  QuantizeParamsWrapperVariant weight_quant_param;
+  weight_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1.0f, 0);
+  QuantizeParamsWrapperVariant bias_quant_param;
+  bias_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+
+  static constexpr std::uint32_t kDim = 16;
+  static constexpr std::int8_t kHadamardValue = 1;
+  static constexpr auto kHadamardMatrix =
+      MakeSylvesterHadamard<kDim>(kHadamardValue);
+  std::array<std::int32_t, kDim> bias_data{};
+
+  TensorPool tensor_pool;
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               io_quant_param, {1, kDim});
+  auto& weight = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, weight_quant_param, {kDim, kDim},
+      kHadamardMatrix.size() * sizeof(std::int8_t), kHadamardMatrix.data());
+  auto& bias = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_32, bias_quant_param, {kDim},
+      bias_data.size() * sizeof(std::int32_t), bias_data.data());
+  auto& output = tensor_pool.CloneNativeTensorFrom(input);
+
+  std::vector<OpWrapper> op_wrappers = ::qnn::BuildFullyConnectedOp(
+      tensor_pool, {input, weight, bias}, {output},
+      /*keep_num_dims=*/false, /*use_int64_bias_as_int32=*/false);
+  ASSERT_EQ(op_wrappers.size(), 1u);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 1u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kFullyConnected));
+}
 }  // namespace
 }  // namespace qnn

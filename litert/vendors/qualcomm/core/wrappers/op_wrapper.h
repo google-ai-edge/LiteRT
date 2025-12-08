@@ -63,6 +63,8 @@ class OpWrapper final {
 
   const TensorWrapper& GetInputTensor(size_t i) const;
 
+  size_t GetInputCount() const;
+
   const TensorWrapper& GetOutputTensor(size_t i) const;
 
   const TensorParamWrapper& GetTensorParam(size_t i) const;
