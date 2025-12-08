@@ -1039,6 +1039,7 @@ cc_library_with_testonly_vis(
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
+        "//litert/cc/options:litert_compiler_options",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",

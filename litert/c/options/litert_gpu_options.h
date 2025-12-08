@@ -143,6 +143,10 @@ LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     LiteRtOpaqueOptions gpu_accelerator_options,
     int num_steps_of_command_buffer_preparations);
 
+// Sets the wait type.
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
+    LiteRtOpaqueOptions gpu_accelerator_options, LiteRtGpuWaitType wait_type);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -213,6 +217,9 @@ LiteRtStatus
 LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     int* num_steps_of_command_buffer_preparations,
     LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
+    LiteRtGpuWaitType* wait_type, LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -71,6 +71,8 @@ struct LiteRtGpuOptionsPayloadT {
   // Added in version 2.0.2a1.
   // Number of steps to prepare WebGPU command buffers in advance.
   int num_steps_of_command_buffer_preparations = 0;
+  // Added in version 2.0.2a1.
+  LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
 };
 
 namespace litert {
@@ -251,6 +253,14 @@ LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
                           litert::GetPayload(gpu_accelerator_options));
   payload->num_steps_of_command_buffer_preparations =
       num_steps_of_command_buffer_preparations;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
+    LiteRtOpaqueOptions gpu_accelerator_options, LiteRtGpuWaitType wait_type) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->wait_type = wait_type;
   return kLiteRtStatusOk;
 }
 
@@ -452,5 +462,15 @@ LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
       << "`payload` cannot be null.";
   *num_steps_of_command_buffer_preparations =
       payload->num_steps_of_command_buffer_preparations;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
+    LiteRtGpuWaitType* wait_type, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(wait_type, ErrorStatusBuilder::InvalidArgument())
+      << "`wait_type` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *wait_type = payload->wait_type;
   return kLiteRtStatusOk;
 }

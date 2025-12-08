@@ -334,6 +334,21 @@ typedef enum {
   kLiteRtGpuBackendOpenGl = 3,  // Experimental, do not use.
 } LiteRtGpuBackend;
 
+// GPU Wait type on synchronous execution.
+// Values are 1:1 mapping to GpuDelegateWaitType.
+typedef enum {
+  // Wait type will be automatically determined by the delegate.
+  kLiteRtGpuWaitTypeDefault = 0,
+  // Blocked waiting for GPU to finish.
+  kLiteRtGpuWaitTypePassive = 1,
+  // Active busy-waiting for GPU to finish.
+  kLiteRtGpuWaitTypeActive = 2,
+  // Do not wait for GPU to finish. Relies on other synchronization ways like
+  // barriers or in-order queue. As it's for backward compatibility, not
+  // recommended for new use cases. Use asynchronous execution mode instead.
+  kLiteRtGpuWaitTypeDoNotWait = 3,
+} LiteRtGpuWaitType;
+
 // Error reporter mode enum
 typedef enum LiteRtErrorReporterMode {
   // No error reporting (errors are ignored)

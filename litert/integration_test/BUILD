@@ -21,7 +21,7 @@ load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_libs")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script", "make_download_model_provider")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_cpu_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_mediatek_mh_guitar_test", "litert_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -339,7 +339,7 @@ litert_device_test(
 #     auto_deps = CPU_GUITAR_TARGS_INTEGRATION,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
-#             litert_cpu_mh_guitar_test(
+#             litert_mh_guitar_test(
 #                 targets = CPU_GUITAR_TARGS_INTEGRATION,
 #             ),
 #         ],
@@ -363,8 +363,11 @@ litert_device_test(
 #     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
-#             litert_cpu_mh_guitar_test(
+#             litert_mh_guitar_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
+#             ),
+#             litert_mh_guitar_test(
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_gpu_mh_test"],
 #             ),
 #             litert_qualcomm_mh_guitar_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm"],
@@ -388,6 +391,7 @@ litert_device_test(
 # )
 #
 # # Same as above, but for SDK 23 devices. NPU is not included as it requires 31+.
+# # GPU is not included due to OpenCL unavailability on some devices.
 # guitar_workflow_test(
 #     name = "litert_guitar_device_integration_tests_kotlin_sdk_23",
 #     auto_deps = [
@@ -395,7 +399,7 @@ litert_device_test(
 #     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
-#             litert_cpu_mh_guitar_test(
+#             litert_mh_guitar_test(
 #                 sdk_version = 23,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
 #             ),

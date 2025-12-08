@@ -65,6 +65,7 @@ package_group(
         "//litert/google/...",
         "//litert/integration_test/...",
         "//litert/js/...",
+        "//litert/kotlin/...",
         "//litert/python/...",
         "//third_party/odml/litert/tensor/...",
         "//litert/samples/semantic_similarity/...",
