@@ -49,7 +49,7 @@ struct LiteRtEventT {
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
   // Custom event set by the client after CreateManaged.
-  litert_custom_event custom_event;
+  LiteRtCustomEvent custom_event;
 #endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
   ~LiteRtEventT();
   litert::Expected<void> Wait(int64_t timeout_in_ms);
