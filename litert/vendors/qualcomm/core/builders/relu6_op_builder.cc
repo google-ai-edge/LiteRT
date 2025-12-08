@@ -16,12 +16,16 @@ std::vector<OpWrapper> BuildRelu6Op(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  // QNN_OP_RELU6 is deprecated, use QNN_OP_RELU_MIN_MAX instead.
-  auto& activation_op = CreateOpWrapper(res, QNN_OP_RELU_MIN_MAX);
-  activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE, 0);
-  activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE, 6);
-  activation_op.AddInputTensor(inputs[0]);
-  activation_op.AddOutputTensor(outputs[0]);
+  // QNN_OP_RELU6 is deprecated, use QNN_OP_ELEMENT_WISE_NEURON (RELU_MIN_MAX)
+  // instead.
+  OpWrapper& relu6_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+  relu6_op.AddInputTensor(inputs[0]);
+  relu6_op.AddOutputTensor(outputs[0]);
+  relu6_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX);
+  relu6_op.AddScalarParam<float>(QNN_OP_ELEMENT_WISE_NEURON_PARAM_MIN_VALUE, 0);
+  relu6_op.AddScalarParam<float>(QNN_OP_ELEMENT_WISE_NEURON_PARAM_MAX_VALUE, 6);
 
   return res;
 }

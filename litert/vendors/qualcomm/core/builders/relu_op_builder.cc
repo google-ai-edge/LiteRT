@@ -16,7 +16,12 @@ std::vector<OpWrapper> BuildReluOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  CreateSimpleActivationOp(res, QNN_OP_RELU, inputs[0], outputs[0]);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU);
 
   return res;
 }
