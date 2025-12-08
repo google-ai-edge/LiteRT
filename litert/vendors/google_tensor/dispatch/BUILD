@@ -68,7 +68,6 @@ litert_dynamic_lib(
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_GoogleTensor.so",
-        "-Wl,-lc++abi",
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_GoogleTensor.so",
