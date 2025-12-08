@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
 
@@ -52,6 +54,7 @@ litert_dynamic_lib(
         "//litert:__subpackages__",
     ],
     deps = [
+        ":google_tensor_options_cc_proto",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
@@ -61,7 +64,6 @@ litert_dynamic_lib(
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/google_tensor:adapter",
         "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -112,4 +114,16 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+proto_library(
+    name = "google_tensor_options_proto",
+    srcs = ["google_tensor_options.proto"],
+    visibility = ["//platforms/darwinn/compiler:__subpackages__"],
+)
+
+cc_proto_library(
+    name = "google_tensor_options_cc_proto",
+    visibility = ["//platforms/darwinn/compiler:__subpackages__"],
+    deps = [":google_tensor_options_proto"],
 )

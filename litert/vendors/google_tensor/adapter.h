@@ -45,7 +45,8 @@ namespace litert::google_tensor {
 // @return bool indicating whether the compilation was successful or not.
 typedef bool (*Compile)(const char* tfl_buffer_data, size_t tfl_buffer_size,
                         const char* soc_model_data, size_t soc_model_size,
-                        LiteRtOpaqueOptions options, char*** compiled_code_data,
+                        const char* options_data, size_t options_size,
+                        char*** compiled_code_data,
                         size_t** compiled_code_sizes, size_t* num_bytecodes,
                         char** out_error_message);
 typedef void (*CompilerFreeCompiledCode)(char** compiled_code_data,

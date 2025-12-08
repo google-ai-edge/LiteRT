@@ -40,6 +40,7 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/adapter.h"
+#include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 
 //
 // Configurations
@@ -379,6 +380,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Resolve custom google tensor options.
   LiteRtOpaqueOptions opaque_options = {};
+  size_t opaque_options_size = 0;
   void (*deleter)(LiteRtOpaqueOptions) = nullptr;
   absl::Cleanup opaque_options_cleanup = [&] {
     if (deleter) {
@@ -394,12 +396,25 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         ::litert::google_tensor::GoogleTensorOptions::Create());
     deleter = google_tensor_opts.GetDeleter();
     opaque_options = google_tensor_opts.Release();
+    opaque_options_size = sizeof(opaque_options);
   } else {
     LITERT_LOG(LITERT_INFO, "Using custom google tensor options");
     opaque_options = compiler_plugin->GetOpaqueOptions()->Get();
+    opaque_options_size = sizeof(opaque_options);
   }
+  // convert LitertOpaqueOptions to googletensor.proto
+  // convert googletensor.proto to compiler options
+  third_party::odml::litert::litert::vendors::google_tensor::compiler::
+      OpaqueOptionsList opaque_options_list;
 
+  // map to opaque options
+  opaque_options_list.ParseFromArray(opaque_options, opaque_options_size);
+
+  // serialize to string
+  std::string opaque_options_list_str;
+  opaque_options_list.SerializeToString(&opaque_options_list_str);
   std::string valid_soc_model(soc_model);
+
   if (strcmp(soc_model, "g5") == 0 || strcmp(soc_model, "g4") == 0 ||
       strcmp(soc_model, "g3") == 0) {
     LITERT_LOG(LITERT_WARNING,
@@ -424,8 +439,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   };
   auto compile_status = api.compile(
       model_buffer_view.data(), model_buffer_view.size(), soc_model_view.data(),
-      soc_model_view.size(), opaque_options, &compiled_code_data,
-      &compiled_code_sizes, &num_bytecodes, &error_message);
+      soc_model_view.size(), opaque_options_list_str.c_str(),
+      opaque_options_list_str.size(), &compiled_code_data, &compiled_code_sizes,
+      &num_bytecodes, &error_message);
 
   if (!compile_status) {
     std::string error_str = "Failed to compile model";
