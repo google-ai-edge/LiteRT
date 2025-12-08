@@ -697,3 +697,18 @@ cc_library(
         "@qairt//:qnn_lib_headers",
     ],
 )
+
+cc_library(
+    name = "hadamard_transform_op_builder",
+    srcs = ["hadamard_transform_op_builder.cc"],
+    hdrs = ["hadamard_transform_op_builder.h"],
+    deps = [
+        "@com_google_absl//absl/numeric:bits",
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
