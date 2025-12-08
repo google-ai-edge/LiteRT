@@ -88,6 +88,12 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetNumStepsOfCommandBufferPreparations(
       int num_steps_of_command_buffer_preparations);
 
+#ifdef __APPLE__
+  // Sets whether to use Metal argument buffers. WARNING: This is only
+  // applicable to Metal backend.
+  LiteRtStatus SetUseMetalArgumentBuffers(bool use_metal_argument_buffers);
+#endif  // __APPLE__
+
   // Sets the wait type for synchronous execution mode. It's ignored for
   // asynchronous execution mode.
   enum class SyncExecutionModeWaitType : int {
