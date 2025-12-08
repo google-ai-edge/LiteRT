@@ -42,11 +42,6 @@ std::string GetUniqueOpName(const char* op_type);
 
 OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type);
 
-OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
-                                    const char* op_type,
-                                    const TensorWrapper& input_tensor,
-                                    const TensorWrapper& output_tensor);
-
 /*
   This function creates a new tensor and replaces the original output tensor of
   the operation if the fused activation is not None.
