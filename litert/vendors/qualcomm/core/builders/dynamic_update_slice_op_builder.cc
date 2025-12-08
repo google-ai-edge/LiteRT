@@ -106,9 +106,12 @@ std::vector<OpWrapper> BuildDynamicUpdateSliceOp(
       QNN_DATATYPE_INT_32, QuantizeParamsWrapperVariant{}, static_table_dims,
       table_size * sizeof(std::int32_t), table_data.data());
 
-  OpWrapper& not_equal_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NOT_EQUAL);
+  OpWrapper& not_equal_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   not_equal_op.AddInputTensor(static_table);
   not_equal_op.AddInputTensor(one_dim_index);
+  not_equal_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL);
 
   TensorWrapper& not_equal_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, QuantizeParamsWrapperVariant{}, static_table_dims);
