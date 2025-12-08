@@ -38,7 +38,7 @@ std::string AbslUnparseFlag(
 
 namespace litert {
 
-Expected<CompilerOptions> CompilerOptionsFromFlags();
+Expected<void> UpdateCompilerOptionsFromFlags(CompilerOptions& options);
 
 }  // namespace litert
 

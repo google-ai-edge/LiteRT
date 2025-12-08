@@ -30,6 +30,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -166,7 +167,12 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   // Returns the reference to the Intel OpenVINO options. User will use this
   // function to set the Intel OpenVINO options.
   Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions();
+
+  // LiteRtRuntimeOptions.
   Expected<RuntimeOptions&> GetRuntimeOptions();
+
+  // LiteRtCompilerOptions.
+  Expected<CompilerOptions&> GetCompilerOptions();
 
  private:
   // Builds the options object. This should be called after all the setters.
@@ -180,6 +186,7 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
   std::optional<intel_openvino::IntelOpenVinoOptions> intel_openvino_options_;
   std::optional<RuntimeOptions> runtime_options_;
+  std::optional<CompilerOptions> compiler_options_;
 };
 
 }  // namespace litert

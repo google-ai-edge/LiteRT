@@ -19,6 +19,7 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_compiler_options.h"
 
 namespace litert {
@@ -55,11 +56,13 @@ TEST(ApplyPluginFlagsTest, ParseFlagsAndGetPartitionStrategySuccess) {
   absl::SetFlag(&FLAGS_partition_strategy,
                 kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 
-  Expected<CompilerOptions> options = CompilerOptionsFromFlags();
+  Expected<CompilerOptions> options = CompilerOptions::Create();
   ASSERT_TRUE(options.HasValue());
-  auto partition_strategy = options.Value().GetPartitionStrategy();
-  ASSERT_TRUE(partition_strategy.HasValue());
-  EXPECT_EQ(partition_strategy.Value(),
+  ASSERT_TRUE(UpdateCompilerOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetPartitionStrategy().HasValue());
+  LITERT_ASSIGN_OR_ABORT(auto partition_strategy,
+                         options.Value().GetPartitionStrategy());
+  EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 }
 

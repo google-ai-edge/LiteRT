@@ -66,7 +66,7 @@ LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
 // Sets a custom event to the LiteRtEvent. Event type must be
 // LiteRtEventTypeCustom.
 LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
-                                  litert_custom_event custom_event);
+                                  LiteRtCustomEvent custom_event);
 
 LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type);
 

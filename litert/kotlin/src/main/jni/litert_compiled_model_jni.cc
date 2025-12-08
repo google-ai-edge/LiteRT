@@ -79,10 +79,19 @@ enum CpuOptionsKey {
 enum GpuOptionsKey {
   kConstantTensorSharing = 0,
   kInfiniteFloatCapping = 1,
-  kBenchmarkModel = 2,
-  kAllowSrcQuantizedFcConvOps = 3,
-  kPrecision = 4,
-  kBufferStorageType = 5,
+  kAllowSrcQuantizedFcConvOps = 2,
+  kPrecision = 3,
+  kBufferStorageType = 4,
+  kPreferTextureWeights = 5,
+  kSerializationDir = 6,
+  kModelCacheKey = 7,
+  kSerializeProgramCache = 8,
+  kSerializeExternalTensors = 9,
+  kExternalTensorsMode = 10,
+  kExternalTensorPattern = 11,
+  kBackend = 12,
+  kPriority = 13,
+  kNumStepsOfCommandBufferPreparations = 14,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -124,6 +133,49 @@ GpuOptions::BufferStorageType ToGpuOptionsBufferStorageType(
       return GpuOptions::BufferStorageType::kTexture2D;
     default:
       return GpuOptions::BufferStorageType::kDefault;
+  }
+}
+
+// Backend for GPU options, the values should match the ones in Kotlin.
+enum Backend {
+  kBackendAutomatic = 0,
+  kBackendOpenCl = 1,
+  kBackendWebGpu = 2,
+};
+
+// Converts the backend string to GpuOptions::Backend.
+GpuOptions::Backend ToGpuOptionsBackend(const char* backend_str) {
+  auto backend = std::stoi(backend_str);
+  switch (backend) {
+    case kBackendOpenCl:
+      return GpuOptions::Backend::kOpenCl;
+    case kBackendWebGpu:
+      return GpuOptions::Backend::kWebGpu;
+    default:
+      return GpuOptions::Backend::kAutomatic;
+  }
+}
+
+// Priority for GPU options, the values should match the ones in Kotlin.
+enum Priority {
+  kPriorityDefault = 0,
+  kPriorityLow = 1,
+  kPriorityNormal = 2,
+  kPriorityHigh = 3,
+};
+
+// Converts the priority string to GpuOptions::Priority.
+GpuOptions::Priority ToGpuOptionsPriority(const char* priority_str) {
+  auto priority = std::stoi(priority_str);
+  switch (priority) {
+    case kPriorityLow:
+      return GpuOptions::Priority::kLow;
+    case kPriorityNormal:
+      return GpuOptions::Priority::kNormal;
+    case kPriorityHigh:
+      return GpuOptions::Priority::kHigh;
+    default:
+      return GpuOptions::Priority::kDefault;
   }
 }
 
@@ -194,14 +246,6 @@ Expected<void> PopulateGpuOptions(JNIEnv* env, GpuOptions& gpu_options,
                             "Failed to set GPU options infiniteFloatCapping.");
         }
         break;
-      case GpuOptionsKey::kBenchmarkModel:
-        status = gpu_options.EnableBenchmarkMode(
-            strcmp(gpu_options_values_vector[i], "true") == 0);
-        if (status != kLiteRtStatusOk) {
-          return Unexpected(status,
-                            "Failed to set GPU options benchmarkModel.");
-        }
-        break;
       case GpuOptionsKey::kAllowSrcQuantizedFcConvOps:
         status = gpu_options.EnableAllowSrcQuantizedFcConvOps(
             strcmp(gpu_options_values_vector[i], "true") == 0);
@@ -217,6 +261,76 @@ Expected<void> PopulateGpuOptions(JNIEnv* env, GpuOptions& gpu_options,
       case GpuOptionsKey::kBufferStorageType:
         LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(
             ToGpuOptionsBufferStorageType(gpu_options_values_vector[i])));
+        break;
+      case GpuOptionsKey::kPreferTextureWeights:
+        status = gpu_options.SetPreferTextureWeights(
+            strcmp(gpu_options_values_vector[i], "true") == 0);
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(status,
+                            "Failed to set GPU options preferTextureWeights.");
+        }
+        break;
+      case GpuOptionsKey::kSerializationDir:
+        status = gpu_options.SetSerializationDir(gpu_options_values_vector[i]);
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(status,
+                            "Failed to set GPU options serializationDir.");
+        }
+        break;
+      case GpuOptionsKey::kModelCacheKey:
+        status = gpu_options.SetModelCacheKey(gpu_options_values_vector[i]);
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(status, "Failed to set GPU options modelCacheKey.");
+        }
+        break;
+      case GpuOptionsKey::kSerializeProgramCache:
+        status = gpu_options.SetSerializeProgramCache(
+            strcmp(gpu_options_values_vector[i], "true") == 0);
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(status,
+                            "Failed to set GPU options serializeProgramCache.");
+        }
+        break;
+      case GpuOptionsKey::kSerializeExternalTensors:
+        status = gpu_options.SetSerializeExternalTensors(
+            strcmp(gpu_options_values_vector[i], "true") == 0);
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(
+              status, "Failed to set GPU options serializeExternalTensors.");
+        }
+        break;
+      case GpuOptionsKey::kExternalTensorsMode:
+        status = gpu_options.EnableExternalTensorsMode(
+            strcmp(gpu_options_values_vector[i], "true") == 0);
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(status,
+                            "Failed to set GPU options externalTensorsMode.");
+        }
+        break;
+      case GpuOptionsKey::kExternalTensorPattern:
+        status =
+            gpu_options.AddExternalTensorPattern(gpu_options_values_vector[i]);
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(status,
+                            "Failed to set GPU options externalTensorPattern.");
+        }
+        break;
+      case GpuOptionsKey::kBackend:
+        LITERT_RETURN_IF_ERROR(gpu_options.SetBackend(
+            ToGpuOptionsBackend(gpu_options_values_vector[i])));
+        break;
+      case GpuOptionsKey::kPriority:
+        LITERT_RETURN_IF_ERROR(gpu_options.SetPriority(
+            ToGpuOptionsPriority(gpu_options_values_vector[i])));
+        break;
+      case GpuOptionsKey::kNumStepsOfCommandBufferPreparations:
+        status = gpu_options.SetNumStepsOfCommandBufferPreparations(
+            std::stoi(gpu_options_values_vector[i]));
+        if (status != kLiteRtStatusOk) {
+          return Unexpected(status,
+                            "Failed to set GPU options "
+                            "numStepsOfCommandBufferPreparations.");
+        }
         break;
       default:
         return Unexpected(kLiteRtStatusErrorInvalidArgument,
