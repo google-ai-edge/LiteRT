@@ -263,9 +263,11 @@ TEST(BwScaleOffsetQuantizeParamsWrapperTest, MoveConstructorTest) {
             dst2.bwScaleOffsetEncoding.offset);
 }
 
-TEST(BwScaleOffsetQuantizeParamsWrapperTest, GetBitwidthTest) {
+TEST(BwScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   BwScaleOffsetQuantizeParamsWrapper wrapper(4, 1.5f, 10);
-  ASSERT_EQ(wrapper.GetBitwidth(), 4);
+  EXPECT_EQ(wrapper.GetBitwidth(), 4);
+  EXPECT_EQ(wrapper.GetScale(), 1.5f);
+  EXPECT_EQ(wrapper.GetZeroPoint(), 10);
 }
 
 TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, CopyConstructorTest) {
