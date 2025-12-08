@@ -112,10 +112,6 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     return Error(status, "Failed to get buffer type");
   }
 
-  if (tensor_buffer_type != kLiteRtTensorBufferTypeAhwb) {
-    return Error(kLiteRtStatusErrorUnsupported, "Unsupported buffer type");
-  }
-
   size_t tensor_buffer_size;
   if (auto status =
           LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size);
@@ -147,21 +143,35 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                  "Tensor strides are not supported");
   }
 
-  AHardwareBuffer* ahwb;
+  ThrBufferType thr_buffer_type;
+  void* buffer;
 #if LITERT_HAS_AHWB_SUPPORT
-  if (auto status = LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb);
-      status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get AHWB");
-  }
+  if (tensor_buffer_type == kLiteRtTensorBufferTypeAhwb) {
+    thr_buffer_type = kThrBufferTypeAHardwareBuffer;
+
+    if (auto status = LiteRtGetTensorBufferAhwb(
+            tensor_buffer, reinterpret_cast<AHardwareBuffer**>(&buffer));
+        status != kLiteRtStatusOk) {
+      return Error(status, "Failed to get AHWB");
+    }
+  } else {
 #else
-  return Error(kLiteRtStatusErrorRuntimeFailure,
-               "AHardwareBuffer is not supported on this platform");
+  if (tensor_buffer_type == kLiteRtTensorBufferTypeHostMemory) {
+    thr_buffer_type = kThrBufferTypeHostMemory;
+
+    if (auto status = LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer);
+        status != kLiteRtStatusOk) {
+      return Error(status, "Failed to get host memory");
+    }
+  } else {
 #endif
+    return Error(kLiteRtStatusErrorUnsupported, "Unsupported buffer type");
+  }
 
   ThrBufferHandle thr_buffer_handle;
   if (auto status = thrRegisterBufferWithOffset(
-            thr_context_, ThrBufferType::kThrBufferTypeAHardwareBuffer, ahwb,
-            tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
+            thr_context_, thr_buffer_type, buffer, tensor_buffer_offset,
+            tensor_buffer_size, &thr_buffer_handle);
         status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_register_buffer_with_offset failed: %d",
                status);
