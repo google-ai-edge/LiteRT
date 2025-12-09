@@ -259,7 +259,6 @@ cc_test(
 cc_library(
     name = "litert_op_code",
     hdrs = ["litert_op_code.h"],
-    deps = ["//tflite:builtin_ops"],
 )
 
 cc_library(
