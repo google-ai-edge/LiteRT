@@ -210,8 +210,8 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:compatibility",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
-        "@eigen_archive//:eigen3",
     ],
 )
 

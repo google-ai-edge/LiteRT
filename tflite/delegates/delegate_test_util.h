@@ -24,11 +24,11 @@ limitations under the License.
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "Eigen/Core"  // from @eigen_archive
 #include "tflite/core/interpreter.h"
 #include "tflite/core/kernels/register.h"
 #include "tflite/core/subgraph.h"
 #include "tflite/kernels/internal/compatibility.h"
+#include "tflite/types/half.h"
 
 namespace tflite {
 namespace delegates {
@@ -236,7 +236,7 @@ class TestFP16Delegation : public ::testing::TestWithParam<int> {
 
   std::unique_ptr<impl::Interpreter> interpreter_;
   std::unique_ptr<FP16Delegate> delegate_;
-  Eigen::half float16_const_;
+  half float16_const_;
 };
 
 }  // namespace test_utils

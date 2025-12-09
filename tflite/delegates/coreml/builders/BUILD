@@ -76,6 +76,7 @@ cc_test(
     deps = [
         ":util",
         "//tflite/core/c:common",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest_main",
         "@eigen_archive//:eigen3",
     ],
