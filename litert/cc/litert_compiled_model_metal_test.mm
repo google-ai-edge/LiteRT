@@ -419,4 +419,82 @@ const float kTolerance = 1e-5;
                                withElementCount:kInt32TestOutputSize];
 }
 
+- (void)testCompiledModelGpuConstantOutputTensor {
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"constant_output_tensor"];
+  XCTAssertNotNil(modelFilePath);
+
+  auto env = litert::Environment::Create({});
+  XCTAssertTrue(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model, litert::CompiledModel::Create(*env, modelFilePath.UTF8String, options));
+
+  XCTAssertEqual(compiled_model.GetNumSignatures(), 1);
+
+  // Create input and output buffers
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, compiled_model.CreateInputBuffers());
+  XCTAssertEqual(input_buffers.size(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
+  XCTAssertEqual(output_buffers.size(), 2);  // normal_output and constant_output
+
+  // Set input values
+  const float input_data[] = {5.0f, 10.0f};
+  XCTAssertTrue(input_buffers[0].Write<float>(absl::MakeConstSpan(input_data, 2)));
+
+  // Run the model
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  // Note: TFLite might reorder outputs - check which is which by size
+  // The constant output has 4 elements, the normal output has 2 elements
+  int constant_output_idx = -1;
+  int normal_output_idx = -1;
+
+  // Determine which output is which based on size
+  for (int i = 0; i < 2; i++) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto size, output_buffers[i].Size());
+    if (size == 4 * sizeof(float)) {
+      constant_output_idx = i;
+    } else if (size == 2 * sizeof(float)) {
+      normal_output_idx = i;
+    }
+  }
+
+  ASSERT_NE(constant_output_idx, -1) << "Could not find constant output";
+  ASSERT_NE(normal_output_idx, -1) << "Could not find normal output";
+
+  {
+    const float kNormalExpectedOutput[] = {10.0f, 20.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[normal_output_idx]
+                               withExpectedOutput:kNormalExpectedOutput
+                                 withElementCount:2
+                                    withTolerance:kTolerance];
+
+    const float kConstantExpectedOutput[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[constant_output_idx]
+                               withExpectedOutput:kConstantExpectedOutput
+                                 withElementCount:4
+                                    withTolerance:kTolerance];
+  }
+
+  // Run again with different input to verify constant output doesn't change
+  const float input_data2[] = {100.0f, 200.0f};
+  XCTAssertTrue(input_buffers[0].Write<float>(absl::MakeConstSpan(input_data2, 2)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  {
+    const float kNormalExpectedOutput[] = {200.0f, 400.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[normal_output_idx]
+                               withExpectedOutput:kNormalExpectedOutput
+                                 withElementCount:2
+                                    withTolerance:kTolerance];
+
+    const float kConstantExpectedOutput[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[constant_output_idx]
+                               withExpectedOutput:kConstantExpectedOutput
+                                 withElementCount:4
+                                    withTolerance:kTolerance];
+  }
+}
+
 @end
