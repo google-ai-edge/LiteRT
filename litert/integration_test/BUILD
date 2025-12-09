@@ -199,18 +199,19 @@ litert_device_test(
 #
 # # Guitar GOOGLE TENSOR -----------------------------------------------------------------------------
 #
+# # TODO: b/450621174 - Reenable flaky device tests
 # GOOGLE_TENSOR_GUITAR_TARGS_SMALL = [
 #     ":google_tensor_smoketest",
 #     # TODO: lukeboyer - Reenable once vis is updated.
 #     # "//litert/runtime/dispatch:dispatch_delegate_google_tensor_test",
-#     "//litert/runtime/dispatch:dispatch_delegate_cascade_google_tensor_test",
-#     "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_google_tensor_test",
-#     "//litert/cc:litert_compiled_model_gpu_device_test",
-#     "//litert/cc:litert_compiled_model_google_tensor_test",
-#     "//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test",
-#     "//litert/vendors/google_tensor/dispatch:dispatch_api_async_google_tensor_test",
-#     "//litert/runtime:gl_buffer_device_test",
-#     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
+#     # "//litert/runtime/dispatch:dispatch_delegate_cascade_google_tensor_test",
+#     # "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_google_tensor_test",
+#     # "//litert/cc:litert_compiled_model_gpu_device_test",
+#     # "//litert/cc:litert_compiled_model_google_tensor_test",
+#     # "//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test",
+#     # "//litert/vendors/google_tensor/dispatch:dispatch_api_async_google_tensor_test",
+#     # "//litert/runtime:gl_buffer_device_test",
+#     # "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 # ]
 #
 # guitar_workflow_test(
