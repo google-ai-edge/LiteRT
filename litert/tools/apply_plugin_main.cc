@@ -26,17 +26,21 @@
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"  // NOLINT
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
 #include "litert/tools/flags/flag_types.h"
-#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
+#include "litert/tools/outstream.h"
+
+#if !defined(LITERT_WINDOWS_OS)
+#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
-#include "litert/tools/outstream.h"
+#endif  // !defined(LITERT_WINDOWS_OS)
 
 namespace {
 
@@ -129,6 +133,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+#if !defined(LITERT_WINDOWS_OS)
   ParseOptionsFlags(
       run->dump_out, "Compiler", [&] { return opts->GetCompilerOptions(); },
       litert::UpdateCompilerOptionsFromFlags,
@@ -149,6 +154,7 @@ int main(int argc, char* argv[]) {
       run->dump_out, "Mediatek", [&] { return opts->GetMediatekOptions(); },
       litert::mediatek::UpdateMediatekOptionsFromFlags,
       "Failed to parse Mediatek flags, Error: ");
+#endif  // !defined(LITERT_WINDOWS_OS)
 
   ParseOptionsFlags(
       run->dump_out, "Intel OpenVINO",

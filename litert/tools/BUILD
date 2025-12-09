@@ -103,20 +103,23 @@ cc_test(
 litert_bin(
     name = "apply_plugin_main",
     srcs = ["apply_plugin_main.cc"],
-    data = [
-        # copybara:uncomment_begin(google-only)
-        # "//platforms/darwinn/compiler:compiler_api_wrapper",
-        # copybara:uncomment_end
-        "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
-        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
-        "//litert/vendors/examples:example_plugin_so",
-        "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-        "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
-        "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
-        "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
-        "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-        "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
-    ],
+    data = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            # copybara:uncomment_begin(google-only)
+            # "//platforms/darwinn/compiler:compiler_api_wrapper",
+            # copybara:uncomment_end
+            "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+            "//litert/vendors/mediatek/compiler:compiler_plugin_so",
+            "//litert/vendors/examples:example_plugin_so",
+            "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+            "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
+            "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+            "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
+            "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+            "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
+        ],
+    }),
     export_litert_only = 1,
     linkstatic = 1,
     # copybara:uncomment malloc = "//base:system_malloc",
@@ -127,6 +130,7 @@ litert_bin(
     ],
     target_compatible_with = select({
         "@platforms//os:linux": [],
+        "@platforms//os:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -139,16 +143,20 @@ litert_bin(
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
-        "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
-        "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
-        "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        ],
+    }),
 )
 
 litert_bin(
