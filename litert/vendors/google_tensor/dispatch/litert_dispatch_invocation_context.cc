@@ -174,12 +174,9 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
                       "Tensor strides are not supported on GoogleTensor");
   }
 
-  LiteRtTensorBufferType supported_tensor_buffer_types[] = {
-      kLiteRtTensorBufferTypeAhwb,
-  };
   int num_supported_tensor_buffer_types =
-      sizeof(supported_tensor_buffer_types) /
-      sizeof(supported_tensor_buffer_types[0]);
+      sizeof(LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes) /
+      sizeof(LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes[0]);
 
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
@@ -190,7 +187,8 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
 
   LiteRtTensorBufferRequirements requirements;
   if (auto status = LiteRtCreateTensorBufferRequirements(
-          num_supported_tensor_buffer_types, supported_tensor_buffer_types,
+          num_supported_tensor_buffer_types,
+          LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes,
           padded_buffer_size, /*num_strides=*/0, /*strides=*/nullptr,
           &requirements);
       status != kLiteRtStatusOk) {

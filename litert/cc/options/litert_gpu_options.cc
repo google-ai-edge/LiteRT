@@ -122,4 +122,18 @@ LiteRtStatus GpuOptions::SetNumStepsOfCommandBufferPreparations(
           Get(), num_steps_of_command_buffer_preparations);
 }
 
+#ifdef __APPLE__
+LiteRtStatus GpuOptions::SetUseMetalArgumentBuffers(
+    bool use_metal_argument_buffers) {
+  return LiteRtSetGpuOptionsUseMetalArgumentBuffers(Get(),
+                                                    use_metal_argument_buffers);
+}
+#endif  // __APPLE__
+
+LiteRtStatus GpuOptions::SetSyncExecutionModeWaitType(
+    SyncExecutionModeWaitType wait_type) {
+  return LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
+      Get(), static_cast<LiteRtGpuWaitType>(wait_type));
+}
+
 }  // namespace litert

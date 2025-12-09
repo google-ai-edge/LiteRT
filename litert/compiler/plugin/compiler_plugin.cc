@@ -460,7 +460,7 @@ LiteRtStatus PartitionSubgraph(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops,
     LiteRtSubgraphT& subgraph, std::vector<LiteRtOp>& res_ops,
     LiteRtModelT& model,
-    LiteRtCompilerOptionsPartitionStrategy partition_strategy_option) {
+    const LiteRtCompilerOptionsPartitionStrategy& partition_strategy_option) {
   // Pick partition strategy based on compiler options.
   std::vector<std::vector<LiteRtOp>> (*partition_strategy_func)(
       const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) =
@@ -469,6 +469,7 @@ LiteRtStatus PartitionSubgraph(
       kLiteRtCompilerOptionsPartitionStrategyDefault) {
     partition_strategy_func = GroupPartitionsV2;
   }
+  LITERT_LOG(LITERT_INFO, "Partition strategy: %d", partition_strategy_option);
 
   // Group selected ops into connected islands.
   auto islands = partition_strategy_func(selected_ops, &subgraph);
@@ -628,7 +629,6 @@ Expected<PartitionResult> PartitionModel(
     LiteRtCompilerOptionsPartitionStrategy strategy =
         kLiteRtCompilerOptionsPartitionStrategyDefault;
     if (compiler_options.HasValue()) {
-      LiteRtCompilerOptionsPartitionStrategy strategy;
       auto status = LiteRtGetCompilerOptionsPartitionStrategy(*compiler_options,
                                                               &strategy);
       if (status != kLiteRtStatusOk) {

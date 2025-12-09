@@ -22,6 +22,8 @@
     "build": "tsup src/index.ts --format esm --dts --sourcemap --metafile",
     "lint": "eslint .",
     "typecheck": "tsc",
+    "bundle-tests": "esbuild --bundle src/tfjs_interop_test.ts --sourcemap --outfile=spec_dist/tfjs_interop_test.js",
+    "test": "npm run bundle-tests && jasmine-browser-runner",
     "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf dist",
     "pack": "npm pack"
   },
@@ -35,9 +37,13 @@
     "@litertjs/eslint-config": "^0.2.1",
     "@tensorflow/tfjs-core": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
+    "@types/jasmine": "^5.1.8",
     "@webgpu/types": "^0.1.54",
     "esbuild": "^0.23.0",
     "eslint": "^9.8.0",
+    "jasmine": "^5.8.0",
+    "jasmine-browser-runner": "^3.0.0",
+    "jasmine-core": "^5.8.0",
     "tsup": "^8.2.3",
     "typescript": "^5.5.4"
   }

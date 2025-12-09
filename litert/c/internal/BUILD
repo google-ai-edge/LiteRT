@@ -28,6 +28,7 @@ package(
         # "//litert/runtime/accelerators:__subpackages__",
         # "//litert/runtime/dispatch:__subpackages__",
         # "//litert/vendors/c:__subpackages__",
+        # "//litert/kotlin:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -121,7 +122,7 @@ cc_library(
         # "//litert/cc:__subpackages__",
         # "//litert/cc/internal:__subpackages__",
         # "//litert/runtime:__subpackages__",
-        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # "//litert/kotlin:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -234,6 +235,10 @@ cc_library(
     name = "litert_logging",
     srcs = ["litert_logging.cc"],
     hdrs = ["litert_logging.h"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "//conditions:default": [],
+    }),
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
@@ -247,8 +252,6 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//tflite:minimal_logging",
-        "//tflite/core/c:private_common",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

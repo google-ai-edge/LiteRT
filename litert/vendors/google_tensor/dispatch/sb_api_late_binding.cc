@@ -186,9 +186,13 @@ T GetValForSymUnavailable() {
   }
 }
 
-// This shared object exports SouthBound symbols that use Tachyon.
 constexpr char kDefaultSouthBoundLibPath[] =
+#ifdef __ANDROID__
     "/vendor/lib64/libedgetpu_litert.so";
+#else
+    "third_party/darwinn/litert/dispatch/libedgetpu_litert.so";
+#endif  // __ANDROID__
+
 // Defining this environment variable is a means to override
 // `kDefaultSouthBoundLibPath` for debug builds.
 #ifndef NDEBUG

@@ -1,0 +1,28 @@
+{
+  "version": 4,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default (host)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/cmake_build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "Android arm64-v8a",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/cmake_build_android_arm64",
+      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Android",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "26",
+        "CMAKE_BUILD_TYPE": "Release",
+        "LITERT_AUTO_BUILD_TFLITE": "ON"
+      }
+    }
+  ]
+}

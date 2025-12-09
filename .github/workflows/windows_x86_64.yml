@@ -180,6 +180,12 @@ jobs:
             //litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test `
             //litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_test
 
+      - name: Build example plugin for Windows
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+            //litert/vendors/examples:LiteRtCompilerPlugin `
+            //litert/vendors/examples:LiteRtDispatch
+
       - name: Build Intel OpenVINO plugin for Windows
         run: |
           bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `

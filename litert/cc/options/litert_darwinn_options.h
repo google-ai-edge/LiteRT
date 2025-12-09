@@ -18,9 +18,9 @@
 #include <cstdint>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_darwinn_runtime_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
-#include "litert/runtime/litert_darwinn_options.h"
 
 namespace litert {
 
@@ -30,7 +30,7 @@ class DarwinnRuntimeOptions : public OpaqueOptions {
   using OpaqueOptions::OpaqueOptions;
 
   static const char* Discriminator() {
-    return LiteRtDarwinnRuntimeOptionsT::Identifier();
+    return LiteRtGetDarwinnRuntimeOptionsIdentifier();
   }
 
   static absl::string_view Identifier();

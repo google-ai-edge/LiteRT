@@ -21,6 +21,7 @@
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
@@ -32,6 +33,14 @@ class DarwinnRuntimeOptions;
 class LiteRtDispatchDeviceContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
+
+  static constexpr LiteRtTensorBufferType kSupportedTensorBufferTypes[] = {
+#if LITERT_HAS_AHWB_SUPPORT
+      kLiteRtTensorBufferTypeAhwb,
+#else
+      kLiteRtTensorBufferTypeHostMemory,
+#endif
+  };
 
   ~LiteRtDispatchDeviceContextT();
 
@@ -59,8 +68,6 @@ class LiteRtDispatchDeviceContextT {
   void add_graph(ThrGraph* graph) { thr_graphs_.insert(graph); }
 
  private:
-  LiteRtDispatchDeviceContextT() = default;
-
   // Struct to store Darwinn runtime options for later application
   struct DarwinnOptionsData {
     std::optional<uint32_t> inference_power_state;
@@ -69,6 +76,8 @@ class LiteRtDispatchDeviceContextT {
     bool atomic_inference = false;
     bool prefer_coherent = false;
   };
+
+  LiteRtDispatchDeviceContextT() = default;
 
   ThrContext* thr_context_ = nullptr;
   absl::flat_hash_set<ThrGraph*> thr_graphs_;

@@ -130,6 +130,24 @@ LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
+                                  LiteRtCustomEvent custom_event) {
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  if (event->type == LiteRtEventTypeCustom) {
+    if (event->custom_event != nullptr &&
+        event->custom_event->Release != nullptr) {
+      event->custom_event->Release(event->custom_event);
+    }
+    event->custom_event = custom_event;
+    if (custom_event && custom_event->Retain != nullptr) {
+      custom_event->Retain(custom_event);
+    }
+    return kLiteRtStatusOk;
+  }
+#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  return kLiteRtStatusErrorUnsupported;
+}
+
 LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms) {
   LITERT_RETURN_IF_ERROR(event->Wait(timeout_in_ms));
   return kLiteRtStatusOk;

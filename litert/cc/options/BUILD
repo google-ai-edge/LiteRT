@@ -277,7 +277,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
-        "//litert/runtime:litert_darwinn_options",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

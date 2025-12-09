@@ -71,6 +71,10 @@ struct LiteRtGpuOptionsPayloadT {
   // Added in version 2.0.2a1.
   // Number of steps to prepare WebGPU command buffers in advance.
   int num_steps_of_command_buffer_preparations = 0;
+  // Set to true to use Metal argument buffers.
+  bool use_metal_argument_buffers = false;
+  // Added in version 2.0.2a1.
+  LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
 };
 
 namespace litert {
@@ -254,6 +258,22 @@ LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetGpuOptionsUseMetalArgumentBuffers(
+    LiteRtOpaqueOptions gpu_options, bool use_metal_argument_buffers) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->use_metal_argument_buffers = use_metal_argument_buffers;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
+    LiteRtOpaqueOptions gpu_accelerator_options, LiteRtGpuWaitType wait_type) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->wait_type = wait_type;
+  return kLiteRtStatusOk;
+}
+
 const char* LiteRtGetGpuOptionsPayloadIdentifier() {
   return LiteRtGpuOptionsPayloadT::kIdentifier.data();
 }
@@ -430,8 +450,7 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
 
 LiteRtStatus
 LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
-    bool* madvise_original_shared_tensors,
-    LiteRtGpuOptionsPayload payload) {
+    bool* madvise_original_shared_tensors, LiteRtGpuOptionsPayload payload) {
   LITERT_RETURN_IF_ERROR(madvise_original_shared_tensors,
                          ErrorStatusBuilder::InvalidArgument())
       << "`madvise_original_shared_tensors` cannot be null.";
@@ -452,5 +471,26 @@ LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
       << "`payload` cannot be null.";
   *num_steps_of_command_buffer_preparations =
       payload->num_steps_of_command_buffer_preparations;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuOptionsUseMetalArgumentBuffers(
+    LiteRtGpuOptionsPayload payload, bool* use_metal_argument_buffers) {
+  LITERT_RETURN_IF_ERROR(use_metal_argument_buffers,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`use_metal_argument_buffers` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *use_metal_argument_buffers = payload->use_metal_argument_buffers;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
+    LiteRtGpuWaitType* wait_type, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(wait_type, ErrorStatusBuilder::InvalidArgument())
+      << "`wait_type` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *wait_type = payload->wait_type;
   return kLiteRtStatusOk;
 }

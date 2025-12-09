@@ -49,16 +49,17 @@ const float kTolerance = 1e-5;
 
 @interface BasicMetalTest : NSObject
 
-// Tests the model with the given external tensors mode configuration.
+// Tests the model with the given execution mode and external tensors mode configuration.
 //
+// @param asyncMode Whether to use async execution mode.
 // @param externalTensorsMode Whether to use external tensors mode.
-+ (void)testBasicMetalTest:(BOOL)externalTensorsMode;
++ (void)testBasicMetalTest:(BOOL)asyncMode externalTensorsMode:(BOOL)externalTensorsMode;
 
 @end
 
 @implementation BasicMetalTest
 
-+ (void)testBasicMetalTest:(BOOL)externalTensorsMode {
++ (void)testBasicMetalTest:(BOOL)asyncMode externalTensorsMode:(BOOL)externalTensorsMode {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   XCTAssertTrue(env);
 
@@ -89,18 +90,160 @@ const float kTolerance = 1e-5;
       input_buffers[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  compiled_model.Run(input_buffers, output_buffers);
+  if (asyncMode) {
+    bool async = false;
+    litert::Expected<void> result = compiled_model.RunAsync(input_buffers, output_buffers, async);
+    XCTAssertTrue(result);
+    XCTAssertTrue(async);
+  } else {
+    litert::Expected<void> result = compiled_model.Run(input_buffers, output_buffers);
+    XCTAssertTrue(result);
+  }
 
   // Check model output.
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, compiled_model.GetSignatureOutputNames());
   XCTAssertEqual(output_names.size(), 1);
   XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add");
   XCTAssertTrue(output_buffers[0].IsMetalMemory());
+  if (asyncMode) {
+    XCTAssertTrue(output_buffers[0].HasEvent());
+    litert::Expected<litert::Event> event = output_buffers[0].GetEvent();
+    XCTAssertTrue(event);
+    litert::Expected<bool> result = event->IsSignaled();
+    XCTAssertTrue(result);
+    XCTAssertFalse(*result);  // Not signaled yet.
+  }
   litert::TensorBuffer *output_buffer = &output_buffers.at(0);
   [MetalTestHelper checkTensorBufferFloatOutput:output_buffer
                              withExpectedOutput:kTestOutputTensor
                                withElementCount:kTestOutputSize
                                   withTolerance:kTolerance];
+  if (asyncMode) {
+    litert::Expected<litert::Event> event = output_buffers[0].GetEvent();
+    XCTAssertTrue(event);
+    litert::Expected<bool> result = event->IsSignaled();
+    XCTAssertTrue(result);
+    // Buffer lock above lets the event be signaled.
+    XCTAssertTrue(*result);
+  }
+}
+
+@end
+
+@interface MetalPipelineTest : NSObject
+
+// Tests the model with the given execution mode and external tensors mode configuration.
+//
+// @param asyncMode1stModel Whether to use async execution mode for 1st model.
+// @param asyncMode2ndModel Whether to use async execution mode for 2nd model.
+// @param externalTensorsMode Whether to use external tensors mode.
++ (void)testMetalPipelineTest:(BOOL)asyncMode1stModel
+            asyncMode2ndModel:(BOOL)asyncMode2ndModel
+          externalTensorsMode:(BOOL)externalTensorsMode;
+
+@end
+
+@implementation MetalPipelineTest
+
++ (void)testMetalPipelineTest:(BOOL)asyncMode1stModel
+            asyncMode2ndModel:(BOOL)asyncMode2ndModel
+          externalTensorsMode:(BOOL)externalTensorsMode {
+  constexpr const float kTestOutputTensorForPipelineTest[] = {21, 42};
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  XCTAssertTrue(env);
+
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_model"];
+  XCTAssertNotNil(modelFilePath);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(externalTensorsMode));
+  XCTAssertTrue(options);
+
+  // Create 1st model.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1, litert::CompiledModel::Create(
+      env, modelFilePath.UTF8String, options));
+  XCTAssertEqual(compiled_model_1.GetNumSignatures(), 1);
+  XCTAssertTrue(compiled_model_1);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers_1, compiled_model_1.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers_1, compiled_model_1.CreateOutputBuffers());
+
+  // Create 2nd model.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_2, litert::CompiledModel::Create(
+      env, modelFilePath.UTF8String, options));
+  XCTAssertEqual(compiled_model_2.GetNumSignatures(), 1);
+  XCTAssertTrue(compiled_model_2);
+
+  // One of input buffers of 2nd model is same as output of 1st model.
+  // Set rest of the input buffers of 2nd model same as 1st model's input
+  // buffers.
+  std::vector<TensorBuffer> input_buffers_2(2);
+  LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_2[0], output_buffers_1[0].Duplicate());
+  LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_2[1], input_buffers_1[1].Duplicate());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers_2, compiled_model_2.CreateOutputBuffers());
+
+  // Fill model inputs for 1st model.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, compiled_model_1.GetSignatureInputNames());
+  XCTAssertEqual(input_names.size(), 2);
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(0).data()], @"arg0");
+  XCTAssertEqualObjects([NSString stringWithUTF8String:input_names.at(1).data()], @"arg1");
+  XCTAssertTrue(input_buffers_1[0].IsMetalMemory());
+  XCTAssertTrue(
+      input_buffers_1[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  XCTAssertTrue(input_buffers_1[1].IsMetalMemory());
+  XCTAssertTrue(
+      input_buffers_1[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Execute 1st model.
+  if (asyncMode1stModel) {
+    bool async = false;
+    litert::Expected<void> result =
+        compiled_model_1.RunAsync(input_buffers_1, output_buffers_1, async);
+    XCTAssertTrue(result);
+    XCTAssertTrue(async);
+  } else {
+    litert::Expected<void> result = compiled_model_1.Run(input_buffers_1, output_buffers_1);
+    XCTAssertTrue(result);
+  }
+
+  // Execute 2nd model.
+  if (asyncMode2ndModel) {
+    bool async = false;
+    litert::Expected<void> result =
+        compiled_model_2.RunAsync(input_buffers_2, output_buffers_2, async);
+    XCTAssertTrue(result);
+    XCTAssertTrue(async);
+  } else {
+    litert::Expected<void> result = compiled_model_2.Run(input_buffers_2, output_buffers_2);
+    XCTAssertTrue(result);
+  }
+
+  // Check 2nd model output.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, compiled_model_2.GetSignatureOutputNames());
+  XCTAssertEqual(output_names.size(), 1);
+  XCTAssertEqualObjects([NSString stringWithUTF8String:output_names.at(0).data()], @"tfl.add");
+  XCTAssertTrue(output_buffers_2[0].IsMetalMemory());
+  if (asyncMode2ndModel) {
+    XCTAssertTrue(output_buffers_2[0].HasEvent());
+    litert::Expected<litert::Event> event = output_buffers_2[0].GetEvent();
+    XCTAssertTrue(event);
+    litert::Expected<bool> result = event->IsSignaled();
+    XCTAssertTrue(result);
+    XCTAssertFalse(*result);  // Not signaled yet.
+  }
+  litert::TensorBuffer *output_buffer = &output_buffers_2.at(0);
+  [MetalTestHelper checkTensorBufferFloatOutput:output_buffer
+                             withExpectedOutput:kTestOutputTensorForPipelineTest
+                               withElementCount:kTestOutputSize
+                                  withTolerance:kTolerance];
+  if (asyncMode2ndModel) {
+    litert::Expected<litert::Event> event = output_buffers_2[0].GetEvent();
+    XCTAssertTrue(event);
+    litert::Expected<bool> result = event->IsSignaled();
+    XCTAssertTrue(result);
+    // Buffer lock above lets the event be signaled.
+    XCTAssertTrue(*result);
+  }
 }
 
 @end
@@ -111,18 +254,51 @@ const float kTolerance = 1e-5;
 @implementation LitertCompiledModelMetalTest
 
 - (void)testCompiledModelGpuBasic {
-  [BasicMetalTest testBasicMetalTest:false];
+  [BasicMetalTest testBasicMetalTest:false externalTensorsMode:false];
 }
 
-- (void)testCompiledModelGpuBasic2nd {
-  // Run the test twice to verify that the GPU environment is shared between two CompiledModel
-  // instances.
-  [BasicMetalTest testBasicMetalTest:false];
+- (void)testCompiledModelGpuBasicAsync {
+  [BasicMetalTest testBasicMetalTest:true externalTensorsMode:false];
 }
 
 - (void)testCompiledModelGpuExternalTensorsMode {
-  // Test the model with external tensors mode enabled.
-  [BasicMetalTest testBasicMetalTest:true];
+  [BasicMetalTest testBasicMetalTest:false externalTensorsMode:true];
+}
+
+- (void)testCompiledModelGpuExternalTensorsModeAsync {
+  [BasicMetalTest testBasicMetalTest:true externalTensorsMode:true];
+}
+
+- (void)testCompiledModelGpuPipeline {
+  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:false externalTensorsMode:false];
+}
+
+- (void)testCompiledModelGpuPipelineAsync1stModel {
+  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:false externalTensorsMode:false];
+}
+
+- (void)testCompiledModelGpuPipelineAsync2ndModel {
+  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:true externalTensorsMode:false];
+}
+
+- (void)testCompiledModelGpuPipelineAsyncBothModels {
+  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:true externalTensorsMode:false];
+}
+
+- (void)testCompiledModelGpuPipelineExternalTensorsMode {
+  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:false externalTensorsMode:true];
+}
+
+- (void)testCompiledModelGpuPipelineExternalTensorsModeAsync1stModel {
+  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:false externalTensorsMode:true];
+}
+
+- (void)testCompiledModelGpuPipelineExternalTensorsModeAsync2ndModel {
+  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:true externalTensorsMode:true];
+}
+
+- (void)testCompiledModelGpuPipelineExternalTensorsModeAsyncBothModels {
+  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:true externalTensorsMode:true];
 }
 
 - (void)testCompiledModelGpuEnvironment {
@@ -241,6 +417,84 @@ const float kTolerance = 1e-5;
   [MetalTestHelper checkTensorBufferInt32Output:&output_buffers[0]
                              withExpectedOutput:kInt32TestOutputTensor
                                withElementCount:kInt32TestOutputSize];
+}
+
+- (void)testCompiledModelGpuConstantOutputTensor {
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"constant_output_tensor"];
+  XCTAssertNotNil(modelFilePath);
+
+  auto env = litert::Environment::Create({});
+  XCTAssertTrue(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model, litert::CompiledModel::Create(*env, modelFilePath.UTF8String, options));
+
+  XCTAssertEqual(compiled_model.GetNumSignatures(), 1);
+
+  // Create input and output buffers
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, compiled_model.CreateInputBuffers());
+  XCTAssertEqual(input_buffers.size(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
+  XCTAssertEqual(output_buffers.size(), 2);  // normal_output and constant_output
+
+  // Set input values
+  const float input_data[] = {5.0f, 10.0f};
+  XCTAssertTrue(input_buffers[0].Write<float>(absl::MakeConstSpan(input_data, 2)));
+
+  // Run the model
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  // Note: TFLite might reorder outputs - check which is which by size
+  // The constant output has 4 elements, the normal output has 2 elements
+  int constant_output_idx = -1;
+  int normal_output_idx = -1;
+
+  // Determine which output is which based on size
+  for (int i = 0; i < 2; i++) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto size, output_buffers[i].Size());
+    if (size == 4 * sizeof(float)) {
+      constant_output_idx = i;
+    } else if (size == 2 * sizeof(float)) {
+      normal_output_idx = i;
+    }
+  }
+
+  ASSERT_NE(constant_output_idx, -1) << "Could not find constant output";
+  ASSERT_NE(normal_output_idx, -1) << "Could not find normal output";
+
+  {
+    const float kNormalExpectedOutput[] = {10.0f, 20.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[normal_output_idx]
+                               withExpectedOutput:kNormalExpectedOutput
+                                 withElementCount:2
+                                    withTolerance:kTolerance];
+
+    const float kConstantExpectedOutput[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[constant_output_idx]
+                               withExpectedOutput:kConstantExpectedOutput
+                                 withElementCount:4
+                                    withTolerance:kTolerance];
+  }
+
+  // Run again with different input to verify constant output doesn't change
+  const float input_data2[] = {100.0f, 200.0f};
+  XCTAssertTrue(input_buffers[0].Write<float>(absl::MakeConstSpan(input_data2, 2)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  {
+    const float kNormalExpectedOutput[] = {200.0f, 400.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[normal_output_idx]
+                               withExpectedOutput:kNormalExpectedOutput
+                                 withElementCount:2
+                                    withTolerance:kTolerance];
+
+    const float kConstantExpectedOutput[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers[constant_output_idx]
+                               withExpectedOutput:kConstantExpectedOutput
+                                 withElementCount:4
+                                    withTolerance:kTolerance];
+  }
 }
 
 @end

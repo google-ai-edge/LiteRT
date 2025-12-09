@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_EVENT_TYPE_H_
 #define ODML_LITERT_LITERT_C_LITERT_EVENT_TYPE_H_
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
@@ -25,7 +27,24 @@ typedef enum {
   LiteRtEventTypeOpenCl = 2,
   LiteRtEventTypeEglSyncFence = 3,
   LiteRtEventTypeEglNativeSyncFence = 4,
+  LiteRtEventTypeCustom = 5,
 } LiteRtEventType;
+
+// Custom events managed by the client.
+typedef struct LiteRtCustomEventT* LiteRtCustomEvent;
+struct LiteRtCustomEventT {
+  // Retains the custom event, e.g. increases the reference count.
+  void (*Retain)(LiteRtCustomEvent event);  // NOLINT
+  // Releases the custom event, e.g. decreases the reference count.
+  // If the reference count reaches 0, the custom event will be destroyed.
+  void (*Release)(LiteRtCustomEvent event);  // NOLINT
+  // Waits for the custom event to be signaled. How to signal the event is
+  // backend dependent, e.g. emulating within Wait() or wrapping an actual GPU
+  // event signaled by the device.
+  void (*Wait)(LiteRtCustomEvent event, int64_t timeout_in_ms);  // NOLINT
+  // Returns 1 if the custom event is signaled, 0 otherwise.
+  int (*IsSignaled)(LiteRtCustomEvent event);  // NOLINT
+};
 
 #ifdef __cplusplus
 }
