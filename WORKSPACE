@@ -27,6 +27,12 @@ http_archive(
     ],
 )
 
+http_archive(
+    name = "build_bazel_apple_support",
+    sha256 = "3216263e7620a116b3f71a083d1c325e0fa0c3c04239850125e141af56b2c86b",
+    url = "https://github.com/bazelbuild/buildtools/releases/download/4.2.2/build_bazel_apple_support.4.2.2.tar.gz",
+)
+
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
 # tensorflow is updated to do the same patchcmd.
 http_archive(
