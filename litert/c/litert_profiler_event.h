@@ -15,40 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_LITERT_PROFILER_EVENT_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_LITERT_PROFILER_EVENT_H_
 
-#ifdef __cplusplus
-// =========================================================================
-//  C++ DEFINITION: Visible only to C++ compilers
-// =========================================================================
-#include <cstdint>
-
-#include "tflite/core/api/profiler.h"
-#include "tflite/profiling/memory_info.h"
-
-// The original C++ struct definition is kept here.
-enum class ProfiledEventSource {
-  LITERT,
-  TFLITE_INTERPRETER,
-  TFLITE_DELEGATE,
-};
-
-struct ProfiledEventData {
-  const char*
-      tag;  // The tag of the event. The tag is copied and owned by the
-            // profiler, the caller does not need to keep the string alive.
-  tflite::Profiler::EventType event_type;
-  uint64_t start_timestamp_us;
-  uint64_t elapsed_time_us;
-  tflite::profiling::memory::MemoryUsage begin_mem_usage;
-  tflite::profiling::memory::MemoryUsage end_mem_usage;
-  uint64_t event_metadata1;
-  uint64_t event_metadata2;
-  ProfiledEventSource event_source;
-};
-
-#else
-// =========================================================================
-//  C DEFINITION: Visible only to C compilers
-// =========================================================================
+#include <stddef.h>
 #include <stdint.h>
 
 // C-compatible version of 'tflite::Profiler::EventType'
@@ -94,8 +61,9 @@ typedef enum LiteRtProfilerEventType {
 // C-compatible version of 'tflite::profiling::memory::MemoryUsage'
 // We define a C struct that matches the memory layout of the C++ one.
 typedef struct LiteRtMemoryUsage {
-  int64_t total_rss_kb;
-  int64_t total_hoard_kb;
+  size_t total_allocated_bytes;
+  size_t in_use_allocated_bytes;
+  size_t private_footprint_bytes;
 } LiteRtMemoryUsage;
 
 // C-compatible version of 'Source'
@@ -119,7 +87,5 @@ typedef struct ProfiledEventData {
   uint64_t event_metadata2;
   ProfiledEventSource event_source;
 } ProfiledEventData;
-
-#endif  // __cplusplus
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_LITERT_PROFILER_EVENT_H_

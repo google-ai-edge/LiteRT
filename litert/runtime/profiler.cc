@@ -137,13 +137,24 @@ if (!profile_buffer_) {
     ProfiledEventData ev_data;
     auto tf_event = profile_buffer_->At(i);
     ev_data.tag = tf_event->tag.c_str();
-    ev_data.event_type = tf_event->event_type;
+    ev_data.event_type =
+        static_cast<LiteRtProfilerEventType>(tf_event->event_type);
     ev_data.start_timestamp_us = tf_event->begin_timestamp_us;
     ev_data.elapsed_time_us = tf_event->elapsed_time;
     ev_data.event_metadata1 = tf_event->event_metadata;
     ev_data.event_metadata2 = tf_event->extra_event_metadata;
-    ev_data.begin_mem_usage = tf_event->begin_mem_usage;
-    ev_data.end_mem_usage = tf_event->end_mem_usage;
+    ev_data.begin_mem_usage.total_allocated_bytes =
+        tf_event->begin_mem_usage.total_allocated_bytes;
+    ev_data.begin_mem_usage.in_use_allocated_bytes =
+        tf_event->begin_mem_usage.in_use_allocated_bytes;
+    ev_data.begin_mem_usage.private_footprint_bytes =
+        tf_event->begin_mem_usage.private_footprint_bytes;
+    ev_data.end_mem_usage.total_allocated_bytes =
+        tf_event->end_mem_usage.total_allocated_bytes;
+    ev_data.end_mem_usage.in_use_allocated_bytes =
+        tf_event->end_mem_usage.in_use_allocated_bytes;
+    ev_data.end_mem_usage.private_footprint_bytes =
+        tf_event->end_mem_usage.private_footprint_bytes;
 
     // Look up our attributed source
     auto it = active_event_sources_map_.find(i);

@@ -365,11 +365,22 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         tflite_event->tag = event.tag;
         tflite_event->begin_timestamp_us = event.start_timestamp_us;
         tflite_event->elapsed_time = event.elapsed_time_us;
-        tflite_event->event_type = event.event_type;
+        tflite_event->event_type =
+            static_cast<tflite::Profiler::EventType>(event.event_type);
         tflite_event->event_metadata = event.event_metadata1;
         tflite_event->extra_event_metadata = event.event_metadata2;
-        tflite_event->begin_mem_usage = event.begin_mem_usage;
-        tflite_event->end_mem_usage = event.end_mem_usage;
+        tflite_event->begin_mem_usage.total_allocated_bytes =
+            event.begin_mem_usage.total_allocated_bytes;
+        tflite_event->begin_mem_usage.in_use_allocated_bytes =
+            event.begin_mem_usage.in_use_allocated_bytes;
+        tflite_event->begin_mem_usage.private_footprint_bytes =
+            event.begin_mem_usage.private_footprint_bytes;
+        tflite_event->end_mem_usage.total_allocated_bytes =
+            event.end_mem_usage.total_allocated_bytes;
+        tflite_event->end_mem_usage.in_use_allocated_bytes =
+            event.end_mem_usage.in_use_allocated_bytes;
+        tflite_event->end_mem_usage.private_footprint_bytes =
+            event.end_mem_usage.private_footprint_bytes;
         tflite_ptr_events.push_back(tflite_event.get());
         tflite_events.push_back(std::move(tflite_event));
       }

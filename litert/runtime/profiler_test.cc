@@ -94,7 +94,7 @@ TEST(LiteRTProfiler, SingleEventRecording) {
   ASSERT_EQ(events.size(), 1);
   const auto& ev = events[0];
   ASSERT_EQ(strcmp(ev.tag, tag), 0);
-  ASSERT_EQ(ev.event_type, tflite::Profiler::EventType::DEFAULT);
+  ASSERT_EQ(ev.event_type, LiteRtProfilerEventType::DEFAULT);
   ASSERT_EQ(ev.event_metadata1, meta1);
   ASSERT_EQ(ev.event_metadata2, meta2);
   ASSERT_EQ(ev.event_source, ProfiledEventSource::LITERT);
@@ -130,7 +130,7 @@ TEST(LiteRTProfiler, MultipleEventRecording) {
   ASSERT_EQ(strcmp(events[1].tag, "Event2"), 0);
   ASSERT_EQ(events[1].event_metadata1, 2);
   ASSERT_EQ(events[1].event_type,
-            tflite::Profiler::EventType::OPERATOR_INVOKE_EVENT);
+            LiteRtProfilerEventType::OPERATOR_INVOKE_EVENT);
 
   std::cout << "TestMultipleEventRecording: PASSED" << std::endl;
 }
