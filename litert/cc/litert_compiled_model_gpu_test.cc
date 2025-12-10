@@ -553,6 +553,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_names, compiled_model.GetSignatureInputNames(signature_index));
+  // Create GL input buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers,
       CreateGlInputBuffers(env, compiled_model, signature_index, input_names));
@@ -566,21 +567,10 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
-  // After GL buffers are filled, create and set egl sync fence event to each
-  // buffer. This ensures proper synchronization in the GPU command queue.
-  for (int i = 0; i < input_buffers.size(); ++i) {
-    LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
-                                input_buffers[i].BufferType());
-    ASSERT_EQ(buffer_type, TensorBufferType::kGlBuffer);
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto input_event,
-        Event::CreateManaged(env.Get(), LiteRtEventTypeEglSyncFence));
-    input_buffers[i].SetEvent(std::move(input_event));
-  }
-
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto output_names,
       compiled_model.GetSignatureOutputNames(signature_index));
+  // Create GL output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto output_buffers,
       CreateGlOutputBuffers(env, compiled_model, signature_index,
@@ -630,6 +620,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_names, compiled_model.GetSignatureInputNames(signature_index));
+  // Create GL input buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers,
       CreateGlInputBuffers(env, compiled_model, signature_index, input_names));
@@ -643,21 +634,10 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
-  // After GL buffers are filled, create and set egl sync fence event to each
-  // buffer. This ensures proper synchronization in the GPU command queue.
-  for (int i = 0; i < input_buffers.size(); ++i) {
-    LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
-                                input_buffers[i].BufferType());
-    ASSERT_EQ(buffer_type, TensorBufferType::kGlBuffer);
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto input_event,
-        Event::CreateManaged(env.Get(), LiteRtEventTypeEglSyncFence));
-    input_buffers[i].SetEvent(std::move(input_event));
-  }
-
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto output_names,
       compiled_model.GetSignatureOutputNames(signature_index));
+  // Create GL output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto output_buffers,
       CreateGlOutputBuffers(env, compiled_model, signature_index,
