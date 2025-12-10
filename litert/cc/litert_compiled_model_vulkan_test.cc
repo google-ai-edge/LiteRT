@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <string>
 #include <tuple>
 #include <utility>
 
@@ -20,6 +21,7 @@
 #include <gtest/gtest.h>
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_environment_options.h"
@@ -28,7 +30,6 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -123,7 +124,34 @@ INSTANTIATE_TEST_SUITE_P(
                            GpuOptions::BufferStorageType::kDefault,
                            GpuOptions::BufferStorageType::kBuffer,
                            GpuOptions::BufferStorageType::kTexture2D,
-                       })));
+                       })),
+    [](const ::testing::TestParamInfo<TestParams>& info) {
+      std::string precision;
+      switch (std::get<0>(info.param)) {
+        case GpuOptions::Precision::kDefault:
+          precision = "Default";
+          break;
+        case GpuOptions::Precision::kFp16:
+          precision = "Fp16";
+          break;
+        case GpuOptions::Precision::kFp32:
+          precision = "Fp32";
+          break;
+      }
+      std::string buffer_storage_type;
+      switch (std::get<1>(info.param)) {
+        case GpuOptions::BufferStorageType::kDefault:
+          buffer_storage_type = "Default";
+          break;
+        case GpuOptions::BufferStorageType::kBuffer:
+          buffer_storage_type = "Buffer";
+          break;
+        case GpuOptions::BufferStorageType::kTexture2D:
+          buffer_storage_type = "Texture2D";
+          break;
+      }
+      return absl::StrCat(precision, "_", buffer_storage_type);
+    });
 
 TEST(CompiledModelVulkanTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
