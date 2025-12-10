@@ -19,9 +19,10 @@
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
-#include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -140,11 +141,9 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   slice1_output_dims[2] /= num_heads;
   auto& slice1_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kSlice1Index].GetOutputTensor(0), slice1_output_dims);
-  EmplaceOpWithIO(new_ops, ops[start_index + kSlice1Index], {softmax_output},
-                  {slice1_output});
-  new_ops.back().ClearTensorParams();
-  new_ops.back().AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
-                                slice1_param_tensor);
+  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice1_output,
+               slice1_param_tensor);
+
   // MatMul 1
   const auto& matmulv_cache_output =
       ops[start_index + kMatMulV1Index].GetOutputTensor(0);
@@ -173,11 +172,9 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   slice2_output_dims[2] /= num_heads;
   auto& slice2_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kSlice2Index].GetOutputTensor(0), slice2_output_dims);
-  EmplaceOpWithIO(new_ops, ops[start_index + kSlice2Index], {softmax_output},
-                  {slice2_output});
-  new_ops.back().ClearTensorParams();
-  new_ops.back().AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
-                                slice2_param_tensor);
+  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice2_output,
+               slice2_param_tensor);
+
   // MatMul 2
   const auto& matmulv_slice_output =
       ops[start_index + kMatMulV2Index].GetOutputTensor(0);
@@ -295,11 +292,8 @@ TensorWrapper& BuildSingleSHA(
   slice_1_output_dims[1] /= num_attn_per_kv_heads;
   auto& slice_1_output = tensor_pool.CloneNativeTensorFrom(
       slice_1.GetOutputTensor(0), slice_1_output_dims);
-  auto& slice_op_1 =
-      EmplaceOpWithIO(new_ops, slice_1, {softmax_output}, {slice_1_output});
-  slice_op_1.ClearTensorParams();
-  slice_op_1.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
-                            slice_1_param_tensor);
+  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice_1_output,
+               slice_1_param_tensor);
 
   // Slice 2
   auto slice_2_param = slice_2.GetTensorPararm(0).GetTensor();
@@ -319,11 +313,8 @@ TensorWrapper& BuildSingleSHA(
   slice_2_output_dims[1] /= num_attn_per_kv_heads;
   auto& slice_2_output = tensor_pool.CloneNativeTensorFrom(
       slice_2.GetOutputTensor(0), slice_2_output_dims);
-  auto& slice_op_2 =
-      EmplaceOpWithIO(new_ops, slice_2, {softmax_output}, {slice_2_output});
-  slice_op_2.ClearTensorParams();
-  slice_op_2.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
-                            slice_2_param_tensor);
+  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice_2_output,
+               slice_2_param_tensor);
 
   // Matmul v1
   auto matmul_v1_output_dims = matmul_v1.GetOutputTensor(0).GetDims();
@@ -791,7 +782,6 @@ size_t OptimizeMHAFastVlmPrefill(
       "[G2G] Validation failed. Rolling back to the original graph.");
   return 1;
 }
-
 
 size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
                        std::vector<OpWrapper>& ops, size_t attn_start_index,
