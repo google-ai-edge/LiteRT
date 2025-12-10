@@ -167,7 +167,6 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       for (int i = 0; i < ov_shape_vec.size(); i++)
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
 
-      // TODO: change f32 to ov_element_type fetched from TensorType
       auto remote_tensor = context.create_tensor(
           ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
           buffer_fd);
