@@ -92,6 +92,7 @@ cc_library(
         "//litert/cc/internal:litert_handle",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//tflite/java/jni",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
