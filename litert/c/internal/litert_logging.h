@@ -113,17 +113,21 @@ LiteRtStatus LiteRtUseSinkLogger();
 
 #endif  // __cplusplus
 
-#define LITERT_LOGGER_LOG_PROD(logger, severity, format, ...)                  \
-  {                                                                            \
-    LiteRtLogSeverity __min_severity__;                                        \
-    if (LiteRtGetMinLoggerSeverity(logger, &__min_severity__) !=               \
-        kLiteRtStatusOk) {                                                     \
-      __min_severity__ = kLiteRtLogSeverityVerbose;                            \
-    }                                                                          \
-    if (severity >= __min_severity__) {                                        \
-      LiteRtLoggerLog(logger, severity, "[%s:%d] " format, __FILE__, __LINE__, \
-                      ##__VA_ARGS__);                                          \
-    }                                                                          \
+#ifndef __FILE_NAME__
+#define __FILE_NAME__ __FILE__
+#endif
+
+#define LITERT_LOGGER_LOG_PROD(logger, severity, format, ...)             \
+  {                                                                       \
+    LiteRtLogSeverity __min_severity__;                                   \
+    if (LiteRtGetMinLoggerSeverity(logger, &__min_severity__) !=          \
+        kLiteRtStatusOk) {                                                \
+      __min_severity__ = kLiteRtLogSeverityVerbose;                       \
+    }                                                                     \
+    if (severity >= __min_severity__) {                                   \
+      LiteRtLoggerLog(logger, severity, "[%s:%d] " format, __FILE_NAME__, \
+                      __LINE__, ##__VA_ARGS__);                           \
+    }                                                                     \
   }
 
 #ifndef NDEBUG
