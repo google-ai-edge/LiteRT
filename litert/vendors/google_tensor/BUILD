@@ -1,3 +1,6 @@
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # Copyright 2024 Google LLC.
@@ -58,6 +61,54 @@ litert_lib(
     ],
 )
 
+proto_library(
+    name = "edgetpu_compiler_options_proto",
+    srcs = ["edgetpu_compiler_options.proto"],
+)
+
+cc_proto_library(
+    name = "edgetpu_compiler_options_cc_proto",
+    visibility = [
+        # copybara:uncomment_begin(google-only)
+        # "//third_party/darwinn/litert:__subpackages__",
+        # copybara:uncomment_end
+    ],
+    deps = [
+        ":edgetpu_compiler_options_proto",
+    ],
+)
+
+cc_library(
+    name = "edgetpu_compiler_api",
+    hdrs = ["edgetpu_compiler_api.h"],
+    visibility = [
+        # copybara:uncomment_begin(google-only)
+        # "//third_party/darwinn/litert:__subpackages__",
+        # copybara:uncomment_end
+    ],
+)
+
+litert_lib(
+    name = "adapter_odc",
+    srcs = [
+        "adapter_odc.cc",
+        "adapter_odc.h",
+    ],
+    hdrs = ["adapter.h"],
+    defines = ["LITERT_GOOGLE_TENSOR_ODC=1"],
+    deps = [
+        ":edgetpu_compiler_api",
+        ":edgetpu_compiler_options_cc_proto",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_shared_library",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
 litert_lib(
     name = "adapter",
     hdrs = ["adapter.h"],
@@ -65,7 +116,7 @@ litert_lib(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [],
+        "@org_tensorflow//tensorflow:android": [":adapter_odc"],
         "//conditions:default": [":adapter_aot"],
     }),
 )
