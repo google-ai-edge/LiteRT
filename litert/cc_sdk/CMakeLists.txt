@@ -66,6 +66,7 @@ set_target_properties(litert_cc_api PROPERTIES
 target_include_directories(litert_cc_api
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
