@@ -44,6 +44,9 @@ struct LiteRtCustomEventT {
   void (*Wait)(LiteRtCustomEvent event, int64_t timeout_in_ms);  // NOLINT
   // Returns 1 if the custom event is signaled, 0 otherwise.
   int (*IsSignaled)(LiteRtCustomEvent event);  // NOLINT
+  // Returns the native pointer of the custom event, or nullptr if not
+  // supported.
+  void* (*GetNative)(LiteRtCustomEvent event);  // NOLINT
 };
 
 #ifdef __cplusplus

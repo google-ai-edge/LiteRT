@@ -76,6 +76,9 @@ LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event, cl_event* cl_event);
 
 LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync);
 
+// Returns the native event of the custom event if supported.
+LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native);
+
 // Pass -1 for timeout_in_ms for indefinite wait.
 LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms);
 
