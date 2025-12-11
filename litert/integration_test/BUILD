@@ -432,11 +432,34 @@ alias(
     ],
 )
 
+# Classic Android platforms with ARM CPUs
 platform(
-    name = "device",
+    name = "device_aarch64",
     constraint_values =
         [
             "@platforms//cpu:aarch64",
+            "@platforms//os:android",
+        ],
+    visibility = [
+        "//litert:litert_public",
+    ],
+)
+
+config_setting(
+    name = "android_x86_64",
+    constraint_values =
+        [
+            "@platforms//cpu:x86_64",
+            "@platforms//os:android",
+        ],
+)
+
+# Android platforms with x86_64 CPUs, e.g. Aluminum devices with Intel CPUs.
+platform(
+    name = "device_x86_64",
+    constraint_values =
+        [
+            "@platforms//cpu:x86_64",
             "@platforms//os:android",
         ],
     visibility = [
