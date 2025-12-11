@@ -124,6 +124,29 @@ litert_define_ats(
     jit_suffix = "",
 )
 
+litert_define_ats(
+    name = "intel_openvino_ats",
+    backend = "intel_openvino",
+    compile_only_suffix = None,
+    do_register = [
+        "hf_all_minilm_l6_v2",
+        "hf_mobilevit_small",
+        "qai_hub_real_esrgan_x4plus",
+        "torchvision_mobilenet_v2",
+        "u2net_lite",
+        "torchvision_resnet18",
+        "torchvision_squeezenet1_1",
+        "whisper_tiny_encoder",
+        "yolo11n",
+    ],
+    dont_register = [
+        "qai_hub_midas",
+        "yamnet",  # terminating due to uncaught exception of type ov::NodeValidationFailure
+        ".*SingleOp.*",
+    ],
+    jit_suffix = "",
+)
+
 # SOURCE CODES #####################################################################################
 
 litert_test(
