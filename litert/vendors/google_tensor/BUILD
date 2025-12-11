@@ -32,6 +32,7 @@ litert_lib(
         # "//platforms/darwinn/compiler:compiler_api_wrapper",
         # copybara:uncomment_end
     ],
+    defines = ["LITERT_GOOGLE_TENSOR_AOT=1"],
     linkopts = [
         # TODO(abhirs): Make this work for OS.
         #copybara:comment_begin(google-only)

@@ -322,12 +322,31 @@ void MakeUniqueSignatureKeysPerSubgraph(LiteRtModelT* model,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  if (compiler_plugin == nullptr || soc_model == nullptr ||
-      partitions == nullptr || compiled_result == nullptr) {
+  if (compiler_plugin == nullptr || partitions == nullptr ||
+      compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
+
+#ifdef LITERT_GOOGLE_TENSOR_AOT
+  // soc_model is required for AOT mode.
+  if (soc_model == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "%s", "soc_model is nullptr in AOT mode");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+#else
+  // Allow unspecified soc model for ODC mode.
+  if (soc_model == nullptr) {
+    soc_model = "Unspecified";
+  }
+  // Currently ODC only supports Single subgraph models.
+  if (num_partitions > 1) {
+    LITERT_LOG(LITERT_ERROR, "%s",
+               "ODC mode does not support multiple subgraphs");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+#endif  // LITERT_GOOGLE_TENSOR_AOT
 
   LITERT_LOG(LITERT_INFO,
              "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",
