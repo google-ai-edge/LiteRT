@@ -41,9 +41,9 @@ struct LiteRtGpuOptionsPayloadT {
   // If true, the delegate will prefer to use textures rather than buffers for
   // weights. Use option when weights in texture has better performance.
   bool prefer_texture_weights = false;
-  // The nul-terminated directory to use for serialization.
+  // The null-terminated directory to use for serialization.
   const char* serialization_dir = nullptr;
-  // The unique nul-terminated token string that acts as a 'namespace' for
+  // The unique null-terminated token string that acts as a 'namespace' for
   // all serialization entries.
   const char* model_cache_key = nullptr;
   // When set to true AND the serialization_dir and model_cache_key are also
@@ -75,6 +75,12 @@ struct LiteRtGpuOptionsPayloadT {
   bool use_metal_argument_buffers = false;
   // Added in version 2.0.2a1.
   LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
+  // Added in version 2.0.2a2.
+  // Preferred WebGPU device name substring, case-insensitive.
+  // If not empty, the adapter which the device name contains the substring will
+  // be chosen.
+  // If empty, the device will be determined by other factors.
+  std::string preferred_device_substr;
 };
 
 namespace litert {
@@ -271,6 +277,15 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->wait_type = wait_type;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    const char* preferred_device_substr) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->preferred_device_substr = preferred_device_substr;
   return kLiteRtStatusOk;
 }
 
@@ -492,5 +507,16 @@ LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *wait_type = payload->wait_type;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    const char** preferred_device_substr, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(preferred_device_substr,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`preferred_device_substr` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *preferred_device_substr = payload->preferred_device_substr.c_str();
   return kLiteRtStatusOk;
 }

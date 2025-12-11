@@ -151,6 +151,11 @@ LiteRtStatus LiteRtSetGpuOptionsUseMetalArgumentBuffers(
 LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
     LiteRtOpaqueOptions gpu_accelerator_options, LiteRtGpuWaitType wait_type);
 
+// Sets the preferred device substring.
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    const char* preferred_device_substr);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -227,6 +232,9 @@ LiteRtStatus LiteRtGetGpuOptionsUseMetalArgumentBuffers(
 
 LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
     LiteRtGpuWaitType* wait_type, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    const char** preferred_device_substr, LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"

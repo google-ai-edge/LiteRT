@@ -136,4 +136,10 @@ LiteRtStatus GpuOptions::SetSyncExecutionModeWaitType(
       Get(), static_cast<LiteRtGpuWaitType>(wait_type));
 }
 
+LiteRtStatus GpuOptions::SetPreferredDeviceSubstr(
+    const char* preferred_device_substr) {
+  return LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+      Get(), preferred_device_substr);
+}
+
 }  // namespace litert

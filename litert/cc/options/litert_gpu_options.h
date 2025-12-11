@@ -110,6 +110,9 @@ class GpuOptions : public litert::OpaqueOptions {
   };
   LiteRtStatus SetSyncExecutionModeWaitType(
       SyncExecutionModeWaitType wait_type);
+
+  // Sets the preferred WebGPU device substring.
+  LiteRtStatus SetPreferredDeviceSubstr(const char* preferred_device_substr);
 };
 
 }  // namespace litert
