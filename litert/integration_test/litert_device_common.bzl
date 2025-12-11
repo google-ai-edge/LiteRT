@@ -211,6 +211,28 @@ def _MediatekSpec():
         ),
     }
 
+# Intel OpenVino
+
+def _IntelOpenVinoSpec():
+    return {
+        "intel_openvino": BackendSpec(
+            id = "intel_openvino",
+            libs = [
+                ("//litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:libopenvino.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
+            ],
+            dispatch = "libLiteRtDispatch_IntelOpenvino.so",
+            plugin = "libLiteRtCompilerPlugin_IntelOpenvino.so",
+            host_libs = [
+                "@intel_openvino//:libopenvino.so",
+                "@intel_openvino//:libopenvino_tensorflow_lite_frontend.so",
+            ],
+        ),
+    }
+
 # GOOGLE TENSOR
 
 def _GoogleTensorSpec():
@@ -268,11 +290,11 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
-    return "qualcomm" in name or name in ["mediatek", "google_tensor", "example"]
+    return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "example"]
 
 # Get the libs for the given backend.
 def get_libs(name):
@@ -309,7 +331,8 @@ def split_dep_platform(
         host_suffix = "_for_host",
         device_suffix = "_for_device",
         no_host = False,
-        no_device = True):
+        no_device = True,
+        backend_id = "cpu"):
     """Forks the configuration of "targets" into builds for both the host and device.
 
     This function creates `platform_data` targets for both host (linux) and device (android)
@@ -324,6 +347,7 @@ def split_dep_platform(
         device_suffix: Suffix to append to device target names.
         no_host: If True, do not generate host targets.
         no_device: If True, do not generate device targets.
+        backend_id: The backend id, used to differentiate between different device platforms.
 
     Returns:
         A struct with two fields:
@@ -351,10 +375,21 @@ def split_dep_platform(
             host.append(":" + host_name)
 
         if not no_device:
+            # Workaround to make sure we select the device_x86_64 platform for intel_openvino.
+            device_platform = "//litert/integration_test:device_aarch64"
+            if backend_id == "intel_openvino":
+                device_platform = "//litert/integration_test:device_x86_64"
+            else:
+                # If bazel is invoked with '--config=android_x86_64' we need to build for x86_64
+                # instead of aarch64.
+                device_platform = select({
+                    "//litert/integration_test:android_x86_64": "//litert/integration_test:device_x86_64",
+                    "//conditions:default": "//litert/integration_test:device_aarch64",
+                })
             platform_data(
                 name = device_name,
                 target = targ,
-                platform = "//litert/integration_test:device",
+                platform = device_platform,
                 testonly = testonly,
             )
             device.append(":" + device_name)

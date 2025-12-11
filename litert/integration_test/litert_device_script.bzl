@@ -241,7 +241,7 @@ def litert_device_script(
     if build_for_host and build_for_device:
         fail("Double split config not yet supported.")
 
-    split_dep_kwargs = {"prefix": name, "testonly": testonly, "no_host": not build_for_host, "no_device": not build_for_device}
+    split_dep_kwargs = {"prefix": name, "testonly": testonly, "no_host": not build_for_host, "no_device": not build_for_device, "backend_id": backend_id}
 
     backend = get_spec(backend_id)
     bins = split_dep_platform(targets = bin, **split_dep_kwargs)
