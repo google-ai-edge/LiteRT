@@ -21,7 +21,7 @@ from litert.python.mlir import ir
 from litert.python.mlir import passmanager
 from xdsl import irdl
 
-# Import placeholder: gfile
+import os # import gfile
 from litert.python.tools.model_utils import core
 from litert.python.tools.model_utils.dialect import mlir
 
