@@ -16,6 +16,8 @@
 
 #include <jni.h>
 
+#include <cstdint>
+
 #ifdef __ANDROID__
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
@@ -31,6 +33,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -48,6 +51,7 @@
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 #include "litert/kotlin/src/main/jni/litert_model_wrapper.h"
 
@@ -67,6 +71,7 @@ using ::litert::TensorBuffer;
 using ::litert::Unexpected;
 using ::litert::jni::CompiledModelWrapper;
 using ::litert::jni::ThrowLiteRtException;
+using ::litert::qualcomm::QualcommOptions;
 
 // Keys for CPU options, the values should match the ones in Kotlin.
 enum CpuOptionsKey {
@@ -92,6 +97,24 @@ enum GpuOptionsKey {
   kBackend = 12,
   kPriority = 13,
   kNumStepsOfCommandBufferPreparations = 14,
+};
+
+// Keys for Qualcomm options, the values should match the ones in Kotlin.
+enum QualcommOptionsKey {
+  kLogLevel = 0,
+  kUseHtpPreference = 1,
+  kUseQint16AsQuint16 = 2,
+  kEnableWeightSharing = 3,
+  kDumpTensorIds = 4,
+  kUseConvHmx = 5,
+  kUseFoldRelu = 6,
+  kHtpPerformanceMode = 7,
+  kProfiling = 8,
+  kIrJsonDir = 9,
+  kDlcDir = 10,
+  kVtcmSize = 11,
+  kNumHvxThreads = 12,
+  kOptimizationLevel = 13,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -341,11 +364,98 @@ Expected<void> PopulateGpuOptions(JNIEnv* env, GpuOptions& gpu_options,
   return {};
 }
 
+// Populates a QualcommOptions from the given qualcomm options.
+// The number of given options must be greater than 0.
+Expected<void> PopulateQualcommOptions(JNIEnv* env,
+                                       QualcommOptions& qualcomm_options,
+                                       jintArray qualcomm_options_keys,
+                                       jobjectArray qualcomm_options_values) {
+  AUTO_CLEANUP_JNI_INT_ARRAY(env, qualcomm_options_keys);
+  AUTO_CLEANUP_JNI_STRING_ARRAY(env, qualcomm_options_values);
+  auto qualcomm_options_keys_size = env->GetArrayLength(qualcomm_options_keys);
+  ABSL_CHECK(qualcomm_options_keys_size == qualcomm_options_values_size);
+
+  for (int i = 0; i < qualcomm_options_keys_size; ++i) {
+    switch (qualcomm_options_keys_array[i]) {
+      case QualcommOptionsKey::kLogLevel:
+        qualcomm_options.SetLogLevel(static_cast<QualcommOptions::LogLevel>(
+            std::stoi(qualcomm_options_values_vector[i])));
+        break;
+      case QualcommOptionsKey::kUseHtpPreference:
+        qualcomm_options.SetUseHtpPreference(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0);
+        break;
+      case QualcommOptionsKey::kUseQint16AsQuint16:
+        qualcomm_options.SetUseQint16AsQuint16(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0);
+        break;
+      case QualcommOptionsKey::kEnableWeightSharing:
+        qualcomm_options.SetEnableWeightSharing(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0);
+        break;
+      case QualcommOptionsKey::kDumpTensorIds: {
+        std::vector<std::string> ids_str =
+            absl::StrSplit(qualcomm_options_values_vector[i], ',');
+        std::vector<std::int32_t> ids;
+        ids.reserve(ids_str.size());
+        for (const auto& id_str : ids_str) {
+          ids.push_back(std::stoi(id_str));
+        }
+        qualcomm_options.SetDumpTensorIds(ids);
+        break;
+      }
+      case QualcommOptionsKey::kUseConvHmx:
+        (qualcomm_options.SetUseConvHMX(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kUseFoldRelu:
+        (qualcomm_options.SetUseFoldReLU(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kHtpPerformanceMode:
+        qualcomm_options.SetHtpPerformanceMode(
+            static_cast<QualcommOptions::HtpPerformanceMode>(
+                std::stoi(qualcomm_options_values_vector[i])));
+        break;
+      case QualcommOptionsKey::kProfiling:
+        qualcomm_options.SetProfiling(static_cast<QualcommOptions::Profiling>(
+            std::stoi(qualcomm_options_values_vector[i])));
+        break;
+      case QualcommOptionsKey::kIrJsonDir:
+        qualcomm_options.SetIrJsonDir(qualcomm_options_values_vector[i]);
+        break;
+      case QualcommOptionsKey::kDlcDir:
+        qualcomm_options.SetDlcDir(qualcomm_options_values_vector[i]);
+        break;
+      case QualcommOptionsKey::kVtcmSize:
+        qualcomm_options.SetVtcmSize(
+            std::stoi(qualcomm_options_values_vector[i]));
+        break;
+      case QualcommOptionsKey::kNumHvxThreads:
+        qualcomm_options.SetNumHvxThreads(
+            std::stoi(qualcomm_options_values_vector[i]));
+        break;
+      case QualcommOptionsKey::kOptimizationLevel:
+        qualcomm_options.SetOptimizationLevel(
+            static_cast<QualcommOptions::OptimizationLevel>(
+                std::stoi(qualcomm_options_values_vector[i])));
+        break;
+      default:
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          absl::StrCat("Unknown Qualcomm options key: ",
+                                       qualcomm_options_keys_array[i]));
+    }
+  }
+  return {};
+}
+
 Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
                                 jintArray cpu_options_keys,
                                 jobjectArray cpu_options_values,
                                 jintArray gpu_options_keys,
-                                jobjectArray gpu_options_values) {
+                                jobjectArray gpu_options_values,
+                                jintArray qualcomm_options_keys,
+                                jobjectArray qualcomm_options_values) {
   int accelerators_size = env->GetArrayLength(accelerators);
   AUTO_CLEANUP_JNI_INT_ARRAY(env, accelerators);
   litert::HwAcceleratorSet acceleratorSet =
@@ -385,6 +495,14 @@ Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
                             compilation_options.GetGpuOptions());
     LITERT_RETURN_IF_ERROR(PopulateGpuOptions(
         env, gpu_options, gpu_options_keys, gpu_options_values));
+
+    if (env->GetArrayLength(qualcomm_options_keys) > 0) {
+      LITERT_ASSIGN_OR_RETURN(auto& qualcomm_options,
+                              compilation_options.GetQualcommOptions());
+      LITERT_RETURN_IF_ERROR(PopulateQualcommOptions(env, qualcomm_options,
+                                                     qualcomm_options_keys,
+                                                     qualcomm_options_values));
+    }
   }
   return std::move(compilation_options);
 }
@@ -614,7 +732,8 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
     JNIEnv* env, jclass clazz, jlong env_handle, jobject asset_manager,
     jstring asset_name, jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
-    jobjectArray gpu_options_values) {
+    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
+    jobjectArray qualcomm_options_values) {
   auto am = AAssetManager_fromJava(env, asset_manager);
   AUTO_CLEANUP_JNI_STRING(env, asset_name);
   ABSL_CHECK(asset_name_str != nullptr);
@@ -634,9 +753,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
   auto litert_env = reinterpret_cast<Environment*>(env_handle);
   ABSL_CHECK(litert_env != nullptr);
 
-  auto compilation_options =
-      CreateOptions(env, accelerators, cpu_options_keys, cpu_options_values,
-                    gpu_options_keys, gpu_options_values);
+  auto compilation_options = CreateOptions(
+      env, accelerators, cpu_options_keys, cpu_options_values, gpu_options_keys,
+      gpu_options_values, qualcomm_options_keys, qualcomm_options_values);
   if (!compilation_options) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compilation options: %s",
                compilation_options.Error().Message().c_str());
@@ -665,13 +784,14 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
     JNIEnv* env, jclass clazz, jlong env_handle, jstring file_path,
     jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
-    jobjectArray gpu_options_values) {
+    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
+    jobjectArray qualcomm_options_values) {
   auto litert_env = reinterpret_cast<Environment*>(env_handle);
   ABSL_CHECK(litert_env != nullptr);
 
-  auto compilation_options =
-      CreateOptions(env, accelerators, cpu_options_keys, cpu_options_values,
-                    gpu_options_keys, gpu_options_values);
+  auto compilation_options = CreateOptions(
+      env, accelerators, cpu_options_keys, cpu_options_values, gpu_options_keys,
+      gpu_options_values, qualcomm_options_keys, qualcomm_options_values);
   if (!compilation_options) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compilation options: %s",
                compilation_options.Error().Message().c_str());

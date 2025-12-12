@@ -105,6 +105,12 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     return egl_sync;
   }
 
+  Expected<void*> GetCustomNativeEvent() {
+    void* native = nullptr;
+    LITERT_RETURN_IF_ERROR(LiteRtGetEventCustomNativeEvent(Get(), &native));
+    return native;
+  }
+
   // Pass -1 for timeout_in_ms for indefinite wait.
   Expected<void> Wait(int64_t timeout_in_ms = -1) {
     LITERT_RETURN_IF_ERROR(LiteRtWaitEvent(Get(), timeout_in_ms));

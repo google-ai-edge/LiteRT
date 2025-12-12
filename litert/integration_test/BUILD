@@ -252,7 +252,8 @@ litert_device_test(
 #     # "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_qualcomm_test",
 #     "//litert/runtime/compiler:jit_compilation_qualcomm_test",
 #     "//litert/runtime:gl_buffer_device_test",
-#     "//litert/cc:litert_compiled_model_qualcomm_test",
+#     # TODO: b/466050076 - Reenable once pthread issue is resolved.
+#     # "//litert/cc:litert_compiled_model_qualcomm_test",
 #     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 #     "//litert/cc:litert_compiled_model_gpu_device_test",
 # ]
@@ -431,11 +432,34 @@ alias(
     ],
 )
 
+# Classic Android platforms with ARM CPUs
 platform(
-    name = "device",
+    name = "device_aarch64",
     constraint_values =
         [
             "@platforms//cpu:aarch64",
+            "@platforms//os:android",
+        ],
+    visibility = [
+        "//litert:litert_public",
+    ],
+)
+
+config_setting(
+    name = "android_x86_64",
+    constraint_values =
+        [
+            "@platforms//cpu:x86_64",
+            "@platforms//os:android",
+        ],
+)
+
+# Android platforms with x86_64 CPUs, e.g. Aluminum devices with Intel CPUs.
+platform(
+    name = "device_x86_64",
+    constraint_values =
+        [
+            "@platforms//cpu:x86_64",
             "@platforms//os:android",
         ],
     visibility = [

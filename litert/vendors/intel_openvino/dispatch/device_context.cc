@@ -57,10 +57,22 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer *ahwb) {
     close(socks[1]);
   });
 
+#if defined(__ANDROID__)
+#if __ANDROID_API__ >= 26
   if (AHardwareBuffer_sendHandleToUnixSocket(ahwb, socks[0]) != 0) {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "Failed to send handle to unix socket");
   }
+#else
+  return litert::Unexpected(
+      kLiteRtStatusErrorRuntimeFailure,
+      "AHardwareBuffer_sendHandleToUnixSocket requires API level 26");
+#endif  // __ANDROID_API__ >= 26
+#else
+  return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "AHWB is not supported on this platform");
+#endif  // defined(__ANDROID__)
+
   // Receives a fd(an int) over the unix socket, sets up control buffer to
   // receive an int
   char payload_byte;
@@ -167,7 +179,6 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       for (int i = 0; i < ov_shape_vec.size(); i++)
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
 
-      // TODO: change f32 to ov_element_type fetched from TensorType
       auto remote_tensor = context.create_tensor(
           ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
           buffer_fd);

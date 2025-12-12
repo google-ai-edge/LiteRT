@@ -118,7 +118,9 @@ jobs:
             "-//litert/tools:tool_display_test"
             "-//litert/tools:dump_test"
             "-//litert/tools:apply_plugin_test"
-            "-//litert/vendors/intel_openvino/..."
+            "-//litert/vendors/intel_openvino/compiler:decoder_test"
+            "-//litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test"
+            "-//litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test"
           )
 
           bazel test --disk_cache=~/.cache/bazel-linux "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"

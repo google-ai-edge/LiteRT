@@ -293,5 +293,21 @@ TEST(GpuOptions, SetUseMetalArgumentBuffersWorks) {
 }
 #endif  // __APPLE__
 
+TEST(GpuAcceleratorCompilationOptions, SetHintFullyDelegatedToSingleDelegate) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+  // Check the default value.
+  bool hint_fully_delegated_to_single_delegate = false;
+  LITERT_ASSERT_OK(LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+      &hint_fully_delegated_to_single_delegate, payload));
+  EXPECT_EQ(hint_fully_delegated_to_single_delegate, false);
+
+  options.SetHintFullyDelegatedToSingleDelegate(true);
+  LITERT_ASSERT_OK(LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+      &hint_fully_delegated_to_single_delegate, payload));
+  EXPECT_EQ(hint_fully_delegated_to_single_delegate, true);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift

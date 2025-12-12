@@ -41,9 +41,9 @@ struct LiteRtGpuOptionsPayloadT {
   // If true, the delegate will prefer to use textures rather than buffers for
   // weights. Use option when weights in texture has better performance.
   bool prefer_texture_weights = false;
-  // The nul-terminated directory to use for serialization.
+  // The null-terminated directory to use for serialization.
   const char* serialization_dir = nullptr;
-  // The unique nul-terminated token string that acts as a 'namespace' for
+  // The unique null-terminated token string that acts as a 'namespace' for
   // all serialization entries.
   const char* model_cache_key = nullptr;
   // When set to true AND the serialization_dir and model_cache_key are also
@@ -75,6 +75,25 @@ struct LiteRtGpuOptionsPayloadT {
   bool use_metal_argument_buffers = false;
   // Added in version 2.0.2a1.
   LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
+  // Added in version 2.0.2a1.
+  // Preferred WebGPU device name substring, case-insensitive.
+  // If not empty, the adapter which the device name contains the substring will
+  // be chosen.
+  // If empty, the device will be determined by other factors.
+  std::string preferred_device_substr;
+  // Added in version 2.0.2a1.
+  // Set to true to hint that the delegate is fully delegated to a single
+  // delegate.
+  bool hint_fully_delegated_to_single_delegate = false;
+  // Added in version 2.0.2a1.
+  // Number of threads for webgpu upload.
+  int num_threads_to_upload = 0;
+  // Added in version 2.0.2a1.
+  // Number of threads for webgpu kernel compilation.
+  int num_threads_to_compile = 0;
+  // Added in version 2.0.2a1.
+  // Whether to convert weights on GPU. It's an experimental feature.
+  bool convert_weights_on_gpu = false;
 };
 
 namespace litert {
@@ -271,6 +290,50 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->wait_type = wait_type;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    const char* preferred_device_substr) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->preferred_device_substr = preferred_device_substr;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
+    LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_upload) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->num_threads_to_upload = num_threads_to_upload;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
+    LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_compile) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->num_threads_to_compile = num_threads_to_compile;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool convert_weights_on_gpu) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->convert_weights_on_gpu = convert_weights_on_gpu;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
+    LiteRtOpaqueOptions gpu_options,
+    bool hint_fully_delegated_to_single_delegate) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->hint_fully_delegated_to_single_delegate =
+      hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }
 
@@ -492,5 +555,62 @@ LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *wait_type = payload->wait_type;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    const char** preferred_device_substr, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(preferred_device_substr,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`preferred_device_substr` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *preferred_device_substr = payload->preferred_device_substr.c_str();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
+    int* num_threads_to_upload, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(num_threads_to_upload,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`num_threads_to_upload` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *num_threads_to_upload = payload->num_threads_to_upload;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
+    int* num_threads_to_compile, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(num_threads_to_compile,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`num_threads_to_compile` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *num_threads_to_compile = payload->num_threads_to_compile;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+    bool* convert_weights_on_gpu, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(convert_weights_on_gpu,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`convert_weights_on_gpu` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *convert_weights_on_gpu = payload->convert_weights_on_gpu;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+    bool* hint_fully_delegated_to_single_delegate,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(hint_fully_delegated_to_single_delegate,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`hint_fully_delegated_to_single_delegate` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *hint_fully_delegated_to_single_delegate =
+      payload->hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }

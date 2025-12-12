@@ -210,6 +210,131 @@ private constructor(
     }
   }
 
+  /** Options to specify Qualcomm options for compiling a model. */
+  data class QualcommOptions
+  constructor(
+    val logLevel: LogLevel? = null,
+    val useHtpPreference: Boolean? = null,
+    val useQint16AsQuint16: Boolean? = null,
+    val enableWeightSharing: Boolean? = null,
+    val dumpTensorIds: List<Int>? = null,
+    val useConvHmx: Boolean? = null,
+    val useFoldRelu: Boolean? = null,
+    val htpPerformanceMode: HtpPerformanceMode? = null,
+    val profiling: Profiling? = null,
+    val irJsonDir: String? = null,
+    val dlcDir: String? = null,
+    val vtcmSize: Int? = null,
+    val numHvxThreads: Int? = null,
+    val optimizationLevel: OptimizationLevel? = null,
+  ) {
+    /** Log level for Qualcomm options. */
+    enum class LogLevel constructor(val value: Int) {
+      OFF(0),
+      ERROR(1),
+      WARN(2),
+      INFO(3),
+      VERBOSE(4),
+      DEBUG(5),
+    }
+
+    /** HTP performance mode for Qualcomm options. */
+    enum class HtpPerformanceMode constructor(val value: Int) {
+      DEFAULT(0),
+      SUSTAINED_HIGH_PERFORMANCE(1),
+      BURST(2),
+      HIGH_PERFORMANCE(3),
+      POWER_SAVER(4),
+      LOW_POWER_SAVER(5),
+      HIGH_POWER_SAVER(6),
+      LOW_BALANCED(7),
+      BALANCED(8),
+      EXTREME_POWER_SAVER(9),
+    }
+
+    /** Profiling for Qualcomm options. */
+    enum class Profiling constructor(val value: Int) {
+      OFF(0),
+      BASIC(1),
+      DETAILED(2),
+      LINTING(3),
+      OPTRACE(4),
+    }
+
+    /** Optimization level for Qualcomm options. */
+    enum class OptimizationLevel constructor(val value: Int) {
+      HTP_OPTIMIZE_FOR_INFERENCE(0),
+      HTP_OPTIMIZE_FOR_PREPARE(1),
+      HTP_OPTIMIZE_FOR_INFERENCE_O3(2),
+    }
+
+    // Keys for passing the Qualcomm options to the native layer.
+    internal enum class Key constructor(val value: Int) {
+      LOG_LEVEL(0),
+      USE_HTP_PREFERENCE(1),
+      USE_QINT16_AS_QUINT16(2),
+      ENABLE_WEIGHT_SHARING(3),
+      DUMP_TENSOR_IDS(4),
+      USE_CONV_HMX(5),
+      USE_FOLD_RELU(6),
+      HTP_PERFORMANCE_MODE(7),
+      PROFILING(8),
+      IR_JSON_DIR(9),
+      DLC_DIR(10),
+      VTCM_SIZE(11),
+      NUM_HVX_THREADS(12),
+      OPTIMIZATION_LEVEL(13),
+    }
+
+    // Converts the options to a map, with all values converted to strings.
+    internal fun toMap(): Map<Key, String> {
+      val map = mutableMapOf<Key, String>()
+      if (logLevel != null) {
+        map[Key.LOG_LEVEL] = logLevel.value.toString()
+      }
+      if (useHtpPreference != null) {
+        map[Key.USE_HTP_PREFERENCE] = useHtpPreference.toString()
+      }
+      if (useQint16AsQuint16 != null) {
+        map[Key.USE_QINT16_AS_QUINT16] = useQint16AsQuint16.toString()
+      }
+      if (enableWeightSharing != null) {
+        map[Key.ENABLE_WEIGHT_SHARING] = enableWeightSharing.toString()
+      }
+      if (dumpTensorIds != null) {
+        map[Key.DUMP_TENSOR_IDS] = dumpTensorIds.joinToString(",")
+      }
+      if (useConvHmx != null) {
+        map[Key.USE_CONV_HMX] = useConvHmx.toString()
+      }
+      if (useFoldRelu != null) {
+        map[Key.USE_FOLD_RELU] = useFoldRelu.toString()
+      }
+      if (htpPerformanceMode != null) {
+        map[Key.HTP_PERFORMANCE_MODE] = htpPerformanceMode.value.toString()
+      }
+      if (profiling != null) {
+        map[Key.PROFILING] = profiling.value.toString()
+      }
+      if (irJsonDir != null) {
+        map[Key.IR_JSON_DIR] = irJsonDir
+      }
+      if (dlcDir != null) {
+        map[Key.DLC_DIR] = dlcDir
+      }
+      if (vtcmSize != null) {
+        map[Key.VTCM_SIZE] = vtcmSize.toString()
+      }
+      if (numHvxThreads != null) {
+        map[Key.NUM_HVX_THREADS] = numHvxThreads.toString()
+      }
+      if (optimizationLevel != null) {
+        map[Key.OPTIMIZATION_LEVEL] = optimizationLevel.value.toString()
+      }
+      return map.toMap()
+    }
+  }
+
   /** Options to specify hardware acceleration for compiling a model. */
   class Options constructor(internal val accelerators: Set<Accelerator>) {
 
@@ -217,6 +342,7 @@ private constructor(
 
     var cpuOptions: CpuOptions? = null
     var gpuOptions: GpuOptions? = null
+    var qualcommOptions: QualcommOptions? = null
 
     companion object {
       @JvmStatic val CPU = Options(Accelerator.CPU)
@@ -398,6 +524,7 @@ private constructor(
 
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
+      val qualcommOptionsMap = options.qualcommOptions?.toMap() ?: mapOf()
       return CompiledModel(
         nativeCreateFromAsset(
           env.handle,
@@ -408,6 +535,8 @@ private constructor(
           cpuOptionsMap.values.toTypedArray(),
           gpuOptionsMap.keys.map { it.value }.toIntArray(),
           gpuOptionsMap.values.toTypedArray(),
+          qualcommOptionsMap.keys.map { it.value }.toIntArray(),
+          qualcommOptionsMap.values.toTypedArray(),
         ),
         env,
         envManaged,
@@ -432,6 +561,7 @@ private constructor(
 
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
+      val qualcommOptionsMap = options.qualcommOptions?.toMap() ?: mapOf()
       return CompiledModel(
         nativeCreateFromFile(
           env.handle,
@@ -441,6 +571,8 @@ private constructor(
           cpuOptionsMap.values.toTypedArray(),
           gpuOptionsMap.keys.map { it.value }.toIntArray(),
           gpuOptionsMap.values.toTypedArray(),
+          qualcommOptionsMap.keys.map { it.value }.toIntArray(),
+          qualcommOptionsMap.values.toTypedArray(),
         ),
         env,
         envManaged,
@@ -480,6 +612,8 @@ private constructor(
       cpuOptionsValues: Array<String>,
       gpuOptionsKeys: IntArray,
       gpuOptionsValues: Array<String>,
+      qualcommOptionsKeys: IntArray,
+      qualcommOptionsValues: Array<String>,
     ): Long
 
     @JvmStatic
@@ -491,6 +625,8 @@ private constructor(
       cpuOptionsValues: Array<String>,
       gpuOptionsKeys: IntArray,
       gpuOptionsValues: Array<String>,
+      qualcommOptionsKeys: IntArray,
+      qualcommOptionsValues: Array<String>,
     ): Long
 
     @JvmStatic

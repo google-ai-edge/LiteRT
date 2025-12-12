@@ -27,7 +27,8 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
     JNIEnv* env, jclass clazz, jlong env_handle, jobject asset_manager,
     jstring asset_name, jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
-    jobjectArray gpu_options_values);
+    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
+    jobjectArray qualcomm_options_values);
 #endif  // __ANDROID__
 
 JNIEXPORT jlong JNICALL
@@ -35,7 +36,8 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
     JNIEnv* env, jclass clazz, jlong env_handle, jstring file_path,
     jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
-    jobjectArray gpu_options_values);
+    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
+    jobjectArray qualcomm_options_values);
 
 JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(

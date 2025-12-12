@@ -687,6 +687,7 @@ cc_library(
 litert_bin(
     name = "benchmark_model",
     export_litert_only = True,
+    ungrte = True,
     deps = [":benchmark_model_main"] + GPU_ACCELERATOR_DEPS,
 )
 

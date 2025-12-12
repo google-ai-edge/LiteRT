@@ -1067,7 +1067,7 @@ class LiteRtModelT {
   // options.
   void AttachAssetToOp(LiteRtOp op, BufferId buf_id, std::string name) {
     OpAssetReference ref = {buf_id, std::move(name)};
-    external_buffer_map_.emplace(op, std::move(ref));
+    external_buffer_map_.insert_or_assign(op, std::move(ref));
   }
 
   // Returns an immutable view of the external buffer and the name of the edge

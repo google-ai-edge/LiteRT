@@ -28,13 +28,12 @@ set(LITERT_BUILD_COMMON_GENERATED_DIR "${LITERT_GENERATED_INCLUDE_DIR}/litert/bu
 file(MAKE_DIRECTORY "${LITERT_BUILD_COMMON_GENERATED_DIR}")
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../build_common/build_config.h.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/litert/build_common/build_config.h.in
     ${LITERT_BUILD_COMMON_GENERATED_DIR}/build_config.h
 )
 include_directories(${LITERT_GENERATED_INCLUDE_DIR})
 
-set(TFLITE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tflite" CACHE PATH "Path to TFLite source directory")
-list(APPEND CMAKE_MODULE_PATH "${TFLITE_SOURCE_DIR}/tools/cmake/modules")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 
 find_package(absl REQUIRED)
 find_package(FlatBuffers REQUIRED)
@@ -46,57 +45,13 @@ set_target_properties(litert_c_api PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/libLiteRt.so"
 )
 
-set(LITERT_CC_HEADERS
-    ../cc/internal/litert_c_types_printing.h
-    ../cc/internal/litert_consts.h
-    ../cc/internal/litert_detail.h
-    ../cc/internal/litert_handle.h
-    ../cc/internal/litert_logging.h
-    ../cc/internal/litert_numerics.h
-    ../cc/internal/litert_platform_support.h
-    ../cc/internal/litert_source_location.h
-    ../cc/internal/litert_tensor_buffer_utils.h
-    ../cc/internal/litert_tflite_error_status_builder.h
-    ../cc/litert_any.h
-    ../cc/litert_buffer_ref.h
-    ../cc/litert_compiled_model.h
-    ../cc/litert_custom_op_kernel.h
-    ../cc/litert_dispatch_delegate.h
-    ../cc/litert_element_type.h
-    ../cc/litert_environment_options.h
-    ../cc/litert_environment.h
-    ../cc/litert_event.h
-    ../cc/litert_expected.h
-    ../cc/litert_layout.h
-    ../cc/litert_macros.h
-    ../cc/litert_model.h
-    ../cc/litert_opaque_options.h
-    ../cc/litert_options.h
-    ../cc/litert_profiler.h
-    ../cc/litert_tensor_buffer_requirements.h
-    ../cc/litert_tensor_buffer.h
-)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/litert_cc_sdk_hdrs.txt FILE_CONTENTS)
+string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_HEADERS "${FILE_CONTENTS}")
+list(REMOVE_ITEM LITERT_CC_HEADERS "")
 
-set(LITERT_CC_SRCS
-    ../c/internal/litert_logging.cc
-    ../cc/internal/litert_tensor_buffer_utils.cc
-    ../cc/litert_compiled_model.cc
-    ../cc/litert_macros.cc
-    ../cc/litert_model.cc
-    ../cc/litert_opaque_options.cc
-    ../cc/litert_options.cc
-    ../cc/litert_tensor_buffer.cc
-    ../cc/options/litert_compiler_options.cc
-    ../cc/options/litert_cpu_options.cc
-    ../cc/options/litert_darwinn_options.cc
-    ../cc/options/litert_google_tensor_options.cc
-    ../cc/options/litert_gpu_options.cc
-    ../cc/options/litert_intel_openvino_options.cc
-    ../cc/options/litert_magic_number_options.cc
-    ../cc/options/litert_mediatek_options.cc
-    ../cc/options/litert_qualcomm_options.cc
-    ../cc/options/litert_runtime_options.cc
-)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/litert_cc_sdk_srcs.txt FILE_CONTENTS)
+string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_SRCS "${FILE_CONTENTS}")
+list(REMOVE_ITEM LITERT_CC_SRCS "")
 
 # Core C++ API library
 add_library(litert_cc_api STATIC
@@ -110,10 +65,8 @@ set_target_properties(litert_cc_api PROPERTIES
 
 target_include_directories(litert_cc_api
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -132,13 +85,12 @@ target_link_libraries(litert_cc_api
 
 # run_model_simple target for testing.
 add_executable(run_model_simple
-    ../tools/run_model_simple.cc
+    litert/tools/run_model_simple.cc
 )
 
 target_include_directories(run_model_simple
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../..
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../..
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(run_model_simple

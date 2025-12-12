@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -22,6 +23,7 @@
 #include <gtest/gtest.h>
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "webgpu/webgpu.h"  // from @dawn
@@ -138,7 +140,7 @@ TEST_P(ParameterizedTest, Basic) {
     EXPECT_TRUE(event);
     auto result = event->IsSignaled();
     EXPECT_TRUE(result);
-    EXPECT_FALSE(*result);  // Not signaled yet.
+    EXPECT_TRUE(*result);  // Webgpu event is signaled immediately.
   }
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
@@ -149,14 +151,6 @@ TEST_P(ParameterizedTest, Basic) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
-  }
-  if (param.async) {
-    auto event = output_buffers[0].GetEvent();
-    EXPECT_TRUE(event);
-    auto result = event->IsSignaled();
-    EXPECT_TRUE(result);
-    // Buffer lock above lets the event be signaled.
-    EXPECT_TRUE(*result);
   }
 }
 
@@ -174,7 +168,36 @@ INSTANTIATE_TEST_SUITE_P(
             GpuOptions::BufferStorageType::kDefault,
             GpuOptions::BufferStorageType::kBuffer,
             GpuOptions::BufferStorageType::kTexture2D,
-        }))));
+        }))),
+    [](const ::testing::TestParamInfo<TestParams>& info) {
+      std::string precision;
+      switch (info.param.precision) {
+        case GpuOptions::Precision::kDefault:
+          precision = "Default";
+          break;
+        case GpuOptions::Precision::kFp16:
+          precision = "Fp16";
+          break;
+        case GpuOptions::Precision::kFp32:
+          precision = "Fp32";
+          break;
+      }
+      std::string buffer_storage_type;
+      switch (info.param.buffer_storage_type) {
+        case GpuOptions::BufferStorageType::kDefault:
+          buffer_storage_type = "Default";
+          break;
+        case GpuOptions::BufferStorageType::kBuffer:
+          buffer_storage_type = "Buffer";
+          break;
+        case GpuOptions::BufferStorageType::kTexture2D:
+          buffer_storage_type = "Texture2D";
+          break;
+      }
+      return absl::StrCat(info.param.async ? "Async" : "Sync", "_",
+                          info.param.external_tensors_mode ? "External_" : "",
+                          precision, "_", buffer_storage_type);
+    });
 
 #ifdef ADDRESS_SANITIZER
 // Currently, it's working only when --config=asan is given. Without it, it
@@ -289,7 +312,7 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
     EXPECT_TRUE(event);
     auto result = event->IsSignaled();
     EXPECT_TRUE(result);
-    EXPECT_FALSE(*result);  // Not signaled yet.
+    EXPECT_TRUE(*result);  // Webgpu event is signaled immediately.
   }
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
@@ -303,14 +326,6 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5),
                 kTestOutputTensorForPipelineTest));
   }
-  if (param.async_2nd_model) {
-    auto event = output_buffers_2[0].GetEvent();
-    EXPECT_TRUE(event);
-    auto result = event->IsSignaled();
-    EXPECT_TRUE(result);
-    // Buffer lock above lets the event be signaled.
-    EXPECT_TRUE(*result);
-  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -318,7 +333,13 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ConvertGenerator<PipelineTestParams::TupleType>(
         ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
                            ::testing::ValuesIn<bool>({false, true}),
-                           ::testing::ValuesIn<bool>({false, true}))));
+                           ::testing::ValuesIn<bool>({false, true})))
+    [](const ::testing::TestParamInfo<PipelineTestParams>& info) {
+      return absl::StrCat(
+          info.param.async_1st_model ? "Async1st" : "Sync1st", "_",
+          info.param.async_2nd_model ? "Async2nd" : "Sync2nd",
+          info.param.external_tensors_mode ? "_External" : "");
+    });
 #endif  // MEMORY_SANITIZER
 
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {

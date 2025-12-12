@@ -259,7 +259,6 @@ cc_test(
 cc_library(
     name = "litert_op_code",
     hdrs = ["litert_op_code.h"],
-    deps = ["//tflite:builtin_ops"],
 )
 
 cc_library(
@@ -547,10 +546,6 @@ cc_library(
 cc_library(
     name = "litert_profiler_event",
     hdrs = ["litert_profiler_event.h"],
-    deps = [
-        "//tflite/core/api",
-        "//tflite/profiling:memory_info",
-    ],
 )
 
 cc_test(
