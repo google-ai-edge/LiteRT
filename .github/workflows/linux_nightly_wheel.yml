@@ -12,7 +12,7 @@ concurrency:
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
-    runs-on: LiteRT_Linux_x64
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false # Allow other matrix jobs to continue if one fails
       matrix:
