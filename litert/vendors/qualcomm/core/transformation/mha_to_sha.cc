@@ -66,10 +66,10 @@ constexpr size_t kSlice3rdAxisEndIndex = 7;
 // This function copies the source_op and updates the tensors according to
 // inputs and outputs. The std::nullopt input/output element indicates that the
 // tensor will not be updated.
-OpWrapper& EmplaceOpWithIO(
-    std::vector<OpWrapper>& new_ops, const OpWrapper& source_op,
-    const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
-    const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs) {
+OpWrapper& EmplaceOpWithIO(std::vector<OpWrapper>& new_ops,
+                           const OpWrapper& source_op,
+                           const std::vector<const TensorWrapper*>& inputs,
+                           const std::vector<const TensorWrapper*>& outputs) {
   OpWrapper ret = source_op;
   ret.UpdateTensors(inputs, outputs);
   return new_ops.emplace_back(ret);
@@ -84,8 +84,7 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   // Mul
   auto& mul_output = tensor_pool.CloneNativeTensorFrom(
       scaling_mul.GetOutputTensor(0), sha_input.GetDims());
-  EmplaceOpWithIO(new_ops, scaling_mul, {sha_input, std::nullopt},
-                  {mul_output});
+  EmplaceOpWithIO(new_ops, scaling_mul, {&sha_input, nullptr}, {&mul_output});
   // MatMul 1
   const auto& matmulk_cache_output =
       ops[start_index + kMatMulK1Index].GetOutputTensor(0);
@@ -94,7 +93,7 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   auto& matmul1_output = tensor_pool.CloneNativeTensorFrom(matmulk_cache_output,
                                                            matmul1_output_dim);
   EmplaceOpWithIO(new_ops, ops[start_index + kMatMulK1Index],
-                  {mul_output, std::nullopt}, {matmul1_output});
+                  {&mul_output, nullptr}, {&matmul1_output});
   // MatMul 2
   const auto& matmulk_slice_output =
       ops[start_index + kMatMulK2Index].GetOutputTensor(0);
@@ -103,25 +102,25 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   auto& matmul2_output = tensor_pool.CloneNativeTensorFrom(matmulk_slice_output,
                                                            matmul2_output_dim);
   EmplaceOpWithIO(new_ops, ops[start_index + kMatMulK2Index],
-                  {mul_output, std::nullopt}, {matmul2_output});
+                  {&mul_output, nullptr}, {&matmul2_output});
   // Concat
   std::vector<uint32_t> concat_output_dim = matmul1_output.GetDims();
   concat_output_dim[3] += matmul2_output.GetDim(3);
   auto& concat_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kConcatIndex].GetOutputTensor(0), concat_output_dim);
   EmplaceOpWithIO(new_ops, ops[start_index + kConcatIndex],
-                  {matmul1_output, matmul2_output}, {concat_output});
+                  {&matmul1_output, &matmul2_output}, {&concat_output});
   // Add
   auto& add_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kAddIndex].GetOutputTensor(0), concat_output.GetDims());
   EmplaceOpWithIO(new_ops, ops[start_index + kAddIndex],
-                  {concat_output, std::nullopt}, {add_output});
+                  {&concat_output, nullptr}, {&add_output});
   // Softmax
   auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kSoftmaxIndex].GetOutputTensor(0),
       add_output.GetDims());
-  EmplaceOpWithIO(new_ops, ops[start_index + kSoftmaxIndex], {add_output},
-                  {softmax_output});
+  EmplaceOpWithIO(new_ops, ops[start_index + kSoftmaxIndex], {&add_output},
+                  {&softmax_output});
   // Slice 1
   // Create StridedSlice param ranges.
   auto mha_slice1_param =
@@ -140,8 +139,8 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   slice1_output_dims[2] /= num_heads;
   auto& slice1_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kSlice1Index].GetOutputTensor(0), slice1_output_dims);
-  EmplaceOpWithIO(new_ops, ops[start_index + kSlice1Index], {softmax_output},
-                  {slice1_output});
+  EmplaceOpWithIO(new_ops, ops[start_index + kSlice1Index], {&softmax_output},
+                  {&slice1_output});
   new_ops.back().ClearTensorParams();
   new_ops.back().AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
                                 slice1_param_tensor);
@@ -154,7 +153,7 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   auto& matmul1_v_output = tensor_pool.CloneNativeTensorFrom(
       matmulv_cache_output, matmul1_v_output_dim);
   EmplaceOpWithIO(new_ops, ops[start_index + kMatMulV1Index],
-                  {slice1_output, std::nullopt}, {matmul1_v_output});
+                  {&slice1_output, nullptr}, {&matmul1_v_output});
   // Slice 2
   // Create StridedSlice param ranges.
   auto mha_slice2_param =
@@ -173,8 +172,8 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   slice2_output_dims[2] /= num_heads;
   auto& slice2_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kSlice2Index].GetOutputTensor(0), slice2_output_dims);
-  EmplaceOpWithIO(new_ops, ops[start_index + kSlice2Index], {softmax_output},
-                  {slice2_output});
+  EmplaceOpWithIO(new_ops, ops[start_index + kSlice2Index], {&softmax_output},
+                  {&slice2_output});
   new_ops.back().ClearTensorParams();
   new_ops.back().AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
                                 slice2_param_tensor);
@@ -186,13 +185,13 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   auto& matmul2_v_output = tensor_pool.CloneNativeTensorFrom(
       matmulv_slice_output, matmul2_v_output_dim);
   EmplaceOpWithIO(new_ops, ops[start_index + kMatMulV2Index],
-                  {slice2_output, std::nullopt}, {matmul2_v_output});
+                  {&slice2_output, nullptr}, {&matmul2_v_output});
   // Add
   auto& add_final_output = tensor_pool.CloneNativeTensorFrom(
       ops[start_index + kAdd2Index].GetOutputTensor(0),
       matmul1_v_output.GetDims());
   EmplaceOpWithIO(new_ops, ops[start_index + kAdd2Index],
-                  {matmul1_v_output, matmul2_v_output}, {add_final_output});
+                  {&matmul1_v_output, &matmul2_v_output}, {&add_final_output});
   return add_final_output;
 }
 
@@ -213,7 +212,7 @@ TensorWrapper& BuildSingleSHA(
   mul_output_dims.erase(mul_output_dims.begin() + 1);
   auto& mul_output = tensor_pool.CloneNativeTensorFrom(mul.GetOutputTensor(0),
                                                        mul_output_dims);
-  EmplaceOpWithIO(new_ops, mul, {sha_mul_input, std::nullopt}, {mul_output});
+  EmplaceOpWithIO(new_ops, mul, {&sha_mul_input, nullptr}, {&mul_output});
 
   // Matmul q
   auto matmul_q_output_dims = matmul_k1.GetOutputTensor(0).GetDims();
@@ -221,15 +220,16 @@ TensorWrapper& BuildSingleSHA(
   matmul_q_output_dims[1] /= num_attn_per_kv_heads;
   auto& matmul_q_output = tensor_pool.CloneNativeTensorFrom(
       matmul_k1.GetOutputTensor(0), matmul_q_output_dims);
-  EmplaceOpWithIO(new_ops, matmul_k1, {mul_output, q_slice}, {matmul_q_output});
+  EmplaceOpWithIO(new_ops, matmul_k1, {&mul_output, &q_slice},
+                  {&matmul_q_output});
 
   // Add
   auto add_1_output_dims = add_1.GetOutputTensor(0).GetDims();
   add_1_output_dims.erase(add_1_output_dims.begin() + 1);
   auto& add_1_output = tensor_pool.CloneNativeTensorFrom(
       add_1.GetOutputTensor(0), add_1_output_dims);
-  EmplaceOpWithIO(new_ops, add_1, {sha_add_input_1, sha_add_input_2},
-                  {add_1_output});
+  EmplaceOpWithIO(new_ops, add_1, {&sha_add_input_1, &sha_add_input_2},
+                  {&add_1_output});
 
   // Matmul k
   auto matmul_qk_output_dims = matmul_k2.GetOutputTensor(0).GetDims();
@@ -237,8 +237,8 @@ TensorWrapper& BuildSingleSHA(
   matmul_qk_output_dims[1] /= num_attn_per_kv_heads;
   auto& matmul_qk_output = tensor_pool.CloneNativeTensorFrom(
       matmul_k2.GetOutputTensor(0), matmul_qk_output_dims);
-  EmplaceOpWithIO(new_ops, matmul_k2, {mul_output, add_1_output},
-                  {matmul_qk_output});
+  EmplaceOpWithIO(new_ops, matmul_k2, {&mul_output, &add_1_output},
+                  {&matmul_qk_output});
 
   // Concat
   std::uint32_t adjusted_axis = 2;
@@ -258,8 +258,7 @@ TensorWrapper& BuildSingleSHA(
   add_2_output_dims[1] = 1;
   auto& add_2_output = tensor_pool.CloneNativeTensorFrom(
       add_2.GetOutputTensor(0), add_2_output_dims);
-  EmplaceOpWithIO(new_ops, add_2, {concat_output, std::nullopt},
-                  {add_2_output});
+  EmplaceOpWithIO(new_ops, add_2, {&concat_output, nullptr}, {&add_2_output});
 
   // Reshape 3
   auto reshape_3_output_dims = reshape_3.GetOutputTensor(0).GetDims();
@@ -267,7 +266,7 @@ TensorWrapper& BuildSingleSHA(
   reshape_3_output_dims[1] /= num_attn_per_kv_heads;
   auto& reshape_3_output = tensor_pool.CloneNativeTensorFrom(
       reshape_3.GetOutputTensor(0), reshape_3_output_dims);
-  EmplaceOpWithIO(new_ops, reshape_3, {add_2_output}, {reshape_3_output});
+  EmplaceOpWithIO(new_ops, reshape_3, {&add_2_output}, {&reshape_3_output});
 
   // Softmax
   auto softmax_output_dims = softmax.GetOutputTensor(0).GetDims();
@@ -275,7 +274,7 @@ TensorWrapper& BuildSingleSHA(
   softmax_output_dims[1] /= num_attn_per_kv_heads;
   auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
       softmax.GetOutputTensor(0), softmax_output_dims);
-  EmplaceOpWithIO(new_ops, softmax, {reshape_3_output}, {softmax_output});
+  EmplaceOpWithIO(new_ops, softmax, {&reshape_3_output}, {&softmax_output});
 
   // Slice 1
   auto slice_1_param = slice_1.GetTensorPararm(0).GetTensor();
@@ -296,7 +295,7 @@ TensorWrapper& BuildSingleSHA(
   auto& slice_1_output = tensor_pool.CloneNativeTensorFrom(
       slice_1.GetOutputTensor(0), slice_1_output_dims);
   auto& slice_op_1 =
-      EmplaceOpWithIO(new_ops, slice_1, {softmax_output}, {slice_1_output});
+      EmplaceOpWithIO(new_ops, slice_1, {&softmax_output}, {&slice_1_output});
   slice_op_1.ClearTensorParams();
   slice_op_1.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
                             slice_1_param_tensor);
@@ -320,7 +319,7 @@ TensorWrapper& BuildSingleSHA(
   auto& slice_2_output = tensor_pool.CloneNativeTensorFrom(
       slice_2.GetOutputTensor(0), slice_2_output_dims);
   auto& slice_op_2 =
-      EmplaceOpWithIO(new_ops, slice_2, {softmax_output}, {slice_2_output});
+      EmplaceOpWithIO(new_ops, slice_2, {&softmax_output}, {&slice_2_output});
   slice_op_2.ClearTensorParams();
   slice_op_2.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES,
                             slice_2_param_tensor);
@@ -331,8 +330,8 @@ TensorWrapper& BuildSingleSHA(
   matmul_v1_output_dims[1] /= num_attn_per_kv_heads;
   auto& matmul_v1_output = tensor_pool.CloneNativeTensorFrom(
       matmul_v1.GetOutputTensor(0), matmul_v1_output_dims);
-  EmplaceOpWithIO(new_ops, matmul_v1, {slice_1_output, v_cache},
-                  {matmul_v1_output});
+  EmplaceOpWithIO(new_ops, matmul_v1, {&slice_1_output, &v_cache},
+                  {&matmul_v1_output});
 
   // Matmul v2
   auto matmul_v2_output_dims = matmul_v2.GetOutputTensor(0).GetDims();
@@ -340,8 +339,8 @@ TensorWrapper& BuildSingleSHA(
   matmul_v2_output_dims[1] /= num_attn_per_kv_heads;
   auto& matmul_v2_output = tensor_pool.CloneNativeTensorFrom(
       matmul_v2.GetOutputTensor(0), matmul_v2_output_dims);
-  EmplaceOpWithIO(new_ops, matmul_v2, {slice_2_output, v_slice},
-                  {matmul_v2_output});
+  EmplaceOpWithIO(new_ops, matmul_v2, {&slice_2_output, &v_slice},
+                  {&matmul_v2_output});
 
   // Add 3
   auto add_3_output_dims = add_3.GetOutputTensor(0).GetDims();
@@ -349,8 +348,8 @@ TensorWrapper& BuildSingleSHA(
   add_3_output_dims[1] /= num_attn_per_kv_heads;
   auto& add_3_output = tensor_pool.CloneNativeTensorFrom(
       add_3.GetOutputTensor(0), add_3_output_dims);
-  EmplaceOpWithIO(new_ops, add_3, {matmul_v1_output, matmul_v2_output},
-                  {add_3_output});
+  EmplaceOpWithIO(new_ops, add_3, {&matmul_v1_output, &matmul_v2_output},
+                  {&add_3_output});
 
   return add_3_output;
 }
@@ -463,8 +462,7 @@ size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
   auto& transpose_output =
       tensor_pool.CloneNativeTensorFrom(pattern_input, transpose_output_dims);
   EmplaceOpWithIO(new_ops, ops[start_index + kTransposePrefillIndex],
-                  {const_cast<::qnn::TensorWrapper&>(pattern_input)},
-                  {transpose_output});
+                  {&pattern_input}, {&transpose_output});
 
   // Reshape
   auto& reshape_output = tensor_pool.CloneNativeTensorFrom(
@@ -472,7 +470,7 @@ size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
                       transpose_output_dims[1] * transpose_output_dims[2],
                       transpose_output_dims[3]});
   EmplaceOpWithIO(new_ops, ops[start_index + kReshapePrefillIndex],
-                  {transpose_output}, {reshape_output});
+                  {&transpose_output}, {&reshape_output});
 
   // Process MHA to SHA transformation.
   const int num_heads = pattern_input.GetDim(2);
@@ -792,7 +790,6 @@ size_t OptimizeMHAFastVlmPrefill(
   return 1;
 }
 
-
 size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
                        std::vector<OpWrapper>& ops, size_t attn_start_index,
                        TensorPool& tensor_pool, size_t pattern_size) {
@@ -987,10 +984,10 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
     for (int i = 0; i < num_heads; ++i) {
       auto& q_matmul_in = tensor_pool.CloneNativeTensorFrom(q_sha_inputs[i]);
       EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMulQ],
-                      {q_sha_inputs[i], std::nullopt}, {q_matmul_in});
+                      {&q_sha_inputs[i].get(), nullptr}, {&q_matmul_in});
       auto& k_transpose_in = tensor_pool.CloneNativeTensorFrom(k_sha_inputs[i]);
       EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMulK],
-                      {k_sha_inputs[i], std::nullopt}, {k_transpose_in});
+                      {&k_sha_inputs[i].get(), nullptr}, {&k_transpose_in});
       auto& k_matmul_in = tensor_pool.CloneNativeTensorFrom(
           k_transpose_in,
           {k_unpack_dims[0], k_unpack_dims[2], k_unpack_dims[1]});
@@ -1003,8 +1000,8 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
       auto& select_in = tensor_pool.CloneNativeTensorFrom(
           matmul_qk_out, {q_matmul_in.GetDim(0), q_matmul_in.GetDim(1),
                           k_matmul_in.GetDim(2)});
-      EmplaceOpWithIO(new_ops, ops[matmul_qk_index], {q_matmul_in, k_matmul_in},
-                      {select_in});
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index],
+                      {&q_matmul_in, &k_matmul_in}, {&select_in});
 
       // Change Select to Add.
       auto& softmax_in =
@@ -1017,15 +1014,16 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
       // Softmax
       auto& qk_softmax =
           tensor_pool.CloneNativeTensorFrom(softmax_in, select_out_dims);
-      EmplaceOpWithIO(new_ops, ops[select_index + kAttnSoftmax], {softmax_in},
-                      {qk_softmax});
+      EmplaceOpWithIO(new_ops, ops[select_index + kAttnSoftmax], {&softmax_in},
+                      {&qk_softmax});
       // MatMul
       const auto& matmul_out =
           ops[select_index + kAttnMatMul].GetOutputTensor(0);
       auto matmul_out_dims = matmul_out.GetDims();
       matmul_out_dims.erase(matmul_out_dims.begin() + 1);
       EmplaceOpWithIO(new_ops, ops[matmul_qk_index],
-                      {qk_softmax, v_sha_inputs[i]}, {sha_outputs[i]});
+                      {&qk_softmax, &v_sha_inputs[i].get()},
+                      {&sha_outputs[i].get()});
     }
     // Pack
     auto pack_op = BuildPackOp(tensor_pool, sha_outputs,
