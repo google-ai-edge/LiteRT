@@ -40,7 +40,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_options.h"
-#include "litert/c/litert_rewriter.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
@@ -53,7 +52,6 @@
 #include "litert/core/environment.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
-#include "litert/core/options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -404,15 +402,15 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
         }
         LITERT_LOG(LITERT_DEBUG, "Matching pattern for op: %d", op->OpCode());
         for (const auto& transformation : transformations_) {
-          LiteRtRewriterT rewriter;
+          LiteRtBuilderT builder;
           LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
                      transformation.name);
           // Call the function pointer.
-          if (transformation.pattern(op, &rewriter) == kLiteRtStatusOk) {
+          if (transformation.pattern(&builder, op) == kLiteRtStatusOk) {
             LITERT_LOG(LITERT_DEBUG, "Matched pattern '%s'",
                        transformation.name);
 
-            rewriter.ApplyChanges(subgraph);
+            builder.ApplyChanges(subgraph);
             subgraph_modified = true;
             // Break from the inner transformation loop since the graph changed.
             break;

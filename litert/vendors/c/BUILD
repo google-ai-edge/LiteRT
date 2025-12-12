@@ -24,11 +24,11 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_options",
-        "//litert/c:litert_rewriter",
     ],
 )
 
@@ -37,11 +37,11 @@ cc_library(
     hdrs = ["litert_compiler_plugin_api.h"],
     deps = [
         ":litert_compiler_plugin",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_options",
-        "//litert/c:litert_rewriter",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
