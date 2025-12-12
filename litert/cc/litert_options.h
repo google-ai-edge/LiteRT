@@ -142,7 +142,7 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   }
 
   // Registers a ScopedFile that contains all external buffer groups.
-  Expected<void> SetExternalWeightScopedFile(ScopedFile scoped_file,
+  Expected<void> SetExternalWeightScopedFile(ScopedFile& scoped_file,
                                              ScopedWeightSectionMap sections);
 
   // Returns the reference to the GPU options. User will use this function to
