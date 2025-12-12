@@ -189,6 +189,15 @@ TEST(QnnOptionTest, SetOptimizationLevel) {
             OptimizationLevel::kHtpOptimizeForInferenceO3);
 }
 
+TEST(QnnOptionTest, SetGraphPriority) {
+  Options options;
+  options.SetGraphPriority(GraphPriority::kHigh);
+  EXPECT_NE(options.GetGraphPriority(), GraphPriority::kDefault);
+  EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kHigh);
+  options.SetGraphPriority(GraphPriority::kDefault);
+  EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -206,6 +215,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetNumHvxThreads(), 0);
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
+  EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
 }
 
 }  // namespace
