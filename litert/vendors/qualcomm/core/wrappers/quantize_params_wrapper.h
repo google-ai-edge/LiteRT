@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
@@ -20,6 +21,17 @@ class UndefinedQuantizeParamsWrapper final {
   UndefinedQuantizeParamsWrapper(const UndefinedQuantizeParamsWrapper&);
 
   UndefinedQuantizeParamsWrapper(UndefinedQuantizeParamsWrapper&&);
+
+  bool operator==(const UndefinedQuantizeParamsWrapper& other) const {
+    CHECK_VALUE_EQ(qnn_quantize_param_.encodingDefinition,
+                   other.qnn_quantize_param_.encodingDefinition,
+                   "Encoding definition of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.quantizationEncoding,
+                   other.qnn_quantize_param_.quantizationEncoding,
+                   "Quantization encoding of quantize params");
+
+    return true;
+  }
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
@@ -37,6 +49,23 @@ class ScaleOffsetQuantizeParamsWrapper final {
   ScaleOffsetQuantizeParamsWrapper(const ScaleOffsetQuantizeParamsWrapper&);
 
   ScaleOffsetQuantizeParamsWrapper(ScaleOffsetQuantizeParamsWrapper&&);
+
+  bool operator==(const ScaleOffsetQuantizeParamsWrapper& other) const {
+    CHECK_VALUE_EQ(qnn_quantize_param_.encodingDefinition,
+                   other.qnn_quantize_param_.encodingDefinition,
+                   "Encoding definition of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.quantizationEncoding,
+                   other.qnn_quantize_param_.quantizationEncoding,
+                   "Quantization encoding of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.scaleOffsetEncoding.scale,
+                   other.qnn_quantize_param_.scaleOffsetEncoding.scale,
+                   "Scale of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.scaleOffsetEncoding.offset,
+                   other.qnn_quantize_param_.scaleOffsetEncoding.offset,
+                   "Offset of quantize params");
+
+    return true;
+  }
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
@@ -71,6 +100,42 @@ class AxisScaleOffsetQuantizeParamsWrapper final {
   AxisScaleOffsetQuantizeParamsWrapper(
       AxisScaleOffsetQuantizeParamsWrapper&& rhs);
 
+  bool operator==(const AxisScaleOffsetQuantizeParamsWrapper& other) const {
+    CHECK_VALUE_EQ(qnn_quantize_param_.encodingDefinition,
+                   other.qnn_quantize_param_.encodingDefinition,
+                   "Encoding definition of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.quantizationEncoding,
+                   other.qnn_quantize_param_.quantizationEncoding,
+                   "Quantization encoding of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.axisScaleOffsetEncoding.axis,
+                   other.qnn_quantize_param_.axisScaleOffsetEncoding.axis,
+                   "Axis of quantize params");
+    CHECK_VALUE_EQ(
+        qnn_quantize_param_.axisScaleOffsetEncoding.numScaleOffsets,
+        other.qnn_quantize_param_.axisScaleOffsetEncoding.numScaleOffsets,
+        "Number of scaleOffsets of quantize params");
+
+    for (size_t i = 0;
+         i < qnn_quantize_param_.axisScaleOffsetEncoding.numScaleOffsets; i++) {
+      std::string error_message_scale =
+          "Scale at ScaleOffset[" + std::to_string(i) + "]";
+      std::string error_message_offset =
+          "Offset at ScaleOffset[" + std::to_string(i) + "]";
+      CHECK_VALUE_EQ(
+          qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset[i].scale,
+          other.qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset[i]
+              .scale,
+          error_message_scale);
+      CHECK_VALUE_EQ(
+          qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset[i].offset,
+          other.qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset[i]
+              .offset,
+          error_message_offset);
+    }
+
+    return true;
+  }
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
   std::int32_t GetAxis() const;
@@ -97,6 +162,26 @@ class BwScaleOffsetQuantizeParamsWrapper final {
 
   BwScaleOffsetQuantizeParamsWrapper(BwScaleOffsetQuantizeParamsWrapper&& rhs);
 
+  bool operator==(const BwScaleOffsetQuantizeParamsWrapper& other) const {
+    CHECK_VALUE_EQ(qnn_quantize_param_.encodingDefinition,
+                   other.qnn_quantize_param_.encodingDefinition,
+                   "Encoding definition of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.quantizationEncoding,
+                   other.qnn_quantize_param_.quantizationEncoding,
+                   "Quantization encoding of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth,
+                   other.qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth,
+                   "Bitwidth of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.bwScaleOffsetEncoding.scale,
+                   other.qnn_quantize_param_.bwScaleOffsetEncoding.scale,
+                   "Scale of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.bwScaleOffsetEncoding.offset,
+                   other.qnn_quantize_param_.bwScaleOffsetEncoding.offset,
+                   "Offset of quantize params");
+
+    return true;
+  }
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
  private:
@@ -115,6 +200,43 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   BwAxisScaleOffsetQuantizeParamsWrapper(
       BwAxisScaleOffsetQuantizeParamsWrapper&& rhs);
+
+  bool operator==(const BwAxisScaleOffsetQuantizeParamsWrapper& other) const {
+    CHECK_VALUE_EQ(qnn_quantize_param_.encodingDefinition,
+                   other.qnn_quantize_param_.encodingDefinition,
+                   "Encoding definition of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.quantizationEncoding,
+                   other.qnn_quantize_param_.quantizationEncoding,
+                   "Quantization encoding of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth,
+                   other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth,
+                   "Bitwidth of quantize params");
+    CHECK_VALUE_EQ(qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis,
+                   other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis,
+                   "Axis of quantize params");
+    CHECK_VALUE_EQ(
+        qnn_quantize_param_.bwAxisScaleOffsetEncoding.numElements,
+        other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.numElements,
+        "Number of elements of quantize params");
+
+    for (size_t i = 0;
+         i < qnn_quantize_param_.bwAxisScaleOffsetEncoding.numElements; i++) {
+      std::string error_message_scale =
+          "Scale at index[" + std::to_string(i) + "]";
+      std::string error_message_offset =
+          "Offset at index[" + std::to_string(i) + "]";
+      CHECK_VALUE_EQ(
+          qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales[i],
+          other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales[i],
+          error_message_scale);
+      CHECK_VALUE_EQ(
+          qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets[i],
+          other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets[i],
+          error_message_offset);
+    }
+
+    return true;
+  }
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 

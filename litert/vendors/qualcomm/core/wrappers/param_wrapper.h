@@ -55,6 +55,60 @@ class ScalarParamWrapper {
     }
   }
 
+  bool operator==(const ScalarParamWrapper& other) const {
+    CHECK_TYPE_EQ(qnn_scalar_.dataType, other.qnn_scalar_.dataType,
+                  "Data type of scalar param");
+
+    switch (qnn_scalar_.dataType) {
+      case QNN_DATATYPE_FLOAT_32:
+        CHECK_VALUE_EQ(qnn_scalar_.floatValue, other.qnn_scalar_.floatValue,
+                       "Float value of scalar param");
+        break;
+      case QNN_DATATYPE_BOOL_8:
+        CHECK_VALUE_EQ(qnn_scalar_.bool8Value, other.qnn_scalar_.bool8Value,
+                       "Boolean value of scalar param");
+        break;
+      case QNN_DATATYPE_UFIXED_POINT_8:
+      case QNN_DATATYPE_UINT_8:
+        CHECK_VALUE_EQ(qnn_scalar_.uint8Value, other.qnn_scalar_.uint8Value,
+                       "Uint8 value of scalar param");
+        break;
+      case QNN_DATATYPE_SFIXED_POINT_8:
+      case QNN_DATATYPE_INT_8:
+        CHECK_VALUE_EQ(qnn_scalar_.int8Value, other.qnn_scalar_.int8Value,
+                       "Int8 value of scalar param");
+        break;
+      case QNN_DATATYPE_UFIXED_POINT_16:
+      case QNN_DATATYPE_UINT_16:
+        CHECK_VALUE_EQ(qnn_scalar_.uint16Value, other.qnn_scalar_.uint16Value,
+                       "Uint16 value of scalar param");
+        break;
+      case QNN_DATATYPE_SFIXED_POINT_16:
+      case QNN_DATATYPE_INT_16:
+        CHECK_VALUE_EQ(qnn_scalar_.int16Value, other.qnn_scalar_.int16Value,
+                       "Int16 value of scalar param");
+        break;
+      case QNN_DATATYPE_UFIXED_POINT_32:
+      case QNN_DATATYPE_UINT_32:
+        CHECK_VALUE_EQ(qnn_scalar_.uint32Value, other.qnn_scalar_.uint32Value,
+                       "Uint32 value of scalar param");
+        break;
+      case QNN_DATATYPE_SFIXED_POINT_32:
+      case QNN_DATATYPE_INT_32:
+        CHECK_VALUE_EQ(qnn_scalar_.int32Value, other.qnn_scalar_.int32Value,
+                       "Int32 value of scalar param");
+        break;
+      default:
+        QNN_LOG_ERROR(
+            "Unsupported data type for comparing scalar param: input: %#x, "
+            "golden: %#x",
+            qnn_scalar_.dataType, other.qnn_scalar_.dataType);
+        return false;
+    }
+
+    return true;
+  }
+
   void CloneTo(Qnn_Param_t& dst) const;
 
  private:
@@ -65,6 +119,10 @@ class ScalarParamWrapper {
 class TensorParamWrapper {
  public:
   explicit TensorParamWrapper(const char* name, const TensorWrapper& tensor);
+
+  bool operator==(const TensorParamWrapper& other) const {
+    return tensor_ == other.tensor_;
+  }
 
   void CloneTo(Qnn_Param_t& dst) const;
 

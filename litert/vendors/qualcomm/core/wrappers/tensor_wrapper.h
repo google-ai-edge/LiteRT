@@ -112,9 +112,58 @@ class TensorWrapper final {
 
   ~TensorWrapper();
 
-  bool operator==(const TensorWrapper& other) const { return this == &other; }
+  bool operator==(const TensorWrapper& other) const {
+    // Compare the address
+    if (this == &other) {
+      return true;
+    }
 
-  bool operator!=(const TensorWrapper& other) const { return this != &other; }
+    // Compare the value
+    CHECK_VALUE_EQ(qnn_tensor_.version, other.qnn_tensor_.version,
+                   "Tensor version");
+    CHECK_TYPE_EQ(qnn_tensor_.v2.type, other.qnn_tensor_.v2.type,
+                  "Tensor type");
+    CHECK_VALUE_EQ(qnn_tensor_.v2.dataFormat, other.qnn_tensor_.v2.dataFormat,
+                   "Data format");
+    CHECK_TYPE_EQ(qnn_tensor_.v2.dataType, other.qnn_tensor_.v2.dataType,
+                  "Data type");
+    CHECK_VALUE_EQ(qnn_tensor_.v2.rank, other.qnn_tensor_.v2.rank, "Rank");
+    for (size_t i = 0; i < qnn_tensor_.v2.rank; i++) {
+      std::string error_message =
+          "Dimension of rank [" + std::to_string(i) + "]";
+      CHECK_VALUE_EQ(qnn_tensor_.v2.dimensions[i],
+                     other.qnn_tensor_.v2.dimensions[i], error_message);
+    }
+    CHECK_TYPE_EQ(qnn_tensor_.v2.memType, other.qnn_tensor_.v2.memType,
+                  "Memory type");
+    CHECK_VALUE_EQ(qnn_tensor_.v2.clientBuf.dataSize,
+                   other.qnn_tensor_.v2.clientBuf.dataSize,
+                   "Data size of client buffer");
+    for (size_t i = 0; i < qnn_tensor_.v2.clientBuf.dataSize; i++) {
+      std::string error_message =
+          "Data of client buffer [" + std::to_string(i) + "]";
+      // Since the clientBuf may store different data types (e.g., float,
+      // int32_t), and type-aware comparison could fail or misinterpret
+      // padding/alignment, Compare client buffer contents byte-by-byte using
+      // std::uint8_t to ensure we have an exact match
+      CHECK_VALUE_EQ(reinterpret_cast<const std::uint8_t*>(
+                         qnn_tensor_.v2.clientBuf.data)[i],
+                     reinterpret_cast<const std::uint8_t*>(
+                         other.qnn_tensor_.v2.clientBuf.data)[i],
+                     error_message);
+    }
+
+    // Compare quantize params
+    if (!(quantize_params_ == other.quantize_params_)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  bool operator!=(const TensorWrapper& other) const {
+    return !(*this == other);
+  }
 
   void CloneTo(Qnn_Tensor_t& dst) const;
 

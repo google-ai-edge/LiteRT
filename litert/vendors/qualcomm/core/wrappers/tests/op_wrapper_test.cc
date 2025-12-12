@@ -209,5 +209,172 @@ TEST(OpWrapperTest, ChangeOpName) {
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
 }
 
+using OpEqualParams = std::tuple<const char*, const char*, QnnOpCode, QnnOpCode,
+                                 std::vector<uint32_t>, std::vector<uint32_t>,
+                                 bool, bool, bool, bool, bool>;
+class OpWrapperEqualParamTest : public ::testing::TestWithParam<OpEqualParams> {
+};
+TEST_P(OpWrapperEqualParamTest, EqualityOperator) {
+  auto [type1, type2, code1, code2, dims1, dims2, differ_scalar_value,
+        differ_tensor_param, differ_input_size, differ_input_data,
+        expected_equal] = GetParam();
+
+  std::vector<uint8_t> data1(
+      std::accumulate(dims1.begin(), dims1.end(), 1u, std::multiplies<>()), 1);
+  std::vector<uint8_t> data2(
+      std::accumulate(dims2.begin(), dims2.end(), 1u, std::multiplies<>()), 1);
+  std::vector<uint8_t> data3(
+      std::accumulate(dims2.begin(), dims2.end(), 1u, std::multiplies<>()), 2);
+
+  qnn::TensorWrapper input1{"",
+                            QNN_TENSOR_TYPE_APP_WRITE,
+                            QNN_DATATYPE_UFIXED_POINT_8,
+                            QuantizeParamsWrapperVariant(),
+                            dims1,
+                            static_cast<uint32_t>(data1.size()),
+                            differ_input_data ? data3.data() : data1.data(),
+                            true};
+  qnn::TensorWrapper output1 = input1;
+  qnn::TensorWrapper input2{"",
+                            QNN_TENSOR_TYPE_APP_WRITE,
+                            QNN_DATATYPE_UFIXED_POINT_8,
+                            QuantizeParamsWrapperVariant(),
+                            dims2,
+                            static_cast<uint32_t>(data2.size()),
+                            data2.data(),
+                            true};
+  qnn::TensorWrapper output2 = input2;
+  qnn::TensorWrapper tensor_param{"",
+                                  QNN_TENSOR_TYPE_APP_WRITE,
+                                  QNN_DATATYPE_UFIXED_POINT_8,
+                                  QuantizeParamsWrapperVariant(),
+                                  dims2,
+                                  static_cast<uint32_t>(data2.size()),
+                                  data3.data(),
+                                  true};
+
+  uint8_t value1 = 255;
+  uint8_t value2 = differ_scalar_value ? 252 : value1;
+
+  qnn::OpWrapper op_wrapper_1{"op_wrapper_1", type1, code1};
+  op_wrapper_1.AddInputTensor(input1);
+  op_wrapper_1.AddOutputTensor(output1);
+  op_wrapper_1.AddScalarParam("uint8_param", value1, false);
+  op_wrapper_1.AddTensorParam("tensor_param", output1);
+
+  qnn::OpWrapper op_wrapper_2{"op_wrapper_2", type2, code2};
+  op_wrapper_2.AddInputTensor(input2);
+  if (differ_input_size) {
+    op_wrapper_2.AddInputTensor(input1);
+  }
+  op_wrapper_2.AddOutputTensor(output2);
+  op_wrapper_2.AddScalarParam("another_uint8_param", value2, false);
+  if (differ_tensor_param) {
+    op_wrapper_2.AddTensorParam("another_tensor_param", tensor_param);
+  } else {
+    op_wrapper_2.AddTensorParam("another_tensor_param", output2);
+  }
+
+  EXPECT_EQ(op_wrapper_1 == op_wrapper_2, expected_equal);
+}
+INSTANTIATE_TEST_SUITE_P(OpWrapperTest_Combinations, OpWrapperEqualParamTest,
+                         ::testing::Values(
+                             // All fields same
+                             OpEqualParams{"OP_TYPE",
+                                           "OP_TYPE",
+                                           QnnOpCode::kUnknown,
+                                           QnnOpCode::kUnknown,
+                                           {1, 1, 3},
+                                           {1, 1, 3},
+                                           false,
+                                           false,
+                                           false,
+                                           false,
+                                           true},
+                             // Type name
+                             OpEqualParams{"TYPE_A",
+                                           "TYPE_B",
+                                           QnnOpCode::kUnknown,
+                                           QnnOpCode::kUnknown,
+                                           {1, 1, 3},
+                                           {1, 1, 3},
+                                           false,
+                                           false,
+                                           false,
+                                           false,
+                                           false},
+                             // Op code
+                             OpEqualParams{"OP_TYPE",
+                                           "OP_TYPE",
+                                           QnnOpCode::kElementWiseAdd,
+                                           QnnOpCode::kElementWiseMultiply,
+                                           {1, 1, 3},
+                                           {1, 1, 3},
+                                           false,
+                                           false,
+                                           false,
+                                           false,
+                                           false},
+                             // Input dims
+                             OpEqualParams{"OP_TYPE",
+                                           "OP_TYPE",
+                                           QnnOpCode::kUnknown,
+                                           QnnOpCode::kUnknown,
+                                           {1, 1, 3},
+                                           {1, 1, 4},
+                                           false,
+                                           false,
+                                           false,
+                                           false,
+                                           false},
+                             // Scalar param value
+                             OpEqualParams{"OP_TYPE",
+                                           "OP_TYPE",
+                                           QnnOpCode::kUnknown,
+                                           QnnOpCode::kUnknown,
+                                           {1, 1, 3},
+                                           {1, 1, 3},
+                                           true,
+                                           false,
+                                           false,
+                                           false,
+                                           false},
+                             // Tensor param value
+                             OpEqualParams{"OP_TYPE",
+                                           "OP_TYPE",
+                                           QnnOpCode::kUnknown,
+                                           QnnOpCode::kUnknown,
+                                           {1, 1, 3},
+                                           {1, 1, 3},
+                                           false,
+                                           true,
+                                           false,
+                                           false,
+                                           false},
+                             // Input size
+                             OpEqualParams{"OP_TYPE",
+                                           "OP_TYPE",
+                                           QnnOpCode::kUnknown,
+                                           QnnOpCode::kUnknown,
+                                           {1, 1, 3},
+                                           {1, 1, 3},
+                                           true,
+                                           false,
+                                           true,
+                                           false,
+                                           false},
+                             // Input data
+                             OpEqualParams{"OP_TYPE",
+                                           "OP_TYPE",
+                                           QnnOpCode::kUnknown,
+                                           QnnOpCode::kUnknown,
+                                           {1, 1, 3},
+                                           {1, 1, 3},
+                                           false,
+                                           false,
+                                           false,
+                                           true,
+                                           false}));
+
 }  // namespace
 }  // namespace qnn
