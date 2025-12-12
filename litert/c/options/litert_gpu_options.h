@@ -156,6 +156,18 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
     LiteRtOpaqueOptions gpu_accelerator_options,
     const char* preferred_device_substr);
 
+// Sets the number of threads for webgpu upload.
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
+    LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_upload);
+
+// Sets the number of threads for webgpu kernel compilation.
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
+    LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_compile);
+
+// Sets whether to convert weights on GPU. It's an experimental feature.
+LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+    LiteRtOpaqueOptions gpu_accelerator_options, bool convert_weights_on_gpu);
+
 // Sets the hint to fully delegate to single delegate.
 // This is an ADVANCED option and should only be set if every subgraph is
 // known to be fully delegated to a single delegate. This flag can be used to
@@ -243,6 +255,15 @@ LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
 
 LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
     const char** preferred_device_substr, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
+    int* num_threads_to_upload, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
+    int* num_threads_to_compile, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+    bool* convert_weights_on_gpu, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
     bool* hint_fully_delegated_to_single_delegate,

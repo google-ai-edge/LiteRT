@@ -114,6 +114,15 @@ class GpuOptions : public litert::OpaqueOptions {
   // Sets the preferred WebGPU device substring.
   LiteRtStatus SetPreferredDeviceSubstr(const char* preferred_device_substr);
 
+  // Sets the number of threads for WebGPU upload.
+  LiteRtStatus SetNumThreadsToUpload(int num_threads_to_upload);
+
+  // Sets the number of threads for WebGPU kernel compilation.
+  LiteRtStatus SetNumThreadsToCompile(int num_threads_to_compile);
+
+  // Sets whether to convert weights on GPU. It's an experimental feature.
+  LiteRtStatus SetConvertWeightsOnGpu(bool convert_weights_on_gpu);
+
   // Sets the hint that the graph will be fully delegated to a single delegate.
   LiteRtStatus SetHintFullyDelegatedToSingleDelegate(
       bool hint_fully_delegated_to_single_delegate);

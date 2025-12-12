@@ -142,6 +142,21 @@ LiteRtStatus GpuOptions::SetPreferredDeviceSubstr(
       Get(), preferred_device_substr);
 }
 
+LiteRtStatus GpuOptions::SetNumThreadsToUpload(int num_threads_to_upload) {
+  return LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
+      Get(), num_threads_to_upload);
+}
+
+LiteRtStatus GpuOptions::SetNumThreadsToCompile(int num_threads_to_compile) {
+  return LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
+      Get(), num_threads_to_compile);
+}
+
+LiteRtStatus GpuOptions::SetConvertWeightsOnGpu(bool convert_weights_on_gpu) {
+  return LiteRtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+      Get(), convert_weights_on_gpu);
+}
+
 LiteRtStatus GpuOptions::SetHintFullyDelegatedToSingleDelegate(
     bool hint_fully_delegated_to_single_delegate) {
   return LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
