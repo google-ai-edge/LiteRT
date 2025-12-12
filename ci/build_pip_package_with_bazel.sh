@@ -87,6 +87,11 @@ case "${ARCH}" in
     ;;
 esac
 
+if command -v xcode-select &> /dev/null; then
+  sudo xcodebuild -license accept
+  BAZEL_FLAGS="${BAZEL_FLAGS} --action_env=DEVELOPER_DIR=$(xcode-select --print-path)"
+fi
+
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
