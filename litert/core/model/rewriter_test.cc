@@ -19,7 +19,6 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/buffer_manager.h"
@@ -283,5 +282,63 @@ TEST(RewriterTest, AddOpAndMulOpToDivOpTransformation) {
   EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflDiv);
   EXPECT_EQ(subgraph.Tensors().size(), 2);
 }
+
+TEST(RewriterTest, BuildWeightsSuccess) {
+  absl::Span<const uint8_t> data = absl::MakeConstSpan(
+      reinterpret_cast<const uint8_t*>(kData.data()), kData.size());
+  LiteRtRewriterT rewriter;
+  LiteRtWeightsT null_weights;
+  null_weights.SetBufferManager(nullptr);
+  auto& tensor =
+      rewriter.BuildTensor(null_weights, Quantization(), TensorType());
+  auto& weights = rewriter.BuildWeights(data.data(), data.size(), &tensor);
+  EXPECT_EQ(weights.Buffer().Size(), kData.size());
+  EXPECT_EQ(tensor.Weights().Buffer().Size(), kData.size());
+  EXPECT_THAT(
+      absl::MakeConstSpan(weights.Buffer().Data(), weights.Buffer().Size()),
+      testing::ElementsAreArray(reinterpret_cast<const uint8_t*>(kData.data()),
+                                kData.size()));
+}
+
+TEST(RewriterTest, TransferWeightsAfterApplyingChangesSuccess) {
+  absl::Span<const uint8_t> data = absl::MakeConstSpan(
+      reinterpret_cast<const uint8_t*>(kData.data()), kData.size());
+  BufferManager manager;
+  LiteRtSubgraphT subgraph = LiteRtSubgraphT(&manager);
+  // Scope to ensure that the rewriter is destroyed after the changes are
+  // applied.
+  {
+    LiteRtRewriterT rewriter;
+    LiteRtTensorT input_tensor;
+    LiteRtTensorT output_tensor;
+    LiteRtWeightsT null_weights;
+    null_weights.SetBufferManager(nullptr);
+    auto& const_tensor = rewriter.BuildTensor(null_weights, Quantization(),
+                                              TensorType(), kTensorName);
+
+    auto& weights =
+        rewriter.BuildWeights(data.data(), data.size(), &const_tensor);
+    EXPECT_THAT(
+        absl::MakeConstSpan(weights.Buffer().Data(), weights.Buffer().Size()),
+        testing::ElementsAreArray(
+            reinterpret_cast<const uint8_t*>(kData.data()), kData.size()));
+    rewriter.BuildOp(kLiteRtOpCodeTflAdd, {&const_tensor, &input_tensor},
+                     {&output_tensor});
+    rewriter.ApplyChanges(&subgraph);
+  }
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  ASSERT_EQ(subgraph.Ops().front()->Inputs().size(), 2);
+  auto const_tensor_after_apply_changes =
+      subgraph.Ops().front()->Inputs().front();
+  EXPECT_EQ(const_tensor_after_apply_changes->Weights().Buffer().Size(),
+            kData.size());
+  EXPECT_THAT(
+      absl::MakeConstSpan(
+          const_tensor_after_apply_changes->Weights().Buffer().Data(),
+          const_tensor_after_apply_changes->Weights().Buffer().Size()),
+      testing::ElementsAreArray(reinterpret_cast<const uint8_t*>(kData.data()),
+                                kData.size()));
+}
+
 }  // namespace
 }  // namespace litert::internal
