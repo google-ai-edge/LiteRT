@@ -317,4 +317,28 @@ TEST(GpuAcceleratorPayload, SetAndGetUseMetalArgumentBuffers) {
   LiteRtDestroyOpaqueOptions(compilation_options);
 }
 
+TEST(GpuAcceleratorPayload, SetAndGetHintFullyDelegatedToSingleDelegate) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  bool hint_fully_delegated_to_single_delegate = true;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+      &hint_fully_delegated_to_single_delegate, payload));
+  EXPECT_EQ(hint_fully_delegated_to_single_delegate, false);
+
+  LITERT_EXPECT_OK(LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
+      compilation_options, true));
+  LITERT_EXPECT_OK(LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+      &hint_fully_delegated_to_single_delegate, payload));
+  EXPECT_EQ(hint_fully_delegated_to_single_delegate, true);
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
 }  // namespace

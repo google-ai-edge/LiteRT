@@ -81,6 +81,9 @@ struct LiteRtGpuOptionsPayloadT {
   // be chosen.
   // If empty, the device will be determined by other factors.
   std::string preferred_device_substr;
+  // Set to true to hint that the delegate is fully delegated to a single
+  // delegate.
+  bool hint_fully_delegated_to_single_delegate = false;
 };
 
 namespace litert {
@@ -286,6 +289,16 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->preferred_device_substr = preferred_device_substr;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
+    LiteRtOpaqueOptions gpu_options,
+    bool hint_fully_delegated_to_single_delegate) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->hint_fully_delegated_to_single_delegate =
+      hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }
 
@@ -518,5 +531,18 @@ LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *preferred_device_substr = payload->preferred_device_substr.c_str();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+    bool* hint_fully_delegated_to_single_delegate,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(hint_fully_delegated_to_single_delegate,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`hint_fully_delegated_to_single_delegate` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *hint_fully_delegated_to_single_delegate =
+      payload->hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }

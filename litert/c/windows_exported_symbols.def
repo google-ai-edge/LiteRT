@@ -259,6 +259,7 @@ EXPORTS
   LiteRtSetGpuOptionsExternalTensorsMode
   LiteRtSetGpuOptionsGpuBackend
   LiteRtSetGpuOptionsGpuPriority
+  LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate
   LiteRtSetGpuOptionsInfiniteFloatCapping
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOpaqueOptionsHash

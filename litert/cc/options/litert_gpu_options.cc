@@ -142,4 +142,10 @@ LiteRtStatus GpuOptions::SetPreferredDeviceSubstr(
       Get(), preferred_device_substr);
 }
 
+LiteRtStatus GpuOptions::SetHintFullyDelegatedToSingleDelegate(
+    bool hint_fully_delegated_to_single_delegate) {
+  return LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
+      Get(), hint_fully_delegated_to_single_delegate);
+}
+
 }  // namespace litert

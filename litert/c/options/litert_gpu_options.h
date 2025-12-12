@@ -156,6 +156,14 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
     LiteRtOpaqueOptions gpu_accelerator_options,
     const char* preferred_device_substr);
 
+// Sets the hint to fully delegate to single delegate.
+// This is an ADVANCED option and should only be set if every subgraph is
+// known to be fully delegated to a single delegate. This flag can be used to
+// skip unnecessary memory allocations.
+LiteRtStatus LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
+    LiteRtOpaqueOptions gpu_options,
+    bool hint_fully_delegated_to_single_delegate);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -235,6 +243,10 @@ LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
 
 LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
     const char** preferred_device_substr, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+    bool* hint_fully_delegated_to_single_delegate,
+    LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"

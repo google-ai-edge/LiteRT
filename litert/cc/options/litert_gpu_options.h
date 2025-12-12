@@ -113,6 +113,10 @@ class GpuOptions : public litert::OpaqueOptions {
 
   // Sets the preferred WebGPU device substring.
   LiteRtStatus SetPreferredDeviceSubstr(const char* preferred_device_substr);
+
+  // Sets the hint that the graph will be fully delegated to a single delegate.
+  LiteRtStatus SetHintFullyDelegatedToSingleDelegate(
+      bool hint_fully_delegated_to_single_delegate);
 };
 
 }  // namespace litert
