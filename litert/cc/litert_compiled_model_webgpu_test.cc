@@ -140,7 +140,7 @@ TEST_P(ParameterizedTest, Basic) {
     EXPECT_TRUE(event);
     auto result = event->IsSignaled();
     EXPECT_TRUE(result);
-    EXPECT_FALSE(*result);  // Not signaled yet.
+    EXPECT_TRUE(*result);  // Webgpu event is signaled immediately.
   }
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
@@ -151,14 +151,6 @@ TEST_P(ParameterizedTest, Basic) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
-  }
-  if (param.async) {
-    auto event = output_buffers[0].GetEvent();
-    EXPECT_TRUE(event);
-    auto result = event->IsSignaled();
-    EXPECT_TRUE(result);
-    // Buffer lock above lets the event be signaled.
-    EXPECT_TRUE(*result);
   }
 }
 
@@ -320,7 +312,7 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
     EXPECT_TRUE(event);
     auto result = event->IsSignaled();
     EXPECT_TRUE(result);
-    EXPECT_FALSE(*result);  // Not signaled yet.
+    EXPECT_TRUE(*result);  // Webgpu event is signaled immediately.
   }
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
@@ -333,14 +325,6 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5),
                 kTestOutputTensorForPipelineTest));
-  }
-  if (param.async_2nd_model) {
-    auto event = output_buffers_2[0].GetEvent();
-    EXPECT_TRUE(event);
-    auto result = event->IsSignaled();
-    EXPECT_TRUE(result);
-    // Buffer lock above lets the event be signaled.
-    EXPECT_TRUE(*result);
   }
 }
 
