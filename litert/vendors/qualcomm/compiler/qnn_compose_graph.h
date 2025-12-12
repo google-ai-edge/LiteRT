@@ -25,6 +25,7 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/wrappers/model_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -44,10 +45,10 @@ LiteRtStatus ConvertTensor(
 
 LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        const litert::Op& litert_op,
-                       ::qnn::TensorPool& tensor_pool,
+                       ::qnn::ModelWrapper& model_wrapper,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
-                       std::vector<::qnn::OpWrapper>& op_wrappers);
+                       std::string_view prefix, std::string_view suffix);
 
 // Composes a new QNN Graph from given LiteRt Graph. Qnn Graph is written to
 // context behind "qnn". Uses given graph_name to name entry point.

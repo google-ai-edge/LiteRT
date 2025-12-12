@@ -32,6 +32,7 @@ cc_test(
         "//litert/vendors/qualcomm/core/builders:slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:model_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
@@ -56,6 +57,7 @@ cc_library(
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:model_wrapper",
     ],
 )
 

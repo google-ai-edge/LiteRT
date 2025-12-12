@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/wrappers/model_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 namespace qnn {
@@ -24,7 +25,7 @@ enum class G2GConfig {
 };
 
 void GraphToGraphTransform(const G2GConfig g2g_option,
-                           std::vector<OpWrapper>& ops, TensorPool& tensor_pool,
+                           ModelWrapper& model_wrapper,
                            std::function<bool(OpWrapper&)> validate_op_config);
 }  // namespace qnn
 

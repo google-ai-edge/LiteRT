@@ -54,6 +54,7 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "litert/vendors/qualcomm/core/wrappers/model_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -290,40 +291,41 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   for (const auto& op : graph.Ops()) {
     // default constructed, won't add tensor to QNN
-    ::qnn::TensorPool tensor_pool;
+    ::qnn::ModelWrapper model_wrapper;
     std::vector<::qnn::TensorWrapperRef> input_tensors;
     for (const auto& input : op.Inputs()) {
       ::qnn::TensorWrapper* res{nullptr};
-      LITERT_RETURN_IF_ERROR(
-          litert::qnn::ConvertTensor(input, tensor_pool, res));
+      LITERT_RETURN_IF_ERROR(litert::qnn::ConvertTensor(
+          input, model_wrapper.GetTensorPool(), res));
       input_tensors.emplace_back(*res);
     }
 
     std::vector<::qnn::TensorWrapperRef> output_tensors;
     for (const auto& output : op.Outputs()) {
       ::qnn::TensorWrapper* res{nullptr};
-      LITERT_RETURN_IF_ERROR(
-          litert::qnn::ConvertTensor(output, tensor_pool, res));
+      LITERT_RETURN_IF_ERROR(litert::qnn::ConvertTensor(
+          output, model_wrapper.GetTensorPool(), res));
       output_tensors.emplace_back(*res);
     }
 
-    std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
-        compiler_plugin->Options().GetUseHtpPreference(), op, tensor_pool,
-        input_tensors, output_tensors, op_wrappers));
+        compiler_plugin->Options().GetUseHtpPreference(), op, model_wrapper,
+        input_tensors, output_tensors, "", ""));
 
     if (compiler_plugin->Options().GetUseQint16AsQuint16()) {
-      tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
-        tensor_wrapper.ConvertQint16ToQuint16();
-      });
+      model_wrapper.GetTensorPool().ForEach(
+          [](::qnn::TensorWrapper& tensor_wrapper) {
+            tensor_wrapper.ConvertQint16ToQuint16();
+          });
     }
 
     // Empty op_wrappers means the op is not supported by QNN.
-    if (op_wrappers.empty()) {
+    if (model_wrapper.GetOps().empty()) {
       continue;
     }
     if (SkipValidationOfQuantizeOp(op) ||
-        std::all_of(op_wrappers.begin(), op_wrappers.end(),
+        std::all_of(model_wrapper.GetOps().begin(),
+                    model_wrapper.GetOps().end(),
                     [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
                       return kLiteRtStatusOk ==
                              qnn_manager->ValidateOp(op_wrapper.GetOpConfig());
