@@ -31,25 +31,12 @@ py_strict_library(
     ],
 )
 
+exports_files(["empty.json"])
+
 pywrap_library(
     name = "pywrap_litert",
-    common_lib_def_files_or_filters = {
-        "litert/python/pywrap_litert_common": "//tflite/python:pywrap_tflite_common.json",
-    },
-    common_lib_linkopts = {
-        "litert/python/pywrap_litert_common": select({
-            "@bazel_tools//src/conditions:windows": [],
-            "@bazel_tools//src/conditions:darwin": ["-Wl,-rpath,@loader_path/"],
-            "//conditions:default": ["-Wl,-rpath,$$ORIGIN/"],
-        }),
-    },
-    common_lib_version_scripts = {
-        "litert/python/pywrap_litert_common": select({
-            "@bazel_tools//src/conditions:windows": None,
-            "@bazel_tools//src/conditions:darwin": "//tflite/python:pywrap_tflite_common_darwin.lds",
-            "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
-        }),
-    },
+
+
     pywrap_count = 10,
     visibility = ["//visibility:public"],
     deps = [

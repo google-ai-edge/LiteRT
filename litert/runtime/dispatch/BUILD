@@ -189,7 +189,7 @@ litert_device_test(
         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
     ],
     features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
+        "@org_tensorflow//tensorflow:android": ["-layering_check"],
         "//conditions:default": [],
     }),
     linkopts = gles_linkopts(),
@@ -245,7 +245,7 @@ litert_device_test(
         "//litert/test:testdata/simple_model_google_tensor.bin",
     ],
     features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
+        "@org_tensorflow//tensorflow:android": ["-layering_check"],
         "//conditions:default": [],
     }),
     linkopts = gles_linkopts(),
@@ -289,7 +289,7 @@ litert_device_test(
         "//litert/test:testdata/simple_model_google_tensor.bin",
     ],
     features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
+        "@org_tensorflow//tensorflow:android": ["-layering_check"],
         "//conditions:default": [],
     }),
     linkopts = gles_linkopts(),

@@ -326,10 +326,10 @@ bool CanLoadOpenCl() {
 }
 
 TEST(TensorBuffer, ClBuffer) {
-  if (!HasOpenClSupport()) {
-    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+#if !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
                     "skipping the test";
-  }
+#endif
   if (!CanLoadOpenCl()) {
     GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
   }

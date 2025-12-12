@@ -162,7 +162,6 @@ class ErrorStatusBuilder {
   }
 
   void PrintLog() const noexcept {
-#ifndef NDEBUG
     if (ShouldLog()) {
       auto logger = LiteRtGetDefaultLogger();
       LiteRtLogSeverity __min_severity__;
@@ -174,7 +173,6 @@ class ErrorStatusBuilder {
         LiteRtLoggerLog(logger, log_level_, "%s", LogMessage().c_str());
       }
     }
-#endif
   }
 
   // Appends data to the error message.
