@@ -14,214 +14,301 @@
  * limitations under the License.
  */
 
-import type {Accelerator} from './constants';
-import {Tensor, TensorTypeError} from './tensor';
-import type {EmscriptenVector, SignatureRunnerWrapper, TensorWrapper} from './wasm_binding_types';
+import {DType, getDataType} from './datatypes';
+import {getGlobalLiteRt} from './global_litert';
+import {CompileOptions, TensorInputs} from './model_types';
+import {Tensor} from './tensor';
+import {LiteRtCompiledModel, LiteRtModel, LiteRtRankedTensorType, LiteRtSimpleSignature, LiteRtTensorBufferRequirements, TensorBufferType} from './wasm_binding_types';
+import {emscriptenVectorToArray} from './wasm_utils';
+
+/**
+ * Description of a tensor in a LiteRT model.
+ */
+export interface TensorDetails {
+  readonly name: string;
+  readonly index: number;
+  readonly dtype: DType;
+  readonly shape: Int32Array;
+  readonly supportedBufferTypes: ReadonlySet<TensorBufferType>;
+}
 
 /**
  * A signature of a LiteRT model that can be run like the CompiledModel itself.
  * Every model has at least one signature, but some models have multiple
  * signatures.
  */
-export abstract class SignatureRunner {
-  protected inputTensors = new Map<string, TensorWrapper>();
-  protected inputTensorsVector: EmscriptenVector<TensorWrapper>;
-  protected outputTensors = new Map<string, TensorWrapper>();
-  protected outputTensorsVector: EmscriptenVector<TensorWrapper>;
-  abstract readonly accelerator: Accelerator;
-  deleted = false;
+export interface SignatureRunner {
+  readonly key: string;
+  readonly options: Required<CompileOptions>;
+  getInputDetails(): readonly TensorDetails[];
+  getOutputDetails(): readonly TensorDetails[];
+
+  run(input: Tensor|Tensor[]): Promise<Tensor[]>;
+  run(input: Record<string, Tensor>): Promise<Record<string, Tensor>>;
+  run(input: Tensor|Tensor[]|
+      Record<string, Tensor>): Promise<Tensor[]|Record<string, Tensor>>;
+}
+
+/**
+ * A signature of a compiled LiteRT model.
+ */
+export class CompiledModelSignatureRunner implements SignatureRunner {
+  private readonly inputDetails: readonly TensorDetails[];
+  private readonly outputDetails: readonly TensorDetails[];
+  private readonly liteRtSimpleSignature: LiteRtSimpleSignature;
+  private deletedInternal = false;
 
   constructor(
-      protected readonly signatureRunnerWrapper: SignatureRunnerWrapper) {
-    this.inputTensorsVector = this.signatureRunnerWrapper.inputs();
-    for (let i = 0; i < this.inputTensorsVector.size(); ++i) {
-      const tensor = this.inputTensorsVector.get(i);
-      this.inputTensors.set(tensor.name(), tensor);
+      private readonly signatureIndex: number,
+      private readonly liteRtModel: LiteRtModel,
+      private readonly liteRtCompiledModel: LiteRtCompiledModel,
+      readonly options: Required<CompileOptions>) {
+    this.liteRtSimpleSignature = liteRtModel.getSignature(signatureIndex);
+
+    // Input details
+    const inputNames =
+        emscriptenVectorToArray(this.liteRtSimpleSignature.inputNames());
+    const inputDetails: TensorDetails[] = [];
+    for (let i = 0; i < inputNames.length; i++) {
+      const name = inputNames[i];
+      const tensorType = liteRtModel.getInputTensorType(signatureIndex, i);
+      const requirements =
+          liteRtCompiledModel.getInputBufferRequirements(signatureIndex, i);
+      inputDetails.push(makeTensorDetails(name, i, tensorType, requirements));
     }
+    this.inputDetails = Object.freeze(inputDetails);
 
-    this.outputTensorsVector = this.signatureRunnerWrapper.outputs();
-    for (let i = 0; i < this.outputTensorsVector.size(); ++i) {
-      const tensor = this.outputTensorsVector.get(i);
-      this.outputTensors.set(tensor.name(), tensor);
+    // Output details
+    const outputNames =
+        emscriptenVectorToArray(this.liteRtSimpleSignature.outputNames());
+    const outputDetails: TensorDetails[] = [];
+    for (let i = 0; i < outputNames.length; i++) {
+      const name = outputNames[i];
+      const tensorType = liteRtModel.getOutputTensorType(signatureIndex, i);
+      const requirements =
+          liteRtCompiledModel.getOutputBufferRequirements(signatureIndex, i);
+      outputDetails.push(makeTensorDetails(name, i, tensorType, requirements));
     }
-  }
-
-  private checkTypes(inputs: Tensor[]): void {
-    const inputTensorsList = [...this.inputTensors.values()];
-    for (let i = 0; i < inputTensorsList.length; ++i) {
-      const tensorWrapper = inputTensorsList[i];
-      const tensor = inputs[i];
-      const expectedDType = tensorWrapper.type();
-      if (expectedDType !== tensor.type.dtype) {
-        throw new TensorTypeError(
-            tensorWrapper.name(), i, expectedDType, tensor.type.dtype);
-      }
-    }
-  }
-
-  /**
-   * Runs the signature with the given input tensors and returns the outputs.
-   */
-  run(input: Tensor|Tensor[]): Tensor[];
-  run(input: Record<string, Tensor>): Record<string, Tensor>;
-  // Typescript won't automatically distribute a union over the above
-  // signatures, so we need to explicitly declare it below.
-  // https://github.com/microsoft/TypeScript/issues/14107
-  run(input: Tensor|Tensor[]|
-      Record<string, Tensor>): Tensor[]|Record<string, Tensor>;
-  run(input: Tensor|Tensor[]|
-      Record<string, Tensor>): Tensor[]|Record<string, Tensor> {
-    if (this.deleted) {
-      throw new Error('Signature has been deleted. Please reload the model.');
-    }
-    let inputArray: Tensor[];
-    let shouldReturnArray = true;
-    if (Array.isArray(input)) {
-      if (input.length !== this.inputTensors.size) {
-        throw new Error(
-            `run() called with ${input.length} ` +
-            `inputs, but signature expects ${this.inputTensors.size} inputs`);
-      }
-      inputArray = input;
-    } else if (input instanceof Tensor) {
-      if (this.inputTensors.size !== 1) {
-        throw new Error(
-            `run() called with a single tensor, but signature expects ${
-                this.inputTensors.size} inputs`);
-      }
-      inputArray = [input];
-    } else {
-      shouldReturnArray = false;
-      // Must insert in the same order as the inputTensors map.
-      inputArray = [];
-      for (const name of this.inputTensors.keys()) {
-        const tensor = input[name];
-        if (!tensor) {
-          throw new Error(`Expected input tensor with name '${
-              name}', but none was provided.`);
-        }
-        inputArray.push(tensor);
-      }
-    }
-
-    this.checkTypes(inputArray);
-    const outputArray = this.runWithArray(inputArray);
-
-    // In most cases, we return an array of tensors.
-    if (shouldReturnArray) {
-      return outputArray;
-    }
-
-    // If the input was a record, we need to return a record of outputs.
-    const output: Record<string, Tensor> = {};
-
-    // This order of outputTensors.keys() is the same as in the
-    // outputTensorsVector (see the constructor) because `Map.prototype.keys`
-    // iterates in insertion order.
-    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map
-    const names = [...this.outputTensors.keys()];
-    for (let i = 0; i < names.length; i++) {
-      output[names[i]] = outputArray[i];
-    }
-    return output;
-  }
-
-  protected pushErrorScopes() {
-    // Only implemented by subclasses that use the GPU.
-  }
-
-  protected popErrorScopes(callsite: string) {
-    // Only implemented by subclasses that use the GPU.
+    this.outputDetails = Object.freeze(outputDetails);
   }
 
   /**
-   * Runs the default signature of the model with the given input tensors and
-   * returns the outputs.
+   * The string key corresponding to this signature in the model.
    */
-  protected runWithArray(input: Tensor[]): Tensor[] {
-    const tensors = this.signatureRunnerWrapper.makeTensorVector();
-    for (const tensor of input) {
-      // TODO: Assert this is a DriftTensor.
-      tensors.push_back(tensor.reference);
-    }
-
-    // Perform input copy.
-    this.pushErrorScopes();
-    this.signatureRunnerWrapper.copyInputs(tensors);
-    this.popErrorScopes('copyInputs');
-
-    tensors.delete();
-
-    // Actually run the signature.
-    this.pushErrorScopes();
-    this.signatureRunnerWrapper.invoke();
-    this.popErrorScopes('invoke');
-
-    // Copy tensors from the interpreter.
-    this.pushErrorScopes();
-    const outputTensorReferences = this.signatureRunnerWrapper.copyOutputs();
-    this.popErrorScopes('copyOutputs');
-
-    const output: Tensor[] = [];
-    for (let i = 0; i < this.outputTensorsVector.size(); ++i) {
-      const tensorWrapper = this.outputTensorsVector.get(i);
-      const tensorReference = outputTensorReferences.get(i);
-      output.push(new Tensor({
-        type: {
-          dtype: tensorWrapper.type(),
-          layout: {dimensions: tensorWrapper.shape()}
-        },
-        accelerator: tensorWrapper.accelerator(),
-        reference: tensorReference,
-      }));
-      tensorWrapper.delete();  // Free this copy from the `.get` call.
-      // Do not free the tensorReference here since it has been passed to the
-      // output Tensor. It will be freed when the Tensor is freed.
-    }
-    outputTensorReferences.delete();
-
-    return output;
+  get key(): string {
+    this.ensureNotDeleted();
+    return this.liteRtSimpleSignature.key();
   }
 
   /**
    * Get details about each input tensor.
    */
-  getInputDetails() {
-    return getTensorMapDetails(this.inputTensors);
+  getInputDetails(): readonly TensorDetails[] {
+    this.ensureNotDeleted();
+    return this.inputDetails;
   }
 
   /**
    * Get details about each output tensor.
    */
-  getOutputDetails() {
-    return getTensorMapDetails(this.outputTensors);
+  getOutputDetails(): readonly TensorDetails[] {
+    this.ensureNotDeleted();
+    return this.outputDetails;
+  }
+
+  /**
+   * Runs the signature with positional input tensors.
+   * @param input The input tensors.
+   * @return The output tensors.
+   */
+  run(input: Tensor|Tensor[]): Promise<Tensor[]>;
+  /**
+   * Runs the signature with named input tensors.
+   * @param input A record of named input tensors.
+   * @return A record of named output tensors.
+   */
+  run(input: Record<string, Tensor>): Promise<Record<string, Tensor>>;
+  // Typescript won't automatically distribute a union over the above
+  // signatures, so we need to explicitly declare it below.
+  // https://github.com/microsoft/TypeScript/issues/14107
+  run(input: Tensor|Tensor[]|
+      Record<string, Tensor>): Promise<Tensor[]|Record<string, Tensor>>;
+  async run(input: TensorInputs) {
+    this.ensureNotDeleted();
+    const inputArray = this.inputsToArray(input);
+    const {inputsOnAccelerator, cleanup} =
+        await this.ensureInputsOnAccelerator(inputArray);
+
+    let outputArray: Tensor[]|undefined;
+    try {
+      outputArray = this.runWithArray(inputsOnAccelerator);
+    } finally {
+      cleanup();
+    }
+
+    if (Array.isArray(input) || input instanceof Tensor) {
+      return outputArray;
+    } else {
+      return this.outputsToRecord(outputArray);
+    }
+  }
+
+  private inputsToArray(input: TensorInputs): Tensor[] {
+    if (Array.isArray(input)) {
+      if (input.length !== this.inputDetails.length) {
+        throw new Error(
+            `run() called with ${input.length} ` +
+            `inputs, but signature expects ${this.inputDetails.length} inputs`);
+      }
+      return input;
+    }
+    if (input instanceof Tensor) {
+      if (this.inputDetails.length !== 1) {
+        throw new Error(
+            `run() called with a single tensor, but signature expects ${
+                this.inputDetails.length} inputs`);
+      }
+      return [input];
+    }
+    // Must insert in the same order as the inputDetails.
+    const inputArray: Tensor[] = [];
+    for (const inputDetails of this.inputDetails) {
+      if (!(inputDetails.name in input)) {
+        throw new Error(
+            `run() called with input record that is missing ` +
+            `input ${inputDetails.name} with index ${inputDetails.index}`);
+      }
+      inputArray.push(input[inputDetails.name]);
+    }
+    return inputArray;
+  }
+
+  private outputsToRecord(output: Tensor[]): Record<string, Tensor> {
+    const outputRecord: Record<string, Tensor> = {};
+    for (let i = 0; i < this.outputDetails.length; i++) {
+      outputRecord[this.outputDetails[i].name] = output[i];
+    }
+    return outputRecord;
+  }
+
+  /**
+   * Ensures that all input tensors are on the correct accelerator. Copies any
+   * tensors that are not on the correct accelerator.
+   *
+   * @param inputs The input tensors to be passed to the signature. They must
+   *     be in the same order and quantity as the input details.
+   * @return A promise that resolves to a list of input tensors that are on the
+   *     correct accelerator, and a cleanup function that deletes any tensors
+   *     that were copied.
+   */
+  private async ensureInputsOnAccelerator(inputs: Tensor[]): Promise<{
+    inputsOnAccelerator: Tensor[];
+    cleanup: () => void;  // Deletes any copies of tensors that were made.
+  }> {
+    const toDelete: Tensor[] = [];
+    const inputsOnAccelerator: Tensor[] = [];
+    const inputDetails = this.getInputDetails();
+
+    if (inputs.length !== inputDetails.length) {
+      throw new Error(`ensureInputsOnAccelerator() called with ${
+          inputs.length} inputs, but signature expects ${
+          inputDetails.length} inputs`);
+    }
+
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i];
+      const bufferType = input.getBufferType();
+      const supportedBufferTypes = inputDetails[i].supportedBufferTypes;
+      if (supportedBufferTypes.size === 0) {
+        throw new Error(`Tensor ${inputDetails[i].name} with index ${
+            inputDetails[i].index} has no supported buffer types.`);
+      }
+      if (supportedBufferTypes.has(bufferType)) {
+        inputsOnAccelerator.push(input);
+      } else {
+        const newBufferType = supportedBufferTypes.values().next().value!;
+        const copy = await input.copyTo(newBufferType);
+        toDelete.push(copy);
+        inputsOnAccelerator.push(copy);
+      }
+    }
+    return {
+      inputsOnAccelerator,
+      cleanup: () => {
+        for (const tensor of toDelete) {
+          tensor.delete();
+        }
+      },
+    };
+  }
+
+  private runWithArray(input: Tensor[]): Tensor[] {
+    // b/458345985: When on WebGPU, will need to check stride & alignment
+    for (let i = 0; i < input.length; i++) {
+      const inputTensor = input[i];
+      const expectedRankedTensorType =
+          this.liteRtModel.getInputTensorType(this.signatureIndex, i);
+      const inputRequirements =
+          this.liteRtCompiledModel.getInputBufferRequirements(
+              this.signatureIndex, i);
+      getGlobalLiteRt().liteRtWasm.checkTensorBufferCompatible(
+          inputTensor.liteRtTensorBuffer, expectedRankedTensorType,
+          inputRequirements);
+
+      expectedRankedTensorType.delete();
+      inputRequirements.delete();
+    }
+
+    const outputTensorBuffers = this.liteRtCompiledModel.run(
+        this.signatureIndex, input.map((tensor) => tensor.liteRtTensorBuffer));
+    return outputTensorBuffers.map(
+        (tensorBuffer) => new Tensor(tensorBuffer, this.options.environment));
+  }
+
+  get deleted(): boolean {
+    return this.deletedInternal;
+  }
+
+  private ensureNotDeleted() {
+    if (this.deleted) {
+      throw new Error(
+          'CompiledModelSignatureRunner is deleted and cannot be used.');
+    }
   }
 
   delete() {
-    if (this.deleted) {
+    if (this.deletedInternal) {
       return;
     }
-    // Delete all the copies
-    for (const tensor of this.inputTensors.values()) {
-      tensor.delete();
-    }
-    this.inputTensors.clear();
-    this.inputTensorsVector.delete();
-
-    for (const tensor of this.outputTensors.values()) {
-      tensor.delete();
-    }
-    this.outputTensors.clear();
-    this.outputTensorsVector.delete();
-
-    this.deleted = true;
-    // Note that we don't delete the signatureRunnerWrapper here since it's a
-    // reference owned by the interpreter.
+    this.deletedInternal = true;
+    this.liteRtSimpleSignature.delete();
   }
 }
 
-function getTensorMapDetails(tensors: Map<string, TensorWrapper>) {
-  return [...tensors.entries()].map(
-      ([name, tensor], index) =>
-          ({name, index, shape: tensor.shape(), dtype: tensor.type()}));
+/**
+ * Creates a TensorDetails object from the given information.
+ *
+ * Deletes the input LiteRtRankedTensorType and LiteRtTensorBufferRequirements
+ * objects.
+ */
+function makeTensorDetails(
+    name: string, index: number, tensorType: LiteRtRankedTensorType,
+    requirements: LiteRtTensorBufferRequirements): TensorDetails {
+  const layout = tensorType.layout();
+  const dimensions = emscriptenVectorToArray(layout.dimensions());
+  layout.delete();
+  const supportedBufferTypes =
+      new Set(emscriptenVectorToArray(requirements.supportedTypes())
+                  .map(({value}) => value));
+
+  const details: TensorDetails = {
+    name,
+    index,
+    dtype: getDataType(tensorType.elementType().value).dtype,
+    shape: new Int32Array(dimensions),
+    supportedBufferTypes,
+  };
+  tensorType.delete();
+  requirements.delete();
+  return details;
 }

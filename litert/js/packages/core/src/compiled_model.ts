@@ -14,131 +14,148 @@
  * limitations under the License.
  */
 
-import {Accelerator} from './constants';
-import {SignatureRunner} from './signature_runner';
+import {Model} from './model';
+import {CompileOptions, TensorInputs} from './model_types';
+import {CompiledModelSignatureRunner, SignatureRunner, TensorDetails} from './signature_runner';
 import {Tensor} from './tensor';
-import type {SignatureRunnerWrapper, TensorWrapper} from './wasm_binding_types';
-import {LiteRtInterpreter} from './wasm_binding_types';
+import {Deletable, LiteRtCompiledModel} from './wasm_binding_types';
 
 /**
- * Represents a loaded LiteRt model.
+ * Represents a compiled LiteRt model.
  */
-export class CompiledModel {
-  protected inputTensors = new Map<string, TensorWrapper>();
-  protected outputTensors = new Map<string, TensorWrapper>();
-  readonly signatures: Record<string, SignatureRunner> = {};
-  protected readonly primarySignature: SignatureRunner;
-  readonly accelerator: Accelerator;
-  deleted = false;
+export class CompiledModel implements Deletable, SignatureRunner {
+  private readonly defaultSignature: SignatureRunner;
+  private readonly compiledModelSignatureRunners:
+      Record<string, CompiledModelSignatureRunner>;
+  readonly key: string;
+  private deletedInternal = false;
 
   constructor(
-      protected readonly liteRtInterpreter: LiteRtInterpreter,
-      makeSignatureRunner:
-          (signatureRunnerWrapper: SignatureRunnerWrapper) => SignatureRunner,
-      private readonly onDelete: () => void) {
-    const tfliteInputs = this.liteRtInterpreter.inputs();
-    for (let i = 0; i < tfliteInputs.size(); ++i) {
-      const tensor = tfliteInputs.get(i);
-      this.inputTensors.set(tensor.name(), tensor);
+      private readonly model: Model,
+      private readonly liteRtCompiledModel: LiteRtCompiledModel,
+      readonly options: Required<CompileOptions>,
+      private readonly onDelete: () => void,
+  ) {
+    const numSignatures = model.liteRtModel.getNumSignatures();
+    const compiledModelSignatureRunners:
+        Record<string, CompiledModelSignatureRunner> = {};
+    for (let i = 0; i < numSignatures; i++) {
+      const compiledModelSignatureRunner = new CompiledModelSignatureRunner(
+          i, model.liteRtModel, liteRtCompiledModel, options);
+      compiledModelSignatureRunners[compiledModelSignatureRunner.key] =
+          compiledModelSignatureRunner;
     }
+    this.compiledModelSignatureRunners =
+        Object.freeze(compiledModelSignatureRunners);
 
-    const signaturesVector = this.liteRtInterpreter.listSignatures();
-    for (let i = 0; i < signaturesVector.size(); ++i) {
-      const signatureName = signaturesVector.get(i);
-      this.signatures[signatureName] = makeSignatureRunner(
-          this.liteRtInterpreter.getSignatureRunner(signatureName));
-    }
-    this.primarySignature = makeSignatureRunner(liteRtInterpreter);
-    this.accelerator = this.primarySignature.accelerator;
+    this.defaultSignature = Object.values(this.signatures)[0]!;
+    this.key = this.defaultSignature.key;
   }
 
-  private checkDeleted() {
-    if (this.deleted) {
-      throw new Error('Model has been deleted. Please reload the model.');
-    }
+  get signatures(): Record<string, SignatureRunner> {
+    this.ensureNotDeleted();
+    return this.compiledModelSignatureRunners;
+  }
+
+  getInputDetails(): readonly TensorDetails[] {
+    this.ensureNotDeleted();
+    return this.defaultSignature.getInputDetails();
+  }
+
+  getOutputDetails(): readonly TensorDetails[] {
+    this.ensureNotDeleted();
+    return this.defaultSignature.getOutputDetails();
   }
 
   /**
-   * Runs the model with the given input tensors and returns the outputs.
-   *
-   * If the first argument is a string, it is interpreted as a signature name
-   * and the second argument is interpreted as the input tensors for that
-   * signature. Otherwise, the first argument is interpreted as the input
-   * tensors for the primary signature.
+   * Runs the default signature with positional input tensors.
+   * @param input The input tensors.
+   * @return A promise that resolves to the output tensors.
    */
-  run(input: Tensor|Tensor[]): Tensor[];
-  run(input: Record<string, Tensor>): Record<string, Tensor>;
-  run(signatureName: string, input: Tensor|Tensor[]): Tensor[];
+  run(input: Tensor|Tensor[]): Promise<Tensor[]>;
+  /**
+   * Runs the default signature with named input tensors.
+   * @param input A record of named input tensors.
+   * @return A promise that resolves to a record of named output tensors.
+   */
+  run(input: Record<string, Tensor>): Promise<Record<string, Tensor>>;
+  /**
+   * Runs a specific signature by name with positional input tensors.
+   * @param signatureName The name of the signature to run.
+   * @param input The input tensors.
+   * @return A promise that resolves to the output tensors.
+   */
+  run(signatureName: string, input: Tensor|Tensor[]): Promise<Tensor[]>;
+  /**
+   * Runs a specific signature by name with named input tensors.
+   * @param signatureName The name of the signature to run.
+   * @param input A record of named input tensors.
+   * @return A promise that resolves to a record of named output tensors.
+   */
   run(signatureName: string,
-      input: Record<string, Tensor>): Record<string, Tensor>;
+      input: Record<string, Tensor>): Promise<Record<string, Tensor>>;
   // Typescript won't automatically distribute a union over the above
   // signatures, so we need to explicitly declare them below.
   // https://github.com/microsoft/TypeScript/issues/14107
   run(input: Tensor|Tensor[]|
-      Record<string, Tensor>): Tensor[]|Record<string, Tensor>;
+      Record<string, Tensor>): Promise<Tensor[]|Record<string, Tensor>>;
   run(signatureName: string, input: Tensor|Tensor[]|Record<string, Tensor>):
-      Tensor[]|Record<string, Tensor>;
-  run(inputOrSignatureName: string|Tensor|Tensor[]|Record<string, Tensor>,
+      Promise<Tensor[]|Record<string, Tensor>>;
+  async run(
+      inputOrSignatureName: string|Tensor|Tensor[]|Record<string, Tensor>,
       maybeInput?: Tensor|Tensor[]|Record<string, Tensor>) {
-    this.checkDeleted();
+    this.ensureNotDeleted();
+    const [signature, input] =
+        this.parseRunInputs(inputOrSignatureName, maybeInput);
+    return await signature.run(input);
+  }
+
+  private parseRunInputs(
+      inputOrSignatureName: string|TensorInputs,
+      maybeInput?: TensorInputs): [SignatureRunner, TensorInputs] {
+    let signature: SignatureRunner;
+    let input: TensorInputs;
     if (typeof inputOrSignatureName === 'string') {
-      const signatureName = inputOrSignatureName;
-      const input = maybeInput;
-      const signature = this.signatures[signatureName];
+      signature = this.signatures[inputOrSignatureName];
       if (!signature) {
-        const signatures = Object.keys(this.signatures).join(', ');
-        throw new Error(`Signature '${
-            signatureName}' not found in the model. Available signatures: ${
-            signatures}`);
+        throw new Error(
+            `No signature named ${inputOrSignatureName} found in model.`);
       }
-      if (!input) {
-        throw new Error(`No input provided for signature '${signatureName}'.`);
+      if (!maybeInput) {
+        throw new Error(
+            `No input provided for signature ${inputOrSignatureName}`);
       }
-
-      return signature.run(input);
+      input = maybeInput;
     } else {
-      return this.primarySignature.run(inputOrSignatureName);
+      signature = this.defaultSignature;
+      input = inputOrSignatureName;
     }
+    return [signature, input];
   }
 
-  /**
-   * Returns the input details for the primary signature.
-   */
-  getInputDetails() {
-    this.checkDeleted();
-    return this.primarySignature.getInputDetails();
+  get deleted(): boolean {
+    return this.deletedInternal;
   }
 
-  /**
-   * Returns the output details for the primary signature.
-   */
-  getOutputDetails() {
-    this.checkDeleted();
-    return this.primarySignature.getOutputDetails();
+  private ensureNotDeleted() {
+    if (this.deleted) {
+      throw new Error('CompiledModel is deleted and cannot be used.');
+    }
   }
 
   delete() {
-    if (this.deleted) {
+    // For now, we enforce a 1:1 correspondence between models and compiled
+    // models. If there's a need in the future, we can revise this.
+    if (this.deletedInternal) {
       return;
     }
-    // Set this now to prevent reentry, although that shouldn't happen.
-    this.deleted = true;
-
-    for (const signature of Object.values(this.signatures)) {
-      signature.delete();
+    this.deletedInternal = true;
+    this.liteRtCompiledModel.delete();
+    this.model.delete();
+    for (const signatureRunner of Object.values(
+             this.compiledModelSignatureRunners)) {
+      signatureRunner.delete();
     }
-
-    // This is separate from the other signatures
-    this.primarySignature.delete();
-
-    for (const input of this.inputTensors.values()) {
-      input.delete();
-    }
-    for (const output of this.outputTensors.values()) {
-      output.delete();
-    }
-
-    this.liteRtInterpreter.delete();
     this.onDelete();
   }
 }
