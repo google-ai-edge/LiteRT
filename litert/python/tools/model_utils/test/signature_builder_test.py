@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Tests for flatbuffer signature builder."""
-
 import os
+
 from xdsl import irdl
+
+import os # import gfile
 from absl.testing import absltest as googletest
 from litert.python.tools import model_utils as mu
 from litert.python.tools.model_utils import model_builder

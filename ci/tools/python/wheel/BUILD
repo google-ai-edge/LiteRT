@@ -76,6 +76,7 @@ ALL_PY_SRC_MODULES = select({
         "//litert/python/internal:llm_metadata_py_pb2",
         "//litert/python/internal:sampler_params_py_pb2",
         "//litert/python/internal:litertlm_builder",
+        "//litert/python/tools:flatbuffer_utils",
     ],
     "//conditions:default": [],
 })
