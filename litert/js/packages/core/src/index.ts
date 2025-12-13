@@ -15,17 +15,15 @@
  */
 
 export * from './litert_web';
-export {type TensorType, Tensor, TensorTypeError, TensorShapeError} from './tensor';
-export * from './constants';
-export * from './compiled_model';
-export * from './signature_runner';
-export {type GpuErrorReporter, isWebGPUSupported} from './gpu_utils';
-export * from './gpu_conversion';
-export * from './cpu_signature_runner';
-export * from './gpu_signature_runner';
-export {type CpuTensorReference, type ErrorReporter} from './wasm_binding_types';
 export {getGlobalLiteRt, getGlobalLiteRtPromise, LiteRtNotLoadedError} from './global_litert';
+export * from './tensor';
+export {type CompileOptions} from './model_types';
+export {CompiledModel} from './compiled_model';
+export {type SignatureRunner} from './signature_runner';
+export {Environment, type EnvironmentOptions} from './environment';
+export {type DType, type TypedArray} from './datatypes';
+export {type Accelerator} from './accelerator_types';
 export * from './load_litert';
+export {TensorBufferType} from './wasm_binding_types';
 import {registerCopyFunctions} from './tensor_copy_functions';
-
 registerCopyFunctions();
