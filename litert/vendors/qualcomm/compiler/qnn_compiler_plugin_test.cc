@@ -409,5 +409,19 @@ TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPluginOpCompatibilityTest,
                          kSupportedOps);
 
+TEST(QnnTestCallDummyPlugin, CheckCompilerCompatibility) {
+  auto plugin = CreatePlugin();
+  LiteRtApiVersion api_version = {.major = 0, .minor = 1, .patch = 0};
+  LiteRtEnvironmentOptions env = nullptr;
+  LiteRtOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      api_version, plugin.get(), env, options, "SM8650"));
+
+  EXPECT_EQ(
+      kLiteRtStatusErrorUnsupportedCompilerVersion,
+      LiteRtCompilerPluginCheckCompilerCompatibility(
+          api_version, plugin.get(), env, options, "UnsupportedSocModel"));
+}
+
 }  // namespace
 }  // namespace litert
