@@ -44,8 +44,8 @@ void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
   }
 }
 
-void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
-                               size_t num_bytes) {
+void ConvertDataFromInt4ToInt8(const void* src, size_t num_bytes,
+                               std::vector<std::int8_t>& dst) {
   dst.clear();
   dst.reserve(num_bytes * 2);
   const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
@@ -57,6 +57,54 @@ void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
     if (upper & 0x08) upper |= 0xF0;
     dst.emplace_back(lower);
     dst.emplace_back(upper);
+  }
+}
+
+void ConvertDataFromInt2ToInt8(const void* src, size_t num_bytes,
+                               std::vector<std::int8_t>& dst) {
+  dst.clear();
+  dst.reserve(num_bytes * 4);
+  const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
+  for (size_t i = 0; i < num_bytes; i++) {
+    std::uint8_t byte = byte_data[i];
+
+    for (size_t j = 0; j < 4; j++) {
+      // Mask: 0000 0011
+      std::int8_t num = byte & 0x03;
+
+      // Perform sign extension on all four numbers
+      // The sign bit for a 2-bit number is the 2nd bit (mask 0x02)
+      // The sign extension mask is 0xFC (binary 1111 1100)
+      if (num & 0x02) num |= 0xFC;
+
+      dst.emplace_back(num);
+
+      byte >>= 2;
+    }
+  }
+}
+
+void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
+                               std::vector<std::int8_t>& dst) {
+  // The source vector size must be a multiple of 4.
+  assert(src.size() % 4 == 0);
+
+  dst.clear();
+  dst.reserve(src.size() / 4);
+
+  // Process the source vector in chunks of 4.
+  for (size_t i = 0; i < src.size(); i += 4) {
+    // Mask each int8_t to get its 2-bit representation, discarding sign bits.
+    // Mask: 0000 0011
+    std::int8_t num1 = src[i] & 0x03;
+    std::int8_t num2 = src[i + 1] & 0x03;
+    std::int8_t num3 = src[i + 2] & 0x03;
+    std::int8_t num4 = src[i + 3] & 0x03;
+
+    // Combine the four 2-bit numbers into a single byte.
+    // num4 is placed in the most significant bits, num1 in the least.
+    std::int8_t byte = num1 | (num2 << 2) | (num3 << 4) | (num4 << 6);
+    dst.emplace_back(byte);
   }
 }
 

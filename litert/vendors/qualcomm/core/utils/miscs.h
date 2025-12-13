@@ -25,6 +25,7 @@
 namespace qnn {
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
+constexpr uint32_t kQuantBitWidth2 = 2;
 
 template <typename...>
 inline constexpr bool always_false = false;
@@ -48,8 +49,14 @@ void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
 void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
                                   std::vector<std::int16_t>& dst);
 
-void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
-                               size_t num_bytes);
+void ConvertDataFromInt4ToInt8(const void* src, size_t num_bytes,
+                               std::vector<std::int8_t>& dst);
+
+void ConvertDataFromInt2ToInt8(const void* src, size_t num_bytes,
+                               std::vector<std::int8_t>& dst);
+
+void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
+                               std::vector<std::int8_t>& dst);
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
 
