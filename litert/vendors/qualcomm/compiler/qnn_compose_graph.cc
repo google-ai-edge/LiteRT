@@ -56,6 +56,7 @@
 #include "litert/vendors/qualcomm/core/builders/embedding_lookup_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder_htp.h"
+#include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gather_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
@@ -483,6 +484,13 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflFullyConnected: {
+      // Attempt to replace FC with HadamardTransform.
+      if (op_wrappers = ::qnn::BuildHadamardTransformOp(
+              tensor_pool, input_tensors, output_tensors);
+          !op_wrappers.empty()) {
+        LITERT_LOG(LITERT_DEBUG, "FC -> HadamardTransform");
+        break;
+      }
       uint32_t fused_activation{};
       LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedFusedActivationOption(
           litert_op.Get(), &fused_activation));
