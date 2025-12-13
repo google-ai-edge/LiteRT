@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_ELEMENT_TYPE_H_
 #define ODML_LITERT_LITERT_CC_LITERT_ELEMENT_TYPE_H_
 
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <type_traits>
@@ -155,6 +154,11 @@ inline constexpr ElementType GetElementType<float>() {
 template <>
 inline constexpr ElementType GetElementType<double>() {
   return ElementType::Float64;
+}
+
+template <>
+inline constexpr ElementType GetElementType<fp16_t>() {
+  return ElementType::Float16;
 }
 
 // clang format off
