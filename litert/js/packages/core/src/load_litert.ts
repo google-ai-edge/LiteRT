@@ -16,6 +16,7 @@
 
 // Placeholder for internal dependency on trusted resource url type
 
+import {Environment} from './environment';
 import {getGlobalLiteRt, getGlobalLiteRtPromise, hasGlobalLiteRt, hasGlobalLiteRtPromise, setGlobalLiteRt, setGlobalLiteRtPromise} from './global_litert';
 import {LiteRt} from './litert_web';
 import {load, LoadOptions} from './load';
@@ -53,8 +54,10 @@ export function loadLiteRt(
     throw new Error('LiteRT is already loading / loaded.');
   }
   setGlobalLiteRtPromise(load(path, options)
-                             .then(liteRt => {
+                             .then(async liteRt => {
                                setGlobalLiteRt(liteRt);
+                               liteRt.setDefaultEnvironment(
+                                   await Environment.create());
                                return liteRt;
                              })
                              .catch(error => {
