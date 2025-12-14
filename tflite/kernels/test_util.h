@@ -57,6 +57,7 @@ limitations under the License.
 #include "tflite/string_util.h"
 #include "tflite/testing/util.h"  // IWYU pragma: keep
 #include "tflite/tools/optimize/quantization_utils.h"
+#include "tflite/types/fp16.h"
 #include "tflite/util.h"
 #include "tsl/platform/logging.h"
 
