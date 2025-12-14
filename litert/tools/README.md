@@ -283,6 +283,14 @@ the NPU implementation.
 npu_numerics_check --cpu_model=<cpu_model_path> --npu_model=<npu_model_path> --dispatch_library_dir=<path_to_dispatch_lib>
 ```
 
+### Test with Custom Inputs
+
+Prepare an input folder containing all input files in .raw format, with each filename corresponding to the model's input signature.
+
+```bash
+npu_numerics_check --cpu_model=<cpu_model_path> --npu_model=<npu_model_path> --dispatch_library_dir=<path_to_dispatch_lib> --input_dir=<path_to_input_folder>
+```
+
 ## `culprit_finder`
 
 A powerful debugging tool to identify the specific operator ("culprit") in a
