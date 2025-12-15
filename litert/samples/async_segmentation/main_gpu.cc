@@ -248,16 +248,15 @@ int main(int argc, char* argv[]) {
   bool async = false;
   LITERT_ABORT_IF_ERROR(
       compiled_model.RunAsync(0, input_buffers, output_buffers, async));
+  if (output_buffers[0].HasEvent()) {
+    LITERT_ASSIGN_OR_ABORT(auto event, output_buffers[0].GetEvent());
+    event.Wait();
+  }
   profiling_timestamps.inference_end_time =
       profiling_timestamps.post_process_start_time = absl::Now();
 
   // ================= POST-PROCESSING =================
   // Post-process the results
-  if (output_buffers[0].HasEvent()) {
-    LITERT_ASSIGN_OR_ABORT(auto event, output_buffers[0].GetEvent());
-    event.Wait();
-  }
-
   std::vector<GLuint> mask_buffer_ids;
   mask_buffer_ids.reserve(6);
   for (int i = 0; i < 6; ++i) {
