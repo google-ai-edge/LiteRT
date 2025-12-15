@@ -75,7 +75,7 @@ export async function runDepthEstimation({
   const inputTensor =
       new Tensor(float32Data, [1, channels, inputHeight, inputWidth]);
 
-  const [outputTensor] = model.run([inputTensor]);
+  const [outputTensor] = await model.run([inputTensor]);
   inputTensor.delete();
 
   const outputData = outputTensor.toTypedArray() as Float32Array;
