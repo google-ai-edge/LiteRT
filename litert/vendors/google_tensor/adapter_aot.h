@@ -34,7 +34,8 @@ namespace litert::google_tensor {
 // @param soc_model_data Pointer to the string identifying the SOC model
 //        (e.g., "g4", "g5", etc.).
 // @param soc_model_size Length of the SOC model string.
-// @param options LiteRTOpaqueOptions to pass the compiler options.
+// @param options Pointer to the serialized GoogleTensorOptions proto.
+// @param options_size Size of the serialized GoogleTensorOptions proto.
 // @param compiled_code_data On success, will be set to point to a newly
 //        allocated buffer containing the compiled code. The caller takes
 //        ownership of this buffer and is responsible for freeing it
@@ -48,7 +49,8 @@ namespace litert::google_tensor {
 // @return bool indicating whether the compilation was successful or not.
 typedef bool (*Compile)(const char* tfl_buffer_data, size_t tfl_buffer_size,
                         const char* soc_model_data, size_t soc_model_size,
-                        LiteRtOpaqueOptions options, char*** compiled_code_data,
+                        const char* options, size_t options_size,
+                        char*** compiled_code_data,
                         size_t** compiled_code_sizes, size_t* num_bytecodes,
                         char** out_error_message);
 typedef void (*CompilerFreeCompiledCode)(char** compiled_code_data,
@@ -71,7 +73,7 @@ class AdapterAot : public Adapter {
 
   Expected<void> Compile(const char* tfl_buffer_data, size_t tfl_buffer_size,
                          const char* soc_model_data, size_t soc_model_size,
-                         LiteRtOpaqueOptions options,
+                         const char* options, size_t options_size,
                          char*** compiled_code_data,
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;

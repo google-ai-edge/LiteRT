@@ -32,7 +32,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_rewriter.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
@@ -40,10 +43,18 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/adapter.h"
+#include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 
 //
 // Configurations
 //
+
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorOptions;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorOptionsShardingIntensity;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorOptionsTruncationType;
 
 namespace google_tensor {
 
@@ -106,6 +117,129 @@ constexpr auto kNumPluginSocModels =
     sizeof(kPluginSocModels) / sizeof(kPluginSocModels[0]);
 
 }  // namespace google_tensor
+
+LiteRtStatus LiteRtOpaqueOptionsToGoogleTensorOptions(
+    LiteRtOpaqueOptions options,
+    third_party::odml::litert::litert::vendors::google_tensor::compiler::
+        GoogleTensorOptions* google_tensor_options) {
+  LiteRtGoogleTensorOptions google_tensor_options_data = nullptr;
+  if (LiteRtFindOpaqueOptionsData(
+          options, "google_tensor",
+          reinterpret_cast<void**>(&google_tensor_options_data)) !=
+      kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (google_tensor_options_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // FLOAT TRUNCATION TYPE
+  LiteRtGoogleTensorOptionsTruncationType float_truncation_type;
+  if (LiteRtGoogleTensorOptionsGetFloatTruncationType(
+          google_tensor_options_data, &float_truncation_type) !=
+      kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  switch (float_truncation_type) {
+    case kLiteRtGoogleTensorFloatTruncationTypeAuto:
+      // set value in google_tensor_options proto
+      google_tensor_options->set_float_truncation_type(
+          GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_AUTO);
+      break;
+    case kLiteRtGoogleTensorFloatTruncationTypeNoTruncation:
+      google_tensor_options->set_float_truncation_type(
+          GoogleTensorOptionsTruncationType::
+              FLOAT_TRUNCATION_TYPE_NO_TRUNCATION);
+      break;
+    case kLiteRtGoogleTensorFloatTruncationTypeBfloat16:
+      google_tensor_options->set_float_truncation_type(
+          GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_BFLOAT16);
+      break;
+    case kLiteRtGoogleTensorFloatTruncationTypeHalf:
+      google_tensor_options->set_float_truncation_type(
+          GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_HALF);
+      break;
+  }
+
+  // INT64 TO INT32 TRUNCATION
+  bool int64_to_int32_truncation;
+  if (LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation(
+          google_tensor_options_data, &int64_to_int32_truncation) !=
+      kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  google_tensor_options->set_int64_to_int32_truncation(
+      int64_to_int32_truncation);
+
+  // DUMP OP TIMINGS
+  bool dump_op_timings;
+  if (LiteRtGoogleTensorOptionsGetDumpOpTimings(
+          google_tensor_options_data, &dump_op_timings) != kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  google_tensor_options->set_dump_op_timings(dump_op_timings);
+
+  // ENABLE LARGE MODEL SUPPORT
+  bool enable_large_model_support;
+  if (LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
+          google_tensor_options_data, &enable_large_model_support) !=
+      kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  google_tensor_options->set_enable_large_model_support(
+      enable_large_model_support);
+
+  // ENABLE 4BIT COMPILATION
+  bool enable_4bit_compilation;
+  if (LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
+          google_tensor_options_data, &enable_4bit_compilation) !=
+      kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  google_tensor_options->set_enable_four_bit_compilation(
+      enable_4bit_compilation);
+
+  // SHARDING INTENSITY
+  LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity;
+  if (LiteRtGoogleTensorOptionsGetShardingIntensity(
+          google_tensor_options_data, &sharding_intensity) != kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  switch (sharding_intensity) {
+    case kLiteRtGoogleTensorShardingIntensityMinimal:
+      google_tensor_options->set_sharding_intensity(
+          GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MINIMAL);
+      break;
+    case kLiteRtGoogleTensorShardingIntensityModerate:
+      google_tensor_options->set_sharding_intensity(
+          GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MODERATE);
+      break;
+    case kLiteRtGoogleTensorShardingIntensityExtensive:
+      google_tensor_options->set_sharding_intensity(
+          GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_EXTENSIVE);
+      break;
+    case kLiteRtGoogleTensorShardingIntensityMaximum:
+      google_tensor_options->set_sharding_intensity(
+          GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MAXIMUM);
+      break;
+    default:
+      google_tensor_options->set_sharding_intensity(
+          GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_UNSPECIFIED);
+      break;
+  }
+
+// TESTING FLAGS
+  std::vector<std::vector<std::string>> testing_flags;
+  if (LiteRtGoogleTensorOptionsGetTestingFlags(
+          google_tensor_options_data, &testing_flags) != kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (const auto& flag : testing_flags) {
+    google_tensor_options->set_testing_flags(flag[0]);
+  }
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
   if (api_version == nullptr) {
@@ -406,7 +540,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     opaque_options = compiler_plugin->GetOpaqueOptions()->Get();
   }
 
+  third_party::odml::litert::litert::vendors::google_tensor::compiler::
+      GoogleTensorOptions google_tensor_options;
+
+  // map to opaque options
+  LITERT_RETURN_IF_ERROR(LiteRtOpaqueOptionsToGoogleTensorOptions(
+      opaque_options, &google_tensor_options));
+
+  // serialize to string
+  std::string google_tensor_options_str;
+  if (!google_tensor_options.SerializeToString(&google_tensor_options_str)) {
+    LITERT_LOG(LITERT_ERROR, "%s", "Failed to serialize opaque options proto.");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   std::string valid_soc_model(soc_model);
+
   if (strcmp(soc_model, "g5") == 0 || strcmp(soc_model, "g4") == 0 ||
       strcmp(soc_model, "g3") == 0) {
     LITERT_LOG(LITERT_WARNING,
@@ -431,7 +579,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   };
   auto compile_status = adapter->Compile(
       model_buffer_view.data(), model_buffer_view.size(), soc_model_view.data(),
-      soc_model_view.size(), opaque_options, &compiled_code_data,
+      soc_model_view.size(), google_tensor_options_str.data(),
+      google_tensor_options_str.size(), &compiled_code_data,
       &compiled_code_sizes, &num_bytecodes);
   if (!compile_status) {
     LITERT_LOG(LITERT_ERROR, "%s", compile_status.Error().Message().c_str());

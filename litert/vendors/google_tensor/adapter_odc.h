@@ -40,7 +40,7 @@ class AdapterOdc : public Adapter {
 
   Expected<void> Compile(const char* tfl_buffer_data, size_t tfl_buffer_size,
                          const char* soc_model_data, size_t soc_model_size,
-                         LiteRtOpaqueOptions options,
+                         const char* options, size_t options_size,
                          char*** compiled_code_data,
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;

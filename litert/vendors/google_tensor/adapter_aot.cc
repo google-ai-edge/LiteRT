@@ -117,8 +117,8 @@ litert::Expected<void> AdapterAot::LoadSymbols(
 
 Expected<void> AdapterAot::Compile(
     const char* tfl_buffer_data, size_t tfl_buffer_size,
-    const char* soc_model_data, size_t soc_model_size,
-    LiteRtOpaqueOptions options, char*** compiled_code_data,
+    const char* soc_model_data, size_t soc_model_size, const char* options_data,
+    size_t options_size, char*** compiled_code_data,
     size_t** compiled_code_sizes, size_t* num_bytecodes) {
   char* error_message = nullptr;
   // Ensure memory allocated by the C API is freed.
@@ -128,8 +128,9 @@ Expected<void> AdapterAot::Compile(
     }
   };
   bool compile_status = api_->compile(
-      tfl_buffer_data, tfl_buffer_size, soc_model_data, soc_model_size, options,
-      compiled_code_data, compiled_code_sizes, num_bytecodes, &error_message);
+      tfl_buffer_data, tfl_buffer_size, soc_model_data, soc_model_size,
+      options_data, options_size, compiled_code_data, compiled_code_sizes,
+      num_bytecodes, &error_message);
   if (!compile_status) {
     std::string error_str = "Failed to compile model";
     if (error_message) {
