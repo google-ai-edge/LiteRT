@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, Tensor} from '@litertjs/core_litert';
+import {CompiledModel, Tensor} from '@litertjs/core';
 
 /**
  * Options for depth estimation.

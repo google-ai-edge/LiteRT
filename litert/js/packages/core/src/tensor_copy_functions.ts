@@ -14,31 +14,46 @@
  * limitations under the License.
  */
 
-import {cpuTensorToGpuTensor, gpuTensorToCpuTensor} from './gpu_utils';
-import {Tensor} from './tensor';
+import {copyHostMemoryToHostMemory} from './cpu_copy_functions';
+import {cpuTensorToGpuTensor, gpuTensorToCpuTensor} from './gpu_copy_functions';
+import {CopyOptions, Tensor, TensorCopyFn} from './tensor';
+import {TensorBufferType} from './wasm_binding_types';
+
+function makeMoveTo(copyTo: TensorCopyFn): TensorCopyFn {
+  return async (tensor: Tensor, options?: CopyOptions) => {
+    const result = await copyTo(tensor, options);
+    tensor.delete();
+    return result;
+  };
+}
 
 /**
  * Registers functions to copy tensors between the CPU and WebGPU accelerators.
  */
 export function registerCopyFunctions() {
-  Tensor.copyFunctions['wasm'] = {
-    'webgpu': {
-      copyTo: cpuTensorToGpuTensor,
-      moveTo: async (tensor: Tensor) => {
-        const gpuTensor = await cpuTensorToGpuTensor(tensor);
-        tensor.delete();
-        return gpuTensor;
-      },
-    },
-  };
-  Tensor.copyFunctions['webgpu'] = {
-    'wasm': {
-      copyTo: gpuTensorToCpuTensor,
-      moveTo: async (tensor: Tensor) => {
-        const cpuTensor = await gpuTensorToCpuTensor(tensor);
-        tensor.delete();
-        return cpuTensor;
-      }
-    },
-  };
+  Tensor.copyFunctions.set(TensorBufferType.HOST_MEMORY, new Map([
+                             [
+                               TensorBufferType.HOST_MEMORY, {
+                                 copyTo: copyHostMemoryToHostMemory,
+                                 // There might be a more efficient way to move
+                                 // from CPU to CPU.
+                                 moveTo: makeMoveTo(copyHostMemoryToHostMemory),
+                               }
+                             ],
+                             [
+                               TensorBufferType.WEB_GPU_BUFFER_PACKED, {
+                                 copyTo: cpuTensorToGpuTensor,
+                                 moveTo: makeMoveTo(cpuTensorToGpuTensor),
+                               }
+                             ],
+                           ]));
+
+  Tensor.copyFunctions.set(TensorBufferType.WEB_GPU_BUFFER_PACKED, new Map([
+                             [
+                               TensorBufferType.HOST_MEMORY, {
+                                 copyTo: gpuTensorToCpuTensor,
+                                 moveTo: makeMoveTo(gpuTensorToCpuTensor),
+                               }
+                             ],
+                           ]));
 }

@@ -17,7 +17,7 @@
 import '@tensorflow/tfjs-backend-webgpu'; // Side-effect import for webgpu backend.
 import '@tensorflow/tfjs-backend-cpu'; // CPU backend is needed if WebGPU is not available.
 
-import {CompiledModel, getWebGpuDevice, loadAndCompile, loadLiteRt, SignatureRunner} from '@litertjs/core_litert';
+import {CompiledModel, getWebGpuDevice, loadAndCompile, loadLiteRt, SignatureRunner} from '@litertjs/core';
 import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
 import {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
