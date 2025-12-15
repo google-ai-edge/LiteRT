@@ -17,8 +17,8 @@
 import '@tensorflow/tfjs-backend-webgpu'; // Side-effect import for webgpu backend.
 import '@tensorflow/tfjs-backend-cpu'; // CPU backend is needed if WebGPU is not available.
 
+import {CompiledModel, getWebGpuDevice, loadAndCompile, loadLiteRt, SignatureRunner} from '@litertjs/core_litert';
 import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
-import {CompiledModel, loadAndCompile, loadLiteRt, SignatureRunner, getWebGpuDevice} from '@litertjs/core';
 import {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 // Placeholder for internal dependency on trusted resource url
@@ -46,6 +46,9 @@ export const liteRtPromise = (async () => {
   }
   try {
     const device = await getWebGpuDevice();
+    if (!device) {
+      throw new Error('WebGPU device is null');
+    }
     const adapterInfo = (device as unknown as {adapterInfo: GPUAdapterInfo}).adapterInfo;
     tf.removeBackend('webgpu');
     tf.registerBackend('webgpu', () => new WebGPUBackend(device, adapterInfo));
@@ -118,7 +121,7 @@ export class LiteRtModelRunner implements ModelRunner {
       benchmarkRunCount: number): Promise<ModelResult> {
     const partialResult: Partial<ModelResult> = {};
 
-    const results = runWithTfjsTensors(model, fakeInputs);
+    const results = await runWithTfjsTensors(model, fakeInputs);
 
     partialResult.tensors = {record: {}};
     for (const [name, tensor] of Object.entries(results)) {
@@ -133,7 +136,7 @@ export class LiteRtModelRunner implements ModelRunner {
     for (let i = 0; i < benchmarkRunCount; i++) {
       const start = performance.now();
       console.log(`Benchmarking run ${i + 1} of ${benchmarkRunCount}`);
-      const results = runWithTfjsTensors(model, fakeInputs);
+      const results = await runWithTfjsTensors(model, fakeInputs);
       for (const result of Object.values(results)) {
         await result.data();  // Ensure data is synced to CPU
         result.dispose();
@@ -240,8 +243,15 @@ function makeFakeInput({shape, dtype}: TensorMeta): tf.Tensor {
  * Make fake inputs for a model.
  */
 function makeFakeInputs(model: CompiledModel|SignatureRunner) {
-  return Object.fromEntries(model.getInputDetails().map(
-      details => [details.name, makeFakeInput(details)]));
+  return Object.fromEntries(model.getInputDetails().map(details => {
+    const shape = details.shape;
+    const dtype = details.dtype;
+    if (dtype !== 'float32' && dtype !== 'int32') {
+      throw new Error(`Unsupported dtype: ${dtype}`);
+    }
+
+    return [details.name, makeFakeInput({shape, dtype})];
+  }));
 }
 
 /**

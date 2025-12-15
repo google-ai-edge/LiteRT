@@ -16,8 +16,8 @@
 
 import '@tensorflow/tfjs-backend-webgpu'; // side-effect to register the backend
 
-import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
 import {CompileOptions, loadAndCompile, loadLiteRt, setWebGpuDevice} from '@litertjs/core';
+import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
 import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-core/dist/public/chained_ops/register_all_chained_ops';
@@ -104,23 +104,22 @@ async function main(useWebGpu = true) {
 
     for (let i = 0; i < times; ++i) {
       let start: number;
-      const top5 = tf.tidy(() => {
-        const inputs = {
-          'serving_default_args_0:0': imageData,
-        };
 
-        start = performance.now();
+      const inputs = {
+        'args_0': imageData,
+      };
 
-        const outputs = runWithTfjsTensors(model, inputs);
-        const output = outputs['StatefulPartitionedCall:0'];
-        return tf.topk(output, 5);
-      });
+      start = performance.now();
+
+      const outputs = await runWithTfjsTensors(model, inputs);
+      const output = outputs['output_0'];
+      const top5 = tf.topk(output, 5);
+      tf.dispose(output);
 
       values = await top5.values.data();
       indices = await top5.indices.data();
 
-      top5.values.dispose();
-      top5.indices.dispose();
+      tf.dispose(top5);
 
       const stop = performance.now();
       totalTime += stop - start!;
