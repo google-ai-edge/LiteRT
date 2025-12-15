@@ -51,7 +51,7 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tsl/platform/path.h"
 
-namespace tensorflow {
+namespace litert {
 namespace debug_test {
 
 class NopPass : public mlir::PassWrapper<NopPass, mlir::OperationPass<>> {
@@ -86,7 +86,7 @@ namespace {
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
-using namespace tensorflow::debug_test;
+using namespace litert::debug_test;
 
 class InitPassManagerTest : public testing::Test {
  protected:
@@ -148,7 +148,7 @@ class InitPassManagerTest : public testing::Test {
 };
 
 TEST_F(InitPassManagerTest, CrashReproducer) {
-  converter::DebugOptions debug_options;
+  litert::converter::DebugOptions debug_options;
   *debug_options.mutable_ir_dump_dir() = path_;
 
   mlir::PassManager pm(&context_);
@@ -167,7 +167,7 @@ TEST_F(InitPassManagerTest, CrashReproducer) {
 }
 
 TEST_F(InitPassManagerTest, DumpToDir) {
-  converter::DebugOptions debug_options;
+  litert::converter::DebugOptions debug_options;
   *debug_options.mutable_ir_dump_dir() = path_;
   *debug_options.mutable_ir_dump_pass_regex() = R"(.*NopPass)";
 
@@ -200,7 +200,7 @@ TEST_F(InitPassManagerTest, DumpToDir) {
 }
 
 TEST_F(InitPassManagerTest, PrintIRBeforeEverything) {
-  converter::DebugOptions debug_options;
+  litert::converter::DebugOptions debug_options;
   *debug_options.mutable_print_ir_before() = R"(.*)";
   std::string captured_out;
   llvm::raw_string_ostream out(captured_out);
@@ -217,7 +217,7 @@ TEST_F(InitPassManagerTest, PrintIRBeforeEverything) {
 }
 
 TEST_F(InitPassManagerTest, PrintIRAfterEverything) {
-  converter::DebugOptions debug_options;
+  litert::converter::DebugOptions debug_options;
   *debug_options.mutable_print_ir_after() = R"(.*)";
   std::string captured_out;
   llvm::raw_string_ostream out(captured_out);
@@ -235,7 +235,7 @@ TEST_F(InitPassManagerTest, PrintIRAfterEverything) {
 }
 
 TEST_F(InitPassManagerTest, PrintIRBeforeAndAfterEverything) {
-  converter::DebugOptions debug_options;
+  litert::converter::DebugOptions debug_options;
   *debug_options.mutable_print_ir_before() = R"(.*)";
   *debug_options.mutable_print_ir_after() = R"(.*)";
   std::string captured_out;
@@ -253,7 +253,7 @@ TEST_F(InitPassManagerTest, PrintIRBeforeAndAfterEverything) {
 }
 
 TEST_F(InitPassManagerTest, ElideLargeElementAttrs) {
-  converter::DebugOptions debug_options;
+  litert::converter::DebugOptions debug_options;
   *debug_options.mutable_print_ir_before() = R"(.*)";
   debug_options.set_elide_elementsattrs_if_larger(5);
   std::string captured_out;
@@ -268,7 +268,7 @@ TEST_F(InitPassManagerTest, ElideLargeElementAttrs) {
 }
 
 TEST_F(InitPassManagerTest, DontElideSmallerElementAttrs) {
-  converter::DebugOptions debug_options;
+  litert::converter::DebugOptions debug_options;
   *debug_options.mutable_print_ir_before() = R"(.*)";
   debug_options.set_elide_elementsattrs_if_larger(11);
   std::string captured_out;
@@ -284,4 +284,4 @@ TEST_F(InitPassManagerTest, DontElideSmallerElementAttrs) {
 }
 
 }  // namespace
-}  // namespace tensorflow
+}  // namespace litert

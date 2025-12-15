@@ -13,7 +13,7 @@
 // limitations under the License.
 syntax = "proto2";
 
-package tflite;
+package litert;
 
 import "tflite/converter/debug/debug_options.proto";
 import "tflite/converter/types.proto";
@@ -318,7 +318,7 @@ message ConverterFlags {
       [default = false, deprecated = true];
 
   // Additional parameters for controlling debug facilities.
-  optional tensorflow.converter.DebugOptions debug_options = 56;
+  optional litert.converter.DebugOptions debug_options = 56;
 
   // If true, TFlite will use offsets instead of flatbuffers array to store
   // buffers and custom options Note: This is an experimental feature

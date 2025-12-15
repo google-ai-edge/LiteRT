@@ -36,7 +36,7 @@ struct LocationHash {
 // The hash function for ConverterErrorData.
 struct ConverterErrorDataHash {
   std::size_t operator()(
-      const tflite::metrics::ConverterErrorData& v) const noexcept {
+      const litert::metrics::ConverterErrorData& v) const noexcept {
     std::size_t hash_result = std::hash<std::string>{}(v.error_message());
     if (v.has_subcomponent()) {
       hash_result ^= std::hash<std::string>{}(v.subcomponent()) << 1;
@@ -54,16 +54,16 @@ struct ConverterErrorDataHash {
 // The comparison function for ConverterErrorData.
 struct ConverterErrorDataComparison {
   std::size_t operator()(
-      const tflite::metrics::ConverterErrorData& a,
-      const tflite::metrics::ConverterErrorData& b) const noexcept {
+      const litert::metrics::ConverterErrorData& a,
+      const litert::metrics::ConverterErrorData& b) const noexcept {
     return ConverterErrorDataHash()(a) == ConverterErrorDataHash()(b);
   }
 };
 
 // Helper function to create a new ConverterErrorData.
-tflite::metrics::ConverterErrorData NewConverterErrorData(
+litert::metrics::ConverterErrorData NewConverterErrorData(
     const std ::string& pass_name, const std::string& error_message,
-    tflite::metrics::ConverterErrorData::ErrorCode error_code,
+    litert::metrics::ConverterErrorData::ErrorCode error_code,
     const std::string& op_name, const Location& location);
 
 }  // namespace TFL
