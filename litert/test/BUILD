@@ -354,6 +354,7 @@ exports_files(
         "testdata/simple_model_npu_mediatek_mt6989_precompiled.tflite",
         "testdata/simple_model_qualcomm.bin",
         "testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
+        "testdata/simple_model_reference_google_tensor.bin",
         "testdata/simple_quantized_ops.tflite",
         "testdata/torchaudio_conformer.tflite",
     ],

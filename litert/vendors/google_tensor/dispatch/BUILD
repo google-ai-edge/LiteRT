@@ -94,6 +94,34 @@ litert_dynamic_lib(
     ],
 )
 
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "dispatch_api_google_tensor_test_x86",
+#     srcs = ["dispatch_api_google_tensor_test.cc"],
+#     data = [
+#         ":dispatch_api_so",
+#         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
+#         "//litert/test:testdata/simple_model_reference_google_tensor.bin",
+#     ],
+#     deps = [
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/base:no_destructor",
+#         "@com_google_absl//absl/log",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/types:span",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc/dynamic_runtime:litert_environment",
+#         "//litert/cc/dynamic_runtime:litert_options",
+#         "//litert/core:filesystem_testonly",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model_npu",
+#         "//litert/vendors/c:litert_dispatch_c_api",
+#     ],
+# )
+# copybara:uncomment_end
+
 litert_device_test(
     name = "dispatch_api_google_tensor_test",
     srcs = ["dispatch_api_google_tensor_test.cc"],
@@ -117,6 +145,7 @@ litert_device_test(
         "//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
