@@ -136,7 +136,7 @@ export async function upscaleImageWithTiling({
       const gpuInputTensor = await cpuInputTensor.moveTo('webgpu');
 
       // Run the model with the GPU tensor
-      const [outputTensor] = model.run([gpuInputTensor]);
+      const [outputTensor] = await model.run([gpuInputTensor]);
 
       // The GPU input tensor can now be deleted
       gpuInputTensor.delete();
