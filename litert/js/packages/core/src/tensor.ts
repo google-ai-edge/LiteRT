@@ -14,9 +14,52 @@
  * limitations under the License.
  */
 
-import {Accelerator, Dimensions, DType, DTYPE_TO_ARRAY_TYPE, TypedArray, TypedArrayConstructor, typedArrayToDtype} from './constants';
+import {Accelerator, AcceleratorDefaultTensorBufferType, TensorBufferTypeToAccelerator} from './accelerator_types';
+import {DType, getDataType, TypedArray, TypedArrayConstructor} from './datatypes';
+import {Environment, WithEnvironment} from './environment';
 import {getGlobalLiteRt} from './global_litert';
-import {CpuTensorReference, OpaqueTensorReference} from './wasm_binding_types';
+import {Deletable, ElementTypeName, LiteRtTensorBuffer, TensorBufferType, TensorBufferTypeName} from './wasm_binding_types';
+import {emscriptenVectorToArray, fillEmscriptenVector} from './wasm_utils';
+
+/**
+ * Options for copying a Tensor to another accelerator or buffer type.
+ */
+export interface CopyOptions {
+  environment?: Environment;
+}
+
+/**
+ * A function that copies a Tensor to another accelerator or buffer type.
+ *
+ * @param tensor The tensor to copy.
+ * @param options Options for the copy operation.
+ * @return A promise that resolves to the copied tensor.
+ */
+export type TensorCopyFn = (tensor: Tensor, options?: CopyOptions) =>
+    Tensor|Promise<Tensor>;
+
+/**
+ * A set of copy functions for copying tensors between accelerators.
+ */
+interface CopyFunctionSet {
+  moveTo?: TensorCopyFn;
+  copyTo?: TensorCopyFn;
+}
+
+/**
+ * A map of copy functions for copying tensors between accelerators.
+ *
+ * The first key is the source buffer type. The second key is the destination
+ * buffer type.
+ */
+type TensorCopyFunctions =
+    Map<TensorBufferType /* from */,
+        Map<TensorBufferType /* to */, CopyFunctionSet>>;
+
+/**
+ * The dimensions or shape of a Tensor.
+ */
+export type Dimensions = Int32Array|number[];
 
 /**
  * Metadata about a Tensor including its type and layout.
@@ -29,181 +72,382 @@ export interface TensorType {
   layout: {dimensions: Dimensions};
 }
 
-// Functions for copying tensors between accelerators.
-interface CopyFunctionSet {
-  moveTo?: (tensor: Tensor) => Tensor | Promise<Tensor>;
-  copyTo?: (tensor: Tensor) => Tensor | Promise<Tensor>;
+interface TensorConstructorArgs {
+  typedArray?: TypedArray;
+  gpuBuffer?: GPUBuffer;
+  liteRtTensorBuffer?: LiteRtTensorBuffer;
+  shape?: Dimensions;
+  dataType?: DType;
+  environment?: Environment;
+  onDelete?: () => void;
 }
 
-type TensorCopyFunctions = Partial<Record<
-    Accelerator /* from */,
-    Partial<Record<Accelerator /* to */, CopyFunctionSet>>>>;
+type Arg = TensorConstructorArgs[keyof TensorConstructorArgs];
 
-
-
-/**
- * Data for constructing a Tensor directly from an OpaqueTensorReference.
- *
- * Most users should not need to construct a Tensor this way. They should
- * instead construct their tensors from TypedArrays or other data sources.
- */
-export interface TensorReferenceData {
-  type: TensorType;
-  accelerator: Accelerator;
-  reference: OpaqueTensorReference;
+function parseData(remainingArgs: Arg[]): {
+  typedArray?: TypedArray;
+  gpuBuffer?: GPUBuffer;
+  liteRtTensorBuffer?: LiteRtTensorBuffer;
+} {
+  const data = remainingArgs.shift();
+  const liteRtWasm = getGlobalLiteRt().liteRtWasm;
+  if (data instanceof liteRtWasm.LiteRtTensorBuffer) {
+    return {liteRtTensorBuffer: data};
+  } else if (data instanceof GPUBuffer) {
+    return {gpuBuffer: data};
+  } else if (ArrayBuffer.isView(data)) {
+    return {typedArray: data};
+  } else {
+    throw new Error(`Unknown type (${
+        data?.constructor.name ?? data}) provided to create a Tensor`);
+  }
 }
 
-function isTensorReferenceData(data: unknown): data is TensorReferenceData {
-  const maybeData = data as TensorReferenceData;
-  return (
-      maybeData !== undefined && typeof maybeData === 'object' &&
-      typeof maybeData.type === 'object' &&
-      typeof maybeData.accelerator === 'string' &&
-      typeof maybeData.reference === 'object');
+function parseShape(remainingArgs: Arg[]): {shape?: Dimensions;} {
+  if (Array.isArray(remainingArgs[0]) ||
+      remainingArgs[0] instanceof Int32Array) {
+    return {shape: remainingArgs.shift() as Dimensions};
+  } else {
+    return {};  // Shape will just be flat.
+  }
+}
+
+function shiftUntilDefined(remainingArgs: Arg[]) {
+  while (remainingArgs.length > 0 && remainingArgs[0] === undefined) {
+    remainingArgs.shift();
+  }
+}
+
+function parseDataType(remainingArgs: Arg[]): {dataType?: DType;} {
+  shiftUntilDefined(remainingArgs);
+  if (typeof remainingArgs[0] === 'string') {
+    // Perhaps this should also support passing in the enum value instead of
+    // just the string?
+    const dtype = remainingArgs.shift() as DType;
+    // Call getDataType to ensure it's actually a valid DType string.
+    return {dataType: getDataType(dtype).dtype};
+  } else {
+    return {};
+  }
+}
+
+function parseEnvironment(remainingArgs: Arg[]): {environment?: Environment;} {
+  shiftUntilDefined(remainingArgs);
+  if (remainingArgs[0] instanceof Environment) {
+    return {environment: remainingArgs.shift() as Environment};
+  } else {
+    return {};
+  }
+}
+
+function parseOnDelete(remainingArgs: Arg[]): {onDelete?: () => void;} {
+  shiftUntilDefined(remainingArgs);
+  if (remainingArgs[0] instanceof Function) {
+    return {onDelete: remainingArgs.shift() as () => void};
+  } else {
+    return {};
+  }
+}
+
+function parseArgs(args: Arg[]): TensorConstructorArgs {
+  return {
+    ...parseData(args),
+    ...parseShape(args),
+    ...parseDataType(args),
+    ...parseEnvironment(args),
+    ...parseOnDelete(args),
+  };
 }
 
 /**
  * A tensor that is passed to or from a model.
- *
- * Tensors may be on the CPU (`wasm` accelerator), on the GPU (`webgpu`
- * accelerator), or on another LiteRt-specific accelerator.
- * They can be converted between accelerators with `copyTo` and `moveTo`.
- * Tensors on the `wasm` accelerator can be converted to the TypedArray
- * corresponding to their data type.
  */
-export class Tensor {
-  // This contains properties of TensorWrapper but organized in a more
-  // JS-friendly way. Some properties may be missing, such as when the user
-  // creates their own Tensor.
-  //
-  // Additionally, instances of this interface are not associated with a
-  // specific TfLite Interpreter.
-
-  static copyFunctions: TensorCopyFunctions = {};
-  private readonly tensorReferenceData: TensorReferenceData;
+export class Tensor implements Deletable, WithEnvironment {
+  readonly liteRtTensorBuffer!: LiteRtTensorBuffer;
+  readonly type: TensorType;
+  readonly environment: Environment;
   private deletedInternal = false;
+  private onDelete: (() => void)|undefined;
 
-  constructor(data: TensorReferenceData);
-  constructor(data: TypedArray, shape?: Dimensions);
+  static copyFunctions: TensorCopyFunctions = new Map();
+
   constructor(
-      dataOrTypedArray: TensorReferenceData|TypedArray, shape?: Dimensions) {
-    if (isTensorReferenceData(dataOrTypedArray)) {
-      this.tensorReferenceData = dataOrTypedArray;
-    } else {
-      this.tensorReferenceData = {
-        type: {
-          dtype: typedArrayToDtype(dataOrTypedArray),
-          layout: {
-            dimensions: shape ?? [dataOrTypedArray.length],
-          }
-        },
-        accelerator: 'wasm',
-        reference: typedArrayToCpuTensorReference(dataOrTypedArray),
+      data: TypedArray, shape?: Dimensions, environment?: Environment,
+      onDelete?: () => void);
+  constructor(
+      liteRtTensorBuffer: LiteRtTensorBuffer, environment?: Environment,
+      onDelete?: () => void);
+  constructor(
+      gpuBuffer: GPUBuffer, shape: Dimensions, dataType: DType,
+      environment?: Environment, onDelete?: () => void);
+  constructor(
+      a: TypedArray|LiteRtTensorBuffer|GPUBuffer,
+      b?: Dimensions|Environment,
+      c?: DType|Environment|(() => void),
+      d?: Environment|(() => void),
+      e?: () => void,
+  ) {
+    const {
+      typedArray,
+      gpuBuffer,
+      liteRtTensorBuffer,
+      shape,
+      dataType,
+      environment,
+      onDelete,
+    } = parseArgs([a, b, c, d, e]);
+
+    this.onDelete = onDelete;  // Typically used for cleaning up WebGPU buffers.
+
+    // Note: We can't easily verify that the GPUBuffer and the environment
+    // share the same device. There's no `.device` property on the GPUBuffer.
+    this.environment = environment ?? getGlobalLiteRt().getDefaultEnvironment();
+
+    if (liteRtTensorBuffer) {
+      if (shape) {
+        throw new Error(
+            'A LiteRtTensorBuffer cannot be provided with a shape.');
+      }
+      if (dataType) {
+        throw new Error(
+            'A LiteRtTensorBuffer cannot be provided with a data type.');
+      }
+      this.liteRtTensorBuffer = liteRtTensorBuffer;
+    } else if (gpuBuffer) {
+      if (!shape) {
+        throw new Error('A GPUBuffer must be provided with a shape.');
+      }
+      if (!dataType) {
+        throw new Error('A GPUBuffer must be provided with a data type.');
+      }
+      const [liteRtTensorBuffer, webGpuBufferPtr] =
+          webGpuBufferToLiteRtTensorBuffer(
+              gpuBuffer, shape, dataType, this.environment);
+      this.liteRtTensorBuffer = liteRtTensorBuffer;
+
+      const onDelete = this.onDelete;
+      this.onDelete = () => {
+        const liteRtWasm = getGlobalLiteRt().liteRtWasm;
+        liteRtWasm.wgpuBufferRelease(webGpuBufferPtr);
+        onDelete?.();
       };
+    } else if (typedArray) {
+      this.liteRtTensorBuffer =
+          typedArrayToLiteRtTensorBuffer(typedArray, shape, environment);
+    } else {
+      throw new Error('No data provided to create a Tensor.');
+    }
+
+    this.type = liteRtTensorBufferToTensorType(this.liteRtTensorBuffer);
+  }
+
+  static fromTypedArray(
+      data: TypedArray, shape?: Dimensions, environment?: Environment): Tensor {
+    return new Tensor(data, shape, environment);
+  }
+
+  private ensureNotDeleted() {
+    if (this.deleted) {
+      throw new Error('Tensor is deleted and cannot be used.');
     }
   }
 
-  /**
-   * Returns the datatype of the tensor.
-   */
-  get type(): TensorType {
-    return this.tensorReferenceData.type;
+  async data(): Promise<TypedArray> {
+    this.ensureNotDeleted();
+    if (this.liteRtTensorBuffer.bufferType().value ===
+        TensorBufferType.HOST_MEMORY) {
+      return this.toTypedArray();
+    }
+    const copy = await this.copyTo('wasm');
+    const data = await copy.data();
+    copy.delete();
+    return data;
   }
 
-  /**
-   * Returns the accelerator the tensor is stored on.
-   */
-  get accelerator(): Accelerator {
-    return this.tensorReferenceData.accelerator;
-  }
-
-  /**
-   * Returns the internal reference to the tensor data.
-   *
-   * Users should not rely on this call, and should use `toTypedArray` instead
-   * if they are trying to view Tensor data.
-   */
-  get reference(): OpaqueTensorReference {
-    return this.tensorReferenceData.reference;
-  }
-
-  static fromTypedArray(data: TypedArray, shape?: Dimensions): Tensor {
-    return new Tensor(data, shape);
-  }
-
-  /**
-   * Returns the data of the tensor as a TypedArray.
-   *
-   * The returned TypedArray is a copy of the data, and this method does not
-   * delete the original tensor.
-   * @throws An error if the tensor is not on Wasm.
-   */
   toTypedArray(): TypedArray {
-    if (this.accelerator !== 'wasm') {
+    this.ensureNotDeleted();
+    const liteRtWasm = getGlobalLiteRt().liteRtWasm;
+    if (this.liteRtTensorBuffer.isWebGpuMemory()) {
       throw new Error(
-          'Tensor must be on Wasm to be converted to a TypedArray.');
+          'Cannot convert a Tensor with WebGPU memory to a TypedArray.');
+    }
+    if (this.liteRtTensorBuffer.bufferType().value !==
+        liteRtWasm.LiteRtTensorBufferType.HOST_MEMORY.value) {
+      throw new Error(
+          'Cannot convert a Tensor with non-host memory to a TypedArray.');
+    }
+    if (this.liteRtTensorBuffer.size() !==
+            this.liteRtTensorBuffer.packedSize() ||
+        this.liteRtTensorBuffer.offset() !== 0) {
+      throw new Error('Tensors with strides or padding are not yet supported.');
     }
 
-    const typedArrayConstructor = DTYPE_TO_ARRAY_TYPE[this.type.dtype];
-    const cpuTensorReference = this.reference as CpuTensorReference;
-    const data = cpuTensorReference.data();
-    return new typedArrayConstructor(
-               // Cast is needed to avoid 'SharedArrayBuffer' in the type.
-               data.buffer as ArrayBuffer, data.byteOffset,
-               data.length / typedArrayConstructor.BYTES_PER_ELEMENT)
-        .slice();
+    const rankedTensorType = this.liteRtTensorBuffer.tensorType();
+    const elementType = rankedTensorType.elementType();
+    const byteWidth = liteRtWasm.liteRtGetByteWidth(elementType);
+    rankedTensorType.delete();
+
+    const typedArrayConstructor =
+        getDataType(elementType.value).typedArrayConstructor;
+    if (typedArrayConstructor.BYTES_PER_ELEMENT !== byteWidth) {
+      throw new Error(
+          `Byte width ${byteWidth} of the tensor's element type ${
+              ElementTypeName[elementType.value]} ` +
+          `does not match the expected byte width ${
+              typedArrayConstructor.BYTES_PER_ELEMENT} of the ${
+              typedArrayConstructor.name}.`);
+    }
+
+    const dataPtr = this.liteRtTensorBuffer.lock(
+        getGlobalLiteRt().liteRtWasm.LiteRtTensorBufferLockMode.READ);
+    try {
+      const uint8Array = liteRtWasm.HEAPU8.slice(
+          dataPtr, dataPtr + this.liteRtTensorBuffer.packedSize());
+
+      const typedArray = new typedArrayConstructor(
+          uint8Array.buffer, uint8Array.byteOffset,
+          uint8Array.byteLength / byteWidth);
+
+      return typedArray;
+    } finally {
+      this.liteRtTensorBuffer.unlock();
+    }
+  }
+
+  getBufferType(): TensorBufferType {
+    this.ensureNotDeleted();
+    return this.liteRtTensorBuffer.bufferType().value;
+  }
+
+  /**
+   * Returns the underlying GPUBuffer of the Tensor.
+   *
+   * Note that the lifetime of the returned GPUBuffer is dependant upon how the
+   * Tensor was created. If the Tensor was constructed from a GPUBuffer, then
+   * the GPUBuffer will NOT be released when the Tensor is deleted. If the
+   * Tensor was copied/moved to GPU from host memory, then the GPU buffer will
+   * be released when the Tensor is deleted.
+   *
+   * The GPU buffer may be larger than the actual data in the tensor.
+   *
+   * @return The GPUBuffer containing the Tensor's data.
+   */
+  toGpuBuffer(): GPUBuffer {
+    this.ensureNotDeleted();
+    const liteRtWasm = getGlobalLiteRt().liteRtWasm;
+    if (!this.liteRtTensorBuffer.isWebGpuMemory()) {
+      throw new Error(
+          'Cannot convert a Tensor with non-WebGPU memory to a GPUBuffer.');
+    }
+    const bufferTypeValue = this.liteRtTensorBuffer.bufferType().value;
+    if (bufferTypeValue !==
+            liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER.value &&
+        bufferTypeValue !==
+            liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_FP16.value &&
+        bufferTypeValue !==
+            liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_PACKED.value) {
+      throw new Error(
+          'Cannot convert a Tensor with host memory to a GPUBuffer.');
+    }
+    // TODO: markoristic - Support tensors with strides or padding.
+    if (this.liteRtTensorBuffer.size() !==
+            this.liteRtTensorBuffer.packedSize() ||
+        this.liteRtTensorBuffer.offset() !== 0) {
+      throw new Error('Tensors with strides or padding are not yet supported.');
+    }
+
+    const gpuBufferId = this.liteRtTensorBuffer.getWebGpuBuffer();
+    return liteRtWasm.WebGPU.getJsObject(gpuBufferId);
+  }
+
+
+  private getCopyFunctionSet(
+      destination: Accelerator|TensorBufferType,
+      ): [CopyFunctionSet, TensorBufferType] {
+    this.ensureNotDeleted();
+    const sourceBufferType = this.getBufferType();
+    const copyFunctions = Tensor.copyFunctions.get(sourceBufferType);
+    if (!copyFunctions) {
+      throw new Error(`TensorBufferType ${
+          TensorBufferTypeName[sourceBufferType] ??
+          sourceBufferType} does not support copying or moving`);
+    }
+
+    const destinationBufferType = (typeof destination === 'string') ?
+        AcceleratorDefaultTensorBufferType[destination] :
+        destination;
+
+    if (destinationBufferType == null) {
+      throw new Error(
+          `Unknown destination '${destination}' for copying or moving.`);
+    }
+
+    const copyFunctionSet = copyFunctions.get(destinationBufferType);
+    if (!copyFunctionSet) {
+      const supportedDestinations =
+          [...copyFunctions].map(([key]) => TensorBufferTypeName[key] ?? key);
+      throw new Error(`TensorBufferType ${
+          TensorBufferTypeName
+              [sourceBufferType]} does not support copying or moving to ${
+          TensorBufferTypeName
+              [destinationBufferType]}. It supports the following TensorBufferTypes: [${
+          supportedDestinations.join(', ')}].`);
+    }
+    return [copyFunctionSet, destinationBufferType];
   }
 
   /**
    * Copies the tensor to the given accelerator.
    *
-   * @param accelerator The accelerator to copy to.
+   * @param destination The accelerator or buffer type to copy to.
    * @return A promise that resolves to the copied tensor.
    */
-  async copyTo(accelerator: Accelerator): Promise<Tensor> {
-    const copyFunctions = Tensor.copyFunctions[this.accelerator];
-    if (!copyFunctions) {
-      throw new Error(
-          `Accelerator ${this.accelerator} does not support copying`);
+  async copyTo(
+      destination: Accelerator|TensorBufferType,
+      options?: CopyOptions): Promise<Tensor> {
+    const [copyFunctionSet, destinationBufferType] =
+        this.getCopyFunctionSet(destination);
+
+    if (!copyFunctionSet.copyTo) {
+      throw new Error(`Copying to ${
+          TensorBufferTypeName
+              [destinationBufferType]} is not supported by this tensor.`);
     }
-    const copyFunctionSet = copyFunctions[accelerator];
-    if (!copyFunctionSet || !copyFunctionSet.copyTo) {
-      const supportedCopyDestinations =
-          Object.entries(copyFunctions)
-              .filter(([key, value]) => value.copyTo)
-              .map(([key, value]) => key);
-      throw new Error(`Accelerator ${
-          this.accelerator} does not support copying to ${
-          accelerator}. It supports copying to the following accelerators: [${
-          supportedCopyDestinations.join(', ')}].`);
-    }
-    return copyFunctionSet.copyTo(this);
+    return copyFunctionSet.copyTo(this, options);
   }
 
   /**
-   * Moves the tensor to the given accelerator, deleting the original.
+   * Moves the tensor to the given accelerator.
    *
-   * @param accelerator The accelerator to move to.
+   * @param destination The accelerator or buffer type to move to.
    * @return A promise that resolves to the moved tensor.
    */
-  async moveTo(accelerator: Accelerator): Promise<Tensor> {
-    const copyFunctions = Tensor.copyFunctions[this.accelerator];
-    if (!copyFunctions) {
-      throw new Error(
-          `Accelerator ${this.accelerator} does not support moving`);
+  async moveTo(
+      destination: Accelerator|TensorBufferType,
+      options?: CopyOptions): Promise<Tensor> {
+    const [copyFunctionSet, destinationBufferType] =
+        this.getCopyFunctionSet(destination);
+
+    if (!copyFunctionSet.moveTo) {
+      throw new Error(`Moving to ${
+          TensorBufferTypeName
+              [destinationBufferType]} is not supported by this tensor.`);
     }
-    const copyFunctionSet = copyFunctions[accelerator];
-    if (!copyFunctionSet || !copyFunctionSet.moveTo) {
-      const supportedMoveDestinations =
-          Object.entries(copyFunctions)
-              .filter(([key, value]) => value.moveTo)
-              .map(([key, value]) => key);
-      throw new Error(`Accelerator ${
-          this.accelerator} does not support moving to ${
-          accelerator}. It supports moving to the following accelerators: [${
-          supportedMoveDestinations.join(', ')}].`);
+    return copyFunctionSet.moveTo(this, options);
+  }
+
+  get bufferType(): TensorBufferType {
+    return this.liteRtTensorBuffer.bufferType().value;
+  }
+
+  get accelerator(): Accelerator {
+    const accelerator = TensorBufferTypeToAccelerator[this.bufferType];
+    if (accelerator === undefined) {
+      throw new Error(`TensorBufferType ${
+          TensorBufferTypeName
+              [this.bufferType]} has an unknown accelerator type.`);
     }
-    return copyFunctionSet.moveTo(this);
+    return accelerator;
   }
 
   get deleted(): boolean {
@@ -211,57 +455,149 @@ export class Tensor {
   }
 
   delete() {
-    this.tensorReferenceData.reference.delete?.();
+    if (this.deletedInternal) {
+      return;
+    }
     this.deletedInternal = true;
+    this.liteRtTensorBuffer.delete();
+    this.onDelete?.();
   }
 }
 
 /**
- * An error thrown when a tensor of the wrong type is passed to a model.
+ * Get the TensorType of a LiteRtTensorBuffer.
  */
-export class TensorTypeError extends Error {
-  constructor(
-      name: string,
-      index: number,
-      expected: DType,
-      actual: DType,
-  ) {
-    super(`Input tensor for ${name} at position ${index} has type ${
-        actual}, but signature expects ${expected}.`);
-  }
+function liteRtTensorBufferToTensorType(
+    liteRtTensorBuffer: LiteRtTensorBuffer,
+    ): TensorType {
+  const liteRtRankedTensorType = liteRtTensorBuffer.tensorType();
+  const elementType = liteRtRankedTensorType.elementType();
+  const liteRtLayout = liteRtRankedTensorType.layout();
+  const dimensions = liteRtLayout.dimensions();
+
+  // Delete temporary emscripten objects.
+  liteRtLayout.delete();
+  liteRtRankedTensorType.delete();
+  // `elementType` does not need to be deleted because it is an enum value.
+  // `dimensions` is deleted by `emscriptenVectorToArray`.
+
+  return {
+    dtype: getDataType(elementType.value).dtype,
+    layout: {dimensions: emscriptenVectorToArray(dimensions)},
+  };
 }
 
 /**
- * An error thrown when a tensor of the wrong shape is passed to a model.
+ * Creates a LiteRtTensorBuffer from a GPUBuffer.
+ *
+ * Returns the LiteRtTensorBuffer and the WebGPU buffer Wasm heap pointer. In
+ * the emscripten implementation, the pointer actually refers to the index of
+ * the buffer in the WebGPU module's Internals.jsObjects array, and must be
+ * released with `wgpuBufferRelease`.
  */
-export class TensorShapeError extends Error {
-  constructor(
-      name: string,
-      expected: {join(joinWith: string): string;},
-      actual: {join(joinWith: string): string;},
-  ) {
-    const expectedShapeString = `[${expected.join(', ')}]`;
-    const actualShapeString = `[${actual.join(', ')}]`;
-    super(
-        `Input tensor for ${name} has shape ${actualShapeString}, but ` +
-        `signature expects ${expectedShapeString}.`);
-  }
-}
-
-function typedArrayToCpuTensorReference(data: TypedArray):
-    OpaqueTensorReference {
+function webGpuBufferToLiteRtTensorBuffer(
+    gpuBuffer: GPUBuffer,
+    shape: Dimensions,
+    dtype: DType,
+    environment: Environment,
+    ): [LiteRtTensorBuffer, number] {
   const globalLiteRt = getGlobalLiteRt();
+  const liteRtWasm = globalLiteRt.liteRtWasm;
 
+  // Create a LiteRtLayout from the shape.
+  const dimensionsVector = new liteRtWasm.VectorInt32();
+  fillEmscriptenVector(shape, dimensionsVector);
+  const layout = liteRtWasm.LiteRtLayout.create(dimensionsVector);
+  dimensionsVector.delete();
+
+  const rankedTensorType = liteRtWasm.LiteRtRankedTensorType.create(
+      {value: getDataType(dtype).elementType},
+      layout,
+  );
+  layout.delete();
+
+  const importedGpuBufferPtr = liteRtWasm.WebGPU.importJsBuffer(gpuBuffer);
+
+  const liteRtTensorBuffer =
+      liteRtWasm.LiteRtTensorBuffer.createFromWebGpuBuffer(
+          environment.liteRtEnvironment,
+          rankedTensorType,
+          liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_PACKED,
+          importedGpuBufferPtr,
+          gpuBuffer.size,
+      );
+  rankedTensorType.delete();
+
+  return [liteRtTensorBuffer, importedGpuBufferPtr];
+}
+
+/**
+ * Creates a LiteRtTensorBuffer from a TypedArray and optional shape.
+ */
+function typedArrayToLiteRtTensorBuffer(
+    data: TypedArray,
+    shape?: Dimensions,
+    environment?: Environment,
+    ): LiteRtTensorBuffer {
+  const globalLiteRt = getGlobalLiteRt();
+  const liteRtWasm = globalLiteRt.liteRtWasm;
+  environment = environment ?? globalLiteRt.getDefaultEnvironment();
+
+  const elementType = getDataType(data).elementType;
+
+  // Create a LiteRtLayout from the shape.
+  const dimensionsVector = new liteRtWasm.VectorInt32();
+  fillEmscriptenVector(shape ?? [data.length], dimensionsVector);
+  const layout = liteRtWasm.LiteRtLayout.create(dimensionsVector);
+  dimensionsVector.delete();
+
+  // Check that the number of elements in the layout matches the number of
+  // elements in the TypedArray.
+  const expectedNumElements = layout.numElements();
+  if (data.length !== expectedNumElements) {
+    layout.delete();
+    throw new Error(
+        `Number of elements ${data.length} of the provided TypedArray ` +
+        `does not match the expected number of elements ${
+            expectedNumElements}.`);
+  }
+
+  // Create a LiteRtRankedTensorType from the element type and layout.
+  const rankedTensorType =
+      liteRtWasm.LiteRtRankedTensorType.create({value: elementType}, layout);
+  layout.delete();  // Delete our copy of the layout.
+
+  // Check that the byte length of the TypedArray matches the expected byte
+  // length of the LiteRtRankedTensorType.
   const arrayType = data.constructor as TypedArrayConstructor;
-  const cpuTensor = new globalLiteRt.liteRtWasm.CpuTensor(
-      data.length * arrayType.BYTES_PER_ELEMENT);
-  const cpuTensorUint8Array = cpuTensor.data();
+  const bufferSize = arrayType.BYTES_PER_ELEMENT * data.length;
+  const expectedBufferSize = rankedTensorType.bytes();
+  if (bufferSize !== expectedBufferSize) {
+    rankedTensorType.delete();
+    throw new Error(
+        `Byte length ${bufferSize} of the provided TypedArray ` +
+        `does not match the expected buffer size ${expectedBufferSize}.`);
+  }
 
-  const cpuTensorArray = new arrayType(
-      // Cast is needed to avoid 'SharedArrayBuffer' in the type.
-      cpuTensorUint8Array.buffer as ArrayBuffer, cpuTensorUint8Array.byteOffset,
-      data.length);
-  cpuTensorArray.set(data);
+  // Create the LiteRtTensorBuffer.
+  const liteRtTensorBuffer = liteRtWasm.LiteRtTensorBuffer.createManaged(
+      environment.liteRtEnvironment,
+      liteRtWasm.LiteRtTensorBufferType.HOST_MEMORY,
+      rankedTensorType,
+      bufferSize,
+  );
+  rankedTensorType.delete();  // Delete our copy.
 
-  return cpuTensor;
+  // Write the data to the LiteRtTensorBuffer.
+  const dataPtr =
+      liteRtTensorBuffer.lock(liteRtWasm.LiteRtTensorBufferLockMode.WRITE);
+  try {
+    const uint8Data =
+        new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    liteRtWasm.HEAPU8.set(uint8Data, dataPtr);
+  } finally {
+    liteRtTensorBuffer.unlock();
+  }
+
+  return liteRtTensorBuffer;
 }
