@@ -39,8 +39,8 @@ class Adapter {
 
   virtual Expected<void> Compile(
       const char* tfl_buffer_data, size_t tfl_buffer_size,
-      const char* soc_model_data, size_t soc_model_size,
-      LiteRtOpaqueOptions options, char*** compiled_code_data,
+      const char* soc_model_data, size_t soc_model_size, const char* options,
+      size_t options_size, char*** compiled_code_data,
       size_t** compiled_code_sizes, size_t* num_bytecodes) = 0;
 
   virtual void FreeCompiledCode(char** compiled_code_data,

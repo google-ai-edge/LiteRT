@@ -60,8 +60,8 @@ TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   sections.emplace("weights.group",
                    ScopedWeightSection{.offset = 4, .length = 8});
 
-  auto status = options.SetExternalWeightScopedFile(std::move(*scoped_file),
-                                                    std::move(sections));
+  auto status =
+      options.SetExternalWeightScopedFile(*scoped_file, std::move(sections));
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   LITERT_EXPECT_OK(status);
   auto* impl = reinterpret_cast<LiteRtOptionsT*>(options.Get());

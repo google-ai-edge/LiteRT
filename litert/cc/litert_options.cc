@@ -107,7 +107,7 @@ Expected<void> Options::Build() {
 }
 
 Expected<void> Options::SetExternalWeightScopedFile(
-    ScopedFile scoped_file, ScopedWeightSectionMap sections) {
+    ScopedFile& scoped_file, ScopedWeightSectionMap sections) {
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   if (!scoped_file.IsValid()) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,

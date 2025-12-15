@@ -37,9 +37,10 @@ pytype_strict_contrib_test(
     srcs = ["signature_builder_test.py"],
     tags = ["no_oss"],
     deps = [
+        # Dependency placeholder: gfile,
+        "@absl_py//absl/testing:absltest",
         "//litert/python/tools/model_utils",
         "//litert/python/tools/model_utils:testing",
-        "@absl_py//absl/testing:absltest",
         "@xdsl",
     ],
 )

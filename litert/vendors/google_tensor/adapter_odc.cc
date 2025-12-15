@@ -84,7 +84,7 @@ litert::Expected<void> AdapterOdc::LoadSymbols() {
 
 // Create EdgeTpuCompilerOptions from the opaque options.
 Expected<EdgeTpuCompilerOptions> CreateEdgeTpuCompilerOptions(
-    LiteRtOpaqueOptions options) {
+    const char* options, size_t options_size) {
   EdgeTpuCompilerOptions edgetpu_compiler_options;
   // TODO: b/467884692 - Parse options from the opaque options.
   return edgetpu_compiler_options;
@@ -93,10 +93,10 @@ Expected<EdgeTpuCompilerOptions> CreateEdgeTpuCompilerOptions(
 Expected<void> AdapterOdc::Compile(
     const char* tfl_buffer_data, size_t tfl_buffer_size,
     const char* soc_model_data, size_t soc_model_size,
-    LiteRtOpaqueOptions options, char*** compiled_code_data,
+    const char* options, size_t options_size, char*** compiled_code_data,
     size_t** compiled_code_sizes, size_t* num_bytecodes) {
   LITERT_ASSIGN_OR_RETURN(auto edgetpu_compiler_options,
-                          CreateEdgeTpuCompilerOptions(options));
+                          CreateEdgeTpuCompilerOptions(options, options_size));
   std::string serialized_options;
   if (!edgetpu_compiler_options.SerializeToString(&serialized_options)) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
