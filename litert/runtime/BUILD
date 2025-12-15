@@ -744,8 +744,11 @@ cc_library(
     hdrs = ["profiler.h"],
     deps = [
         "//litert/c:litert_profiler_event",
+        "//tflite:framework",
+        "//tflite/core:private_cc_api_stable",
         "//tflite/core/api",
         "//tflite/profiling:profile_buffer",
+        "//tflite/profiling:profile_summarizer",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
@@ -792,6 +795,21 @@ cc_test(
         "//litert/c/internal:litert_logging",
         "//tflite/core/api",
         "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "profiler_summarizer_test",
+    srcs = ["profiler_summarizer_test.cc"],
+    deps = [
+        ":profiler",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/core/api",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )
