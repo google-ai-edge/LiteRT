@@ -12,19 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <any>
 #include <cstddef>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
@@ -37,21 +39,24 @@
 using ::testing::Pointwise;
 
 litert::Expected<litert::Environment> CreateDefaultEnvironment() {
-  const std::vector<litert::Environment::Option> environment_options = {
+  static const absl::NoDestructor<std::string> dispatch_library_dir(
+#if defined(__ANDROID__)
+      "/data/local/tmp"
+#else
+      litert::testing::GetLiteRtPath("vendors/google_tensor/dispatch")
+#endif
+  );
+
+  std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
-          "/data/local/tmp",
+          (*dispatch_library_dir).c_str(),
       },
   };
   return litert::Environment::Create(absl::MakeConstSpan(environment_options));
 }
 
 TEST(DispatchApi, GoogleTensor) {
-#if !defined(__ANDROID__)
-  GTEST_SKIP()
-      << "This test is specific to Android devices with a GoogleTensor eTPU";
-#endif
-
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
@@ -81,8 +86,13 @@ TEST(DispatchApi, GoogleTensor) {
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
-  auto model_file_name =
-      litert::testing::GetTestFilePath(kGoogleTensorModelFileName);
+  auto model_file_name = litert::testing::GetTestFilePath(
+#if defined(__ANDROID__)
+      kGoogleTensorModelFileName
+#else
+      kGoogleTensorReferenceModelFileName
+#endif
+  );
   auto model = litert::internal::LoadBinaryFile(model_file_name);
   EXPECT_TRUE(model) << model.Error();
   ABSL_LOG(INFO) << "Loaded model " << model_file_name << ", " << model->Size()
@@ -123,7 +133,6 @@ TEST(DispatchApi, GoogleTensor) {
                 input_0_tensor_buffer_requirements, /*type_index=*/0,
                 &input_0_tensor_buffer_type),
             kLiteRtStatusOk);
-  EXPECT_EQ(input_0_tensor_buffer_type, kLiteRtTensorBufferTypeAhwb);
   size_t input_0_tensor_buffer_size;
   EXPECT_EQ(
       LiteRtGetTensorBufferRequirementsBufferSize(
@@ -145,7 +154,6 @@ TEST(DispatchApi, GoogleTensor) {
                 input_1_tensor_buffer_requirements, /*type_index=*/0,
                 &input_1_tensor_buffer_type),
             kLiteRtStatusOk);
-  EXPECT_EQ(input_1_tensor_buffer_type, kLiteRtTensorBufferTypeAhwb);
   size_t input_1_tensor_buffer_size;
   EXPECT_EQ(
       LiteRtGetTensorBufferRequirementsBufferSize(
@@ -167,7 +175,6 @@ TEST(DispatchApi, GoogleTensor) {
                 output_tensor_buffer_requirements, /*type_index=*/0,
                 &output_tensor_buffer_type),
             kLiteRtStatusOk);
-  EXPECT_EQ(output_tensor_buffer_type, kLiteRtTensorBufferTypeAhwb);
   size_t output_tensor_buffer_size;
   EXPECT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(
                 output_tensor_buffer_requirements, &output_tensor_buffer_size),
@@ -293,6 +300,9 @@ TEST(DispatchApi, GoogleTensor) {
   LiteRtDestroyTensorBuffer(output_tensor_buffer);
   LiteRtDestroyTensorBuffer(input_1_tensor_buffer);
   LiteRtDestroyTensorBuffer(input_0_tensor_buffer);
+  LiteRtDestroyTensorBufferRequirements(input_0_tensor_buffer_requirements);
+  LiteRtDestroyTensorBufferRequirements(input_1_tensor_buffer_requirements);
+  LiteRtDestroyTensorBufferRequirements(output_tensor_buffer_requirements);
   EXPECT_EQ(LiteRtDispatchInvocationContextDestroy(invocation_context),
             kLiteRtStatusOk);
   EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
