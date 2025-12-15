@@ -39,13 +39,13 @@ namespace internal {
 
 // Register all custom ops including user specified custom ops.
 absl::Status RegisterAllCustomOps(
-    const tflite::ConverterFlags& converter_flags);
+    const litert::ConverterFlags& converter_flags);
 
 // Populate quantization specs (or not) given user specified ranges for each
 // input arrays.
 absl::Status PopulateQuantizationSpecs(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags,
     mlir::TFL::QuantizationSpecs* quant_specs,
     std::vector<std::string>* node_names, std::vector<std::string>* node_dtypes,
     std::vector<std::optional<std::vector<int>>>* node_shapes,
@@ -55,8 +55,8 @@ absl::Status PopulateQuantizationSpecs(
 // Convert imported MLIR file to TfLite flatbuffer.
 // This will also run relevant passes as well.
 absl::Status ConvertMLIRToTFLiteFlatBuffer(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags,
     std::unique_ptr<mlir::MLIRContext>&& context,
     mlir::OwningOpRef<mlir::ModuleOp> module,
     const mlir::TFL::PassConfig& pass_config,
@@ -65,8 +65,8 @@ absl::Status ConvertMLIRToTFLiteFlatBuffer(
     const quantization::PyFunctionLibrary* quantization_py_function_lib);
 
 // Give a warning for any unused flags that have been specified.
-void WarningUnusedFlags(const tflite::ModelFlags& model_flags,
-                        const tflite::ConverterFlags& converter_flags);
+void WarningUnusedFlags(const litert::ModelFlags& model_flags,
+                        const litert::ConverterFlags& converter_flags);
 }  // namespace internal
 }  // namespace tensorflow
 

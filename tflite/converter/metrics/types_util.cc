@@ -29,9 +29,9 @@ namespace TFL {
 namespace {
 
 // Extracts information from mlir::FileLineColLoc to the proto message
-// tflite::metrics::ConverterErrorData::FileLoc.
+// litert::metrics::ConverterErrorData::FileLoc.
 void ExtractFileLine(const FileLineColLoc& loc,
-                     tflite::metrics::ConverterErrorData::FileLoc* fileline) {
+                     litert::metrics::ConverterErrorData::FileLoc* fileline) {
   fileline->set_filename(loc.getFilename().str());
   fileline->set_line(loc.getLine());
   fileline->set_column(loc.getColumn());
@@ -42,8 +42,8 @@ class LocationExtractor : public Location {
  public:
   explicit LocationExtractor(const Location& loc) : Location(loc) {}
 
-  void Extract(tflite::metrics::ConverterErrorData* error_data) {
-    using tflite::metrics::ConverterErrorData;
+  void Extract(litert::metrics::ConverterErrorData* error_data) {
+    using litert::metrics::ConverterErrorData;
     auto mutable_location = error_data->mutable_location();
 
     llvm::TypeSwitch<LocationAttr>(impl)
@@ -106,11 +106,11 @@ class LocationExtractor : public Location {
 };
 }  // namespace
 
-tflite::metrics::ConverterErrorData NewConverterErrorData(
+litert::metrics::ConverterErrorData NewConverterErrorData(
     const std ::string& pass_name, const std::string& error_message,
-    tflite::metrics::ConverterErrorData::ErrorCode error_code,
+    litert::metrics::ConverterErrorData::ErrorCode error_code,
     const std::string& op_name, const Location& location) {
-  using tflite::metrics::ConverterErrorData;
+  using litert::metrics::ConverterErrorData;
   ConverterErrorData error;
   if (!pass_name.empty()) {
     error.set_subcomponent(pass_name);
