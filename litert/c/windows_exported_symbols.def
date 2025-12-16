@@ -203,6 +203,7 @@ EXPORTS
   LiteRtQualcommOptionsGetDlcDir
   LiteRtQualcommOptionsGetDumpTensorIds
   LiteRtQualcommOptionsGetEnableWeightSharing
+  LiteRtQualcommOptionsGetGraphPriority
   LiteRtQualcommOptionsGetHtpPerformanceMode
   LiteRtQualcommOptionsGetIdentifier
   LiteRtQualcommOptionsGetIrJsonDir
@@ -218,6 +219,7 @@ EXPORTS
   LiteRtQualcommOptionsSetDlcDir
   LiteRtQualcommOptionsSetDumpTensorIds
   LiteRtQualcommOptionsSetEnableWeightSharing
+  LiteRtQualcommOptionsSetGraphPriority
   LiteRtQualcommOptionsSetHtpPerformanceMode
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel

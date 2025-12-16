@@ -282,6 +282,56 @@ TEST(OptimizationLevelTest, Parse) {
   }
 }
 
+TEST(GraphPriorityTest, Parse) {
+  std::string error;
+  QualcommOptions::GraphPriority value;
+
+  {
+    static constexpr absl::string_view kGraphPriority = "default";
+    static constexpr QualcommOptions::GraphPriority kGraphPriorityEnum =
+        QualcommOptions::GraphPriority::kDefault;
+    EXPECT_TRUE(AbslParseFlag(kGraphPriority, &value, &error));
+    EXPECT_EQ(value, kGraphPriorityEnum);
+    EXPECT_EQ(kGraphPriority, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kGraphPriority = "low";
+    static constexpr QualcommOptions::GraphPriority kGraphPriorityEnum =
+        QualcommOptions::GraphPriority::kLow;
+    EXPECT_TRUE(AbslParseFlag(kGraphPriority, &value, &error));
+    EXPECT_EQ(value, kGraphPriorityEnum);
+    EXPECT_EQ(kGraphPriority, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kGraphPriority = "normal";
+    static constexpr QualcommOptions::GraphPriority kGraphPriorityEnum =
+        QualcommOptions::GraphPriority::kNormal;
+    EXPECT_TRUE(AbslParseFlag(kGraphPriority, &value, &error));
+    EXPECT_EQ(value, kGraphPriorityEnum);
+    EXPECT_EQ(kGraphPriority, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kGraphPriority = "normal_high";
+    static constexpr QualcommOptions::GraphPriority kGraphPriorityEnum =
+        QualcommOptions::GraphPriority::kNormalHigh;
+    EXPECT_TRUE(AbslParseFlag(kGraphPriority, &value, &error));
+    EXPECT_EQ(value, kGraphPriorityEnum);
+    EXPECT_EQ(kGraphPriority, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kGraphPriority = "high";
+    static constexpr QualcommOptions::GraphPriority kGraphPriorityEnum =
+        QualcommOptions::GraphPriority::kHigh;
+    EXPECT_TRUE(AbslParseFlag(kGraphPriority, &value, &error));
+    EXPECT_EQ(value, kGraphPriorityEnum);
+    EXPECT_EQ(kGraphPriority, AbslUnparseFlag(value));
+  }
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());
@@ -300,6 +350,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
   EXPECT_EQ(options.Value().GetOptimizationLevel(),
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
+  EXPECT_EQ(options.Value().GetGraphPriority(),
+            QualcommOptions::GraphPriority::kDefault);
 }
 
 }  // namespace

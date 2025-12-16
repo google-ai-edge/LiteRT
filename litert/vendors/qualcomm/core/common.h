@@ -56,6 +56,14 @@ enum class OptimizationLevel {
   kHtpOptimizeForInferenceO3 = 2,
 };
 
+enum class GraphPriority {
+  kDefault = 0,
+  kLow = 1,
+  kNormal = 2,
+  kNormalHigh = 3,
+  kHigh = 4,
+};
+
 class Options {
  public:
   Options() = default;
@@ -106,6 +114,9 @@ class Options {
   void SetOptimizationLevel(OptimizationLevel optimization_level);
   OptimizationLevel GetOptimizationLevel() const;
 
+  void SetGraphPriority(GraphPriority graph_priority);
+  GraphPriority GetGraphPriority() const;
+
   std::string Dump() const;
 
  private:
@@ -125,6 +136,7 @@ class Options {
   std::uint32_t num_hvx_threads_ = 0;
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
+  GraphPriority graph_priority_ = GraphPriority::kDefault;
 };
 
 // Gets a default logger implementation to stdout.
