@@ -16,11 +16,18 @@
 
 load("//litert/sdk_util:repo.bzl", "configurable_repo")
 
+# LINT.IfChange(bazel_qairt_sdk_version)
 def qairt():
     configurable_repo(
         name = "qairt",
         build_file = "@//third_party/qairt:qairt.BUILD",
         local_path_env = "LITERT_QAIRT_SDK",
-        strip_prefix = "latest",
-        url = "https://storage.googleapis.com/litert/litert_qualcomm_sdk_2_37_1_release.tar.gz",
+        strip_prefix = "qairt/2.41.0.251128",
+        url = "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.41.0.251128/v2.41.0.251128.zip",
+        file_extension = "zip",
     )
+
+# LINT.ThenChange(
+#     ../../ci/tools/python/vendor_sdk/qualcomm/setup.py:wheel_qairt_sdk_version,
+#     ../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version
+# )

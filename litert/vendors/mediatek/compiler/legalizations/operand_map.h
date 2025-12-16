@@ -75,7 +75,8 @@ class OperandType : public NeuronOperandType {
 
     if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
       auto quant_info = t.PerTensorQuantization();
-      LITERT_LOG(LITERT_INFO, "zeroPoint: %d, scale: %f", quant_info.zero_point,
+      LITERT_LOG(LITERT_DEBUG, "zeroPoint: %d, scale: %f",
+                 quant_info.zero_point,
                  quant_info.scale);
       return OperandType(*mtk_type, std::move(mtk_dimensions), quant_info.scale,
                          quant_info.zero_point, std::nullopt);
@@ -85,9 +86,9 @@ class OperandType : public NeuronOperandType {
       params.scaleCount = quant_info.num_channels;
       params.scales = quant_info.scales;
       params.channelDim = quant_info.quantized_dimension;
-      LITERT_LOG(LITERT_INFO, "quantized_dimension: %d",
+      LITERT_LOG(LITERT_DEBUG, "quantized_dimension: %d",
                  quant_info.quantized_dimension);
-      LITERT_LOG(LITERT_INFO, "params.channelDim: %d", params.channelDim);
+      LITERT_LOG(LITERT_DEBUG, "params.channelDim: %d", params.channelDim);
       return OperandType(*mtk_type, std::move(mtk_dimensions), 0, 0, params);
     } else {
       return OperandType(*mtk_type, std::move(mtk_dimensions), /*scale*/ 0,
@@ -95,14 +96,14 @@ class OperandType : public NeuronOperandType {
     }
   }
 
-  void Info() {
+  void LogDebugInfo() {
     std::string vector = "[";
     for (int i = 0; i < dimensionCount; i++) {
       vector += std::to_string(dimensions_[i]);
       vector += ",";
     }
     vector += "]";
-    LITERT_LOG(LITERT_INFO,
+    LITERT_LOG(LITERT_DEBUG,
                "\n[Type] %d"
                "\n[zeroPoint]%d"
                "\n[scale]%f"

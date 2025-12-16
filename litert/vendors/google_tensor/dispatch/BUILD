@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+# copybara:uncomment load("INTERNAL_ACCEL_RUNTIME/common:build_defs.bzl", "compile_model")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
@@ -32,7 +32,7 @@ package(
 #
 # genrule(
 #     name = "sb_api_late_binding_cc",
-#     srcs = ["INTERNAL_SB_API_LATE_BINDING"],
+#     srcs = ["INTERNAL_ACCEL_RUNTIME/star_ship/south_bound:sb_api_late_binding.cc"],
 #     outs = ["sb_api_late_binding.cc"],
 #     # Replace g3 header path with that of the copy made above.
 #     cmd = "sed 's|third_party/odml/infra/southbound/sb_api.h|third_party/odml/litert/litert/vendors/google_tensor/dispatch/sb_api.h|g' $< > $@",
@@ -95,13 +95,21 @@ litert_dynamic_lib(
 )
 
 # copybara:uncomment_begin(google-only)
+# compile_model(
+#     name = "simple_model_reference_bin",
+#     chip_family = INTERNAL_ACCEL_CHIP_FAMILY_24,
+#     chip_variant = INTERNAL_ACCEL_CHIP_VARIANT_0,
+#     compiled_binary_file = "simple_model_reference_google_tensor.bin",
+#     model_source = "//litert/test:testdata/simple_model.mlir",
+# )
+#
 # cc_test(
 #     name = "dispatch_api_google_tensor_test_x86",
 #     srcs = ["dispatch_api_google_tensor_test.cc"],
 #     data = [
+#         "simple_model_reference_google_tensor.bin",
 #         ":dispatch_api_so",
 #         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
-#         "//litert/test:testdata/simple_model_reference_google_tensor.bin",
 #     ],
 #     deps = [
 #         "@com_google_googletest//:gtest_main",

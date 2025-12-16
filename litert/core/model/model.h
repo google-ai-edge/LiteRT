@@ -865,6 +865,10 @@ class LiteRtRewriterT {
   // Returns the set of ops that are marked for erases.
   absl::flat_hash_set<LiteRtOp> Erases() const { return erases_; }
 
+  // Builds weights for given tensor.
+  LiteRtWeightsT& BuildWeights(const uint8_t* data, size_t size,
+                               LiteRtTensor tensor);
+
   // Builds a new LiteRt tensor owned by the rewriter.
   LiteRtTensorT& BuildTensor(const LiteRtWeightsT& weights,
                              Quantization quantization, TensorType tensor_type,
@@ -902,7 +906,8 @@ class LiteRtRewriterT {
 
  private:
   // Subgraph to hold the IR.
-  LiteRtSubgraphT subgraph_;
+  litert::internal::BufferManager buffer_manager_;
+  LiteRtSubgraphT subgraph_ = LiteRtSubgraphT(&buffer_manager_);
 
   // Records of transactions.
   absl::flat_hash_set<LiteRtOp> erases_;

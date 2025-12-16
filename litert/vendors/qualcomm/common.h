@@ -120,6 +120,8 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetNumHvxThreads(qualcomm_options.GetNumHvxThreads());
   qnn_options.SetOptimizationLevel(static_cast<::qnn::OptimizationLevel>(
       qualcomm_options.GetOptimizationLevel()));
+  qnn_options.SetGraphPriority(
+      static_cast<::qnn::GraphPriority>(qualcomm_options.GetGraphPriority()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
 
   // TODO(jiunkaiy): Set backend type based on qualcomm options.

@@ -43,8 +43,13 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'i386', 'i686')
 
 # --- Configuration for Qualcomm SDK Download ---
 # Qairt version doesn't not necessarily match the SDK version though.
-QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.40.0.251030/v2.40.0.251030.zip'
-QAIRT_CONTENT_DIR = 'qairt/2.40.0.251030'
+# LINT.IfChange(wheel_qairt_sdk_version)
+QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.41.0.251128/v2.41.0.251128.zip'
+QAIRT_CONTENT_DIR = 'qairt/2.41.0.251128'
+# LINT.ThenChange(
+# ../../../../../../opensource_only/third_party/qairt/workspace.bzl:bazel_qairt_sdk_version,
+# ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version
+# )
 QAIRT_TARGET_DIR = 'ai_edge_litert_sdk_qualcomm/data'
 # ---
 

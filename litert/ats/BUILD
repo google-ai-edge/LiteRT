@@ -129,6 +129,7 @@ litert_define_ats(
     backend = "intel_openvino",
     compile_only_suffix = None,
     do_register = [
+        "SingleOp",
         "hf_all_minilm_l6_v2",
         "hf_mobilevit_small",
         "qai_hub_real_esrgan_x4plus",
@@ -140,9 +141,10 @@ litert_define_ats(
         "yolo11n",
     ],
     dont_register = [
+        ".*SingleOp_inference_BinaryNoBroadcast.*",
+        ".*SingleOp_inference_Unary.*",
         "qai_hub_midas",
-        "yamnet",  # terminating due to uncaught exception of type ov::NodeValidationFailure
-        ".*SingleOp.*",
+        "yamnet",
     ],
     jit_suffix = "",
 )

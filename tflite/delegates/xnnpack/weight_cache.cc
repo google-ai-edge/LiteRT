@@ -15,6 +15,9 @@ limitations under the License.
 #include "tflite/delegates/xnnpack/weight_cache.h"
 
 #include <fcntl.h>
+
+#include "tflite/logger.h"
+#include "tflite/minimal_logging.h"
 #if defined(_MSC_VER)
 #include <io.h>
 #define F_OK 0
@@ -23,6 +26,7 @@ limitations under the License.
 #endif
 
 #include <cerrno>  // IWYU pragma: keep
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -38,27 +42,9 @@ limitations under the License.
 #include "flatbuffers/verifier.h"  // from @flatbuffers
 #include "tflite/c/common.h"
 #include "tflite/delegates/xnnpack/file_util.h"
+#include "tflite/delegates/xnnpack/macros.h"
 #include "tflite/delegates/xnnpack/mmap_handle.h"
 #include "tflite/delegates/xnnpack/weight_cache_schema_generated.h"
-#include "tflite/logger.h"
-#include "tflite/minimal_logging.h"
-
-#define XNNPACK_ABORT_CHECK(TEST, ...)                      \
-  if (!(TEST)) {                                            \
-    TFLITE_LOG_PROD(tflite::TFLITE_LOG_ERROR, __VA_ARGS__); \
-    std::abort();                                           \
-  }
-
-#define XNNPACK_VAR_ARG_HEAD(FIRST, ...) FIRST
-
-#define XNNPACK_RETURN_CHECK(TEST, ...)                              \
-  if (!(TEST)) {                                                     \
-    if (sizeof(XNNPACK_VAR_ARG_HEAD("" __VA_ARGS__)) > sizeof("")) { \
-      TFLITE_LOG_PROD(tflite::TFLITE_LOG_ERROR,                      \
-                      "XNNPack weight cache: " __VA_ARGS__);         \
-    }                                                                \
-    return false;                                                    \
-  }
 
 namespace tflite::xnnpack {
 
@@ -339,7 +325,8 @@ bool MMapWeightCacheProvider::LoadOrStartBuild(const char* path,
   }
   const char* const safe_path = Sanitize(path);
   FileDescriptor build_fd = fd.Duplicate();
-  if (!IsInMemoryCachePath(safe_path) && Load(safe_path, std::move(fd))) {
+  if (!IsInMemoryCachePath(safe_path) && fd.Size() &&
+      Load(safe_path, std::move(fd))) {
     TFLITE_LOG_PROD(tflite::TFLITE_LOG_VERBOSE,
                     "XNNPack weight cache loaded from '%s'.", safe_path);
     return true;
@@ -409,8 +396,8 @@ bool MMapWeightCacheProvider::Load() {
   }();
 
   XNNPACK_RETURN_CHECK(header.version == XNNPackCacheHeader::kVersion,
-                       "incompatible header version. Got %zd, expected %zd. "
-                       "Cache needs to be built again.",
+                       "incompatible header version. Got %" PRIu64
+                       ", expected %" PRIu64 ". Cache needs to be built again.",
                        header.version, XNNPackCacheHeader::kVersion);
 
   XNNPACK_RETURN_CHECK(xnn_experimental_check_build_identifier(
@@ -685,20 +672,22 @@ bool IsCompatibleCacheFile(const char* path) {
   return IsCompatibleCacheFile(std::move(fd));
 }
 
-bool IsCompatibleCacheFile(const FileDescriptor& fd) {
+bool IsCompatibleCacheFile(FileDescriptorView fd) {
   XNNPACK_RETURN_CHECK(fd.IsValid(), "Invalid file descriptor: %d.",
                        fd.Value());
   const size_t current_pos = fd.GetPos();
   ScopeGuard reset_pos_on_return(
       [current_pos, &fd] { fd.SetPos(current_pos); });
+  XNNPACK_RETURN_CHECK(fd.SetPos(0) != -1,
+                       "Couldn't move to the start of the file.");
 
   XNNPackCacheHeader header;
   XNNPACK_RETURN_CHECK(fd.Read(&header, sizeof(header)),
                        "Couldn't read file header.");
-  XNNPACK_RETURN_CHECK(
-      header.version == XNNPackCacheHeader::kVersion,
-      "Cache header version is incompatible. Expected %llu, got %llu.",
-      XNNPackCacheHeader::kVersion, header.version);
+  XNNPACK_RETURN_CHECK(header.version == XNNPackCacheHeader::kVersion,
+                       "Cache header version is incompatible. Expected %" PRIu64
+                       ", got %" PRIu64 ".",
+                       XNNPackCacheHeader::kVersion, header.version);
   XNNPACK_RETURN_CHECK(xnn_experimental_check_build_identifier(
                            header.xnnpack_build_identifier,
                            sizeof(header.xnnpack_build_identifier)),

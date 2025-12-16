@@ -15,6 +15,7 @@
 // #include "litert/core/model/rewriter.h"
 #include "litert/c/litert_rewriter.h"
 
+#include <cstdint>
 #include <vector>
 
 #include "litert/c/litert_common.h"
@@ -87,10 +88,26 @@ LiteRtStatus LiteRtRewriterBuildTensor(
 
     weights_t.SetBufferId(buffer_id);
     weights_t.SetBufferManager(buffer_manager);
+  } else {
+    // Set the buffer manager to nullptr, this allows the internal rewriter to
+    // identify this is a null weights.
+    weights_t.SetBufferManager(nullptr);
   }
 
   *new_tensor =
       &rewriter->BuildTensor(weights_t, quantization, tensor_type, name);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtRewriterBuildWeights(const uint8_t* data,
+                                        LiteRtParamIndex size,
+                                        LiteRtTensor tensor,
+                                        LiteRtRewriter rewriter,
+                                        LiteRtWeights* new_weights) {
+  if (rewriter == nullptr || tensor == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *new_weights = &rewriter->BuildWeights(data, size, tensor);
   return kLiteRtStatusOk;
 }
 

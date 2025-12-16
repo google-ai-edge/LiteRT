@@ -53,11 +53,29 @@ float GetOptimizationValue(::qnn::OptimizationLevel level) {
   }
 }
 
+Qnn_Priority_t GetGraphPriorityValue(::qnn::GraphPriority graph_priority) {
+  // Default priority is NORMAL
+  switch (graph_priority) {
+    case ::qnn::GraphPriority::kDefault:
+      return QNN_PRIORITY_DEFAULT;
+    case ::qnn::GraphPriority::kLow:
+      return QNN_PRIORITY_LOW;
+    case ::qnn::GraphPriority::kNormal:
+      return QNN_PRIORITY_NORMAL;
+    case ::qnn::GraphPriority::kNormalHigh:
+      return QNN_PRIORITY_NORMAL_HIGH;
+    case ::qnn::GraphPriority::kHigh:
+      return QNN_PRIORITY_HIGH;
+    default:
+      return QNN_PRIORITY_UNDEFINED;
+  }
+}
+
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     const ::qnn::Options& options) {
   static std::array<QnnHtpGraph_CustomConfig_t, 6> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 6> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 7> result;
+  static std::array<QnnGraph_Config_t, 7> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 8> result;
 
   // QNN suggest always enable relax precision.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
@@ -105,6 +123,14 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     result[i] = &graph_configs[i];
   }
 
+  // Graph Priority
+  graph_configs[num_config] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[num_config].option = QNN_GRAPH_CONFIG_OPTION_PRIORITY;
+  graph_configs[num_config].priority =
+      GetGraphPriorityValue(options.GetGraphPriority());
+  result[num_config] = &graph_configs[num_config];
+  num_config++;
+
   result[num_config] = nullptr;
   return absl::MakeSpan(result.data(), num_config + 1);
 }
@@ -112,8 +138,8 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
 inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
     const ::qnn::Options& options) {
   static std::array<QnnHtpGraph_CustomConfig_t, 5> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 5> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 6> result;
+  static std::array<QnnGraph_Config_t, 6> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 7> result;
   // Default use O3 for now.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -156,6 +182,14 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
     graph_configs[i].customConfig = &graph_custom_configs[i];
     result[i] = &graph_configs[i];
   }
+
+  // Graph Priority
+  graph_configs[num_config] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[num_config].option = QNN_GRAPH_CONFIG_OPTION_PRIORITY;
+  graph_configs[num_config].priority =
+      GetGraphPriorityValue(options.GetGraphPriority());
+  result[num_config] = &graph_configs[num_config];
+  num_config++;
 
   result[num_config] = nullptr;
   return absl::MakeSpan(result.data(), num_config + 1);

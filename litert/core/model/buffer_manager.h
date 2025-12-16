@@ -76,6 +76,18 @@ class BufferManager {
     return GetView(buffers_[id].first);
   }
 
+  // Get the buffer at the given id.
+  Expected<OwningBufferRef<uint8_t>> GetOwnedBuffer(BufferId id) {
+    if (id >= buffers_.size()) {
+      return Error(kLiteRtStatusErrorIndexOOB);
+    }
+    if (std::holds_alternative<OwningBufferRef<uint8_t>>(buffers_[id].first)) {
+      return std::get<OwningBufferRef<uint8_t>>(buffers_[id].first);
+    } else {
+      return Error(kLiteRtStatusErrorIndexOOB);
+    }
+  }
+
   // Get the context of the buffer at the given id.
   Expected<BufferContext::Ref> GetContext(BufferId id) {
     if (id >= buffers_.size()) {

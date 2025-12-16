@@ -26,6 +26,7 @@ EXPORTS
   LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
+  LiteRtClearTensorBufferEvent
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
   LiteRtCreateCompilerOptions
@@ -40,7 +41,6 @@ EXPORTS
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
-  LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtDestroyCompiledModel
   LiteRtDestroyEnvironment
@@ -204,6 +204,7 @@ EXPORTS
   LiteRtQualcommOptionsGetDlcDir
   LiteRtQualcommOptionsGetDumpTensorIds
   LiteRtQualcommOptionsGetEnableWeightSharing
+  LiteRtQualcommOptionsGetGraphPriority
   LiteRtQualcommOptionsGetHtpPerformanceMode
   LiteRtQualcommOptionsGetIdentifier
   LiteRtQualcommOptionsGetIrJsonDir
@@ -219,6 +220,7 @@ EXPORTS
   LiteRtQualcommOptionsSetDlcDir
   LiteRtQualcommOptionsSetDumpTensorIds
   LiteRtQualcommOptionsSetEnableWeightSharing
+  LiteRtQualcommOptionsSetGraphPriority
   LiteRtQualcommOptionsSetHtpPerformanceMode
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel

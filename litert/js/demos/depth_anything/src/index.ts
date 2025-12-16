@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, loadAndCompile, loadLiteRt} from '@litertjs/core';
+import {CompiledModel, loadAndCompile, loadLiteRt} from '@litertjs/core_litert';
 import {html, LitElement} from 'lit';
 import {customElement, state} from 'lit/decorators.js';
 // Placeholder for internal dependency on trusted resource url

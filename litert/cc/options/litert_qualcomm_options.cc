@@ -59,10 +59,9 @@ QualcommOptions::LogLevel QualcommOptions::GetLogLevel() {
 
 void QualcommOptions::SetHtpPerformanceMode(
     QualcommOptions::HtpPerformanceMode htp_performance_mode) {
-  internal::AssertOk(
-      LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
-      static_cast<LiteRtQualcommOptionsHtpPerformanceMode>(
-          htp_performance_mode));
+  internal::AssertOk(LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
+                     static_cast<LiteRtQualcommOptionsHtpPerformanceMode>(
+                         htp_performance_mode));
 }
 
 QualcommOptions::HtpPerformanceMode QualcommOptions::GetHtpPerformanceMode() {
@@ -194,8 +193,21 @@ QualcommOptions::OptimizationLevel QualcommOptions::GetOptimizationLevel() {
   LiteRtQualcommOptionsOptimizationLevel optimization_level;
   internal::AssertOk(LiteRtQualcommOptionsGetOptimizationLevel, Data(),
                      &optimization_level);
-  return static_cast<QualcommOptions::OptimizationLevel>(
-      optimization_level);
+  return static_cast<QualcommOptions::OptimizationLevel>(optimization_level);
+}
+
+void QualcommOptions::SetGraphPriority(
+    QualcommOptions::GraphPriority graph_priority) {
+  internal::AssertOk(
+      LiteRtQualcommOptionsSetGraphPriority, Data(),
+      static_cast<LiteRtQualcommOptionsGraphPriority>(graph_priority));
+}
+
+QualcommOptions::GraphPriority QualcommOptions::GetGraphPriority() {
+  LiteRtQualcommOptionsGraphPriority graph_priority;
+  internal::AssertOk(LiteRtQualcommOptionsGetGraphPriority, Data(),
+                     &graph_priority);
+  return static_cast<QualcommOptions::GraphPriority>(graph_priority);
 }
 
 void QualcommOptions::SetUseConvHMX(bool use_conv_hmx) {
