@@ -33,7 +33,9 @@ enum class Profiling {
 
 enum class BackendType {
   kUndefinedBackend = 0,
+  kGpuBackend,
   kHtpBackend,
+  kDspBackend,
   kIrBackend,
 };
 

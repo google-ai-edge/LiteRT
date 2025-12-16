@@ -354,6 +354,51 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
 
 // NOLINTEND(*alien-types*)
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
+          litert::qualcomm::QualcommOptions::Backend::kHtp,
+          "QNN backend to use.");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,
+                   std::string* error) {
+  if (text == "gpu") {
+    *options = QualcommOptions::Backend::kGpu;
+    return true;
+  }
+  if (text == "htp") {
+    *options = QualcommOptions::Backend::kHtp;
+    return true;
+  }
+  if (text == "dsp") {
+    *options = QualcommOptions::Backend::kDsp;
+    return true;
+  }
+  if (text == "ir") {
+    *options = QualcommOptions::Backend::kIr;
+    return true;
+  }
+  *error = "Unknown QNN backend";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::Backend options) {
+  switch (options) {
+    case QualcommOptions::Backend::kUndefined:
+      return "undefined";
+    case QualcommOptions::Backend::kGpu:
+      return "gpu";
+    case QualcommOptions::Backend::kHtp:
+      return "htp";
+    case QualcommOptions::Backend::kDsp:
+      return "dsp";
+    case QualcommOptions::Backend::kIr:
+      return "ir";
+  }
+}
+
+}  // namespace litert::qualcomm
+
 namespace litert::qualcomm {
 
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
@@ -410,6 +455,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
+
+  const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
+  opts.SetBackend(qnn_backend);
 
   return {};
 }
