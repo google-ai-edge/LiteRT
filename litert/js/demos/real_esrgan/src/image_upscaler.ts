@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, isWebGPUSupported, loadAndCompile, loadLiteRt} from '@litertjs/core_litert';
+import {CompiledModel, isWebGPUSupported, loadAndCompile, loadLiteRt} from '@litertjs/core';
 import {html, LitElement, TemplateResult} from 'lit';
 import {customElement, state} from 'lit/decorators.js';
 // Placeholder for internal dependency on trusted resource url

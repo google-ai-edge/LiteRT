@@ -16,7 +16,7 @@
 
 import '@tensorflow/tfjs-backend-cpu';
 
-import * as litert from '@litertjs/core_litert';
+import * as litert from '@litertjs/core';
 import {litertToTfjs, runWithTfjsTensors, TensorConversionError, tfjsToLitert} from '@litertjs/tfjs-interop';
 import {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';

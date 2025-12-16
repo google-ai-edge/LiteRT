@@ -18,7 +18,7 @@ import './console_mirror';
 import './run_result_visualizer';
 import './common_settings';
 
-import {CompiledModel, SignatureRunner} from '@litertjs/core_litert';
+import {CompiledModel, SignatureRunner} from '@litertjs/core';
 import {css, html, LitElement} from 'lit';
 import {customElement, query, state} from 'lit/decorators.js';
 import {when} from 'lit/directives/when.js';
