@@ -16,9 +16,11 @@ cc_test(
     ],
     deps = [
         "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "//litert/vendors/qualcomm/core:tensor_pool",
         "@com_google_googletest//:gtest_main",
         "@qairt//:qnn_lib_headers",
     ],
