@@ -33,6 +33,7 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsProfiling profiling = kLiteRtQualcommProfilingOff;
   bool use_htp_preference = false;
   bool use_qint16_as_quint16 = false;
+  bool enable_dsp_backend = false;
   bool enable_weight_sharing = false;
   bool use_conv_hmx = true;
   bool use_fold_relu = true;
@@ -449,6 +450,28 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
   }
 
   *graph_priority = options->graph_priority;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetEnableDspBackend(
+    LiteRtQualcommOptions options, bool enable_dsp_backend) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->enable_dsp_backend = enable_dsp_backend;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetEnableDspBackend(
+    LiteRtQualcommOptions options, bool* enable_dsp_backend) {
+  if (enable_dsp_backend == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *enable_dsp_backend = options->enable_dsp_backend;
 
   return kLiteRtStatusOk;
 }

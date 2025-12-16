@@ -48,6 +48,10 @@ TEST(QnnOptionTest, BackendType) {
   static constexpr BackendType kIr = BackendType::kIrBackend;
   options.SetBackendType(kIr);
   EXPECT_EQ(options.GetBackendType(), kIr);
+
+  static constexpr BackendType kDsp = BackendType::kDspBackend;
+  options.SetBackendType(kDsp);
+  EXPECT_EQ(options.GetBackendType(), kDsp);
 }
 
 TEST(QnnOptionTest, HtpPerformanceMode) {
@@ -198,6 +202,14 @@ TEST(QnnOptionTest, SetGraphPriority) {
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
 }
 
+TEST(QnnOptionTest, EnableDspBackend) {
+  Options options;
+  options.SetEnableDspBackend(true);
+  EXPECT_EQ(options.GetEnableDspBackend(), true);
+  options.SetEnableDspBackend(false);
+  EXPECT_EQ(options.GetEnableDspBackend(), false);
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -216,6 +228,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
+  EXPECT_FALSE(options.GetEnableDspBackend());
 }
 
 }  // namespace

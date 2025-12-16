@@ -35,6 +35,7 @@ enum class BackendType {
   kUndefinedBackend = 0,
   kHtpBackend,
   kIrBackend,
+  kDspBackend,
 };
 
 enum class HtpPerformanceMode {
@@ -117,6 +118,9 @@ class Options {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority() const;
 
+  void SetEnableDspBackend(bool enable_dsp_backend);
+  bool GetEnableDspBackend() const;
+
   std::string Dump() const;
 
  private:
@@ -137,6 +141,7 @@ class Options {
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
+  bool enable_dsp_backend_ = false;
 };
 
 // Gets a default logger implementation to stdout.

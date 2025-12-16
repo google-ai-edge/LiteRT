@@ -147,6 +147,11 @@ class QualcommOptions : public OpaqueOptions {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority();
 
+  // This option controls whether to enable dsp backend, enable it if the device
+  // arch <= v66. Default is disabled.
+  void SetEnableDspBackend(bool enable_dsp_backend);
+  bool GetEnableDspBackend();
+
  private:
   LiteRtQualcommOptions Data() const;
 };

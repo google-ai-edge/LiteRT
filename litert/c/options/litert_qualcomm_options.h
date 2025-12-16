@@ -231,6 +231,14 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsGraphPriority* graph_priority);
 
+// This option controls whether to enable dsp backend, enable it if the device
+// arch <= v66. Default is disabled.
+LiteRtStatus LiteRtQualcommOptionsSetEnableDspBackend(
+    LiteRtQualcommOptions options, bool enable_dsp_backend);
+
+LiteRtStatus LiteRtQualcommOptionsGetEnableDspBackend(
+    LiteRtQualcommOptions options, bool* enable_dsp_backend);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

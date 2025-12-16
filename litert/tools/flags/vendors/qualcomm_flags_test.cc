@@ -352,6 +352,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
+  EXPECT_FALSE(options.Value().GetEnableDspBackend());
 }
 
 }  // namespace

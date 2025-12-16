@@ -352,6 +352,9 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
 
 // NOLINTEND(*alien-types*)
 
+ABSL_FLAG(bool, qualcomm_enable_dsp_backend, false,
+          "Flag to enable QNN Dsp backend.");
+
 namespace litert::qualcomm {
 
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
@@ -408,6 +411,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
+
+  const auto enable_dsp_backend = absl::GetFlag(FLAGS_qualcomm_enable_dsp_backend);
+  opts.SetEnableDspBackend(enable_dsp_backend);
 
   return {};
 }

@@ -430,5 +430,23 @@ TEST(LiteRtQualcommOptionsTest, Hash) {
   LiteRtDestroyOpaqueOptions(options2);
 }
 
+TEST(LiteRtQualcommOptionsTest, EnableDspBackend) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsSetEnableDspBackend(qualcomm_options, false));
+
+  bool enable_dsp_backend;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetEnableDspBackend(
+      qualcomm_options, &enable_dsp_backend));
+  EXPECT_FALSE(enable_dsp_backend);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 }  // namespace
 }  // namespace litert::qualcomm

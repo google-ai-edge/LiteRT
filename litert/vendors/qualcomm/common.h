@@ -110,6 +110,7 @@ inline LiteRtStatus InitQnnOptions(
       static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
   qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
   qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
+  qnn_options.SetEnableDspBackend(qualcomm_options.GetEnableDspBackend());
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
   qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());

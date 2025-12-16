@@ -232,6 +232,18 @@ bool QualcommOptions::GetUseFoldReLU() {
   return use_fold_relu;
 }
 
+void QualcommOptions::SetEnableDspBackend(bool enabled_dsp_backend) {
+  internal::AssertOk(LiteRtQualcommOptionsSetEnableWeightSharing, Data(),
+                     enabled_dsp_backend);
+}
+
+bool QualcommOptions::GetEnableDspBackend() {
+  bool enabled_dsp_backend;
+  internal::AssertOk(LiteRtQualcommOptionsGetEnableWeightSharing, Data(),
+                     &enabled_dsp_backend);
+  return enabled_dsp_backend;
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {

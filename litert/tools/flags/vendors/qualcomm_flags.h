@@ -119,6 +119,8 @@ std::string AbslUnparseFlag(QualcommOptions::Profiling options);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(bool, qualcomm_enable_dsp_backend);
+
 #endif
 
 // TO OBJECT (internal) ////////////////////////////////////////////////////////
