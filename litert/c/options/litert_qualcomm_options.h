@@ -231,6 +231,20 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsGraphPriority* graph_priority);
 
+typedef enum LiteRtQualcommOptionsBackend {
+  kLiteRtQualcommBackendUndefined = 0,
+  kLiteRtQualcommBackendGpu,
+  kLiteRtQualcommBackendHtp,
+  kLiteRtQualcommBackendDsp,
+  kLiteRtQualcommBackendIr,
+} LiteRtQualcommOptionsBackend;
+
+LiteRtStatus LiteRtQualcommOptionsSetBackend(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend qnn_backend);
+
+LiteRtStatus LiteRtQualcommOptionsGetBackend(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend* qnn_backend);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

@@ -63,12 +63,27 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "dsp_backend",
+    srcs = ["dsp_backend.cc"],
+    hdrs = ["dsp_backend.h"],
+    deps = [
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
 cc_test(
     name = "qnn_backend_test",
     srcs = [
         "qnn_backend_test.cc",
     ],
     deps = [
+        ":dsp_backend",
         ":htp_backend",
         ":ir_backend",
         ":qnn_backend",
