@@ -62,6 +62,12 @@ size_t TransformQuantizeInMask(
   if (!is_connected) {
     return 1;
   }
+
+  if (!::qnn::IsElementwiseNot(ops[start_index + 0]) ||
+      !::qnn::IsElementwiseMultiply(ops[start_index + 3])) {
+    return 1;
+  }
+
   // Graph transform
   QNN_LOG_INFO("[G2G] Transform quant ops in Gemma3 mask models");
   // Construct the new subgraph
