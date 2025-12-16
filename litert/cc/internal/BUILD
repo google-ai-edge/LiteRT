@@ -41,7 +41,7 @@ next_library_visibility = [
     # "//litert/runtime/dispatch:__subpackages__",
     # "//litert/ats:__subpackages__",
     # "//litert/integration_test:__subpackages__",
-    # "//litert/js/packages/core_litert:__subpackages__",  # TODO: b/459587509 - Remove this with CompiledModel migration.
+    # "//litert/js/packages/core:__subpackages__",  # TODO: b/459587509 - Remove this with CompiledModel migration.
     # copybara:uncomment_end_and_comment_begin
     "//visibility:public",
     # copybara:comment_end
