@@ -50,8 +50,8 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
   if (!operand_index) {
     return operand_index.Error();
   }
-  LITERT_LOG(LITERT_INFO, "\nOperandIndex: %d", operand_index.Value());
-  operand_type->Info();
+  LITERT_LOG(LITERT_DEBUG, "\nOperandIndex: %d", operand_index.Value());
+  operand_type->LogDebugInfo();
 
   if (t.HasWeights()) {
     auto weights = t.Weights().Bytes();
