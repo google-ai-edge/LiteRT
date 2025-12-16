@@ -16,14 +16,22 @@
 
 import {WasmModule} from '@litertjs/wasm-utils';
 
-import type {Accelerator, DType} from './constants';
-import type {GPUDeviceWithAdapterInfo} from './gpu_utils';
-
 // These external interfaces that are implemented by the C++ code must use the
 // `declare` keyword to prevent the JS Compiler from renaming them.
 
+// Several interfaces in this file represent bound C++ objects. These interfaces
+// do not follow TypeScript's structural typing rules (a user should not be able
+// to assign an object they create themselves to one of these interfaces).
+//
+// We use unique symbol keys to enforce nominal typing. This is similar to the
+// approach in https://www.typescriptlang.org/play/?#example/nominal-typing, but
+// unique symbol keys are safer than string keys since they cannot be assigned
+// by the user.
+// https://www.typescriptlang.org/docs/handbook/type-compatibility.html
+// https://www.typescriptlang.org/docs/handbook/symbols.html#unique-symbol
+
 /**
- * An interface for objects that can be deleted.
+ * An object that can be deleted.
  */
 export declare interface Deletable {
   delete(): void;
@@ -32,164 +40,354 @@ export declare interface Deletable {
 /**
  * A C++ vector of elements.
  */
-export declare interface EmscriptenVector<T> {
+export declare interface EmscriptenVector<T> extends Deletable {
   size(): number;
   get(index: number): T&Deletable;
-  delete(): void;
+  push_back(item: T): void;
+}
+
+declare const emscriptenVectorInt32Brand: unique symbol;
+
+/**
+ * A C++ vector of int32_t.
+ */
+export declare interface EmscriptenVectorInt32 extends
+    EmscriptenVector<number> {
+  [emscriptenVectorInt32Brand]: void;
 }
 
 /**
- * A C++ vector of elements that can be written to.
+ * A C++ vector of int32_t.
  */
-export declare interface WritableEmscriptenVector<T> extends
-    EmscriptenVector<T> {
-  push_back(elem: T): void;
-  delete(): void;
+export declare interface EmscriptenVectorInt32Constructor {
+  new(): EmscriptenVectorInt32;
+}
+
+// Define a unique symbol to act as a brand for LiteRtEnvironment.
+declare const liteRtEnvironmentBrand: unique symbol;
+
+/**
+ * The constructor for the C++ litert::Environment class in Wasm.
+ */
+export declare interface LiteRtEnvironmentConstructor {
+  // Do not use this constructor. It is only here to allow checking
+  // `instanceof LiteRtEnvironment` in TS. Use `create` instead.
+  new(...args: never[]): LiteRtEnvironment;
+  create(webGpuDevice: GPUDevice|null): LiteRtEnvironment;
 }
 
 /**
- * A wrapper around the C++ LiteRt Tensor owned by a specific interpreter.
+ * A C++ litert::Environment in Wasm.
  */
-export declare interface TensorWrapper {
-  // In C++, this class has a pointer to a TfLiteTensor associated with a
-  // particular TfLite Interpreter. Additionally, it may have a pointer to the
-  // MLDrift SpatialTensor if it is a GPU tensor. The memory behind these
-  // pointers may change whenever the interpreter is run (as part of the setup
-  // or execution of the interpreter).
-  //
-  // Consequently, this should never be exposed to the user. Instead, JS classes
-  // should copy Tensors to or from TensorWrappers as needed.
-  type(): DType;
-  name(): string;
-  shape(): Int32Array;
-  accelerator(): Accelerator;
-  delete(): void;
-}
-/**
- * An opaque reference to MLDrift GPU memory or WASM CPU memory that backs a
- * tensor. It is not associated with a specific interpreter.
- */
-export declare interface OpaqueTensorReference {
-  // This interface differs from TensorWrapper in that it is not associated
-  // with a specific TfLite Interpreter / Tensor. We assume that any
-  // OpaqueTensorReference that is exposed to JavaScript is free to be used with
-  // any LiteRt interpreter and will not be overwritten or deleted when an
-  // interpreter is run.
-  //
-  // This should always be associated with a Tensor, which has metadata that the
-  // TfLite Tensor we no longer have access to would otherwise hold.
-  //
-  // We don't expose which accelerator this is stored on here because instances
-  // of this can be backed by any type in C++. Store the accelerator on the
-  // Tensor instead.
-  //
-  // Using 'declare' in the declaration to avoid the bundler renaming
-  // properties.
-
-  // This helps TypeScript prevent accidentally assigning a Tensor (or some
-  // other type) to an OpaqueTensorReference, however, it will not actually be
-  // present in real instances of this interface.
-  _do_not_use_me_tag: Symbol;
-  delete?(): void;  // Some refs must be deleted, others are GCd.
-}
-
-type DriftTensorCacheKey =
-    [number, number, number, number, number, number, number, number];
-
-/**
- * A reference to MLDrift GPU memory that backs a tensor. It is not associated
- * with a specific interpreter.
- */
-export declare interface DriftTensor extends OpaqueTensorReference {
-  getCacheKey(): DriftTensorCacheKey;
+export declare interface LiteRtEnvironment extends Deletable {
+  // Enforce nominal typing.
+  [liteRtEnvironmentBrand]: void;
 }
 
 /**
- * A reference to CPU memory that backs a tensor. It is not associated with a
- * specific interpreter.
+ * Options for loading and compiling a LiteRt model.
  */
-export declare interface CpuTensorReference extends OpaqueTensorReference {
-  data(): Uint8Array;
+export declare interface LiteRtCompileOptions {
+  accelerator?: 'webgpu'|'wasm';
+}
+
+declare const liteRtModelBrand: unique symbol;
+
+/**
+ * The constructor for the C++ litert::Layout class in Wasm.
+ */
+export declare interface LiteRtLayoutConstructor {
+  new(...args: never[]): LiteRtLayout;
+  create(dimensions: EmscriptenVector<number>): LiteRtLayout;
+}
+
+/**
+ * A C++ litert::Layout in Wasm.
+ */
+export declare interface LiteRtLayout extends Deletable {
+  rank(): number;
+  dimensions(): EmscriptenVector<number>;
+  hasStrides(): boolean;
+  strides(): EmscriptenVector<number>;
+  numElements(): number;
+}
+
+/**
+ * The constructor for the C++ litert::RankedTensorType class in Wasm.
+ */
+export declare interface LiteRtRankedTensorTypeConstructor {
+  new(...args: never[]): LiteRtRankedTensorType;
+  create(elementType: EmscriptenEnumElement<ElementType>, layout: LiteRtLayout):
+      LiteRtRankedTensorType;
+}
+
+/**
+ * A C++ litert::RankedTensorType in Wasm.
+ */
+export declare interface LiteRtRankedTensorType extends Deletable {
+  elementType(): EmscriptenEnumElement<ElementType>;
+  layout(): LiteRtLayout;
+  bytes(): number;
+}
+
+/**
+ * A C++ litert::Model in Wasm.
+ */
+export declare interface LiteRtModel extends Deletable {
+  [liteRtModelBrand]: void;
+  getNumSignatures(): number;
+  getSignature(signatureIndex: number): LiteRtSimpleSignature;
+  getInputTensorType(signatureIndex: number, inputIndex: number):
+      LiteRtRankedTensorType;
+  getOutputTensorType(signatureIndex: number, outputIndex: number):
+      LiteRtRankedTensorType;
+}
+
+/**
+ * A C++ litert::SimpleSignature in Wasm.
+ */
+export declare interface LiteRtSimpleSignature extends Deletable {
+  key(): string;
+  inputNames(): EmscriptenVector<string>;
+  outputNames(): EmscriptenVector<string>;
+}
+
+/**
+ * A C++ litert::TensorBufferRequirements in Wasm.
+ */
+export declare interface LiteRtTensorBufferRequirements extends Deletable {
+  supportedTypes(): EmscriptenVector<LiteRtTensorBufferType>;
+}
+
+declare const liteRtCompiledModelBrand: unique symbol;
+
+/**
+ * A C++ litert::CompiledModel in Wasm.
+ */
+export declare interface LiteRtCompiledModel extends Deletable {
+  [liteRtCompiledModelBrand]: void;
+  getInputBufferRequirements(signatureIndex: number, inputIndex: number):
+      LiteRtTensorBufferRequirements;
+  getOutputBufferRequirements(signatureIndex: number, outputIndex: number):
+      LiteRtTensorBufferRequirements;
+  run(signatureIndex: number,
+      inputTensors: LiteRtTensorBuffer[]): LiteRtTensorBuffer[];
+}
+
+/**
+ * ElementType enum representing the types of elements in tensors.
+ * Values must match litert::ElementType in
+ * litert_model_types.h
+ *
+ * It is reproduced separately here so it can be used in JS before the Wasm
+ * module loads and for typechecking.
+ */
+export const ElementType = {
+  NONE: 0,
+  FLOAT32: 1,
+  INT32: 2,
+  UINT8: 3,
+  INT64: 4,
+  STRING: 5,
+  BOOL: 6,
+  INT16: 7,
+  COMPLEX64: 8,
+  INT8: 9,
+  FLOAT16: 10,
+  FLOAT64: 11,
+  COMPLEX128: 12,
+  UINT64: 13,
+  RESOURCE: 14,
+  VARIANT: 15,
+  UINT32: 16,
+  UINT16: 17,
+  INT4: 18,
+  BFLOAT16: 19,
+} as const;
+
+/**
+ * The type for possible values of a C++ litert::ElementType.
+ */
+export type ElementType = (typeof ElementType)[keyof typeof ElementType];
+
+/**
+ * The keys of the ElementType enum.
+ *
+ * Used for error messages.
+ */
+export const ElementTypeName = {
+  [ElementType.NONE]: 'NONE',
+  [ElementType.FLOAT32]: 'FLOAT32',
+  [ElementType.INT32]: 'INT32',
+  [ElementType.UINT8]: 'UINT8',
+  [ElementType.INT64]: 'INT64',
+  [ElementType.STRING]: 'STRING',
+  [ElementType.BOOL]: 'BOOL',
+  [ElementType.INT16]: 'INT16',
+  [ElementType.COMPLEX64]: 'COMPLEX64',
+  [ElementType.INT8]: 'INT8',
+  [ElementType.FLOAT16]: 'FLOAT16',
+  [ElementType.FLOAT64]: 'FLOAT64',
+  [ElementType.COMPLEX128]: 'COMPLEX128',
+  [ElementType.UINT64]: 'UINT64',
+  [ElementType.RESOURCE]: 'RESOURCE',
+  [ElementType.VARIANT]: 'VARIANT',
+  [ElementType.UINT32]: 'UINT32',
+  [ElementType.UINT16]: 'UINT16',
+  [ElementType.INT4]: 'INT4',
+  [ElementType.BFLOAT16]: 'BFLOAT16',
+} as const;
+
+/**
+ * The union type of the keys of the ElementType enum.
+ */
+export type ElementTypeName =
+    (typeof ElementTypeName)[keyof typeof ElementTypeName];
+
+/**
+ * A C++ enum value in Wasm.
+ */
+export declare interface EmscriptenEnumElement<T> {
+  value: T;
+}
+
+type EmscriptenEnum<T extends object> = {
+  [K in keyof T]: EmscriptenEnumElement<T[K]>;
+};
+
+/**
+ * A C++ litert::TensorBufferType enum value.
+ *
+ * This is reproduced separately here so it can be used in JS before the Wasm
+ * module loads and for typechecking (i.e., in tensor.copyTo).
+ */
+export const TensorBufferType = {
+  HOST_MEMORY: 1,
+  WEB_GPU_BUFFER: 20,
+  WEB_GPU_BUFFER_FP16: 21,
+  WEB_GPU_BUFFER_PACKED: 26,
+} as const;
+
+/**
+ * The type for possible values of a C++ litert::TensorBufferType.
+ */
+export type TensorBufferType =
+    (typeof TensorBufferType)[keyof typeof TensorBufferType];
+
+/**
+ * The keys of the TensorBufferType enum.
+ *
+ * Used for error messages.
+ */
+export const TensorBufferTypeName = {
+  [TensorBufferType.HOST_MEMORY]: 'HOST_MEMORY',
+  [TensorBufferType.WEB_GPU_BUFFER]: 'WEB_GPU_BUFFER',
+  [TensorBufferType.WEB_GPU_BUFFER_FP16]: 'WEB_GPU_BUFFER_FP16',
+  [TensorBufferType.WEB_GPU_BUFFER_PACKED]: 'WEB_GPU_BUFFER_PACKED',
+} as const;
+
+/**
+ * The union type of the keys of the TensorBufferType enum.
+ */
+export type TensorBufferTypeName =
+    (typeof TensorBufferTypeName)[keyof typeof TensorBufferTypeName];
+
+/**
+ * The C++ litert::TensorBufferType enum, containing its values.
+ */
+type LiteRtTensorBufferTypeEnum = EmscriptenEnum<typeof TensorBufferType>;
+
+/**
+ * The type for possible values of a C++ litert::TensorBufferType.
+ */
+export type LiteRtTensorBufferType =
+    LiteRtTensorBufferTypeEnum[keyof LiteRtTensorBufferTypeEnum];
+
+/**
+ * A C++ litert::TensorBufferLockMode enum value.
+ */
+declare interface LiteRtTensorBufferLockModeEnum {
+  READ: EmscriptenEnumElement<0>;
+  WRITE: EmscriptenEnumElement<1>;
+  READ_WRITE: EmscriptenEnumElement<2>;
+}
+
+/**
+ * The type for possible values of a C++ litert::TensorBufferLockMode.
+ */
+export type LiteRtTensorBufferLockMode =
+    LiteRtTensorBufferLockModeEnum[keyof LiteRtTensorBufferLockModeEnum];
+
+/**
+ * The constructor for the C++ litert::TensorBuffer class in Wasm.
+ */
+export declare interface LiteRtTensorBufferConstructor {
+  /**
+   * Do not use this constructor. It is only here to allow checking
+   * `instanceof LiteRtTensorBuffer` in TS. Use `createManaged` instead.
+   */
+  new(...args: never[]): LiteRtTensorBuffer;
+
+  createManaged(
+      environment: LiteRtEnvironment,
+      bufferType: LiteRtTensorBufferType,
+      tensorType: LiteRtRankedTensorType,
+      bufferSize: number,
+      ): LiteRtTensorBuffer;
+
+  createFromWebGpuBuffer(
+      environment: LiteRtEnvironment,
+      rankedTensorType: LiteRtRankedTensorType,
+      tensorBufferType: LiteRtTensorBufferType,
+      webGpuBufferPtr: number, /* use wasm.WebGPU.importJsBuffer() */
+      size: number,
+      ): LiteRtTensorBuffer;
+}
+
+/**
+ * An instance of the C++ litert::TensorBuffer class in Wasm.
+ */
+export declare interface LiteRtTensorBuffer extends Deletable {
+  lock(mode: LiteRtTensorBufferLockMode): number;  // Returns the pointer to the locked buffer.
+  unlock(): void;
+  bufferType(): LiteRtTensorBufferType;
+  tensorType(): LiteRtRankedTensorType;
+  isWebGpuMemory(): boolean;
+  getWebGpuBuffer(): number;  // Use wasm.WebGPU.getJsObject() to get GPUBuffer.
   size(): number;
+  packedSize(): number;
+  offset(): number;
 }
-
-/**
- * A wrapper around the C++ LiteRt SignatureRunner owned by a specific
- * interpreter.
- */
-export declare interface SignatureRunnerWrapper {
-  inputs(): EmscriptenVector<TensorWrapper>;
-  outputs(): EmscriptenVector<TensorWrapper>;
-  invoke(): void;
-  copyInputs(srcs: EmscriptenVector<OpaqueTensorReference>): void;
-  copyOutputs(): EmscriptenVector<OpaqueTensorReference>;
-  makeTensorVector(): WritableEmscriptenVector<OpaqueTensorReference>;
-  // Do not `delete()` this. It's passed by reference and freed on the C++ side.
-}
-
-/**
- * Interface for the C++ LiteRt interpreter.
- */
-export declare interface LiteRtInterpreter extends SignatureRunnerWrapper {
-  listSignatures(): EmscriptenVector<string>;
-  getSignatureRunner(signatureKey: string): SignatureRunnerWrapper;
-  delete(): void;
-}
-
-/**
- * A custom error reporting function for receiving errors from LiteRt.
- * @param message The error message from LiteRt.
- * @returns The error object that will be thrown. For correct control flow,
- *     LiteRt will always throw an error, but this function can be used to
- *     change the error message or type.
- */
-export type ErrorReporter = (message: string) => Error;
 
 /**
  * Interface for the C++ LiteRt bindings.
  */
-export declare interface LiteRtWasm extends WasmModule, WebgpuConversionWasm {
-  loadAndCompileWebGpu(modelDataPtr: number, modelSize: number):
-      LiteRtInterpreter;
-  loadAndCompileCpu(modelDataPtr: number, modelSize: number): LiteRtInterpreter;
+export declare interface LiteRtWasm extends WasmModule {
   setupLogging(): void;
-  setErrorReporter(errorReporter: ErrorReporter): void;
-  preinitializedWebGPUDevice: GPUDeviceWithAdapterInfo;
-}
-
-/**
- * Interface for the C++ WebGPU conversion bindings.
- */
-export declare interface WebgpuConversionWasm {
-  makeConverterFromTfjs(
-      type: string, b: number, h: number, w: number,
-      c: number): NativeInputConverter;
-
-  // TODO(msoulanille): I think we make a new one of these every time. We
-  // should cache them. Do we then need to send an initial example tensor to
-  // initialize the converter?
-  makeConverterToTfjs(tensorReference: OpaqueTensorReference):
-      NativeOutputConverter;
-
+  LiteRtEnvironment: LiteRtEnvironmentConstructor;
+  loadModel(
+      environment: LiteRtEnvironment,
+      modelDataPtr: number,
+      modelSize: number,
+      ): LiteRtModel;
+  compileModel(
+      environment: LiteRtEnvironment,
+      model: LiteRtModel,
+      options?: LiteRtCompileOptions,
+      ): LiteRtCompiledModel;
+  LiteRtTensorBuffer: LiteRtTensorBufferConstructor;
+  LiteRtTensorBufferType: LiteRtTensorBufferTypeEnum;
+  LiteRtTensorBufferLockMode: LiteRtTensorBufferLockModeEnum;
+  LiteRtLayout: LiteRtLayoutConstructor;
+  LiteRtRankedTensorType: LiteRtRankedTensorTypeConstructor;
+  VectorInt32: EmscriptenVectorInt32Constructor;
+  liteRtGetByteWidth(elementType: EmscriptenEnumElement<ElementType>): number;
   WebGPU: WasmWebGpuObjectInterface;
-  preinitializedWebGPUDevice: GPUDevice;
-  CpuTensor: {new(size: number): CpuTensorReference;};
-}
-
-/**
- * Converts a LiteRT DriftTensor to a WebGPU buffer in TF.js tensor format.
- */
-export declare interface NativeOutputConverter {
-  convertToTfjs(tensorRef: OpaqueTensorReference): number;
-  delete(): void;
-}
-
-/**
- * Converts a WebGPU buffer in TF.js tensor format to a LiteRT DriftTensor.
- */
-export declare interface NativeInputConverter {
-  convertFromTfjs(tfjsBufferPtr: number): OpaqueTensorReference;
-  delete(): void;
+  checkTensorBufferCompatible(
+      tensorBuffer: LiteRtTensorBuffer,
+      expectedRankedTensorType: LiteRtRankedTensorType,
+      requirements: LiteRtTensorBufferRequirements,
+      ): void;
 }
 
 /**
