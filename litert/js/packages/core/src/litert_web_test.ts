@@ -14,18 +14,11 @@
  * limitations under the License.
  */
 
-import '@tensorflow/tfjs-backend-webgpu'; // DO NOT REMOVE: Requried for side effects.
-
-import {CompiledModel, ErrorReporter, getAdapterInfo, getGlobalLiteRt, getGlobalLiteRtPromise, getWebGpuDevice, isWebGPUSupported, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, setErrorReporter, setWebGpuDevice, Tensor, TensorTypeError, unloadLiteRt} from '@litertjs/core';
-import {litertToTfjs, runWithTfjsTensors, TensorConversionError, tfjsToLitert} from '@litertjs/tfjs-interop';
-import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
-import * as tf from '@tensorflow/tfjs-core';
-import '@tensorflow/tfjs-core/dist/public/chained_ops/register_all_chained_ops';
+import {CompiledModel, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 
 describe('LiteRt', () => {
   let liteRt: LiteRt;
-  let device: GPUDevice;
 
   async function resetLiteRt(
       loadFromDirectory = false, {threads = false}: LoadLiteRtOptions = {}) {
@@ -36,48 +29,14 @@ describe('LiteRt', () => {
       liteRt =
           await loadLiteRt('/wasm/litert_wasm_internal.js');
     }
-
-    // Share the same WebGPU device with TFJS.
-    await tf.ready();
-    const backend = tf.backend() as WebGPUBackend;
-    const device = backend.device;
-    // TF.js AdapterInfo doesn't match GPUAdapterInfo, so we fudge it a bit for
-    // now. However, once all Chrome versions we test on have migrated to
-    // supporting just `device.adapterInfo`, then this workaround will no longer
-    // be needed. So we use this for testing on Linux-dev, but publicly our API
-    // will assume users are using just `setWebGpuDevice(device)` for TF.js
-    // integrations. TODO: Remove once this workaround is obsolete.
-    const adapterInfo = Object.assign(
-                            {
-                              device,
-                              description: '',
-                              __brand: '',
-                            },
-                            backend.adapterInfo) as unknown as GPUAdapterInfo;
-    liteRt.setWebGpuDevice(device, adapterInfo);
   }
 
   beforeAll(async () => {
-    jasmine.DEFAULT_TIMEOUT_INTERVAL = 10000;
-    try {
-      // Log GPU info for debugging missing GPU issues in CI.
-      console.log('GPU:', navigator.gpu);
-      console.log('Adapter: ', await navigator.gpu.requestAdapter());
-      console.log('setting webgpu backend');
-      await tf.setBackend('webgpu');
-      console.log('webgpu backend set');
-
-      // We don't reset LiteRt on every test because it's expensive.
-      console.log('resetting liteRt');
-      await resetLiteRt();
-      console.log('liteRt reset');
-    } catch (e) {
-      console.error('!!!beforeAll failed!!!', e);
-      throw e;
-    }
+    jasmine.DEFAULT_TIMEOUT_INTERVAL = 600_000;
   });
 
   it('loads the WASM module from its js file', async () => {
+    await resetLiteRt();
     expect(liteRt).toBeDefined();
   });
 
@@ -100,48 +59,49 @@ describe('LiteRt', () => {
     }
   });
 
-  it('can create its own WebGPU device', async () => {
-    // TODO: b/434244321 - Move tests that affect global state to a different
-    // describe block instead of using try/finally.
-    try {
-      unloadLiteRt();
-      liteRt = await loadLiteRt('/wasm');
+  it('setDefaultEnvironment() sets the default environment', async () => {
+    await resetLiteRt();
+    const environment = new Environment({webGpuDevice: null});
+    liteRt.setDefaultEnvironment(environment);
+    expect(liteRt.getDefaultEnvironment()).toBe(environment);
+  });
 
-      // Load a model to create the WebGPU device.
-      const model = await loadAndCompile(
-          '/testdata/add_10x10.tflite', {accelerator: 'webgpu'});
-      model.delete();
-      expect(await getWebGpuDevice()).toBeDefined();
-    } finally {
-      await resetLiteRt();
+  it('setWebGpuDevice() sets the WebGPU device', async () => {
+    await resetLiteRt();
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error('No GPU adapter found.');
     }
+    const device = await adapter.requestDevice();
+    liteRt.setWebGpuDevice(device);
+    expect(liteRt.getWebGpuDevice()).toBe(device);
   });
 
   describe('loadAndCompile', () => {
     // Some of these tests that intentionally cause C++ exceptions leave
     // LiteRT's wasm in a bad state. Reset it after each test to prevent
     // cascading failures.
-    afterEach(resetLiteRt);
+    beforeEach(resetLiteRt);
     const modelPath = '/testdata/add_10x10.tflite';  // A small test model.
+    const model2Path = '/testdata/multi_signature_model.tflite';
 
     it('loads from a Uint8Array', async () => {
       const modelData = await fetch(modelPath);
-      const model = await loadAndCompile(
-          new Uint8Array(await modelData.arrayBuffer()),
-          {accelerator: 'webgpu'});
+      const model =
+          await loadAndCompile(new Uint8Array(await modelData.arrayBuffer()));
       expect(model).toBeDefined();
       model.delete();
     });
 
     it('loads from a string URL', async () => {
-      const model = await loadAndCompile(modelPath, {accelerator: 'webgpu'});
+      const model = await loadAndCompile(modelPath);
       expect(model).toBeDefined();
       model.delete();
     });
 
     it('loads from a URL object', async () => {
       const modelUrl = new URL(`${location.origin}${modelPath}`);
-      const model = await loadAndCompile(modelUrl, {accelerator: 'webgpu'});
+      const model = await loadAndCompile(modelUrl);
       expect(model).toBeDefined();
       model.delete();
     });
@@ -149,7 +109,7 @@ describe('LiteRt', () => {
     it('loads from a ReadableStreamDefaultReader', async () => {
       const modelData = await fetch(modelPath);
       const modelReader = modelData.body!.getReader();
-      const model = await loadAndCompile(modelReader, {accelerator: 'webgpu'});
+      const model = await loadAndCompile(modelReader);
       expect(model).toBeDefined();
       model.delete();
     });
@@ -166,27 +126,90 @@ describe('LiteRt', () => {
            }
          });
 
-         await expectAsync(loadAndCompile(fakeModel.getReader(), {
-           accelerator: 'webgpu'
-         })).toBeRejectedWithError(/Model is too large/);
+         await expectAsync(loadAndCompile(fakeModel.getReader()))
+             .toBeRejectedWithError(/Model is too large/);
        });
 
     it('throws an error when given a bad model', async () => {
       const badModel =
           new TextEncoder().encode('****BADM and some extra data here.');
 
-      await expectAsync(loadAndCompile(badModel, {
-        accelerator: 'webgpu'
-      })).toBeRejectedWithError(/Failed to build interpreter/);
+      await expectAsync(loadAndCompile(badModel))
+          .toBeRejectedWithError(/Failed to load model from buffer/);
     });
+
+    it('loads two models', async () => {
+      const [model1, model2] = await Promise.all([
+        loadAndCompile(modelPath),
+        loadAndCompile(model2Path),
+      ]);
+      expect(model1).toBeDefined();
+      expect(model2).toBeDefined();
+      model1.delete();
+      model2.delete();
+    });
+
+    it('loads with compileOptions with undefined accelerator', async () => {
+      const model = await loadAndCompile(modelPath, {accelerator: undefined});
+      expect(model).toBeDefined();
+      model.delete();
+    });
+
+    it('loads with compileOptions with wasm accelerator', async () => {
+      const model = await loadAndCompile(modelPath, {accelerator: 'wasm'});
+      expect(model).toBeDefined();
+      model.delete();
+    });
+
+    it('defaults to webgpu if unspecified and a WebGPU device is available',
+       async () => {
+         const adapter = await navigator.gpu.requestAdapter();
+         if (!adapter) {
+           throw new Error('No GPU adapter found.');
+         }
+         const device = await adapter.requestDevice();
+         liteRt.setWebGpuDevice(device);
+         const model = await loadAndCompile(modelPath, {
+           environment: new Environment({webGpuDevice: device}),
+         });
+         expect(model.options.accelerator).toBe('webgpu');
+         model.delete();
+       });
+
+    it('defaults to wasm if unspecified and no WebGPU device is available',
+       async () => {
+         const model = await loadAndCompile(modelPath, {
+           environment: new Environment({webGpuDevice: null}),
+         });
+         expect(model.options.accelerator).toBe('wasm');
+         model.delete();
+       });
+
+    it('throws an error if WebGPU is requested but no device is available',
+       async () => {
+         await expectAsync(loadAndCompile(modelPath, {
+           environment: new Environment({webGpuDevice: null}),
+           accelerator: 'webgpu',
+         })).toBeRejectedWithError(/no WebGPU device is set/);
+       });
+
+    it('throws an error with compileOptions with unsupported accelerator type',
+       async () => {
+         await expectAsync(loadAndCompile(modelPath, {
+           // this test is designed to throw an error, using any to
+           // contruct a mock CompileOptions object.
+           // tslint:disable-next-line:no-any
+           accelerator: 'unsupported' as any
+         })).toBeRejectedWithError(/Invalid accelerator: unsupported/);
+       });
   });
 
   describe('input / output details', () => {
     let multiSignatureModel: CompiledModel;
 
     beforeAll(async () => {
-      multiSignatureModel = await loadAndCompile(
-          '/testdata/multi_signature_model.tflite', {accelerator: 'webgpu'});
+      multiSignatureModel =
+          await loadAndCompile('/testdata/multi_signature_model.tflite');
     });
 
     afterAll(() => {
@@ -197,16 +220,18 @@ describe('LiteRt', () => {
       const inputDetails = multiSignatureModel.getInputDetails();
       expect(inputDetails).toEqual([
         {
-          name: 'add_a:0',
+          name: 'b',
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
+          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
         },
         {
-          name: 'add_b:0',
+          name: 'a',
           index: 1,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
+          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
         },
       ]);
     });
@@ -215,10 +240,11 @@ describe('LiteRt', () => {
       const outputDetails = multiSignatureModel.getOutputDetails();
       expect(outputDetails).toEqual([
         {
-          name: 'PartitionedCall:0',
+          name: 'output',
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
+          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
         },
       ]);
     });
@@ -228,16 +254,18 @@ describe('LiteRt', () => {
           multiSignatureModel.signatures['mul'].getInputDetails();
       expect(inputDetails).toEqual([
         {
-          name: 'mul_a:0',
+          name: 'b',
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
+          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
         },
         {
-          name: 'mul_b:0',
+          name: 'a',
           index: 1,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
+          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
         },
       ]);
     });
@@ -247,637 +275,816 @@ describe('LiteRt', () => {
           multiSignatureModel.signatures['mul'].getOutputDetails();
       expect(outputDetails).toEqual([
         {
-          name: 'PartitionedCall_1:0',
+          name: 'output',
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
+          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
         },
       ]);
     });
   });
 
+  describe('tensors', () => {
+    it('creates a tensor from a Float32Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('float32');
+      expect(tensor.type.layout.dimensions).toEqual([3]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a Int32Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Int32Array([1, 2, 3, 4, 5]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('int32');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a Uint8Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Uint8Array([1, 2, 3, 4, 5]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('uint8');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a GPUBuffer', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter!.requestDevice();
+      liteRt.setWebGpuDevice(device);
+
+      const gpuBuffer = device.createBuffer({
+        size: data.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC |
+            GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true,
+      });
+      new Float32Array(gpuBuffer.getMappedRange()).set(data);
+      gpuBuffer.unmap();
+
+      const tensor =
+          new Tensor(gpuBuffer, [3], 'float32', liteRt.getDefaultEnvironment());
+      expect(tensor.type.dtype).toEqual('float32');
+      expect(tensor.type.layout.dimensions).toEqual([3]);
+      expect(await tensor.data()).toEqual(data);
+      expect(tensor.bufferType).toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+      expect(tensor.accelerator).toEqual('webgpu');
+      tensor.delete();
+      gpuBuffer.destroy();
+    });
+
+    it('calls the onDelete callback when deleted', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const onDelete = jasmine.createSpy('onDelete');
+      const tensor = new Tensor(data, undefined, undefined, onDelete);
+      tensor.delete();
+      expect(onDelete).toHaveBeenCalled();
+    });
+
+    it('environment is the default when not provided', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const tensor = new Tensor(data);
+      expect(tensor.environment).toBe(liteRt.getDefaultEnvironment());
+    });
+
+    it('environment is the provided one when provided', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const environment = new Environment({webGpuDevice: null});
+      const tensor = new Tensor(data, undefined, environment);
+      expect(tensor.environment).toBe(environment);
+    });
+
+    it('copies a CPU tensor to a float32 WebGPU tensor and back', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const cpuTensor = new Tensor(data);
+      expect(cpuTensor.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+      expect(cpuTensor.accelerator).toEqual('wasm');
+      const gpuTensor = await cpuTensor.copyTo('webgpu');
+      expect(gpuTensor.bufferType)
+          .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+      expect(gpuTensor.accelerator).toEqual('webgpu');
+
+      // Copy back to CPU.
+      const cpuTensor2 = await gpuTensor.copyTo('wasm');
+      expect(cpuTensor2.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+      expect(cpuTensor2.accelerator).toEqual('wasm');
+      // Copy back again to verify that gpuTensor is still valid after one copy.
+      const cpuTensor3 = await gpuTensor.copyTo('wasm');
+      expect(cpuTensor3.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+      expect(cpuTensor3.accelerator).toEqual('wasm');
+
+      // Source tensor is still valid after copy.
+      expect(await cpuTensor.data()).toEqual(data);
+      // Copy actually copies the data.
+      expect(await cpuTensor2.data()).toEqual(data);
+      expect(await cpuTensor3.data()).toEqual(data);
+      cpuTensor.delete();
+      gpuTensor.delete();
+      cpuTensor2.delete();
+      cpuTensor3.delete();
+    });
+
+    it('can copy to a different environment', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const cpuTensor = new Tensor(data);
+
+      // Create a new WebGPU device.
+      const newAdapter = await navigator.gpu.requestAdapter();
+      if (!newAdapter) {
+        throw new Error('No GPU adapter found.');
+      }
+      const newDevice = await newAdapter.requestDevice();
+      const newEnv = new Environment({webGpuDevice: newDevice});
+
+      const gpuTensor = await cpuTensor.copyTo('webgpu', {environment: newEnv});
+      expect(gpuTensor.environment).toBe(newEnv);
+      expect(gpuTensor.bufferType)
+          .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+      expect(gpuTensor.accelerator).toEqual('webgpu');
+
+      const cpuTensor2 = await gpuTensor.copyTo('wasm');
+      expect(await cpuTensor2.data()).toEqual(data);
+      expect(cpuTensor2.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+      expect(cpuTensor2.accelerator).toEqual('wasm');
+
+      gpuTensor.delete();
+      cpuTensor.delete();
+      cpuTensor2.delete();
+    });
+
+    it('copying to WebGPU throws if the environment does not have a WebGPU device',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const data = new Float32Array([1.234, 2.345, 3.456]);
+         const cpuTensor = new Tensor(data);
+         const badEnv = new Environment({webGpuDevice: null});
+         await expectAsync(cpuTensor.copyTo('webgpu', {
+           environment: badEnv
+         })).toBeRejectedWithError(/No WebGPU device is available/);
+         cpuTensor.delete();
+       });
+
+    it('can specify copy destination by TensorBufferType', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const cpuTensor = new Tensor(data);
+      const gpuTensor =
+          await cpuTensor.copyTo(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+      expect(gpuTensor.bufferType)
+          .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+      expect(gpuTensor.accelerator).toEqual('webgpu');
+      gpuTensor.delete();
+      cpuTensor.delete();
+    });
+
+    it('throws an error if copying to an unsupported destination', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const cpuTensor = new Tensor(data);
+      await expectAsync(
+          cpuTensor.copyTo('unsupported' as unknown as TensorBufferType))
+          .toBeRejectedWithError(
+              /Unknown destination 'unsupported' for copying or moving/);
+      cpuTensor.delete();
+    });
+
+    it('moves a CPU tensor to a float32 WebGPU tensor and back', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const cpuTensor = new Tensor(data);
+      expect(cpuTensor.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+      expect(cpuTensor.accelerator).toEqual('wasm');
+      const gpuTensor = await cpuTensor.moveTo('webgpu');
+      expect(gpuTensor.bufferType)
+          .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+      expect(gpuTensor.accelerator).toEqual('webgpu');
+      const cpuTensor2 = await gpuTensor.moveTo('wasm');
+      expect(cpuTensor2.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+      expect(cpuTensor2.accelerator).toEqual('wasm');
+      // Source tensors are not valid after move.
+      expect(cpuTensor.deleted).toBeTrue();
+      expect(gpuTensor.deleted).toBeTrue();
+      // Move actually moves the data.
+      expect(await cpuTensor2.data()).toEqual(data);
+      cpuTensor2.delete();
+    });
+
+    it('data() rejects if the tensor is deleted', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const tensor = new Tensor(data);
+      tensor.delete();
+      await expectAsync(tensor.data())
+          .toBeRejectedWithError('Tensor is deleted and cannot be used.');
+    });
+
+    it('toGpuBuffer() returns the underlying GPUBuffer', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter!.requestDevice();
+      liteRt.setWebGpuDevice(device);
+
+      const tensor = new Tensor(data);
+      const gpuTensor = await tensor.moveTo('webgpu');
+
+      const gpuBuffer = gpuTensor.toGpuBuffer();
+      expect(gpuBuffer).toBeInstanceOf(GPUBuffer);
+      expect(gpuBuffer.size).toBeGreaterThanOrEqual(data.byteLength);
+
+      const readBuffer = device.createBuffer({
+        size: gpuBuffer.size,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+      });
+
+      const encoder = device.createCommandEncoder();
+      encoder.copyBufferToBuffer(gpuBuffer, 0, readBuffer, 0, gpuBuffer.size);
+      device.queue.submit([encoder.finish()]);
+
+      await readBuffer.mapAsync(GPUMapMode.READ);
+      const resultData =
+          new Float32Array(readBuffer.getMappedRange(), 0, data.length);
+      expect(resultData).toEqual(data);
+
+      readBuffer.unmap();
+      readBuffer.destroy();
+      // gpuTensor.delete();
+    });
+
+    it('toGpuBuffer() throws if the tensor is not on WebGPU', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const tensor = new Tensor(data);
+      expect(() => tensor.toGpuBuffer())
+          .toThrowError(
+              'Cannot convert a Tensor with non-WebGPU memory to a GPUBuffer.');
+      tensor.delete();
+    });
+
+    it('deletes the WebGPU buffer when the tensor is deleted', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float32Array([1.234, 2.345, 3.456]);
+      const tensor = new Tensor(data);
+      const gpuTensor = await tensor.moveTo('webgpu');
+      const gpuBuffer = gpuTensor.toGpuBuffer();
+      gpuBuffer.label = 'the test buffer';
+      expect(gpuBuffer).toBeInstanceOf(GPUBuffer);
+      gpuTensor.delete();
+      await expectAsync(
+          checkBufferIsUsable(tensor.environment.webGpuDevice!, gpuBuffer))
+          .toBeRejectedWithError(/the test buffer.*destroyed/);
+    });
+
+    for (const dimensionCount of [1, 2, 3, 4] as const) {
+      describe(`with ${dimensionCount} dimensions`, () => {
+        const batchDims = new Array(dimensionCount - 1).fill(1);
+        it('copies a Float32 tensor from CPU to WebGPU and back', async () => {
+          await resetLiteRt(true, {threads: false});
+          const data = new Float32Array([1.234, 2.345, 3.456]);
+          const cpuTensor = new Tensor(data, [...batchDims, 3]);
+          expect(cpuTensor.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor.accelerator).toEqual('wasm');
+          const gpuTensor = await cpuTensor.copyTo('webgpu');
+          expect(gpuTensor.bufferType)
+              .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+          expect(gpuTensor.accelerator).toEqual('webgpu');
+          const cpuTensor2 = await gpuTensor.copyTo('wasm');
+          expect(cpuTensor2.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor2.accelerator).toEqual('wasm');
+          expect(await cpuTensor2.data()).toEqual(await cpuTensor.data());
+          expect(cpuTensor.deleted).toBeFalse();
+          expect(gpuTensor.deleted).toBeFalse();
+          cpuTensor.delete();
+          gpuTensor.delete();
+          cpuTensor2.delete();
+        });
+
+        it('copies an Int32 tensor from CPU to WebGPU and back', async () => {
+          await resetLiteRt(true, {threads: false});
+          const data = new Int32Array([1, 2, 3, 2147483647]);
+          const cpuTensor = new Tensor(data, [...batchDims, 4]);
+          expect(cpuTensor.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor.accelerator).toEqual('wasm');
+          const gpuTensor = await cpuTensor.copyTo('webgpu');
+          expect(gpuTensor.bufferType)
+              .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+          expect(gpuTensor.accelerator).toEqual('webgpu');
+          const cpuTensor2 = await gpuTensor.copyTo('wasm');
+          expect(cpuTensor2.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor2.accelerator).toEqual('wasm');
+          expect(await cpuTensor2.data()).toEqual(await cpuTensor.data());
+          expect(cpuTensor.deleted).toBeFalse();
+          expect(gpuTensor.deleted).toBeFalse();
+          cpuTensor.delete();
+          gpuTensor.delete();
+          cpuTensor2.delete();
+        });
+
+        it('moves a Float32 tensor from CPU to WebGPU and back', async () => {
+          await resetLiteRt(true, {threads: false});
+          const data = new Float32Array([1.234, 2.345, 3.456]);
+          const cpuTensor = new Tensor(data, [...batchDims, 3]);
+          expect(cpuTensor.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor.accelerator).toEqual('wasm');
+          const gpuTensor = await cpuTensor.moveTo('webgpu');
+          expect(gpuTensor.bufferType)
+              .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+          expect(gpuTensor.accelerator).toEqual('webgpu');
+          const cpuTensor2 = await gpuTensor.moveTo('wasm');
+          expect(cpuTensor2.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor2.accelerator).toEqual('wasm');
+          expect(await cpuTensor2.data()).toEqual(data);
+          expect(cpuTensor.deleted).toBeTrue();
+          expect(gpuTensor.deleted).toBeTrue();
+          cpuTensor2.delete();
+        });
+
+        it('moves an Int32 tensor from CPU to WebGPU and back', async () => {
+          await resetLiteRt(true, {threads: false});
+          const data = new Int32Array([1, 2, 3, 2147483647]);
+          const cpuTensor = new Tensor(data, [...batchDims, 4]);
+          expect(cpuTensor.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor.accelerator).toEqual('wasm');
+          const gpuTensor = await cpuTensor.moveTo('webgpu');
+          expect(gpuTensor.bufferType)
+              .toEqual(TensorBufferType.WEB_GPU_BUFFER_PACKED);
+          expect(gpuTensor.accelerator).toEqual('webgpu');
+          const cpuTensor2 = await gpuTensor.moveTo('wasm');
+          expect(cpuTensor2.bufferType).toEqual(TensorBufferType.HOST_MEMORY);
+          expect(cpuTensor2.accelerator).toEqual('wasm');
+          expect(await cpuTensor2.data()).toEqual(data);
+          expect(cpuTensor.deleted).toBeTrue();
+          expect(gpuTensor.deleted).toBeTrue();
+          cpuTensor2.delete();
+        });
+      });
+    }
+  });
+
   describe('run', () => {
-    for (const accelerator of ['webgpu', 'wasm'] as const) {
+    let identity: Tensor;
+    let range: Tensor;
+
+    beforeAll(async () => {
+      await resetLiteRt();
+      // 10x10 identity matrix
+      const identityArray = new Float32Array(100);
+      for (let i = 0; i < 10; i++) {
+        identityArray[i * 10 + i] = 1.0;
+      }
+      identity = new Tensor(identityArray, [10, 10]);
+
+      // Range from 0 to 99
+      const rangeArray = new Float32Array(100);
+      for (let i = 0; i < 100; i++) {
+        rangeArray[i] = i;
+      }
+      range = new Tensor(rangeArray, [10, 10]);
+    });
+
+    afterAll(() => {
+      identity.delete();
+      range.delete();
+    });
+
+    it('copies wasm inputs to webgpu when running a webgpu model', async () => {
+      const model = await loadAndCompile(
+          '/testdata/multi_signature_model.tflite', {accelerator: 'webgpu'});
+      const identityCpu = await identity.copyTo('wasm');
+      const rangeCpu = await range.copyTo('wasm');
+      const outputs = await model.run([identityCpu, rangeCpu]);
+      expect(outputs.length).toBe(1);
+      const sum = await addTensors(identity, range);
+      expect(await outputs[0].data()).toEqual(sum);
+      outputs[0].delete();
+      model.delete();
+      identityCpu.delete();
+      rangeCpu.delete();
+    });
+
+    it('copies webgpu inputs to wasm when running a wasm model', async () => {
+      const model = await loadAndCompile(
+          '/testdata/multi_signature_model.tflite', {accelerator: 'wasm'});
+      const identityWebGpu = await identity.copyTo('webgpu');
+      const rangeWebGpu = await range.copyTo('webgpu');
+      const outputs = await model.run([identityWebGpu, rangeWebGpu]);
+      expect(outputs.length).toBe(1);
+      const sum = await addTensors(identity, range);
+      expect(await outputs[0].data()).toEqual(sum);
+      outputs[0].delete();
+      model.delete();
+      identityWebGpu.delete();
+      rangeWebGpu.delete();
+    });
+
+    for (const accelerator of ['wasm', 'webgpu'] as const) {
       describe(accelerator, () => {
         let mobilenetModel: CompiledModel;
         let multiSignatureModel: CompiledModel;
         let mixedInputModel: CompiledModel;
 
-        let identityTfjs: tf.Tensor;
-        let rangeTfjs: tf.Tensor;
-        let identity: Tensor;
-        let range: Tensor;
-
         beforeAll(async () => {
           mobilenetModel = await loadAndCompile(
               '/testdata/torchvision_mobilenet_v2.tflite', {accelerator});
-
           multiSignatureModel = await loadAndCompile(
               '/testdata/multi_signature_model.tflite', {accelerator});
-
           mixedInputModel = await loadAndCompile(
               '/testdata/mixed_input_model.tflite', {accelerator});
-
-          identityTfjs = tf.diag(tf.ones([10], 'float32'));
-          await identityTfjs.data();
-          identity = tfjsToLitert(identityTfjs, accelerator);
-
-          rangeTfjs = tf.range(0, 100, 1, 'float32').reshape([10, 10]);
-          await rangeTfjs.data();
-          range = tfjsToLitert(rangeTfjs, accelerator);
         });
 
         afterAll(() => {
           mobilenetModel.delete();
           multiSignatureModel.delete();
-          identityTfjs.dispose();
-          identity.delete();
-          rangeTfjs.dispose();
-          range.delete();
+          mixedInputModel.delete();
+        });
+
+        it(`model.options.accelerator is ${accelerator}`, () => {
+          expect(mobilenetModel.options.accelerator).toBe(accelerator);
+          expect(multiSignatureModel.options.accelerator).toBe(accelerator);
+          expect(mixedInputModel.options.accelerator).toBe(accelerator);
+        });
+
+        it('runs multiple signatures of a model', async () => {
+          // "add" signature
+          const sum = await addTensors(identity, range);
+          const addOutputs =
+              await multiSignatureModel.run('add', {'a': identity, 'b': range});
+          expect(Object.keys(addOutputs)).toEqual(['output']);
+          const output = addOutputs['output'];
+          expect(await output.data()).toEqual(sum);
+          output.delete();
+
+          // "sub" signature
+          const diff = await subTensors(identity, range);
+          const subOutputs =
+              await multiSignatureModel.run('sub', {'a': identity, 'b': range});
+          expect(Object.keys(subOutputs)).toEqual(['output']);
+          const subOutput = subOutputs['output'];
+          expect(await subOutput.data()).toEqual(diff);
+          subOutput.delete();
+
+          // "mul" signature
+          const product = await mulTensors(identity, range);
+          const mulOutputs =
+              await multiSignatureModel.run('mul', {'a': identity, 'b': range});
+          expect(Object.keys(mulOutputs)).toEqual(['output']);
+          const mulOutput = mulOutputs['output'];
+          expect(await mulOutput.data()).toEqual(product);
+          mulOutput.delete();
         });
 
         it('runs a model multiple times', async () => {
-          const fakeInput = tf.zeros([1, 3, 224, 224], 'float32');
+          const fakeInput =
+              await (new Tensor(new Float32Array(1 * 3 * 224 * 224), [
+                1, 3, 224, 224
+              ])).moveTo(accelerator);
 
-          const outputs = [];
+          const outputPromises = [];
           for (let i = 0; i < 10; ++i) {
             // The model should not crash when run multiple times.
-            outputs.push(runWithTfjsTensors(mobilenetModel, {
-              'serving_default_args_0:0': fakeInput,
-            }));
+            outputPromises.push(mobilenetModel.run({'args_0': fakeInput}));
           }
-
-          const outputsData = await Promise.all(outputs.map(
-              output => output['StatefulPartitionedCall:0'].data()));
+          const outputs = await Promise.all(outputPromises);
+          const outputsData = await Promise.all(
+              outputs.map(output => output['output_0'].data()));
 
           // All the outputs should be the same.
           for (let i = 1; i < outputsData.length; ++i) {
             expect(outputsData[i]).toEqual(outputsData[0]);
           }
+          fakeInput.delete();
+          for (const output of outputs) {
+            output['output_0'].delete();
+          }
         });
 
         it('runs a model with mixed input types', async () => {
-          const int32Input = tf.range(0, 10, 1, 'int32').reshape([1, 10]);
-          const float32Input = tf.range(0, 10, 1, 'float32').reshape([1, 10]);
+          const int32InputData = new Int32Array(10);
+          for (let i = 0; i < 10; i++) int32InputData[i] = i;
+          const int32Input =
+              await (new Tensor(int32InputData, [1, 10])).moveTo(accelerator);
 
-          const outputs = runWithTfjsTensors(mixedInputModel, {
+          const float32InputData = new Float32Array(10);
+          for (let i = 0; i < 10; i++) float32InputData[i] = i / 10;
+          const float32Input =
+              await (new Tensor(float32InputData, [1, 10])).moveTo(accelerator);
+
+          const outputs = await mixedInputModel.run({
             'int_input': int32Input,
             'float_input': float32Input,
           });
 
           const outputData = await outputs['Identity'].data();
-          const expectedOutput = tf.tidy(() => {
-            return tf.add(int32Input, float32Input).mul(2);
-          });
-          expect(outputData).toEqual(await expectedOutput.data());
-          int32Input.dispose();
-          float32Input.dispose();
-          expectedOutput.dispose();
-          outputs['Identity'].dispose();
-        });
-
-        it('gives meaningful errors on shape mismatch', async () => {
-          const badShape = tf.zeros([1, 3, 224, 225], 'float32');
-          expect(() => runWithTfjsTensors(mobilenetModel, {
-                   'serving_default_args_0:0': badShape,
-                 }))
-              .toThrowError(
-                  /Source .*1, 3, 224, 225.*dest input.*1, 3, 224, 224|Input.*1, 3, 224, 225.*expects.*1, 3, 224, 224/);
-        });
-
-        it('output tensors have their accelerator set correctly', async () => {
-          const fakeInputTfjs = tf.zeros([1, 3, 224, 224], 'float32');
-          const fakeInput = tfjsToLitert(fakeInputTfjs, accelerator);
-
-          const outputs = mobilenetModel.run({
-            'serving_default_args_0:0': fakeInput,
-          });
-
-          expect(outputs['StatefulPartitionedCall:0']).toBeDefined();
-          expect(outputs['StatefulPartitionedCall:0'].accelerator)
-              .toEqual(accelerator);
-        });
-
-        it('runs multiple signatures of a model', async () => {
-          // "add" signature
-          const addOutputs = multiSignatureModel.run(
-              'add', {'add_a:0': identity, 'add_b:0': range});
-          const addOutputsAsTfjs =
-              litertToTfjs(addOutputs['PartitionedCall:0']);
-          expect(await addOutputsAsTfjs.data())
-              .toEqual(await rangeTfjs.add(identityTfjs).data());
-
-          // "sub" signature
-          const subOutputs = multiSignatureModel.run(
-              'sub', {'sub_a:0': identity, 'sub_b:0': range});
-          const subOutputsAsTfjs =
-              litertToTfjs(subOutputs['PartitionedCall_2:0']);
-          expect(await subOutputsAsTfjs.data())
-              .toEqual(await identityTfjs.sub(rangeTfjs).data());
-
-          // "mul" signature
-          const mulOutputs = multiSignatureModel.run(
-              'mul', {'mul_a:0': identity, 'mul_b:0': range});
-          const mulOutputsAsTfjs =
-              litertToTfjs(mulOutputs['PartitionedCall_1:0']);
-          expect(await mulOutputsAsTfjs.data())
-              .toEqual(await identityTfjs.mul(rangeTfjs).data());
+          const expectedOutputData = new Float32Array(10);
+          for (let i = 0; i < 10; i++) {
+            expectedOutputData[i] =
+                (int32InputData[i] + float32InputData[i]) * 2;
+          }
+          expect(outputData).toEqual(expectedOutputData);
+          int32Input.delete();
+          float32Input.delete();
+          outputs['Identity'].delete();
         });
 
         it('`run(Tensor)` returns `Tensor[]`', async () => {
-          const fakeInput = tf.zeros([1, 3, 224, 224], 'float32');
-          const fakeInputAsLiteRt = tfjsToLitert(fakeInput, accelerator);
+          const fakeInput =
+              await (new Tensor(new Float32Array(1 * 3 * 224 * 224), [
+                1, 3, 224, 224
+              ])).moveTo(accelerator);
 
-          const outputs = mobilenetModel.run(fakeInputAsLiteRt);
-          const expectedOutputs = mobilenetModel.run({
-            'serving_default_args_0:0': fakeInputAsLiteRt,
-          });
+          const outputs = await mobilenetModel.run(fakeInput);
+          const expectedOutputs =
+              await mobilenetModel.run({'args_0': fakeInput});
 
-          const outputAsTfjs = litertToTfjs(outputs[0]);
-          const expectedOutputAsTfjs =
-              litertToTfjs(expectedOutputs['StatefulPartitionedCall:0']);
-
-          expect(await outputAsTfjs.data())
-              .toEqual(await expectedOutputAsTfjs.data());
+          expect(outputs.length).toBe(1);
+          expect(outputs[0]).toBeInstanceOf(Tensor);
+          expect(await outputs[0].data())
+              .toEqual(await expectedOutputs['output_0'].data());
+          fakeInput.delete();
+          outputs[0].delete();
+          expectedOutputs['output_0'].delete();
         });
 
         it('`run([Tensor, ...])` returns `Tensor[]`', async () => {
-          const outputs = multiSignatureModel.run([identity, range]);
-
-          const outputAsTfjs = litertToTfjs(outputs[0]);
-          expect(await outputAsTfjs.data())
-              .toEqual(await tf.add(identityTfjs, rangeTfjs).data());
+          const outputs = await multiSignatureModel.run([identity, range]);
+          expect(outputs.length).toBe(1);
+          const sum = await addTensors(identity, range);
+          expect(outputs[0]).toBeInstanceOf(Tensor);
+          expect(await outputs[0].data()).toEqual(sum);
+          outputs[0].delete();
         });
 
         it('`run({\'input\': Tensor, ...})` returns `{\'output\': Tensor, ...}`',
            async () => {
-             const outputs = multiSignatureModel.run(
-                 {'add_a:0': identity, 'add_b:0': range});
-
-             const outputAsTfjs = litertToTfjs(outputs['PartitionedCall:0']);
-             expect(await outputAsTfjs.data())
-                 .toEqual(await tf.add(identityTfjs, rangeTfjs).data());
+             const outputs =
+                 await multiSignatureModel.run({'a': identity, 'b': range});
+             const sum = await addTensors(identity, range);
+             expect(await outputs['output'].data()).toEqual(sum);
+             expect(outputs['output']).toBeInstanceOf(Tensor);
+             outputs['output'].delete();
            });
 
         it('`run(\'signature\', Tensor)` returns `Tensor[]`', async () => {
-          const fakeInput = tf.zeros([1, 3, 224, 224], 'float32');
-          const fakeInputAsLiteRt = tfjsToLitert(fakeInput, accelerator);
-
+          const fakeInput =
+              await (new Tensor(new Float32Array(1 * 3 * 224 * 224), [
+                1, 3, 224, 224
+              ])).moveTo(accelerator);
           const outputs =
-              mobilenetModel.run('serving_default', fakeInputAsLiteRt);
-          const expectedOutputs = mobilenetModel.run({
-            'serving_default_args_0:0': fakeInputAsLiteRt,
-          });
-
-          const outputAsTfjs = litertToTfjs(outputs[0]);
-          const expectedOutputAsTfjs =
-              litertToTfjs(expectedOutputs['StatefulPartitionedCall:0']);
-
-          expect(await outputAsTfjs.data())
-              .toEqual(await expectedOutputAsTfjs.data());
+              await mobilenetModel.run('serving_default', fakeInput);
+          const expectedOutputs =
+              await mobilenetModel.run({'args_0': fakeInput});
+          expect(outputs.length).toBe(1);
+          expect(await outputs[0].data())
+              .toEqual(await expectedOutputs['output_0'].data());
+          fakeInput.delete();
+          outputs[0].delete();
+          expectedOutputs['output_0'].delete();
         });
 
         it('`run(\'signature\', [Tensor, ...])` returns `Tensor[]`',
            async () => {
-             const outputs = multiSignatureModel.run('add', [identity, range]);
-
-             const outputAsTfjs = litertToTfjs(outputs[0]);
-             expect(await outputAsTfjs.data())
-                 .toEqual(await tf.add(identityTfjs, rangeTfjs).data());
+             const outputs =
+                 await multiSignatureModel.run('add', [identity, range]);
+             expect(outputs.length).toBe(1);
+             const sum = await addTensors(identity, range);
+             expect(outputs[0]).toBeInstanceOf(Tensor);
+             expect(await outputs[0].data()).toEqual(sum);
+             outputs[0].delete();
            });
 
-        it('`run(\'signature\', {\'input\': ...})` returns `{\'output\': ...}`',
+        describe('custom environments', () => {
+          let customEnv: Environment;
+          let modelWithCustomEnv: CompiledModel;
+          let identityCustom: Tensor;
+          let rangeCustom: Tensor;
+
+          beforeEach(async () => {
+            customEnv = new Environment({webGpuDevice: null});
+            modelWithCustomEnv = await loadAndCompile(
+                '/testdata/multi_signature_model.tflite',
+                {environment: customEnv});
+            identityCustom =
+                new Tensor(await identity.data(), [10, 10], customEnv);
+            rangeCustom = new Tensor(await range.data(), [10, 10], customEnv);
+          });
+
+          afterEach(() => {
+            identityCustom.delete();
+            rangeCustom.delete();
+            modelWithCustomEnv.delete();
+            customEnv.delete();
+          });
+
+          it('model.options.environment is the custom environment', () => {
+            expect(modelWithCustomEnv.options.environment).toBe(customEnv);
+          });
+
+          it('returned tensors share the same environment as the model',
+             async () => {
+               const outputs =
+                   await modelWithCustomEnv.run([identityCustom, rangeCustom]);
+               expect(outputs[0].environment).toBe(customEnv);
+               expect(outputs[0].environment)
+                   .not.toBe(liteRt.getDefaultEnvironment());
+               outputs[0].delete();
+             });
+
+          it('returned tensors share the same environment as the signature',
+             async () => {
+               const outputs = await modelWithCustomEnv.signatures['add'].run(
+                   [identityCustom, rangeCustom]);
+               expect(outputs[0].environment).toBe(customEnv);
+               expect(outputs[0].environment)
+                   .not.toBe(liteRt.getDefaultEnvironment());
+               outputs[0].delete();
+             });
+        });
+
+        it('`run([Tensor])` throws if the model expects more tensors',
            async () => {
-             const outputs = multiSignatureModel.run(
-                 'add', {'add_a:0': identity, 'add_b:0': range});
-
-             const outputAsTfjs = litertToTfjs(outputs['PartitionedCall:0']);
-             expect(await outputAsTfjs.data())
-                 .toEqual(await tf.add(identityTfjs, rangeTfjs).data());
+             await expectAsync(multiSignatureModel.run([identity]))
+                 .toBeRejectedWithError(/called with 1.*expects 2/);
            });
 
-        it('`run(Tensor)` throws if the model expects more tensors', () => {
-          expect(() => multiSignatureModel.run([identity]))
-              .toThrowError(/called with 1.*expects 2/);
+        it('throws an error if no input is provided', async () => {
+          // TS compiler will prevent this, but JS may call it so test it
+          // anyway.
+          // tslint:disable-next-line:no-any
+          await expectAsync((mobilenetModel as any).run('serving_default'))
+              .toBeRejectedWithError(
+                  /No input provided for signature serving_default/);
         });
 
         it('throws an error if the tensor is of the wrong type', async () => {
-          const fakeInput = tf.zeros([1, 3, 224, 224], 'int32');
-          const fakeInputAsLiteRt = tfjsToLitert(fakeInput, accelerator);
-          expect(() => mobilenetModel.run(fakeInputAsLiteRt))
-              .toThrowError(
-                  TensorTypeError,
-                  /Input.*serving_default_args_0:0.*position 0.*has type int32.*signature expects float32/);
+          const fakeInput =
+              new Tensor(new Int32Array(1 * 3 * 224 * 224), [1, 3, 224, 224]);
+          await expectAsync(mobilenetModel.run({'args_0': fakeInput}))
+              .toBeRejectedWithError(
+                  'TensorBuffer ranked tensor type Int32[1, 3, 224, 224] does not match expected ranked tensor type Float32[1, 3, 224, 224]');
+          fakeInput.delete();
         });
 
+        it('throws an error if the tensor is of the wrong shape', async () => {
+          const fakeInput =
+              new Tensor(new Float32Array(1 * 3 * 224 * 225), [1, 3, 224, 225]);
+          await expectAsync(mobilenetModel.run({'args_0': fakeInput}))
+              .toBeRejectedWithError(
+                  'TensorBuffer ranked tensor type Float32[1, 3, 224, 225] does not match expected ranked tensor type Float32[1, 3, 224, 224]');
+          fakeInput.delete();
+        });
+
+        it('throws an error if the signature does not exist', async () => {
+          await expectAsync(multiSignatureModel.run('bad_signature', [
+            identity, range
+          ])).toBeRejectedWithError(/No signature named bad_signature/);
+        });
+
+        it('throws an error if the signature does not have all the array inputs',
+           async () => {
+             await expectAsync(multiSignatureModel.run('add', [identity]))
+                 .toBeRejectedWithError(/called with 1.*expects 2/);
+           });
+
+        it('throws an error if the signature does not have all the object inputs',
+           async () => {
+             await expectAsync(multiSignatureModel.run('add', {'a': identity}))
+                 .toBeRejectedWithError(
+                     /called with input record that is missing input b/);
+           });
+
         it('throws an error if the model has been deleted', async () => {
-          const fakeInput = tf.zeros([10, 10], 'float32');
-          const fakeInputAsLiteRt = tfjsToLitert(fakeInput, accelerator);
           const deletableModel = await loadAndCompile(
               '/testdata/multi_signature_model.tflite', {accelerator});
           deletableModel.delete();
-          expect(() => deletableModel.run(fakeInputAsLiteRt))
-              .toThrowError(
-                  Error, /Model has been deleted. Please reload the model./);
+          await expectAsync(deletableModel.run([identity, range]))
+              .toBeRejectedWithError(
+                  Error, /CompiledModel is deleted and cannot be used./);
         });
 
-        it('throws an error if the signature has been deleted', async () => {
-          const fakeInput = tf.zeros([10, 10], 'float32');
-          const fakeInputAsLiteRt = tfjsToLitert(fakeInput, accelerator);
+        it('throws an error if a signature\'s model has been deleted', async () => {
           const deletableModel = await loadAndCompile(
               '/testdata/multi_signature_model.tflite', {accelerator});
-          deletableModel.signatures['add'].delete();
-          expect(() => deletableModel.run('add', fakeInputAsLiteRt))
-              .toThrowError(
+          const signature = deletableModel.signatures['add'];
+          deletableModel.delete();
+          await expectAsync(signature.run([identity, range]))
+              .toBeRejectedWithError(
                   Error,
-                  /Signature has been deleted. Please reload the model./);
+                  /CompiledModelSignatureRunner is deleted and cannot be used./);
         });
-      });
-    }
-  });
 
-  it('supports custom error reporting', async () => {
-    const loggedErrors: string[] = [];
-    const customErrorReporter: ErrorReporter = (message: string) => {
-      loggedErrors.push(message);
-      return new Error(`Custom error: ${message}`);
-    };
+        it('supports 1D, 2D, 3D, and 4D input tensors', async () => {
+          const model = await loadAndCompile(
+              '/testdata/add_1d_2d_3d_4d.tflite', {accelerator});
+          const x = new Tensor(new Float32Array(4).fill(1.0), [4]);
 
-    setErrorReporter(customErrorReporter);
+          const y = new Tensor(new Float32Array(12).fill(1.0), [3, 4]);
+          const z = new Tensor(new Float32Array(24).fill(1.0), [2, 3, 4]);
+          const w = new Tensor(new Float32Array(24).fill(1.0), [1, 2, 3, 4]);
+          const inputs = {'x': x, 'y': y, 'z': z, 'w': w};
 
-    // Create an error by loading a bad model.
-    const badModel =
-        new TextEncoder().encode('****BADM and some extra data here.');
+          const outputs = await model.run(inputs);
+          expect(await outputs['Identity'].data())
+              .toEqual(new Float32Array(24).fill(4.0));
 
-    await expectAsync(loadAndCompile(badModel, {
-      accelerator: 'webgpu',
-    })).toBeRejectedWithError(/Custom error: /);
-    expect(loggedErrors).toEqual(['Failed to build interpreter.']);
-
-    // Reset LiteRt because we changed the error reporter.
-    await resetLiteRt();
-  });
-
-  it('calls multiple signatures of a model', async () => {
-    const modelPath = '/testdata/multi_signature_model.tflite';
-    const model = await loadAndCompile(modelPath, {accelerator: 'webgpu'});
-    expect(model).toBeDefined();
-
-    const identity = tf.diag(tf.ones([10], 'float32'));
-    const a = tfjsToLitert(identity);
-
-    const range = tf.range(0, 100, 1, 'float32').reshape([10, 10]);
-    const b = tfjsToLitert(range);
-
-    // "add" signature
-    const addOutputs = model.run('add', {'add_a:0': a, 'add_b:0': b});
-    const addOutputsAsTfjs = litertToTfjs(addOutputs['PartitionedCall:0']);
-    expect(await addOutputsAsTfjs.data())
-        .toEqual(await range.add(identity).data());
-
-    // "sub" signature
-    const subOutputs = model.run('sub', {'sub_a:0': a, 'sub_b:0': b});
-    const subOutputsAsTfjs = litertToTfjs(subOutputs['PartitionedCall_2:0']);
-    expect(await subOutputsAsTfjs.data())
-        .toEqual(await identity.sub(range).data());
-
-    // "mul" signature
-    const mulOutputs = model.run('mul', {'mul_a:0': a, 'mul_b:0': b});
-    const mulOutputsAsTfjs = litertToTfjs(mulOutputs['PartitionedCall_1:0']);
-    expect(await mulOutputsAsTfjs.data())
-        .toEqual(await identity.mul(range).data());
-
-    model.delete();
-  });
-
-  it('sets WebGPU device', async () => {
-    if (!isWebGPUSupported()) {
-      throw new Error('This browser does not support WebGPU.');
-    }
-
-    // We reset LiteRt state because otherwise we could throw an error when
-    // changing WebGPU device, depending on whether or not `loadAndCompile` has
-    // been called yet.
-    await resetLiteRt();
-
-    const oldDevice = await getWebGpuDevice();
-    const oldAdapterInfo = await getAdapterInfo();
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) {
-      throw new Error('No GPU adapter found.');
-    }
-    const adapterInfo = adapter.info;
-    const device = await adapter.requestDevice();
-
-    // TODO: Remove adapterInfo from the api, as the latest GPUDevice type
-    // should have adapterInfo.
-    setWebGpuDevice(device, adapterInfo);
-    await expectAsync(getWebGpuDevice()).toBeResolvedTo(device);
-    await expectAsync(getAdapterInfo()).toBeResolvedTo(adapterInfo);
-    setWebGpuDevice(oldDevice, oldAdapterInfo);
-  });
-
-  it('supports 1D, 2D, 3D, and 4D input tensors', async () => {
-    const modelPath = '/testdata/add_1d_2d_3d_4d.tflite';
-    const model = await loadAndCompile(modelPath, {accelerator: 'webgpu'});
-    expect(model).toBeDefined();
-
-    const x = tf.ones([4], 'float32');
-    const y = tf.ones([3, 4], 'float32');
-    const z = tf.ones([2, 3, 4], 'float32');
-    const w = tf.ones([1, 2, 3, 4], 'float32');
-    const inputs = {
-      'x': tfjsToLitert(x),
-      'y': tfjsToLitert(y),
-      'z': tfjsToLitert(z),
-      'w': tfjsToLitert(w),
-    };
-
-    // "add" signature
-    const outputs = model.run(inputs);
-    const outputAsLiteRt = outputs['Identity'];
-    const outputAsTfjs = litertToTfjs(outputAsLiteRt);
-    expect(await outputAsTfjs.data())
-        .toEqual(await x.add(y).add(z).add(w).data());
-
-    model.delete();
-  });
-
-  it('supports 1D tfjs tensors with the last dimension not divisible by 4',
-     async () => {
-       const modelPath = '/testdata/add_c1_c7.tflite';
-       const model = await loadAndCompile(modelPath, {accelerator: 'webgpu'});
-
-       const x = tf.ones([1], 'float32');
-       const y = tf.ones([7], 'float32');
-       const inputs = {
-         'x': tfjsToLitert(x),
-         'y': tfjsToLitert(y),
-       };
-
-       const outputs = model.run(inputs);
-       const outputAsLiteRt = outputs['Identity'];
-       const outputAsTfjs = litertToTfjs(outputAsLiteRt);
-       const outputData = await outputAsTfjs.data();
-       const expectedData = await x.add(y).data();
-
-       expect(outputData).toEqual(expectedData);
-
-       model.delete();
-     });
-
-  it('supports 2D tfjs tensors with the last dimension not divisible by 4',
-     async () => {
-       const modelPath = '/testdata/add_10x10.tflite';
-       const model = await loadAndCompile(modelPath, {accelerator: 'webgpu'});
-
-       const identity = tf.diag(tf.ones([10], 'float32'));
-       const a = tfjsToLitert(identity);
-
-       const range = tf.range(0, 100, 1, 'float32').reshape([10, 10]);
-       const b = tfjsToLitert(range);
-       const outputs = model.run({'a': a, 'b': b});
-
-       const outputAsLiteRt = outputs['Identity'];
-       const outputAsTfjs = litertToTfjs(outputAsLiteRt);
-       const outputData = await outputAsTfjs.data();
-       const expectedData = await identity.add(range).data();
-
-       expect(outputData).toEqual(expectedData);
-
-       model.delete();
-     });
-
-
-  describe('TFJS Interop', () => {
-    describe('tfjsToLitert', () => {
-      it('throws when TFJS WebGPU tensor data is not on CPU', async () => {
-        tf.tidy(() => {
-          const tfjsGpuTensor = tf.range(0, 10, 1, 'float32').pow(2);
-          expect(() => tfjsToLitert(tfjsGpuTensor, 'wasm'))
-              .toThrowError(
-                  TensorConversionError,
-                  /TFJS tensor data is on WebGPU but not on CPU/);
+          x.delete();
+          y.delete();
+          z.delete();
+          w.delete();
+          outputs['Identity'].delete();
+          model.delete();
         });
-      });
-    });
 
-    describe('runWithTfjsTensors', () => {
-      it('throws when TFJS WebGPU input tensors are not on CPU', async () => {
-        const modelPath = '/testdata/add_10x10.tflite';
-        const model = await loadAndCompile(modelPath, {accelerator: 'wasm'});
-        const tfjsGpuTensor = tf.range(0, 10, 1, 'float32').pow(2);
-        expect(() => runWithTfjsTensors(model, [tfjsGpuTensor, tfjsGpuTensor]))
-            .toThrowError(
-                TensorConversionError,
-                /TFJS tensor data is on WebGPU but not on CPU/);
-      });
+        it('supports 1D tensors with last dim not divisible by 4', async () => {
+          const model =
+              await loadAndCompile('/testdata/add_c1_c7.tflite', {accelerator});
+          const x = new Tensor(new Float32Array([1.0]), [1]);
+          const y = new Tensor(new Float32Array(7).fill(1.0), [7]);
+          const inputs = {'x': x, 'y': y};
 
-      for (const accelerator of ['webgpu', 'wasm'] as const) {
-        describe(accelerator, () => {
-          let model: CompiledModel;
-          let inputs: Record<string, tf.Tensor>;
-          let expectedOutput: tf.Tensor;
+          const outputs = await model.run(inputs);
+          expect(await outputs['Identity'].data())
+              .toEqual(new Float32Array(7).fill(2.0));
+          x.delete();
+          y.delete();
+          outputs['Identity'].delete();
+          model.delete();
+        });
 
-          beforeAll(async () => {
-            try {
-              model = await loadAndCompile(
-                  '/testdata/multi_signature_model.tflite', {accelerator});
-              inputs = {
-                'add_a:0': tf.diag(tf.ones([10], 'float32')),
-                'add_b:0': tf.range(0, 100, 1, 'float32').reshape([10, 10]),
-              };
-              expectedOutput = inputs['add_a:0'].add(inputs['add_b:0']);
-              await inputs['add_a:0'].data();
-              await inputs['add_b:0'].data();
-            } catch (e) {
-              console.error(e);
-              throw e;
+        it('supports 2D tensors with last dim not divisible by 4', async () => {
+          const model =
+              await loadAndCompile('/testdata/add_10x10.tflite', {accelerator});
+
+          const identityData = new Float32Array(100);
+          for (let i = 0; i < 10; i++) {
+            for (let j = 0; j < 10; j++) {
+              identityData[i * 10 + j] = 1.0;
             }
-          });
+          }
+          const a = new Tensor(identityData, [10, 10]);
 
-          afterAll(() => {
-            model.delete();
-            for (const value of Object.values(inputs)) {
-              value.dispose();
-            }
-            expectedOutput.dispose();
-          });
+          const rangeData = new Float32Array(100);
+          for (let i = 0; i < 100; i++) {
+            rangeData[i] = i;
+          }
+          const b = new Tensor(rangeData, [10, 10]);
 
-          it('runs a model with TFJS inputs and outputs', async () => {
-            const outputs = runWithTfjsTensors(model, inputs);
+          const outputs = await model.run({'a': a, 'b': b});
+          const outputData = await outputs['Identity'].data();
 
-            expect(await outputs['PartitionedCall:0'].data())
-                .toEqual(await expectedOutput.data());
-          });
-
-          it('runs a signature with TFJS inputs and outputs', async () => {
-            const outputs = runWithTfjsTensors(model, 'add', inputs);
-
-            expect(await outputs['PartitionedCall:0'].data())
-                .toEqual(await expectedOutput.data());
-          });
-
-          it('runs with `run([Tensor...]) calling style', async () => {
-            const outputs = runWithTfjsTensors(
-                model, [inputs['add_a:0'], inputs['add_b:0']]);
-
-            expect(await outputs[0].data())
-                .toEqual(await expectedOutput.data());
-          });
-
-          it('runs a signature that\'s passed directly to `run`', async () => {
-            const outputs = runWithTfjsTensors(model.signatures['add'], [
-              inputs['add_a:0'],
-              inputs['add_b:0'],
-            ]);
-
-            expect(await outputs[0].data())
-                .toEqual(await expectedOutput.data());
-          });
-        });
-      }
-    });
-  });
-
-  describe('tensor conversion functions', () => {
-    for (const dimensionCount of [1, 2, 3, 4] as const) {
-      describe(`with ${dimensionCount} dimensions`, () => {
-        const batchDims = new Array(dimensionCount - 1).fill(1);
-
-        it('copies a Float32 tensor from CPU to WebGPU and back', async () => {
-          const cpuTensor = Tensor.fromTypedArray(
-              new Float32Array([1.234, 2.345, 3.456]), [...batchDims, 3]);
-          const gpuTensor = await cpuTensor.copyTo('webgpu');
-          const cpuTensor2 = await gpuTensor.copyTo('wasm');
-          expect(cpuTensor2.toTypedArray()).toEqual(cpuTensor.toTypedArray());
-          expect(cpuTensor.deleted).toBeFalse();
-          expect(gpuTensor.deleted).toBeFalse();
-        });
-
-        it('copies an Int32 tensor from CPU to WebGPU and back', async () => {
-          const cpuTensor = Tensor.fromTypedArray(
-              new Int32Array([1, 2, 3, 2147483647]), [...batchDims, 4]);
-          const gpuTensor = await cpuTensor.copyTo('webgpu');
-          const cpuTensor2 = await gpuTensor.copyTo('wasm');
-          expect(cpuTensor2.toTypedArray()).toEqual(cpuTensor.toTypedArray());
-          expect(cpuTensor.deleted).toBeFalse();
-          expect(gpuTensor.deleted).toBeFalse();
-        });
-
-        it('moves a Float32 tensor from CPU to WebGPU and back', async () => {
-          const data = new Float32Array([1.234, 2.345, 3.456]);
-          const cpuTensor = Tensor.fromTypedArray(data, [...batchDims, 3]);
-          const gpuTensor = await cpuTensor.moveTo('webgpu');
-          const cpuTensor2 = await gpuTensor.moveTo('wasm');
-          expect(cpuTensor2.toTypedArray()).toEqual(data);
-          expect(cpuTensor.deleted).toBeTrue();
-          expect(gpuTensor.deleted).toBeTrue();
-        });
-
-        it('moves an Int32 tensor from CPU to WebGPU and back', async () => {
-          const data = new Int32Array([1, 2, 3, 2147483647]);
-          const cpuTensor = Tensor.fromTypedArray(data, [...batchDims, 4]);
-          const gpuTensor = await cpuTensor.moveTo('webgpu');
-          const cpuTensor2 = await gpuTensor.moveTo('wasm');
-          expect(cpuTensor2.toTypedArray()).toEqual(data);
-          expect(cpuTensor.deleted).toBeTrue();
-          expect(gpuTensor.deleted).toBeTrue();
+          const expectedData = new Float32Array(100);
+          for (let i = 0; i < 100; i++) {
+            expectedData[i] = identityData[i] + rangeData[i];
+          }
+          expect(outputData).toEqual(expectedData);
+          a.delete();
+          b.delete();
+          outputs['Identity'].delete();
+          model.delete();
         });
       });
     }
-
-    it('supports 1D tensors with the last dimension not divisible by 4',
-       async () => {
-         const modelPath = '/testdata/add_c1_c7.tflite';
-         const model = await loadAndCompile(modelPath, {accelerator: 'webgpu'});
-
-         const x = new Float32Array([1.0]);
-         const y = new Float32Array(new Array(7).fill(1.0));
-
-         const inputs = {
-           'x': await Tensor.fromTypedArray(x, [1]).moveTo('webgpu'),
-           'y': await Tensor.fromTypedArray(y, [7]).moveTo('webgpu'),
-         };
-
-         const outputs = model.run(inputs);
-         const output = outputs['Identity'];
-         const outputCpu = await output.moveTo('wasm');
-         const outputData = outputCpu.toTypedArray();
-
-         const expectedData = new Float32Array(new Array(7).fill(2.0));
-         expect(outputData).toEqual(expectedData);
-
-         model.delete();
-       });
-
-    it('supports 2D tensors with the last dimension not divisible by 4',
-       async () => {
-         const modelPath = '/testdata/add_10x10.tflite';
-         const model = await loadAndCompile(modelPath, {accelerator: 'webgpu'});
-
-         const identity = new Float32Array(100);
-         for (let i = 0; i < 10; i++) {
-           for (let j = 0; j < 10; j++) {
-             identity[i * 10 + j] = 1.0;
-           }
-         }
-         const a =
-             await Tensor.fromTypedArray(identity, [10, 10]).moveTo('webgpu');
-
-         const range = new Float32Array(100);
-         for (let i = 0; i < 100; i++) {
-           range[i] = i;
-         }
-         const b =
-             await Tensor.fromTypedArray(range, [10, 10]).moveTo('webgpu');
-
-         const outputs = model.run({'a': a, 'b': b});
-         const output = outputs['Identity'];
-         const outputCpu = await output.moveTo('wasm');
-         const outputData = await outputCpu.toTypedArray();
-
-         const expectedData = new Float32Array(100);
-         for (let i = 0; i < 100; i++) {
-           expectedData[i] = identity[i] + range[i];
-         }
-
-         expect(outputData).toEqual(expectedData);
-
-         model.delete();
-       });
-
-    it('can pass a TypedArray to the Tensor constructor', async () => {
-      const data = new Float32Array([1.234, 2.345, 3.456]);
-      const cpuTensor = new Tensor(data);
-      expect(cpuTensor.type.dtype).toEqual('float32');
-      expect(cpuTensor.type.layout.dimensions).toEqual([3]);
-      expect(cpuTensor.accelerator).toEqual('wasm');
-      expect(cpuTensor.toTypedArray()).toEqual(data);
-    });
-
-    it('can pass a TypedArray to the Tensor constructor with a shape',
-       async () => {
-         const data = new Int32Array([1, 2, 3, 4, 5, 6, 7, 8]);
-         const cpuTensor = new Tensor(data, [2, 1, 2, 2]);
-         expect(cpuTensor.type.dtype).toEqual('int32');
-         expect(cpuTensor.type.layout.dimensions).toEqual([2, 1, 2, 2]);
-         expect(cpuTensor.accelerator).toEqual('wasm');
-         expect(cpuTensor.toTypedArray()).toEqual(data);
-       });
   });
 
   describe('delegate compatibility', () => {
     let model: CompiledModel;
+    let a: Tensor;
+    let b: Tensor;
+    let expectedOutput: Float32Array;
 
     beforeAll(async () => {
+      await resetLiteRt();
       model = await loadAndCompile(
           '/testdata/delegate_compatibility_test.tflite',
           {accelerator: 'webgpu'});
+
+      const aData = new Float32Array(100).fill(0);
+      for (let i = 0; i < 10; ++i) aData[i * 10 + i] = 1;
+      a = new Tensor(aData, [10, 10]);
+
+      const bData = new Float32Array(100);
+      for (let i = 0; i < 100; ++i) bData[i] = i;
+      b = new Tensor(bData, [10, 10]);
+      expectedOutput = bData;
     });
 
     afterAll(() => {
       model.delete();
+      a.delete();
+      b.delete();
     });
 
     it('loads the model', async () => {
@@ -885,68 +1092,87 @@ describe('LiteRt', () => {
     });
 
     describe('matmul', () => {
-      let a: tf.Tensor;
-      let b: tf.Tensor;
-      let expectedOutput: tf.Tensor;
-
-      beforeAll(async () => {
-        await tf.ready();
-        a = tf.diag(tf.ones([10], 'float32'));
-        b = tf.range(0, 100, 1, 'float32').reshape([10, 10]);
-        expectedOutput = a.matMul(b);
-      });
-
-      afterAll(() => {
-        a.dispose();
-        b.dispose();
-        expectedOutput.dispose();
-      });
-
       it('works with 10x10 inputs', async () => {
-        const outputs = runWithTfjsTensors(model, 'matmul_10x10', {
-          'matmul_10x10_a:0': a.reshape([10, 10]),
-          'matmul_10x10_b:0': b.reshape([10, 10]),
+        const outputs = await model.run('matmul_10x10', {
+          'a': a,
+          'b': b,
         });
-        expect(await outputs['PartitionedCall:0'].data())
-            .toEqual(await expectedOutput.data());
+        expect(await outputs['output'].data()).toEqual(expectedOutput);
+        outputs['output'].delete();
       });
 
       it('works with 1x10x10 inputs', async () => {
-        const outputs = runWithTfjsTensors(model, 'matmul_1x10x10', {
-          'matmul_1x10x10_a:0': a.reshape([1, 10, 10]),
-          'matmul_1x10x10_b:0': b.reshape([1, 10, 10]),
+        const a1x10x10 = new Tensor(await a.data(), [1, 10, 10]);
+        const b1x10x10 = new Tensor(await b.data(), [1, 10, 10]);
+        const outputs = await model.run('matmul_1x10x10', {
+          'a': a1x10x10,
+          'b': b1x10x10,
         });
-        expect(await outputs['PartitionedCall_1:0'].data())
-            .toEqual(await expectedOutput.data());
+        expect(await outputs['output'].data()).toEqual(expectedOutput);
+        a1x10x10.delete();
+        b1x10x10.delete();
+        outputs['output'].delete();
       });
 
       it('works with 1x1x10x10 inputs', async () => {
-        const outputs = runWithTfjsTensors(model, 'matmul_1x1x10x10', {
-          'matmul_1x1x10x10_a:0': a.reshape([1, 1, 10, 10]),
-          'matmul_1x1x10x10_b:0': b.reshape([1, 1, 10, 10]),
+        const a1x1x10x10 = new Tensor(await a.data(), [1, 1, 10, 10]);
+        const b1x1x10x10 = new Tensor(await b.data(), [1, 1, 10, 10]);
+        const outputs = await model.run('matmul_1x1x10x10', {
+          'a': a1x1x10x10,
+          'b': b1x1x10x10,
         });
-        expect(await outputs['PartitionedCall_2:0'].data())
-            .toEqual(await expectedOutput.data());
+        expect(await outputs['output'].data()).toEqual(expectedOutput);
+        a1x1x10x10.delete();
+        b1x1x10x10.delete();
+        outputs['output'].delete();
       });
     });
   });
-
-  describe('getGlobalLiteRtPromise', () => {
-    afterEach(async () => {
-      await resetLiteRt();
-    });
-
-    it('returns undefined if LiteRt is not loaded', async () => {
-      unloadLiteRt();
-      expect(getGlobalLiteRtPromise()).toBeUndefined();
-    });
-
-    it('returns a promise that resolves to the loaded LiteRt instance',
-       async () => {
-         unloadLiteRt();
-         const liteRtPromise = loadLiteRt('/wasm/');
-         await expectAsync(liteRtPromise).toBeResolved();
-         expect(getGlobalLiteRt()).toEqual(await liteRtPromise);
-       });
-  });
 });
+
+async function addTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
+  const aArray = await a.data();
+  const bArray = await b.data();
+  const result = new Float32Array(aArray.length);
+  for (let i = 0; i < aArray.length; i++) {
+    result[i] = aArray[i] + bArray[i];
+  }
+  return result;
+}
+
+async function subTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
+  const aArray = await a.data();
+  const bArray = await b.data();
+  const result = new Float32Array(aArray.length);
+  for (let i = 0; i < aArray.length; i++) {
+    result[i] = aArray[i] - bArray[i];
+  }
+  return result;
+}
+
+async function mulTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
+  const aArray = await a.data();
+  const bArray = await b.data();
+  const result = new Float32Array(aArray.length);
+  for (let i = 0; i < aArray.length; i++) {
+    result[i] = aArray[i] * bArray[i];
+  }
+  return result;
+}
+
+async function checkBufferIsUsable(
+    device: GPUDevice, buffer: GPUBuffer): Promise<void> {
+  device.pushErrorScope('validation');
+  const tempBuffer =
+      device.createBuffer({size: 4, usage: GPUBufferUsage.COPY_DST});
+  const encoder = device.createCommandEncoder();
+  encoder.copyBufferToBuffer(buffer, 0, tempBuffer, 0, 0);
+  device.queue.submit([encoder.finish()]);
+  tempBuffer.destroy();
+
+  const error = await device.popErrorScope();
+  if (error) {
+    // Wrap in an error message that jasmine can read.
+    throw new Error(error.message);
+  }
+}
