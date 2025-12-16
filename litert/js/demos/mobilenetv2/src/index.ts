@@ -16,7 +16,7 @@
 
 import '@tensorflow/tfjs-backend-webgpu'; // side-effect to register the backend
 
-import {CompileOptions, loadAndCompile, loadLiteRt, setWebGpuDevice} from '@litertjs/core_litert';
+import {CompileOptions, loadAndCompile, loadLiteRt, setWebGpuDevice} from '@litertjs/core';
 import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
 import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, type DType, getDefaultEnvironment, SignatureRunner, Tensor, TensorBufferType, TensorDetails} from '@litertjs/core_litert';
+import {CompiledModel, type DType, getDefaultEnvironment, SignatureRunner, Tensor, TensorBufferType, TensorDetails} from '@litertjs/core';
 import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 
