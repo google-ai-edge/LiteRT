@@ -34,8 +34,6 @@ constexpr const char* kQualcommUInt16ModelFileName =
     "simple_add_uint16_qualcomm.bin";
 constexpr const char* kGoogleTensorModelFileName =
     "simple_model_google_tensor.bin";
-constexpr const char* kGoogleTensorReferenceModelFileName =
-    "simple_model_reference_google_tensor.bin";
 constexpr const char* kMediaTekModelFileName = "simple_model_mtk.bin";
 constexpr const char* kOpenvinoModelBlobFileName = "ov_model_add1d_FP32.blob";
 

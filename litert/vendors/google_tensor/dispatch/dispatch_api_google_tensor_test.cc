@@ -86,16 +86,17 @@ TEST(DispatchApi, GoogleTensor) {
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
-  auto model_file_name = litert::testing::GetTestFilePath(
+  std::string model_file_path =
 #if defined(__ANDROID__)
-      kGoogleTensorModelFileName
+      litert::testing::GetTestFilePath(kGoogleTensorModelFileName);
 #else
-      kGoogleTensorReferenceModelFileName
+      litert::testing::GetLiteRtPath(
+          "vendors/google_tensor/dispatch/"
+          "simple_model_reference_google_tensor.bin");
 #endif
-  );
-  auto model = litert::internal::LoadBinaryFile(model_file_name);
+  auto model = litert::internal::LoadBinaryFile(model_file_path);
   EXPECT_TRUE(model) << model.Error();
-  ABSL_LOG(INFO) << "Loaded model " << model_file_name << ", " << model->Size()
+  ABSL_LOG(INFO) << "Loaded model " << model_file_path << ", " << model->Size()
                  << " bytes";
 
   // ///////////////////////////////////////////////////////////////////////////
