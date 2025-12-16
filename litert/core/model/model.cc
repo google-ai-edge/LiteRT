@@ -30,6 +30,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -197,6 +198,16 @@ LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {
   return res;
 }
 
+LiteRtWeightsT& LiteRtRewriterT::BuildWeights(const uint8_t* data, size_t size,
+                                              LiteRtTensor tensor) {
+  ABSL_DCHECK(tensor != nullptr) << "Tensor is null";
+  ABSL_DCHECK(IsTensorAllocated(tensor))
+      << "Tensor is not built by the rewriter";
+  ::litert::OwningBufferRef<uint8_t> weights_buffer(data, size);
+  SetWeightsFromOwnedBuffer(tensor->Weights(), std::move(weights_buffer));
+  return tensor->Weights();
+}
+
 LiteRtTensorT& LiteRtRewriterT::BuildTensor(const LiteRtWeightsT& weights,
                                             Quantization quantization,
                                             TensorType tensor_type,
@@ -204,8 +215,14 @@ LiteRtTensorT& LiteRtRewriterT::BuildTensor(const LiteRtWeightsT& weights,
   LiteRtTensorT& tensor = subgraph_.EmplaceTensor();
   tensor.SetType(tensor_type);
   tensor.SetQarams(quantization);
-  tensor.Weights().SetBufferId(weights.GetBufferId());
-  tensor.Weights().SetBufferManager(weights.GetBufferManager());
+  if (weights.GetBufferManager() != nullptr) {
+    // In case of the weights have been registered in any buffer manager,
+    // reassign the tensor to the same buffer manager.
+    tensor.Weights().SetBufferId(weights.GetBufferId());
+    tensor.Weights().SetBufferManager(weights.GetBufferManager());
+  } else {
+    tensor.Weights().SetBufferManager(subgraph_.GetBufferManager());
+  }
   if (name.has_value()) {
     tensor.SetName(*name);
   }
@@ -293,7 +310,10 @@ void LiteRtRewriterT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
 
   // Transfer ownership of tensors and ops to the root subgraph.
   // Note: Maintain the original topological order of the ops.
-  size_t splice_index = subgraph_to_apply->Ops().size() - 1;
+  size_t splice_index = 0;
+  if (!subgraph_to_apply->Ops().empty()) {
+    splice_index = subgraph_to_apply->Ops().size() - 1;
+  }
   LITERT_LOG(LITERT_DEBUG, "splice_index starting: %zu", splice_index);
   for (size_t original_op_index = 0;
        original_op_index < subgraph_to_apply->Ops().size();
@@ -305,7 +325,24 @@ void LiteRtRewriterT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
     }
   }
   DCE(*subgraph_to_apply);
+  // Transfer ops from the subgraph to the root subgraph.
   subgraph_to_apply->TransferOpsFrom(subgraph_.OpsAllocation(), splice_index);
+
+  // Transfer ownership of Weights buffers to the root subgraph.
+  auto src_buffer_manager = subgraph_.GetBufferManager();
+  auto dst_buffer_manager = subgraph_to_apply->GetBufferManager();
+  for (auto& tensor : subgraph_.Tensors()) {
+    if ((tensor->Weights().Buffer().Size() > 0) &&
+        (tensor->Weights().GetBufferManager() == src_buffer_manager)) {
+      auto src_buffer_id = tensor->Weights().GetBufferId();
+      auto src_buffer = src_buffer_manager->GetOwnedBuffer(src_buffer_id);
+      auto new_buf_id = dst_buffer_manager->RegisterOwnedBuffer(
+          std::move(src_buffer.Value()));
+      tensor->Weights().SetBufferId(new_buf_id);
+      tensor->Weights().SetBufferManager(dst_buffer_manager);
+    }
+  }
+  // Transfer ownership of tensors to the root subgraph.
   subgraph_to_apply->TransferTensorsFrom(subgraph_.TensorsAllocation());
 
   erases_.clear();

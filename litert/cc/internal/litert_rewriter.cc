@@ -93,4 +93,5 @@ Op Rewriter::BuildOp(LiteRtOpCode op_code, OpInputs& inputs,
                      output_tensors.data(), this->Get(), &litert_op);
   return Op(litert_op);
 }
+
 }  // namespace litert

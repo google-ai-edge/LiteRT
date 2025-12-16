@@ -246,6 +246,7 @@ cc_library(
     deps = [
         ":litert_extended_model",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/container:inlined_vector",

@@ -212,4 +212,26 @@ TEST(LiteRtRewriterTest, CanBuildOpTest) {
   EXPECT_THAT(op->Inputs(), ElementsAre(&input_tensor_0, &input_tensor_1));
   EXPECT_THAT(op->Outputs(), ElementsAre(&output_tensor_0));
 }
+
+TEST(LiteRtRewriterTest, BuildWeights) {
+  static constexpr absl::string_view kData = "Nurburgring";
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(kData.data());
+
+  LiteRtRewriterT rewriter;
+  LiteRtTensor tensor;
+  LiteRtRankedTensorType ranked_tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 2, .dimensions = {3, 3}}};
+
+  LITERT_ASSERT_OK(LiteRtRewriterBuildTensor(
+      kLiteRtRankedTensorType, ranked_tensor_type, LiteRtUnrankedTensorType(),
+      nullptr, kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
+      LiteRtQuantizationPerChannel(), &rewriter, "", &tensor));
+
+  LiteRtWeights weights;
+  LITERT_ASSERT_OK(LiteRtRewriterBuildWeights(data, kData.size(), tensor,
+                                              &rewriter, &weights));
+  EXPECT_EQ(weights->Buffer().Size(), kData.size());
+  EXPECT_EQ(weights->Buffer().StrView(), kData);
+}
 }  // namespace

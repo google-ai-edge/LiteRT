@@ -423,6 +423,8 @@ cc_library(
         "//litert/c:litert_op_code",
         "//litert/c:litert_rewriter",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_ranked_tensor_type",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -438,9 +440,11 @@ cc_test(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
