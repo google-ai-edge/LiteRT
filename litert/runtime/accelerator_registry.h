@@ -32,6 +32,16 @@ namespace litert::internal {
 // accelerators (and their resources) that are registered with it.
 class AcceleratorRegistry {
  public:
+  AcceleratorRegistry() {
+    // Reserve space for vectors to prevent memory reallocations. Some
+    // environment doesn't allow to share heap between shared libraries (where
+    // it modify vectors) and the main executable (where it allocates vectors).
+    static constexpr size_t kMaxSharedLibraries = 4;
+    static constexpr size_t kMaxAccelerators = 4;
+    accelerator_shared_libraries_.reserve(kMaxSharedLibraries);
+    accelerators_.reserve(kMaxAccelerators);
+  }
+
   struct Deleter {
     void operator()(LiteRtAcceleratorT* accelerator) {
       DestroyAccelerator(accelerator);
