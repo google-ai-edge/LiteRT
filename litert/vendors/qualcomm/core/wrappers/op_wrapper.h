@@ -56,6 +56,8 @@ class OpWrapper final {
 
   const qnn::TensorParamWrapper& GetTensorPararm(size_t i) const;
 
+  std::optional<ScalarParamWrapper> GetScalarParam(size_t i) const;
+
   std::vector<std::reference_wrapper<TensorWrapper>> GetAllTensors();
 
   void SwapOutputs(OpWrapper& other);
@@ -82,6 +84,12 @@ class OpWrapper final {
   std::vector<Qnn_Param_t> qnn_params_{};
   QnnOpCode op_code_{QnnOpCode::kUnknown};
 };
+
+bool IsElementwiseMultiply(const OpWrapper& op);
+
+bool IsElementwiseAdd(const OpWrapper& op);
+
+bool IsElementwiseNot(const OpWrapper& op);
 
 }  // namespace qnn
 
