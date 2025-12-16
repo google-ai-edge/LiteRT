@@ -139,6 +139,7 @@ enum ThrBufferType : int {
   kThrBufferTypeFastRpcMem =
       2,  // Shared memory used for FastRPC.
           // https://android.googlesource.com/platform/external/fastrpc/
+  kThrBufferTypeDmaBuf = 3,
 };
 
 // Version of the `ThrInvocationMetrics` struct defined in this header file.
@@ -516,18 +517,26 @@ ThrStatus thrSqAttachScratchPadBuffer(ThrContext* context,
 // After the execution, buffers can be detached by
 // `thrInvocationContextDetachBuffer` API when they're not used anymore.
 
-// Registers the given `buffer` in `type` to the given `ThrContext`.
-// The `size` is the size of the given `buffer`. You can omit it for
-// `AHardwareBuffer`.
-// Note: The memory of `buffer` should be valid until `thrUnregisterBuffer` is
-// called.
+// Registers `buffer` to the given `ThrContext`, assuming an offset of 0.
+//
+// `type` determines the meaning of `buffer`:
+//  - kThrBufferTypeHostMemory -> pointer to valid region in the calling
+//                                process's virtual address space.
+//  - kThrBufferTypeAHardwareBuffer -> pointer to `AHardwareBuffer` struct.
+//  - kThrBufferTypeFastRpcMem -> pointer returned from a call to `RpcMemAlloc`.
+//  - kThrBufferTypeDmaBuf -> file descriptor that refers to a dma-buf.
+//
+// `size` is the size of `buffer`s underlying memory in bytes. It can be
+// set to 0 when `type == kThrBufferTypeAHardwareBuffer`, which will register
+// the entire AhardwareBuffer.
+//
+// Note: `buffer`s underlying memory must remain valid until it is unregistered
+// via `thrUnregisterBuffer`.
 ThrStatus thrRegisterBuffer(ThrContext* context, ThrBufferType type,
                             void* buffer, size_t size, ThrBufferHandle* handle);
 
-// Registers `AHardwareBuffer` to the given `ThrContext`.
-//
-// Warning: This is NOT a SB API but a `thrRegisterBuffer` wrapper for
-// `AHardwareBuffer` buffer type.
+// A variant of `thrRegisterBuffer` specialized for `AHardwareBuffer`s that
+// registers the entire `AHardwareBuffer`.
 inline ThrStatus thrRegisterBufferAhwb(ThrContext* context,
                                        AHardwareBuffer* ahwb,
                                        ThrBufferHandle* handle) {
@@ -535,17 +544,18 @@ inline ThrStatus thrRegisterBufferAhwb(ThrContext* context,
                            /*size=*/0, handle);
 }
 
-// The same with `thrRegisterBuffer` with additional `offset` parameter.
-// This API enables to use part of the given `buffer` memory as a SouthBound
-// Buffer.
+// A variant of `thrRegisterBuffer` that allows for specifying a non-zero
+// offset. This enables "partial registration" of buffers.
 //
-// Note: The offset + size should be less than or equal to the size of the
-// given `buffer`.
+// Warning: `offset + size` must be less than or equal to the size of `buffer`s
+// underlying memory.
 ThrStatus thrRegisterBufferWithOffset(ThrContext* context, ThrBufferType type,
                                       void* buffer, size_t offset, size_t size,
                                       ThrBufferHandle* handle);
 
-// The same with `thrRegisterBufferAhwb` with additional `offset` parameter.
+// A variant of `thrRegisterBufferWithOffset` specialized for
+// `AHardwareBuffer`s that registers the entire `AHardwareBuffer` starting at
+// `offset`.
 inline ThrStatus thrRegisterBufferAhwbWithOffset(ThrContext* context,
                                                  AHardwareBuffer* ahwb,
                                                  size_t offset,
@@ -555,10 +565,10 @@ inline ThrStatus thrRegisterBufferAhwbWithOffset(ThrContext* context,
                                      /*size=*/0, handle);
 }
 
-// Unregisters the registered buffer associated with the given
-// `ThrBufferHandle`.
-// Note: Registered `ThrBufferHandle` is supposed to be unregistered with this
-// API before the associated `ThrContext` is deleted by `thrContextDelete` API.
+// Unregisters the buffer associated with `handle` from the given `ThrContext`.
+//
+// Note: `handle` must be unregistered via `thrUnregisterBuffer` before the
+// `ThrContext` is deleted.
 ThrStatus thrUnregisterBuffer(ThrContext* context, ThrBufferHandle handle);
 
 // --------------------------------------------------------------------------
