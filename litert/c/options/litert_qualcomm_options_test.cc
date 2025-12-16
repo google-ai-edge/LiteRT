@@ -386,6 +386,10 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetUseFoldReLU());
   options->SetUseFoldReLU(false);
   EXPECT_FALSE(options->GetUseFoldReLU());
+
+  EXPECT_EQ(options->GetQnnBackend(), QualcommOptions::QnnBackend::kHtp);
+  options->SetQnnBackend(QualcommOptions::QnnBackend::kDsp);
+  EXPECT_EQ(options->GetQnnBackend(), QualcommOptions::QnnBackend::kDsp);
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {
@@ -428,6 +432,24 @@ TEST(LiteRtQualcommOptionsTest, Hash) {
 
   LiteRtDestroyOpaqueOptions(options1);
   LiteRtDestroyOpaqueOptions(options2);
+}
+
+TEST(LiteRtQualcommOptionsTest, QnnBackend) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetQnnBackend(
+      qualcomm_options, kLiteRtQualcommQnnBackendDsp));
+
+  LiteRtQualcommOptionsQnnBackend qnn_backend;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetQnnBackend(qualcomm_options, &qnn_backend));
+  EXPECT_EQ(qnn_backend, kLiteRtQualcommQnnBackendDsp);
+
+  LiteRtDestroyOpaqueOptions(options);
 }
 
 }  // namespace

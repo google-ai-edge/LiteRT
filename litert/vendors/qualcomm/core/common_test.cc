@@ -48,6 +48,10 @@ TEST(QnnOptionTest, BackendType) {
   static constexpr BackendType kIr = BackendType::kIrBackend;
   options.SetBackendType(kIr);
   EXPECT_EQ(options.GetBackendType(), kIr);
+
+  static constexpr BackendType kDsp = BackendType::kDspBackend;
+  options.SetBackendType(kDsp);
+  EXPECT_EQ(options.GetBackendType(), kDsp);
 }
 
 TEST(QnnOptionTest, HtpPerformanceMode) {
