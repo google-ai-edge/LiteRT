@@ -497,4 +497,51 @@ const float kTolerance = 1e-5;
   }
 }
 
+- (void)testCompiledModelexternalTensorBinding {
+  auto env = litert::Environment::Create({});
+  XCTAssertTrue(env);
+
+  // Create weight tensor buffer.
+  alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) float kWeightTensor[] = {1.0f, 2.0f};
+  constexpr int kWeightSize = sizeof(kWeightTensor);
+
+  // Create Compilation options and bind weight tensor.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK(options.AddExternalTensorBinding(
+      /*signature_name=*/"", /*tensor_name=*/"arg1", kWeightTensor, kWeightSize));
+  NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_model"];
+  XCTAssertNotNil(modelFilePath);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model, litert::CompiledModel::Create(*env, modelFilePath.UTF8String, options));
+
+  // Create and fill input and output buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  absl::flat_hash_map<absl::string_view, TensorBuffer> output_map;
+  output_map["tfl.add"] = std::move(output_buffers[0]);
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> input_map;
+  float kInputTensor[] = {1.0f, 1.0f};
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::TensorBufferRequirements requirements,
+                              compiled_model.GetInputBufferRequirements(0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type, requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer arg0_buffer,
+      TensorBuffer::CreateManaged(*env, buffer_type[0],
+                                  litert::RankedTensorType(litert::ElementType::Float32,
+                                                           litert::Layout(litert::Dimensions({2}))),
+                                  sizeof(kInputTensor)));
+  LITERT_ASSERT_OK(arg0_buffer.Write<float>(absl::MakeConstSpan(kInputTensor, 2)));
+  input_map["arg0"] = std::move(arg0_buffer);
+
+  // Execute model with input and output buffers.
+  LITERT_ASSERT_OK(compiled_model.Run(input_map, output_map));
+
+  // Check model output.
+  constexpr float kExpectedOutput[] = {2.0f, 3.0f};
+  [MetalTestHelper checkTensorBufferFloatOutput:&output_map["tfl.add"]
+                             withExpectedOutput:kExpectedOutput
+                               withElementCount:2
+                                  withTolerance:kTolerance];
+}
 @end
