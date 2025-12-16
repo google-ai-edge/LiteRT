@@ -159,17 +159,18 @@ class Expected {
 
   // Construct T from initializer list inplace.
   template <class U>
-  Expected(std::initializer_list<U> il) : has_value_(true), value_(il) {}
+  constexpr Expected(std::initializer_list<U> il)
+      : has_value_(true), value_(il) {}
 
   // Construct T from forwarded args inplace.
   template <class... Args>
-  explicit Expected(Args&&... args)
+  constexpr explicit Expected(Args&&... args)
       : has_value_(true), value_(std::forward<Args>(args)...) {}
 
   // NOLINTBEGIN(*-explicit-constructor)
 
   // Allow for implicit conversion from convertible T value inplace.
-  Expected(reference t) : has_value_(true), value_(t) {}
+  constexpr Expected(reference t) : has_value_(true), value_(t) {}
   // Copy constructs from a constant reference.
   //
   // Disabled if `T` is a constant reference.
@@ -177,21 +178,24 @@ class Expected {
       class U,
       class = std::enable_if_t<std::is_same_v<std::decay_t<U>, value_type>>,
       class = std::enable_if<!std::is_same_v<const U&, reference>>>
-  Expected(const U& t) : has_value_(true), value_(t) {}
-  Expected(value_type&& t) : has_value_(true), value_(std::move(t)) {}
+  constexpr Expected(const U& t) : has_value_(true), value_(t) {}
+  constexpr Expected(value_type&& t) : has_value_(true), value_(std::move(t)) {}
 
   // Construct from Unexpected inplace.
 
   // Allow for implicit conversion from Error.
-  Expected(const Unexpected& err) : has_value_(false), unexpected_(err) {}
-  Expected(Unexpected&& err) : has_value_(false), unexpected_(std::move(err)) {}
-  Expected(const class Error& e) : has_value_(false), unexpected_(e) {}
+  constexpr Expected(const Unexpected& err)
+      : has_value_(false), unexpected_(err) {}
+  constexpr Expected(Unexpected&& err)
+      : has_value_(false), unexpected_(std::move(err)) {}
+  constexpr Expected(const class Error& e)
+      : has_value_(false), unexpected_(e) {}
 
   // NOLINTEND(*-explicit-constructor)
 
   // Copy/move
 
-  Expected(Expected&& other) : has_value_(other.HasValue()) {
+  constexpr Expected(Expected&& other) : has_value_(other.HasValue()) {
     if (HasValue()) {
       ConstructAt(std::addressof(value_), std::move(other.value_));
     } else {
@@ -199,7 +203,7 @@ class Expected {
     }
   }
 
-  Expected(const Expected& other) : has_value_(other.has_value_) {
+  constexpr Expected(const Expected& other) : has_value_(other.has_value_) {
     if (HasValue()) {
       ConstructAt(std::addressof(value_), other.value_);
       value_ = other.value_;
@@ -208,7 +212,7 @@ class Expected {
     }
   }
 
-  Expected& operator=(Expected&& other) {
+  constexpr Expected& operator=(Expected&& other) {
     if (this != &other) {
       if (HasValue()) {
         if (other.HasValue()) {
@@ -231,7 +235,7 @@ class Expected {
     return *this;
   }
 
-  Expected& operator=(const Expected& other) {
+  constexpr Expected& operator=(const Expected& other) {
     if (this != &other) {
       if (HasValue()) {
         if (other.HasValue()) {
@@ -253,7 +257,7 @@ class Expected {
     return *this;
   }
 
-  ~Expected() {
+  constexpr ~Expected() {
     if (has_value_ && std::is_destructible<T>()) {
       value_.~StorageType();
     } else {
@@ -262,7 +266,7 @@ class Expected {
   }
 
   // Observers for T value, program exits if it doesn't have one.
-  const_reference Value() const& {
+  constexpr const_reference Value() const& {
     CheckVal();
     if constexpr (std::is_reference_v<T>) {
       return value_.get();
@@ -271,7 +275,7 @@ class Expected {
     }
   }
 
-  reference Value() & {
+  constexpr reference Value() & {
     CheckVal();
     if constexpr (std::is_reference_v<T>) {
       return value_.get();
@@ -286,7 +290,7 @@ class Expected {
   // Deleted: an Expected should always be checked before accessing its value.
   reference& Value() && = delete;
 
-  const_pointer operator->() const& {
+  constexpr const_pointer operator->() const& {
     CheckVal();
     if constexpr (std::is_reference_v<T>) {
       return &(value_.get());
@@ -295,7 +299,7 @@ class Expected {
     }
   }
 
-  pointer operator->() & {
+  constexpr pointer operator->() & {
     CheckVal();
     if constexpr (std::is_reference_v<T>) {
       return &(value_.get());
@@ -310,9 +314,9 @@ class Expected {
   // Deleted: an Expected should always be checked before accessing its value.
   pointer operator->() && = delete;
 
-  const_reference operator*() const& { return Value(); }
+  constexpr const_reference operator*() const& { return Value(); }
 
-  reference operator*() & { return Value(); }
+  constexpr reference operator*() & { return Value(); }
 
   // Deleted: an Expected should always be checked before accessing its value.
   reference& operator*() const&& = delete;
@@ -321,12 +325,12 @@ class Expected {
   reference& operator*() && = delete;
 
   // Observer for Unexpected, program exits if it doesn't have one.
-  const class Error& Error() const& {
+  constexpr const class Error& Error() const& {
     CheckNoVal();
     return unexpected_.Error();
   }
 
-  class Error& Error() & {
+  constexpr class Error& Error() & {
     CheckNoVal();
     return unexpected_.Error();
   }
@@ -338,10 +342,10 @@ class Expected {
   class Error&& Error() && = delete;
 
   // Does this expected contain a T Value. It contains an unexpected if not.
-  bool HasValue() const { return has_value_; }
+  constexpr bool HasValue() const { return has_value_; }
 
   // Convert to bool for HasValue.
-  explicit operator bool() const { return HasValue(); }
+  constexpr explicit operator bool() const { return HasValue(); }
 
  private:
   bool has_value_;
