@@ -454,7 +454,7 @@ config_setting(
         ],
 )
 
-# Android platforms with x86_64 CPUs, e.g. Aluminum devices with Intel CPUs.
+# Android platforms with x86_64 CPUs, e.g. Chromebook devices with Intel CPUs.
 platform(
     name = "device_x86_64",
     constraint_values =
