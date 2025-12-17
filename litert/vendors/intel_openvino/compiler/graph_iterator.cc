@@ -127,6 +127,7 @@ GraphIteratorDelegate::get_decoder() const {
             op.Code() != LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d &&
             op.Code() != LiteRtOpCode::kLiteRtOpCodeTflMul &&
             op.Code() != LiteRtOpCode::kLiteRtOpCodeTflAdd &&
+            op.Code() != LiteRtOpCode::kLiteRtOpCodeTflEmbeddingLookup &&
             op.Code() != LiteRtOpCode::kLiteRtOpCodeTflFullyConnected)
           tensor_meta_info.m_quantization_info = nullptr;
       }
