@@ -21,7 +21,7 @@ export {type CompileOptions} from './model_types';
 export {CompiledModel} from './compiled_model';
 export {type SignatureRunner, type TensorDetails} from './signature_runner';
 export {Environment, type EnvironmentOptions} from './environment';
-export {type DType} from './datatypes';
+export {type DType, type TypedArray} from './datatypes';
 export {type Accelerator} from './accelerator_types';
 export * from './load_litert';
 export {TensorBufferType} from './wasm_binding_types';

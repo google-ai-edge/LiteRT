@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-import {CompiledModel, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, Tensor, unloadLiteRt} from '@litertjs/core';
+import {CompiledModel, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
-
-import {TypedArray} from './datatypes';
-import {Environment} from './environment';
-import {TensorBufferType} from './index';
 
 describe('LiteRt', () => {
   let liteRt: LiteRt;

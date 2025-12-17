@@ -226,7 +226,7 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
       if (supportedBufferTypes.has(bufferType)) {
         inputsOnAccelerator.push(input);
       } else {
-        const newBufferType = supportedBufferTypes.values().next().value;
+        const newBufferType = supportedBufferTypes.values().next().value!;
         const copy = await input.copyTo(newBufferType);
         toDelete.push(copy);
         inputsOnAccelerator.push(copy);
