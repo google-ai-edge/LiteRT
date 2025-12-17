@@ -73,7 +73,7 @@ LiteRtStatus LiteRtJoinTensorBufferRequirements(
     LiteRtTensorBufferRequirements src_requirements_2,
     LiteRtTensorBufferRequirements* joined_requirements);
 
-// Destroy a owned LiteRtTensorBufferRequirements object.
+// Destroy an owned LiteRtTensorBufferRequirements object.
 void LiteRtDestroyTensorBufferRequirements(
     LiteRtTensorBufferRequirements requirements);
 

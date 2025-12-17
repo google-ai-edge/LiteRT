@@ -321,9 +321,9 @@ LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
 // TODO b/413449050 - Update behavior to upload contents without conversion.
 LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer buffer);
 
-// Destroy a owned tensor buffer. If the tensor buffer is managed, the number of
-// references to it is decreased and released the underlying TensorBufferT when
-// the last reference is removed.
+// Destroy an owned tensor buffer. If the tensor buffer is managed, the number
+// of references to it is decreased and released the underlying TensorBufferT
+// when the last reference is removed.
 void LiteRtDestroyTensorBuffer(LiteRtTensorBuffer buffer);
 
 #ifdef __cplusplus

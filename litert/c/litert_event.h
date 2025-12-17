@@ -91,7 +91,7 @@ LiteRtStatus LiteRtIsEventSignaled(LiteRtEvent event, bool* is_signaled);
 // Returns a dup of the event's sync fence fd.
 LiteRtStatus LiteRtDupFdEvent(LiteRtEvent event, int* dup_fd);
 
-// Destroys a owned LiteRtEvent object.
+// Destroys an owned LiteRtEvent object.
 void LiteRtDestroyEvent(LiteRtEvent event);
 
 #ifdef __cplusplus

@@ -32,7 +32,7 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
                                      const LiteRtEnvOption* options,
                                      LiteRtEnvironment* environment);
 
-// Destroy a owned LiteRT environment object.
+// Destroy an owned LiteRT environment object.
 void LiteRtDestroyEnvironment(LiteRtEnvironment environment);
 
 // Get the options that the environment was created with.

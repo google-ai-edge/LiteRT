@@ -63,7 +63,8 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
 // - buffer_requirements: the returned `LiteRtTensorBufferRequirements`.
 //
 // Note: The returned LiteRtTensorBufferRequirements is still owned by the
-// LiteRtCompiledModel and should not outlive the LiteRtCompiledModel.
+// LiteRtCompiledModel and is only valid during the LiteRtCompileModel's
+// lifetime.
 LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index,
@@ -80,7 +81,8 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 // - buffer_requirements: the returned `LiteRtTensorBufferRequirements`.
 //
 // Note: The returned LiteRtTensorBufferRequirements is still owned by the
-// LiteRtCompiledModel and should not outlive the LiteRtCompiledModel.
+// LiteRtCompiledModel and is only valid during the LiteRtCompileModel's
+// lifetime.
 LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex output_index,
@@ -180,7 +182,7 @@ LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
     LiteRtCompiledModel compiled_model, void* data,
     bool (*check_cancelled_func)(void*));
 
-// Destroy a owned LiteRtCompiledModel object.
+// Destroy an owned LiteRtCompiledModel object.
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model);
 
 // Start collection of HW-specific metrics at a specific level of detail (>= 0).
