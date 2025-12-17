@@ -87,6 +87,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSum,
     kLiteRtOpCodeTflReduceMax,
     kLiteRtOpCodeTflEmbeddingLookup,
+    kLiteRtOpCodeTflConv3d,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,

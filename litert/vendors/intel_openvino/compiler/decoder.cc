@@ -736,6 +736,54 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any(keep_dims);
       }
       break;
+    case LiteRtOpCode::kLiteRtOpCodeTflConv3d:
+      if (name == "strides") {
+        int32_t stride_d;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dStrideDOption(litert_op_, &stride_d),
+            ERROR_LOG_STR("stride_d", op_name_.c_str()));
+        int32_t stride_w;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dStrideWOption(litert_op_, &stride_w),
+            ERROR_LOG_STR("stride_w", op_name_.c_str()));
+        int32_t stride_h;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dStrideHOption(litert_op_, &stride_h),
+            ERROR_LOG_STR("stride_h", op_name_.c_str()));
+        return ov::Any(std::vector<int64_t>{1, stride_d, stride_h, stride_w, 1});
+      } else if (name == "padding") {
+        uint32_t padding;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dPaddingOption(litert_op_, &padding),
+            ERROR_LOG_STR("padding", op_name_.c_str()));
+        return ov::Any(std::string(
+            tflite::EnumNamePadding(static_cast<tflite::Padding>(padding))));
+      } else if (name == "dilations") {
+        int32_t dilation_d_factor;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dDilationDOption(litert_op_, &dilation_d_factor),
+            ERROR_LOG_STR("dilation_d_factor", op_name_.c_str()));
+        int32_t dilation_w_factor;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dDilationWOption(litert_op_, &dilation_w_factor),
+            ERROR_LOG_STR("dilation_w_factor", op_name_.c_str()));
+        int32_t dilation_h_factor;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dDilationHOption(litert_op_, &dilation_h_factor),
+            ERROR_LOG_STR("dilation_h_factor", op_name_.c_str()));
+        return ov::Any(
+            std::vector<int64_t>{1, dilation_d_factor, dilation_h_factor, dilation_w_factor, 1});
+      } else if (name == "activation") {
+        uint32_t fused_activation;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv3dFusedActivationOption(litert_op_, &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
+        return ov::Any(tflite::EnumNameActivationFunctionType(
+            static_cast<tflite::ActivationFunctionType>(fused_activation)));
+      } else if (name == "data_format") {
+        return ov::Any("NDHWC");
+      }
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return ov::Any(nullptr);
