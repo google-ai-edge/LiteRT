@@ -784,6 +784,30 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any("NDHWC");
       }
       break;
+    case LiteRtOpCode::kLiteRtOpCodeTflArgMax:
+      if (name == "output_type") {
+        // Get the output tensor to extract its element type
+        litert::Op op(litert_op_);
+        auto outputs = op.Outputs();
+        if (outputs.empty()) {
+          LITERT_LOG(LITERT_ERROR, "ArgMax op has no outputs");
+          return ov::Any(nullptr);
+        }
+        // Get the element type from the output tensor
+        const ElementType type = outputs[0].ElementType();
+        ov::element::Type ov_element_type =
+            MapLiteTypeToOV(static_cast<LiteRtElementType>(type));
+        return ov::Any(ov_element_type);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeTflOneHot:
+      if (name == "axis") {
+        // TODO: Currently litert_options doesn't provide an option for this.
+        // Using the default value as per TFLite and OV spec.
+        int32_t axis = -1;
+        return ov::Any(axis);
+      }
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return ov::Any(nullptr);
