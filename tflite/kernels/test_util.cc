@@ -59,6 +59,7 @@ limitations under the License.
 #include "tflite/tools/logging.h"
 #include "tflite/tools/serialization/writer_lib.h"
 #include "tflite/tools/versioning/op_version.h"
+#include "tflite/types/fp16.h"  // IWYU pragma: keep
 #include "tflite/version.h"
 #include "tsl/platform/logging.h"
 
