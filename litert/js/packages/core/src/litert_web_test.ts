@@ -549,6 +549,25 @@ describe('LiteRt', () => {
           .toBeRejectedWithError(/the test buffer.*destroyed/);
     });
 
+    it('liteRtWasm.WebGPU.Internals.jsObjects no longer contains the buffer pointer when the tensor is deleted',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const data = new Float32Array([1.234, 2.345, 3.456]);
+         const tensor = new Tensor(data);
+         const gpuTensor = await tensor.moveTo('webgpu');
+         const bufferPtr = gpuTensor.liteRtTensorBuffer.getWebGpuBuffer();
+
+         // This is a private property of the WebGPU module, but we need to
+         // access it to test that the buffer is removed from the map when the
+         // tensor is deleted.
+         // tslint:disable-next-line:no-any
+         const jsObjects =
+             (liteRt.liteRtWasm.WebGPU as any).Internals.jsObjects;
+         expect(jsObjects[bufferPtr]).toBe(gpuTensor.toGpuBuffer());
+         gpuTensor.delete();
+         expect(jsObjects[bufferPtr]).toBeUndefined();
+       });
+
     for (const dimensionCount of [1, 2, 3, 4] as const) {
       describe(`with ${dimensionCount} dimensions`, () => {
         const batchDims = new Array(dimensionCount - 1).fill(1);

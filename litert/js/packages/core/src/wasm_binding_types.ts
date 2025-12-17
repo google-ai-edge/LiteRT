@@ -375,6 +375,7 @@ export declare interface LiteRtWasm extends WasmModule {
       model: LiteRtModel,
       options?: LiteRtCompileOptions,
       ): LiteRtCompiledModel;
+  wgpuBufferRelease(bufferPtr: number): void;
   LiteRtTensorBuffer: LiteRtTensorBufferConstructor;
   LiteRtTensorBufferType: LiteRtTensorBufferTypeEnum;
   LiteRtTensorBufferLockMode: LiteRtTensorBufferLockModeEnum;

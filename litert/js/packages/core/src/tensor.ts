@@ -220,8 +220,17 @@ export class Tensor implements Deletable, WithEnvironment {
       if (!dataType) {
         throw new Error('A GPUBuffer must be provided with a data type.');
       }
-      this.liteRtTensorBuffer = webGpuBufferToLiteRtTensorBuffer(
-          gpuBuffer, shape, dataType, this.environment);
+      const [liteRtTensorBuffer, webGpuBufferPtr] =
+          webGpuBufferToLiteRtTensorBuffer(
+              gpuBuffer, shape, dataType, this.environment);
+      this.liteRtTensorBuffer = liteRtTensorBuffer;
+
+      const onDelete = this.onDelete;
+      this.onDelete = () => {
+        const liteRtWasm = getGlobalLiteRt().liteRtWasm;
+        liteRtWasm.wgpuBufferRelease(webGpuBufferPtr);
+        onDelete?.();
+      };
     } else if (typedArray) {
       this.liteRtTensorBuffer =
           typedArrayToLiteRtTensorBuffer(typedArray, shape, environment);
@@ -446,6 +455,9 @@ export class Tensor implements Deletable, WithEnvironment {
   }
 
   delete() {
+    if (this.deletedInternal) {
+      return;
+    }
     this.deletedInternal = true;
     this.liteRtTensorBuffer.delete();
     this.onDelete?.();
@@ -475,12 +487,20 @@ function liteRtTensorBufferToTensorType(
   };
 }
 
+/**
+ * Creates a LiteRtTensorBuffer from a GPUBuffer.
+ *
+ * Returns the LiteRtTensorBuffer and the WebGPU buffer Wasm heap pointer. In
+ * the emscripten implementation, the pointer actually refers to the index of
+ * the buffer in the WebGPU module's Internals.jsObjects array, and must be
+ * released with `wgpuBufferRelease`.
+ */
 function webGpuBufferToLiteRtTensorBuffer(
     gpuBuffer: GPUBuffer,
     shape: Dimensions,
     dtype: DType,
     environment: Environment,
-    ): LiteRtTensorBuffer {
+    ): [LiteRtTensorBuffer, number] {
   const globalLiteRt = getGlobalLiteRt();
   const liteRtWasm = globalLiteRt.liteRtWasm;
 
@@ -496,17 +516,19 @@ function webGpuBufferToLiteRtTensorBuffer(
   );
   layout.delete();
 
+  const importedGpuBufferPtr = liteRtWasm.WebGPU.importJsBuffer(gpuBuffer);
+
   const liteRtTensorBuffer =
       liteRtWasm.LiteRtTensorBuffer.createFromWebGpuBuffer(
           environment.liteRtEnvironment,
           rankedTensorType,
           liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_PACKED,
-          liteRtWasm.WebGPU.importJsBuffer(gpuBuffer),
+          importedGpuBufferPtr,
           gpuBuffer.size,
       );
   rankedTensorType.delete();
 
-  return liteRtTensorBuffer;
+  return [liteRtTensorBuffer, importedGpuBufferPtr];
 }
 
 /**
