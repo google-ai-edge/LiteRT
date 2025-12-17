@@ -29,5 +29,6 @@ def qairt():
 
 # LINT.ThenChange(
 #     ../../ci/tools/python/vendor_sdk/qualcomm/setup.py:wheel_qairt_sdk_version,
-#     ../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version
+#     ../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
+#     ../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library_jit.sh:fetch_qairt_sdk_version
 # )
