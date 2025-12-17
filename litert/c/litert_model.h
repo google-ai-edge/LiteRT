@@ -86,6 +86,9 @@ LiteRtStatus LiteRtGetTensorDefiningOp(LiteRtTensor tensor,
 
 // Get static weights associated with a given tensor. All tensors have weights,
 // null weights have size = 0;
+//
+// Note: The returned LiteRtWeights is only valid during the LiteRtModel's
+// lifetime.
 LiteRtStatus LiteRtGetTensorWeights(LiteRtTensor tensor,
                                     LiteRtWeights* weights);
 
@@ -126,6 +129,9 @@ LiteRtStatus LiteRtGetOpOutput(LiteRtOp op, LiteRtParamIndex output_index,
 //
 
 // Get input tensors for given subgraph.
+//
+// Note: The returned LiteRtTensor is only valid during the LiteRtModel's
+// lifetime.
 LiteRtStatus LiteRtGetNumSubgraphInputs(LiteRtSubgraph subgraph,
                                         LiteRtParamIndex* num_inputs);
 LiteRtStatus LiteRtGetSubgraphInput(LiteRtSubgraph subgraph,
@@ -133,6 +139,9 @@ LiteRtStatus LiteRtGetSubgraphInput(LiteRtSubgraph subgraph,
                                     LiteRtTensor* input);
 
 // Get output tensors for given subgraph.
+//
+// Note: The returned LiteRtTensor is only valid during the LiteRtModel's
+// lifetime.
 LiteRtStatus LiteRtGetNumSubgraphOutputs(LiteRtSubgraph subgraph,
                                          LiteRtParamIndex* num_outputs);
 LiteRtStatus LiteRtGetSubgraphOutput(LiteRtSubgraph subgraph,
@@ -175,6 +184,9 @@ LiteRtStatus LiteRtGetSignatureInputName(LiteRtSignature signature,
                                          const char** input_name);
 
 // Get the input tensor for the given signature and input name.
+//
+// Note: The returned LiteRtTensor is only valid during the LiteRtModel's
+// lifetime.
 LiteRtStatus LiteRtGetSignatureInputTensor(LiteRtSignature signature,
                                            const char* input_name,
                                            LiteRtTensor* tensor);
@@ -196,6 +208,9 @@ LiteRtStatus LiteRtGetSignatureOutputName(LiteRtSignature signature,
                                           const char** output_name);
 
 // Get the output tensor for the given signature and output name.
+//
+// Note: The returned LiteRtTensor is only valid during the LiteRtModel's
+// lifetime.
 LiteRtStatus LiteRtGetSignatureOutputTensor(LiteRtSignature signature,
                                             const char* output_name,
                                             LiteRtTensor* tensor);
@@ -239,6 +254,9 @@ LiteRtStatus LiteRtGetNumModelSubgraphs(LiteRtModel model,
                                         LiteRtParamIndex* num_subgraphs);
 
 // Get subgraph at given index in model.
+//
+// Note: The returned LiteRtSubgraph is only valid during the LiteRtModel's
+// lifetime.
 LiteRtStatus LiteRtGetModelSubgraph(LiteRtModel model,
                                     LiteRtParamIndex subgraph_index,
                                     LiteRtSubgraph* subgraph);
@@ -248,6 +266,9 @@ LiteRtStatus LiteRtGetNumModelSignatures(LiteRtModel model,
                                          LiteRtParamIndex* num_signatures);
 
 // Get the signature at the given index in the model
+//
+// Note: The returned LiteRtSignature is only valid during the LiteRtModel's
+// lifetime.
 LiteRtStatus LiteRtGetModelSignature(LiteRtModel model,
                                      LiteRtParamIndex signature_index,
                                      LiteRtSignature* signature);
