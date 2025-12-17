@@ -26,12 +26,12 @@ size_t OptimizeMHAFastVlmPrefill(
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
 
-size_t OptimizeMHATinyGemmaPrefillPattern0(
+size_t OptimizeMHATinyGemmaPrefillPatternWithGlobalMask(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);
 
-size_t OptimizeMHATinyGemmaPrefillPattern1(
+size_t OptimizeMHATinyGemmaPrefillPattern(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size);

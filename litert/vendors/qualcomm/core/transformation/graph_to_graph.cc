@@ -156,31 +156,32 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
     Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
               OptimizeMHAPrefill);
 
-    const std::vector<QnnOpCode> tiny_gemma_mha_prefill_pattern_0 = {
-        QnnOpCode::kElementWiseMultiply,
-        QnnOpCode::kTranspose,
-        QnnOpCode::kReshape,
-        QnnOpCode::kMatMul,
-        QnnOpCode::kMatMul,
-        QnnOpCode::kConcat,
-        QnnOpCode::kConcat,   // concat mask
-        QnnOpCode::kReshape,  // reshape mask
-        QnnOpCode::kElementWiseAdd,
-        QnnOpCode::kSoftmax,
-        QnnOpCode::kStridedSlice,
-        QnnOpCode::kStridedSlice,
-        QnnOpCode::kMatMul,
-        QnnOpCode::kMatMul,
-        QnnOpCode::kElementWiseAdd,
-        QnnOpCode::kReshape,
-        QnnOpCode::kTranspose,
-        QnnOpCode::kReshape,
-    };
+    const std::vector<QnnOpCode>
+        tiny_gemma_mha_prefill_pattern_with_global_mask = {
+            QnnOpCode::kElementWiseMultiply,
+            QnnOpCode::kTranspose,
+            QnnOpCode::kReshape,
+            QnnOpCode::kMatMul,
+            QnnOpCode::kMatMul,
+            QnnOpCode::kConcat,
+            QnnOpCode::kConcat,   // concat mask
+            QnnOpCode::kReshape,  // reshape mask
+            QnnOpCode::kElementWiseAdd,
+            QnnOpCode::kSoftmax,
+            QnnOpCode::kStridedSlice,
+            QnnOpCode::kStridedSlice,
+            QnnOpCode::kMatMul,
+            QnnOpCode::kMatMul,
+            QnnOpCode::kElementWiseAdd,
+            QnnOpCode::kReshape,
+            QnnOpCode::kTranspose,
+            QnnOpCode::kReshape,
+        };
     Transform(validate_op_config, ops, tensor_pool,
-              tiny_gemma_mha_prefill_pattern_0,
-              OptimizeMHATinyGemmaPrefillPattern0);
+              tiny_gemma_mha_prefill_pattern_with_global_mask,
+              OptimizeMHATinyGemmaPrefillPatternWithGlobalMask);
 
-    const std::vector<QnnOpCode> tiny_gemma_mha_prefill_pattern_1 = {
+    const std::vector<QnnOpCode> tiny_gemma_mha_prefill_pattern = {
         QnnOpCode::kElementWiseMultiply,
         QnnOpCode::kTranspose,
         QnnOpCode::kReshape,
@@ -199,8 +200,8 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
         QnnOpCode::kReshape,
     };
     Transform(validate_op_config, ops, tensor_pool,
-              tiny_gemma_mha_prefill_pattern_1,
-              OptimizeMHATinyGemmaPrefillPattern1);
+              tiny_gemma_mha_prefill_pattern,
+              OptimizeMHATinyGemmaPrefillPattern);
   }
 
   // Mask Gemma Optimization

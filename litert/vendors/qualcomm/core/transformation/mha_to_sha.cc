@@ -341,8 +341,8 @@ TensorWrapper& BuildSingleSHA(
   return add_3_output;
 }
 
-void CloneNamespace(OpWrapper& source, std::vector<OpWrapper>& ops) {
-  absl::string_view start_op_name = source.GetOpConfig().v1.name;
+void CloneNamespace(const OpWrapper& source, std::vector<OpWrapper>& ops) {
+  absl::string_view start_op_name = source.GetName();
   size_t pos = start_op_name.rfind('/');
   if (pos == absl::string_view::npos) {
     return;
@@ -828,26 +828,18 @@ bool OptimizeMHATinyGemmaPrefill(
   auto& transpose_output =
       tensor_pool.CloneNativeTensorFrom(pattern_input, transpose_output_dims);
   auto& new_transpose_0 = EmplaceOpWithIO(
-      new_ops, transpoe_0, {const_cast<::qnn::TensorWrapper&>(pattern_input)},
+      new_ops, transpoe_0, {const_cast<TensorWrapper&>(pattern_input)},
       {transpose_output});
-
-  // Reshape
-  auto& reshape_output = tensor_pool.CloneNativeTensorFrom(
-      pattern_input, {transpose_output_dims[0], 1,
-                      transpose_output_dims[1] * transpose_output_dims[2],
-                      transpose_output_dims[3]});
-  auto& new_reshape_0 =
-      EmplaceOpWithIO(new_ops, reshape_0, {transpose_output}, {reshape_output});
 
   // Process MHA to SHA transformation.
   const int num_heads = pattern_input.GetDim(2);
-  const auto& mha_input = new_reshape_0.GetOutputTensor(0);
+  const auto& mha_input = new_transpose_0.GetOutputTensor(0);
 
   // Prepare inputs for num_heads SHAs.
   std::vector<TensorWrapperRef> sha_inputs;
   sha_inputs.reserve(num_heads);
-  auto sha_input_dims = new_reshape_0.GetOutputTensor(0).GetDims();
-  sha_input_dims[2] /= num_heads;
+  auto sha_input_dims = new_transpose_0.GetOutputTensor(0).GetDims();
+  sha_input_dims[1] /= num_heads;
   for (size_t i = 0; i < num_heads; ++i) {
     auto& sha_input =
         tensor_pool.CloneNativeTensorFrom(mha_input, sha_input_dims);
@@ -855,14 +847,15 @@ bool OptimizeMHATinyGemmaPrefill(
   }
 
   // Split
-  const std::array<int32_t, 1> split_axis_data{2};
+  const std::array<int32_t, 1> split_axis_data{1};
   auto& split_axis = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, {}, {split_axis_data.size()},
       split_axis_data.size() * sizeof(decltype(split_axis_data)::value_type),
       split_axis_data.data());
   auto split_state_ops = BuildSplitOp(
-      tensor_pool, {split_axis, const_cast<::qnn::TensorWrapper&>(mha_input)},
+      tensor_pool, {split_axis, const_cast<TensorWrapper&>(mha_input)},
       sha_inputs, num_heads);
+  CloneNamespace(mul, split_state_ops);
   std::move(split_state_ops.begin(), split_state_ops.end(),
             std::back_inserter(new_ops));
 
@@ -877,8 +870,7 @@ bool OptimizeMHATinyGemmaPrefill(
         tensor_pool.CloneNativeTensorFrom(concated_mask, splited_mask_dims));
   }
   auto split_masks_ops = BuildSplitOp(
-      tensor_pool,
-      {split_axis, const_cast<::qnn::TensorWrapper&>(concated_mask)},
+      tensor_pool, {split_axis, const_cast<TensorWrapper&>(concated_mask)},
       splited_masks, num_heads);
   std::move(split_masks_ops.begin(), split_masks_ops.end(),
             std::back_inserter(new_ops));
@@ -901,13 +893,15 @@ bool OptimizeMHATinyGemmaPrefill(
       tensor_pool.CloneNativeTensorFrom(sha_outputs[0], concat_output_dims);
   auto concat_sha_output_ops =
       BuildConcatenationOp(tensor_pool, sha_outputs, {concat_output}, 3);
+  CloneNamespace(mul, concat_sha_output_ops);
   std::move(concat_sha_output_ops.begin(), concat_sha_output_ops.end(),
             std::back_inserter(new_ops));
 
   // Reshape
   auto new_reshape_ops =
       BuildReshapeOp(tensor_pool, {concat_output},
-                     {const_cast<::qnn::TensorWrapper&>(pattern_output)});
+                     {const_cast<TensorWrapper&>(pattern_output)});
+  CloneNamespace(mul, new_reshape_ops);
   std::move(new_reshape_ops.begin(), new_reshape_ops.end(),
             std::back_inserter(new_ops));
   return true;
@@ -915,48 +909,48 @@ bool OptimizeMHATinyGemmaPrefill(
 
 }  // namespace
 
-size_t OptimizeMHATinyGemmaPrefillPattern0(
+size_t OptimizeMHATinyGemmaPrefillPatternWithGlobalMask(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  constexpr size_t mul_index = 0;
-  constexpr size_t transpose_0_index = 1;
-  constexpr size_t reshape_0_index = 2;
-  constexpr size_t matmul_k0_index = 3;
-  constexpr size_t matmul_k1_index = 4;
-  constexpr size_t concat_index = 5;
-  constexpr size_t concat_mask_index = 6;
-  constexpr size_t reshape_mask_index = 7;
-  constexpr size_t add_0_index = 8;
-  constexpr size_t softmax_index = 9;
-  constexpr size_t slice_0_index = 10;
-  constexpr size_t slice_1_index = 11;
-  constexpr size_t matmul_v0_index = 12;
-  constexpr size_t matmul_v1_index = 13;
-  constexpr size_t add_1_index = 14;
-  constexpr size_t reshape_1_index = 15;
-  constexpr size_t transpose_1_index = 16;
-  constexpr size_t reshape_2_index = 17;
+  constexpr size_t kMulIndex = 0;
+  constexpr size_t kTranspose0Index = 1;
+  constexpr size_t kReshape0Index = 2;
+  constexpr size_t kMatmulK0Index = 3;
+  constexpr size_t kMatmulK1Index = 4;
+  constexpr size_t kConcatIndex = 5;
+  constexpr size_t kConcatMaskIndex = 6;
+  constexpr size_t kReshapeMaskIndex = 7;
+  constexpr size_t kAdd0Index = 8;
+  constexpr size_t kSoftmaxIndex = 9;
+  constexpr size_t kSlice0Index = 10;
+  constexpr size_t kSlice1Index = 11;
+  constexpr size_t kMatmulV0Index = 12;
+  constexpr size_t kMatmulV1Index = 13;
+  constexpr size_t kAdd1Index = 14;
+  constexpr size_t kReshape1Index = 15;
+  constexpr size_t kTranspose1Index = 16;
+  constexpr size_t kReshape2Index = 17;
 
-  const auto& mul = ops[start_index + mul_index];
-  const auto& transpose_0 = ops[start_index + transpose_0_index];
-  const auto& reshape_0 = ops[start_index + reshape_0_index];
-  const auto& matmul_k0 = ops[start_index + matmul_k0_index];
-  const auto& matmul_k1 = ops[start_index + matmul_k1_index];
-  const auto& concat = ops[start_index + concat_index];
-  const auto& add_0 = ops[start_index + add_0_index];
-  const auto& softmax = ops[start_index + softmax_index];
-  const auto& slice_0 = ops[start_index + slice_0_index];
-  const auto& slice_1 = ops[start_index + slice_1_index];
-  const auto& matmul_v0 = ops[start_index + matmul_v0_index];
-  const auto& matmul_v1 = ops[start_index + matmul_v1_index];
-  const auto& add_1 = ops[start_index + add_1_index];
-  const auto& reshape_1 = ops[start_index + reshape_1_index];
-  const auto& transpose_1 = ops[start_index + transpose_1_index];
-  const auto& reshape_2 = ops[start_index + reshape_2_index];
+  const auto& mul = ops[start_index + kMulIndex];
+  const auto& transpose_0 = ops[start_index + kTranspose0Index];
+  const auto& reshape_0 = ops[start_index + kReshape0Index];
+  const auto& matmul_k0 = ops[start_index + kMatmulK0Index];
+  const auto& matmul_k1 = ops[start_index + kMatmulK1Index];
+  const auto& concat = ops[start_index + kConcatIndex];
+  const auto& add_0 = ops[start_index + kAdd0Index];
+  const auto& softmax = ops[start_index + kSoftmaxIndex];
+  const auto& slice_0 = ops[start_index + kSlice0Index];
+  const auto& slice_1 = ops[start_index + kSlice1Index];
+  const auto& matmul_v0 = ops[start_index + kMatmulV0Index];
+  const auto& matmul_v1 = ops[start_index + kMatmulV1Index];
+  const auto& add_1 = ops[start_index + kAdd1Index];
+  const auto& reshape_1 = ops[start_index + kReshape1Index];
+  const auto& transpose_1 = ops[start_index + kTranspose1Index];
+  const auto& reshape_2 = ops[start_index + kReshape2Index];
 
-  const auto& mask_concat = ops[start_index + concat_mask_index];
-  const auto& mask_reshape = ops[start_index + reshape_mask_index];
+  const auto& mask_concat = ops[start_index + kConcatMaskIndex];
+  const auto& mask_reshape = ops[start_index + kReshapeMaskIndex];
   if (mask_concat.GetOutputTensor(0) != mask_reshape.GetInputTensor(0) ||
       mask_reshape.GetOutputTensor(0) != add_0.GetInputTensor(1)) {
     return 1;
@@ -972,7 +966,7 @@ size_t OptimizeMHATinyGemmaPrefillPattern0(
 
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
-                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                  [validate_op_config](OpWrapper& op_wrapper) -> bool {
                     return op_wrapper.IsOpCode(QnnOpCode::kSplit) ||
                            validate_op_config(op_wrapper);
                   });
@@ -987,53 +981,55 @@ size_t OptimizeMHATinyGemmaPrefillPattern0(
                std::make_move_iterator(new_ops.begin()),
                std::make_move_iterator(new_ops.end()));
     // Only keep mask_concat and mask_reshape
-    ops.erase(ops.begin() + start_index + add_0_index,
+    ops.erase(ops.begin() + start_index + kAdd0Index,
               ops.begin() + start_index + pattern_size);
     ops.erase(ops.begin() + start_index,
-              ops.begin() + start_index + concat_mask_index);
+              ops.begin() + start_index + kConcatMaskIndex);
     return step_size;
   }
   QNN_LOG_WARNING(
-      "[G2G] Validation failed. Rolling back to the original graph.");
+      "[G2G] Validation failed in "
+      "OptimizeMHATinyGemmaPrefillPatternWithGlobalMask. Rolling back to the "
+      "original graph.");
   return 1;
 }
 
-size_t OptimizeMHATinyGemmaPrefillPattern1(
+size_t OptimizeMHATinyGemmaPrefillPattern(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  constexpr size_t mul_index = 0;
-  constexpr size_t transpose_0_index = 1;
-  constexpr size_t reshape_0_index = 2;
-  constexpr size_t matmul_k0_index = 3;
-  constexpr size_t matmul_k1_index = 4;
-  constexpr size_t concat_index = 5;
-  constexpr size_t add_0_index = 6;
-  constexpr size_t softmax_index = 7;
-  constexpr size_t slice_0_index = 8;
-  constexpr size_t slice_1_index = 9;
-  constexpr size_t matmul_v0_index = 10;
-  constexpr size_t matmul_v1_index = 11;
-  constexpr size_t add_1_index = 12;
-  constexpr size_t reshape_1_index = 13;
-  constexpr size_t transpose_1_index = 14;
-  constexpr size_t reshape_2_index = 15;
-  const auto& mul = ops[start_index + mul_index];
-  const auto& transpose_0 = ops[start_index + transpose_0_index];
-  const auto& reshape_0 = ops[start_index + reshape_0_index];
-  const auto& matmul_k0 = ops[start_index + matmul_k0_index];
-  const auto& matmul_k1 = ops[start_index + matmul_k1_index];
-  const auto& concat = ops[start_index + concat_index];
-  const auto& add_0 = ops[start_index + add_0_index];
-  const auto& softmax = ops[start_index + softmax_index];
-  const auto& slice_0 = ops[start_index + slice_0_index];
-  const auto& slice_1 = ops[start_index + slice_1_index];
-  const auto& matmul_v0 = ops[start_index + matmul_v0_index];
-  const auto& matmul_v1 = ops[start_index + matmul_v1_index];
-  const auto& add_1 = ops[start_index + add_1_index];
-  const auto& reshape_1 = ops[start_index + reshape_1_index];
-  const auto& transpose_1 = ops[start_index + transpose_1_index];
-  const auto& reshape_2 = ops[start_index + reshape_2_index];
+  constexpr size_t kMulIndex = 0;
+  constexpr size_t kTranspose0Index = 1;
+  constexpr size_t kReshape0Index = 2;
+  constexpr size_t kMatmulK0Index = 3;
+  constexpr size_t kMatmulK1Index = 4;
+  constexpr size_t kConcatIndex = 5;
+  constexpr size_t kAdd0Index = 6;
+  constexpr size_t kSoftmaxIndex = 7;
+  constexpr size_t kSlice0Index = 8;
+  constexpr size_t kSlice1Index = 9;
+  constexpr size_t kMatmulV0Index = 10;
+  constexpr size_t kMatmulV1Index = 11;
+  constexpr size_t kAdd1Index = 12;
+  constexpr size_t kReshape1Index = 13;
+  constexpr size_t kTranspose1Index = 14;
+  constexpr size_t kReshape2Index = 15;
+  const auto& mul = ops[start_index + kMulIndex];
+  const auto& transpose_0 = ops[start_index + kTranspose0Index];
+  const auto& reshape_0 = ops[start_index + kReshape0Index];
+  const auto& matmul_k0 = ops[start_index + kMatmulK0Index];
+  const auto& matmul_k1 = ops[start_index + kMatmulK1Index];
+  const auto& concat = ops[start_index + kConcatIndex];
+  const auto& add_0 = ops[start_index + kAdd0Index];
+  const auto& softmax = ops[start_index + kSoftmaxIndex];
+  const auto& slice_0 = ops[start_index + kSlice0Index];
+  const auto& slice_1 = ops[start_index + kSlice1Index];
+  const auto& matmul_v0 = ops[start_index + kMatmulV0Index];
+  const auto& matmul_v1 = ops[start_index + kMatmulV1Index];
+  const auto& add_1 = ops[start_index + kAdd1Index];
+  const auto& reshape_1 = ops[start_index + kReshape1Index];
+  const auto& transpose_1 = ops[start_index + kTranspose1Index];
+  const auto& reshape_2 = ops[start_index + kReshape2Index];
 
   std::vector<OpWrapper> new_ops;
   if (!OptimizeMHATinyGemmaPrefill(
@@ -1045,7 +1041,7 @@ size_t OptimizeMHATinyGemmaPrefillPattern1(
 
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
-                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                  [validate_op_config](OpWrapper& op_wrapper) -> bool {
                     return op_wrapper.IsOpCode(QnnOpCode::kSplit) ||
                            validate_op_config(op_wrapper);
                   });
@@ -1064,7 +1060,8 @@ size_t OptimizeMHATinyGemmaPrefillPattern1(
     return step_size;
   }
   QNN_LOG_WARNING(
-      "[G2G] Validation failed. Rolling back to the original graph.");
+      "[G2G] Validation failed in OptimizeMHATinyGemmaPrefillPattern. Rolling "
+      "back to the original graph.");
   return 1;
 }
 

@@ -1304,34 +1304,33 @@ TEST(MHAOptimization, TinyGemma3Prefill) {
   GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
-  ASSERT_EQ(op_wrappers.size(), 50);
+  ASSERT_EQ(op_wrappers.size(), 49);
 
   ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kTranspose));
-  ASSERT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kReshape));
-  ASSERT_TRUE(op_wrappers[2].IsOpCode(QnnOpCode::kSplit));
-  ASSERT_TRUE(op_wrappers[3].IsOpCode(QnnOpCode::kSplit));  // split mask
+  ASSERT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kSplit));
+  ASSERT_TRUE(op_wrappers[2].IsOpCode(QnnOpCode::kSplit));  // split mask
   const size_t sha_size = 11;
   const size_t num_head = 4;
   for (int i = 0; i < num_head; ++i) {
-    ASSERT_EQ(op_wrappers[4 + sha_size * i].GetOpCode(),
+    ASSERT_EQ(op_wrappers[3 + sha_size * i].GetOpCode(),
               QnnOpCode::kElementWiseMultiply);
+    ASSERT_EQ(op_wrappers[4 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
     ASSERT_EQ(op_wrappers[5 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
-    ASSERT_EQ(op_wrappers[6 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
-    ASSERT_EQ(op_wrappers[7 + sha_size * i].GetOpCode(), QnnOpCode::kConcat);
-    ASSERT_EQ(op_wrappers[8 + sha_size * i].GetOpCode(),
+    ASSERT_EQ(op_wrappers[6 + sha_size * i].GetOpCode(), QnnOpCode::kConcat);
+    ASSERT_EQ(op_wrappers[7 + sha_size * i].GetOpCode(),
               QnnOpCode::kElementWiseAdd);
-    ASSERT_EQ(op_wrappers[9 + sha_size * i].GetOpCode(), QnnOpCode::kSoftmax);
+    ASSERT_EQ(op_wrappers[8 + sha_size * i].GetOpCode(), QnnOpCode::kSoftmax);
+    ASSERT_EQ(op_wrappers[9 + sha_size * i].GetOpCode(),
+              QnnOpCode::kStridedSlice);
     ASSERT_EQ(op_wrappers[10 + sha_size * i].GetOpCode(),
               QnnOpCode::kStridedSlice);
-    ASSERT_EQ(op_wrappers[11 + sha_size * i].GetOpCode(),
-              QnnOpCode::kStridedSlice);
+    ASSERT_EQ(op_wrappers[11 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
     ASSERT_EQ(op_wrappers[12 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
-    ASSERT_EQ(op_wrappers[13 + sha_size * i].GetOpCode(), QnnOpCode::kMatMul);
-    ASSERT_EQ(op_wrappers[14 + sha_size * i].GetOpCode(),
+    ASSERT_EQ(op_wrappers[13 + sha_size * i].GetOpCode(),
               QnnOpCode::kElementWiseAdd);
   }
-  ASSERT_EQ(op_wrappers[48].GetOpCode(), QnnOpCode::kConcat);
-  ASSERT_EQ(op_wrappers[49].GetOpCode(), QnnOpCode::kReshape);
+  ASSERT_EQ(op_wrappers[47].GetOpCode(), QnnOpCode::kConcat);
+  ASSERT_EQ(op_wrappers[48].GetOpCode(), QnnOpCode::kReshape);
 }
 
 TEST(MHAOptimization, AttentionWithSelect) {
