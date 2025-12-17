@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, type DType, getDefaultEnvironment, SignatureRunner, Tensor, TensorBufferType, TensorDetails} from '@litertjs/core';
+import {CompiledModel, type DType, getDefaultEnvironment, SignatureRunner, Tensor, TensorBufferType, TensorDetails, type TypedArray} from '@litertjs/core';
 import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 
@@ -136,7 +136,7 @@ export function tfjsToLitert(
   const tfjsData = tfjsTensor.dataSync();
   // dtype is handled implicitly by the TypeArray type returned by
   // dataSync.
-  return new Tensor(tfjsData, tfjsTensor.shape, environment);
+  return new Tensor(tfjsData as TypedArray, tfjsTensor.shape, environment);
 }
 
 /**
