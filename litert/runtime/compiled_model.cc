@@ -319,11 +319,29 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     request.cpu = true;
     // TODO(b/456318365): Handle weight access request to support multiple
     // backends.
-    request.opencl = (hardware_accelerators & kLiteRtHwAcceleratorGpu) != 0;
+    request.opencl = false;
     absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
     if (!prepare_status.ok()) {
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 std::string(prepare_status.message()));
+    }
+    // Inspect the weight infos to log the available weights for GPU delegates.
+    auto weight_infos = weight_loader_->GetWeightInfo();
+    LITERT_LOG(LITERT_DEBUG,
+               "External weight loader: %zu weight tensors available for GPU "
+               "delegates",
+               weight_infos.size());
+    for (const auto& info : weight_infos) {
+      if (info.packing.empty()) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=<none>",
+                   info.external_buffer_id);
+      } else {
+        LITERT_LOG(LITERT_DEBUG,
+                   "  Weight tensor: external_buffer_id=%u, packing=%.*s",
+                   info.external_buffer_id,
+                   static_cast<int>(info.packing.size()), info.packing.data());
+      }
     }
   }
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
