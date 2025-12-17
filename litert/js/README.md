@@ -41,7 +41,7 @@ For a complete guide, see our docs at
 [ai.google.dev/edge/litert/web](https://ai.google.dev/edge/litert/web).
 
 The following code snippet loads LiteRT.js, loads the MobileNetV2 model, and
-runs it on a fake input image tensor. 
+runs it on a fake input image tensor.
 
 ```typescript
 import {loadLiteRt, loadAndCompile} from '@litertjs/core';
@@ -57,13 +57,12 @@ const model = await loadAndCompile(
 
 const inputTypedArray = new Float32Array(1*3*224*224);
 const inputTensor = new Tensor(inputTypedArray, [1, 3, 224, 224]);
-const gpuTensor = await inputTensor.moveTo('webgpu');
 
-const results = model.run(gpuTensor);
-gpuTensor.delete();
+const results = await model.run(inputTensor);
+inputTensor.delete();
 
-const result = results[0].moveTo('cpu');
-console.log(result.toTypedArray());
+const result = results[0];
+console.log(await result.data());
 result.delete();
 ```
 
@@ -77,7 +76,7 @@ some setup code to use the same WebGPU device, after which tensors can be
 converted between LiteRT.js and TFJS.
 
 ```typescript
-import {loadLiteRt} from '@litertjs/core';
+import {loadLiteRt, getWebGpuDevice} from '@litertjs/core';
 import {
   runWithTfjsTensors,
 } from '@litertjs/tfjs-interop';
@@ -85,17 +84,16 @@ import {
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgpu';
 
-// Initialize TFJS WebGPU backend
-await tf.setBackend('webgpu');
-
 // Initialize LiteRT.js's Wasm files
 // Wasm files are located in `node_modules/@litertjs/core/wasm/`.
 await loadLiteRt('your/path/to/wasm');
 
-// Make LiteRt use the same GPU device as TFJS (for tensor conversion)
-const backend = tf.backend() as WebGPUBackend;
-// Make sure to run this before loading a LiteRT model.
-liteRt.setWebGpuDevice(backend.device);
+// Make TFJS use the same GPU device as LiteRT.js (for tensor conversion).
+// Run this before loading a LiteRT model.
+const device = await getWebGpuDevice();
+tf.removeBackend('webgpu');
+tf.registerBackend('webgpu', () => new WebGPUBackend(device, device.adapterInfo));
+await tf.setBackend('webgpu');
 ```
 
 Use the utility package, `@litertjs/tfjs-interop`, to convert between TFJS and
@@ -125,7 +123,7 @@ const input = tf.randomUniform([1, 3, 224, 224]);
 // each other.
 
 // You can pass a single tensor to the model
-let results = runWithTfjsTensors(model, input);
+let results = await runWithTfjsTensors(model, input);
 
 // Results[0] contains the single output tensor from running the model.
 await results[0].data();
@@ -133,7 +131,7 @@ results[0].print();
 results[0].dispose();
 
 // You can also pass an array of inputs
-results = runWithTfjsTensors(model, [input]);
+results = await runWithTfjsTensors(model, [input]);
 
 // The output type is still an array, as in the single tensor case.
 await results[0].data();
@@ -142,7 +140,7 @@ results[0].dispose();
 
 // You can also pass inputs by name by passing an Object of inputs.
 // Find the input tensor's name from `model.getInputDetails()`:
-let resultsObject = runWithTfjsTensors(model, {
+let resultsObject = await runWithTfjsTensors(model, {
   'serving_default_args_0:0': input,
 });
 
@@ -156,9 +154,6 @@ result.dispose();
 // All of these methods of calling a model also work when calling a signature
 // of a model. You can find the signatures a model contains by checking
 // `model.signatures` or using the LiteRT Model Tester.
-//
-// (The base signature of a model is not in this Record. Just use the model
-// object itself).
 
 console.log(model.signatures); // { 'serving_default': SignatureRunner }
 
