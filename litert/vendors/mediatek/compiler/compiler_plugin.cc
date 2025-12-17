@@ -88,6 +88,7 @@ constexpr std::pair<const char*, const char*> kPluginSocModels[] = {
     {"mt8189", "mt8189"},
 };
 
+// LINT.IfChange(supported_ops)
 constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflAdd,
     kLiteRtOpCodeTflMul,
@@ -132,6 +133,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflMinimum,
     kLiteRtOpCodeShloComposite,
 };
+// LINT.ThenChange(./MediaTek_Neuro_Compiler.md:supported_ops)
 // clang-format on
 
 constexpr auto kNumPluginSocModels =
