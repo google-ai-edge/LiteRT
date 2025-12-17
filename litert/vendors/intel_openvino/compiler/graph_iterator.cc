@@ -78,6 +78,11 @@ bool fill_tensor_meta(
   tensor_meta_info.m_partial_shape = tensor_shape;
   tensor_meta_info.m_element_type = ov_element_type;
   tensor_meta_info.m_tensor_name = std::string(litert_tensor.Name());
+  if (tensor_meta_info.m_tensor_name.empty()) {
+    tensor_meta_info.m_tensor_name = "tensor_id_" + std::to_string(litert_tensor.TensorIndex());
+    LITERT_LOG(LITERT_VERBOSE, "Tensor name is empty, assign default name %s",
+               tensor_meta_info.m_tensor_name.c_str());
+  }
   return true;
 }
 
