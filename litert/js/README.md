@@ -157,14 +157,12 @@ result.dispose();
 
 console.log(model.signatures); // { 'serving_default': SignatureRunner }
 
-results = runWithTfjsTensors(model, 'serving_default', input);
-await results[0].data();
+results = await runWithTfjsTensors(model, 'serving_default', input);
 results[0].print();
 results[0].dispose();
 
 // You can also pass the signature directly if you prefer.
-results = runWithTfjsTensors(model.signatures['serving_default'], input);
-await results[0].data();
+results = await runWithTfjsTensors(model.signatures['serving_default'], input);
 results[0].print();
 results[0].dispose();
 ```
