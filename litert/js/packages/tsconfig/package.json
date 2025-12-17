@@ -1,6 +1,6 @@
 {
   "name": "@litertjs/tsconfig",
-  "version": "0.2.1",
+  "version": "2.0.0",
   "private": true,
   "repository": {
     "type": "git",

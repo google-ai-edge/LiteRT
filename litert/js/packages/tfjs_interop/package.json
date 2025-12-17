@@ -1,6 +1,6 @@
 {
   "name": "@litertjs/tfjs-interop",
-  "version": "0.2.1",
+  "version": "2.0.0",
   "description": "Tensorflow.js interop for LiteRT.js",
   "publishConfig": {
     "access": "public"
@@ -28,13 +28,13 @@
     "pack": "npm pack"
   },
   "peerDependencies": {
-    "@litertjs/core": "^0.2.1",
+    "@litertjs/core": "^2.0.0",
     "@tensorflow/tfjs-core": "^4.22.0"
   },
   "devDependencies": {
-    "@litertjs/core": "^0.2.1",
-    "@litertjs/tsconfig": "^0.2.1",
-    "@litertjs/eslint-config": "^0.2.1",
+    "@litertjs/core": "^2.0.0",
+    "@litertjs/tsconfig": "^2.0.0",
+    "@litertjs/eslint-config": "^2.0.0",
     "@tensorflow/tfjs-core": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@types/jasmine": "^5.1.8",
