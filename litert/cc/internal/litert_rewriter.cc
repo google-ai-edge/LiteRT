@@ -52,11 +52,11 @@ Expected<Tensor> Rewriter::BuildTensor(const RankedTensorSpec& spec) const {
     litert_per_channel_quantization = *spec.per_channel_quantization;
     quantization_type_id = kLiteRtQuantizationPerChannel;
   }
-  internal::AssertOk(LiteRtRewriterBuildTensor, kLiteRtRankedTensorType,
-                     ranked_tensor_type_litert, LiteRtUnrankedTensorType(),
-                     litert_weights, quantization_type_id,
-                     litert_per_tensor_quantization,
-                     litert_per_channel_quantization, this->Get(),
+  internal::AssertOk(LiteRtRewriterBuildTensor, this->Get(),
+                     kLiteRtRankedTensorType, ranked_tensor_type_litert,
+                     LiteRtUnrankedTensorType(), litert_weights,
+                     quantization_type_id, litert_per_tensor_quantization,
+                     litert_per_channel_quantization,
                      spec.tensor_name.value_or("").c_str(), &tensor);
   return Tensor(tensor);
 }
@@ -66,12 +66,11 @@ Expected<Tensor> Rewriter::BuildScalar(LiteRtElementType element_type,
   LiteRtTensor tensor;
   LiteRtUnrankedTensorType unranked_tensor_type;
   unranked_tensor_type.element_type = element_type;
-  internal::AssertOk(LiteRtRewriterBuildTensor, kLiteRtUnrankedTensorType,
-                     LiteRtRankedTensorType(), unranked_tensor_type,
-                     LiteRtWeights(), kLiteRtQuantizationNone,
-                     LiteRtQuantizationPerTensor(),
-                     LiteRtQuantizationPerChannel(), this->Get(),
-                     name.value_or("").c_str(), &tensor);
+  internal::AssertOk(
+      LiteRtRewriterBuildTensor, this->Get(), kLiteRtUnrankedTensorType,
+      LiteRtRankedTensorType(), unranked_tensor_type, LiteRtWeights(),
+      kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
+      LiteRtQuantizationPerChannel(), name.value_or("").c_str(), &tensor);
   return Tensor(tensor);
 }
 
@@ -88,9 +87,9 @@ Op Rewriter::BuildOp(LiteRtOpCode op_code, OpInputs& inputs,
   for (const auto& output : outputs) {
     output_tensors.push_back(output.Get());
   }
-  internal::AssertOk(LiteRtRewriterBuildOp, op_code, input_tensors.size(),
-                     input_tensors.data(), output_tensors.size(),
-                     output_tensors.data(), this->Get(), &litert_op);
+  internal::AssertOk(LiteRtRewriterBuildOp, this->Get(), op_code,
+                     input_tensors.size(), input_tensors.data(),
+                     output_tensors.size(), output_tensors.data(), &litert_op);
   return Op(litert_op);
 }
 

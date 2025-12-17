@@ -24,8 +24,8 @@ using litert::Rewriter;
 
 extern "C" {
 
-LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtOp op,
-                                              LiteRtRewriter rewriter_ptr) {
+LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtRewriter rewriter_ptr,
+                                              LiteRtOp op) {
   // Convert to C++ objects.
   Rewriter rewriter = Rewriter(rewriter_ptr);
   Op root_op = Op(op);
@@ -39,8 +39,8 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus SqrtMeanSquareTransformation(LiteRtOp op,
-                                          LiteRtRewriter rewriter_ptr) {
+LiteRtStatus SqrtMeanSquareTransformation(LiteRtRewriter rewriter_ptr,
+                                          LiteRtOp op) {
   Rewriter rewriter = Rewriter(rewriter_ptr);
   Op root_op = Op(op);
 
@@ -74,7 +74,7 @@ LiteRtStatus SqrtMeanSquareTransformation(LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DummyTransformation(LiteRtOp op, LiteRtRewriter rewriter_ptr) {
+LiteRtStatus DummyTransformation(LiteRtRewriter rewriter_ptr, LiteRtOp op) {
   return kLiteRtStatusPatternNoMatch;
 }
 

@@ -28,6 +28,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
@@ -194,6 +195,22 @@ TEST(CcRewriterTest, TestBuildWeights) {
   for (int i = 0; i < data.size(); ++i) {
     EXPECT_EQ(weights_data[i], data[i]);
   }
+}
+
+TEST(CcRewriterTest, TestSetOpOptions) {
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  OpInputs inputs;
+  OpOutputs outputs;
+  auto op = cc_rewriter.BuildOp(kLiteRtOpCodeTflAdd, inputs, outputs);
+  {
+    AddOptions add_options;
+    add_options.fused_activation_function = kActivationFunctionTypeRelu;
+    cc_rewriter.SetOpOptions<AddOptions>(op, std::move(add_options));
+  }
+  auto res = GetOptionsAs<AddOptions>(op.Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
 }
 
 }  // namespace

@@ -26,6 +26,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
@@ -44,13 +45,13 @@ using ::testing::ElementsAreArray;
 TEST(LiteRtRewriterTest, CanEraseOp) {
   LiteRtRewriterT rewriter;
   LiteRtOpT op;
-  LITERT_ASSERT_OK(LiteRtRewriterEraseOp(&op, &rewriter));
+  LITERT_ASSERT_OK(LiteRtRewriterEraseOp(&rewriter, &op));
   EXPECT_TRUE(rewriter.Erases().contains(&op));
 }
 
 TEST(LiteRtRewriterTest, EraseOpNullOpReturnsError) {
   LiteRtRewriterT rewriter;
-  EXPECT_EQ(LiteRtRewriterEraseOp(nullptr, &rewriter),
+  EXPECT_EQ(LiteRtRewriterEraseOp(&rewriter, nullptr),
             kLiteRtStatusErrorInvalidArgument);
 }
 
@@ -65,9 +66,10 @@ TEST(LiteRtRewriterTest, CanBuildUnrankedTensor) {
   LiteRtUnrankedTensorType unranked_tensor_type = {
       .element_type = kLiteRtElementTypeFloat32};
   LITERT_ASSERT_OK(LiteRtRewriterBuildTensor(
-      kLiteRtUnrankedTensorType, LiteRtRankedTensorType(), unranked_tensor_type,
-      LiteRtWeights(), kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
-      LiteRtQuantizationPerChannel(), &rewriter, kName.data(), &tensor));
+      &rewriter, kLiteRtUnrankedTensorType, LiteRtRankedTensorType(),
+      unranked_tensor_type, LiteRtWeights(), kLiteRtQuantizationNone,
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
+      kName.data(), &tensor));
   EXPECT_EQ(tensor->Type().first, kLiteRtUnrankedTensorType);
   EXPECT_EQ(tensor->Type().second.unranked_tensor_type.element_type,
             kLiteRtElementTypeFloat32);
@@ -89,10 +91,10 @@ TEST(LiteRtRewriterTest,
   LiteRtUnrankedTensorType unranked_tensor_type = {
       .element_type = kLiteRtElementTypeFloat32};
   EXPECT_EQ(LiteRtRewriterBuildTensor(
-                kLiteRtUnrankedTensorType, LiteRtRankedTensorType(),
+                &rewriter, kLiteRtUnrankedTensorType, LiteRtRankedTensorType(),
                 unranked_tensor_type, &weights, kLiteRtQuantizationNone,
                 LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
-                &rewriter, "", &tensor),
+                "", &tensor),
             kLiteRtStatusErrorInvalidArgument);
 }
 
@@ -103,9 +105,10 @@ TEST(LiteRtRewriterTest, CanBuildRankedTensor) {
       .element_type = kLiteRtElementTypeFloat32,
       .layout = {.rank = 2, .dimensions = {3, 3}}};
   LITERT_ASSERT_OK(LiteRtRewriterBuildTensor(
-      kLiteRtRankedTensorType, ranked_tensor_type, LiteRtUnrankedTensorType(),
-      LiteRtWeights(), kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
-      LiteRtQuantizationPerChannel(), &rewriter, kName.data(), &tensor));
+      &rewriter, kLiteRtRankedTensorType, ranked_tensor_type,
+      LiteRtUnrankedTensorType(), LiteRtWeights(), kLiteRtQuantizationNone,
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(),
+      kName.data(), &tensor));
 
   EXPECT_EQ(tensor->Type().first, kLiteRtRankedTensorType);
   EXPECT_EQ(tensor->Type().second.ranked_tensor_type.element_type,
@@ -132,9 +135,10 @@ TEST(LiteRtRewriterTest, CanBuildRankedTensorWithWeights) {
       .layout = {.rank = 2, .dimensions = {3, 3}}};
 
   LITERT_ASSERT_OK(LiteRtRewriterBuildTensor(
-      kLiteRtRankedTensorType, ranked_tensor_type, LiteRtUnrankedTensorType(),
-      &weights, kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
-      LiteRtQuantizationPerChannel(), &rewriter, "", &tensor));
+      &rewriter, kLiteRtRankedTensorType, ranked_tensor_type,
+      LiteRtUnrankedTensorType(), &weights, kLiteRtQuantizationNone,
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(), "",
+      &tensor));
 
   EXPECT_EQ(tensor->Weights().GetBufferId(), 1);
   EXPECT_EQ(tensor->Weights().GetBufferManager(), &manager);
@@ -151,9 +155,10 @@ TEST(LiteRtRewriterTest, CanBuildTensorWithPerTensorQuantization) {
   LiteRtQuantizationPerTensor per_tensor_quantization = {.scale = 1.0,
                                                          .zero_point = 1};
   LITERT_ASSERT_OK(LiteRtRewriterBuildTensor(
-      kLiteRtRankedTensorType, ranked_tensor_type, LiteRtUnrankedTensorType(),
-      LiteRtWeights(), kLiteRtQuantizationPerTensor, per_tensor_quantization,
-      LiteRtQuantizationPerChannel(), &rewriter, kName.data(), &tensor));
+      &rewriter, kLiteRtRankedTensorType, ranked_tensor_type,
+      LiteRtUnrankedTensorType(), LiteRtWeights(), kLiteRtQuantizationPerTensor,
+      per_tensor_quantization, LiteRtQuantizationPerChannel(), kName.data(),
+      &tensor));
   EXPECT_EQ(tensor->Qparams().first, kLiteRtQuantizationPerTensor);
   EXPECT_EQ(tensor->Qparams().second.per_tensor.scale, 1.0);
   EXPECT_EQ(tensor->Qparams().second.per_tensor.zero_point, 1);
@@ -177,10 +182,10 @@ TEST(LiteRtRewriterTest, CanBuildTensorWithPerChannelQuantization) {
           .second.per_channel;
 
   LITERT_ASSERT_OK(LiteRtRewriterBuildTensor(
-      kLiteRtRankedTensorType, ranked_tensor_type, LiteRtUnrankedTensorType(),
-      LiteRtWeights(), kLiteRtQuantizationPerChannel,
-      LiteRtQuantizationPerTensor(), per_channel_quantization, &rewriter,
-      kName.data(), &tensor));
+      &rewriter, kLiteRtRankedTensorType, ranked_tensor_type,
+      LiteRtUnrankedTensorType(), LiteRtWeights(),
+      kLiteRtQuantizationPerChannel, LiteRtQuantizationPerTensor(),
+      per_channel_quantization, kName.data(), &tensor));
 
   LiteRtQuantizationPerChannel built_per_channel_quantization =
       tensor->Qparams().second.per_channel;
@@ -205,8 +210,8 @@ TEST(LiteRtRewriterTest, CanBuildOpTest) {
   std::vector<LiteRtTensor> input_tensors = {&input_tensor_0, &input_tensor_1};
   std::vector<LiteRtTensor> output_tensors = {&output_tensor_0};
   LITERT_ASSERT_OK(LiteRtRewriterBuildOp(
-      kLiteRtOpCodeTflAdd, input_tensors.size(), input_tensors.data(),
-      output_tensors.size(), output_tensors.data(), &rewriter, &op));
+      &rewriter, kLiteRtOpCodeTflAdd, input_tensors.size(),
+      input_tensors.data(), output_tensors.size(), output_tensors.data(), &op));
   EXPECT_EQ(op->OpCode(), kLiteRtOpCodeTflAdd);
   EXPECT_EQ(op->Inputs().size(), 2);
   EXPECT_THAT(op->Inputs(), ElementsAre(&input_tensor_0, &input_tensor_1));
@@ -224,14 +229,29 @@ TEST(LiteRtRewriterTest, BuildWeights) {
       .layout = {.rank = 2, .dimensions = {3, 3}}};
 
   LITERT_ASSERT_OK(LiteRtRewriterBuildTensor(
-      kLiteRtRankedTensorType, ranked_tensor_type, LiteRtUnrankedTensorType(),
-      nullptr, kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
-      LiteRtQuantizationPerChannel(), &rewriter, "", &tensor));
+      &rewriter, kLiteRtRankedTensorType, ranked_tensor_type,
+      LiteRtUnrankedTensorType(), nullptr, kLiteRtQuantizationNone,
+      LiteRtQuantizationPerTensor(), LiteRtQuantizationPerChannel(), "",
+      &tensor));
 
   LiteRtWeights weights;
-  LITERT_ASSERT_OK(LiteRtRewriterBuildWeights(data, kData.size(), tensor,
-                                              &rewriter, &weights));
+  LITERT_ASSERT_OK(LiteRtRewriterBuildWeights(&rewriter, data, kData.size(),
+                                              tensor, &weights));
   EXPECT_EQ(weights->Buffer().Size(), kData.size());
   EXPECT_EQ(weights->Buffer().StrView(), kData);
 }
+
+TEST(LiteRtRewriterTest, BuildAddOpOption) {
+  LiteRtRewriterT rewriter;
+
+  auto& op = rewriter.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
+  uint32_t fused_activation = 6;
+  LITERT_ASSERT_OK(
+      LiteRtRewriterBuildAddOpOption(&rewriter, &op, &fused_activation));
+  EXPECT_EQ(litert::internal::GetTflOptions(op)
+                .AsAddOptions()
+                ->fused_activation_function,
+            6);
+}
+
 }  // namespace

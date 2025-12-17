@@ -245,6 +245,7 @@ cc_library(
     ],
     deps = [
         ":litert_extended_model",
+        ":litert_op_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
@@ -380,8 +381,18 @@ cc_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    # Things allocated accros ABI boundaries are causing mismatched-size-delete.
+    # use system_malloc, and gunit_main_no_heapcheck to avoid this. Those workaound will be removed
+    # once in OSS.
+    # copybara:uncomment malloc = "//base:system_malloc",
     deps = [
         ":litert_op_options",
+        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
+        # "@com_google_googletest//:gtest_main_no_heapcheck",
+        # copybara:uncomment_end_and_comment_begin
+        "@com_google_googletest//:gtest_main",
+        # copybara:comment_end
+        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
@@ -391,8 +402,6 @@ cc_test(
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 

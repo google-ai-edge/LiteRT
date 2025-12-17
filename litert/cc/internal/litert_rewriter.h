@@ -30,6 +30,7 @@
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
@@ -103,8 +104,8 @@ class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
     const uint8_t* data_uint8 = reinterpret_cast<const uint8_t*>(data.data());
     size_t size_uint8 = data.size() * sizeof(T);
     LiteRtWeights weights;
-    internal::AssertOk(LiteRtRewriterBuildWeights, data_uint8, size_uint8,
-                       tensor.Get(), this->Get(), &weights);
+    internal::AssertOk(LiteRtRewriterBuildWeights, Get(), data_uint8,
+                       size_uint8, tensor.Get(), &weights);
     return Weights(weights);
   }
 
@@ -119,9 +120,22 @@ class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
     return BuildOp(src.Code(), inputs, outputs);
   };
 
+  // Set the op options for the given op.
+  // The options must be a subclass of OpOptions, will return error otherwise.
+  template <typename T>
+  Expected<void> SetOpOptions(Op& op, T&& options) const {
+    if constexpr (!std::is_base_of_v<OpOptions, T>) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    }
+    options.op = op.Get();
+    options.SetOpOptions(Get());
+
+    return Expected<void>();
+  }
+
   // Record the op to be erased.
   void EraseOp(Op& op) const {
-    internal::AssertOk(LiteRtRewriterEraseOp, op.Get(), this->Get());
+    internal::AssertOk(LiteRtRewriterEraseOp, Get(), op.Get());
   }
 };
 

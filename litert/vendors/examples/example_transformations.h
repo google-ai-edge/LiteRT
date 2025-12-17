@@ -21,13 +21,13 @@
 extern "C" {
 #endif
 
-LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtOp op,
-                                              LiteRtRewriter rewriter_ptr);
+LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtRewriter rewriter_ptr,
+                                              LiteRtOp op);
 
-LiteRtStatus SqrtMeanSquareTransformation(LiteRtOp op,
-                                          LiteRtRewriter rewriter_ptr);
+LiteRtStatus SqrtMeanSquareTransformation(LiteRtRewriter rewriter_ptr,
+                                          LiteRtOp op);
 
-LiteRtStatus DummyTransformation(LiteRtOp op, LiteRtRewriter rewriter_ptr);
+LiteRtStatus DummyTransformation(LiteRtRewriter rewriter_ptr, LiteRtOp op);
 
 #ifdef __cplusplus
 }  // extern "C"

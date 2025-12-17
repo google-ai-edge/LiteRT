@@ -16,6 +16,8 @@
 #include "litert/c/litert_rewriter.h"
 
 #include <cstdint>
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "litert/c/litert_common.h"
@@ -23,6 +25,8 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,13 +37,13 @@ extern "C" {
 //
 
 LiteRtStatus LiteRtRewriterBuildTensor(
-    LiteRtTensorTypeId tensor_type_id,
+    LiteRtRewriter rewriter, LiteRtTensorTypeId tensor_type_id,
     LiteRtRankedTensorType ranked_tensor_type,
     LiteRtUnrankedTensorType unranked_tensor_type, LiteRtWeights weights,
     LiteRtQuantizationTypeId quantization_type_id,
     LiteRtQuantizationPerTensor per_tensor_quantization,
-    LiteRtQuantizationPerChannel per_channel_quantization,
-    LiteRtRewriter rewriter, const char* name, LiteRtTensor* new_tensor) {
+    LiteRtQuantizationPerChannel per_channel_quantization, const char* name,
+    LiteRtTensor* new_tensor) {
   // Pack tensor type to internal type.
   TensorType tensor_type;
   tensor_type.first = tensor_type_id;
@@ -99,10 +103,11 @@ LiteRtStatus LiteRtRewriterBuildTensor(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtRewriterBuildWeights(const uint8_t* data,
+LiteRtStatus LiteRtRewriterBuildWeights(LiteRtRewriter rewriter,
+                                        const uint8_t* data,
                                         LiteRtParamIndex size,
                                         LiteRtTensor tensor,
-                                        LiteRtRewriter rewriter,
+
                                         LiteRtWeights* new_weights) {
   if (rewriter == nullptr || tensor == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -111,12 +116,12 @@ LiteRtStatus LiteRtRewriterBuildWeights(const uint8_t* data,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtRewriterBuildOp(LiteRtOpCode op_code,
+LiteRtStatus LiteRtRewriterBuildOp(LiteRtRewriter rewriter,
+                                   LiteRtOpCode op_code,
                                    LiteRtParamIndex num_inputs,
                                    LiteRtTensor* inputs,
                                    LiteRtParamIndex num_outputs,
-                                   LiteRtTensor* outputs,
-                                   LiteRtRewriter rewriter, LiteRtOp* new_op) {
+                                   LiteRtTensor* outputs, LiteRtOp* new_op) {
   if (rewriter == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -142,13 +147,37 @@ LiteRtStatus LiteRtRewriterBuildOp(LiteRtOpCode op_code,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtRewriterEraseOp(LiteRtOp op_to_erase,
-                                   LiteRtRewriter rewriter) {
+LiteRtStatus LiteRtRewriterEraseOp(LiteRtRewriter rewriter,
+                                   LiteRtOp op_to_erase) {
   if (rewriter == nullptr || op_to_erase == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
   rewriter->EraseOp(op_to_erase);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtRewriterBuildAddOpOption(LiteRtRewriter rewriter,
+                                            LiteRtOp op,
+                                            uint32_t* fused_activation) {
+  if (rewriter == nullptr || op == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!rewriter->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeTflAdd) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_AddOptions;
+  auto options = std::make_unique<tflite::AddOptionsT>();
+  options->fused_activation_function =
+      static_cast<tflite::ActivationFunctionType>(*fused_activation);
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions(*op, std::move(tfl_options));
   return kLiteRtStatusOk;
 }
 

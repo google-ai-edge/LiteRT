@@ -569,6 +569,8 @@ cc_library(
         ":litert_op_code",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
     ],
 )
 
@@ -579,6 +581,7 @@ cc_test(
         ":litert_common",
         ":litert_model",
         ":litert_op_code",
+        ":litert_op_options",
         ":litert_rewriter",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",

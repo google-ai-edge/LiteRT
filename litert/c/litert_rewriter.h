@@ -37,43 +37,43 @@ extern "C" {
 // name. The new tensor is created within the context of the provided
 // rewriter.
 LiteRtStatus LiteRtRewriterBuildTensor(
-    LiteRtTensorTypeId tensor_type_id,
+    LiteRtRewriter rewriter, LiteRtTensorTypeId tensor_type_id,
     LiteRtRankedTensorType ranked_tensor_type,
     LiteRtUnrankedTensorType unranked_tensor_type, LiteRtWeights weights,
     LiteRtQuantizationTypeId quantization_type_id,
     LiteRtQuantizationPerTensor per_tensor_quantization,
-    LiteRtQuantizationPerChannel per_channel_quantization,
-    LiteRtRewriter rewriter, const char* name, LiteRtTensor* new_tensor);
+    LiteRtQuantizationPerChannel per_channel_quantization, const char* name,
+    LiteRtTensor* new_tensor);
 
 // Builds weights for a tensor. Rewriter will take the ownership of the data,
 // the built weights will be owned by the tensor before calling ApplyChanges().
-LiteRtStatus LiteRtRewriterBuildWeights(const uint8_t* data,
+LiteRtStatus LiteRtRewriterBuildWeights(LiteRtRewriter rewriter,
+                                        const uint8_t* data,
                                         LiteRtParamIndex size,
                                         LiteRtTensor tensor,
-                                        LiteRtRewriter rewriter,
                                         LiteRtWeights* new_weights);
 
 // Creates a new OP within the graph being rewritten.
 // This function takes the OP code, input tensors, and output tensors
 // to construct a new op in the graph.
 // The new op is created within the context of the provided rewriter.
-LiteRtStatus LiteRtRewriterBuildOp(LiteRtOpCode op_code,
+LiteRtStatus LiteRtRewriterBuildOp(LiteRtRewriter rewriter,
+                                   LiteRtOpCode op_code,
                                    LiteRtParamIndex num_inputs,
                                    LiteRtTensor* inputs,
                                    LiteRtParamIndex num_outputs,
-                                   LiteRtTensor* outputs,
-                                   LiteRtRewriter rewriter, LiteRtOp* new_op);
+                                   LiteRtTensor* outputs, LiteRtOp* new_op);
 
 // Removes an existing OP from the graph being rewritten.
 // This function is performed transactionally within the rewriter context.
-LiteRtStatus LiteRtRewriterEraseOp(LiteRtOp op_to_erase,
-                                   LiteRtRewriter rewriter);
+LiteRtStatus LiteRtRewriterEraseOp(LiteRtRewriter rewriter,
+                                   LiteRtOp op_to_erase);
 
 // Function pointer type for a rewrite pattern (also known as a transformation).
 // A LiteRtPatternFn takes an LiteRtOp and an LiteRtRewriter
 // instance. It can analyze the OP and use the rewriter to modify the graph,
 // for example, by replacing the OP with a sequence of other operations.
-typedef LiteRtStatus (*LiteRtPatternFn)(LiteRtOp op, LiteRtRewriter rewriter);
+typedef LiteRtStatus (*LiteRtPatternFn)(LiteRtRewriter rewriter, LiteRtOp op);
 
 #ifdef __cplusplus
 }

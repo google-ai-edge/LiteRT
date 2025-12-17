@@ -115,7 +115,6 @@ enum ActivationFunctionType : uint32_t {
   kActivationFunctionTypeMax = kActivationFunctionTypeSignBit,
 };
 
-
 using FullyConnectedOptionsWeightsFormat = uint32_t;
 enum FullyConnectedOptionsWeightsFormatType : uint32_t {
   kFullyConnectedOptionsWeightsFormatDefault = 0,
@@ -167,7 +166,6 @@ struct CompositeOptions : public OpOptions {
 struct RmsNormOpts : public CompositeOptions {
   // The epsilon composite attribute of the RMS norm.
   float epsilon;
-
   LiteRtStatus InitFromOp(LiteRtOp litert_op) override;
 };
 
@@ -176,6 +174,7 @@ struct AddOptions : public OpOptions {
   LiteRtOp op;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtRewriter rewriter);
 };
 
 // Struct to hold LiteRt BatchMatmul op.
