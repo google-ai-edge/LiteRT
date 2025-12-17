@@ -217,11 +217,11 @@ LoadModelAndCompilation(
     const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
     const void* bytecode_addr, size_t bytecode_size, int num_inputs,
     int num_outputs) {
-  if (auto result = LoadFromDlaBytecode(neuron_adapter_api, bytecode_addr,
-                                        bytecode_size, num_inputs, num_outputs);
+  if (auto result = LoadFromCachedNetwork(neuron_adapter_api, bytecode_addr,
+                                          bytecode_size);
       !result) {
-    return LoadFromCachedNetwork(neuron_adapter_api, bytecode_addr,
-                                 bytecode_size);
+    return LoadFromDlaBytecode(neuron_adapter_api, bytecode_addr,
+                               bytecode_size, num_inputs, num_outputs);
   } else {
     return result;
   }
