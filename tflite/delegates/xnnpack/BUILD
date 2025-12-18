@@ -421,6 +421,7 @@ cc_library(
     hdrs = ["file_util.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":macros",
         "//tflite:minimal_logging",
     ],
 )
