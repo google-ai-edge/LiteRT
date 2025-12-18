@@ -68,8 +68,7 @@ target_sources(common_test
 )
 target_link_libraries(common_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_core
         GTest::gtest_main
 )
 
@@ -83,8 +82,8 @@ target_sources(tensor_pool_test
 
 target_link_libraries(tensor_pool_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_wrappers
+        qnn_core
         GTest::gtest_main
 )
 
@@ -98,8 +97,8 @@ target_sources(op_wrapper_test
 
 target_link_libraries(op_wrapper_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_wrappers
+        qnn_core
         GTest::gtest_main
 )
 
@@ -113,8 +112,9 @@ target_sources(tensor_wrapper_test
 
 target_link_libraries(tensor_wrapper_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_wrappers
+        qnn_core
+        GTest::gmock
         GTest::gtest_main
 )
 
@@ -128,8 +128,8 @@ target_sources(param_wrapper_test
 
 target_link_libraries(param_wrapper_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_wrappers
+        qnn_core
         GTest::gtest_main
 )
 
@@ -143,8 +143,8 @@ target_sources(quantize_params_wrapper_test
 
 target_link_libraries(quantize_params_wrapper_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_wrappers
+        qnn_core
         GTest::gtest_main
 )
 
@@ -158,8 +158,8 @@ target_sources(utils_test
 
 target_link_libraries(utils_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_backends
+        qnn_core
         GTest::gtest_main
 )
 
@@ -173,7 +173,7 @@ target_sources(qnn_backend_test
 
 target_link_libraries(qnn_backend_test
     PRIVATE
-        qnn_compiler_plugin
-        litert_test_common
+        qnn_backends
+        qnn_core
         GTest::gtest_main
 )
