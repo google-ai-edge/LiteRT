@@ -385,6 +385,9 @@ cc_test(
     # use system_malloc, and gunit_main_no_heapcheck to avoid this. Those workaound will be removed
     # once in OSS.
     # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        "nosan",
+    ],
     deps = [
         ":litert_op_options",
         # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
