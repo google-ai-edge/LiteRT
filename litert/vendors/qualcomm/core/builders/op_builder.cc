@@ -257,8 +257,7 @@ void AddFusedActivationNode(std::vector<OpWrapper>& res,
       break;
     }
     case FusedActivationReluN1To1: {
-      OpWrapper& elementwise_op =
-          CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
       elementwise_op.AddInputTensor(input_tensor);
       elementwise_op.AddOutputTensor(output_tensor);
       elementwise_op.AddScalarParam<std::uint32_t>(
@@ -271,8 +270,7 @@ void AddFusedActivationNode(std::vector<OpWrapper>& res,
       break;
     }
     case FusedActivationRelu6: {
-      OpWrapper& elementwise_op =
-          CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
       elementwise_op.AddInputTensor(input_tensor);
       elementwise_op.AddOutputTensor(output_tensor);
       elementwise_op.AddScalarParam<std::uint32_t>(
