@@ -207,14 +207,9 @@ void OpWrapper::AddSuffixToName(absl::string_view suffix) {
 }
 
 namespace {
-bool IsElementwiseOpImpl(const OpWrapper& op, QnnOpCode legacy_op_code,
-                         QnnOpCode new_op_code, const char* op_param_name,
-                         std::uint32_t op_param) {
-  if (op.GetOpCode() == legacy_op_code) {
-    return true;
-  }
-
-  if (op.GetOpCode() != new_op_code) {
+bool IsElementwiseOpImpl(const OpWrapper& op, QnnOpCode op_code,
+                         const char* op_param_name, std::uint32_t op_param) {
+  if (op.GetOpCode() != op_code) {
     return false;
   }
 
@@ -237,22 +232,19 @@ bool IsElementwiseOpImpl(const OpWrapper& op, QnnOpCode legacy_op_code,
 }  // namespace
 
 bool IsElementwiseMultiply(const OpWrapper& op) {
-  return IsElementwiseOpImpl(op, QnnOpCode::kElementWiseMultiply,
-                             QnnOpCode::kElementWiseBinary,
+  return IsElementwiseOpImpl(op, QnnOpCode::kElementWiseBinary,
                              QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
                              QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
 }
 
 bool IsElementwiseAdd(const OpWrapper& op) {
-  return IsElementwiseOpImpl(op, QnnOpCode::kElementWiseAdd,
-                             QnnOpCode::kElementWiseBinary,
+  return IsElementwiseOpImpl(op, QnnOpCode::kElementWiseBinary,
                              QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
                              QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
 }
 
 bool IsElementwiseNot(const OpWrapper& op) {
-  return IsElementwiseOpImpl(op, QnnOpCode::kElementWiseNot,
-                             QnnOpCode::kElementWiseUnary,
+  return IsElementwiseOpImpl(op, QnnOpCode::kElementWiseUnary,
                              QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
                              QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
 }
