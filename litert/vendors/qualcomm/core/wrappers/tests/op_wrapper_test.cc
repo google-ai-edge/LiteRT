@@ -13,9 +13,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
@@ -478,26 +476,28 @@ TEST(OpWrapperTest, GetScalarParam) {
 }
 
 TEST(OpWrapperTest, IsElementwiseTest) {
-  TensorPool tensor_pool;
-  auto& input_tensor = tensor_pool.CreateNativeTensor(
-      QNN_DATATYPE_FLOAT_16, QuantizeParamsWrapperVariant(), {1, 1, 3});
-  auto& output_tensor = tensor_pool.CreateNativeTensor(
-      QNN_DATATYPE_FLOAT_16, QuantizeParamsWrapperVariant(), {1, 1, 3});
+  // TODO: Use the op builders after we refactor them into less-dependency
+  // version.
+  OpWrapper add_op("name", QNN_OP_ELEMENT_WISE_BINARY,
+                   QnnOpCode::kElementWiseBinary);
+  add_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
+  EXPECT_TRUE(IsElementwiseAdd(add_op));
 
-  auto add_op = BuildElementwiseAddOp(tensor_pool, {input_tensor, input_tensor},
-                                      {output_tensor});
-  ASSERT_EQ(add_op.size(), 1);
-  EXPECT_TRUE(::qnn::IsElementwiseAdd(add_op[0]));
+  OpWrapper mul_op("name", QNN_OP_ELEMENT_WISE_BINARY,
+                   QnnOpCode::kElementWiseBinary);
+  mul_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
+  EXPECT_TRUE(IsElementwiseMultiply(mul_op));
 
-  auto mul_op = BuildElementwiseMulOp(tensor_pool, {input_tensor, input_tensor},
-                                      {output_tensor});
-  ASSERT_EQ(mul_op.size(), 1);
-  EXPECT_TRUE(::qnn::IsElementwiseMultiply(mul_op[0]));
-
-  auto not_op =
-      BuildElementwiseNotOp(tensor_pool, {input_tensor}, {output_tensor});
-  ASSERT_EQ(not_op.size(), 1);
-  EXPECT_TRUE(::qnn::IsElementwiseNot(not_op[0]));
+  OpWrapper not_op("name", QNN_OP_ELEMENT_WISE_UNARY,
+                   QnnOpCode::kElementWiseUnary);
+  not_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
+  EXPECT_TRUE(IsElementwiseNot(not_op));
 }
 
 }  // namespace

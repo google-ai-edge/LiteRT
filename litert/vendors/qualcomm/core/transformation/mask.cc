@@ -63,8 +63,8 @@ size_t TransformQuantizeInMask(
     return 1;
   }
 
-  if (!::qnn::IsElementwiseNot(ops[start_index + 0]) ||
-      !::qnn::IsElementwiseMultiply(ops[start_index + 3])) {
+  if (!IsElementwiseNot(ops[start_index + 0]) ||
+      !IsElementwiseMultiply(ops[start_index + 3])) {
     return 1;
   }
 
