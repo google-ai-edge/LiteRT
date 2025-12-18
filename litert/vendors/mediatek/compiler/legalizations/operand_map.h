@@ -76,8 +76,7 @@ class OperandType : public NeuronOperandType {
     if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
       auto quant_info = t.PerTensorQuantization();
       LITERT_LOG(LITERT_DEBUG, "zeroPoint: %d, scale: %f",
-                 quant_info.zero_point,
-                 quant_info.scale);
+                 quant_info.zero_point, quant_info.scale);
       return OperandType(*mtk_type, std::move(mtk_dimensions), quant_info.scale,
                          quant_info.zero_point, std::nullopt);
     } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
