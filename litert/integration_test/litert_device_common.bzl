@@ -231,6 +231,9 @@ def _IntelOpenVinoSpec():
                 #("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
                 # copybara:comment_end
             ],
+            mh_devices = [{
+                "label": "litert-test-intel-ptl",
+            }],
             dispatch = "libLiteRtDispatch_IntelOpenvino.so",
             plugin = "libLiteRtCompilerPlugin_IntelOpenvino.so",
             host_libs = [

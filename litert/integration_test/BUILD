@@ -75,7 +75,7 @@ cc_library(
 
 # ON DEVICE INTEGRATION TESTS ######################################################################
 
-# NOTE: Everything here should be built with -c opt --config=android_arm64.
+# NOTE: Everything here except IntelOpenVino related should be built with -c opt --config=android_arm64.
 
 # CPU ----------------------------------------------------------------------------------------------
 
@@ -155,6 +155,20 @@ litert_device_test(
         "//litert/cc/internal:litert_shared_library",
         "//litert/test:matchers",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# INTEL OPENVINO -----------------------------------------------------------------------------------
+
+# Should be built with -c opt --config=android_x86_64
+litert_device_test(
+    name = "intel_openvino_smoketest",
+    srcs = ["smoketests/intel_openvino_smoketest.cc"],
+    backend_id = "intel_openvino",
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_shared_library",
         "@com_google_googletest//:gtest_main",
     ],
 )
