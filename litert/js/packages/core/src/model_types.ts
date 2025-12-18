@@ -19,10 +19,18 @@ import {Tensor} from './tensor';
 import {LiteRtCompileOptions} from './wasm_binding_types';
 
 /**
+ * Options for compiling a LiteRt model on CPU.
+ */
+export interface CpuOptions {
+  numThreads?: number;
+}
+
+/**
  * Options for loading and compiling a LiteRt model.
  */
 export interface CompileOptions extends LiteRtCompileOptions {
   environment?: Environment;
+  cpuOptions?: CpuOptions;
 }
 
 /**

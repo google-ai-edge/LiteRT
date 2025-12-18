@@ -389,6 +389,7 @@ export declare interface LiteRtWasm extends WasmModule {
       expectedRankedTensorType: LiteRtRankedTensorType,
       requirements: LiteRtTensorBufferRequirements,
       ): void;
+  getThreadCount(): number;
 }
 
 /**

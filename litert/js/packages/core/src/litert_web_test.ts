@@ -50,13 +50,34 @@ describe('LiteRt', () => {
     expect(liteRt).toBeDefined();
   });
 
-  it('loads the threaded WASM module', async () => {
-    try {
+  describe('threaded wasm', () => {
+    it('loads the threaded WASM module', async () => {
+      try {
+        await resetLiteRt(/* loadFromDirectory= */ true, {threads: true});
+        expect(liteRt).toBeDefined();
+      } finally {
+        await resetLiteRt();
+      }
+    });
+
+    it('uses `navigator.hardwareConcurrency` threads by default', async () => {
       await resetLiteRt(/* loadFromDirectory= */ true, {threads: true});
-      expect(liteRt).toBeDefined();
-    } finally {
-      await resetLiteRt();
-    }
+      const model = await loadAndCompile('/testdata/add_10x10.tflite');
+      expect(model).toBeDefined();
+      expect(model.options.cpuOptions.numThreads)
+          .toBe(navigator.hardwareConcurrency);
+      model.delete();
+    });
+
+    it('can set the number of threads', async () => {
+      await resetLiteRt(/* loadFromDirectory= */ true, {threads: true});
+      const model = await loadAndCompile('/testdata/add_10x10.tflite', {
+        cpuOptions: {numThreads: 3},
+      });
+      expect(model).toBeDefined();
+      expect(model.options.cpuOptions.numThreads).toBe(3);
+      model.delete();
+    });
   });
 
   it('setDefaultEnvironment() sets the default environment', async () => {
@@ -208,6 +229,7 @@ describe('LiteRt', () => {
     let multiSignatureModel: CompiledModel;
 
     beforeAll(async () => {
+      await resetLiteRt(true, {threads: false});
       multiSignatureModel =
           await loadAndCompile('/testdata/multi_signature_model.tflite');
     });
@@ -224,14 +246,16 @@ describe('LiteRt', () => {
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
-          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
+          supportedBufferTypes:
+              new Set([TensorBufferType.WEB_GPU_BUFFER_PACKED]),
         },
         {
           name: 'a',
           index: 1,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
-          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
+          supportedBufferTypes:
+              new Set([TensorBufferType.WEB_GPU_BUFFER_PACKED]),
         },
       ]);
     });
@@ -244,7 +268,8 @@ describe('LiteRt', () => {
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
-          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
+          supportedBufferTypes:
+              new Set([TensorBufferType.WEB_GPU_BUFFER_PACKED]),
         },
       ]);
     });
@@ -258,14 +283,16 @@ describe('LiteRt', () => {
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
-          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
+          supportedBufferTypes:
+              new Set([TensorBufferType.WEB_GPU_BUFFER_PACKED]),
         },
         {
           name: 'a',
           index: 1,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
-          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
+          supportedBufferTypes:
+              new Set([TensorBufferType.WEB_GPU_BUFFER_PACKED]),
         },
       ]);
     });
@@ -279,7 +306,8 @@ describe('LiteRt', () => {
           index: 0,
           dtype: 'float32',
           shape: new Int32Array([10, 10]),
-          supportedBufferTypes: new Set([TensorBufferType.HOST_MEMORY]),
+          supportedBufferTypes:
+              new Set([TensorBufferType.WEB_GPU_BUFFER_PACKED]),
         },
       ]);
     });

@@ -149,9 +149,13 @@ export class LiteRt {
           'environment.');
     }
 
+    const cpuOptions = compileOptions.cpuOptions ??
+        {numThreads: this.liteRtWasm.getThreadCount()};
+
     const filledCompileOptions: Required<CompileOptions> = {
       environment,
       accelerator,
+      cpuOptions,
     };
 
     const ptr = this.liteRtWasm._malloc(modelData.byteLength);
@@ -161,7 +165,7 @@ export class LiteRt {
         modelData.byteLength);
     const wasmCompiledModel = this.liteRtWasm.compileModel(
         filledCompileOptions.environment.liteRtEnvironment, wasmModel,
-        compileOptions);
+        filledCompileOptions);
     const loadedModel = new Model(wasmModel, () => {
       this.liteRtWasm._free(ptr);
     });
