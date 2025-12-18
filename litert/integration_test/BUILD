@@ -173,6 +173,12 @@ litert_device_test(
     ],
 )
 
+litert_integration_test(
+    name = "classic_ml_device_tests_intel_openvino_JIT",
+    backend_id = "intel_openvino",
+    models = "//litert/integration_test/models:classic_ml",
+)
+
 # copybara:uncomment_begin(google-only)
 # # GOOGLE-ONLY ######################################################################################
 #
