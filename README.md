@@ -16,22 +16,12 @@ platforms, via efficient conversion, runtime, and optimization
 LiteRT continues the legacy of TensorFlow Lite as the trusted, high-performance
 runtime for on-device AI.
 
-LiteRT V1 supports the TensorFlow Lite APIs, and is the recommended
-solution for existing apps using those older APIs.
-
-LiteRT V2 (aka Next as announced at Google IO '25), introduces a new set of
-APIs, featuring advanced GPU/NPU acceleration, delivering superior performance,
-and making on-device ML inference easier than ever.
-
-### 🚀 Status: General Availability (for V1) / Alpha (for V2)
-
-- LiteRT V1 supports the TensorFlow Lite API, and its release status is
-  [general availability](https://support.google.com/a/answer/11202276?hl=en).
-- LiteRT V2 is an alpha release and under active development.
+LiteRT features advanced GPU/NPU acceleration, delivers superior ML & GenAI
+performance, making on-device ML inference easier than ever.
 
 ### 🌟 What's New
 
-- **🆕 New LiteRT v2 API**: Streamline development with automated accelerator
+- **🆕 New LiteRT Compiled Model API**: Streamline development with automated accelerator
   selection, true async execution, and efficient I/O buffer handling.
 
   - Automated accelerator selection vs explicit delegate creation
@@ -157,17 +147,6 @@ deployment. Our product strategies are:
 - **Platform Support**: Enhancing support for core platforms and exploring new
   ones.
 
-## 🗺 What's Next:
-
-**V2 Beta by Dec 2025:**
-
-- Achieve feature parity with TensorFlow Lite
-- Expand GPU backend support
-- Proactively increase ML and GenAI model coverage
-- Broader LiteRT Runtime/Converter upgrades from TensorFlow Lite
-
-**V2 General Availability by Google IO, May 2026**
-
 ## 🙌 Contributing
 
 We welcome contributions to LiteRT. Please see the
@@ -204,7 +183,6 @@ Check out these other projects from Google:
 - **[XNNPACK](https://github.com/google/XNNPACK)**: A highly optimized library
   of neural network inference operators for ARM, x86, and WebAssembly
   architectures that provides high-performance CPU acceleration for LiteRT.
-- **V2 GPU Delegate** - Coming soon
 - **[MediaPipe](https://github.com/google-ai-edge/mediapipe)**: A framework for
   building cross-platform, customizable ML solutions for live and streaming
   media.

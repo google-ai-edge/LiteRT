@@ -1,3 +1,80 @@
+# Release 2.1.0
+
+**Release 2.1.0 is the LiteRT** beta release.
+
+LiteRT APIs are stable and have achieved feature parity. This milestone marks a significant step forward, introducing full feature parity with TensorFlow Lite, stable LiteRT APIs, and critical performance enhancements for GPU and NPU acceleration. With this release, we are officially recommending that developers begin their transition to LiteRT.
+
+## Major Features and Improvements
+
+### LiteRT Runtime
+
+* Custom op is supported through [custom op dispatcher](https://github.com/google-ai-edge/LiteRT/blob/main/g3doc/apis/Custom_Op_Dispatcher.md).
+* CMake Build is supported in addition to Bazel
+* Released LiteRT C++ SDK using prebuilt libLiteRt.so file
+* Added Profiler API in CompiledModel
+* Added ErrorReporter API in CompiledModel
+* Added ResizeInputTensor API in CompiledModel
+
+### LiteRT NPU
+
+* Introduced LiteRT Accelerator Test Suite for coverage and regression testing
+* Introduced LiteRT graph transformation APIs for compiler plugins
+* Qualcomm
+  * Added support for Qualcomm Snapdragon Gen5
+  * Added support for NPU JIT mode
+  * LiteRT Op coverage improvements
+* MediaTek
+  * Added support for NPU JIT mode
+  * LiteRT Op coverage improvements
+
+### LiteRT GPU
+
+* Increased GPU coverage with WebGPU/Dawn and OpenCL including Android, Linux, MacOS, Windows, iOS, IoT devices
+* Added asynchronous execution to Metal, WebGPU backends
+* Improved performance and memory footprint
+* Added an option to control GPU inference priority
+* Better error handling (without crashing) on Delegation errors
+
+### LLM Support
+
+* Provided Desktop GPU backends prebuilt for Linux (x64, arm64), MacOS (arm64), Windows (x64)
+* Improved memory utilization when executing on GPUs
+* Published new LLMs on [https://huggingface.co/litert-community](https://huggingface.co/litert-community)
+  * litert-community/FastVLM-0.5B
+  * litert-community/Qwen3-0.6B
+  * litert-community/embeddinggemma-300m with new NPU precompiled models
+  * litert-community/gemma-3-270m-it with new NPU precompiled model
+* Published Function Gemma on [https://huggingface.co/google](https://huggingface.co/google)
+  * google/functiongemma-270m-it
+
+### LiteRT on Android
+
+* Added Interpreter API (CPU only) in the Maven v2.1.0+ packages
+* Added [Instruction](https://ai.google.dev/edge/litert/next/android_cpp_sdk) to use pre-built CompiledModell C++ API from the Maven package.
+
+## Bug Fixes and Other Changes
+
+Fixes Android min SDK version and it’s 23 now.
+
+LiteRT NPU: Fixes partition algorithm when the full model cannot be offloaded to NPU.
+
+## Breaking Changes
+
+* Removed direct C headers usage. Users no longer need to include C headers.
+* TensorBuffer::CreateManaged() requires Environment always.
+* All TensorBuffer creation requires Environment except HostMemory types.
+* LiteRT C++ constructors are hidden. All LiteRT C++ objects should be created by Create() methods.
+* Moved internal only C++ APIs(such as litert\_logging.h) to litert/cc/internal
+* Removed Tensor, Subgraph, Signature access from litert::Model. Instead users can access SimpleTensor, SimpleSignature.
+* The CompiledModel::Create() API no longer needs litert::Model. They can be created from filename, model buffers directly.
+* Users can access SimpleTensor and SimpleSignature from CompiledModel.
+* Annotation, Metrics APIs are removed from CompiledModel.
+* Removed individual OpaqueOptions creation. These OpaqueOptions objects are obtained by Options directly.
+  *  Options::GetCpuOptions()
+  *  Options::GetGpuOptions()
+  *  Options::GetRuntimeOptions()
+  * …
+
 # Release 2.0.2a1
 
 ## LiteRT
