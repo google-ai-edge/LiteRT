@@ -147,6 +147,9 @@ class QualcommOptions : public OpaqueOptions {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority();
 
+  void SetSaverOutputDir(const std::string& saver_output_dir);
+  absl::string_view GetSaverOutputDir();
+
  private:
   LiteRtQualcommOptions Data() const;
 };
