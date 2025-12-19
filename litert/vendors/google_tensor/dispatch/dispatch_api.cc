@@ -18,9 +18,11 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -39,14 +41,22 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
 namespace {
 
+// All constants are initialized with valid values in `Initialize`.
+
+// Google Tensor Dispatch API build ID.
 char BuildId[256];
 
-LiteRtEnvironmentOptions TheEnvironmntOptions;
-LiteRtOptions TheOptions;
+// Optional DarwiNN-specific options provided by the application.
 std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
+
+// Tensor buffer types that are supported by the available SouthBound
+// implementation.
+std::vector<LiteRtTensorBufferType> TheSupportedTensorBufferTypes;
+
 }  // namespace
 
 namespace litert {
@@ -58,9 +68,6 @@ namespace google_tensor {
 
 LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
-  TheEnvironmntOptions = environment_options;
-  TheOptions = options;
-
   // Parse Darwinn runtime options from the opaque options
   auto [env, opts, opq_opts, darwinn_opts] =
       litert::ParseOptions<litert::DarwinnRuntimeOptions>(environment_options,
@@ -79,6 +86,21 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  TheSupportedTensorBufferTypes = {
+#if LITERT_HAS_AHWB_SUPPORT
+      kLiteRtTensorBufferTypeAhwb,
+#endif
+  };
+#if LITERT_HAS_DMABUF_SUPPORT
+  if (GoogleTensorSouthBoundFeatureSupported(
+          GoogleTensorSouthBoundFeature::kDmaBufRegistration)) {
+    TheSupportedTensorBufferTypes.push_back(kLiteRtTensorBufferTypeDmaBuf);
+  }
+#endif
+  if (TheSupportedTensorBufferTypes.empty()) {
+    TheSupportedTensorBufferTypes.push_back(kLiteRtTensorBufferTypeHostMemory);
+  }
+
   const char* sb_api_version = thrGetVendorApiVersion();
   const char* sb_vendor_id = thrGetVendorId();
   snprintf(
@@ -87,7 +109,6 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
       "vendor id: %s",
       LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
       LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
-  BuildId[sizeof(BuildId) - 1] = 0;
 
   return kLiteRtStatusOk;
 }
@@ -111,8 +132,7 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
   if (auto result = LiteRtDispatchDeviceContextT::Create(
-          TheDarwinnOptions.get());
-
+          TheDarwinnOptions.get(), &TheSupportedTensorBufferTypes);
       result) {
     *device_context = result->release();
     return kLiteRtStatusOk;
@@ -187,8 +207,8 @@ LiteRtStatus InvocationContextCreate(
     LiteRtDispatchInvocationContext* invocation_context) {
   function_name = "";
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromBytecode(
-          device_context, exec_type, exec_bytecode_buffer,
-          function_name, num_inputs, num_outputs);
+          &TheSupportedTensorBufferTypes, device_context, exec_type,
+          exec_bytecode_buffer, function_name, num_inputs, num_outputs);
       result) {
     *invocation_context = result->release();
     return kLiteRtStatusOk;
@@ -537,7 +557,7 @@ LiteRtStatus InvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context) {
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromGraph(
-          device_context, graph);
+          &TheSupportedTensorBufferTypes, device_context, graph);
       result) {
     *invocation_context = result->release();
     return kLiteRtStatusOk;

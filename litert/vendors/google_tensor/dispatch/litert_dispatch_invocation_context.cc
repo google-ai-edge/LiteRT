@@ -15,6 +15,7 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 
 #include <cstddef>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -50,6 +51,7 @@ inline constexpr auto Pad(X x, Align align) {
 
 litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::CreateFromBytecode(
+    const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -123,7 +125,8 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
     }
   }
 
-  auto invocation_context = CreateFromGraph(device_context, *graph);
+  auto invocation_context = CreateFromGraph(supported_tensor_buffer_types,
+                                            device_context, *graph);
   if (!invocation_context) {
     return invocation_context.Error();
   }
@@ -135,6 +138,7 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
 
 litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::CreateFromGraph(
+    const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types,
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph) {
   ThrGraph* thr_graph = graph->thr_graph();
   auto thr_icontext =
@@ -145,8 +149,8 @@ LiteRtDispatchInvocationContextT::CreateFromGraph(
   }
 
   device_context->add_graph(thr_graph);
-  return Ptr(new LiteRtDispatchInvocationContextT(thr_icontext,
-                                                  device_context, graph));
+  return Ptr(new LiteRtDispatchInvocationContextT(
+      supported_tensor_buffer_types, thr_icontext, device_context, graph));
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
@@ -165,32 +169,25 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
   }
 }
 
-namespace {
-
-Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   if (tensor_type.layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported on GoogleTensor");
   }
 
-  int num_supported_tensor_buffer_types =
-      sizeof(LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes) /
-      sizeof(LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes[0]);
-
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
     return Unexpected(buffer_size.Error());
   }
 
-  size_t padded_buffer_size = Pad(*buffer_size, kEdgeTpuPadding);
-
   LiteRtTensorBufferRequirements requirements;
   if (auto status = LiteRtCreateTensorBufferRequirements(
-          num_supported_tensor_buffer_types,
-          LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes,
-          padded_buffer_size, /*num_strides=*/0, /*strides=*/nullptr,
-          &requirements);
+          supported_tensor_buffer_types_->size(),
+          supported_tensor_buffer_types_->data(),
+          Pad(*buffer_size, kEdgeTpuPadding), /*num_strides=*/0,
+          /*strides=*/nullptr, &requirements);
       status != kLiteRtStatusOk) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create tensor buffer requirements");
@@ -198,7 +195,6 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
 
   return requirements;
 }
-}  // namespace
 
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(

@@ -37,6 +37,14 @@ package(
 #     # Replace g3 header path with that of the copy made above.
 #     cmd = "sed 's|third_party/odml/infra/southbound/sb_api.h|third_party/odml/litert/litert/vendors/google_tensor/dispatch/sb_api.h|g' $< > $@",
 # )
+#
+# genrule(
+#     name = "sb_api_features_h",
+#     srcs = ["INTERNAL_ACCEL_RUNTIME/star_ship/south_bound:sb_api_features.h"],
+#     outs = ["sb_api_features.h"],
+#     # Replace g3 header path with that of the copy made above.
+#     cmd = "sed 's|third_party/odml/infra/southbound/sb_api.h|third_party/odml/litert/litert/vendors/google_tensor/dispatch/sb_api.h|g' $< > $@",
+# )
 # copybara:uncomment_end
 
 litert_dynamic_lib(
@@ -55,6 +63,7 @@ litert_dynamic_lib(
         "litert_dispatch_invocation_context.h",
         "litert_dispatch_metrics.h",
         "sb_api.h",
+        "sb_api_features.h",
         "sb_dispatch_annotations.h",
     ],
     copts = [

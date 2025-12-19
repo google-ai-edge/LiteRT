@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if __ANDROID__
 #include <android/hardware_buffer.h>
@@ -51,8 +52,12 @@ LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
-    const litert::DarwinnRuntimeOptions* darwinn_options) {
+    const litert::DarwinnRuntimeOptions* darwinn_options,
+    const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types) {
   Ptr device_context(new LiteRtDispatchDeviceContextT());
+
+  device_context->supported_tensor_buffer_types_ =
+      supported_tensor_buffer_types;
 
   device_context->thr_context_ = thrContextCreate();
 
@@ -105,18 +110,33 @@ LiteRtDispatchDeviceContextT::Create(
 Expected<LiteRtTensorBufferHandle>
 LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     LiteRtTensorBuffer tensor_buffer) {
+  LiteRtRankedTensorType tensor_type;
+  if (auto status =
+          LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Failed to get tensor buffer tensor type");
+  }
+  if (tensor_type.layout.has_strides) {
+    return Error(kLiteRtStatusErrorUnsupported,
+                 "Tensor strides are not supported");
+  }
+
   LiteRtTensorBufferType tensor_buffer_type;
   if (auto status =
           LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type);
       status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get buffer type");
+    return Error(status, "Failed to get tensor buffer type");
+  }
+  if (!IsSupportedTensorBufferType(tensor_buffer_type)) {
+    return Error(kLiteRtStatusErrorUnsupported,
+                 "Unsupported tensor buffer type");
   }
 
   size_t tensor_buffer_size;
   if (auto status =
           LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size);
       status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get buffer size");
+    return Error(status, "Failed to get tensor buffer size");
   }
 
   size_t tensor_buffer_offset;
@@ -127,56 +147,70 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       tensor_buffer_offset = 0;
     } else {
       return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "Failed to get buffer offset");
+                   "Failed to get tensor buffer offset");
     }
-  }
-
-  LiteRtRankedTensorType tensor_type;
-  if (auto status =
-          LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type);
-      status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get tensor buffer type");
-  }
-
-  if (tensor_type.layout.has_strides) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "Tensor strides are not supported");
-  }
-
-  ThrBufferType thr_buffer_type;
-  void* buffer;
-#if LITERT_HAS_AHWB_SUPPORT
-  if (tensor_buffer_type == kLiteRtTensorBufferTypeAhwb) {
-    thr_buffer_type = kThrBufferTypeAHardwareBuffer;
-
-    if (auto status = LiteRtGetTensorBufferAhwb(
-            tensor_buffer, reinterpret_cast<AHardwareBuffer**>(&buffer));
-        status != kLiteRtStatusOk) {
-      return Error(status, "Failed to get AHWB");
-    }
-  } else {
-#else
-  if (tensor_buffer_type == kLiteRtTensorBufferTypeHostMemory) {
-    thr_buffer_type = kThrBufferTypeHostMemory;
-
-    if (auto status = LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer);
-        status != kLiteRtStatusOk) {
-      return Error(status, "Failed to get host memory");
-    }
-  } else {
-#endif
-    return Error(kLiteRtStatusErrorUnsupported, "Unsupported buffer type");
   }
 
   ThrBufferHandle thr_buffer_handle;
-  if (auto status = thrRegisterBufferWithOffset(
-            thr_context_, thr_buffer_type, buffer, tensor_buffer_offset,
-            tensor_buffer_size, &thr_buffer_handle);
-        status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_register_buffer_with_offset failed: %d",
-               status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_register_buffer_with_offset failed");
+  switch (tensor_buffer_type) {
+#if LITERT_HAS_AHWB_SUPPORT
+    case kLiteRtTensorBufferTypeAhwb: {
+      AHardwareBuffer* ahwb;
+      if (auto status = LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb);
+          status != kLiteRtStatusOk) {
+        return Error(status, "Failed to get ahwb");
+      }
+
+      if (auto status = thrRegisterBufferWithOffset(
+              thr_context_, kThrBufferTypeAHardwareBuffer, ahwb,
+              tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
+          status != kThrStatusSuccess) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "Failed to register ahwb");
+      }
+      break;
+    }
+#endif
+#if LITERT_HAS_DMABUF_SUPPORT
+    case kLiteRtTensorBufferTypeDmaBuf: {
+      void* dmabuf_buffer_addr;
+      int dmabuf_buffer_fd;
+      if (auto status =
+              LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer,
+                                  &dmabuf_buffer_addr, &dmabuf_buffer_fd);
+          status != kLiteRtStatusOk) {
+        return Error(status, "Failed to get dma-buf buffer");
+      }
+
+      if (auto status = thrRegisterBufferDmaBufWithOffset(
+              thr_context_, dmabuf_buffer_fd,
+              tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
+          status != kThrStatusSuccess) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "Failed to register dma-buf buffer");
+      }
+      break;
+    }
+#endif
+    case kLiteRtTensorBufferTypeHostMemory: {
+      void* host_memory_addr;
+      if (auto status = LiteRtGetTensorBufferHostMemory(tensor_buffer,
+                                                        &host_memory_addr);
+          status != kLiteRtStatusOk) {
+        return Error(status, "Failed to get host memory");
+      }
+
+      if (auto status = thrRegisterBufferWithOffset(
+              thr_context_, kThrBufferTypeHostMemory, host_memory_addr,
+              tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
+          status != kThrStatusSuccess) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "Failed to register host memory");
+      }
+      break;
+    }
+    default:
+      LITERT_FATAL("Unsupported tensor buffer type '%d'", tensor_buffer_type);
   }
 
   return thr_buffer_handle;

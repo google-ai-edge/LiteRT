@@ -19,9 +19,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
@@ -31,12 +33,14 @@ class LiteRtDispatchInvocationContextT {
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
   static litert::Expected<Ptr> CreateFromBytecode(
+      const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
       int num_inputs, int num_outputs);
 
   static litert::Expected<Ptr> CreateFromGraph(
+      const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types,
       LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph);
 
   ~LiteRtDispatchInvocationContextT();
@@ -75,9 +79,11 @@ class LiteRtDispatchInvocationContextT {
 
  private:
   LiteRtDispatchInvocationContextT(
+      const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types,
       ThrInvocationContext* thr_invocation_context,
       LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph)
-      : thr_invocation_context_(thr_invocation_context),
+      : supported_tensor_buffer_types_(supported_tensor_buffer_types),
+        thr_invocation_context_(thr_invocation_context),
         device_context_(device_context),
         graph_(graph) {}
 
@@ -85,6 +91,10 @@ class LiteRtDispatchInvocationContextT {
     exec_handle_ = exec_handle;
   }
 
+  litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+      const LiteRtRankedTensorType& tensor_type);
+
+  const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types_;
   ThrInvocationContext* thr_invocation_context_;
   LiteRtDispatchDeviceContext device_context_;
   LiteRtDispatchGraph graph_;

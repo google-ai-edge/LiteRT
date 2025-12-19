@@ -15,9 +15,11 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -34,18 +36,11 @@ class LiteRtDispatchDeviceContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
-  static constexpr LiteRtTensorBufferType kSupportedTensorBufferTypes[] = {
-#if LITERT_HAS_AHWB_SUPPORT
-      kLiteRtTensorBufferTypeAhwb,
-#else
-      kLiteRtTensorBufferTypeHostMemory,
-#endif
-  };
-
   ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
-      const litert::DarwinnRuntimeOptions* darwinn_options = nullptr);
+      const litert::DarwinnRuntimeOptions* darwinn_options,
+      const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
@@ -79,9 +74,16 @@ class LiteRtDispatchDeviceContextT {
 
   LiteRtDispatchDeviceContextT() = default;
 
+  bool IsSupportedTensorBufferType(LiteRtTensorBufferType type) const {
+    return std::find(supported_tensor_buffer_types_->begin(),
+                     supported_tensor_buffer_types_->end(), type) !=
+           supported_tensor_buffer_types_->end();
+  }
+
+  std::optional<DarwinnOptionsData> darwinn_options_;
+  const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types_;
   ThrContext* thr_context_ = nullptr;
   absl::flat_hash_set<ThrGraph*> thr_graphs_;
-  std::optional<DarwinnOptionsData> darwinn_options_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
