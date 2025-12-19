@@ -39,6 +39,8 @@ struct LiteRtQualcommOptionsT {
   bool use_fold_relu = true;
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode =
+      kLiteRtQualcommDspPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
   std::string ir_json_dir;
   std::string dlc_dir;
@@ -314,6 +316,30 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
   }
 
   *htp_performance_mode = options->htp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_performance_mode = dsp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode* dsp_performance_mode) {
+  if (options == nullptr || dsp_performance_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_performance_mode = options->dsp_performance_mode;
 
   return kLiteRtStatusOk;
 }

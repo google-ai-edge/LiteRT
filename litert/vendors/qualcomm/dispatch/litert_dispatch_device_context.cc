@@ -143,7 +143,6 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                         "Unsupported tensor buffer type");
   }
 
-  QnnMemHtp_Descriptor_t mem_htp_descriptor = {};
   Qnn_MemDescriptor_t mem_descriptor = {};
   // QNN does not support 0-dimensional tensors.
   std::array<uint32_t, 1> dim{1};
@@ -154,8 +153,10 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   }
   mem_descriptor.dataType = tensor_data_type;
 
+  QnnMemHtp_Descriptor_t mem_htp_descriptor = {};
   switch (qnn_manager_.GetOptions().GetBackendType()) {
     case ::qnn::BackendType::kDspBackend:
+      // DSP Backend only supports QNN_MEM_TYPE_ION
       mem_descriptor.memType = QNN_MEM_TYPE_ION;
       mem_descriptor.ionInfo.fd = buffer_fd;
 

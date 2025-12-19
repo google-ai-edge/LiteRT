@@ -33,10 +33,24 @@ class DspBackend : public QnnBackend {
 
   ~DspBackend();
 
-  bool Init(const Options& options,
-            std::optional<::qnn::SocInfo> soc_info) override;
+  bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
  private:
+  void PerformanceVote() override;
+
+  bool CreatePerfPowerConfigPtr(
+      const PerformanceModeVoteType vote_type) override;
+
+  inline bool IsPerfModeEnabled() const {
+    return performance_mode_ != DspPerformanceMode::kDefault;
+  }
+
+  // Performance control
+  struct BackendConfig;
+  std::unique_ptr<BackendConfig> backend_config_;
+  std::uint32_t powerconfig_client_id_{0};
+  PerformanceModeVoteType manual_voting_type_{kNoVote};
+  DspPerformanceMode performance_mode_{DspPerformanceMode::kDefault};
 };
 
 }  // namespace qnn
