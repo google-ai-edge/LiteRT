@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <cstdint>
-#include <string>
 #include <tuple>
 #include <utility>
 
@@ -43,16 +42,51 @@ using testing::Pointwise;
 namespace litert {
 namespace {
 
-using TestParams =
-    std::tuple<GpuOptions::Precision, GpuOptions::BufferStorageType>;
+struct TestParams {
+  using TupleT =
+      std::tuple<bool, GpuOptions::Precision, GpuOptions::BufferStorageType>;
+
+  bool external_tensor_mode;
+  GpuOptions::Precision precision;
+  GpuOptions::BufferStorageType buffer_storage_type;
+
+  explicit TestParams(TupleT tuple)
+      : external_tensor_mode(std::get<0>(tuple)),
+        precision(std::get<1>(tuple)),
+        buffer_storage_type(std::get<2>(tuple)) {}
+};
+
+absl::string_view ToString(GpuOptions::Precision precision) {
+  switch (precision) {
+    case GpuOptions::Precision::kDefault:
+      return "Default";
+    case GpuOptions::Precision::kFp16:
+      return "Fp16";
+    case GpuOptions::Precision::kFp32:
+      return "Fp32";
+  }
+}
+
+absl::string_view ToString(GpuOptions::BufferStorageType buffer_storage_type) {
+  switch (buffer_storage_type) {
+    case GpuOptions::BufferStorageType::kDefault:
+      return "Default";
+    case GpuOptions::BufferStorageType::kBuffer:
+      return "Buffer";
+    case GpuOptions::BufferStorageType::kTexture2D:
+      return "Texture2D";
+  }
+}
 
 Expected<Options> CreateGpuOptions(const TestParams& params) {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
   LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
-  LITERT_RETURN_IF_ERROR(gpu_options.EnableExternalTensorsMode(true));
-  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<0>(params)));
-  LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<1>(params)));
+  LITERT_RETURN_IF_ERROR(
+      gpu_options.EnableExternalTensorsMode(params.external_tensor_mode));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(params.precision));
+  LITERT_RETURN_IF_ERROR(
+      gpu_options.SetBufferStorageType(params.buffer_storage_type));
   return std::move(options);
 }
 
@@ -115,42 +149,19 @@ TEST_P(ParameterizedTest, Basic) {
 
 INSTANTIATE_TEST_SUITE_P(
     CompiledModelWebGpuTest, ParameterizedTest,
-    ::testing::Combine(::testing::ValuesIn<GpuOptions::Precision>({
-                           GpuOptions::Precision::kDefault,
-                           GpuOptions::Precision::kFp16,
-                           GpuOptions::Precision::kFp32,
-                       }),
-                       ::testing::ValuesIn<GpuOptions::BufferStorageType>({
-                           GpuOptions::BufferStorageType::kDefault,
-                           GpuOptions::BufferStorageType::kBuffer,
-                           GpuOptions::BufferStorageType::kTexture2D,
-                       })),
+    ::testing::ConvertGenerator<TestParams::TupleT>(::testing::Combine(
+        ::testing::Bool(),
+        ::testing::ValuesIn<GpuOptions::Precision>({
+            GpuOptions::Precision::kDefault, GpuOptions::Precision::kFp16,
+            GpuOptions::Precision::kFp32}),
+        ::testing::ValuesIn<GpuOptions::BufferStorageType>({
+            GpuOptions::BufferStorageType::kDefault,
+            GpuOptions::BufferStorageType::kBuffer,
+            GpuOptions::BufferStorageType::kTexture2D}))),
     [](const ::testing::TestParamInfo<TestParams>& info) {
-      std::string precision;
-      switch (std::get<0>(info.param)) {
-        case GpuOptions::Precision::kDefault:
-          precision = "Default";
-          break;
-        case GpuOptions::Precision::kFp16:
-          precision = "Fp16";
-          break;
-        case GpuOptions::Precision::kFp32:
-          precision = "Fp32";
-          break;
-      }
-      std::string buffer_storage_type;
-      switch (std::get<1>(info.param)) {
-        case GpuOptions::BufferStorageType::kDefault:
-          buffer_storage_type = "Default";
-          break;
-        case GpuOptions::BufferStorageType::kBuffer:
-          buffer_storage_type = "Buffer";
-          break;
-        case GpuOptions::BufferStorageType::kTexture2D:
-          buffer_storage_type = "Texture2D";
-          break;
-      }
-      return absl::StrCat(precision, "_", buffer_storage_type);
+      return absl::StrCat(info.param.external_tensor_mode ? "external_" : "",
+                          ToString(info.param.precision), "_",
+                          ToString(info.param.buffer_storage_type));
     });
 
 TEST(CompiledModelVulkanTest, GpuEnvironment) {
@@ -162,8 +173,8 @@ TEST(CompiledModelVulkanTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_1,
-      CreateGpuOptions({GpuOptions::Precision::kDefault,
-                        GpuOptions::BufferStorageType::kDefault}));
+      CreateGpuOptions(TestParams({false, GpuOptions::Precision::kDefault,
+                                   GpuOptions::BufferStorageType::kDefault})));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model_1,
       CompiledModel::Create(*env_1, testing::GetTestFilePath(kModelFileName),
@@ -189,8 +200,8 @@ TEST(CompiledModelVulkanTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_2,
-      CreateGpuOptions({GpuOptions::Precision::kFp32,
-                        GpuOptions::BufferStorageType::kTexture2D}));
+      CreateGpuOptions(TestParams({true, GpuOptions::Precision::kFp32,
+                                   GpuOptions::BufferStorageType::kBuffer})));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model_2,
       CompiledModel::Create(*env_2, testing::GetTestFilePath(kModelFileName),
