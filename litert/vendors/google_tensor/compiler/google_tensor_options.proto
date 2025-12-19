@@ -31,9 +31,32 @@ enum GoogleTensorOptionsShardingIntensity {
   SHARDING_INTENSITY_MAXIMUM = 4;
 }
 
+// Enum to specify the type of Google Tensor device.
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_TENSOR_G3 = 1;  // Pixel 8 Series
+  DEVICE_TYPE_TENSOR_G4 = 2;  // Pixel 9 Series
+  DEVICE_TYPE_TENSOR_G5 = 3;  // Pixel 10 Series
+  DEVICE_TYPE_TENSOR_G6 = 4;  // Pixel 11 Series
+}
+
+// Message to hold the configuration for the Google Tensor compiler.
+// NEXT ID: 3
+message GoogleTensorCompilerConfig {
+  enum CompilationClient {
+    COMPILATION_CLIENT_UNSPECIFIED = 0;
+    COMPILATION_CLIENT_LITERT_PLUGIN = 1;
+    COMPILATION_CLIENT_SDK = 2;
+  }
+  // The compilation client to be compiled by the compiler.
+  CompilationClient compilation_client = 1;
+  // The SOC Devices to be compiled by the compiler.
+  DeviceType device = 2;
+}
+
 // Message to hold various compilation options for the Google Tensor compiler
 // plugin.
-// NEXT ID: 9
+// NEXT ID: 10
 message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
@@ -52,4 +75,6 @@ message GoogleTensorOptions {
   // String of key=value pairs for testing purposes.
   // Example: testing_flags = "flag1=value1,flag2=value2"
   string testing_flags = 8;
+  // The compiler configuration to be used by the compiler.
+  GoogleTensorCompilerConfig compiler_config = 9;
 }

@@ -50,6 +50,10 @@
 //
 
 using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    DeviceType;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorCompilerConfig;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
     GoogleTensorOptions;
 using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
     GoogleTensorOptionsShardingIntensity;
@@ -66,6 +70,26 @@ constexpr const char* kPluginSocModels[] = {
     "Tensor_G5",
     "Tensor_G6",
 };  // get the name for plugin soc model
+
+LiteRtStatus GetDeviceType(absl::string_view soc_model,
+                           DeviceType* device_type) {
+  if (soc_model == "Tensor_G3") {
+    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::DEVICE_TYPE_TENSOR_G3;
+  } else if (soc_model == "Tensor_G4") {
+    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::DEVICE_TYPE_TENSOR_G4;
+  } else if (soc_model == "Tensor_G5") {
+    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::DEVICE_TYPE_TENSOR_G5;
+  } else if (soc_model == "Tensor_G6") {
+    *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        compiler::DEVICE_TYPE_TENSOR_G6;
+  } else {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return kLiteRtStatusOk;
+}
 
 constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeTflAssignVariable,
@@ -229,7 +253,7 @@ LiteRtStatus LiteRtOpaqueOptionsToGoogleTensorOptions(
       break;
   }
 
-// TESTING FLAGS
+  // TESTING FLAGS
   std::vector<std::vector<std::string>> testing_flags;
   if (LiteRtGoogleTensorOptionsGetTestingFlags(
           google_tensor_options_data, &testing_flags) != kLiteRtStatusOk) {
@@ -547,6 +571,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_RETURN_IF_ERROR(LiteRtOpaqueOptionsToGoogleTensorOptions(
       opaque_options, &google_tensor_options));
 
+  // Set compilation configuration.
+  auto* compiler_config = google_tensor_options.mutable_compiler_config();
+  compiler_config->set_compilation_client(
+      GoogleTensorCompilerConfig::COMPILATION_CLIENT_LITERT_PLUGIN);
+
+  // Set device type.
+  DeviceType device_type;
+  LiteRtStatus status = google_tensor::GetDeviceType(soc_model, &device_type);
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Invalid soc model for device type: %s",
+               soc_model);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  compiler_config->set_device(device_type);
+
   // serialize to string
   std::string google_tensor_options_str;
   if (!google_tensor_options.SerializeToString(&google_tensor_options_str)) {
@@ -563,7 +602,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         absl::StrCat("Tensor_", absl::AsciiStrToUpper(valid_soc_model));
   }
   // TODO(b/398984678): add support for multiple bytecodes
-  absl::string_view soc_model_view(valid_soc_model);
   absl::string_view model_buffer_view(buffer_str);
 
   char** compiled_code_data = nullptr;
@@ -578,10 +616,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   };
   auto compile_status = adapter->Compile(
-      model_buffer_view.data(), model_buffer_view.size(), soc_model_view.data(),
-      soc_model_view.size(), google_tensor_options_str.data(),
-      google_tensor_options_str.size(), &compiled_code_data,
-      &compiled_code_sizes, &num_bytecodes);
+      model_buffer_view.data(), model_buffer_view.size(),
+      google_tensor_options_str.data(), google_tensor_options_str.size(),
+      &compiled_code_data, &compiled_code_sizes, &num_bytecodes);
   if (!compile_status) {
     LITERT_LOG(LITERT_ERROR, "%s", compile_status.Error().Message().c_str());
     return compile_status.Error().Status();
