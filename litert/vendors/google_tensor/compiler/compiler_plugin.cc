@@ -526,7 +526,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       deleter(opaque_options);
     }
   };
-  if (!compiler_plugin->GetOpaqueOptions()) {
+  if (!compiler_plugin->GetGoogleTensorOptions()) {
     LITERT_LOG(
         LITERT_INFO,
         "No custom google tensor options found, creating default options");
