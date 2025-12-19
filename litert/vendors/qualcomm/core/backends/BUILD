@@ -10,18 +10,6 @@ package(
 )
 
 cc_library(
-    name = "htp_perf_control",
-    srcs = ["htp_perf_control.cc"],
-    hdrs = ["htp_perf_control.h"],
-    deps = [
-        "//litert/vendors/qualcomm/core:common",
-        "//litert/vendors/qualcomm/core/utils:log",
-        "@com_google_absl//absl/base:core_headers",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-cc_library(
     name = "qnn_backend",
     srcs = ["qnn_backend.cc"],
     hdrs = ["qnn_backend.h"],
@@ -53,7 +41,6 @@ cc_library(
     srcs = ["htp_backend.cc"],
     hdrs = ["htp_backend.h"],
     deps = [
-        ":htp_perf_control",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
