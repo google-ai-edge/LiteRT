@@ -107,4 +107,15 @@ Qnn_DeviceHandle_t QnnBackend::GetDeviceHandle() {
 
 Qnn_LogHandle_t QnnBackend::GetLogHandle() { return log_handle_.get(); }
 
+QnnDevice_Infrastructure_t QnnBackend::GetPerfInfra() {
+  QnnDevice_Infrastructure_t device_infra = nullptr;
+  Qnn_ErrorHandle_t error = QnnApi()->deviceGetInfrastructure(&device_infra);
+  if (error != QNN_SUCCESS) {
+    QNN_LOG_ERROR("Backend performance_mode creation failed. Error %d",
+                  QNN_GET_ERROR_CODE(error));
+    return nullptr;
+  }
+  return device_infra;
+}
+
 }  // namespace qnn

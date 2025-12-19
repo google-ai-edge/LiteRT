@@ -45,6 +45,11 @@ class QnnBackend {
   Qnn_LogHandle_t GetLogHandle();
 
  private:
+  virtual void PerformanceVote() {};
+
+  virtual bool CreatePerfPowerConfigPtr(
+      const PerformanceModeVoteType vote_type) {};
+
   const QNN_INTERFACE_VER_TYPE* qnn_api_ = nullptr;
   std::list<QnnBackend_Config_t> backend_configs_;
   std::list<QnnDevice_Config_t> device_configs_;
@@ -74,6 +79,8 @@ class QnnBackend {
   QnnDeviceHandle CreateDeviceHandle(
       Qnn_LogHandle_t log_handle,
       absl::Span<const QnnDevice_Config_t*> configs);
+
+  QnnDevice_Infrastructure_t GetPerfInfra();
 
   QnnLogHandle log_handle_;
   QnnBackendHandle backend_handle_;

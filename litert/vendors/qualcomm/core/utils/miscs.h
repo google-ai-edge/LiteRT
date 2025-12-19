@@ -42,6 +42,17 @@ float Dequantize(const T val, const float scale, const int32_t zero_point) {
   return scale * (val - zero_point);
 }
 
+template <typename T>
+std::vector<std::add_pointer_t<std::add_const_t<T>>> ObtainNullTermPtrVector(
+    const std::vector<T>& vec) {
+  std::vector<std::add_pointer_t<std::add_const_t<T>>> ret(vec.size());
+  for (int i = 0; i < vec.size(); ++i) {
+    ret[i] = &(vec[i]);
+  }
+  ret.emplace_back(nullptr);
+  return ret;
+}
+
 void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
                                   std::vector<std::uint16_t>& dst);
 
