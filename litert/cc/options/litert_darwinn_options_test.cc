@@ -52,8 +52,8 @@ TEST(DarwinnRuntimeOptionsTest, CheckDefaultValues) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, DarwinnRuntimeOptions::Create());
 
   // Check default values
-  EXPECT_THAT(options.GetInferencePowerState(), IsOkAndHolds(0));
-  EXPECT_THAT(options.GetInferenceMemoryPowerState(), IsOkAndHolds(0));
+  EXPECT_THAT(options.GetInferencePowerState(), IsOkAndHolds(6));
+  EXPECT_THAT(options.GetInferenceMemoryPowerState(), IsOkAndHolds(3));
   EXPECT_THAT(options.GetInferencePriority(), IsOkAndHolds(-1));
   EXPECT_THAT(options.GetPreferCoherent(), IsOkAndHolds(false));
 }

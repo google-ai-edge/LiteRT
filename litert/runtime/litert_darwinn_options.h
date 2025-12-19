@@ -19,8 +19,10 @@
 
 namespace litert {
 
-constexpr uint32_t kDefaultInferencePowerState = 0;
-constexpr uint32_t kDefaultInferenceMemoryPowerState = 0;
+// Default to "active" device power state.
+constexpr uint32_t kDefaultInferencePowerState = 6;
+// Default to "low" memory power state.
+constexpr uint32_t kDefaultInferenceMemoryPowerState = 3;
 
 // Runtime/per-inference options for DarwiNN delegate
 struct LiteRtDarwinnRuntimeOptionsT {
