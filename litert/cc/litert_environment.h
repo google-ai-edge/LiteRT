@@ -27,6 +27,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
+/// @file
+/// @brief Defines the C++ wrapper for the LiteRT environment.
+
 namespace litert {
 
 class Environment
@@ -45,7 +48,7 @@ class Environment
     WebGpuQueue = kLiteRtEnvOptionTagWebGpuQueue,
     MetalDevice = kLiteRtEnvOptionTagMetalDevice,
     MetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
-    // WARNING: Vulkan support is experimental.
+    /// @warning Vulkan support is experimental.
     VulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
     VulkanCommandPool = kLiteRtEnvOptionTagVulkanCommandPool,
     CallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
@@ -84,7 +87,7 @@ class Environment
     }
   }
 
-  // Returns whether the environment supports CL/GL interop.
+  /// @brief Returns whether the environment supports CL/GL interop.
   bool SupportsClGlInterop() const {
     bool is_supported = false;
     if (auto status =
@@ -95,7 +98,7 @@ class Environment
     return is_supported;
   }
 
-  // Returns whether the environment supports AHWB/CL interop.
+  /// @brief Returns whether the environment supports AHWB/CL interop.
   bool SupportsAhwbClInterop() const {
     bool is_supported = false;
     if (auto status =
@@ -106,7 +109,7 @@ class Environment
     return is_supported;
   }
 
-  // Returns whether the environment supports AHWB/GL interop.
+  /// @brief Returns whether the environment supports AHWB/GL interop.
   bool SupportsAhwbGlInterop() const {
     bool is_supported = false;
     if (auto status =
@@ -117,9 +120,10 @@ class Environment
     return is_supported;
   }
 
-  ///  \internal Wraps a LiteRtEnvironment C object in a Environment C++ object.
-  ///
-  /// Warning: This is internal use only.
+  /// @internal
+  /// @brief Wraps a `LiteRtEnvironment` C object in an `Environment` C++
+  /// object.
+  /// @warning This is for internal use only.
   static Environment WrapCObject(LiteRtEnvironment env, OwnHandle owned) {
     return Environment(env, owned);
   }

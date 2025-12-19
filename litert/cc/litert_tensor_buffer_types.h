@@ -20,15 +20,19 @@
 
 #include "litert/c/litert_tensor_buffer_types.h"
 
+/// @file
+/// @brief Defines C++ types and enums for LiteRT tensor buffers.
+
 namespace litert {
 
-// Byte alignment is required for host memory TensorBuffers, needed by the
-// LiteRT CPU accelerator.
+/// @brief The required byte alignment for host memory `TensorBuffer`s, used
+/// by the LiteRT CPU accelerator.
 inline constexpr size_t kHostMemoryBufferAlignment =
     static_cast<size_t>(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
 
-// C++-style scoped enum.
-// This inherits from the C enum to ensure C-level interoperability.
+/// @brief A C++-style scoped enum for tensor buffer types.
+///
+/// This enum inherits from the C enum to ensure C-level interoperability.
 enum class TensorBufferType {
   kUnknown = kLiteRtTensorBufferTypeUnknown,
   kHostMemory = kLiteRtTensorBufferTypeHostMemory,
@@ -39,7 +43,7 @@ enum class TensorBufferType {
   kGlBuffer = kLiteRtTensorBufferTypeGlBuffer,
   kGlTexture = kLiteRtTensorBufferTypeGlTexture,
 
-  // 10-19 are reserved for OpenCL memory objects.
+  /// 10-19 are reserved for OpenCL memory objects.
   kOpenClBuffer = kLiteRtTensorBufferTypeOpenClBuffer,
   kOpenClBufferFp16 = kLiteRtTensorBufferTypeOpenClBufferFp16,
   kOpenClTexture = kLiteRtTensorBufferTypeOpenClTexture,
@@ -48,7 +52,7 @@ enum class TensorBufferType {
   kOpenClImageBuffer = kLiteRtTensorBufferTypeOpenClImageBuffer,
   kOpenClImageBufferFp16 = kLiteRtTensorBufferTypeOpenClImageBufferFp16,
 
-  // 20-29 are reserved for WebGPU memory objects.
+  /// 20-29 are reserved for WebGPU memory objects.
   kWebGpuBuffer = kLiteRtTensorBufferTypeWebGpuBuffer,
   kWebGpuBufferFp16 = kLiteRtTensorBufferTypeWebGpuBufferFp16,
   kWebGpuTexture = kLiteRtTensorBufferTypeWebGpuTexture,
@@ -57,14 +61,14 @@ enum class TensorBufferType {
   kWebGpuImageBufferFp16 = kLiteRtTensorBufferTypeWebGpuImageBufferFp16,
   kWebGpuBufferPacked = kLiteRtTensorBufferTypeWebGpuBufferPacked,
 
-  // 30-39 are reserved for Metal memory objects.
+  /// 30-39 are reserved for Metal memory objects.
   kMetalBuffer = kLiteRtTensorBufferTypeMetalBuffer,
   kMetalBufferFp16 = kLiteRtTensorBufferTypeMetalBufferFp16,
   kMetalTexture = kLiteRtTensorBufferTypeMetalTexture,
   kMetalTextureFp16 = kLiteRtTensorBufferTypeMetalTextureFp16,
   kMetalBufferPacked = kLiteRtTensorBufferTypeMetalBufferPacked,
 
-  // 40-49 are reserved for Vulkan memory objects.
+  /// 40-49 are reserved for Vulkan memory objects.
   kVulkanBuffer = kLiteRtTensorBufferTypeVulkanBuffer,
   kVulkanBufferFp16 = kLiteRtTensorBufferTypeVulkanBufferFp16,
   kVulkanTexture = kLiteRtTensorBufferTypeVulkanTexture,

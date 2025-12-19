@@ -29,14 +29,17 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
+/// @file
+/// @brief Defines the C++ wrapper for a tensor layout and related utilities.
+
 namespace litert {
 
 using Dimensions = absl::InlinedVector<int32_t, kExpectedMaxTensorRank>;
 using Strides = absl::InlinedVector<uint32_t, kExpectedMaxTensorRank>;
 
-// Small standalone helper functions for working with the C layout API.
+/// @brief Small standalone helper functions for working with the C layout API.
 
-// Build layout from given iterator of dimensions.
+/// @brief Builds a layout from a given iterator of dimensions.
 template <class Begin, class End>
 inline constexpr LiteRtLayout BuildLayout(Begin begin, End end,
                                           const uint32_t* strides = nullptr) {
@@ -60,26 +63,26 @@ inline constexpr LiteRtLayout BuildLayout(Begin begin, End end,
   return layout;
 }
 
-// Build layout from given iterable of dimensions.
+/// @brief Builds a layout from a given iterable of dimensions.
 template <class Dims>
 inline constexpr LiteRtLayout BuildLayout(const Dims& dims,
                                           const uint32_t* strides = nullptr) {
   return BuildLayout(std::cbegin(dims), std::cend(dims), strides);
 }
 
-// Build layout from literal dimensions.
+/// @brief Builds a layout from literal dimensions.
 inline constexpr LiteRtLayout BuildLayout(std::initializer_list<int32_t> dims,
                                           const uint32_t* strides = nullptr) {
   return BuildLayout(dims.begin(), dims.end(), strides);
 }
 
-// Get dims as span.
+/// @brief Gets the dimensions as a span.
 inline constexpr absl::Span<const int32_t> DimsSpan(
     const LiteRtLayout& layout) {
   return absl::MakeConstSpan(layout.dimensions, layout.rank);
 }
 
-// Get strides as span if they exist.
+/// @brief Gets the strides as a span if they exist.
 inline constexpr std::optional<absl::Span<const uint32_t>> StridesSpan(
     const LiteRtLayout& layout) {
   if (layout.has_strides) {
@@ -88,7 +91,7 @@ inline constexpr std::optional<absl::Span<const uint32_t>> StridesSpan(
   return {};
 }
 
-// Tensor layout. C++ equivalent to LiteRtLayout.
+/// @brief A C++ wrapper for `LiteRtLayout`, representing a tensor layout.
 class Layout {
  public:
   using Dim = int32_t;
@@ -131,8 +134,9 @@ class Layout {
     }
   }
 
-  // Return the number of scalar elements in the provided tensor layout. Return
-  // an error if the layout includes dynamic dimensions.
+  /// @brief Returns the number of scalar elements in the tensor layout.
+  ///
+  /// Returns an error if the layout includes dynamic dimensions.
   Expected<size_t> NumElements() const {
     size_t num_elements;
     LITERT_RETURN_IF_ERROR(

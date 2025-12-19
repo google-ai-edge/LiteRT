@@ -28,11 +28,15 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 
+/// @file
+/// @brief Defines the C++ wrapper for LiteRT tensor buffer requirements.
+
 namespace litert {
 
-// Requirements for allocating a TensorBuffer, typically specified by a HW
-// accelerator for a given I/O tensor. C++ equivalent to
-// LiteRtTensorBufferRequirements.
+/// @brief Represents the requirements for allocating a `TensorBuffer`.
+///
+/// This class is the C++ equivalent of `LiteRtTensorBufferRequirements` and is
+/// typically specified by a hardware accelerator for a given I/O tensor.
 class TensorBufferRequirements
     : public internal::Handle<LiteRtTensorBufferRequirements,
                               LiteRtDestroyTensorBufferRequirements> {
@@ -117,18 +121,18 @@ class TensorBufferRequirements
       const TensorBufferRequirements& src1,
       const TensorBufferRequirements& src2);
 
-  ///  \internal Wraps a LiteRtTensorBufferRequirements C object in a
-  /// TensorBufferRequirements C++ object.
-  ///
-  /// Warning: This is internal use only.
+  /// @internal
+  /// @brief Wraps a `LiteRtTensorBufferRequirements` C object in a
+  /// `TensorBufferRequirements` C++ object.
+  /// @warning This is for internal use only.
   static TensorBufferRequirements WrapCObject(
       LiteRtTensorBufferRequirements requirements, OwnHandle owned) {
     return TensorBufferRequirements(requirements, owned);
   }
 
  private:
-  // Parameter `owned` indicates if the created TensorBufferRequirements object
-  // should take ownership of the provided `requirements` handle.
+  /// @param owned Indicates if the created `TensorBufferRequirements` object
+  /// should take ownership of the provided `requirements` handle.
   explicit TensorBufferRequirements(LiteRtTensorBufferRequirements requirements,
                                     OwnHandle owned)
       : internal::Handle<LiteRtTensorBufferRequirements,

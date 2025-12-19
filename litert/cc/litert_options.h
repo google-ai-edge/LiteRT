@@ -51,6 +51,11 @@ struct ApplyPluginRun;
 LiteRtStatus ApplyPlugin(std::unique_ptr<ApplyPluginRun> run);
 }  // namespace tools
 
+/// Manages the configuration options for compiling a LiteRT model.
+///
+/// This class provides methods to set hardware accelerators, add custom
+/// operations, bind external tensors, and configure various backend-specific
+/// options (e.g., GPU, CPU, Qualcomm, MediaTek, etc.).
 class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
  public:
   friend class CompiledModel;
@@ -58,39 +63,56 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   friend LiteRtStatus tools::ApplyPlugin(
       std::unique_ptr<tools::ApplyPluginRun> run);
 
-  // A weight section contains the offset and length of a contiguous region
-  // inside a ScopedFile that backs a single external buffer group.
-  // This map then provides the mapping between the group name and its
-  // section.
+  /// A map from a group name to a weight section.
+  ///
+  /// A weight section contains the offset and length of a contiguous region
+  /// inside a `ScopedFile` that backs a single external buffer group. This map
+  /// provides the mapping between the group name and its section.
   using ScopedWeightSectionMap =
       absl::flat_hash_map<std::string, ScopedWeightSection>;
 
   Options() = default;
 
-  // Parameter `owned` indicates if the created CompilationOptions object
-  // should take ownership of the provided `compilation_options` handle.
+  /// Constructs an `Options` object from a C handle.
+  /// @param compilation_options The C handle to the LiteRT options.
+  /// @param owned Indicates whether this object should take ownership of the
+  /// provided handle.
   explicit Options(LiteRtOptions compilation_options, OwnHandle owned)
       : internal::Handle<LiteRtOptions, LiteRtDestroyOptions>(
             compilation_options, owned) {}
 
+  /// Creates a new `Options` object.
+  /// @return An `Expected` object containing the new `Options` instance, or an
+  /// error if creation fails.
   static Expected<Options> Create() {
     LiteRtOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtCreateOptions(&options));
     return Options(options, OwnHandle::kYes);
   }
 
+  /// Sets the hardware accelerators to be used for the model.
+  /// @param accelerators A bitmask of hardware accelerators.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> SetHardwareAccelerators(HwAccelerators accelerators) {
     LITERT_RETURN_IF_ERROR(LiteRtSetOptionsHardwareAccelerators(
         Get(), static_cast<LiteRtHwAcceleratorSet>(accelerators)));
     return {};
   }
 
+  /// Sets the hardware accelerators to be used for the model.
+  /// @param accelerators A set of hardware accelerators.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> SetHardwareAccelerators(HwAcceleratorSet accelerators) {
     LITERT_RETURN_IF_ERROR(LiteRtSetOptionsHardwareAccelerators(
         Get(), static_cast<LiteRtHwAcceleratorSet>(accelerators.value)));
     return {};
   }
 
+  /// Retrieves the currently set hardware accelerators.
+  /// @return An `Expected` object containing the set of hardware accelerators,
+  /// or an error.
   Expected<LiteRtHwAcceleratorSet> GetHardwareAccelerators() {
     LiteRtHwAcceleratorSet accelerators;
     LITERT_RETURN_IF_ERROR(
@@ -98,18 +120,28 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return accelerators;
   }
 
+  /// @deprecated Use the `GetXXXOptions()` methods instead.
   [[deprecated("Use the GetXXXOptions() methods instead.")]]
   Expected<void> AddOpaqueOptions(OpaqueOptions&& options) {
     LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(Get(), options.Release()));
     return {};
   }
 
+  /// Retrieves the opaque options.
+  /// @return An `Expected` object containing the opaque options, or an error.
   Expected<OpaqueOptions> GetOpaqueOptions() {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(Get(), &options));
     return OpaqueOptions::WrapCObject(options, OwnHandle::kNo);
   }
 
+  /// Adds a custom operator kernel.
+  /// @param custom_op_name The name of the custom operator.
+  /// @param custom_op_version The version of the custom operator.
+  /// @param custom_op_kernel The custom operator kernel implementation.
+  /// @param custom_op_kernel_user_data User data to be passed to the kernel.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> AddCustomOpKernel(const std::string& custom_op_name,
                                    int custom_op_version,
                                    const LiteRtCustomOpKernel& custom_op_kernel,
@@ -120,6 +152,10 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return {};
   }
 
+  /// Adds a custom operator kernel.
+  /// @param custom_op_kernel The custom operator kernel to add.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> AddCustomOpKernel(CustomOpKernel& custom_op_kernel) {
     return AddCustomOpKernel(custom_op_kernel.OpName(),
                              custom_op_kernel.OpVersion(),
@@ -127,12 +163,19 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
                              static_cast<void*>(&custom_op_kernel));
   }
 
-  // Binds an external memory buffer to a specific tensor in the model.
-  // This function sets the tensor's allocation type to kTfLiteCustom, making it
-  // appear as a constant tensor with a pre-allocated buffer.
-  //
-  // Note: `data` is owned by the caller and must outlive the lifetime of the
-  // CompiledModel. `size_bytes` must match the tensor's expected size.
+  /// Binds an external memory buffer to a specific tensor in the model.
+  ///
+  /// This function sets the tensor's allocation type to `kTfLiteCustom`,
+  /// making it appear as a constant tensor with a pre-allocated buffer.
+  ///
+  /// @note `data` is owned by the caller and must outlive the lifetime of the
+  /// `CompiledModel`. `size_bytes` must match the tensor's expected size.
+  /// @param signature_name The name of the signature containing the tensor.
+  /// @param tensor_name The name of the tensor to bind.
+  /// @param data A pointer to the external memory buffer.
+  /// @param size_bytes The size of the external memory buffer in bytes.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> AddExternalTensorBinding(const std::string& signature_name,
                                           const std::string& tensor_name,
                                           void* data, size_t size_bytes) {
@@ -141,42 +184,56 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return {};
   }
 
-  // Registers a ScopedFile that contains all external buffer groups.
+  /// Registers a `ScopedFile` that contains all external buffer groups.
+  /// @param scoped_file The file containing the external weights.
+  /// @param sections A map from group names to their respective sections in the
+  /// file.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> SetExternalWeightScopedFile(ScopedFile& scoped_file,
                                              ScopedWeightSectionMap sections);
 
-  // Returns the reference to the GPU options. User will use this function to
-  // set the GPU options.
+  /// Returns a reference to the GPU options.
+  ///
+  /// Use this to configure GPU-specific settings.
   Expected<GpuOptions&> GetGpuOptions();
 
-  // Returns the reference to the CPU options. User will use this function to
-  // set the CPU options.
+  /// Returns a reference to the CPU options.
+  ///
+  /// Use this to configure CPU-specific settings.
   Expected<CpuOptions&> GetCpuOptions();
-  // Returns the reference to the Qualcomm options. User will use this function
-  // to set the Qualcomm options.
+
+  /// Returns a reference to the Qualcomm options.
+  ///
+  /// Use this to configure Qualcomm-specific settings.
   Expected<qualcomm::QualcommOptions&> GetQualcommOptions();
 
-  // Returns the reference to the MediaTek options. User will use this function
-  // to set the MediaTek options.
+  /// Returns a reference to the MediaTek options.
+  ///
+  /// Use this to configure MediaTek-specific settings.
   Expected<mediatek::MediatekOptions&> GetMediatekOptions();
 
-  // Returns the reference to the Google Tensor options. User will use this
-  // function to set the Google Tensor options.
+  /// Returns a reference to the Google Tensor options.
+  ///
+  /// Use this to configure Google Tensor-specific settings.
   Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions();
 
-  // Returns the reference to the Intel OpenVINO options. User will use this
-  // function to set the Intel OpenVINO options.
+  /// Returns a reference to the Intel OpenVINO options.
+  ///
+  /// Use this to configure Intel OpenVINO-specific settings.
   Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions();
 
-  // LiteRtRuntimeOptions.
+  /// Returns a reference to the runtime options.
   Expected<RuntimeOptions&> GetRuntimeOptions();
 
-  // LiteRtCompilerOptions.
+  /// Returns a reference to the compiler options.
   Expected<CompilerOptions&> GetCompilerOptions();
 
  private:
-  // Builds the options object. This should be called after all the setters.
-  // It's automatically called in CompiledModel::Create.
+  /// Builds the options object.
+  ///
+  /// This should be called after all setters have been invoked. It is
+  /// automatically called in `CompiledModel::Create`.
   Expected<void> Build();
 
   std::optional<GpuOptions> gpu_options_;

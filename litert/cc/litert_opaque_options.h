@@ -28,11 +28,17 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
+/// @file
+/// @brief Defines a C++ wrapper for the LiteRT opaque options, which allow for
+///        extensible, type-erased configuration.
+
 namespace litert {
 
+/// @brief A C++ wrapper for `LiteRtOpaqueOptions`, providing a way to manage
+///        and access type-erased configuration data.
+/// @todo Work logging into this API (and derived classes).
 class OpaqueOptions
     : public internal::Handle<LiteRtOpaqueOptions, LiteRtDestroyOpaqueOptions> {
-  // TODO: lukeboyer - Work logging into this api (and derived classes).
  public:
   using Ref = std::reference_wrapper<OpaqueOptions>;
 
@@ -74,8 +80,8 @@ class OpaqueOptions
         LiteRtAppendOpaqueOptions(&h, appended_options.Release()));
     if (h != Get()) {
       // If appending a new linked list item has changed the linked list head
-      // pointer, then we need to reflect that as the new handle. Note that
-      // should happen only if the previous handle was null.
+      // pointer, we need to reflect that as the new handle. This should only
+      // happen if the previous handle was null.
       assert(!Get());
       *this = OpaqueOptions(h, OwnHandle::kYes);
     }
@@ -86,9 +92,9 @@ class OpaqueOptions
     auto h = Get();
     LITERT_RETURN_IF_ERROR(LiteRtPopOpaqueOptions(&h));
     if (h != Get()) {
-      // If popping the last item has changed the linked list head pointer, then
-      // we release the current handle since it has been already destructed by
-      // the pop call, and then use the new head pointer as the new handle.
+      // If popping the last item has changed the linked list head pointer, we
+      // release the current handle since it has been destructed by the pop
+      // call, and then use the new head pointer as the new handle.
       (void)Release();
       *this = OpaqueOptions(h, OwnHandle::kYes);
     }
@@ -99,31 +105,34 @@ class OpaqueOptions
 
   Expected<uint64_t> Hash() const;
 
-  ///  \internal  Wraps a LiteRtOpaqueOptions C object in a OpaqueOptions C++
-  ///  object.
-  ///
-  /// Warning: This is internal use only.
+  /// @internal
+  /// @brief Wraps a `LiteRtOpaqueOptions` C object in an `OpaqueOptions` C++
+  /// object.
+  /// @warning This is for internal use only.
   static OpaqueOptions WrapCObject(LiteRtOpaqueOptions options,
                                    OwnHandle owned) {
     return OpaqueOptions(options, owned);
   }
 
  protected:
-  // Parameter `owned` indicates if the created AcceleratorCompilationOptions
-  // object should take ownership of the provided `options` handle.
+  /// @param owned Indicates if the created
+  /// `AcceleratorCompilationOptions` object should take ownership of the
+  /// provided `options` handle.
   explicit OpaqueOptions(LiteRtOpaqueOptions options, OwnHandle owned)
       : Handle(options, owned) {}
 };
 
-// Find the opaque option in the chain that matches the provided identifier.
+/// @brief Finds the opaque option in the chain that matches the provided
+/// identifier.
 Expected<OpaqueOptions> FindOpaqueOptions(
     OpaqueOptions& options, const std::string& payload_identifier);
 
-// Convience wrapper on top of Find. Resolves the matching opaque options
-// as an instance of the type derived from OpaqueOptions, provided it implements
-// the required hooks. This is analogous to FindData, except that it returns
-// the C++ wrapper associated with an opaque options type, rather than the raw
-// payload data.
+/// @brief A convenience wrapper on top of `FindOpaqueOptions`.
+///
+/// This function resolves the matching opaque options as an instance of a type
+/// derived from `OpaqueOptions`, provided it implements the required hooks.
+/// This is analogous to `FindData`, but it returns the C++ wrapper associated
+/// with an opaque options type, rather than the raw payload data.
 template <typename Discriminated,
           std::enable_if_t<std::is_base_of<OpaqueOptions, Discriminated>::value,
                            bool> = true>
@@ -134,9 +143,11 @@ Expected<Discriminated> FindOpaqueOptions(OpaqueOptions& options) {
   return Discriminated::Create(opq);
 }
 
-// Find the raw data payload of given type from the opaque option in the chain
-// with matching identifier. This is analogous to Discriminate, except that
-// it returns the payload used to interopt with the C API.
+/// @brief Finds the raw data payload of a given type from the opaque option in
+/// the chain with a matching identifier.
+///
+/// This is analogous to `Discriminate`, but it returns the payload used to
+/// interoperate with the C API.
 template <typename T>
 Expected<T*> FindOpaqueData(OpaqueOptions& options,
                             const std::string& payload_identifier) {

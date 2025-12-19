@@ -33,9 +33,13 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
+/// @file
+/// @brief Defines C++ wrappers for the LiteRT model, signature, and tensor
+/// types.
+
 namespace litert {
 
-// SimpleTensor. C++ equivalent of LiteRtTensor with limited functionality.
+/// @brief A C++ wrapper for `LiteRtTensor` with limited functionality.
 class SimpleTensor : public internal::NonOwnedHandle<LiteRtTensor> {
  public:
   explicit SimpleTensor(LiteRtTensor tensor) : NonOwnedHandle(tensor) {}
@@ -100,7 +104,8 @@ class SimpleTensor : public internal::NonOwnedHandle<LiteRtTensor> {
   }
 };
 
-// Model signature. Simpler version of C++ equivalent of LiteRtSignature.
+/// @brief A simplified C++ wrapper for `LiteRtSignature`, representing a model
+/// signature.
 class SimpleSignature : public internal::NonOwnedHandle<LiteRtSignature> {
  public:
   explicit SimpleSignature(LiteRtSignature signature)
@@ -138,48 +143,45 @@ class SimpleSignature : public internal::NonOwnedHandle<LiteRtSignature> {
     return output_names;
   }
 
-  // Returns the input tensor type with the given input signature name in the
-  // signature entry.
+  /// @brief Returns the input tensor type for the given input signature name.
   Expected<RankedTensorType> InputTensorType(absl::string_view name) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, InputTensor(name));
     return tensor.RankedTensorType();
   }
 
-  // Returns the input tensor type at the given index in the signature entry.
+  /// @brief Returns the input tensor type at the given index.
   Expected<RankedTensorType> InputTensorType(size_t index) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, InputTensor(index));
     return tensor.RankedTensorType();
   }
 
-  // Returns the output tensor type with the given output signature name in the
-  // signature entry.
+  /// @brief Returns the output tensor type for the given output signature
+  /// name.
   Expected<RankedTensorType> OutputTensorType(absl::string_view name) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, OutputTensor(name));
     return tensor.RankedTensorType();
   }
 
-  // Returns the output tensor type at the given index in the signature entry.
+  /// @brief Returns the output tensor type at the given index.
   Expected<RankedTensorType> OutputTensorType(size_t index) const {
     LITERT_ASSIGN_OR_RETURN(auto tensor, OutputTensor(index));
     return tensor.RankedTensorType();
   }
 
-  // Returns the input tensor with the given input signature name in the
-  // signature entry.
+  /// @brief Returns the input tensor for the given input signature name.
   Expected<SimpleTensor> InputTensor(absl::string_view name) const;
 
-  // Returns the input tensor at the given index in the signature entry.
+  /// @brief Returns the input tensor at the given index.
   Expected<SimpleTensor> InputTensor(size_t index) const;
 
-  // Returns the output tensor with the given output signature name in the
-  // signature entry.
+  /// @brief Returns the output tensor for the given output signature name.
   Expected<SimpleTensor> OutputTensor(absl::string_view name) const;
 
-  // Returns the output tensor at the given index in the signature entry.
+  /// @brief Returns the output tensor at the given index.
   Expected<SimpleTensor> OutputTensor(size_t index) const;
 };
 
-// Model. C++ equivalent of LiteRtModel.
+/// @brief A C++ wrapper for `LiteRtModel`, representing a LiteRT model.
 class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
  public:
   Model() = default;
@@ -201,8 +203,10 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return CreateFromOwnedHandle(model);
   }
 
-  // The caller must ensure that the buffer remains valid for the lifetime of
-  // the model.
+  /// @brief Creates a model from a buffer.
+  ///
+  /// The caller must ensure that the buffer remains valid for the lifetime of
+  /// the model.
   static Expected<Model> CreateFromBuffer(BufferRef<uint8_t> buffer) {
     LiteRtModel model;
     if (auto status =
@@ -230,7 +234,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return num_signatures;
   }
 
-  // Returns the list of signatures defined in the model.
+  /// @brief Returns the list of signatures defined in the model.
   Expected<std::vector<SimpleSignature>> GetSignatures() const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
@@ -245,7 +249,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return std::move(signatures);
   }
 
-  // Returns the list of signature key names defined in the signature.
+  /// @brief Returns the list of signature key names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
@@ -261,7 +265,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature_keys;
   }
 
-  // Returns the list of input names defined in the signature.
+  /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
@@ -271,12 +275,12 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.InputNames();
   }
 
-  // Returns the list of input names defined in the signature.
+  /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
     return GetSignatureInputNames(/*signature_index=*/0);
   }
 
-  // Returns the list of input names defined in the signature.
+  /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
@@ -286,7 +290,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature->InputNames();
   }
 
-  // Returns the list of output names defined in the signature.
+  /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
@@ -296,12 +300,12 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.OutputNames();
   }
 
-  // Returns the list of output names defined in the signature.
+  /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
     return GetSignatureOutputNames(/*signature_index=*/0);
   }
 
-  // Returns the list of output names defined in the signature.
+  /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
@@ -311,7 +315,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature->OutputNames();
   }
 
-  // Returns the signature at the given index.
+  /// @brief Returns the signature at the given index.
   Expected<SimpleSignature> GetSignature(size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
     internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
@@ -319,8 +323,9 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return SimpleSignature(lite_rt_signature);
   }
 
-  // Returns the signature index for the given signature key.
-  // Returns 0 if the signature key is empty.
+  /// @brief Returns the signature index for the given signature key.
+  ///
+  /// Returns 0 if the signature key is empty.
   Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const {
     if (signature_key.empty()) {
       return 0;
@@ -339,8 +344,9 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
   }
 
-  // Returns the Signature object for the given signature key.
-  // Returns the default signature if the signature key is empty.
+  /// @brief Returns the `SimpleSignature` object for the given signature key.
+  ///
+  /// Returns the default signature if the signature key is empty.
   Expected<SimpleSignature> FindSignature(
       absl::string_view signature_key) const {
     if (signature_key.empty()) {
@@ -366,7 +372,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return key;
   }
 
-  // Returns the tensor type for the given n-th input tensor.
+  /// @brief Returns the tensor type for the n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
                                                 size_t input_index) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
@@ -374,7 +380,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.InputTensorType(input_index);
   }
 
-  // Returns the tensor type for the given input tensor name.
+  /// @brief Returns the tensor type for the given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
       size_t signature_index, absl::string_view input_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
@@ -382,7 +388,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.InputTensorType(input_name);
   }
 
-  // Returns the tensor type for the given input tensor name.
+  /// @brief Returns the tensor type for the given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
       absl::string_view signature_key, absl::string_view input_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
@@ -390,13 +396,14 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.InputTensorType(input_name);
   }
 
-  // Get input tensor type of the default signature for input name.
+  /// @brief Gets the input tensor type of the default signature for a given
+  /// input name.
   Expected<RankedTensorType> GetInputTensorType(
       absl::string_view input_name) const {
     return GetInputTensorType(/*signature_index=*/0, input_name);
   }
 
-  // Returns the tensor type for the given n-th output tensor.
+  /// @brief Returns the tensor type for the n-th output tensor.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  size_t output_index) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
@@ -404,7 +411,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.OutputTensorType(output_index);
   }
 
-  // Returns the tensor type for the given output tensor name.
+  /// @brief Returns the tensor type for the given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
       size_t signature_index, absl::string_view output_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
@@ -412,7 +419,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.OutputTensorType(output_name);
   }
 
-  // Returns the tensor type for the given output tensor name.
+  /// @brief Returns the tensor type for the given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
       absl::string_view signature_key, absl::string_view output_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
@@ -420,15 +427,16 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return signature.OutputTensorType(output_name);
   }
 
-  // Get output tensor type of the default signature for output name.
+  /// @brief Gets the output tensor type of the default signature for a given
+  /// output name.
   Expected<RankedTensorType> GetOutputTensorType(
       absl::string_view output_name) const {
     return GetOutputTensorType(/*signature_index=*/0, output_name);
   }
 
  protected:
-  // Parameter `owned` indicates if the created TensorBuffer object should take
-  // ownership of the provided `tensor_buffer` handle.
+  /// @param owned Indicates if the created `TensorBuffer` object should take
+  /// ownership of the provided `tensor_buffer` handle.
   Model(LiteRtModel model, OwnHandle owned) : Handle(model, owned) {}
 };
 

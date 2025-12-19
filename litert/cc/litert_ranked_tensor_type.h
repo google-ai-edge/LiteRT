@@ -31,10 +31,13 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 
+/// @file
+/// @brief Defines the C++ wrapper for a ranked tensor type.
+
 namespace litert {
 
-// Type for tensors with known dimensions. C++ equivalent to
-// LiteRtRankedTensorType.
+/// @brief A C++ wrapper for `LiteRtRankedTensorType`, representing a type for
+/// tensors with known dimensions.
 class RankedTensorType {
  public:
   RankedTensorType(ElementType element_type, Layout&& layout)
@@ -76,7 +79,7 @@ class RankedTensorType {
   class Layout layout_;
 };
 
-// Construct a ranked tensor type from c++ type.
+/// @brief Constructs a `RankedTensorType` from a C++ type and shape.
 template <typename T>
 RankedTensorType MakeRankedTensorType(
     std::initializer_list<Layout::Dim> shape) {

@@ -29,8 +29,13 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
+/// @file
+/// @brief Defines an RTTI-free replacement for `std::any` using `std::variant`
+///        and provides conversion utilities between `LiteRtAny` and `std::any`.
+
 namespace litert {
-// RTTI-free replacement for std::any using std::variant
+/// @brief An RTTI-free replacement for `std::any`, implemented using
+/// `std::variant`.
 using LiteRtVariant =
     std::variant<std::monostate,     // Empty/None type
                  bool,               // kLiteRtAnyTypeBool
@@ -158,7 +163,7 @@ Expected<T> GetReal(const LiteRtAny& any) {
 }
 }  // namespace internal
 
-// Extracts the value from a LiteRtAny object with type checking.
+/// @brief Extracts a value from a `LiteRtAny` object with type checking.
 template <class T>
 inline Expected<T> Get(const LiteRtAny& any);
 

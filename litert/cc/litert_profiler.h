@@ -23,6 +23,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
+/// @file
+/// @brief Defines the C++ wrapper for the LiteRT profiler.
+
 namespace litert {
 
 class Profiler
@@ -30,22 +33,26 @@ class Profiler
  public:
   Profiler() = default;
 
-  // Parameter `owned` indicates if the created Profiler object
-  // should take ownership of the provided `profiler` handle.
+  /// @brief Constructs a `Profiler` object.
+  /// @param profiler The `LiteRtProfiler` handle.
+  /// @param owned Indicates if the created `Profiler` object should take
+  /// ownership of the provided `profiler` handle.
   explicit Profiler(LiteRtProfiler profiler, OwnHandle owned)
       : internal::Handle<LiteRtProfiler, LiteRtDestroyProfiler>(profiler,
                                                                 owned) {}
 
-  // Get the number of events.
+  /// @brief Get the number of events.
   Expected<int> GetNumEvents() const {
     int num_events = -1;
     LITERT_RETURN_IF_ERROR(LiteRtGetNumProfilerEvents(Get(), &num_events));
     return num_events;
   };
 
-  // Get the profiled events. Caller owns the returned vector. ProfiledEventData
-  // is a struct that contains the event name, event type, start timestamp,
-  // end timestamp, and event source.
+  /// @brief Get the profiled events.
+  ///
+  /// The caller owns the returned vector. `ProfiledEventData` is a struct that
+  /// contains the event name, event type, start timestamp, end timestamp, and
+  /// event source.
   Expected<std::vector<ProfiledEventData>> GetEvents() const {
     LITERT_ASSIGN_OR_RETURN(int num_events, GetNumEvents());
     if (num_events == 0) {
@@ -58,26 +65,28 @@ class Profiler
     return events;
   }
 
-  // Reset the profiler.
+  /// @brief Reset the profiler.
   Expected<void> Reset() {
     LITERT_RETURN_IF_ERROR(LiteRtResetProfiler(Get()));
     return {};
   }
 
-  // Start profiling.
+  /// @brief Start profiling.
   Expected<void> StartProfiling() {
     LITERT_RETURN_IF_ERROR(LiteRtStartProfiler(Get()));
     return {};
   }
 
-  // Stop profiling.
+  /// @brief Stop profiling.
   Expected<void> StopProfiling() {
     LITERT_RETURN_IF_ERROR(LiteRtStopProfiler(Get()));
     return {};
   }
 
-  // Set the current event source. ProfiledEventSource is used to determine
-  // the source of the event [LiteRT, TFLite delegate, TFlite interpreter]
+  /// @brief Set the current event source.
+  ///
+  /// `ProfiledEventSource` is used to determine the source of the event
+  /// (e.g., LiteRT, TFLite delegate, TFLite interpreter).
   Expected<void> SetCurrentEventSource(ProfiledEventSource event_source) {
     LITERT_RETURN_IF_ERROR(
         LiteRtSetProfilerCurrentEventSource(Get(), event_source));

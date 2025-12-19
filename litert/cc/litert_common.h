@@ -18,12 +18,15 @@
 
 #include "litert/c/litert_common.h"
 
+/// @file
+/// @brief Defines common types and enums for the LiteRT C++ API.
+
 namespace litert {
 
 // LINT.IfChange(status_codes)
 enum class Status : int {
   kOk = kLiteRtStatusOk,
-  // Generic errors.
+  /// Generic errors.
   kErrorInvalidArgument = kLiteRtStatusErrorInvalidArgument,
   kErrorMemoryAllocationFailure = kLiteRtStatusErrorMemoryAllocationFailure,
   kErrorRuntimeFailure = kLiteRtStatusErrorRuntimeFailure,
@@ -34,25 +37,25 @@ enum class Status : int {
   kErrorWrongVersion = kLiteRtStatusErrorWrongVersion,
   kErrorUnknown = kLiteRtStatusErrorUnknown,
   kErrorAlreadyExists = kLiteRtStatusErrorAlreadyExists,
-  // Inference progression errors.
+  /// Inference progression errors.
   kCancelled = kLiteRtStatusCancelled,
-  // File and loading related errors.
+  /// File and loading related errors.
   kErrorFileIO = kLiteRtStatusErrorFileIO,
   kErrorInvalidFlatbuffer = kLiteRtStatusErrorInvalidFlatbuffer,
   kErrorDynamicLoading = kLiteRtStatusErrorDynamicLoading,
   kErrorSerialization = kLiteRtStatusErrorSerialization,
   kErrorCompilation = kLiteRtStatusErrorCompilation,
-  // IR related errors.
+  /// IR related errors.
   kErrorIndexOOB = kLiteRtStatusErrorIndexOOB,
   kErrorInvalidIrType = kLiteRtStatusErrorInvalidIrType,
   kErrorInvalidGraphInvariant = kLiteRtStatusErrorInvalidGraphInvariant,
   kErrorGraphModification = kLiteRtStatusErrorGraphModification,
-  // Tool related errors.
+  /// Tool related errors.
   kErrorInvalidToolConfig = kLiteRtStatusErrorInvalidToolConfig,
-  // Legalization related errors.
+  /// Legalization related errors.
   kLegalizeNoMatch = kLiteRtStatusLegalizeNoMatch,
   kErrorInvalidLegalization = kLiteRtStatusErrorInvalidLegalization,
-  // Transformation related errors.
+  /// Transformation related errors.
   kPatternNoMatch = kLiteRtStatusPatternNoMatch,
   kInvalidTransformation = kLiteRtStatusInvalidTransformation,
 };
@@ -68,7 +71,7 @@ enum class HwAccelerators : int {
 #endif  // __EMSCRIPTEN__
 };
 
-// Type-safe bit field for HwAccelerators.
+/// @brief A type-safe bit field for `HwAccelerators`.
 struct HwAcceleratorSet {
   int value;
 

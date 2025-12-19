@@ -23,9 +23,14 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_numerics.h"
 
+/// @file
+/// @brief Defines the C++ `ElementType` enum and related utility functions for
+/// LiteRT.
+
 namespace litert {
 
-// Data type of tensor elements. C++ equivalent to LiteRtElementType.
+/// @brief The data type of tensor elements. This is the C++ equivalent of
+/// `LiteRtElementType`.
 enum class ElementType {
   None = kLiteRtElementTypeNone,
   Bool = kLiteRtElementTypeBool,
@@ -50,7 +55,7 @@ enum class ElementType {
   TfVariant = kLiteRtElementTypeTfVariant,
 };
 
-// Get number of bytes of a single element of given type.
+/// @brief Gets the number of bytes of a single element of a given type.
 inline constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
   if (ty == ElementType::Bool)
     return ByteWidth(1);
@@ -84,7 +89,8 @@ inline constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
     return std::nullopt;
 }
 
-// Get number of bytes of a single element of given type via template.
+/// @brief Gets the number of bytes of a single element of a given type via a
+/// template parameter.
 template <ElementType Ty>
 inline constexpr ByteWidth GetByteWidth() {
   constexpr auto byte_width = GetByteWidth(Ty);
@@ -95,7 +101,7 @@ inline constexpr ByteWidth GetByteWidth() {
 template <class>
 constexpr bool dependent_false = false;  // workaround before CWG2518/P2593R1
 
-// Get the litert::ElementType associated with given C++ type.
+/// @brief Gets the `litert::ElementType` associated with a given C++ type.
 template <typename T>
 inline constexpr ElementType GetElementType() {
   static_assert(dependent_false<T>, "Uknown C++ type");

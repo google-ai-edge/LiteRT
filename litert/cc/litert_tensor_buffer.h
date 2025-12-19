@@ -46,35 +46,42 @@ typedef struct _cl_mem* cl_mem;
 typedef struct WGPUBufferImpl* WGPUBuffer;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
+/// @file
+/// @brief Defines C++ wrappers for LiteRT tensor buffers and related utilities.
+
 namespace litert {
 
-// Tensor and associated backing buffer. C++ equivalent of LiteRtTensorBuffer.
+/// @brief A C++ wrapper for `LiteRtTensorBuffer`, representing a tensor and
+/// its associated backing buffer.
 class TensorBuffer
     : public internal::Handle<LiteRtTensorBuffer, LiteRtDestroyTensorBuffer> {
  public:
   TensorBuffer() = default;
 
-  // Creates a managed TensorBuffer object in a given buffer type and size.
-  // The returned object is owned by the caller. For host memory this allocator
-  // guarantees `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT` alignment and reserves any
-  // delegate-specific padding (e.g. XNNPACK extra bytes), so callers do not
-  // need to over-allocate manually.
+  /// @brief Creates a managed `TensorBuffer` of a given buffer type and size.
+  ///
+  /// The returned object is owned by the caller. For host memory, this
+  /// allocator guarantees `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT` alignment and
+  /// reserves any delegate-specific padding (e.g., XNNPACK extra bytes), so
+  /// callers do not need to over-allocate manually.
   static Expected<TensorBuffer> CreateManaged(
       const Environment& env, TensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
 
-  // Creates a managed host memory TensorBuffer object using the
-  // default environment (if applicable). The returned object is owned by the
-  // caller.
+  /// @brief Creates a managed host memory `TensorBuffer` using the default
+  /// environment (if applicable).
+  ///
+  /// The returned object is owned by the caller.
   static Expected<TensorBuffer> CreateManagedHostMemory(
       const RankedTensorType& tensor_type, size_t buffer_size);
 
-  // Creates a TensorBuffer object that wraps the provided host memory.
-  // The provided host memory is not owned by the TensorBuffer object and must
-  // outlive the TensorBuffer object. Callers are responsible for ensuring that
-  // the pointer is aligned to at least `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT`
-  // bytes and, if a delegate such as XNNPACK needs extra padding, that the
-  // underlying allocation includes and initializes that region.
+  /// @brief Creates a `TensorBuffer` that wraps the provided host memory.
+  ///
+  /// The provided host memory is not owned by the `TensorBuffer` object and
+  /// must outlive it. Callers are responsible for ensuring that the pointer is
+  /// aligned to at least `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT` bytes and that
+  /// any required padding for delegates like XNNPACK is included and
+  /// initialized.
   static Expected<TensorBuffer> CreateFromHostMemory(
       const Environment& env, const RankedTensorType& tensor_type,
       void* host_mem_addr, size_t buffer_size);
@@ -83,11 +90,12 @@ class TensorBuffer
       const RankedTensorType& tensor_type, void* host_mem_addr,
       size_t buffer_size);
 
-  // Creates a TensorBuffer object that wraps an Android Hardware Buffer. Note
-  // that the provided AHardwareBuffer is not owned by the TensorBuffer object
-  // and must outlive the TensorBuffer object. The `ahwb_offset` parameter
-  // specifies the offset in bytes from the start of the AHardwareBuffer where
-  // the tensor data starts.
+  /// @brief Creates a `TensorBuffer` that wraps an Android Hardware Buffer.
+  ///
+  /// The provided `AHardwareBuffer` is not owned by the `TensorBuffer` and must
+  /// outlive it.
+  /// @param ahwb_offset The offset in bytes from the start of the
+  /// `AHardwareBuffer` where the tensor data begins.
   static Expected<TensorBuffer> CreateFromAhwb(
       const Environment& env, const RankedTensorType& tensor_type,
       AHardwareBuffer* ahwb, size_t ahwb_offset);
@@ -117,9 +125,11 @@ class TensorBuffer
       TensorBufferType buffer_type, void* buffer, size_t size_bytes);
 #endif  // LITERT_HAS_METAL_SUPPORT
 
-  // Creates a duplicate of the current TensorBuffer object. The returned
-  // object is reference counted so the underlying LiteRtTensorBuffer handle is
-  // not released with the destructor until the last reference is removed.
+  /// @brief Creates a duplicate of the current `TensorBuffer` object.
+  ///
+  /// The returned object is reference-counted, so the underlying
+  /// `LiteRtTensorBuffer` handle is not released until the last reference is
+  /// removed.
   Expected<TensorBuffer> Duplicate() const;
 
   litert::Expected<AHardwareBuffer*> GetAhwb() const {
@@ -236,24 +246,24 @@ class TensorBuffer
     return static_cast<enum TensorBufferType>(tensor_buffer_type);
   }
 
-  // Returns true if the tensor buffer is an OpenCL memory.
-  // Note: This function doesn't return Expected<bool> users can easily make
-  // mistakes when using it.
+  /// @brief Returns `true` if the tensor buffer is an OpenCL memory object.
+  /// @note This function does not return an `Expected<bool>` to prevent
+  /// potential misuse.
   bool IsOpenClMemory() const;
 
-  // Returns true if the tensor buffer is an WebGPU memory.
-  // Note: This function doesn't return Expected<bool> users can easily make
-  // mistakes when using it.
+  /// @brief Returns `true` if the tensor buffer is a WebGPU memory object.
+  /// @note This function does not return an `Expected<bool>` to prevent
+  /// potential misuse.
   bool IsWebGpuMemory() const;
 
-  // Returns true if the tensor buffer is an Metal memory.
-  // Note: This function doesn't return Expected<bool> users can easily make
-  // mistakes when using it.
+  /// @brief Returns `true` if the tensor buffer is a Metal memory object.
+  /// @note This function does not return an `Expected<bool>` to prevent
+  /// potential misuse.
   bool IsMetalMemory() const;
 
-  // Returns true if the tensor buffer is a Vulkan memory.
-  // Note: This function doesn't return Expected<bool> users can easily make
-  // mistakes when using it.
+  /// @brief Returns `true` if the tensor buffer is a Vulkan memory object.
+  /// @note This function does not return an `Expected<bool>` to prevent
+  /// potential misuse.
   bool IsVulkanMemory() const;
 
   Expected<RankedTensorType> TensorType() const {
@@ -272,16 +282,18 @@ class TensorBuffer
     auto t = TensorType();
     return t && *t == ::litert::RankedTensorType(type);
   }
-  // Returns the size of the underlying H/W tensor buffer. This size can be
-  // different to the PackedSize() if there is stride and padding exists.
+  /// @brief Returns the size of the underlying hardware tensor buffer.
+  ///
+  /// This size can differ from `PackedSize()` if striding and padding exist.
   Expected<size_t> Size() const {
     size_t size;
     LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferSize(Get(), &size));
     return size;
   }
 
-  // Returns the size of the tensor buffer in packed bytes. This size is used to
-  // read / write data on locked tensor buffer.
+  /// @brief Returns the size of the tensor buffer in packed bytes.
+  ///
+  /// This size is used for reading/writing data on a locked tensor buffer.
   Expected<size_t> PackedSize() const {
     size_t size;
     LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferPackedSize(Get(), &size));
@@ -306,8 +318,9 @@ class TensorBuffer
     return Event::WrapCObject(event, OwnHandle::kNo);
   }
 
-  // Set the C++ Event object for the tensor buffer.
-  // The function takes ownership of the passed Event object.
+  /// @brief Sets the C++ `Event` object for the tensor buffer.
+  ///
+  /// This function takes ownership of the provided `Event` object.
   Expected<void> SetEvent(Event&& event) {
     if (!event.IsOwned()) {
       return Error(kLiteRtStatusErrorInvalidArgument,
@@ -351,9 +364,11 @@ class TensorBuffer
     return {};
   }
 
-  // Writes data from the user provided Span<const T> to the tensor buffer.
-  // It returns an error if the provided buffer is bigger than the size of the
-  // tensor buffer.
+  /// @brief Writes data from a user-provided `absl::Span<const T>` to the
+  /// tensor buffer.
+  ///
+  /// Returns an error if the provided buffer is larger than the tensor
+  /// buffer's size.
   template <typename T>
   Expected<void> Write(absl::Span<const T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kWrite));
@@ -371,11 +386,12 @@ class TensorBuffer
     return {};
   }
 
-  // Reads data into the user provided Span<T> from the tensor buffer.
-  // If the provided buffer is smaller than the size of the tensor buffer, the
-  // data will be read up to the size of the provided buffer.
-  // It returns an error if the provided buffer is bigger than the size of the
-  // tensor buffer.
+  /// @brief Reads data from the tensor buffer into a user-provided
+  /// `absl::Span<T>`.
+  ///
+  /// If the provided buffer is smaller than the tensor buffer, data will be
+  /// read up to the size of the provided buffer. Returns an error if the
+  /// provided buffer is larger than the tensor buffer.
   template <typename T>
   Expected<void> Read(absl::Span<T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kRead));
@@ -394,18 +410,18 @@ class TensorBuffer
     return {};
   }
 
-  /// \internal  Wraps a LiteRtTensorBuffer C object in a TensorBuffer C++
+  /// @internal
+  /// @brief Wraps a `LiteRtTensorBuffer` C object in a `TensorBuffer` C++
   /// object.
-  ///
-  /// Warning: This is internal use only.
+  /// @warning This is for internal use only.
   static TensorBuffer WrapCObject(LiteRtTensorBuffer tensor_buffer,
                                   OwnHandle owned) {
     return TensorBuffer(tensor_buffer, owned);
   }
 
  private:
-  // Parameter `owned` indicates if the created TensorBuffer object should take
-  // ownership of the provided `tensor_buffer` handle.
+  /// @param owned Indicates if the created `TensorBuffer` object should take
+  /// ownership of the provided `tensor_buffer` handle.
   explicit TensorBuffer(LiteRtTensorBuffer tensor_buffer, OwnHandle owned)
       : Handle(tensor_buffer, owned) {}
 };

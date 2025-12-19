@@ -31,21 +31,22 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/internal/litert_detail.h"
 
+/// @file
+/// @brief Defines an `Expected` class for handling return values that may be
+/// an error.
+///
+/// This implementation is similar to `absl::StatusOr` or `std::expected`
+/// (C++23) but is better integrated with `LiteRtStatus` as the canonical status
+/// code.
+
 namespace litert {
 
-// An "Expected" incapsulates the result of some routine which may have an
-// unexpected result. Unexpected results in this context are a standard
-// LiteRtStatus plus extra usability data such as error messages. This is
-// similar to an absl::StatusOr or std::expected (C++23) but better integrated
-// with LiteRtStatus as the canonical status code.
-
-// C++ wrapper around LiteRtStatus code. Provides a status as well
-// as an error message.
+/// @brief A C++ wrapper for a `LiteRtStatus` code, providing a status and an
+/// error message.
 class Error {
  public:
-  // Construct Unexpected from status and optional error message.
-  //
-  // NOTE: ::litert::Status::kOk should not be passed to Unexpected.
+  /// @brief Constructs an `Error` from a status and an optional error message.
+  /// @note `::litert::Status::kOk` should not be passed.
   explicit Error(Status status, std::string message = "")
       : status_(static_cast<LiteRtStatus>(status)),
         message_(std::move(message)) {
@@ -58,9 +59,8 @@ class Error {
     ABSL_DCHECK(status != kLiteRtStatusOk);
   }
 
-  // Get the status.
-  // TODO: b/454666070 - Rename to Status() after the deprecated function is
-  // removed.
+  /// @brief Gets the status.
+  /// @todo Rename to `Status()` after the deprecated function is removed.
   constexpr Status StatusCC() const {
     return static_cast<enum Status>(status_);
   }
@@ -68,7 +68,8 @@ class Error {
   [[deprecated("Use StatusCC() instead.")]]
   constexpr LiteRtStatus Status() const { return status_; }
 
-  // Get the error message, empty string if none was attached.
+  /// @brief Gets the error message. Returns an empty string if none was
+  /// attached.
   const std::string& Message() const { return message_; }
 
   friend std::ostream& operator<<(std::ostream& stream, const Error& error) {
@@ -98,7 +99,8 @@ class Unexpected {
   constexpr explicit Unexpected(Args&&... args)
       : error_(std::forward<Args>(args)...) {}
 
-  // Allow for implicit conversion from convertible Error value inplace.
+  /// @brief Allows for implicit conversion from a convertible `Error` value
+  /// in-place.
   // NOLINTNEXTLINE(*-explicit-constructor)
   Unexpected(class Error&& e) : error_(std::move(e)) {}
 
@@ -123,23 +125,26 @@ class Unexpected {
   class Error error_;
 };
 
-// Utility for generic return values that may be a statused failure. Expected
-// stores and owns the lifetime of either an Unexpected, or a T. T may be any
-// type, primitive or non-primitive.
-//
-// No dynamic allocations occur during initialization, so the underlying T is
-// only movable (as opposed to something like "release"). Arguments should be
-// constructed in place at the time of initializing the expected if possible.
-//
-// Unexpected&& and T&& may be implicitly casted to an Expected. For example,
-//
-// Expected<Foo> Bar() {
-//   bool success = ...
-//   if (!success) {
-//     return Unexpected(kLiteRtStatus, "Bad Baz");
-//   }
-//   return Foo();
-// }
+/// @brief A utility for generic return values that may represent a failure.
+///
+/// `Expected` stores and owns the lifetime of either an `Unexpected` object or
+/// a value of type `T`. `T` can be any primitive or non-primitive type.
+///
+/// No dynamic allocations occur during initialization, so the underlying `T` is
+/// only movable (as opposed to being releasable). Arguments should be
+/// constructed in-place when initializing the `Expected` object if possible.
+///
+/// `Unexpected&&` and `T&&` can be implicitly cast to an `Expected`. For
+/// example:
+/// @code
+/// Expected<Foo> Bar() {
+///   bool success = ...
+///   if (!success) {
+///     return Unexpected(kLiteRtStatus, "Bad Baz");
+///   }
+///   return Foo();
+/// }
+/// @endcode
 template <class T>
 class Expected {
  public:
@@ -147,32 +152,31 @@ class Expected {
       std::conditional_t<std::is_reference_v<T>,
                          std::reference_wrapper<std::remove_reference_t<T>>, T>;
 
-  // The following type defs are snake case to match the standard member types.
-
+  /// @brief The following type definitions are in snake_case to match standard
+  /// member types.
   using value_type = std::decay_t<T>;
   using pointer = std::remove_reference_t<T>*;
   using const_pointer = const value_type*;
   using reference = std::remove_reference_t<T>&;
   using const_reference = const value_type&;
 
-  // Construct Expected with T inplace.
-
-  // Construct T from initializer list inplace.
+  /// @brief Constructs `T` from an initializer list in-place.
   template <class U>
   Expected(std::initializer_list<U> il) : has_value_(true), value_(il) {}
 
-  // Construct T from forwarded args inplace.
+  /// @brief Constructs `T` from forwarded arguments in-place.
   template <class... Args>
   explicit Expected(Args&&... args)
       : has_value_(true), value_(std::forward<Args>(args)...) {}
 
   // NOLINTBEGIN(*-explicit-constructor)
 
-  // Allow for implicit conversion from convertible T value inplace.
+  /// @brief Allows for implicit conversion from a convertible `T` value
+  /// in-place.
   Expected(reference t) : has_value_(true), value_(t) {}
-  // Copy constructs from a constant reference.
-  //
-  // Disabled if `T` is a constant reference.
+  /// @brief Copy-constructs from a constant reference.
+  ///
+  /// This is disabled if `T` is a constant reference.
   template <
       class U,
       class = std::enable_if_t<std::is_same_v<std::decay_t<U>, value_type>>,
@@ -180,9 +184,9 @@ class Expected {
   Expected(const U& t) : has_value_(true), value_(t) {}
   Expected(value_type&& t) : has_value_(true), value_(std::move(t)) {}
 
-  // Construct from Unexpected inplace.
-
-  // Allow for implicit conversion from Error.
+  /// @brief Constructs from an `Unexpected` object in-place.
+  ///
+  /// Allows for implicit conversion from `Error`.
   Expected(const Unexpected& err) : has_value_(false), unexpected_(err) {}
   Expected(Unexpected&& err) : has_value_(false), unexpected_(std::move(err)) {}
   Expected(const class Error& e) : has_value_(false), unexpected_(e) {}
@@ -261,7 +265,8 @@ class Expected {
     }
   }
 
-  // Observers for T value, program exits if it doesn't have one.
+  /// @brief Observers for the `T` value. The program exits if it doesn't have
+  /// one.
   const_reference Value() const& {
     CheckVal();
     if constexpr (std::is_reference_v<T>) {
@@ -280,10 +285,12 @@ class Expected {
     }
   }
 
-  // Deleted: an Expected should always be checked before accessing its value.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its value.
   reference& Value() const&& = delete;
 
-  // Deleted: an Expected should always be checked before accessing its value.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its value.
   reference& Value() && = delete;
 
   const_pointer operator->() const& {
@@ -304,23 +311,28 @@ class Expected {
     }
   }
 
-  // Deleted: an Expected should always be checked before accessing its value.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its value.
   const_pointer operator->() const&& = delete;
 
-  // Deleted: an Expected should always be checked before accessing its value.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its value.
   pointer operator->() && = delete;
 
   const_reference operator*() const& { return Value(); }
 
   reference operator*() & { return Value(); }
 
-  // Deleted: an Expected should always be checked before accessing its value.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its value.
   reference& operator*() const&& = delete;
 
-  // Deleted: an Expected should always be checked before accessing its value.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its value.
   reference& operator*() && = delete;
 
-  // Observer for Unexpected, program exits if it doesn't have one.
+  /// @brief Observer for `Unexpected`. The program exits if it doesn't have
+  /// one.
   const class Error& Error() const& {
     CheckNoVal();
     return unexpected_.Error();
@@ -331,16 +343,20 @@ class Expected {
     return unexpected_.Error();
   }
 
-  // Deleted: an Expected should always be checked before accessing its error.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its error.
   const class Error&& Error() const&& = delete;
 
-  // Deleted: an Expected should always be checked before accessing its error.
+  /// @brief Deleted: an `Expected` should always be checked before accessing
+  /// its error.
   class Error&& Error() && = delete;
 
-  // Does this expected contain a T Value. It contains an unexpected if not.
+  /// @brief Checks if this `Expected` contains a `T` value.
+  ///
+  /// If not, it contains an `Unexpected`.
   bool HasValue() const { return has_value_; }
 
-  // Convert to bool for HasValue.
+  /// @brief Converts to `bool` for `HasValue`.
   explicit operator bool() const { return HasValue(); }
 
  private:
@@ -395,22 +411,23 @@ void AbslStringify(Sink& sink, const Expected<T>& expected) {
 template <>
 class Expected<void> {
  public:
-  // Implicit construction is used to simplify returning a valid value, e.g., in
-  // "return {};"
+  /// @brief Implicit construction is used to simplify returning a valid value
+  /// (e.g., `return {};`).
   Expected() : unexpected_(std::nullopt) {}
 
   // NOLINTBEGIN(*-explicit-constructor)
 
-  // Construct from Unexpected inplace.
+  /// @brief Constructs from an `Unexpected` object in-place.
   Expected(const Unexpected& err) : unexpected_(err) {}
   Expected(Unexpected&& err) : unexpected_(std::move(err)) {}
 
-  // Allow for implicit conversion from Error.
+  /// @brief Allows for implicit conversion from `Error`.
   Expected(const Error& e) : unexpected_(e) {}
 
   // NOLINTEND(*-explicit-constructor)
 
-  // Observer for Unexpected, program exits if it doesn't have one.
+  /// @brief Observer for `Unexpected`. The program exits if it doesn't have
+  /// one.
   const class Error& Error() const& {
     CheckNoVal();
     return unexpected_->Error();
@@ -431,10 +448,12 @@ class Expected<void> {
     return std::move(unexpected_->Error());
   }
 
-  // Does this expected contain a T Value. It contains an unexpected if not.
+  /// @brief Checks if this `Expected` contains a `T` value.
+  ///
+  /// If not, it contains an `Unexpected`.
   bool HasValue() const { return !unexpected_.has_value(); }
 
-  // Convert to bool for HasValue.
+  /// @brief Converts to `bool` for `HasValue`.
   explicit operator bool() const { return HasValue(); }
 
  private:

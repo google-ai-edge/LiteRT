@@ -27,48 +27,79 @@
 
 namespace litert {
 
+/// Manages configuration options for a LiteRT Environment.
+///
+/// This class provides methods to access various options related to the LiteRT
+/// environment, such as compiler settings, dispatch libraries, and hardware
+/// acceleration configurations (e.g., OpenCL, EGL, WebGPU, Metal, Vulkan).
 class EnvironmentOptions
     : public internal::NonOwnedHandle<LiteRtEnvironmentOptions> {
  public:
-  // EnvironmentOptions are always owned by some environment, this can never be
-  // an owning handle.
+  /// Constructs an EnvironmentOptions instance.
+  /// @note EnvironmentOptions are always owned by an environment and this class
+  /// only holds a non-owning handle.
   explicit EnvironmentOptions(LiteRtEnvironmentOptions env)
       : NonOwnedHandle(env) {}
 
+  /// Tags for environment options. These tags are used to identify and retrieve
+  /// specific configuration settings.
   enum class Tag : int {
+    /// Directory for compiler plugin libraries.
     kCompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,
+    /// Directory for dispatch libraries.
     kDispatchLibraryDir = kLiteRtEnvOptionTagDispatchLibraryDir,
+    /// OpenCL device ID.
     kOpenClDeviceId = kLiteRtEnvOptionTagOpenClDeviceId,
+    /// OpenCL platform ID.
     kOpenClPlatformId = kLiteRtEnvOptionTagOpenClPlatformId,
+    /// OpenCL context.
     kOpenClContext = kLiteRtEnvOptionTagOpenClContext,
+    /// OpenCL command queue.
     kOpenClCommandQueue = kLiteRtEnvOptionTagOpenClCommandQueue,
+    /// EGL display.
     kEglDisplay = kLiteRtEnvOptionTagEglDisplay,
+    /// EGL context.
     kEglContext = kLiteRtEnvOptionTagEglContext,
+    /// WebGPU device.
     kWebGpuDevice = kLiteRtEnvOptionTagWebGpuDevice,
+    /// WebGPU queue.
     kWebGpuQueue = kLiteRtEnvOptionTagWebGpuQueue,
+    /// Metal device.
     kMetalDevice = kLiteRtEnvOptionTagMetalDevice,
+    /// Metal command queue.
     kMetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
-    // WARNING: Vulkan support is experimental.
+    /// Vulkan environment (experimental).
     kVulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
+    /// Vulkan command pool (experimental).
     kVulkanCommandPool = kLiteRtEnvOptionTagVulkanCommandPool,
+    /// Callback to be invoked on GPU environment destruction.
     kCallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+    /// User data for the GPU environment destruction callback.
     kCallbackUserDataOnGpuEnvDestroy =
         kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+    /// Magic number configurations.
     kMagicNumberConfigs = kLiteRtEnvOptionTagMagicNumberConfigs,
+    /// Magic number verifications.
     kMagicNumberVerifications = kLiteRtEnvOptionTagMagicNumberVerifications,
+    /// Directory for the compiler cache.
     kCompilerCacheDir = kLiteRtEnvOptionTagCompilerCacheDir,
-    // Singleton ML Drift WebGPU/Dawn instance required for shared libraries not
-    // to create their own instances.
+    /// Singleton ML Drift WebGPU/Dawn instance. Required for shared libraries
+    /// to prevent them from creating their own instances.
     kWebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
-    // Dawn procedure table pointer for shared libraries to populate their
-    // tables with the shared procedures instead of their own procedures.
+    /// Dawn procedure table pointer. This allows shared libraries to use the
+    /// shared procedures instead of their own.
     kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
   };
 
+  /// Retrieves the value of an option specified by a tag.
+  /// @param tag The tag of the option to retrieve.
+  /// @return An `Expected` object containing the option value if successful,
+  /// or an error if the option is not found or the handle is null.
   Expected<LiteRtVariant> GetOption(Tag tag) const {
     return GetOption(static_cast<LiteRtEnvOptionTag>(tag));
   }
 
+  /// @deprecated Use `GetOption(Tag)` instead.
   [[deprecated("Use GetOption(Tag) instead.")]]
   Expected<LiteRtVariant> GetOption(LiteRtEnvOptionTag tag) const {
     if (Get() == nullptr) {
