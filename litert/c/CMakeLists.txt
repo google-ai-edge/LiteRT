@@ -32,7 +32,7 @@ set(LITERT_C_API_SOURCES
     litert_opaque_options.cc
     litert_options.cc
     litert_profiler.cc
-    litert_rewriter.cc
+    litert_builder.cc
     litert_tensor_buffer.cc
     litert_tensor_buffer_requirements.cc
 )
@@ -108,7 +108,7 @@ set(LITERT_C_HEADERS
     litert_compiler_plugin.h
     litert_dispatch.h
     litert_dispatch_delegate.h
-    litert_rewriter.h
+    litert_builder.h
 )
 
 

@@ -24,7 +24,7 @@ namespace {
 TEST(ExampleTransformationTest, SimpleAddOpToMulOpTransformation) {
   // Create a subgraph with an add op and a mul op.
   LiteRtSubgraphT subgraph;
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
   LiteRtOpT& add_op = subgraph.EmplaceOp();
   auto& add_op_input_tensor = subgraph.EmplaceTensor();
   auto& mul_op_output_tensor = subgraph.EmplaceTensor();
@@ -33,10 +33,10 @@ TEST(ExampleTransformationTest, SimpleAddOpToMulOpTransformation) {
   internal::AttachOutput(&mul_op_output_tensor, add_op);
 
   // Call the transformation.
-  SimpleAddOpToMulOpTransformation(&rewriter, &add_op);
+  SimpleAddOpToMulOpTransformation(&builder, &add_op);
 
   // Apply the changes.
-  rewriter.ApplyChanges(&subgraph);
+  builder.ApplyChanges(&subgraph);
 
   // Verify the changes.
   EXPECT_EQ(subgraph.Ops().size(), 1);

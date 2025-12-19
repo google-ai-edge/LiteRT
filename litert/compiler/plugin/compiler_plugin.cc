@@ -402,15 +402,15 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
         }
         LITERT_LOG(LITERT_DEBUG, "Matching pattern for op: %d", op->OpCode());
         for (const auto& transformation : transformations_) {
-          LiteRtRewriterT rewriter;
+          LiteRtBuilderT builder;
           LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
                      transformation.name);
           // Call the function pointer.
-          if (transformation.pattern(&rewriter, op) == kLiteRtStatusOk) {
+          if (transformation.pattern(&builder, op) == kLiteRtStatusOk) {
             LITERT_LOG(LITERT_DEBUG, "Matched pattern '%s'",
                        transformation.name);
 
-            rewriter.ApplyChanges(subgraph);
+            builder.ApplyChanges(subgraph);
             subgraph_modified = true;
             // Break from the inner transformation loop since the graph changed.
             break;

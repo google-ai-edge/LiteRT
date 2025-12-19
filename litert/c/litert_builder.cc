@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// #include "litert/core/model/rewriter.h"
-#include "litert/c/litert_rewriter.h"
+#include "litert/c/litert_builder.h"
 
 #include <cstdint>
 #include <memory>
@@ -33,11 +32,11 @@ extern "C" {
 #endif
 
 //
-// Rewriter
+// Builder
 //
 
-LiteRtStatus LiteRtRewriterBuildTensor(
-    LiteRtRewriter rewriter, LiteRtTensorTypeId tensor_type_id,
+LiteRtStatus LiteRtBuilderBuildTensor(
+    LiteRtBuilder builder, LiteRtTensorTypeId tensor_type_id,
     LiteRtRankedTensorType ranked_tensor_type,
     LiteRtUnrankedTensorType unranked_tensor_type, LiteRtWeights weights,
     LiteRtQuantizationTypeId quantization_type_id,
@@ -93,36 +92,35 @@ LiteRtStatus LiteRtRewriterBuildTensor(
     weights_t.SetBufferId(buffer_id);
     weights_t.SetBufferManager(buffer_manager);
   } else {
-    // Set the buffer manager to nullptr, this allows the internal rewriter to
+    // Set the buffer manager to nullptr, this allows the internal builder to
     // identify this is a null weights.
     weights_t.SetBufferManager(nullptr);
   }
 
   *new_tensor =
-      &rewriter->BuildTensor(weights_t, quantization, tensor_type, name);
+      &builder->BuildTensor(weights_t, quantization, tensor_type, name);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtRewriterBuildWeights(LiteRtRewriter rewriter,
-                                        const uint8_t* data,
-                                        LiteRtParamIndex size,
-                                        LiteRtTensor tensor,
+LiteRtStatus LiteRtBuilderBuildWeights(LiteRtBuilder builder,
+                                       const uint8_t* data,
+                                       LiteRtParamIndex size,
+                                       LiteRtTensor tensor,
 
-                                        LiteRtWeights* new_weights) {
-  if (rewriter == nullptr || tensor == nullptr) {
+                                       LiteRtWeights* new_weights) {
+  if (builder == nullptr || tensor == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *new_weights = &rewriter->BuildWeights(data, size, tensor);
+  *new_weights = &builder->BuildWeights(data, size, tensor);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtRewriterBuildOp(LiteRtRewriter rewriter,
-                                   LiteRtOpCode op_code,
-                                   LiteRtParamIndex num_inputs,
-                                   LiteRtTensor* inputs,
-                                   LiteRtParamIndex num_outputs,
-                                   LiteRtTensor* outputs, LiteRtOp* new_op) {
-  if (rewriter == nullptr) {
+LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
+                                  LiteRtParamIndex num_inputs,
+                                  LiteRtTensor* inputs,
+                                  LiteRtParamIndex num_outputs,
+                                  LiteRtTensor* outputs, LiteRtOp* new_op) {
+  if (builder == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -143,28 +141,26 @@ LiteRtStatus LiteRtRewriterBuildOp(LiteRtRewriter rewriter,
     output_tensors.push_back(outputs[i]);
   }
 
-  *new_op = &rewriter->BuildOp(op_code, input_tensors, output_tensors);
+  *new_op = &builder->BuildOp(op_code, input_tensors, output_tensors);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtRewriterEraseOp(LiteRtRewriter rewriter,
-                                   LiteRtOp op_to_erase) {
-  if (rewriter == nullptr || op_to_erase == nullptr) {
+LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase) {
+  if (builder == nullptr || op_to_erase == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  rewriter->EraseOp(op_to_erase);
+  builder->EraseOp(op_to_erase);
 
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtRewriterBuildAddOpOption(LiteRtRewriter rewriter,
-                                            LiteRtOp op,
-                                            uint32_t* fused_activation) {
-  if (rewriter == nullptr || op == nullptr) {
+LiteRtStatus LiteRtBuilderBuildAddOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                           uint32_t* fused_activation) {
+  if (builder == nullptr || op == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!rewriter->IsOpAllocated(op)) {
+  if (!builder->IsOpAllocated(op)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (op->OpCode() != kLiteRtOpCodeTflAdd) {

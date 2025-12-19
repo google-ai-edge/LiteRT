@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_REWRITER_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_REWRITER_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_
 
-// Model Rewriter. C++ equivalent of LiteRtRewriter.
+// Model Builder. C++ equivalent of LiteRtBuilder.
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -23,10 +23,10 @@
 #include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -90,10 +90,10 @@ class RankedTensorSpecBuilder {
   std::optional<std::string> tensor_name_;
 };
 
-class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
+class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
  public:
-  explicit Rewriter(LiteRtRewriter rewriter)
-      : internal::NonOwnedHandle<LiteRtRewriter>(rewriter) {}
+  explicit Builder(LiteRtBuilder builder)
+      : internal::NonOwnedHandle<LiteRtBuilder>(builder) {}
   // For ranked tensors.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
 
@@ -104,7 +104,7 @@ class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
     const uint8_t* data_uint8 = reinterpret_cast<const uint8_t*>(data.data());
     size_t size_uint8 = data.size() * sizeof(T);
     LiteRtWeights weights;
-    internal::AssertOk(LiteRtRewriterBuildWeights, Get(), data_uint8,
+    internal::AssertOk(LiteRtBuilderBuildWeights, this->Get(), data_uint8,
                        size_uint8, tensor.Get(), &weights);
     return Weights(weights);
   }
@@ -128,17 +128,17 @@ class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
       return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
     options.op = op.Get();
-    options.SetOpOptions(Get());
+    options.SetOpOptions(this->Get());
 
     return Expected<void>();
   }
 
   // Record the op to be erased.
   void EraseOp(Op& op) const {
-    internal::AssertOk(LiteRtRewriterEraseOp, Get(), op.Get());
+    internal::AssertOk(LiteRtBuilderEraseOp, this->Get(), op.Get());
   }
 };
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_REWRITER_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_

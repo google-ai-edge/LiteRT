@@ -174,7 +174,7 @@ struct AddOptions : public OpOptions {
   LiteRtOp op;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
-  Expected<void> SetOpOptions(LiteRtRewriter rewriter);
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 // Struct to hold LiteRt BatchMatmul op.

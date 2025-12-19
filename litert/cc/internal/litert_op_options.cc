@@ -17,11 +17,11 @@
 #include <cstdint>
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "litert/c/litert_builder.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/c/litert_rewriter.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -86,9 +86,9 @@ LiteRtStatus AddOptions::InitFromOp(LiteRtOp op) {
   return kLiteRtStatusOk;
 }
 
-Expected<void> AddOptions::SetOpOptions(LiteRtRewriter rewriter) {
+Expected<void> AddOptions::SetOpOptions(LiteRtBuilder builder) {
   LITERT_RETURN_IF_ERROR(
-      LiteRtRewriterBuildAddOpOption(rewriter, op, &fused_activation_function));
+      LiteRtBuilderBuildAddOpOption(builder, op, &fused_activation_function));
   return Expected<void>();
 }
 

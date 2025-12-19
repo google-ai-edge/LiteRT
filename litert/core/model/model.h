@@ -842,22 +842,22 @@ class LiteRtSignatureT {
 // main subgraph when no explicit signatures have been authored.
 LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph);
 
-// Rewriter (Experimental feature)
+// Builder (Experimental feature)
 
-// The LiteRtRewriterT class provides an interface to build and modify
+// The LiteRtBuilderT class provides an interface to build and modify
 // LiteRtSubgraphT instances in a transactional manner. It allows for the
 // creation of new tensors and operators, cloning existing ones, and marking
-// operators for erasure. Changes are accumulated within the rewriter and
+// operators for erasure. Changes are accumulated within the builder and
 // applied to a target subgraph only when ApplyChanges() is called. This ensures
 // atomic updates to the graph structure.
 
-class LiteRtRewriterT {
+class LiteRtBuilderT {
  public:
-  LiteRtRewriterT() = default;
-  LiteRtRewriterT(const LiteRtRewriterT&) = delete;
-  LiteRtRewriterT(LiteRtRewriterT&&) = default;
-  LiteRtRewriterT& operator=(const LiteRtRewriterT&) = delete;
-  LiteRtRewriterT& operator=(LiteRtRewriterT&&) = default;
+  LiteRtBuilderT() = default;
+  LiteRtBuilderT(const LiteRtBuilderT&) = delete;
+  LiteRtBuilderT(LiteRtBuilderT&&) = default;
+  LiteRtBuilderT& operator=(const LiteRtBuilderT&) = delete;
+  LiteRtBuilderT& operator=(LiteRtBuilderT&&) = default;
 
   // Get the subgraph that is being rewritten.
   LiteRtSubgraphT& Subgraph() { return subgraph_; }
@@ -869,26 +869,26 @@ class LiteRtRewriterT {
   LiteRtWeightsT& BuildWeights(const uint8_t* data, size_t size,
                                LiteRtTensor tensor);
 
-  // Builds a new LiteRt tensor owned by the rewriter.
+  // Builds a new LiteRt tensor owned by the builder.
   LiteRtTensorT& BuildTensor(const LiteRtWeightsT& weights,
                              Quantization quantization, TensorType tensor_type,
                              std::optional<std::string> name = std::nullopt);
 
-  // Builds a new LiteRt tensor owned by the rewriter, clone of src.
+  // Builds a new LiteRt tensor owned by the builder, clone of src.
   LiteRtTensorT& BuildTensor(const LiteRtTensorT& src);
 
-  // Builds a new LiteRt op owned by the rewriter.
+  // Builds a new LiteRt op owned by the builder.
   LiteRtOpT& BuildOp(LiteRtOpCode code, std::vector<LiteRtTensor> inputs,
                      std::vector<LiteRtTensor> outputs);
 
-  // Builds a new LiteRt op owned by the rewriter, clone of src.
+  // Builds a new LiteRt op owned by the builder, clone of src.
   LiteRtOpT& BuildOp(LiteRtOpT& src, std::vector<LiteRtTensor> inputs,
                      std::vector<LiteRtTensor> outputs);
 
-  // Checks if op is allocated in rewriter.
+  // Checks if op is allocated in builder.
   bool IsOpAllocated(LiteRtOp op) const { return allocated_ops_.contains(op); }
 
-  // Checks if tensor is allocated in rewriter.
+  // Checks if tensor is allocated in builder.
   bool IsTensorAllocated(LiteRtTensor tensor) const {
     return allocated_tensors_.contains(tensor);
   }
@@ -898,7 +898,7 @@ class LiteRtRewriterT {
   void EraseOp(LiteRtOp opToErase);
 
   // Applies all changes to the given subgraph, that was recorded by the
-  // rewriter.
+  // builder.
   //
   // Note: This internal function is intentionally not exposed to the public
   // API, to avoid users from accidentally applying changes mid-computation.

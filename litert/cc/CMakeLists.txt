@@ -18,7 +18,7 @@ cmake_minimum_required(VERSION 3.20)
 # Core C++ API library
 add_library(litert_cc_api STATIC
     internal/litert_op_options.cc
-    internal/litert_rewriter.cc
+    internal/litert_builder.cc
     internal/litert_shared_library.cc
     internal/litert_tensor_buffer_utils.cc
     internal/litert_extended_model.cc
@@ -61,7 +61,7 @@ set(LITERT_CC_HEADERS
     internal/litert_numerics.h
     internal/litert_op_options.h
     internal/litert_platform_support.h
-    internal/litert_rewriter.h
+    internal/litert_builder.h
     internal/litert_rng.h
     internal/litert_shared_library.h
     internal/litert_source_location.h

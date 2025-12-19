@@ -198,20 +198,20 @@ LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {
   return res;
 }
 
-LiteRtWeightsT& LiteRtRewriterT::BuildWeights(const uint8_t* data, size_t size,
-                                              LiteRtTensor tensor) {
+LiteRtWeightsT& LiteRtBuilderT::BuildWeights(const uint8_t* data, size_t size,
+                                             LiteRtTensor tensor) {
   ABSL_DCHECK(tensor != nullptr) << "Tensor is null";
   ABSL_DCHECK(IsTensorAllocated(tensor))
-      << "Tensor is not built by the rewriter";
+      << "Tensor is not built by the builder";
   ::litert::OwningBufferRef<uint8_t> weights_buffer(data, size);
   SetWeightsFromOwnedBuffer(tensor->Weights(), std::move(weights_buffer));
   return tensor->Weights();
 }
 
-LiteRtTensorT& LiteRtRewriterT::BuildTensor(const LiteRtWeightsT& weights,
-                                            Quantization quantization,
-                                            TensorType tensor_type,
-                                            std::optional<std::string> name) {
+LiteRtTensorT& LiteRtBuilderT::BuildTensor(const LiteRtWeightsT& weights,
+                                           Quantization quantization,
+                                           TensorType tensor_type,
+                                           std::optional<std::string> name) {
   LiteRtTensorT& tensor = subgraph_.EmplaceTensor();
   tensor.SetType(tensor_type);
   tensor.SetQarams(quantization);
@@ -230,18 +230,18 @@ LiteRtTensorT& LiteRtRewriterT::BuildTensor(const LiteRtWeightsT& weights,
   return tensor;
 }
 
-LiteRtTensorT& LiteRtRewriterT::BuildTensor(const LiteRtTensorT& src) {
+LiteRtTensorT& LiteRtBuilderT::BuildTensor(const LiteRtTensorT& src) {
   return BuildTensor(src.Weights(), src.Qparams(), src.Type(),
                      std::string(src.Name()));
 }
 
-LiteRtOpT& LiteRtRewriterT::BuildOp(LiteRtOpCode code,
-                                    std::vector<LiteRtTensor> inputs,
-                                    std::vector<LiteRtTensor> outputs) {
+LiteRtOpT& LiteRtBuilderT::BuildOp(LiteRtOpCode code,
+                                   std::vector<LiteRtTensor> inputs,
+                                   std::vector<LiteRtTensor> outputs) {
   LiteRtOpT& op = subgraph_.EmplaceOp();
   op.SetOpCode(code);
   // Only use AttachInput/AttachOutput for tensors that are allocated in the
-  // rewriter.
+  // builder.
   for (const LiteRtTensor& input : inputs) {
     ABSL_DCHECK(input != nullptr) << "Input tensor is null";
     if (IsTensorAllocated(input)) {
@@ -265,18 +265,18 @@ LiteRtOpT& LiteRtRewriterT::BuildOp(LiteRtOpCode code,
   return op;
 }
 
-LiteRtOpT& LiteRtRewriterT::BuildOp(LiteRtOpT& src,
-                                    std::vector<LiteRtTensor> inputs,
-                                    std::vector<LiteRtTensor> outputs) {
+LiteRtOpT& LiteRtBuilderT::BuildOp(LiteRtOpT& src,
+                                   std::vector<LiteRtTensor> inputs,
+                                   std::vector<LiteRtTensor> outputs) {
   return BuildOp(src.OpCode(), inputs, outputs);
 }
 
-void LiteRtRewriterT::EraseOp(LiteRtOp opToErase) {
+void LiteRtBuilderT::EraseOp(LiteRtOp opToErase) {
   ABSL_DCHECK(opToErase != nullptr) << "Op to erase is null";
   erases_.insert(opToErase);
 }
 
-void LiteRtRewriterT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
+void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
   // Remove all ops that are marked for erases.
   for (LiteRtOp op : erases_) {
     Drop(*op);
@@ -286,7 +286,7 @@ void LiteRtRewriterT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
   DCE(subgraph_);
 
   // Recover the graph connectivity after transferring, for inputs and
-  // outputs of the rewriter subgraph.
+  // outputs of the builder subgraph.
   auto const is_a_io_tensor = [](const LiteRtTensor& tensor,
                                  const std::vector<LiteRtTensor>& io_Tensors) {
     return std::any_of(

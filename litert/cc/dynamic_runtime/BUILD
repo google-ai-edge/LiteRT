@@ -45,7 +45,7 @@ LITERT_C_API_DEPS = [
     "//litert/c/internal:litert_logging",
     "//litert/c:litert_metrics",
     "//litert/c:litert_model",
-    "//litert/c:litert_rewriter",
+    "//litert/c:litert_builder",
     "//litert/c:litert_model_types",
     "//litert/c:litert_op_code",
     "//litert/c:litert_op_options",
@@ -237,9 +237,9 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_rewriter",
-    srcs = ["//litert/cc/internal:litert_rewriter.cc"],
-    hdrs = ["//litert/cc/internal:litert_rewriter.h"],
+    name = "litert_builder",
+    srcs = ["//litert/cc/internal:litert_builder.cc"],
+    hdrs = ["//litert/cc/internal:litert_builder.h"],
     visibility = [
         "//litert:litert_public",
     ],

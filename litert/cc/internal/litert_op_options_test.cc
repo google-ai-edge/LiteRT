@@ -681,13 +681,13 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
 }
 
 TEST(OpOptionsTest, TestSetAddOpOptionsSuccess) {
-  LiteRtRewriterT rewriter;
-  auto& op = rewriter.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
   {
     AddOptions options = {};
     options.fused_activation_function = kActivationFunctionTypeRelu;
     options.op = &op;
-    options.SetOpOptions(&rewriter);
+    options.SetOpOptions(&builder);
   }
   auto res = GetOptionsAs<AddOptions>(&op);
   ASSERT_TRUE(res);

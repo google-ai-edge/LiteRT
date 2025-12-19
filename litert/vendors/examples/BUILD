@@ -94,8 +94,8 @@ litert_bin(
         ":example_common",
         ":example_transformations",
         ":litert_compiler_plugin_c_api",
+        "//litert/c:litert_builder",
         "//litert/c:litert_op_options",
-        "//litert/c:litert_rewriter",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
@@ -298,8 +298,8 @@ cc_library(
     hdrs = ["example_transformations.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc/dynamic_runtime:litert_builder",
         "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_rewriter",
     ],
 )
 

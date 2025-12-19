@@ -353,8 +353,8 @@ cc_test(
 )
 
 cc_test(
-    name = "rewriter_test",
-    srcs = ["rewriter_test.cc"],
+    name = "builder_test",
+    srcs = ["builder_test.cc"],
     deps = [
         ":buffer_manager",
         ":model",

@@ -374,12 +374,12 @@ cc_library(
     hdrs = ["litert_op_options.h"],
     visibility = internal_static_library_visibility,
     deps = [
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
-        "//litert/c:litert_rewriter",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
@@ -411,19 +411,19 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_rewriter",
-    srcs = ["litert_rewriter.cc"],
-    hdrs = ["litert_rewriter.h"],
+    name = "litert_builder",
+    srcs = ["litert_builder.cc"],
+    hdrs = ["litert_builder.h"],
     visibility = internal_static_library_visibility,
     deps = [
         ":litert_detail",
         ":litert_extended_model",
         ":litert_handle",
         ":litert_op_options",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_rewriter",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/cc:litert_ranked_tensor_type",
@@ -432,12 +432,12 @@ cc_library(
 )
 
 cc_test(
-    name = "litert_rewriter_test",
-    srcs = ["litert_rewriter_test.cc"],
+    name = "litert_builder_test",
+    srcs = ["litert_builder_test.cc"],
     deps = [
+        ":litert_builder",
         ":litert_extended_model",
         ":litert_op_options",
-        ":litert_rewriter",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_op_code",

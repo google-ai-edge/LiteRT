@@ -560,9 +560,9 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_rewriter",
-    srcs = ["litert_rewriter.cc"],
-    hdrs = ["litert_rewriter.h"],
+    name = "litert_builder",
+    srcs = ["litert_builder.cc"],
+    hdrs = ["litert_builder.h"],
     deps = [
         ":litert_common",
         ":litert_model",
@@ -575,14 +575,14 @@ cc_library(
 )
 
 cc_test(
-    name = "litert_rewriter_test",
-    srcs = ["litert_rewriter_test.cc"],
+    name = "litert_builder_test",
+    srcs = ["litert_builder_test.cc"],
     deps = [
+        ":litert_builder",
         ":litert_common",
         ":litert_model",
         ":litert_op_code",
         ":litert_op_options",
-        ":litert_rewriter",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
@@ -619,7 +619,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_op_options",
     ":litert_opaque_options",
     ":litert_profiler",
-    ":litert_rewriter",
+    ":litert_builder",
     ":litert_tensor_buffer",
     "//litert/c/internal:litert_accelerator_registration",
     "//litert/c/internal:litert_accelerator",
