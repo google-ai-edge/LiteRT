@@ -524,7 +524,8 @@ ThrStatus thrSqAttachScratchPadBuffer(ThrContext* context,
 //                                process's virtual address space.
 //  - kThrBufferTypeAHardwareBuffer -> pointer to `AHardwareBuffer` struct.
 //  - kThrBufferTypeFastRpcMem -> pointer returned from a call to `RpcMemAlloc`.
-//  - kThrBufferTypeDmaBuf -> file descriptor that refers to a dma-buf.
+//  - kThrBufferTypeDmaBuf -> pointer to file descriptor that refers to a
+//                            dma-buf.
 //
 // `size` is the size of `buffer`s underlying memory in bytes. It can be
 // set to 0 when `type == kThrBufferTypeAHardwareBuffer`, which will register
@@ -542,6 +543,12 @@ inline ThrStatus thrRegisterBufferAhwb(ThrContext* context,
                                        ThrBufferHandle* handle) {
   return thrRegisterBuffer(context, kThrBufferTypeAHardwareBuffer, ahwb,
                            /*size=*/0, handle);
+}
+
+// A variant of `thrRegisterBuffer` specialized for `dma-buf`s.
+inline ThrStatus thrRegisterBufferDmaBuf(ThrContext* context, int fd,
+                                         size_t size, ThrBufferHandle* handle) {
+  return thrRegisterBuffer(context, kThrBufferTypeDmaBuf, &fd, size, handle);
 }
 
 // A variant of `thrRegisterBuffer` that allows for specifying a non-zero
@@ -563,6 +570,14 @@ inline ThrStatus thrRegisterBufferAhwbWithOffset(ThrContext* context,
   return thrRegisterBufferWithOffset(context, kThrBufferTypeAHardwareBuffer,
                                      ahwb, offset,
                                      /*size=*/0, handle);
+}
+
+// A variant of `thrRegisterBufferWithOffset` specialized for `dma-buf`s.
+inline ThrStatus thrRegisterBufferDmaBufWithOffset(ThrContext* context, int fd,
+                                                   size_t offset, size_t size,
+                                                   ThrBufferHandle* handle) {
+  return thrRegisterBufferWithOffset(context, kThrBufferTypeDmaBuf, &fd, offset,
+                                     size, handle);
 }
 
 // Unregisters the buffer associated with `handle` from the given `ThrContext`.
