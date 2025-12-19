@@ -143,6 +143,12 @@ void Options::SetGraphPriority(GraphPriority graph_priority) {
   graph_priority_ = graph_priority;
 }
 
+absl::string_view Options::GetSaverOutputDir() const { return saver_output_dir_; }
+
+void Options::SetSaverOutputDir(absl::string_view saver_output_dir) {
+  saver_output_dir_ = saver_output_dir;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -161,7 +167,8 @@ DlcDir: %s\n\
 VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n\
-GraphPriority: %d\n";  // NOLINT
+GraphPriority: %d\n\
+SaverOutputDir: %s\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
@@ -170,7 +177,7 @@ GraphPriority: %d\n";  // NOLINT
                          enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
                          htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
                          dlc_dir_, vtcm_size_, num_hvx_threads_,
-                         optimization_level_, graph_priority_);
+                         optimization_level_, graph_priority_, saver_output_dir_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }
