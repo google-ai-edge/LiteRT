@@ -260,6 +260,12 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
           "QNN graph priority, If the option is set to 'default', the "
           "QNN_PRIORITY_DEFAULT (Equal to QNN_PRIORITY_NORMAL) will be used.");
 
+ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
+          "Saver output directory. If provided, you can obtain saver_output.c "
+          "and params.bin. Saver records all QNN API calls into files which "
+          "can be replayed on any QNN backend. See Qualcomm "
+          "AI Runtime (QAIRT) SDK document for more details.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -457,6 +463,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
+
+  const std::string saver_output_dir =
+      absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
+  opts.SetSaverOutputDir(saver_output_dir);
 
   return {};
 }
