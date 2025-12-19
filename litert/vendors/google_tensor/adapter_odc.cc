@@ -90,11 +90,12 @@ Expected<EdgeTpuCompilerOptions> CreateEdgeTpuCompilerOptions(
   return edgetpu_compiler_options;
 }
 
-Expected<void> AdapterOdc::Compile(
-    const char* tfl_buffer_data, size_t tfl_buffer_size,
-    const char* soc_model_data, size_t soc_model_size,
-    const char* options, size_t options_size, char*** compiled_code_data,
-    size_t** compiled_code_sizes, size_t* num_bytecodes) {
+Expected<void> AdapterOdc::Compile(const char* tfl_buffer_data,
+                                   size_t tfl_buffer_size, const char* options,
+                                   size_t options_size,
+                                   char*** compiled_code_data,
+                                   size_t** compiled_code_sizes,
+                                   size_t* num_bytecodes) {
   LITERT_ASSIGN_OR_RETURN(auto edgetpu_compiler_options,
                           CreateEdgeTpuCompilerOptions(options, options_size));
   std::string serialized_options;
