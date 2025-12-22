@@ -39,6 +39,7 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
+  std::vector<size_t> skip_op_ids;
   std::string ir_json_dir;
   std::string dlc_dir;
   std::uint32_t vtcm_size = 0;
@@ -244,6 +245,29 @@ LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
   }
   *ids = options->dump_tensor_ids.data();
   *number_of_ids = options->dump_tensor_ids.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetSkipOpIds(
+    LiteRtQualcommOptions options, const size_t* ids,
+    std::uint32_t number_of_ids) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (size_t i = 0; i < number_of_ids; i++) {
+    options->skip_op_ids.emplace_back(ids[i]);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetSkipOpIds(
+    LiteRtQualcommOptions options, size_t** ids,
+    std::uint32_t* number_of_ids) {
+  if (ids == nullptr || number_of_ids == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *ids = options->skip_op_ids.data();
+  *number_of_ids = options->skip_op_ids.size();
   return kLiteRtStatusOk;
 }
 

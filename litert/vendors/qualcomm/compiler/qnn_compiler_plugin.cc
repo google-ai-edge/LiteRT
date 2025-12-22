@@ -288,7 +288,12 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     qnn_manager = compiler_plugin->QNN();
   }
 
-  for (const auto& op : graph.Ops()) {
+  auto ids_to_skip = compiler_plugin->Options().GetSkipOpIds();
+  std::unordered_set<size_t> ids_to_skip_set(ids_to_skip.begin(), ids_to_skip.end());
+  auto ops = graph.Ops();
+  for (auto it = ops.begin(); it != ops.end(); ++it) {
+    const auto& op = *it;
+    std::size_t op_id = std::distance(std::begin(ops), it);
     // default constructed, won't add tensor to QNN
     ::qnn::TensorPool tensor_pool;
     std::vector<::qnn::TensorWrapperRef> input_tensors;
@@ -322,6 +327,15 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     if (op_wrappers.empty()) {
       continue;
     }
+
+    if (ids_to_skip_set.count(op_id)) {
+      LITERT_LOG(LITERT_INFO,
+                 "Skipping op id: %d, code: %d when compiling the model. It "
+                 "will run on CPU instead of Qualcomm chips.",
+                 op_id, op.Code());
+      continue;
+    }
+
     if (SkipValidationOfQuantizeOp(op) ||
         std::all_of(op_wrappers.begin(), op_wrappers.end(),
                     [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
