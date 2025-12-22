@@ -15,6 +15,7 @@
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -105,6 +106,10 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
 ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
+
+ABSL_FLAG(std::vector<std::string>, qualcomm_skip_op_ids, {},
+          "Operator ids to skip delegation to Qualcomm AI Engine Direct. "
+          "Comma-separated list of string.");
 
 namespace litert::qualcomm {
 
@@ -352,6 +357,32 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
 
 // NOLINTEND(*alien-types*)
 
+namespace {
+template <typename T>
+T ParseStr(const std::string& s) {
+  T value = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
+
+  if (ec == std::errc()) {
+    // No error; ensure we consumed the whole string (reject trailing garbage)
+    if (ptr != s.data() + s.size()) {
+      throw std::invalid_argument("Trailing characters in integer: \"" + s +
+                                  "\"");
+    }
+    return value;
+  }
+
+  if (ec == std::errc::invalid_argument) {
+    throw std::invalid_argument("Invalid integer: \"" + s + "\"");
+  }
+  if (ec == std::errc::result_out_of_range) {
+    throw std::out_of_range("Integer out of range: \"" + s + "\"");
+  }
+  // Fallback (shouldn't normally happen)
+  throw std::runtime_error("Unexpected parse error for: \"" + s + "\"");
+}
+}
+
 namespace litert::qualcomm {
 
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
@@ -383,6 +414,15 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
                   int32_ids.push_back(std::stoi(id));
                 });
   opts.SetDumpTensorIds(int32_ids);
+
+  const auto skip_op_ids = absl::GetFlag(FLAGS_qualcomm_skip_op_ids);
+  std::vector<size_t> int_skip_op_ids;
+  int_skip_op_ids.reserve(skip_op_ids.size());
+  std::transform(skip_op_ids.begin(), skip_op_ids.end(),
+                 std::back_inserter(int_skip_op_ids),
+                 [](const std::string& id) { return ParseStr<size_t>(id); });
+
+  opts.SetSkipOpIds(int_skip_op_ids);
 
   const std::string ir_json_dir = absl::GetFlag(FLAGS_qualcomm_ir_json_dir);
   opts.SetIrJsonDir(ir_json_dir);

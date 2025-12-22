@@ -4,6 +4,7 @@
 #include "litert/vendors/qualcomm/core/common.h"
 
 #include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -109,6 +110,14 @@ std::vector<std::int32_t> Options::GetDumpTensorIds() const {
   return dump_tensor_ids_;
 }
 
+void Options::SetSkipOpIds(const std::vector<size_t>& skip_op_ids) {
+  skip_op_ids_ = skip_op_ids;
+}
+
+std::vector<size_t> Options::GetSkipOpIds() const {
+  return skip_op_ids_;
+}
+
 absl::string_view Options::GetIrJsonDir() const { return ir_json_dir_; }
 
 void Options::SetIrJsonDir(absl::string_view ir_json_dir) {
@@ -156,6 +165,7 @@ UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
 HtpPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
+SkipOpIds: %s\n\
 IrJsonDir: %s\n\
 DlcDir: %s\n\
 VtcmSize: %d\n\
@@ -164,12 +174,13 @@ OptimizationLevel: %d\n\
 GraphPriority: %d\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
+  std::string skip_op_ids = absl::StrJoin(skip_op_ids_, ",");
 
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
                          use_htp_preference_, use_qint16_as_quint16_,
                          enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
-                         htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
-                         dlc_dir_, vtcm_size_, num_hvx_threads_,
+                         htp_performance_mode_, dump_tensor_ids, skip_op_ids,
+                         ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
                          optimization_level_, graph_priority_);
 }
 
