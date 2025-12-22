@@ -42,6 +42,15 @@ TEST(IntListFlagTest, MultiInt) {
   EXPECT_EQ("1,2,3", AbslUnparseFlag(value));
 }
 
+TEST(IntListFlagTest, MultiUint32) {
+  std::string error;
+  IntList<std::uint32_t> value;
+
+  EXPECT_TRUE(AbslParseFlag("1,2,3", &value, &error));
+  EXPECT_THAT(value.elements, ElementsAre(1, 2, 3));
+  EXPECT_EQ("1,2,3", AbslUnparseFlag(value));
+}
+
 TEST(IntListFlagTest, SingleInt) {
   std::string error;
   IntList value;

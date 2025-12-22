@@ -15,6 +15,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
+#include <cstdint>
+#include <vector>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
@@ -37,6 +40,9 @@ class CompilerOptions : public OpaqueOptions {
   Expected<void> SetPartitionStrategy(
       LiteRtCompilerOptionsPartitionStrategy partition_strategy);
   Expected<LiteRtCompilerOptionsPartitionStrategy> GetPartitionStrategy() const;
+
+  Expected<void> SetSkipDelegationOpId(const std::vector<std::uint32_t>& ids);
+  Expected<std::vector<std::uint32_t>> GetSkipDelegationOpId() const;
 
   Expected<void> SetDummyOption(bool dummy_option);
   Expected<bool> GetDummyOption() const;

@@ -16,10 +16,15 @@
 
 #include "litert/cc/options/litert_compiler_options.h"
 
+#include <cstdint>
+#include <vector>
+
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/test/matchers.h"
 
+using testing::ElementsAreArray;
 namespace litert {
 namespace {
 
@@ -39,6 +44,16 @@ TEST(CompilerOptionsTest, SetAndGetPartitionStrategyReturnsSetValue) {
                               options.GetPartitionStrategy());
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+}
+
+TEST(CompilerOptionsTest, SetAndGetSkipDelegationOpId) {
+  LITERT_ASSERT_OK_AND_ASSIGN(::litert::CompilerOptions options,
+                              ::litert::CompilerOptions::Create());
+  const std::vector<std::uint32_t> kSkipDelegationOpIds{1, 2, 3};
+  LITERT_EXPECT_OK(options.SetSkipDelegationOpId(kSkipDelegationOpIds));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto skip_delegation_op_id,
+                              options.GetSkipDelegationOpId());
+  EXPECT_THAT(skip_delegation_op_id, ElementsAreArray(kSkipDelegationOpIds));
 }
 
 }  // namespace

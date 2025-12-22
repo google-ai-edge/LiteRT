@@ -89,6 +89,30 @@ TEST(LiteRtCompilerOptionsTest, SetAndGetWCPartitionStrategy) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtCompilerOptionsTest, SetAndGetSkipDelegationOpIds) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
+
+  LiteRtCompilerOptions compiler_options;
+  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
+
+  const std::vector<std::uint32_t> kSkipDelegationOpIds{1, 2, 3};
+  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsSkipDelegationOpIds(
+      compiler_options, kSkipDelegationOpIds.data(),
+      kSkipDelegationOpIds.size()));
+
+  const std::uint32_t* ids;
+  size_t number_of_ids;
+  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsSkipDelegationOpIds(
+      compiler_options, &ids, &number_of_ids));
+  EXPECT_EQ(number_of_ids, kSkipDelegationOpIds.size());
+  for (size_t i = 0; i < kSkipDelegationOpIds.size(); i++) {
+    EXPECT_EQ(kSkipDelegationOpIds[i], ids[i]);
+  }
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtCompilerOptionsTest, Hash) {
   LiteRtOpaqueOptions options1;
   LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options1));
@@ -100,12 +124,16 @@ TEST(LiteRtCompilerOptionsTest, Hash) {
   LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
   EXPECT_EQ(hash1, hash2);
 
+  const std::vector<std::uint32_t> kSkipDelegationOpIds{1, 2, 3};
   LiteRtCompilerOptions compiler_options;
   LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options1, &compiler_options));
   LITERT_ASSERT_OK(LiteRtSetDummyCompilerOptions(compiler_options, true));
   LITERT_ASSERT_OK(LiteRtSetCompilerOptionsPartitionStrategy(
       compiler_options,
       kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
+  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsSkipDelegationOpIds(
+      compiler_options, kSkipDelegationOpIds.data(),
+      kSkipDelegationOpIds.size()));
   LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
   LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
   EXPECT_NE(hash1, hash2);

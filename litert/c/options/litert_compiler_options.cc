@@ -25,6 +25,7 @@
 struct LiteRtCompilerOptionsT {
   LiteRtCompilerOptionsPartitionStrategy partition_strategy =
       kLiteRtCompilerOptionsPartitionStrategyDefault;
+  std::vector<std::uint32_t> skip_delegation_op_ids;
   bool dummy_option = false;
 };
 
@@ -85,6 +86,30 @@ LiteRtStatus LiteRtGetCompilerOptionsPartitionStrategy(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *partition_strategy = options->partition_strategy;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetCompilerOptionsSkipDelegationOpIds(
+    LiteRtCompilerOptions options, const uint32_t* ids, size_t number_of_ids) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->skip_delegation_op_ids.clear();
+  options->skip_delegation_op_ids.reserve(number_of_ids);
+  for (size_t i = 0; i < number_of_ids; i++) {
+    options->skip_delegation_op_ids.emplace_back(ids[i]);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerOptionsSkipDelegationOpIds(
+    LiteRtCompilerOptionsConst options, const uint32_t** ids,
+    size_t* number_of_ids) {
+  if (ids == nullptr || number_of_ids == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *ids = options->skip_delegation_op_ids.data();
+  *number_of_ids = options->skip_delegation_op_ids.size();
   return kLiteRtStatusOk;
 }
 

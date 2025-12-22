@@ -60,7 +60,6 @@ cc_test(
 
 cc_library(
     name = "flag_types",
-    srcs = ["flag_types.cc"],
     hdrs = ["flag_types.h"],
     deps = [
         "@com_google_absl//absl/flags:marshalling",

@@ -14,6 +14,7 @@
 
 #include "litert/tools/flags/apply_plugin_flags.h"
 
+#include <cstdint>
 #include <string>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
@@ -27,13 +28,20 @@
 ABSL_FLAG(std::string, cmd, "partition",
           "Routine to run (apply, partition, compile, info, noop).");
 
-ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
+ABSL_FLAG(::litert::tools::IntList<int>, subgraphs,
+          ::litert::tools::IntList<int>{},
           "If provides, only the subgraphs with the given indices "
           "are applied with the plugin.");
 
 ABSL_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy,
           kLiteRtCompilerOptionsPartitionStrategyDefault,
           "Partition strategy for the compiler.");
+
+ABSL_FLAG(::litert::tools::IntList<std::uint32_t>, skip_delegation_op_ids,
+          ::litert::tools::IntList<std::uint32_t>{},
+          "Operator ids to skip delegation to any vendors. "
+          "A comma-separated list of string. Note: This is a debug feature, "
+          "please use with --subgraph in multi-signature models.");
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -72,6 +80,9 @@ Expected<void> UpdateCompilerOptionsFromFlags(CompilerOptions& options) {
   LITERT_RETURN_IF_ERROR(
       options.SetPartitionStrategy(absl::GetFlag(FLAGS_partition_strategy)));
 
+  // Parse skip delegation ids.
+  LITERT_RETURN_IF_ERROR(options.SetSkipDelegationOpId(
+      absl::GetFlag(FLAGS_skip_delegation_op_ids).elements));
   return {};
 }
 }  // namespace litert
