@@ -9,7 +9,7 @@ platforms, via efficient conversion, runtime, and optimization
 
 📖 [Get Started](#-installation) | 🤝 [Contributing](#-contributing) | 📜
 [License](#-license) | 🛡 [Security Policy](SECURITY.md) | 📄
-[Documentation](#-getting-help)
+[Documentation](https://ai.google.dev/edge/litert)
 
 ## Description
 
@@ -63,7 +63,7 @@ Coming soon...
 
 ## 🏁 Installation
 
-For a comprehensive guide to setting up your application with LiteRT Next, see
+For a comprehensive guide to setting up your application with LiteRT, see
 the [Get Started guide](https://ai.google.dev/edge/litert).
 
 You can build LiteRT from source:
