@@ -123,6 +123,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetGraphPriority(
       static_cast<::qnn::GraphPriority>(qualcomm_options.GetGraphPriority()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
+  qnn_options.SetSkipOpIds(qualcomm_options.GetSkipOpIds());
 
   // TODO(jiunkaiy): Set backend type based on qualcomm options.
   // However, if a DLC directory is set, we must use the IR backend.
