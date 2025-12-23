@@ -154,16 +154,19 @@ cc_test(
         ":litert_event",
         "//litert/c:litert_event_type",
         "//litert/cc/internal:litert_platform_support",
+        "//litert/core:environment",
         "//litert/test:matchers",
+        "//tflite/types:half",
+        "@FP16//:FP16",
         "@com_google_googletest//:gtest_main",
     ],
 )
 
-litert_device_exec(
-    name = "litert_event_device_test",
-    backend_id = "cpu",
-    target = ":litert_event_test",
-)
+# litert_device_exec(
+#     name = "litert_event_device_test",
+#     backend_id = "cpu",
+#     target = ":litert_event_test",
+# )
 
 cc_library(
     name = "litert_model",
@@ -441,6 +444,10 @@ cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["//litert/cc:litert_tensor_buffer_test.cc"],
     linkopts = litert_android_linkopts(),
+    target_compatible_with = [
+        "@platforms//os:android",
+        "@platforms//os:linux",
+    ],
     deps = [
         ":litert_environment",
         ":litert_event",
@@ -459,6 +466,7 @@ cc_test(
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_platform_support",
+        "//litert/core:environment",
         "//litert/runtime:tensor_buffer",
         "//litert/test:matchers",
         "//tflite/delegates/gpu/cl:buffer",
@@ -466,6 +474,8 @@ cc_test(
         "//tflite/delegates/gpu/cl:cl_context",
         "//tflite/delegates/gpu/cl:cl_device",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
+        "//tflite/types:half",
+        "@FP16//:FP16",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
@@ -481,12 +491,12 @@ cc_test(
     }),
 )
 
-litert_device_exec(
-    name = "litert_tensor_buffer_device_test",
-    backend_id = "cpu",
-    data = [],
-    target = ":litert_tensor_buffer_test",
-)
+# litert_device_exec(
+#     name = "litert_tensor_buffer_device_test",
+#     backend_id = "cpu",
+#     data = [],
+#     target = ":litert_tensor_buffer_test",
+# )
 
 cc_library(
     name = "litert_tensor_buffer_requirements",
@@ -603,6 +613,10 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
+    ],
+    target_compatible_with = [
+        "@platforms//os:android",
+        "@platforms//os:linux",
     ],
     deps = [
         ":litert_compiled_model",

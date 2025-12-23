@@ -675,16 +675,7 @@ py_strict_library(
 
 pywrap_library(
     name = "pywrap_tflite",
-    common_lib_def_files_or_filters = {
-        "tflite/python/pywrap_tflite_common": "pywrap_tflite_common.json",
-    },
-    common_lib_version_scripts = {
-        "tflite/python/pywrap_tflite_common": select({
-            "@bazel_tools//src/conditions:windows": None,
-            "@bazel_tools//src/conditions:darwin": "pywrap_tflite_common_darwin.lds",
-            "//conditions:default": "pywrap_tflite_common.lds",
-        }),
-    },
+
     pywrap_count = 8,
     visibility = ["//visibility:public"],
     deps = [

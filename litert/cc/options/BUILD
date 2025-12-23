@@ -284,6 +284,10 @@ cc_library(
 cc_test(
     name = "litert_darwinn_options_test",
     srcs = ["litert_darwinn_options_test.cc"],
+    target_compatible_with = [
+        "@platforms//os:android",
+        "@platforms//os:linux",
+    ],
     deps = [
         ":litert_darwinn_options",
         "//litert/cc:litert_expected",

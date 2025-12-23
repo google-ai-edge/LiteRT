@@ -16,7 +16,6 @@
 # Dummy BUILD file to make this directory a package.
 
 package(
+    licenses = ["notice"],
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
 )
-
-licenses(["notice"])
