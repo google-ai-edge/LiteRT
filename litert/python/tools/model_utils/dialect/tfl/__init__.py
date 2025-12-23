@@ -58,6 +58,7 @@ from ._pad_v2 import *
 from ._range import *
 # pylint: disable=g-multiple-import
 # pylint: disable=g-bad-import-order
+from ._external_const import ExternalConstOp, external_const
 from ._hard_swish import HardSwishOp, hard_swish
 from ._maximum import MaximumOp, maximum
 from ._minimum import MinimumOp, minimum
