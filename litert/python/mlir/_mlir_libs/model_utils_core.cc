@@ -70,6 +70,10 @@ void RegisterPasses() {
   mlir::odml::registerLegalizeStablehloToVhloPass();
   mlir::PassRegistration<mlir::TFL::OptimizePass>(
       []() { return mlir::TFL::CreateOptimizePass(); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::func::FuncOp>>(
+      []() { return mlir::TFL::CreatePrepareQuantizePass(); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
+      []() { return mlir::TFL::CreatePropagateQsvPass(); });
 }
 
 mlir::OwningOpRef<mlir::ModuleOp> FlatbufferToMlir(mlir::MLIRContext* context,

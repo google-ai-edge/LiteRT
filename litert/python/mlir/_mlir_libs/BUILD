@@ -48,6 +48,7 @@ cc_library(
         "//tflite/converter:tensorflow_lite",
         "//tflite/converter:tensorflow_lite_ops",
         "//tflite/converter:tensorflow_lite_optimize",
+        "//tflite/converter:tensorflow_lite_quantize",
         "//tflite/converter/quantization/ir:QuantOps",
         "//tflite/converter/stablehlo:prepare_hlo",
         "@com_google_absl//absl/strings:string_view",

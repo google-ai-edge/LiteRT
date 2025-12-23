@@ -57,3 +57,14 @@ pytype_strict_contrib_test(
         "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )
+
+pytype_strict_contrib_test(
+    name = "mlir_passes_test",
+    srcs = ["mlir_passes_test.py"],
+    tags = ["no_oss"],
+    deps = [
+        "//litert/python/tools/model_utils",
+        "//litert/python/tools/model_utils:testing",
+        "@absl_py//absl/testing:absltest",
+    ],
+)
