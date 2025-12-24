@@ -268,6 +268,10 @@ class LiteRtTensorBufferT {
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 
+  static litert::Expected<Ptr> CreateManagedOpenVINOTensorBuffer(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
   static litert::Expected<Ptr> CreateManagedGlBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       size_t buffer_size);
