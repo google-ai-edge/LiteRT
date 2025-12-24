@@ -85,6 +85,7 @@ Expected<std::vector<ExampleOp>> ParseOps(absl::string_view str) {
 
 // Intermediate struct for parsing the schema.
 struct SchemaStrings {
+  std::string version;
   std::string inputs;
   std::string outputs;
   std::string tensors;
@@ -92,34 +93,41 @@ struct SchemaStrings {
 
   static Expected<SchemaStrings> Parse(absl::string_view str) {
     const std::vector<std::string> split = absl::StrSplit(str, '\n');
-    if (std::size(split) != 4) {
-      LITERT_LOG(LITERT_ERROR, "Invalid graph format, expected 4 lines, got %d",
+    if (std::size(split) != 5) {
+      LITERT_LOG(LITERT_ERROR, "Invalid graph format, expected 5 lines, got %d",
                  std::size(split));
       return Error(kLiteRtStatusErrorInvalidArgument);
     }
-    LITERT_ASSIGN_OR_RETURN(auto inputs, ParseSchemaLine(split[0]));
+    LITERT_ASSIGN_OR_RETURN(auto version, ParseSchemaLine(split[0]));
+    if (version.key != "version") {
+      LITERT_LOG(LITERT_ERROR,
+                 "Invalid schema line format, expected 'version'");
+      return Error(kLiteRtStatusErrorInvalidArgument);
+    }
+    LITERT_ASSIGN_OR_RETURN(auto inputs, ParseSchemaLine(split[1]));
     if (inputs.key != "inputs") {
       LITERT_LOG(LITERT_ERROR, "Invalid schema line format, expected 'inputs'");
       return Error(kLiteRtStatusErrorInvalidArgument);
     }
-    LITERT_ASSIGN_OR_RETURN(auto outputs, ParseSchemaLine(split[1]));
+    LITERT_ASSIGN_OR_RETURN(auto outputs, ParseSchemaLine(split[2]));
     if (outputs.key != "outputs") {
       LITERT_LOG(LITERT_ERROR,
                  "Invalid schema line format, expected 'outputs'");
       return Error(kLiteRtStatusErrorInvalidArgument);
     }
-    LITERT_ASSIGN_OR_RETURN(auto tensors, ParseSchemaLine(split[2]));
+    LITERT_ASSIGN_OR_RETURN(auto tensors, ParseSchemaLine(split[3]));
     if (tensors.key != "tensors") {
       LITERT_LOG(LITERT_ERROR,
                  "Invalid schema line format, expected 'tensors'");
       return Error(kLiteRtStatusErrorInvalidArgument);
     }
-    LITERT_ASSIGN_OR_RETURN(auto ops, ParseSchemaLine(split[3]));
+    LITERT_ASSIGN_OR_RETURN(auto ops, ParseSchemaLine(split[4]));
     if (ops.key != "ops") {
       LITERT_LOG(LITERT_ERROR, "Invalid schema line format, expected 'ops'");
       return Error(kLiteRtStatusErrorInvalidArgument);
     }
-    return SchemaStrings{inputs.value, outputs.value, tensors.value, ops.value};
+    return SchemaStrings{version.value, inputs.value, outputs.value,
+                         tensors.value, ops.value};
   }
 };
 
@@ -161,6 +169,7 @@ Expected<ExampleGraph> ExampleGraph::Parse(BufferRef<uint8_t> serialized) {
 
   LITERT_ASSIGN_OR_RETURN(auto schema,
                           SchemaStrings::Parse(serialized.StrView()));
+  graph.version_ = schema.version;
   LITERT_ASSIGN_OR_RETURN(graph.inputs_, (ParseLoI<Index>(schema.inputs)));
   LITERT_ASSIGN_OR_RETURN(graph.outputs_, (ParseLoI<Index>(schema.outputs)));
 

@@ -50,6 +50,9 @@ const char* LiteRtGetStatusString(LiteRtStatus status) {
     LITERT_STATUS_STR_CASE(kLiteRtStatusPatternNoMatch);
     LITERT_STATUS_STR_CASE(kLiteRtStatusInvalidTransformation);
     LITERT_STATUS_STR_CASE(kLiteRtStatusCancelled);
+    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnsupportedRuntimeVersion);
+    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnsupportedCompilerVersion);
+    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorIncompatibleByteCodeVersion);
 #undef LITERT_STATUS_STR_CASE
   }
 }
