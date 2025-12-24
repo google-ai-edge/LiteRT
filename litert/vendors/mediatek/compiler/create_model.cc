@@ -271,6 +271,11 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_PRELU);
         break;
+      case kLiteRtOpCodeTflLeakyRelu:
+        status =
+            LegalizeOp(neuron_adapter_api, model, *operand_map, op,
+                       NEURON_PRELU, std::make_tuple(AddLeakyReluAlphaOption));
+        break;
       case kLiteRtOpCodeTflMaximum:
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_MAXIMUM);
