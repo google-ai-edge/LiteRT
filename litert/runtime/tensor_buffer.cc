@@ -246,6 +246,7 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate aligned memory");
   }
+  std::memset(host_memory_ptr, 0, buffer_size);
   std::memset(static_cast<uint8_t*>(host_memory_ptr) + buffer_size, 0,
               XNN_EXTRA_BYTES);
 
