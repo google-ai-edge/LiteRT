@@ -109,6 +109,12 @@ LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
 LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
     LiteRtQualcommOptions options, int32_t** ids, uint32_t* number_of_ids);
 
+LiteRtStatus LiteRtQualcommOptionsSetSkipOpIds(
+    LiteRtQualcommOptions options, const size_t* ids, uint32_t number_of_ids);
+
+LiteRtStatus LiteRtQualcommOptionsGetSkipOpIds(
+    LiteRtQualcommOptions options, size_t** ids, uint32_t* number_of_ids);
+
 // When using short conv hmx, one might have better performance, but convolution
 // that have short depth and/or weights that are not symmetric could exhibit
 // inaccurate results.

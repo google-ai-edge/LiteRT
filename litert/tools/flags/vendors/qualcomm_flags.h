@@ -54,6 +54,8 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_qint16_as_quint16);
 
 ABSL_DECLARE_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids);
 
+ABSL_DECLARE_FLAG(std::vector<std::string>, qualcomm_skip_op_ids);
+
 ABSL_DECLARE_FLAG(std::string, qualcomm_ir_json_dir);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_dlc_dir);

@@ -4,6 +4,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_COMMON_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_COMMON_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -99,6 +100,9 @@ class Options {
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds() const;
 
+  void SetSkipOpIds(const std::vector<size_t>& skip_op_ids);
+  std::vector<size_t> GetSkipOpIds() const;
+
   absl::string_view GetIrJsonDir() const;
   void SetIrJsonDir(absl::string_view ir_json_dir);
 
@@ -137,6 +141,7 @@ class Options {
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
+  std::vector<size_t> skip_op_ids_;
 };
 
 // Gets a default logger implementation to stdout.

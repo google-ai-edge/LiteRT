@@ -106,6 +106,12 @@ ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
 
+ABSL_FLAG(
+    std::vector<std::string>, qualcomm_skip_op_ids, {},
+    "Specify operator ids to skip delegation to Qualcomm AI Engine Direct. "
+    "Comma-separated list of "
+    "string.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -383,6 +389,14 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
                   int32_ids.push_back(std::stoi(id));
                 });
   opts.SetDumpTensorIds(int32_ids);
+
+  const auto skip_op_ids = absl::GetFlag(FLAGS_qualcomm_skip_op_ids);
+  std::vector<size_t> int_skip_op_ids;
+  std::for_each(skip_op_ids.begin(), skip_op_ids.end(),
+                [&int_skip_op_ids](const std::string& id) {
+                  int_skip_op_ids.push_back(std::stoi(id));
+                });
+  opts.SetSkipOpIds(int_skip_op_ids);
 
   const std::string ir_json_dir = absl::GetFlag(FLAGS_qualcomm_ir_json_dir);
   opts.SetIrJsonDir(ir_json_dir);
