@@ -62,6 +62,7 @@ the `VerifyCommonOp` function.
 | `kLiteRtOpCodeTflPad` | Legalized to `NEURON_PAD`. |
 | `kLiteRtOpCodeTflPadv2` | Legalized to `NEURON_PAD_V2`. |
 | `kLiteRtOpCodeTflPrelu` | Legalized to `NEURON_PRELU`. |
+| `kLiteRtOpCodeTflLeakyRelu` | Legalized to `NEURON_PRELU` via treating alpha in LeakyRelu as the input tensor of Prelu. |
 | `kLiteRtOpCodeTflQuantize` | Legalized to `NEURON_QUANTIZE`. |
 | `kLiteRtOpCodeTflReduceMax` | Legalized to `NEURON_REDUCE_MAX`. Supports `keep_dims` attribute. |
 | `kLiteRtOpCodeTflRelu` | Legalized to `NEURON_RELU`. |
@@ -81,3 +82,4 @@ the `VerifyCommonOp` function.
 | `kLiteRtOpCodeTflTranspose` | Legalized to `NEURON_TRANSPOSE`. |
 | `kLiteRtOpCodeTflTransposeConv` | Legalized to `NEURON_TRANSPOSE_CONV`. Supports padding and stride. Adds a zero bias if one is not provided. |
 | `kLiteRtOpCodeShloComposite` | Supports `odml.rms_norm` (as OEM extension `MTKEXT_RMS_NORMALIZATION`) and `odml.l2_norm` (as `NEURON_L2_NORMALIZATION`). |
+<!-- LINT.ThenChange(./compiler_plugin.cc:supported_ops) -->
