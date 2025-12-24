@@ -417,6 +417,23 @@ inline Expected<uint32_t> AddDivFuseActivationOption(const litert::Op& op,
   return operand_map.AddScalarInt32(fuse);
 }
 
+//==============================================================================
+// kLiteRtOpCodeTflLeakyRelu
+//==============================================================================
+inline Expected<uint32_t> AddLeakyReluAlphaOption(const litert::Op& op,
+                                                  OperandMap& operand_map) {
+  std::vector<uint32_t> tensor_shape = {1};
+  int32_t alpha_idx = -1;
+  LITERT_ASSIGN_OR_RETURN(alpha_idx,
+                          operand_map.RegisterExtraData(sizeof(float)));
+  LITERT_RETURN_IF_ERROR(LiteRtGetLeakyReluAlphaOption(
+      op.Get(), (float*)operand_map.GetExtraData(alpha_idx)))
+      << "Fails to get LiteRtGetLeakyReluAlphaOption";
+  return operand_map.AddTensorByType(NEURON_TENSOR_FLOAT32, tensor_shape,
+                                     operand_map.GetExtraData(alpha_idx),
+                                     sizeof(float));
+}  // namespace litert::mediatek
+
 }  // namespace litert::mediatek
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_LEGALIZE_HELPER_H_
