@@ -101,6 +101,14 @@ HtpPerformanceMode Options::GetHtpPerformanceMode() const {
   return htp_performance_mode_;
 }
 
+void Options::SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode) {
+  dsp_performance_mode_ = dsp_performance_mode;
+}
+
+DspPerformanceMode Options::GetDspPerformanceMode() const {
+  return dsp_performance_mode_;
+}
+
 void Options::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
   dump_tensor_ids_ = ids;
 }
@@ -143,6 +151,15 @@ void Options::SetGraphPriority(GraphPriority graph_priority) {
   graph_priority_ = graph_priority;
 }
 
+void Options::SetEnableDspBackend(bool enable_dsp_backend) {
+  if (enable_dsp_backend) {
+    SetBackendType(::qnn::BackendType::kDspBackend);
+  }
+  enable_dsp_backend_ = enable_dsp_backend;
+}
+
+bool Options::GetEnableDspBackend() const { return enable_dsp_backend_; }
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -155,22 +172,24 @@ EnableWeightSharing: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
 HtpPerformanceMode: %d\n\
+DspPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
 IrJsonDir: %s\n\
 DlcDir: %s\n\
 VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n\
-GraphPriority: %d\n";  // NOLINT
+GraphPriority: %d\n\
+EnableDspBackend: %v\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
-  return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
-                         use_htp_preference_, use_qint16_as_quint16_,
-                         enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
-                         htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
-                         dlc_dir_, vtcm_size_, num_hvx_threads_,
-                         optimization_level_, graph_priority_);
+  return absl::StrFormat(
+      kQnnOptionsDumpFormat, log_level_, profiling_, use_htp_preference_,
+      use_qint16_as_quint16_, enable_weight_sharing_, use_conv_hmx_,
+      use_fold_relu_, htp_performance_mode_, dsp_performance_mode_,
+      dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
+      optimization_level_, graph_priority_, enable_dsp_backend_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

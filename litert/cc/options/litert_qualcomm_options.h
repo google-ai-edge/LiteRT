@@ -74,6 +74,22 @@ class QualcommOptions : public OpaqueOptions {
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode();
 
+  enum class DspPerformanceMode : int {
+    kDefault = kLiteRtQualcommDspPerformanceModeDefault,
+    kSustainedHighPerformance =
+        kLiteRtQualcommDspPerformanceModeSustainedHighPerformance,
+    kBurst = kLiteRtQualcommDspPerformanceModeBurst,
+    kHighPerformance = kLiteRtQualcommDspPerformanceModeHighPerformance,
+    kPowerSaver = kLiteRtQualcommDspPerformanceModePowerSaver,
+    kLowPowerSaver = kLiteRtQualcommDspPerformanceModeLowPowerSaver,
+    kHighPowerSaver = kLiteRtQualcommDspPerformanceModeHighPowerSaver,
+    kLowBalanced = kLiteRtQualcommDspPerformanceModeLowBalanced,
+    kBalanced = kLiteRtQualcommDspPerformanceModeBalanced,
+  };
+
+  void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
+  DspPerformanceMode GetDspPerformanceMode();
+
   void SetUseHtpPreference(bool use_htp_preference);
   bool GetUseHtpPreference();
 
@@ -146,6 +162,11 @@ class QualcommOptions : public OpaqueOptions {
 
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority();
+
+  // This option controls whether to enable dsp backend, enable it if the device
+  // arch <= v66. Default is disabled.
+  void SetEnableDspBackend(bool enable_dsp_backend);
+  bool GetEnableDspBackend();
 
  private:
   LiteRtQualcommOptions Data() const;
