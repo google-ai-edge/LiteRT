@@ -34,4 +34,13 @@ LiteRtStatus LiteRtGetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
+                                              LiteRtEnvOption env_option) {
+  LITERT_RETURN_IF_ERROR(
+      options, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument))
+      << "`options` handle is null.";
+  LITERT_RETURN_IF_ERROR(options->SetOption(env_option));
+  return kLiteRtStatusOk;
+}
+
 }  // extern "C"

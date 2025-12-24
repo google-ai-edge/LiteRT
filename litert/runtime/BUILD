@@ -191,6 +191,7 @@ cc_library(
         ":gpu_environment_header",
         ":litert_gpu_util",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
