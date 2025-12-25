@@ -87,6 +87,15 @@ case "${ARCH}" in
     ;;
 esac
 
+if command -v xcode-select &> /dev/null; then
+  sudo xcodebuild -license accept
+  # export SDKROOT=$(xcrun --sdk iphonesimulator --show-sdk-path)
+  BAZEL_FLAGS="${BAZEL_FLAGS} --action_env=DEVELOPER_DIR=$(xcode-select --print-path) --action_env=SDKROOT=$(xcrun --sdk macosx --show-sdk-path)"
+fi
+
+# Echo the environment variables for debugging.
+env
+
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
