@@ -57,7 +57,7 @@ limitations under the License.
 
 // IWYU pragma: no_include "util/regexp/re2/re2.h"
 
-namespace tensorflow {
+namespace litert {
 namespace {
 
 // Simple raw_ostream that prints to a file.
@@ -287,7 +287,7 @@ std::function<bool(mlir::Pass*, mlir::Operation*)> CreatePrintIRFun(
 }  // namespace
 
 void InitPassManager(mlir::PassManager& pm,
-                     const converter::DebugOptions& options,
+                     const litert::converter::DebugOptions& options,
                      llvm::raw_ostream& out) {
   std::string dump_dir = options.ir_dump_dir();
 
@@ -355,4 +355,4 @@ void InitPassManager(mlir::PassManager& pm,
           pm.getContext()));
 }
 
-}  // namespace tensorflow
+}  // namespace litert

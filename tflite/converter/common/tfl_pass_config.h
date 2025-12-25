@@ -100,8 +100,8 @@ struct PassConfig {
   bool enable_composite_direct_lowering = true;
 
   // Specifies the framework of the original model.
-  tflite::ConverterFlags::ModelOriginFramework model_origin_framework =
-      tflite::ConverterFlags::UNSET;
+  litert::ConverterFlags::ModelOriginFramework model_origin_framework =
+      litert::ConverterFlags::UNSET;
 
   // When set to true, convert +Inf/-Inf to MIN/MAX float value and output of
   // convert only contains finite values.
@@ -144,7 +144,7 @@ inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
             << "\nconvert_qdq_format: "
             << GetQDQQuantModeString(pass_config.qdq_conversion_mode)
             << "\nmodel_origin_framework: "
-            << tflite::ConverterFlags::ModelOriginFramework_Name(
+            << litert::ConverterFlags::ModelOriginFramework_Name(
                    pass_config.model_origin_framework)
             << "\n";
 }

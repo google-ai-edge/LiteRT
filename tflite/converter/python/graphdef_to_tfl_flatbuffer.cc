@@ -44,8 +44,8 @@ limitations under the License.
 namespace tensorflow {
 
 absl::Status ConvertGraphDefToTFLiteFlatBuffer(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags, const GraphDebugInfo& debug_info,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags, const GraphDebugInfo& debug_info,
     const GraphDef& input, std::string* result) {
   auto context = std::make_unique<mlir::MLIRContext>();
   GraphImportConfig specs;
@@ -106,7 +106,7 @@ absl::Status ConvertGraphDefToTFLiteFlatBuffer(
       converter_flags.legalize_custom_tensor_list_ops();
   // Disable the unfolding of the 16x16 TF::BatchMatMulOp to avoid the
   // conversion to an unsupported 16x16 TFL::FullyConnectedOp.
-  if (converter_flags.inference_type() == tflite::IODataType::QUANTIZED_INT16) {
+  if (converter_flags.inference_type() == litert::IODataType::QUANTIZED_INT16) {
     pass_config.unfold_batch_matmul = false;
   }
   pass_config.unfold_large_splat_constant =
