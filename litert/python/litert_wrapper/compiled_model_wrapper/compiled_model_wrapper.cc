@@ -25,18 +25,52 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
 namespace litert::compiled_model_wrapper {
+
+namespace {
+// Converts ElementType to a string representation for Python.
+const char* ElementTypeToString(ElementType dtype) {
+  switch (dtype) {
+    case ElementType::Float32:
+      return "float32";
+    case ElementType::Float16:
+      return "float16";
+    case ElementType::Int32:
+      return "int32";
+    case ElementType::UInt8:
+      return "uint8";
+    case ElementType::Int64:
+      return "int64";
+    case ElementType::Bool:
+      return "bool";
+    case ElementType::Int16:
+      return "int16";
+    case ElementType::Int8:
+      return "int8";
+    case ElementType::Float64:
+      return "float64";
+    case ElementType::UInt32:
+      return "uint32";
+    case ElementType::UInt16:
+      return "uint16";
+    default:
+      return "unknown";
+  }
+}
+}  // namespace
 
 // Returns the byte width of a data type.
 size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
@@ -407,6 +441,51 @@ PyObject* CompiledModelWrapper::CreateOutputBuffers(int signature_index) {
     PyList_SetItem(py_list, i, capsule);
   }
   return py_list;
+}
+
+PyObject* CompiledModelWrapper::GetInputTensorDetails(
+    const char* signature_key) {
+  auto sig_or = model_.FindSignature(signature_key);
+  if (!sig_or) {
+    return ConvertErrorToPyExc(sig_or.Error());
+  }
+  auto sig = std::move(*sig_or);
+  auto input_names = sig.InputNames();
+  PyObject* result_dict = PyDict_New();
+  for (const auto& name : input_names) {
+    auto tensor_or = sig.InputTensor(name);
+    if (!tensor_or) {
+      Py_DECREF(result_dict);
+      return ConvertErrorToPyExc(tensor_or.Error());
+    }
+    auto tensor = std::move(*tensor_or);
+    PyObject* tensor_dict = PyDict_New();
+    PyDict_SetItemString(tensor_dict, "name",
+                         PyUnicode_FromString(tensor.Name().data()));
+    PyDict_SetItemString(tensor_dict, "index",
+                         PyLong_FromLong(tensor.TensorIndex()));
+    PyDict_SetItemString(
+        tensor_dict, "dtype",
+        PyUnicode_FromString(ElementTypeToString(tensor.ElementType())));
+    if (tensor.TypeId() == kLiteRtRankedTensorType) {
+      auto ranked_type_or = tensor.RankedTensorType();
+      if (!ranked_type_or) {
+        Py_DECREF(tensor_dict);
+        Py_DECREF(result_dict);
+        return ConvertErrorToPyExc(ranked_type_or.Error());
+      }
+      auto shape = ranked_type_or->Layout().Dimensions();
+      PyObject* shape_list = PyList_New(shape.size());
+      for (size_t i = 0; i < shape.size(); ++i) {
+        PyList_SetItem(shape_list, i, PyLong_FromLong(shape[i]));
+      }
+      PyDict_SetItemString(tensor_dict, "shape", shape_list);
+      Py_DECREF(shape_list);
+    }
+    PyDict_SetItemString(result_dict, name.data(), tensor_dict);
+    Py_DECREF(tensor_dict);
+  }
+  return result_dict;
 }
 
 PyObject* CompiledModelWrapper::RunByName(const char* signature_key,

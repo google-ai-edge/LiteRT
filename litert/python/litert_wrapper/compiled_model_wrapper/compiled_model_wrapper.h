@@ -134,6 +134,9 @@ class CompiledModelWrapper {
   PyObject* RunByIndex(int signature_index, PyObject* input_caps_list,
                        PyObject* output_caps_list);
 
+  // Returns input tensor details for a given signature.
+  PyObject* GetInputTensorDetails(const char* signature_key);
+
  private:
   // Returns the size in bytes of a single element of the given data type.
   static size_t ByteWidthOfDType(const std::string& dtype);
