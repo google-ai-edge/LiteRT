@@ -329,7 +329,7 @@ cc_library(
         "//tflite/kernels/internal:optimized_base",
         "//tflite/kernels/internal:reference_base",
         "//tflite/kernels/internal:types",
-        "@FP16",
+        "//tflite/types:half",
     ],
 )
 
