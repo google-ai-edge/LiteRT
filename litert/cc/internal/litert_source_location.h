@@ -19,8 +19,15 @@
 
 namespace litert {
 
-#if defined(__has_builtin) && __has_builtin(__builtin_FILE) && \
-    __has_builtin(__builtin_LINE)
+// Check for __has_builtin support with proper nesting to avoid
+// preprocessor errors on compilers that don't support it
+#ifdef __has_builtin
+#if __has_builtin(__builtin_FILE) && __has_builtin(__builtin_LINE)
+#define LITERT_HAS_BUILTIN_SOURCE_LOCATION 1
+#endif
+#endif
+
+#ifdef LITERT_HAS_BUILTIN_SOURCE_LOCATION
 #define LITERT_INTERNAL_BUILTIN_FILE __builtin_FILE()
 #define LITERT_INTERNAL_BUILTIN_LINE __builtin_LINE()
 #else
