@@ -243,6 +243,7 @@ cc_library(
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
         # "//third_party/odml/litert_lm/c:__pkg__",
+        # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/litert_lm/kotlin:__subpackages__",
         # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
         # copybara:uncomment_end_and_comment_begin
