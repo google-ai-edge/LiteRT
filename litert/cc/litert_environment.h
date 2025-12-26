@@ -50,7 +50,6 @@ class Environment
     MetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
     /// @warning Vulkan support is experimental.
     VulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
-    VulkanCommandPool = kLiteRtEnvOptionTagVulkanCommandPool,
     CallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
     CallbackUserDataOnGpuEnvDestry =
         kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,

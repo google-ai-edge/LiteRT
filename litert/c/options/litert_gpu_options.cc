@@ -69,7 +69,7 @@ struct LiteRtGpuOptionsPayloadT {
   // Set to true to madvise the original shared tensors after use.
   bool madvise_original_shared_tensors = false;
   // Added in version 2.0.2a1.
-  // Number of steps to prepare WebGPU command buffers in advance.
+  // Number of steps to prepare WebGPU or Vulkan command buffers in advance.
   int num_steps_of_command_buffer_preparations = 0;
   // Set to true to use Metal argument buffers.
   bool use_metal_argument_buffers = false;
