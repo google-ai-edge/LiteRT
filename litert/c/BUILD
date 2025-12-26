@@ -647,7 +647,11 @@ cc_test(
 # TODO: b/437381008
 cc_library(
     name = "litert_runtime_c_api_so_shim",
-    linkopts = ["-Wl,--undefined-glob=LiteRt*"],
+    linkopts = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        "//conditions:default": ["-Wl,--undefined-glob=LiteRt*"],
+    }),
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
@@ -656,9 +660,10 @@ cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRt.so",
-    user_link_flags = export_lrt_runtime_only_linkopt() + [
-        "-Wl,-soname=libLiteRt.so",
-    ] + litert_android_linkopts(),
+    user_link_flags = export_lrt_runtime_only_linkopt() + select({
+        "@platforms//os:macos": ["-Wl,-install_name,@rpath/libLiteRt.so"],
+        "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
+    }) + litert_android_linkopts(),
     deps = [":litert_runtime_c_api_so_shim"],
 )
 
@@ -744,7 +749,11 @@ exports_files(srcs = ["windows_exported_symbols.def"])
 # TODO: b/437381008
 cc_library(
     name = "litert_tflite_runtime_c_api_so_shim",
-    linkopts = ["-Wl,--undefined-glob=LiteRt*"],
+    linkopts = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        "//conditions:default": ["-Wl,--undefined-glob=LiteRt*"],
+    }),
     deps = LITERT_C_API_COMMON_DEPS + [
         "//tflite/c:c_api",
         "//tflite/c:c_api_experimental",
@@ -768,7 +777,8 @@ cc_shared_library(
 SELECT_LITERT_RUNTIME_C_API_SO = select({
     ":resolve_symbols_in_exec": [],
     "@platforms//os:ios": [":litert_runtime_c_api_dylib"],
-    "@platforms//os:macos": [":litert_runtime_c_api_dylib"],
+    ":litert_macos_wheel_use_so": [":litert_runtime_c_api_so"],
+    ":litert_macos_default": [":litert_runtime_c_api_dylib"],
     "@platforms//os:windows": [],
     "//conditions:default": [":litert_runtime_c_api_so"],
 })
@@ -785,6 +795,18 @@ filegroup(
 config_setting(
     name = "resolve_symbols_in_exec",
     define_values = {"resolve_symbols_in_exec": "true"},
+)
+
+config_setting(
+    name = "litert_macos_wheel_use_so",
+    constraint_values = ["@platforms//os:macos"],
+    define_values = {"litert_macos_wheel_use_so": "true"},
+)
+
+config_setting(
+    name = "litert_macos_default",
+    constraint_values = ["@platforms//os:macos"],
+    define_values = {"litert_macos_wheel_use_so": "false"},
 )
 
 filegroup(

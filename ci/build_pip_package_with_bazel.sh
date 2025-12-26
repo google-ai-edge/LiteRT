@@ -19,6 +19,7 @@ set -ex
 export TF_LOCAL_SOURCE_PATH=${TF_LOCAL_SOURCE_PATH:-"$(pwd)/third_party/tensorflow"}
 
 ARCH="$(uname -m)"
+OS_NAME="$(uname -s)"
 TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-$1}
 if [ "${TENSORFLOW_TARGET}" = "rpi" ]; then
   export TENSORFLOW_TARGET="armhf"
@@ -58,6 +59,11 @@ case "${TENSORFLOW_TARGET}" in
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
 esac
+
+if [[ "${OS_NAME}" == "Darwin" ]]; then
+  # Ensure LiteRT runtime dylib is built and linked for macOS wheels.
+  BAZEL_FLAGS="${BAZEL_FLAGS} --config=macos_wheel"
+fi
 
 if [[ -n "${BAZEL_CONFIG_FLAGS}" ]]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} ${BAZEL_CONFIG_FLAGS}"

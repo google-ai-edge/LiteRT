@@ -185,6 +185,12 @@ build:apple-toolchain --apple_crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --host_crosstool_top=@local_config_apple_cc//:toolchain
 
+# Wheel builds need the LiteRT runtime dylib linked into python extensions.
+# This config overrides the macos default above.
+build:macos_wheel --config=macos
+build:macos_wheel --define=resolve_symbols_in_exec=false
+build:macos_wheel --define=litert_macos_wheel_use_so=true
+
 # Settings for MacOS on ARM CPUs.
 build:macos_arm64 --config=macos
 build:macos_arm64 --cpu=darwin_arm64
