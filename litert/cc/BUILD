@@ -1002,6 +1002,7 @@ cc_library(
 #         "@com_google_absl//absl/strings",
 #         "//litert/cc/internal:scoped_file",
 #         "//litert/cc/internal:scoped_weight_source",
+#         "//litert/core:options",
 #         "//litert/test:matchers",
 #     ],
 # )
