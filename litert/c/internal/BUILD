@@ -119,7 +119,6 @@ cc_library(
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert/c:__subpackages__",
         # "//litert/cc:__subpackages__",
-        # "//litert/cc/internal:__subpackages__",
         # "//litert/runtime:__subpackages__",
         # "//litert/kotlin:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
