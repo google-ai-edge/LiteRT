@@ -175,8 +175,10 @@ setuptools.setup(
         '': [
             '*.so',
             '*.pyd',
+            '*.dylib',
             '**/*_main',
             '**/*.so',
+            '**/*.dylib',
         ]
     },
     install_requires=[
