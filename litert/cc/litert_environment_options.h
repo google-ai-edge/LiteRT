@@ -70,8 +70,6 @@ class EnvironmentOptions
     kMetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
     /// Vulkan environment (experimental).
     kVulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
-    /// Vulkan command pool (experimental).
-    kVulkanCommandPool = kLiteRtEnvOptionTagVulkanCommandPool,
     /// Callback to be invoked on GPU environment destruction.
     kCallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
     /// User data for the GPU environment destruction callback.

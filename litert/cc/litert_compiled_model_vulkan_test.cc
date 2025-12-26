@@ -187,12 +187,6 @@ TEST(CompiledModelVulkanTest, GpuEnvironment) {
   ABSL_LOG(INFO) << "Vulkan env: "
                  << reinterpret_cast<void*>(std::get<int64_t>(vulkan_env_1));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto command_pool_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagVulkanCommandPool));
-  ABSL_LOG(INFO) << "Vulkan command pool: "
-                 << reinterpret_cast<void*>(std::get<int64_t>(command_pool_1));
-
   // Check if the 2nd LiteRT environment can get the same WebGPU device and
   // command queue.
   auto env_2 = litert::Environment::Create({});
@@ -212,12 +206,6 @@ TEST(CompiledModelVulkanTest, GpuEnvironment) {
       auto vulkan_env_2,
       env_options_2.GetOption(kLiteRtEnvOptionTagVulkanEnvironment));
   EXPECT_EQ(std::get<int64_t>(vulkan_env_1), std::get<int64_t>(vulkan_env_2));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto command_pool_2,
-      env_options_2.GetOption(kLiteRtEnvOptionTagVulkanCommandPool));
-  EXPECT_EQ(std::get<int64_t>(command_pool_1),
-            std::get<int64_t>(command_pool_2));
 }
 
 }  // namespace
