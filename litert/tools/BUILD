@@ -107,7 +107,7 @@ litert_bin(
         "@platforms//os:windows": [],
         "//conditions:default": [
             # copybara:uncomment_begin(google-only)
-            # "//platforms/darwinn/compiler:compiler_api_wrapper",
+            # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
             # copybara:uncomment_end
             "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
             "//litert/vendors/mediatek/compiler:compiler_plugin_so",
@@ -164,7 +164,7 @@ litert_bin(
     srcs = ["apply_plugin_main.cc"],
     data = [
         # copybara:uncomment_begin(google-only)
-        # "//platforms/darwinn/compiler:compiler_api_wrapper",
+        # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
         # copybara:uncomment_end
         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
     ],

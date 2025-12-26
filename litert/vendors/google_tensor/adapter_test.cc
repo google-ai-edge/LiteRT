@@ -52,7 +52,7 @@ TEST(AdapterTest, CreateSuccess) {
 }
 
 TEST(AdapterTest, CreateFailure) {
-  auto kLibDarwinnCompilerNoLib = "libcompiler_api_wrapper_no_lib.so";
+  auto kLibDarwinnCompilerNoLib = "liblitert_plugin_compiler_no_lib.so";
   auto adapter_result = Adapter::Create(kLibDarwinnCompilerNoLib);
   ASSERT_FALSE(adapter_result.HasValue());
 }

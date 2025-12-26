@@ -55,7 +55,7 @@ litert::Expected<Adapter::Ptr> Adapter::Create(
 
 litert::Expected<void> AdapterAot::LoadSymbols(
     std::optional<std::string> shared_library_dir) {
-  constexpr auto kLibTensorTPUCompiler = "libcompiler_api_wrapper.so";
+  constexpr auto kLibTensorTPUCompiler = "liblitert_plugin_compiler.so";
 
   const std::vector<std::string> so_paths = {
       shared_library_dir.has_value()
