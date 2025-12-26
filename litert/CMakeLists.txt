@@ -63,6 +63,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
+# The codebase has deprecated Error constructors that are still in use
+add_compile_options(
+  -Wno-deprecated-declarations
+  -Wno-return-type
+  -fpermissive
+)
+
 if(CMAKE_SYSTEM_PROCESSOR)
   string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" LITERT_SYSTEM_PROCESSOR_LOWER)
 else()
@@ -410,4 +418,3 @@ add_subdirectory(vendors)
 if(LITERT_BUILD_TOOLS)
   add_subdirectory(tools)
 endif()
-

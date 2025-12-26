@@ -324,6 +324,7 @@ std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority) {
     case QualcommOptions::GraphPriority::kHigh:
       return "high";
   }
+  return "default";
 }
 
 std::string AbslUnparseFlag(
@@ -336,6 +337,7 @@ std::string AbslUnparseFlag(
     case QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3:
       return "O3";
   }
+  return "O1";
 }
 
 }  // namespace litert::qualcomm
