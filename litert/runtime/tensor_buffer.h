@@ -26,8 +26,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
+#include "absl/types/span.h"               // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_layout.h"
@@ -38,8 +38,9 @@
 #include "litert/runtime/event.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
+
+#include "litert/runtime/open_cl_memory.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -265,6 +266,10 @@ class LiteRtTensorBufferT {
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedOpenClMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
+  static litert::Expected<Ptr> CreateManagedOpenVINOTensorBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 

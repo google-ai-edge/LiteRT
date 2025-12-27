@@ -24,23 +24,27 @@
 #include <utility>
 #include <vector>
 
-#include "xnnpack.h"  // from @XNNPACK
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/types/span.h"          // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/environment.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
+#include "litert/runtime/tensor_buffer_registry.h"
+#include "xnnpack.h"  // from @XNNPACK
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
+
+#include "litert/runtime/open_cl_memory.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -79,6 +83,40 @@ void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
 // CFI builds don't like directly passing free() as a function pointer, so wrap
 // in another function.
 void FreeHostMemory(void* ptr) { litert_aligned_free(ptr); }
+
+Expected<void> RegisterOpenVINOCustomBufferIfNeeded(LiteRtEnvironment env) {
+  litert::internal::TensorBufferRegistry* registry = nullptr;
+  LiteRtGetTensorBufferRegistry(env, reinterpret_cast<void**>(&registry));
+  if (!registry) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Failed to get tensor buffer registry.");
+  }
+  litert::Expected<litert::internal::CustomTensorBufferHandlers>
+      registered_handlers = registry->GetCustomHandlers(
+          kLiteRtTensorBufferTypeOpenVINOTensorBuffer);
+  if (!registered_handlers.HasValue()) {
+    // TODO:: Make sure the custom buffer handlers are setted by OpenVINO plugin.
+    std::optional<LiteRtAny> option_custom_buffer_handlers =
+        env->GetOption(kLiteRtEnvOptionTagCustomTensorBufferHandlers);
+    if (!option_custom_buffer_handlers) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "No custom tensor buffer handlers found.");
+    }
+    const auto* custom_buffer_handlers =
+        reinterpret_cast<const LiteRtCustomTensorBufferHandlers*>(
+            option_custom_buffer_handlers->ptr_value);
+
+    litert::internal::CustomTensorBufferHandlers handlers = {
+        .create_func = custom_buffer_handlers->create_func,
+        .destroy_func = custom_buffer_handlers->destroy_func,
+        .lock_func = custom_buffer_handlers->lock_func,
+        .unlock_func = custom_buffer_handlers->unlock_func,
+    };
+    registry->RegisterHandlers(kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+                               handlers);
+  }
+  return {};
+}
 
 }  // namespace
 
@@ -206,6 +244,10 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
       // internal vulkan memory is auto-disposed by the
       // litert::internal::VulkanMemory destructor.
       break;
+    case kLiteRtTensorBufferTypeOpenVINOTensorBuffer:
+      // internal OpenVINO remote tensor is auto-disposed by the
+      // litert::internal::CustomBuffer destructor.
+      break;
   }
 }
 
@@ -256,7 +298,6 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
           tensor_type,
           absl::MakeSpan(static_cast<uint8_t*>(host_memory_ptr), buffer_size),
           deallocator));
-
   return std::move(tensor_buffer);
 }
 
@@ -449,6 +490,27 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
   return tensor_buffer;
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedOpenVINOTensorBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_RETURN_IF_ERROR(RegisterOpenVINOCustomBufferIfNeeded(env));
+
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, tensor_type, buffer_type, buffer_size, packed_size);
+  if (!buffer) {
+    return Unexpected(buffer.Error());
+  }
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(*buffer));
+  return tensor_buffer;
+}
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuBuffer(
@@ -692,6 +754,10 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
       return CreateManagedVulkanMemory(env, tensor_type, buffer_type,
                                        buffer_size);
     }
+    case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
+      return CreateManagedOpenVINOTensorBuffer(env, tensor_type, buffer_type,
+                                               buffer_size);
+    }
     case kLiteRtTensorBufferTypeUnknown:
     default:
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
@@ -916,7 +982,7 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
 Expected<litert::internal::CustomBuffer*>
 LiteRtTensorBufferT::GetCustomBuffer() {
   if (IsWebGpuMemory(buffer_type_) || IsVulkanMemory(buffer_type_) ||
-      IsMetalMemory(buffer_type_)) {
+      IsMetalMemory(buffer_type_) || IsOpenVINOTensorBuffer(buffer_type_)) {
     return &std::get<litert::internal::CustomBuffer>(buffer_);
   }
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -1009,7 +1075,8 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferTypeVulkanTextureFp16:
     case kLiteRtTensorBufferTypeVulkanImageBuffer:
     case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
-    case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+    case kLiteRtTensorBufferTypeVulkanBufferPacked:
+    case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
                               custom_buffer->Lock(mode));
@@ -1079,7 +1146,8 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeVulkanTextureFp16:
     case kLiteRtTensorBufferTypeVulkanImageBuffer:
     case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
-    case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+    case kLiteRtTensorBufferTypeVulkanBufferPacked:
+    case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Unlock();
     }
