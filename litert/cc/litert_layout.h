@@ -103,8 +103,7 @@ class Layout {
   constexpr explicit Layout(const litert::Dimensions& dimensions)
       : lrt_layout_(BuildLayout(dimensions)) {}
 
-  constexpr explicit Layout(const litert::Dimensions& dimensions,
-                            const litert::Strides& strides)
+  Layout(const litert::Dimensions& dimensions, const litert::Strides& strides)
       : lrt_layout_(BuildLayout(dimensions,
                                 strides.empty() ? nullptr : strides.data())) {}
 
