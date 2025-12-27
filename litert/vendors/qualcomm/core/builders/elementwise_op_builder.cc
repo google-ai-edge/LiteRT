@@ -19,11 +19,14 @@ std::vector<OpWrapper> BuildElementwiseAddOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_ADD);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
 
   return res;
 }
@@ -33,11 +36,14 @@ std::vector<OpWrapper> BuildElementwiseSubOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SUBTRACT);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SUBTRACT);
 
   return res;
 }
@@ -47,11 +53,14 @@ std::vector<OpWrapper> BuildElementwiseMulOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_MULTIPLY);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
 
   return res;
 }
@@ -61,11 +70,14 @@ std::vector<OpWrapper> BuildElementwiseDivOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_DIVIDE);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_DIVIDE);
 
   return res;
 }
@@ -75,11 +87,12 @@ std::vector<OpWrapper> BuildElementwiseSinOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SIN);
-  for (const auto& input : inputs) {
-    elementwise_op.AddInputTensor(input);
-  }
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_SIN);
 
   return res;
 }
@@ -104,11 +117,12 @@ std::vector<OpWrapper> BuildElementwiseCosOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_COS);
-  for (const auto& input : inputs) {
-    elementwise_op.AddInputTensor(input);
-  }
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_COS);
 
   return res;
 }
@@ -133,11 +147,12 @@ std::vector<OpWrapper> BuildElementwiseRsqrtOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_RSQRT);
-  for (const auto& input : inputs) {
-    elementwise_op.AddInputTensor(input);
-  }
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_RSQRT);
 
   return res;
 }
@@ -147,9 +162,12 @@ std::vector<OpWrapper> BuildElementwiseSqrtOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SQUARE_ROOT);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
   elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_SQRT);
 
   return res;
 }
@@ -159,11 +177,13 @@ std::vector<OpWrapper> BuildElementwiseSquareOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  OpWrapper& elementwise_op =
-      CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_MULTIPLY);
+  OpWrapper& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
 
   return res;
 }
@@ -173,12 +193,14 @@ std::vector<OpWrapper> BuildElementwiseSquaredDifferenceOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op =
-      CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SQUARED_DIFFERENCE);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SQUARED_DIFFERENCE);
 
   return res;
 }
@@ -352,11 +374,15 @@ std::vector<OpWrapper> BuildElementwisePowerOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_POWER);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_POWER);
+
   return res;
 }
 
@@ -381,11 +407,13 @@ std::vector<OpWrapper> BuildElementwiseNotOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NOT);
-  for (const auto& input : inputs) {
-    elementwise_op.AddInputTensor(input);
-  }
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  elementwise_op.AddInputTensor(inputs[0]);
   elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
+
   return res;
 }
 
