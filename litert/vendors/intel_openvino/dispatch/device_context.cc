@@ -39,13 +39,21 @@
 #include "litert/c/litert_model.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
+#if defined(LITERT_WINDOWS_OS)
+#include "litert/vendors/intel_openvino/dispatch/remote_tensor_buffer.h"
+#endif  // LITERT_WINDOWS_OS
+
+#if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
+#include "openvino/core/type/element_type.hpp"
+#endif
+
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create() {
   return Ptr(new LiteRtDispatchDeviceContextT());
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
-litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer *ahwb) {
+litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
   int socks[2];
   if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, socks) != 0) {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -133,31 +141,34 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Tensor strides are not supported"));
 
-  ov::element::Type ov_element_type =
-      litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
   switch (tensor_buffer_type) {
-    case kLiteRtTensorBufferTypeHostMemory: {
-      void* buffer_host_addr;
+    case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
+#if defined(LITERT_WINDOWS_OS)
+      HwMemoryHandle hw_memory_handle;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
+          LiteRtGetTensorBufferCustomTensorBufferHandle(tensor_buffer,
+                                                        &hw_memory_handle),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to get HostMemory buffer"));
+                             "Failed to get OpenVINO remote tensor buffer."));
+      RemoteTensorBuffer* custom_tensor_buffer =
+          reinterpret_cast<RemoteTensorBuffer*>(hw_memory_handle);
 
-      auto context = core_->get_default_context("NPU")
-                         .as<ov::intel_npu::level_zero::ZeroContext>();
-      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
-      for (int i = 0; i < ov_shape_vec.size(); i++)
-        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-
-      auto remote_tensor = context.create_l0_host_tensor(
-          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()});
-      memcpy(remote_tensor.get(), buffer_host_addr, tensor_buffer_size);
+      LITERT_ASSIGN_OR_RETURN(auto remote_tensor,
+                              custom_tensor_buffer->GetZeroBufferTensor());
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
                                  remote_tensor);
+
       return next_handle_++;
+#else
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          "Remote tensor support is missing on this platform.");
+#endif  // LITERT_WINDOWS_OS
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
+      ov::element::Type ov_element_type =
+          litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
       int buffer_fd;
       void *buffer_host_addr;
       LITERT_RETURN_IF_ERROR(
@@ -195,6 +206,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
     case kLiteRtTensorBufferTypeAhwb: {
 #if LITERT_HAS_AHWB_SUPPORT
+      ov::element::Type ov_element_type =
+          litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
       AHardwareBuffer *ahwb;
       LITERT_RETURN_IF_ERROR(
           LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb),

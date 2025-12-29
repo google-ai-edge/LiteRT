@@ -65,7 +65,7 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   LiteRtTensorBufferType supported_tensor_buffer_types[] = {
 #if defined(LITERT_WINDOWS_OS)
-      kLiteRtTensorBufferTypeHostMemory,
+      kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
 #else
       // OpenVINO RemoteTensor doesn't support copy-free AHWB buffer. Until
       // it's supported, we use DMA-BUF.
@@ -77,7 +77,6 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
   int num_supported_tensor_buffer_types =
       sizeof(supported_tensor_buffer_types) /
       sizeof(supported_tensor_buffer_types[0]);
-
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
     return litert::Unexpected(buffer_size.Error());

@@ -20,9 +20,9 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/custom_buffer.h"
@@ -176,6 +176,18 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
   return kLiteRtStatusOk;
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+LiteRtStatus LiteRtGetTensorBufferCustomTensorBufferHandle(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+  if (!tensor_buffer || !hw_memory_handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto remote_tensor_buffer,
+                          tensor_buffer->GetCustomBuffer());
+  *hw_memory_handle = remote_tensor_buffer->hw_buffer_handle();
+  return kLiteRtStatusOk;
+}
 
 #if LITERT_HAS_METAL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
@@ -346,10 +358,10 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
-                          LiteRtTensorBufferT::CreateFromWebGpuBuffer(
-                              env, *tensor_type, buffer_type, wgpu_buffer,
-                              wgpu_buffer_size));
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateFromWebGpuBuffer(
+          env, *tensor_type, buffer_type, wgpu_buffer, wgpu_buffer_size));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 }

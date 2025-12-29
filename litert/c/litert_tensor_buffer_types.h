@@ -83,6 +83,9 @@ typedef enum {
   kLiteRtTensorBufferTypeVulkanImageBuffer = 44,
   kLiteRtTensorBufferTypeVulkanImageBufferFp16 = 45,
   kLiteRtTensorBufferTypeVulkanBufferPacked = 46,
+
+  // 50-59 are reserved for custom NPU memory objects.
+  kLiteRtTensorBufferTypeOpenVINOTensorBuffer = 50,
 } LiteRtTensorBufferType;
 // LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types)
 
@@ -94,6 +97,10 @@ inline bool IsOpenClMemory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked ||
          buffer_type == kLiteRtTensorBufferTypeOpenClImageBuffer ||
          buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16;
+}
+
+inline bool IsOpenVINOTensorBuffer(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeOpenVINOTensorBuffer;
 }
 
 inline bool IsWebGpuMemory(LiteRtTensorBufferType buffer_type) {
