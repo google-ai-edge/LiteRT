@@ -177,6 +177,7 @@ else()
             ${ABSEIL_TOOL_LIBS}
             ${LITERT_TOOL_COMMON_LIBS}
             "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
     )
 endif()
 
@@ -221,6 +222,7 @@ else()
             litert_core
             litert_core_model
             "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
     )
 endif()
 
@@ -272,6 +274,7 @@ else()
             ${ABSEIL_TOOL_LIBS}
             ${LITERT_TOOL_COMMON_LIBS}
             "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
     )
 endif()
 # Platform-specific configurations for all executables

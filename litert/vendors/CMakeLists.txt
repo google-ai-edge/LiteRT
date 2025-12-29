@@ -229,7 +229,12 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
 endfunction()
 
 # Google Tensor
-_litert_add_dispatch_so(GoogleTensor "google_tensor/dispatch" "GoogleTensor")
+set(GOOGLE_TENSOR_SB_API_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/google_tensor/dispatch/sb_api.h")
+if(EXISTS "${GOOGLE_TENSOR_SB_API_HEADER}")
+  _litert_add_dispatch_so(GoogleTensor "google_tensor/dispatch" "GoogleTensor")
+else()
+  message(STATUS "Skipping Google Tensor dispatch: sb_api.h not found")
+endif()
 # MediaTek
 check_include_file_cxx("neuron/api/NeuronAdapter.h" HAVE_MEDIATEK_NEURON_HDR)
 if(NEUROPILOT_HEADERS_DIR AND EXISTS "${NEUROPILOT_HEADERS_DIR}/neuron/api/NeuronAdapter.h")
@@ -258,4 +263,3 @@ if(LITERT_ENABLE_QUALCOMM)
   # Use modular CMake structure for Qualcomm
   add_subdirectory(qualcomm)
 endif()
-
