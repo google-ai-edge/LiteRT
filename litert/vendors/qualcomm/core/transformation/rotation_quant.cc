@@ -56,13 +56,15 @@ size_t ParallelizeHadamardTransform(
             ops[start_index + kPostReshapeIndex].GetInputTensor(0))) {
     return 1;
   }
-
-  // Check both rehsape ops are for non-power-of-two Hadamard.
+  
   const auto& input = ops[start_index + kPreReshapeIndex].GetInputTensor(0);
   const auto& output = ops[start_index + kPostReshapeIndex].GetOutputTensor(0);
-  if (!(input.GetDims() == output.GetDims() &&
-        input.GetDim(input.GetRank() - 1) >
-            h_input.GetDim(h_input.GetRank() - 1))) {
+  const std::uint32_t input_size = input.GetDim(input.GetRank() - 1);
+  const std::uint32_t hadamard_size = h_input.GetDim(h_input.GetRank() - 1);
+
+  // Check both rehsape ops are for non-power-of-two Hadamard.
+  if (!(input.GetDims() == output.GetDims() && input_size > hadamard_size &&
+        input_size % hadamard_size == 0)) {
     return 1;
   }
 
@@ -71,21 +73,16 @@ size_t ParallelizeHadamardTransform(
   std::vector<OpWrapper> new_ops;
 
   // Compute the number of HadamardTransform ops.
-  size_t num_h =
-      input.GetDim(input.GetRank() - 1) / h_input.GetDim(h_input.GetRank() - 1);
+  const std::uint32_t num_h = input_size / hadamard_size;
 
-  // Prepare inputs and outputs for parrallel Hadamard Transform.
+  // Prepare inputs for parrallel Hadamard Transform.
   std::vector<::qnn::TensorWrapperRef> hadamard_transform_inputs;
-  std::vector<::qnn::TensorWrapperRef> hadamard_transform_outputs;
   hadamard_transform_inputs.reserve(num_h);
-  hadamard_transform_outputs.reserve(num_h);
-  for (int i = 0; i < num_h; ++i) {
-    auto io_dims = input.GetDims();
-    io_dims[input.GetRank() - 1] /= num_h;
+  auto io_dims = input.GetDims();
+  io_dims[input.GetRank() - 1] /= num_h;
+  for (std::uint32_t i = 0; i < num_h; ++i) {
     hadamard_transform_inputs.emplace_back(
         tensor_pool.CloneNativeTensorFrom(input, io_dims));
-    hadamard_transform_outputs.emplace_back(
-        tensor_pool.CloneNativeTensorFrom(output, io_dims));
   }
 
   // Split
@@ -102,9 +99,13 @@ size_t ParallelizeHadamardTransform(
   std::move(split.begin(), split.end(), std::back_inserter(new_ops));
 
   // HadamardTransform
-  for (int i = 0; i < num_h; ++i) {
-    EmplaceOpWithIO(new_ops, hadamard_transform, {hadamard_transform_inputs[i]},
-                    {hadamard_transform_outputs[i]});
+  std::vector<::qnn::TensorWrapperRef> hadamard_transform_outputs;
+  hadamard_transform_outputs.reserve(hadamard_transform_inputs.size());
+  for (const auto& input_tensor : hadamard_transform_inputs) {
+    const auto& output_tensor = hadamard_transform_outputs.emplace_back(
+        tensor_pool.CloneNativeTensorFrom(output, io_dims));
+    EmplaceOpWithIO(new_ops, hadamard_transform, {input_tensor},
+                    {output_tensor});
   }
 
   // Concat

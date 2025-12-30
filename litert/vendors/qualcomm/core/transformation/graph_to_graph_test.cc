@@ -1338,12 +1338,11 @@ TEST(RotQuant, ReshapeHadamardReshape) {
   constexpr std::size_t num_rotation = 1152 / 128;
   constexpr std::size_t op_size = 2 + num_rotation;
   ASSERT_EQ(op_wrappers.size(), op_size);
-  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kSplit));
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kSplit));
   for (std::size_t i = 1; i < 1 + num_rotation; ++i) {
-    printf("%d\n", op_wrappers[i].GetOpCode());
-    ASSERT_TRUE(op_wrappers[i].IsOpCode(QnnOpCode::kHadamardTransform));
+    EXPECT_TRUE(op_wrappers[i].IsOpCode(QnnOpCode::kHadamardTransform));
   }
-  ASSERT_TRUE(op_wrappers[op_size - 1].IsOpCode(QnnOpCode::kConcat));
+  EXPECT_TRUE(op_wrappers[op_size - 1].IsOpCode(QnnOpCode::kConcat));
 }
 }  // namespace
 }  // namespace qnn

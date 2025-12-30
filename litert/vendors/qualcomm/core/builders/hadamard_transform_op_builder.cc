@@ -6,12 +6,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-#include <variant>
 #include <cmath>
 #include "QnnOpDef.h"  // from @qairt
-#include "absl/numeric/bits.h"
+#include "absl/numeric/bits.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
-#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 namespace qnn {
@@ -27,7 +25,7 @@ std::optional<float> GetSylvesterHadamardScale(const TensorWrapper& weight) {
   const std::uint32_t n = weight.GetDim(0);
 
   // Ensure the size is power-of-two.
-  if (n == 0 || (n & (n - 1) != 0)) return std::nullopt;
+  if (n == 0 || (n & (n - 1)) != 0) return std::nullopt;
 
   // Get weight data.
   if (weight.GetDataType() != Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_8) {
@@ -39,9 +37,9 @@ std::optional<float> GetSylvesterHadamardScale(const TensorWrapper& weight) {
   std::int8_t hadamard_value = hadamard.value()[0];
 
   // Ensure the matrix adheres Sylvester's construction.
-  for (int i = 0; i < n; ++i) {
-    for (int j = 0; j < n; ++j) {
-      int bits = absl::popcount(static_cast<uint32_t>(i & j));
+  for (std::uint32_t i = 0; i < n; ++i) {
+    for (std::uint32_t j = 0; j < n; ++j) {
+      int bits = absl::popcount(i & j);
       std::int8_t val = ((bits & 1) == 0) ? +hadamard_value : -hadamard_value;
       if (hadamard.value()[i * n + j] != val) {
         return std::nullopt;
