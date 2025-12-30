@@ -40,7 +40,7 @@ typedef enum {
   kLiteRtEnvOptionTagMetalCommandQueue = 11,
   // WARNING: Vulkan support is experimental.
   kLiteRtEnvOptionTagVulkanEnvironment = 12,
-  kLiteRtEnvOptionTagVulkanCommandPool = 13,
+  // kLiteRtEnvOptionTagVulkanCommandPool = 13,  // Deprecated.
   kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy = 14,
   kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy = 15,
   kLiteRtEnvOptionTagMagicNumberConfigs = 16,
