@@ -8,7 +8,6 @@
 #include <memory>
 #include <optional>
 
-#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -52,6 +51,12 @@ class HtpBackend : public QnnBackend {
   ::qnn::SocInfo GetSocInfo() { return soc_info_; }
 
  private:
+  // Direct vote is only supported in manual mode.
+  void PerformanceVote() override;
+
+  bool CreatePerfPowerConfigPtr(
+      const PerformanceModeVoteType vote_type) override;
+
   QnnHtpDevice_CustomConfig_t& AllocateHtpDeviceConfig() {
     auto& back = htp_device_configs_.emplace_back();
     back.option = QNN_HTP_DEVICE_CONFIG_OPTION_UNKNOWN;
@@ -66,12 +71,23 @@ class HtpBackend : public QnnBackend {
 
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
 
+  inline bool IsPerfModeEnabled() const {
+    return performance_mode_ != HtpPerformanceMode::kDefault;
+  }
+
   // TODO: Remove this after user can pass graph options to QNN
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
+  SocInfo soc_info_ = kSocInfos[7];  // V75
   std::list<QnnHtpDevice_CustomConfig_t> htp_device_configs_;
   std::list<QnnHtpDevice_DeviceInfoExtension_t> htp_device_info_extensions_;
   QnnDevicePlatformInfo qnn_device_platform_info_;
-  std::unique_ptr<PerfControl> perf_control_{nullptr};
+
+  // Performance control
+  struct BackendConfig;
+  std::unique_ptr<BackendConfig> backend_config_;
+  std::uint32_t powerconfig_client_id_{0};
+  std::uint32_t device_id_{0};
+  PerformanceModeVoteType manual_voting_type_{kNoVote};
+  HtpPerformanceMode performance_mode_{HtpPerformanceMode::kDefault};
 };
 
 }  // namespace qnn

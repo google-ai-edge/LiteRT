@@ -180,7 +180,7 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 11);
+  ASSERT_EQ(num_supported_soc_models, 13);
 
   const char* config_id;
   LITERT_ASSERT_OK(

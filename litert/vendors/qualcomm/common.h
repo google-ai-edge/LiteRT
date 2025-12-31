@@ -110,11 +110,15 @@ inline LiteRtStatus InitQnnOptions(
       static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
   qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
   qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
+  qnn_options.SetBackendType(
+      static_cast<::qnn::BackendType>(qualcomm_options.GetQnnBackend()));
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
   qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
+  qnn_options.SetDspPerformanceMode(static_cast<::qnn::DspPerformanceMode>(
+      qualcomm_options.GetDspPerformanceMode()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
   qnn_options.SetVtcmSize(qualcomm_options.GetVtcmSize());
   qnn_options.SetNumHvxThreads(qualcomm_options.GetNumHvxThreads());

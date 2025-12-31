@@ -40,6 +40,18 @@ bool AbslParseFlag(absl::string_view text, QualcommOptions::LogLevel* options,
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::QnnBackend,
+                  qualcomm_qnn_backend);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::QnnBackend* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::QnnBackend options);
+
+}  // namespace litert::qualcomm
+
 #endif
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
@@ -104,6 +116,19 @@ bool AbslParseFlag(absl::string_view text,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::HtpPerformanceMode options);
+
+}  // namespace litert::qualcomm
+
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::DspPerformanceMode,
+                  qualcomm_dsp_performance_mode);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::DspPerformanceMode* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options);
 
 }  // namespace litert::qualcomm
 

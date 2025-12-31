@@ -158,6 +158,28 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsHtpPerformanceMode* htp_performance_mode);
 
+// dsp_performance_mode
+
+typedef enum LiteRtQualcommOptionsDspPerformanceMode {
+  kLiteRtQualcommDspPerformanceModeDefault = 0,
+  kLiteRtQualcommDspPerformanceModeSustainedHighPerformance = 1,
+  kLiteRtQualcommDspPerformanceModeBurst = 2,
+  kLiteRtQualcommDspPerformanceModeHighPerformance = 3,
+  kLiteRtQualcommDspPerformanceModePowerSaver = 4,
+  kLiteRtQualcommDspPerformanceModeLowPowerSaver = 5,
+  kLiteRtQualcommDspPerformanceModeHighPowerSaver = 6,
+  kLiteRtQualcommDspPerformanceModeLowBalanced = 7,
+  kLiteRtQualcommDspPerformanceModeBalanced = 8,
+} LiteRtQualcommOptionsDspPerformanceMode;
+
+LiteRtStatus LiteRtQualcommOptionsSetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode);
+
+LiteRtStatus LiteRtQualcommOptionsGetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
+
 // profiling
 
 // This option controls the profiling level. A higher level results in a more
@@ -230,6 +252,23 @@ LiteRtStatus LiteRtQualcommOptionsSetGraphPriority(
 LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsGraphPriority* graph_priority);
+
+// This option controls which backend to use. Default is unknown (let the
+// runtime decide).
+typedef enum LiteRtQualcommOptionsQnnBackend {
+  kLiteRtQualcommQnnBackendUndefined = 0,
+  kLiteRtQualcommQnnBackendGpu,
+  kLiteRtQualcommQnnBackendHtp,
+  kLiteRtQualcommQnnBackendDsp,
+  kLiteRtQualcommQnnBackendIr,
+} LiteRtQualcommOptionsQnnBackend;
+
+LiteRtStatus LiteRtQualcommOptionsSetQnnBackend(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsQnnBackend qnn_backend);
+
+LiteRtStatus LiteRtQualcommOptionsGetQnnBackend(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsQnnBackend* qnn_backend);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -193,6 +193,99 @@ TEST(HtpPerformanceModeTest, Parse) {
   }
 }
 
+TEST(DspPerformanceModeTest, Malformed) {
+  std::string error;
+  QualcommOptions::DspPerformanceMode value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(DspPerformanceModeTest, Parse) {
+  std::string error;
+  QualcommOptions::DspPerformanceMode value;
+
+  {
+    static constexpr absl::string_view kMode = "default";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kDefault;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "sustained_high_performance";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kSustainedHighPerformance;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "burst";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kBurst;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "high_performance";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kHighPerformance;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "power_saver";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kPowerSaver;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "low_power_saver";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kLowPowerSaver;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "high_power_saver";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kHighPowerSaver;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "low_balanced";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kLowBalanced;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "balanced";
+    static constexpr QualcommOptions::DspPerformanceMode kModeEnum =
+        QualcommOptions::DspPerformanceMode::kBalanced;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+}
+
 TEST(ProfilingTest, Malformed) {
   std::string error;
   QualcommOptions::Profiling value;
@@ -332,6 +425,47 @@ TEST(GraphPriorityTest, Parse) {
   }
 }
 
+TEST(QnnBackendTest, Parse) {
+  std::string error;
+  QualcommOptions::QnnBackend value;
+
+  {
+    static constexpr absl::string_view kBackend = "gpu";
+    static constexpr QualcommOptions::QnnBackend kBackendEnum =
+        QualcommOptions::QnnBackend::kGpu;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kBackend = "htp";
+    static constexpr QualcommOptions::QnnBackend kBackendEnum =
+        QualcommOptions::QnnBackend::kHtp;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kBackend = "dsp";
+    static constexpr QualcommOptions::QnnBackend kBackendEnum =
+        QualcommOptions::QnnBackend::kDsp;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kBackend = "ir";
+    static constexpr QualcommOptions::QnnBackend kBackendEnum =
+        QualcommOptions::QnnBackend::kIr;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());
@@ -352,6 +486,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
+  EXPECT_EQ(options.Value().GetQnnBackend(), QualcommOptions::QnnBackend::kHtp);
 }
 
 }  // namespace
