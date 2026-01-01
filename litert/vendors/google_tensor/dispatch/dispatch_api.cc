@@ -577,6 +577,11 @@ LiteRtStatus InvocationContextGetGraph(
   *graph = invocation_context->graph();
   return kLiteRtStatusOk;
 }
+LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
+                                       LiteRtEnvironmentOptions env,
+                                       LiteRtOptions options) {
+  return kLiteRtStatusOk;
+}
 
 }  // namespace google_tensor
 }  // namespace litert
@@ -609,6 +614,8 @@ LiteRtDispatchInterface TheInterface = {
     .get_num_metrics = litert::google_tensor::GetNumMetrics,
     .get_metric = litert::google_tensor::GetMetric,
     .destroy_metrics = litert::google_tensor::DestroyMetrics,
+    .check_runtime_compatibility =
+        litert::google_tensor::CheckRuntimeCompatibility,
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {

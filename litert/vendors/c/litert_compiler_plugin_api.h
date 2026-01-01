@@ -79,6 +79,11 @@ typedef LiteRtStatus (*LiteRtCompilerPluginRegisterAllTransformationsT)(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns);
 
+typedef LiteRtStatus (*LiteRtCompilerPluginCheckCompilerCompatibilityT)(
+    LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
+    LiteRtEnvironmentOptions env, LiteRtOptions options,
+    const char* soc_model_name);
+
 //
 // Function Pointer Container
 //
@@ -106,6 +111,7 @@ struct LiteRtCompilerPluginApi {
   LiteRtGetCompiledResultCallInfoT get_compiled_result_call_info;
   LiteRtGetNumCompiledResultCallsT get_compiled_result_num_calls;
   LiteRtCompilerPluginRegisterAllTransformationsT register_all_transformations;
+  LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
 };
 
 #ifdef __cplusplus
@@ -150,6 +156,9 @@ static constexpr absl::string_view kLiteRtGetNumCompiledResultCalls =
 static constexpr absl::string_view
     kLiteRtCompilerPluginRegisterAllTransformations =
         "LiteRtCompilerPluginRegisterAllTransformations";
+static constexpr absl::string_view
+    kLiteRtCompilerPluginCheckCompilerCompatibility =
+        "LiteRtCompilerPluginCheckCompilerCompatibility";
 
 #endif  // __cplusplus
 
