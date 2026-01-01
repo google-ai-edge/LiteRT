@@ -1247,6 +1247,7 @@ cc_library(
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "@opencl_headers",
+        "@eigen_archive//:eigen3",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",

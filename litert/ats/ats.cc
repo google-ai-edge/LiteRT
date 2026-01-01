@@ -31,6 +31,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_numerics.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "tflite/schema/schema_generated.h"
@@ -66,7 +67,7 @@ void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
       Fixture,
       BinaryNoBroadcast,
       SizeListC<1, 2, 3, 4, 5, 6>,
-      TypeList<float, int32_t>,
+      TypeList<float, int32_t, fp16_t>,
       OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,
       FaListC<::tflite::ActivationFunctionType_NONE>>
     (iters, test_id, options, cap);
