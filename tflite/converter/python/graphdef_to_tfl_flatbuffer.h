@@ -29,8 +29,8 @@ namespace tensorflow {
 // given model flags, converter flags and debug information. Returns error
 // status if it fails to convert the input.
 absl::Status ConvertGraphDefToTFLiteFlatBuffer(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags, const GraphDebugInfo& debug_info,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags, const GraphDebugInfo& debug_info,
     const GraphDef& input, std::string* result);
 
 }  // namespace tensorflow

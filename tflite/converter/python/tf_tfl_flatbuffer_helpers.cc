@@ -111,49 +111,49 @@ constexpr mlir::StringRef kUnidirectionalSequenceRnnOp =
     "DT_FLOAT} "
     "attr : { name: '_tflite_input_indices' type: 'list(int)'}";
 
-// Converts the tflite::IODataType to tensorflow::DataType. Only contains the
+// Converts the litert::IODataType to tensorflow::DataType. Only contains the
 // conversion mapping for constants defined in TFLite Python API.
-DataType ConvertIODataTypeToDataType(tflite::IODataType dtype) {
+DataType ConvertIODataTypeToDataType(litert::IODataType dtype) {
   switch (dtype) {
-    case tflite::IODataType::FLOAT:
+    case litert::IODataType::FLOAT:
       return DT_FLOAT;
-    case tflite::IODataType::FLOAT16:
+    case litert::IODataType::FLOAT16:
       return DT_HALF;
-    case tflite::IODataType::FLOAT64:
+    case litert::IODataType::FLOAT64:
       return DT_DOUBLE;
-    case tflite::IODataType::QUANTIZED_UINT8:
+    case litert::IODataType::QUANTIZED_UINT8:
       return DT_QUINT8;
-    case tflite::IODataType::QUANTIZED_INT8:
+    case litert::IODataType::QUANTIZED_INT8:
       return DT_QINT8;
-    case tflite::IODataType::QUANTIZED_INT16:
+    case litert::IODataType::QUANTIZED_INT16:
       return DT_QINT16;
-    case tflite::IODataType::INT8:
+    case litert::IODataType::INT8:
       return DT_INT8;
-    case tflite::IODataType::INT16:
+    case litert::IODataType::INT16:
       return DT_INT16;
-    case tflite::IODataType::UINT16:
+    case litert::IODataType::UINT16:
       return DT_UINT16;
-    case tflite::IODataType::INT32:
+    case litert::IODataType::INT32:
       return DT_INT32;
-    case tflite::IODataType::UINT32:
+    case litert::IODataType::UINT32:
       return DT_UINT32;
-    case tflite::IODataType::INT64:
+    case litert::IODataType::INT64:
       return DT_INT64;
-    case tflite::IODataType::UINT8:
+    case litert::IODataType::UINT8:
       return DT_UINT8;
-    case tflite::IODataType::UINT64:
+    case litert::IODataType::UINT64:
       return DT_UINT64;
-    case tflite::IODataType::STRING:
+    case litert::IODataType::STRING:
       return DT_STRING;
-    case tflite::IODataType::BOOL:
+    case litert::IODataType::BOOL:
       return DT_BOOL;
-    case tflite::IODataType::COMPLEX64:
+    case litert::IODataType::COMPLEX64:
       return DT_COMPLEX64;
-    case tflite::IODataType::COMPLEX128:
+    case litert::IODataType::COMPLEX128:
       return DT_COMPLEX128;
-    case tflite::IODataType::RESOURCE:
+    case litert::IODataType::RESOURCE:
       return DT_RESOURCE;
-    case tflite::IODataType::VARIANT:
+    case litert::IODataType::VARIANT:
       return DT_VARIANT;
     default:
       return DT_INVALID;
@@ -202,7 +202,7 @@ absl::Status RegisterCustomBuiltinOps(
 }  // namespace
 
 absl::Status RegisterAllCustomOps(
-    const tflite::ConverterFlags& converter_flags) {
+    const litert::ConverterFlags& converter_flags) {
   // Register any custom OpDefs.
   std::vector<std::string> extra_tf_opdefs(
       converter_flags.custom_opdefs().begin(),
@@ -214,8 +214,8 @@ absl::Status RegisterAllCustomOps(
 }
 
 absl::Status PopulateQuantizationSpecs(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags,
     mlir::TFL::QuantizationSpecs* quant_specs,
     std::vector<std::string>* node_names, std::vector<std::string>* node_dtypes,
     std::vector<std::optional<std::vector<int>>>* node_shapes,
@@ -237,7 +237,7 @@ absl::Status PopulateQuantizationSpecs(
     // If it's not filled, make it an empty string so the importer will use
     // the data type in the NodeDef.
     auto tflite_data_type = flag.data_type();
-    if (tflite_data_type == tflite::IODataType::IO_DATA_TYPE_UNKNOWN) {
+    if (tflite_data_type == litert::IODataType::IO_DATA_TYPE_UNKNOWN) {
       node_dtypes->push_back("");
     } else {
       node_dtypes->push_back(
@@ -303,7 +303,7 @@ absl::Status PopulateQuantizationSpecs(
     if (converter_flags.allow_bfloat16()) {
       mask |= ReducedPrecisionSupport::Bfloat16Inference;
     }
-    if (converter_flags.accumulation_type() == tflite::IODataType::FLOAT16) {
+    if (converter_flags.accumulation_type() == litert::IODataType::FLOAT16) {
       mask |= ReducedPrecisionSupport::Float16Accumulation;
     } else {
       mask |= ReducedPrecisionSupport::Float32Accumulation;
@@ -328,8 +328,8 @@ absl::Status PopulateQuantizationSpecs(
 }
 
 absl::Status ConvertMLIRToTFLiteFlatBuffer(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags,
     std::unique_ptr<mlir::MLIRContext>&& context,
     mlir::OwningOpRef<mlir::ModuleOp> module,
     const mlir::TFL::PassConfig& pass_config,
@@ -358,8 +358,8 @@ absl::Status ConvertMLIRToTFLiteFlatBuffer(
   return status;
 }
 
-void WarningUnusedFlags(const tflite::ModelFlags& model_flags,
-                        const tflite::ConverterFlags& converter_flags) {
+void WarningUnusedFlags(const litert::ModelFlags& model_flags,
+                        const litert::ConverterFlags& converter_flags) {
   if (converter_flags.output_format()) {
     LOG(WARNING) << "Ignored output_format.";
   }

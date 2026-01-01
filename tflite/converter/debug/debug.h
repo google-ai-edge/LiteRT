@@ -20,15 +20,15 @@ limitations under the License.
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
 #include "tflite/converter/debug/debug_options.pb.h"
 
-namespace tensorflow {
+namespace litert {
 
 // Initializes the pass manager with default options that make debugging easier.
 // The `out` method parameter is exposed for testing purposes and not intended
 // to be specified by client code.
 void InitPassManager(mlir::PassManager& pm,
-                     const converter::DebugOptions& options,
+                     const litert::converter::DebugOptions& options,
                      llvm::raw_ostream& out = llvm::outs());
 
-}  // namespace tensorflow
+}  // namespace litert
 
 #endif  // TENSORFLOW_COMPILER_MLIR_LITE_DEBUG_DEBUG_H_

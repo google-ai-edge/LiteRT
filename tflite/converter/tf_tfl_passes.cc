@@ -62,7 +62,7 @@ namespace {
 constexpr mlir::StringRef kTFLiteDataLayout = "NHWC";
 }  // namespace
 
-void AddOptimizationPasses(const tflite::ConverterFlags& converter_flags,
+void AddOptimizationPasses(const litert::ConverterFlags& converter_flags,
                            const mlir::TFL::PassConfig& pass_config,
                            mlir::OpPassManager* pass_manager) {
   mlir::TFL::ConverterPassOptionsSetter converter_pass_options_setter(
@@ -100,7 +100,7 @@ void AddOptimizationPasses(const tflite::ConverterFlags& converter_flags,
 }
 
 void AddStrictQDQQuantizationPasses(
-    const tflite::ConverterFlags& converter_flags,
+    const litert::ConverterFlags& converter_flags,
     const mlir::TFL::PassConfig& pass_config,
     mlir::OpPassManager& pass_manager) {
   pass_manager.addNestedPass<mlir::func::FuncOp>(
@@ -181,7 +181,7 @@ void AddQuantizationPasses(const mlir::TFL::PassConfig& pass_config,
 }
 
 void AddVariableFreezingFromGlobalTensorsPasses(
-    const tflite::ConverterFlags& converter_flags,
+    const litert::ConverterFlags& converter_flags,
     const mlir::TFL::PassConfig& pass_config,
     mlir::OpPassManager* pass_manager) {
   // This pass does resource analysis of saved model global tensors and marks
@@ -252,7 +252,7 @@ void AddPreQuantizationStableHloToTfPasses(
   pass_manager.addPass(
       mlir::odml::CreateLegalizeTFXlaCallModuleToStablehloPass());
 
-  if (pass_config.model_origin_framework == tflite::ConverterFlags::PYTORCH) {
+  if (pass_config.model_origin_framework == litert::ConverterFlags::PYTORCH) {
     AddPytorchPasses(pass_manager);
   }
 
@@ -457,7 +457,7 @@ void AddPreVariableFreezingTFToTFLConversionPasses(
 // it.
 void AddPostVariableFreezingTFToTFLConversionPasses(
     llvm::StringRef saved_model_dir,
-    const tflite::ConverterFlags& converter_flags,
+    const litert::ConverterFlags& converter_flags,
     const mlir::TFL::PassConfig& pass_config,
     mlir::OpPassManager* pass_manager) {
   // Note:
@@ -689,7 +689,7 @@ void AddPostVariableFreezingTFToTFLConversionPasses(
 }
 
 void AddTFToTFLConversionPasses(llvm::StringRef saved_model_dir,
-                                const tflite::ConverterFlags& converter_flags,
+                                const litert::ConverterFlags& converter_flags,
                                 const mlir::TFL::PassConfig& pass_config,
                                 mlir::OpPassManager* pass_manager) {
   AddPreVariableFreezingTFToTFLConversionPasses(pass_config, pass_manager);
@@ -698,7 +698,7 @@ void AddTFToTFLConversionPasses(llvm::StringRef saved_model_dir,
 }
 void AddTFToTFLConversionPasses(const mlir::TFL::PassConfig& pass_config,
                                 mlir::OpPassManager* pass_manager) {
-  const tflite::ConverterFlags converter_flags;
+  const litert::ConverterFlags converter_flags;
   AddTFToTFLConversionPasses(/*saved_model_dir=*/"", converter_flags,
                              pass_config, pass_manager);
 }
