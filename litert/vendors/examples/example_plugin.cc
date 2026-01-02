@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -36,10 +37,26 @@
 // This plugin matches on mul ops, and emits "byte code" that is simply
 // a string representative of the ops consumed.
 
+constexpr char kExamplePluginVersion[] = "1";
+
 // Plugins can hold state.
 struct LiteRtCompilerPluginT {
   std::vector<LiteRtTransformation> transformations;
 };
+
+LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
+    LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
+    LiteRtEnvironmentOptions env, LiteRtOptions options,
+    const char* soc_model_name) {
+  // Example plugin does not depend on any compiler library, so we can
+  // return an error to test the error handling.
+  if (strcmp(soc_model_name, litert::example::kIncompatiblePluginSocModel) ==
+      0) {
+    LITERT_LOG(LITERT_ERROR, "Incompatible compiler version.");
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
   if (!api_version) {
@@ -254,6 +271,7 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
 
   example_graph.SetInputs(std::move(example_graph_inputs));
   example_graph.SetOutputs(std::move(example_graph_outputs));
+  example_graph.SetVersion(kExamplePluginVersion);
 
   LITERT_ASSIGN_OR_RETURN(auto serialized, example_graph.Serialize());
   result.byte_code[byte_code_idx] = std::string(serialized.StrView());
