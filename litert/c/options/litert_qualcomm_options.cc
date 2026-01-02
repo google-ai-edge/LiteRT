@@ -33,6 +33,7 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsProfiling profiling = kLiteRtQualcommProfilingOff;
   bool use_htp_preference = false;
   bool use_qint16_as_quint16 = false;
+  LiteRtQualcommOptionsQnnBackend qnn_backend = kLiteRtQualcommQnnBackendHtp;
   bool enable_weight_sharing = false;
   bool use_conv_hmx = true;
   bool use_fold_relu = true;
@@ -67,12 +68,13 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
     const LiteRtQualcommOptionsT* options =
         reinterpret_cast<const LiteRtQualcommOptionsT*>(payload);
     uint64_t ans = 0;
-    litert::HashCombine(
-        ans, options->log_level, options->profiling,
-        options->use_htp_preference, options->use_qint16_as_quint16,
-        options->enable_weight_sharing, options->htp_performance_mode,
-        options->ir_json_dir, options->dlc_dir, options->vtcm_size,
-        options->num_hvx_threads, options->optimization_level);
+    litert::HashCombine(ans, options->log_level, options->profiling,
+                        options->use_htp_preference,
+                        options->use_qint16_as_quint16, options->qnn_backend,
+                        options->enable_weight_sharing,
+                        options->htp_performance_mode, options->ir_json_dir,
+                        options->dlc_dir, options->vtcm_size,
+                        options->num_hvx_threads, options->optimization_level);
     return ans;
   };
   LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, qti_hash));
@@ -449,6 +451,30 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
   }
 
   *graph_priority = options->graph_priority;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetQnnBackend(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsQnnBackend qnn_backend) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->qnn_backend = qnn_backend;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetQnnBackend(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsQnnBackend* qnn_backend) {
+  if (qnn_backend == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *qnn_backend = options->qnn_backend;
 
   return kLiteRtStatusOk;
 }

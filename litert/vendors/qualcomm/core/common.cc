@@ -148,6 +148,7 @@ std::string Options::Dump() const {
       "\
 ::qnn::Options:\n\
 LogLevel: %d\n\
+BackendType: %d\n\
 Profiling: %d\n\
 UseHtpPreference: %v\n\
 UseQint16AsQuint16: %v\n\
@@ -165,12 +166,12 @@ GraphPriority: %d\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
-  return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
-                         use_htp_preference_, use_qint16_as_quint16_,
-                         enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
-                         htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
-                         dlc_dir_, vtcm_size_, num_hvx_threads_,
-                         optimization_level_, graph_priority_);
+  return absl::StrFormat(
+      kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
+      use_htp_preference_, use_qint16_as_quint16_, enable_weight_sharing_,
+      use_conv_hmx_, use_fold_relu_, htp_performance_mode_, dump_tensor_ids,
+      ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
+      graph_priority_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

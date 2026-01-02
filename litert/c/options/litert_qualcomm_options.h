@@ -231,6 +231,23 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsGraphPriority* graph_priority);
 
+// This option controls which backend to use. Default is unknown (let the
+// runtime decide).
+typedef enum LiteRtQualcommOptionsQnnBackend {
+  kLiteRtQualcommQnnBackendUndefined = 0,
+  kLiteRtQualcommQnnBackendGpu,
+  kLiteRtQualcommQnnBackendHtp,
+  kLiteRtQualcommQnnBackendDsp,
+  kLiteRtQualcommQnnBackendIr,
+} LiteRtQualcommOptionsQnnBackend;
+
+LiteRtStatus LiteRtQualcommOptionsSetQnnBackend(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsQnnBackend qnn_backend);
+
+LiteRtStatus LiteRtQualcommOptionsGetQnnBackend(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsQnnBackend* qnn_backend);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

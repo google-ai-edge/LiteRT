@@ -8,6 +8,8 @@
 namespace qnn {
 enum class SnapdragonModel {
   UNKNOWN_SDM = 0,
+  SDM865 = 21,
+  SM6350 = 29,
   SA8295 = 39,
   SM8350 = 30,
   SM8450 = 36,
