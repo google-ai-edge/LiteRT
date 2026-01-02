@@ -32,18 +32,18 @@ litert_lib(
     hdrs = ["adapter.h"],
     data = [
         # copybara:uncomment_begin(google-only)
-        # "//platforms/darwinn/compiler:compiler_api_wrapper",
+        # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
         # copybara:uncomment_end
     ],
     defines = ["LITERT_GOOGLE_TENSOR_AOT=1"],
     linkopts = [
         # TODO(abhirs): Make this work for OS.
         #copybara:comment_begin(google-only)
-        make_rpaths(["platforms/darwinn/compiler"]),
+        make_rpaths(["platforms/darwinn/compiler/external"]),
         # copybara:uncomment_end
     ],
     tags = [
-        # Don't build/test in OS until libcompiler_api_wrapper.so is available.
+        # Don't build/test in OS until liblitert_plugin_compiler.so is available.
         "nobuilder",
         "no_oss",
     ],
@@ -133,7 +133,7 @@ cc_test(
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",
-        #Don't build/test in OS until libcompiler_api_wrapper.so is available.
+        #Don't build/test in OS until liblitert_plugin_compiler.so is available.
         "nobuilder",
         "no_oss",
         # Sanitizer runtime doesn't work with anything that uses dlopen.
