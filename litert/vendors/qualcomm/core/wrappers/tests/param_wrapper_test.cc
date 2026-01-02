@@ -186,6 +186,55 @@ TEST(ScalarParamWrapperTest, QuantizedInt32ParamTest) {
   EXPECT_EQ(int32_quant_qnn_param.scalarParam.int32Value, value);
 }
 
+template <typename T, bool IsQuant>
+struct ScalarParamType {
+  using Type = T;
+  static constexpr bool is_quant = IsQuant;
+};
+
+template <typename T>
+class ScalarParamEqualTypedTest : public ::testing::Test {};
+
+using ScalarParamTypes = ::testing::Types<
+    ScalarParamType<float, false>,     // QNN_DATATYPE_FLOAT_32
+    ScalarParamType<bool, false>,      // QNN_DATATYPE_BOOL_8
+    ScalarParamType<uint8_t, false>,   // QNN_DATATYPE_UINT_8
+    ScalarParamType<uint8_t, true>,    // QNN_DATATYPE_UFIXED_POINT_8
+    ScalarParamType<int8_t, false>,    // QNN_DATATYPE_INT_8
+    ScalarParamType<int8_t, true>,     // QNN_DATATYPE_SFIXED_POINT_8
+    ScalarParamType<uint16_t, false>,  // QNN_DATATYPE_UINT_16
+    ScalarParamType<uint16_t, true>,   // QNN_DATATYPE_UFIXED_POINT_16
+    ScalarParamType<int16_t, false>,   // QNN_DATATYPE_INT_16
+    ScalarParamType<int16_t, true>,    // QNN_DATATYPE_SFIXED_POINT_16
+    ScalarParamType<uint32_t, false>,  // QNN_DATATYPE_UINT_32
+    ScalarParamType<uint32_t, true>,   // QNN_DATATYPE_UFIXED_POINT_32
+    ScalarParamType<int32_t, false>,   // QNN_DATATYPE_INT_32
+    ScalarParamType<int32_t, true>     // QNN_DATATYPE_SFIXED_POINT_32
+    >;
+
+TYPED_TEST_SUITE(ScalarParamEqualTypedTest, ScalarParamTypes);
+
+TYPED_TEST(ScalarParamEqualTypedTest, EqualityOperator) {
+  using cpp_type = typename TypeParam::Type;
+  constexpr bool is_quant = TypeParam::is_quant;
+
+  cpp_type val1, val2;
+  if constexpr (std::is_same_v<cpp_type, float>) {
+    val1 = 1.5f;
+    val2 = 2.5f;
+  } else {
+    val1 = static_cast<cpp_type>(1);
+    val2 = static_cast<cpp_type>(0);
+  }
+
+  qnn::ScalarParamWrapper wrapper1{"param", val1, is_quant};
+  qnn::ScalarParamWrapper wrapper2{"param", val1, is_quant};
+  qnn::ScalarParamWrapper wrapper3{"param", val2, is_quant};
+
+  EXPECT_TRUE(wrapper1 == wrapper2);
+  EXPECT_FALSE(wrapper1 == wrapper3);
+}
+
 TEST(ParamWrapperTest, TensorParamTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   std::vector<std::uint8_t> data = {1, 2, 3};
@@ -229,5 +278,35 @@ TEST(ParamWrapperTest, TensorParamTest) {
     EXPECT_EQ(ref_data[i], data[i]);
   }
 }
+
+TEST(TensorParamWrapperTest, EqualityOperator) {
+  std::vector<uint8_t> data1(3, 1);
+  std::vector<uint8_t> data2(3, 2);
+
+  qnn::TensorWrapper tensor1{"",
+                             QNN_TENSOR_TYPE_STATIC,
+                             QNN_DATATYPE_UFIXED_POINT_8,
+                             QuantizeParamsWrapperVariant(),
+                             {1, 1, 3},
+                             static_cast<uint32_t>(data1.size()),
+                             data1.data(),
+                             true};
+  qnn::TensorWrapper tensor2{"",
+                             QNN_TENSOR_TYPE_STATIC,
+                             QNN_DATATYPE_UFIXED_POINT_8,
+                             QuantizeParamsWrapperVariant(),
+                             {1, 1, 3},
+                             static_cast<uint32_t>(data2.size()),
+                             data2.data(),
+                             true};
+
+  qnn::TensorParamWrapper param1{"tensor_param", tensor1};
+  qnn::TensorParamWrapper param2{"tensor_param", tensor1};
+  qnn::TensorParamWrapper param3{"tensor_param", tensor2};
+
+  EXPECT_TRUE(param1 == param2);
+  EXPECT_FALSE(param1 == param3);
+}
+
 }  // namespace
 }  // namespace qnn
