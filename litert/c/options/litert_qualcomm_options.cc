@@ -33,11 +33,14 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsProfiling profiling = kLiteRtQualcommProfilingOff;
   bool use_htp_preference = false;
   bool use_qint16_as_quint16 = false;
+  bool enable_dsp_backend = false;
   bool enable_weight_sharing = false;
   bool use_conv_hmx = true;
   bool use_fold_relu = true;
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode =
+      kLiteRtQualcommDspPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
   std::string ir_json_dir;
   std::string dlc_dir;
@@ -317,6 +320,30 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtQualcommOptionsSetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_performance_mode = dsp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode* dsp_performance_mode) {
+  if (options == nullptr || dsp_performance_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_performance_mode = options->dsp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
                                                const char* ir_json_dir) {
   if (options == nullptr) {
@@ -449,6 +476,28 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
   }
 
   *graph_priority = options->graph_priority;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetEnableDspBackend(
+    LiteRtQualcommOptions options, bool enable_dsp_backend) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->enable_dsp_backend = enable_dsp_backend;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetEnableDspBackend(
+    LiteRtQualcommOptions options, bool* enable_dsp_backend) {
+  if (enable_dsp_backend == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *enable_dsp_backend = options->enable_dsp_backend;
 
   return kLiteRtStatusOk;
 }

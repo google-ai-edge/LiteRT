@@ -135,6 +135,24 @@ TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, DspPerformanceMode) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetDspPerformanceMode(
+      qualcomm_options, kLiteRtQualcommDspPerformanceModeBurst));
+
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetDspPerformanceMode(
+      qualcomm_options, &dsp_performance_mode));
+  EXPECT_EQ(dsp_performance_mode, kLiteRtQualcommDspPerformanceModeBurst);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -339,6 +357,12 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kBurst);
 
+  EXPECT_EQ(options->GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kDefault);
+  options->SetDspPerformanceMode(QualcommOptions::DspPerformanceMode::kBurst);
+  EXPECT_EQ(options->GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kBurst);
+
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
   options->SetProfiling(QualcommOptions::Profiling::kDetailed);
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kDetailed);
@@ -428,6 +452,24 @@ TEST(LiteRtQualcommOptionsTest, Hash) {
 
   LiteRtDestroyOpaqueOptions(options1);
   LiteRtDestroyOpaqueOptions(options2);
+}
+
+TEST(LiteRtQualcommOptionsTest, EnableDspBackend) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsSetEnableDspBackend(qualcomm_options, false));
+
+  bool enable_dsp_backend;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetEnableDspBackend(
+      qualcomm_options, &enable_dsp_backend));
+  EXPECT_FALSE(enable_dsp_backend);
+
+  LiteRtDestroyOpaqueOptions(options);
 }
 
 }  // namespace
