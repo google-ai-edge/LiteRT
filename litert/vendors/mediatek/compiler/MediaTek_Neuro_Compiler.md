@@ -81,3 +81,4 @@ the `VerifyCommonOp` function.
 | `kLiteRtOpCodeTflTranspose` | Legalized to `NEURON_TRANSPOSE`. |
 | `kLiteRtOpCodeTflTransposeConv` | Legalized to `NEURON_TRANSPOSE_CONV`. Supports padding and stride. Adds a zero bias if one is not provided. |
 | `kLiteRtOpCodeShloComposite` | Supports `odml.rms_norm` (as OEM extension `MTKEXT_RMS_NORMALIZATION`) and `odml.l2_norm` (as `NEURON_L2_NORMALIZATION`). |
+<!-- LINT.ThenChange(./compiler_plugin.cc:supported_ops) -->
