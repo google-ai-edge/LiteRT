@@ -101,6 +101,10 @@ Qnn_OpConfig_t OpWrapper::GetOpConfig() {
 
 QnnOpCode OpWrapper::GetOpCode() const { return op_code_; }
 
+std::string_view OpWrapper::GetName() const {
+  return std::string_view(name_.data(), name_.size());
+}
+
 bool OpWrapper::IsOpCode(QnnOpCode op_code) const {
   return op_code_ == op_code;
 }
