@@ -214,17 +214,14 @@ cc_library(
     srcs = [
         "custom_buffer.cc",
         "tensor_buffer.cc",
-        "tensor_buffer_requirements.cc",
     ],
     hdrs = [
         "custom_buffer.h",
         "event.h",
         "tensor_buffer.h",
         "tensor_buffer_lockstate.h",
-        "tensor_buffer_requirements.h",
         "//litert/c:litert_custom_tensor_buffer.h",
         "//litert/c:litert_tensor_buffer.h",
-        "//litert/c:litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
@@ -289,6 +286,24 @@ cc_library(
         ],
         "//conditions:default": [],
     }) + litert_metal_deps(),
+)
+
+cc_library(
+    name = "tensor_buffer_requirements",
+    srcs = [
+        "tensor_buffer_requirements.cc",
+    ],
+    hdrs = [
+        "tensor_buffer_requirements.h",
+        # "//litert/c:litert_tensor_buffer_requirements.h",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/core/util:to_string",
+    ],
 )
 
 cc_library(
@@ -454,11 +469,13 @@ cc_library(
     linkopts = litert_metal_linkopts(),
     deps = [
         ":tensor_buffer",
+        ":tensor_buffer_requirements",
         ":tensor_identifier",
         ":tfl_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -536,6 +553,7 @@ cc_library(
         ":metrics",
         ":profiler",
         ":tensor_buffer",
+        ":tensor_buffer_requirements",
         ":tensor_identifier",
         ":tfl_utils",
         "@com_google_absl//absl/cleanup",
@@ -555,6 +573,7 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_accelerator",
         "//litert/c/internal:litert_delegate_wrapper",
@@ -613,6 +632,7 @@ cc_test(
         ":compiled_model",
         ":open_cl_memory",
         ":tensor_buffer",
+        ":tensor_buffer_requirements",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
         "//litert/c:litert_layout",
@@ -625,7 +645,6 @@ cc_test(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
