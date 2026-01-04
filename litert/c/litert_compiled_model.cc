@@ -21,21 +21,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
-#include <unordered_map>
+#include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/compiled_model.h"
+#include "tflite/model_builder.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +49,146 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
                           LiteRtCompiledModelT::Create(
                               environment, model, jit_compilation_options));
   *compiled_model = created_compiled_model.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCreateCompiledModelFromFileFlatbufferOnly(
+    LiteRtEnvironment environment, const char* filename,
+    LiteRtOptions jit_compilation_options,
+    LiteRtCompiledModel* compiled_model) {
+  if (!environment || !filename || !compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto fb_model = tflite::FlatBufferModel::BuildFromFile(filename);
+  if (!fb_model) {
+    return kLiteRtStatusErrorFileIO;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_compiled_model,
+      LiteRtCompiledModelT::CreateFromFlatbuffer(
+          environment, std::move(fb_model), jit_compilation_options,
+          std::optional<std::string>(filename)));
+  *compiled_model = created_compiled_model.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCreateCompiledModelFromBufferFlatbufferOnly(
+    LiteRtEnvironment environment, const void* buffer_addr, size_t buffer_size,
+    LiteRtOptions jit_compilation_options,
+    LiteRtCompiledModel* compiled_model) {
+  if (!environment || !buffer_addr || !buffer_size || !compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto fb_model = tflite::FlatBufferModel::BuildFromBuffer(
+      reinterpret_cast<const char*>(buffer_addr), buffer_size);
+  if (!fb_model) {
+    return kLiteRtStatusErrorFileIO;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_compiled_model,
+      LiteRtCompiledModelT::CreateFromFlatbuffer(
+          environment, std::move(fb_model), jit_compilation_options));
+  *compiled_model = created_compiled_model.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelNumSignatures(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex* num_signatures) {
+  if (!compiled_model || !num_signatures) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_signatures =
+      static_cast<LiteRtParamIndex>(compiled_model->GetNumSignatures());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelSignatureKey(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char** signature_key) {
+  if (!compiled_model || !signature_key) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto key, compiled_model->GetSignatureKey(
+                                        static_cast<size_t>(signature_index)));
+  *signature_key = key.data();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelNumSignatureInputs(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex* num_inputs) {
+  if (!compiled_model || !num_inputs) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto count,
+                          compiled_model->GetNumSignatureInputs(
+                              static_cast<size_t>(signature_index)));
+  *num_inputs = static_cast<LiteRtParamIndex>(count);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelSignatureInputName(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const char** input_name) {
+  if (!compiled_model || !input_name) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto name, compiled_model->GetSignatureInputName(
+                                         static_cast<size_t>(signature_index),
+                                         static_cast<size_t>(input_index)));
+  *input_name = name.data();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelNumSignatureOutputs(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex* num_outputs) {
+  if (!compiled_model || !num_outputs) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto count,
+                          compiled_model->GetNumSignatureOutputs(
+                              static_cast<size_t>(signature_index)));
+  *num_outputs = static_cast<LiteRtParamIndex>(count);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelSignatureOutputName(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex output_index, const char** output_name) {
+  if (!compiled_model || !output_name) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto name, compiled_model->GetSignatureOutputName(
+                                         static_cast<size_t>(signature_index),
+                                         static_cast<size_t>(output_index)));
+  *output_name = name.data();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelInputTensorType(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, LiteRtRankedTensorType* tensor_type) {
+  if (!compiled_model || !tensor_type) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto type, compiled_model->GetInputTensorType(
+                                         static_cast<size_t>(signature_index),
+                                         static_cast<size_t>(input_index)));
+  *tensor_type = type;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelOutputTensorType(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex output_index, LiteRtRankedTensorType* tensor_type) {
+  if (!compiled_model || !tensor_type) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto type, compiled_model->GetOutputTensorType(
+                                         static_cast<size_t>(signature_index),
+                                         static_cast<size_t>(output_index)));
+  *tensor_type = type;
   return kLiteRtStatusOk;
 }
 
