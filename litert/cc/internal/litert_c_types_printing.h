@@ -66,6 +66,9 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
     case kLiteRtElementTypeBool:
       dtype_str = "i1";
       break;
+    case kLiteRtElementTypeFloat16:
+      dtype_str = "f16";
+      break;
     default:
       dtype_str = ::litert::kNoPrinterTag;
       break;

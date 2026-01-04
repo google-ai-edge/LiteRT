@@ -171,6 +171,7 @@ litert_test(
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_numerics",
         "//litert/test/generators",
         "//litert/test/generators:common",
         "//tflite/schema:schema_fbs",
@@ -179,6 +180,7 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
+        "@eigen_archive//:eigen3",
     ],
 )
 
