@@ -115,6 +115,9 @@ class QualcommOptions : public OpaqueOptions {
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds();
 
+  void SetSkipOpIds(const std::vector<size_t>& ids);
+  std::vector<size_t> GetSkipOpIds();
+
   void SetIrJsonDir(const std::string& ir_json_dir);
   absl::string_view GetIrJsonDir();
 
