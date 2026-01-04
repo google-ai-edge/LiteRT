@@ -93,6 +93,7 @@ case "${ARCH}" in
     ;;
 esac
 
+bazel clean --expunge
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
