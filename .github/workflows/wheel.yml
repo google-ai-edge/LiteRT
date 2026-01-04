@@ -1,0 +1,146 @@
+name: "Nightly Wheel Build"
+
+on:
+  push:
+    tags:
+    - v*.*.*
+  pull_request:
+    branches:
+    - main
+  schedule:
+    - cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
+  workflow_dispatch:
+    inputs:
+      REFRESH_CACHE:
+        description: 'Refresh cache to remove unused files'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  presubmit:
+    name: "Build Wheels - Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Allow other matrix jobs to continue if one fails
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    permissions:
+      actions: write
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REFRESH_CACHE: ${{ github.event_name == 'schedule' ||
+                         (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libc++-dev \
+            libc++abi-dev \
+            clang \
+      - name: Configure tensorflow & python path
+        run: |
+          chmod +x configure.py
+          export PYTHON_BIN_PATH=$(which python3)
+          export PYTHON_LIB_PATH=$(python3 -c 'import site; print(site.getsitepackages()[0])')
+          export TF_NEED_ROCM=0
+          export TF_NEED_CUDA=0
+          export TF_SET_ANDROID_WORKSPACE=0
+          export CC_OPT_FLAGS='-Wno-sign-compare'
+          python3 configure.py
+      - name: Set up cache keys
+        id: cache-keys
+        run: |
+          CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
+          CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
+          CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+          CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+          echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$GITHUB_OUTPUT"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+      - name: Clean build outputs if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        run: bazel clean --expunge
+
+      - name: Restore bazel cache if cache is not being refreshed.
+        id: bazel-cache
+        if: env.REFRESH_CACHE != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/bazel-linux
+            ~/.cache/bazel-android
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+      - name: Check cache hit
+        run: |
+          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
+          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
+          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+
+      - name: Build and generate wheel
+        env:
+          DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
+          CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
+          USE_LOCAL_TF: "true"
+          TEST_MANYLINUX_COMPLIANCE: "true"
+          # Optional: Secrets for PyPI upload
+          # TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          # TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          export NIGHTLY_RELEASE_DATE=$(date +%Y%m%d)
+          if [[ -f "ci/build_pip_package_with_docker.sh" ]]; then
+            chmod +x ci/build_pip_package_with_docker.sh
+            # --------------------------------------------------------------------------
+            # IMPORTANT INSTRUCTION:
+            # The 'bazel clean --expunge' command must be added to the script
+            # that runs *inside* the Docker container, immediately before the
+            # 'bazel build ... //ci/tools/python/wheel:litert_wheel' command.
+            #
+            # You need to modify either 'ci/build_pip_package_with_docker.sh'
+            # or, more likely, the script *it* executes inside the container
+            # (e.g., 'build_pip_package_with_bazel.sh').
+            #
+            # Example change in the inner script:
+            #   echo "INFO: Cleaning Bazel cache..."
+            #   bazel clean --expunge
+            #   echo "INFO: Starting Bazel build..."
+            #   bazel build -c opt --cxxopt=-std=gnu++17 ... (your build command)
+            # --------------------------------------------------------------------------
+            echo "INFO: Running build_pip_package_with_docker.sh. Ensure 'bazel clean --expunge' is called inside the container before the build."
+            ./ci/build_pip_package_with_docker.sh
+          else
+            echo "Error: ci/build_pip_package_with_docker.sh not found!"
+            exit 1
+          fi
+      - name: List generated files
+        run: |
+          echo "Generated files in dist/:"
+          find $(pwd)/dist -type f
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lite-rt-artifacts-py${{ matrix.python-version }}-${{ github.run_id }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
