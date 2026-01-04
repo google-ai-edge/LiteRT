@@ -148,7 +148,7 @@ class CompiledModelNext : public CompiledModel {
                                        absl::string_view key,
                                        absl::string_view value) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return SetDispatchAnnotation(signature_index, key, value);
   }
 
@@ -156,7 +156,7 @@ class CompiledModelNext : public CompiledModel {
   Expected<std::optional<std::string>> GetDispatchAnnotation(
       absl::string_view signature_name, absl::string_view key) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return GetDispatchAnnotation(signature_index, key);
   }
 
@@ -164,7 +164,7 @@ class CompiledModelNext : public CompiledModel {
   Expected<void> RemoveDispatchAnnotation(absl::string_view signature_name,
                                           absl::string_view key) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return RemoveDispatchAnnotation(signature_index, key);
   }
 
