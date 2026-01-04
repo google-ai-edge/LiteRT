@@ -1,0 +1,80 @@
+name: "Nightly Wheel Build"
+
+on:
+  push:
+    tags:
+    - v*.*.*
+  pull_request:
+    branches:
+    - main
+  schedule:
+    - cron: "0 8 * * *"  # Runs at 8:00 UTC every day
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-nightly
+  cancel-in-progress: true
+
+jobs:
+  build_wheels:
+    name: "Build Wheels - Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Allow other matrix jobs to continue if one fails
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Build and generate wheel
+        env:
+          DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
+          CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
+          USE_LOCAL_TF: "true"
+          TEST_MANYLINUX_COMPLIANCE: "true"
+          # Optional: Secrets for PyPI upload
+          # TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          # TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          export NIGHTLY_RELEASE_DATE=$(date +%Y%m%d)
+          if [[ -f "ci/build_pip_package_with_docker.sh" ]]; then
+            chmod +x ci/build_pip_package_with_docker.sh
+
+            # --------------------------------------------------------------------------
+            # IMPORTANT INSTRUCTION:
+            # The 'bazel clean --expunge' command must be added to the script
+            # that runs *inside* the Docker container, immediately before the
+            # 'bazel build ... //ci/tools/python/wheel:litert_wheel' command.
+            #
+            # You need to modify either 'ci/build_pip_package_with_docker.sh'
+            # or, more likely, the script *it* executes inside the container
+            # (e.g., 'build_pip_package_with_bazel.sh').
+            #
+            # Example change in the inner script:
+            #   echo "INFO: Cleaning Bazel cache..."
+            #   bazel clean --expunge
+            #   echo "INFO: Starting Bazel build..."
+            #   bazel build -c opt --cxxopt=-std=gnu++17 ... (your build command)
+            # --------------------------------------------------------------------------
+            echo "INFO: Running build_pip_package_with_docker.sh. Ensure 'bazel clean --expunge' is called inside the container before the build."
+            ./ci/build_pip_package_with_docker.sh
+          else
+            echo "Error: ci/build_pip_package_with_docker.sh not found!"
+            exit 1
+          fi
+
+      - name: List generated files
+        run: |
+          echo "Generated files in dist/:"
+          find $(pwd)/dist -type f
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lite-rt-artifacts-py${{ matrix.python-version }}-${{ github.run_id }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
