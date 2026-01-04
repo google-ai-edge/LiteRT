@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 #define ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -32,9 +31,11 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/plugin/compiler_plugin.h"
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "third_party/odml/litert/weight_loader/external_weight_loader_litert.h"
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
@@ -49,10 +50,8 @@
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/profiler.h"
 #include "litert/runtime/tensor_identifier.h"
-#include "litert/runtime/tfl_utils.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/core/api/error_reporter.h"
-#include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
 
@@ -80,6 +79,13 @@ class LiteRtCompiledModelT {
   static litert::Expected<Ptr> Create(
       LiteRtEnvironmentT* env, LiteRtModel model,
       LiteRtOptions jit_compilation_options = nullptr);
+
+  // Creates a LiteRtCompiledModelT from a flatbuffer model directly.
+  // This bypasses LiteRtModel IR and is intended for CPU/GPU and NPU AOT paths.
+  static litert::Expected<Ptr> CreateFromFlatbuffer(
+      LiteRtEnvironmentT* env, tflite::FlatBufferModel::Ptr fb_model,
+      LiteRtOptions jit_compilation_options = nullptr,
+      std::optional<std::string> model_path = std::nullopt);
 
   // Returns the buffer requirements for the n-th input tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the input tensor
@@ -145,6 +151,36 @@ class LiteRtCompiledModelT {
   // Returns the layout for an input tensor identified by signature and index.
   litert::Expected<LiteRtLayout> GetInputTensorLayout(size_t signature_index,
                                                       size_t input_index);
+
+  // Returns the signature key for the given signature index.
+  litert::Expected<absl::string_view> GetSignatureKey(
+      size_t signature_index) const;
+
+  // Returns the signature index for the given signature key.
+  litert::Expected<size_t> GetSignatureIndex(
+      absl::string_view signature_key) const;
+
+  // Returns the number of inputs for the given signature.
+  litert::Expected<size_t> GetNumSignatureInputs(size_t signature_index);
+
+  // Returns the number of outputs for the given signature.
+  litert::Expected<size_t> GetNumSignatureOutputs(size_t signature_index);
+
+  // Returns the input name for a given signature and input index.
+  litert::Expected<absl::string_view> GetSignatureInputName(
+      size_t signature_index, size_t input_index);
+
+  // Returns the output name for a given signature and output index.
+  litert::Expected<absl::string_view> GetSignatureOutputName(
+      size_t signature_index, size_t output_index);
+
+  // Returns the input tensor type for a given signature and input index.
+  litert::Expected<LiteRtRankedTensorType> GetInputTensorType(
+      size_t signature_index, size_t input_index);
+
+  // Returns the output tensor type for a given signature and output index.
+  litert::Expected<LiteRtRankedTensorType> GetOutputTensorType(
+      size_t signature_index, size_t output_index);
 
   // Runs the model of the given signature with the provided input/output
   // litert::TensorBuffers. If parameter `async` is true, then the model is run
@@ -232,6 +268,11 @@ class LiteRtCompiledModelT {
   litert::Expected<void> Cancel();
 
  private:
+  // Applies delegates matching the requested hardware accelerators.
+  litert::Expected<void> ApplyAccelerators(
+      LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options,
+      LiteRtHwAcceleratorSet hardware_accelerators);
+
   static bool CheckCancelledWrapper(void* data);
   // Helper function to automatically resize input tensor based on shape change
   static litert::Expected<bool> InputTensorNeedsResize(
