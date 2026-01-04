@@ -93,6 +93,7 @@ class Error {
   std::string message_;
 };
 
+/// @brief A utility for generic return values that represents a failure.
 class Unexpected {
  public:
   template <class... Args>
@@ -408,6 +409,10 @@ void AbslStringify(Sink& sink, const Expected<T>& expected) {
   }
 }
 
+/// @brief A specialization of `Expected` for `void`.
+///
+/// This specialization is used to simplify returning a valid value (e.g.,
+/// `return {};`).
 template <>
 class Expected<void> {
  public:

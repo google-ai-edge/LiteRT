@@ -426,6 +426,7 @@ class TensorBuffer
       : Handle(tensor_buffer, owned) {}
 };
 
+/// @brief A scoped lock for a `TensorBuffer`.
 class TensorBufferScopedLock {
  public:
   TensorBufferScopedLock(const TensorBufferScopedLock& arg) = delete;

@@ -23,11 +23,9 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
-/// @file
-/// @brief Defines the C++ interface for custom operator kernels in LiteRT.
-
 namespace litert {
 
+/// @brief Defines the C++ interface for custom operator kernels in LiteRT.
 class CustomOpKernel {
  public:
   virtual ~CustomOpKernel() = default;

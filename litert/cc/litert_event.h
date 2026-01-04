@@ -24,9 +24,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
-/// @file
-/// @brief Defines the C++ wrapper for LiteRT events, used for synchronization.
-
 extern "C" {
 /// @brief Forward declaration of OpenCL event to avoid including OpenCL
 /// headers.
@@ -36,6 +33,7 @@ typedef void* EGLSyncKHR;
 
 namespace litert {
 
+/// @brief Defines the C++ wrapper for LiteRT events, used for synchronization.
 class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
  public:
   /// @brief Creates an `Event` object from a sync fence file descriptor.

@@ -27,11 +27,13 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
-/// @file
-/// @brief Defines the C++ wrapper for the LiteRT environment.
-
 namespace litert {
 
+/// @brief The environment works like a context that holds the runtime states.
+///
+/// To create a `CompiledModel` or `TensorBuffer`, an Environment is required.
+/// In a case of having multiple CompiledModels, it is recommended to share
+/// the same Environment.
 class Environment
     : public internal::Handle<LiteRtEnvironment, LiteRtDestroyEnvironment> {
  public:
