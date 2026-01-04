@@ -40,8 +40,8 @@ jobs:
           # TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           export NIGHTLY_RELEASE_DATE=$(date +%Y%m%d)
-          if [[ -f "ci/build_pip_package_with_docker.sh" ]]; then
-            chmod +x ci/build_pip_package_with_docker.sh
+          if [[ -f "ci/build_pip_package_with_bazel.sh" ]]; then
+            chmod +x ci/build_pip_package_with_bazel.sh
 
             # --------------------------------------------------------------------------
             # IMPORTANT INSTRUCTION:
@@ -62,7 +62,7 @@ jobs:
             echo "INFO: Running build_pip_package_with_docker.sh. Ensure 'bazel clean --expunge' is called inside the container before the build."
             ./ci/build_pip_package_with_docker.sh
           else
-            echo "Error: ci/build_pip_package_with_docker.sh not found!"
+            echo "Error: ci/build_pip_package_with_bazel.sh not found!"
             exit 1
           fi
 
