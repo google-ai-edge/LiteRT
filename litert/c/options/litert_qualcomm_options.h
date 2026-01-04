@@ -231,6 +231,11 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsGraphPriority* graph_priority);
 
+LiteRtStatus LiteRtQualcommOptionsSetSaverOutputDir(LiteRtQualcommOptions options,
+                                            const char* saver_output_dir);
+
+LiteRtStatus LiteRtQualcommOptionsGetSaverOutputDir(LiteRtQualcommOptions options,
+                                            const char** saver_output_dir);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

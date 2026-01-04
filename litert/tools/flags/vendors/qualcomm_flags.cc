@@ -260,6 +260,10 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
           "QNN graph priority, If the option is set to 'default', the "
           "QNN_PRIORITY_DEFAULT (Equal to QNN_PRIORITY_NORMAL) will be used.");
 
+ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
+          "Saver output directory. If provided, you can obtain saver_output.c "
+          "and params.bin for debugging purpose.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -411,6 +415,8 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
 
+  const std::string saver_output_dir = absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
+  opts.SetSaverOutputDir(saver_output_dir);
   return {};
 }
 

@@ -133,6 +133,7 @@ inline LiteRtStatus InitQnnOptions(
                "Overriding backend type to IR Backend because DLC dir is set.");
     qnn_options.SetBackendType(::qnn::BackendType::kIrBackend);
   }
+  qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
 
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;

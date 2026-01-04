@@ -40,6 +40,7 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
+#include "litert/vendors/qualcomm/core/backends/saver_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "HTP/QnnHtpContext.h"  // from @qairt
@@ -347,6 +348,15 @@ std::optional<::qnn::SocInfo> FindSocInfo(
   return std::nullopt;
 }
 
+LiteRtStatus LoadSaverInitFunc(
+    const SharedLibrary& lib,
+    ::qnn::SaverBackend::QnnSaverInitFn_t saver_initialize) {
+  LITERT_ASSIGN_OR_RETURN(
+      saver_initialize, lib.LookupSymbol<::qnn::SaverBackend::QnnSaverInitFn_t>(
+                            ::qnn::SaverBackend::kLibQnnSaverSymbol));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
@@ -379,12 +389,38 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
   options_ = options;
-  switch (options_.GetBackendType()) {
+  if (!options_.GetSaverOutputDir().empty()) {
+    LITERT_RETURN_IF_ERROR(LoadLib(::qnn::SaverBackend::GetLibraryName()));
+    LITERT_RETURN_IF_ERROR(
+        ResolveApi(::qnn::SaverBackend::GetExpectedBackendVersion()));
+    ::qnn::SaverBackend::QnnSaverInitFn_t saver_initialize;
+    LITERT_RETURN_IF_ERROR(LoadSaverInitFunc(lib_, saver_initialize));
+    LITERT_RETURN_IF_ERROR(::qnn::SaverBackend::Init(
+        saver_initialize, options_.GetSaverOutputDir()));
+  } else {
+    switch (options_.GetBackendType()) {
     case ::qnn::BackendType::kHtpBackend: {
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::HtpBackend::GetExpectedBackendVersion()));
+      break;
+    }
+    case ::qnn::BackendType::kIrBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::IrBackend::GetLibraryName()));
+      LITERT_RETURN_IF_ERROR(
+          ResolveApi(::qnn::IrBackend::GetExpectedBackendVersion()));
+      break;
+    }
+    default: {
+      LITERT_LOG(LITERT_ERROR, "Unsupported backend type: %d",
+                 options_.GetBackendType());
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+  }
+  }
 
+  switch (options_.GetBackendType()) {
+    case ::qnn::BackendType::kHtpBackend: {
       backend_ = std::make_unique<::qnn::HtpBackend>(Api());
       LITERT_RETURN_IF_ERROR(backend_->Init(options_, soc_info));
       auto* htp_backend = dynamic_cast<::qnn::HtpBackend*>(backend_.get());
@@ -397,10 +433,6 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       break;
     }
     case ::qnn::BackendType::kIrBackend: {
-      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::IrBackend::GetLibraryName()));
-      LITERT_RETURN_IF_ERROR(
-          ResolveApi(::qnn::IrBackend::GetExpectedBackendVersion()));
-
       backend_ = std::make_unique<::qnn::IrBackend>(Api());
       LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
 
