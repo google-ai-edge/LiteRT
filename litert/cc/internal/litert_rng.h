@@ -260,21 +260,22 @@ class F16InF32Generator<float> final {
   }
 };
 
-template <typename D>
+template <typename D, typename Enable = void>
 class SinGenerator final : public DataGeneratorBase<D> {};
 
 // Generates sin values in the range [-1, 1].
-template <>
-class SinGenerator<float> final : public DataGeneratorBase<float> {
+template <typename D>
+class SinGenerator<D, std::enable_if_t<std::is_floating_point_v<D>>> final
+    : public DataGeneratorBase<D> {
  public:
   SinGenerator() = default;
 
   template <typename Rng>
-  float operator()(Rng& rng) {
-    return std::sin(rng() * 0.12345f);
+  D operator()(Rng& rng) {
+    return static_cast<D>(std::sin(rng() * 0.12345));
   }
-  float Max() const override { return 1.0f; }
-  float Min() const override { return -1.0f; }
+  D Max() const override { return static_cast<D>(1.0); }
+  D Min() const override { return static_cast<D>(-1.0); }
 };
 
 // Dummy primitive generator that returns a monotonically increasing sequence.
@@ -291,10 +292,10 @@ class DummyGenerator final : public DataGeneratorBase<D> {
   }
 
   DataType Max() const override { return NumericLimits<D>::Max(); }
-  DataType Min() const override { return 0; }
+  DataType Min() const override { return static_cast<D>(0); }
 
  private:
-  D val_ = 0;
+  D val_ = static_cast<D>(0);
 };
 
 // DEFAULTS FOR DATA GENERATORS ////////////////////////////////////////////////
@@ -467,7 +468,7 @@ const auto RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize =
 // RANDOM TENSOR DATA //////////////////////////////////////////////////////////
 
 // Base class for generating data for tensors.
-template <typename D, template <typename> typename Generator>
+template <typename D, template <typename...> typename Generator>
 class RandomTensorData {
  private:
   // TODO: Support on standard types.
@@ -515,7 +516,7 @@ class RandomTensorData {
             typename = std::enable_if_t<std::is_constructible_v<Gen, DD, DD>>>
   explicit RandomTensorData(DD min, DD max) : gen_(min, max) {}
 
-  template <typename = std::enable_if<std::is_constructible_v<Gen>>::type>
+  template <typename = std::enable_if_t<std::is_constructible_v<Gen>>>
   explicit RandomTensorData() : gen_() {}
 
  private:
@@ -548,6 +549,11 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
+  RandomTensorDataBuilder& SetFp16Dummy() {
+    fp16_config_ = Dummy();
+    return *this;
+  }
+
   RandomTensorDataBuilder& SetF16InF32() {
     float_config_ = F16InF32();
     return *this;
@@ -555,6 +561,11 @@ class RandomTensorDataBuilder {
 
   RandomTensorDataBuilder& SetSin() {
     float_config_ = Sin();
+    return *this;
+  }
+
+  RandomTensorDataBuilder& SetFp16Sin() {
+    fp16_config_ = Sin();
     return *this;
   }
 
@@ -593,6 +604,12 @@ class RandomTensorDataBuilder {
       } else {
         auto [min, max] = std::get<std::pair<D, D>>(int64_config_);
         return {static_cast<double>(min), static_cast<double>(max)};
+      }
+    } else if constexpr (std::is_same_v<D, fp16_t>) {
+      if (std::holds_alternative<Dummy>(fp16_config_)) {
+        return {0, static_cast<double>(std::numeric_limits<fp16_t>::max())};
+      } else {
+        return {-1.0, 1.0};
       }
     } else {
       static_assert(false, "Unsupported type");
@@ -643,6 +660,14 @@ class RandomTensorDataBuilder {
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
         return Functor()(data, std::forward<Args>(args)...);
       }
+    } else if constexpr (std::is_same_v<D, fp16_t>) {
+      if (std::holds_alternative<Dummy>(fp16_config_)) {
+        RandomTensorData<D, DummyGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      } else {
+        RandomTensorData<D, SinGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      }
     } else {
       static_assert(false, "Unsupported type");
     }
@@ -659,9 +684,12 @@ class RandomTensorDataBuilder {
   template <typename D>
   using FloatConfig =
       std::variant<std::pair<float, float>, Dummy, NullOpt, F16InF32, Sin>;
+  template <typename D>
+  using Fp16Config = std::variant<Dummy, Sin>;
 
   IntConfig<int32_t> int_config_ = NullOpt();
   FloatConfig<float> float_config_ = NullOpt();
+  Fp16Config<fp16_t> fp16_config_ = Sin();
   IntConfig<int64_t> int64_config_ = NullOpt();
 };
 

@@ -37,6 +37,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_numerics.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
@@ -200,6 +201,9 @@ class SimpleBuffer {
     } else if (Type().ElementType() == ElementType::Int64) {
       return b.Call<int64_t, RandomTensorFunctor>(rng, start, num_elements,
                                                   *this);
+    } else if (Type().ElementType() == ElementType::Float16) {
+      return b.Call<fp16_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                 *this);
     }
     // TODO: Add support for other types.
     return Error(kLiteRtStatusErrorInvalidArgument, "Unsupported element type");
