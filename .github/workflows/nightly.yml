@@ -23,11 +23,29 @@ jobs:
       fail-fast: false # Allow other matrix jobs to continue if one fails
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libc++-dev \
+            libc++abi-dev \
+            clang \
+
+      - name: Configure tensorflow & python path
+        run: |
+          chmod +x configure.py
+          export PYTHON_BIN_PATH=$(which python3)
+          export PYTHON_LIB_PATH=$(python3 -c 'import site; print(site.getsitepackages()[0])')
+          export TF_NEED_ROCM=0
+          export TF_NEED_CUDA=0
+          export TF_SET_ANDROID_WORKSPACE=0
+          export CC_OPT_FLAGS='-Wno-sign-compare'
+          python3 configure.py
 
       - name: Build and generate wheel
         env:
@@ -59,6 +77,7 @@ jobs:
             #   echo "INFO: Starting Bazel build..."
             #   bazel build -c opt --cxxopt=-std=gnu++17 ... (your build command)
             # --------------------------------------------------------------------------
+            
             echo "INFO: Running build_pip_package_with_docker.sh. Ensure 'bazel clean --expunge' is called inside the container before the build."
             ./ci/build_pip_package_with_docker.sh
           else
