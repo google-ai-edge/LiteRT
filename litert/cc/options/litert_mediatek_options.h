@@ -24,7 +24,7 @@
 
 namespace litert::mediatek {
 
-// Wraps a LiteRtMediatekOptions object for convenience.
+/// @brief Defines the C++ wrapper for MediaTek-specific LiteRT options.
 class MediatekOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;

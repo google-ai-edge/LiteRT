@@ -28,7 +28,7 @@
 
 namespace litert::qualcomm {
 
-// Wraps a LiteRtQualcommOptions object for convenience.
+/// @brief Defines the C++ wrapper for Qualcomm-specific LiteRT options.
 class QualcommOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
@@ -41,8 +41,10 @@ class QualcommOptions : public OpaqueOptions {
 
   static Expected<QualcommOptions> Create();
 
-  // This determines the logging level of all underlying qualcomm sdk libraries.
-  // Does not effect litert logging. Defaults to INFO.
+  /// @brief Determines the logging level of all underlying Qualcomm SDK
+  /// libraries.
+  ///
+  /// This does not affect LiteRT logging. Defaults to `kInfo`.
   enum class LogLevel : int {
     kOff = kLiteRtQualcommLogOff,
     kError = kLiteRtQualcommLogLevelError,
@@ -55,8 +57,8 @@ class QualcommOptions : public OpaqueOptions {
   void SetLogLevel(LogLevel log_level);
   LogLevel GetLogLevel();
 
-  // This option controls whether to convert a LiteRt operation to QNN
-  // operations which are preferred by the HTP backend. Defaults to false.
+  /// @brief This option controls whether to convert a LiteRT operation to QNN
+  /// operations that are preferred by the HTP backend. Defaults to `false`.
   enum class HtpPerformanceMode : int {
     kDefault = kLiteRtQualcommHtpPerformanceModeDefault,
     kSustainedHighPerformance =
@@ -77,30 +79,34 @@ class QualcommOptions : public OpaqueOptions {
   void SetUseHtpPreference(bool use_htp_preference);
   bool GetUseHtpPreference();
 
-  // This option controls whether to convert a quantized int16 model to a
-  // quantized uint16 model. Defaults to false.
+  /// @brief This option controls whether to convert a quantized int16 model to
+  /// a quantized uint16 model. Defaults to `false`.
   void SetUseQint16AsQuint16(bool use_qin16_as_quint16);
   bool GetUseQint16AsQuint16();
 
-  // Weight sharing indicates whether different subgraphs may share weight
-  // tensors. This is only supported on x86 AOT. Defaults to false.
+  /// @brief Indicates whether different subgraphs may share weight tensors.
+  ///
+  /// This is only supported on x86 AOT. Defaults to `false`.
   void SetEnableWeightSharing(bool weight_sharing_enabled);
   bool GetEnableWeightSharing();
 
-  // When using short conv hmx, one might have better performance, but
-  // convolution that have short depth and/or weights that are not symmetric
-  // could exhibit inaccurate results.
+  /// @brief When using short conv hmx, one might have better performance, but
+  /// convolutions with short depth and/or non-symmetric weights could exhibit
+  /// inaccurate results.
   void SetUseConvHMX(bool use_conv_hmx);
   bool GetUseConvHMX();
 
-  // When using fold relu, one might have better performance. This optimization
-  // is correct when quantization ranges for convolution are equal to or are
-  // subset of the Relu operation.
+  /// @brief When using fold relu, one might have better performance.
+  ///
+  /// This optimization is correct when quantization ranges for convolution are
+  /// equal to or are a subset of the Relu operation.
   void SetUseFoldReLU(bool use_fold_relu);
   bool GetUseFoldReLU();
 
-  // This option controls the profiling level. A higher level results in a more
-  // detailed report after execution. Defaults to off.
+  /// @brief This option controls the profiling level.
+  ///
+  /// A higher level results in a more detailed report after execution.
+  /// Defaults to `kOff`.
   enum class Profiling : int {
     kOff = kLiteRtQualcommProfilingOff,
     kBasic = kLiteRtQualcommProfilingBasic,

@@ -24,7 +24,7 @@
 
 namespace litert {
 
-// C++ wrapper for DarwiNN runtime options
+/// @brief A C++ wrapper for DarwiNN runtime options.
 class DarwinnRuntimeOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
@@ -35,35 +35,37 @@ class DarwinnRuntimeOptions : public OpaqueOptions {
 
   static absl::string_view Identifier();
 
-  // Create a new DarwiNN runtime options instance
+  /// @brief Creates a new DarwiNN runtime options instance.
   static Expected<DarwinnRuntimeOptions> Create();
 
-  // Find DarwiNN runtime options in an existing opaque options list
+  /// @brief Finds DarwiNN runtime options in an existing opaque options list.
   static Expected<DarwinnRuntimeOptions> Create(OpaqueOptions& options);
 
-  // Power management setters/getters
+  /// @brief Sets/gets the power management settings.
   Expected<void> SetInferencePowerState(uint32_t power_state);
   Expected<uint32_t> GetInferencePowerState() const;
 
   Expected<void> SetInferenceMemoryPowerState(uint32_t memory_power_state);
   Expected<uint32_t> GetInferenceMemoryPowerState() const;
 
-  // Scheduling setters/getters
+  /// @brief Sets/gets the scheduling priority.
   Expected<void> SetInferencePriority(int8_t priority);
   Expected<int8_t> GetInferencePriority() const;
 
-  // Atomic inference setters/getters. To disable TPU firmware concurrency.
+  /// @brief Sets/gets atomic inference settings to disable TPU firmware
+  /// concurrency.
   Expected<void> SetAtomicInference(bool atomic_inference);
   Expected<bool> GetAtomicInference() const;
 
-  // Memory coherency preference setter/getter
+  /// @brief Sets/gets the memory coherency preference.
   Expected<void> SetPreferCoherent(bool prefer_coherent);
   Expected<bool> GetPreferCoherent() const;
 };
 
-// Note: FindOpaqueOptions template specializations are not needed.
-// The generic template in litert_opaque_options.h will use Discriminator()
-// to find the options in the linked list and then call Create(found_options).
+/// @note `FindOpaqueOptions` template specializations are not needed.
+/// The generic template in `litert_opaque_options.h` will use `Discriminator()`
+/// to find the options in the linked list and then call
+/// `Create(found_options)`.
 
 }  // namespace litert
 

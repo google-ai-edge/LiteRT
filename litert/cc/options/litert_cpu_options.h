@@ -23,6 +23,7 @@
 
 namespace litert {
 
+/// @brief Defines the C++ wrapper for LiteRT CPU options.
 class CpuOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;

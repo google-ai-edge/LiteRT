@@ -24,7 +24,7 @@
 
 namespace litert::intel_openvino {
 
-// Wraps a LiteRtIntelOpenVinoOptions object for convenience.
+/// @brief Defines the C++ wrapper for Intel OpenVINO-specific LiteRT options.
 class IntelOpenVinoOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;

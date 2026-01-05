@@ -21,6 +21,9 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 
+/// @file
+/// @brief Defines C++ wrappers and utilities for LiteRT magic number options.
+
 namespace litert::options {
 
 struct MagicNumberConfigsDeleter {
@@ -37,15 +40,19 @@ using MagicNumberVerificationsPtr =
     std::unique_ptr<LiteRtMagicNumberVerifications,
                     MagicNumberVerificationsDeleter>;
 
-// Allocates a LiteRtMagicNumberConfigs structure large enough to hold
-// `num_configs` entries. The returned pointer owns the allocated memory and
-// will automatically free it when destroyed.
+/// @brief Allocates a `LiteRtMagicNumberConfigs` structure large enough to
+/// hold `num_configs` entries.
+///
+/// The returned pointer owns the allocated memory and will automatically free
+/// it when destroyed.
 Expected<MagicNumberConfigsPtr> CreateMagicNumberConfigs(
     std::size_t num_configs);
 
-// Allocates a LiteRtMagicNumberVerifications structure large enough to hold
-// `num_verifications` entries. The returned pointer owns the allocated memory
-// and will automatically free it when destroyed.
+/// @brief Allocates a `LiteRtMagicNumberVerifications` structure large enough
+/// to hold `num_verifications` entries.
+///
+/// The returned pointer owns the allocated memory and will automatically free
+/// it when destroyed.
 Expected<MagicNumberVerificationsPtr> CreateMagicNumberVerifications(
     std::size_t num_verifications);
 

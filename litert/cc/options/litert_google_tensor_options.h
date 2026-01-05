@@ -25,7 +25,7 @@
 
 namespace litert::google_tensor {
 
-// Wraps a LiteRtGoogleTensorOptions object for convenience.
+/// @brief Defines the C++ wrapper for Google Tensor-specific LiteRT options.
 class GoogleTensorOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;

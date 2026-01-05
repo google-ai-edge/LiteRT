@@ -19,9 +19,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
+
 namespace litert {
-// RuntimeOptions is a wrapper around LiteRtRuntimeOptions. It is used to
-// configure the runtime options of LiteRt runtime.
+
+  /// @brief Defines the C++ wrapper for LiteRT runtime options.
 class RuntimeOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;

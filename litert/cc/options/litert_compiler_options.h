@@ -22,6 +22,7 @@
 
 namespace litert {
 
+/// @brief Defines the C++ wrapper for LiteRT compiler options.
 class CompilerOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;

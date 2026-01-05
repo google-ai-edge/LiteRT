@@ -22,9 +22,7 @@
 
 namespace litert {
 
-// Builds a WebNN option object that can be passed to LiteRT CompiledModel
-// creation.
-//
+/// @brief Defines the C++ wrapper for WebNN-specific LiteRT options.
 class WebNnOptions : public litert::OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
