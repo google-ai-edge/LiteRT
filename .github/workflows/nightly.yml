@@ -34,7 +34,7 @@ jobs:
         env:
           DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
           CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
-          USE_LOCAL_TF: "true"
+          USE_LOCAL_TF: "false"
           TEST_MANYLINUX_COMPLIANCE: "true"
           # Optional: Secrets for PyPI upload
           # TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
