@@ -41,6 +41,7 @@ set(LITERT_RUNTIME_SOURCES
     ion_buffer.cc
     magic_number_utils.cc
     profiler.cc
+    profiler_summarizer.cc
     tensor_buffer.cc
     tensor_buffer_registry.cc
     tensor_buffer_requirements.cc

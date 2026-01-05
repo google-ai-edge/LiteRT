@@ -22,11 +22,15 @@
 #include <vector>
 
 #include "litert/c/litert_profiler_event.h"
+#include "litert/runtime/profiler_summarizer.h"
+#include "tflite/interpreter.h"
 #include "tflite/profiling/profile_buffer.h"  // IWYU pragma: keep
 
 LiteRtProfilerT::LiteRtProfilerT(size_t max_num_events)
     : profiling_enabled_(false),
-      current_event_source_(ProfiledEventSource::LITERT) {
+      current_event_source_(ProfiledEventSource::LITERT),
+      summarizer_(
+          std::make_unique<litert::profiling::LiteRtProfileSummarizer>()) {
   // Initialize the profile buffer with the TFLite metadata version
   // and the maximum number of events.
   profile_buffer_ = std::make_unique<tflite::profiling::ProfileBuffer>(
@@ -122,6 +126,7 @@ void LiteRtProfilerT::Reset() {
   active_event_sources_map_.clear();
   current_event_source_ = ProfiledEventSource::LITERT;  // Reset hint
   // litert_profiling_enabled_ remains as is, Reset just clears data.
+  last_processed_event_index_ = 0;
 }
 
 std::vector<ProfiledEventData> LiteRtProfilerT::GetProfiledEvents() const {
@@ -180,4 +185,23 @@ void LiteRtProfilerT::SetCurrentEventSource(ProfiledEventSource source_hint) {
 
 size_t LiteRtProfilerT::GetNumEvents() const {
   return profile_buffer_->Size();
+}
+
+std::string LiteRtProfilerT::GetProfileSummary(
+    const tflite::Interpreter& interpreter) {
+  if (!profile_buffer_) {
+    return "";
+  }
+
+  size_t current_size = profile_buffer_->Size();
+  if (current_size > last_processed_event_index_) {
+    std::vector<const tflite::profiling::ProfileEvent*> events_ptrs;
+    events_ptrs.reserve(current_size - last_processed_event_index_);
+    for (size_t i = last_processed_event_index_; i < current_size; ++i) {
+      events_ptrs.push_back(profile_buffer_->At(i));
+    }
+    summarizer_->ProcessProfiles(events_ptrs, interpreter);
+    last_processed_event_index_ = current_size;
+  }
+  return summarizer_->GetOutputString();
 }

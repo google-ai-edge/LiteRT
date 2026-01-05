@@ -543,6 +543,7 @@ cc_library(
         ":litert_common",
         ":litert_profiler_event",
         "//litert/cc:litert_macros",
+        "//litert/runtime:compiled_model",
         "//litert/runtime:profiler",
     ],
 )

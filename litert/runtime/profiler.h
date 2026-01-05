@@ -26,7 +26,9 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_profiler_event.h"
+#include "litert/runtime/profiler_summarizer.h"
 #include "tflite/core/api/profiler.h"
+#include "tflite/core/interpreter.h"
 #include "tflite/profiling/profile_buffer.h"
 
 class LiteRtProfilerT : public tflite::Profiler {
@@ -103,6 +105,10 @@ class LiteRtProfilerT : public tflite::Profiler {
     return result;
   }
 
+  // Gets the profile summary using the
+  // litert::profiling::LiteRtProfileSummarizer class.
+  std::string GetProfileSummary(const tflite::Interpreter& interpreter);
+
  private:
   // Collection to own unique copies of tag strings
   std::set<std::string> owned_tags_set_;
@@ -118,6 +124,11 @@ class LiteRtProfilerT : public tflite::Profiler {
   // Map of event handle to event source. This is used to track the source of
   // the events that are currently active.
   std::map<uint32_t, ProfiledEventSource> active_event_sources_map_;
+
+  // Summary formatter for customized output formats.
+  std::unique_ptr<litert::profiling::LiteRtProfileSummarizer> summarizer_;
+
+  size_t last_processed_event_index_ = 0;
 };
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PROFILER_H_

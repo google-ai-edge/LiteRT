@@ -14,6 +14,8 @@
 
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PROFILER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PROFILER_H_
+#include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "litert/c/litert_common.h"
@@ -81,6 +83,16 @@ class Profiler
   Expected<void> StopProfiling() {
     LITERT_RETURN_IF_ERROR(LiteRtStopProfiler(Get()));
     return {};
+  }
+
+  /// @brief Get the profile summary.
+  Expected<std::string> GetProfileSummary(LiteRtCompiledModel compiled_model) {
+    const char* summary = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetProfileSummary(Get(), compiled_model, &summary));
+    std::string result(summary);
+    free(const_cast<char*>(summary));
+    return result;
   }
 
   /// @brief Set the current event source.

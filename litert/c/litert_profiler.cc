@@ -14,9 +14,12 @@
 
 #include "litert/c/litert_profiler.h"
 
+#include <string>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/compiled_model.h"
 #include "litert/runtime/profiler.h"
 
 extern "C" {
@@ -95,6 +98,33 @@ LiteRtStatus LiteRtGetProfilerEvents(LiteRtProfiler profiler, int num_events,
   for (int i = 0; i < internal_events.size(); ++i) {
     events[i] = internal_events[i];
   }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetProfileSummary(LiteRtProfiler profiler,
+                                     LiteRtCompiledModel compiled_model,
+                                     const char** summary) {
+  LITERT_RETURN_IF_ERROR(profiler,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "profiler is null.";
+  LITERT_RETURN_IF_ERROR(compiled_model,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "compiled_model is null.";
+  LITERT_RETURN_IF_ERROR(summary, litert::ErrorStatusBuilder::InvalidArgument())
+      << "summary is null.";
+
+  auto interpreter_res = GetInterpreter(compiled_model);
+  if (!interpreter_res.HasValue()) {
+    // Failed to retrieve the interpreter from the compiled model.
+    return kLiteRtStatusErrorNotFound;
+  }
+  auto* interpreter = interpreter_res.Value();
+  if (interpreter == nullptr) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  std::string summary_str = profiler->GetProfileSummary(*interpreter);
+  *summary = strdup(summary_str.c_str());
   return kLiteRtStatusOk;
 }
 }  // extern "C"

@@ -1052,6 +1052,24 @@ cc_library_with_testonly_vis(
     ],
 )
 
+cc_test(
+    name = "litert_profiler_test",
+    srcs = ["litert_profiler_test.cc"],
+    data = [
+        "//litert/test:tflite_test_data",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_options",
+        "//litert/test:common",
+        "//litert/test:simple_model",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_profiler",
     hdrs = [":litert_profiler.h"],

@@ -742,11 +742,28 @@ cc_library(
 )
 
 cc_library(
+    name = "profiler_summarizer",
+    srcs = ["profiler_summarizer.cc"],
+    hdrs = ["profiler_summarizer.h"],
+    deps = [
+        "//tflite:framework",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/core/api",
+        "//tflite/profiling:profile_buffer",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
     name = "profiler",
     srcs = ["profiler.cc"],
     hdrs = ["profiler.h"],
     deps = [
+        ":profiler_summarizer",
         "//litert/c:litert_profiler_event",
+        "//tflite:framework",
+        "//tflite/core:private_cc_api_stable",
         "//tflite/core/api",
         "//tflite/profiling:profile_buffer",
         "@com_google_absl//absl/strings",
@@ -795,6 +812,24 @@ cc_test(
         "//litert/c/internal:litert_logging",
         "//tflite/core/api",
         "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "profiler_summarizer_test",
+    srcs = ["profiler_summarizer_test.cc"],
+    deps = [
+        ":profiler",
+        ":profiler_summarizer",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/core/api",
+        "//tflite/profiling:profile_buffer",
+        "//tflite/profiling:profile_summarizer",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )

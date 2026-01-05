@@ -51,6 +51,12 @@ LiteRtStatus LiteRtGetNumProfilerEvents(LiteRtProfiler profiler,
 LiteRtStatus LiteRtGetProfilerEvents(LiteRtProfiler profiler, int num_events,
                                      ProfiledEventData* events);
 
+// Gets the profile summary.The caller is responsible for freeing the memory of
+// the `summary` string using C library `free()`.
+LiteRtStatus LiteRtGetProfileSummary(LiteRtProfiler profiler,
+                                     LiteRtCompiledModel compiled_model,
+                                     const char** summary);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

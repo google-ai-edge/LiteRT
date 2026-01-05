@@ -45,7 +45,6 @@ limitations under the License.
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
-#include "tflite/profiling/profile_summarizer.h"
 
 namespace litert::benchmark {
 namespace {
@@ -239,12 +238,18 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
 
   auto use_profiler = params_.Get<bool>("use_profiler");
   if (use_profiler) {
-    run_summarizer_ = std::make_unique<tflite::profiling::ProfileSummarizer>();
     LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
     profiler_.StartProfiling();
   }
-  log_output_ =
-      std::make_unique<BenchmarkLoggingListener>(run_summarizer_.get());
+  log_output_ = std::make_unique<BenchmarkLoggingListener>([this]() {
+    if (profiler_) {
+      auto res = profiler_.GetProfileSummary(compiled_model_->Get());
+      if (res.HasValue()) {
+        return res.Value();
+      }
+    }
+    return std::string("");
+  });
   AddListener(log_output_.get());
 
   auto signature = params_.Get<std::string>("signature_to_run_for");
