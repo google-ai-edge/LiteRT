@@ -146,6 +146,14 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
   }
   auto lock_and_addr = TensorBufferScopedLock::Create<const int>(
       *tensor_buffer, TensorBuffer::LockMode::kRead);
+  if (!lock_and_addr) {
+    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
+               lock_and_addr.Error().Message().c_str());
+    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
+                         lock_and_addr.Error().Message());
+    return nullptr;
+  }
+
   jintArray result = env->NewIntArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetIntArrayRegion(result, 0, *num_elements, lock_and_addr->second);
@@ -175,6 +183,14 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadFloat(JNIEnv* env,
 
   auto lock_and_addr = TensorBufferScopedLock::Create<const float>(
       *tensor_buffer, TensorBuffer::LockMode::kRead);
+  if (!lock_and_addr) {
+    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
+               lock_and_addr.Error().Message().c_str());
+    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
+                         lock_and_addr.Error().Message());
+    return nullptr;
+  }
+
   jfloatArray result = env->NewFloatArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetFloatArrayRegion(result, 0, *num_elements, lock_and_addr->second);
@@ -204,6 +220,14 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt8(JNIEnv* env,
 
   auto lock_and_addr = TensorBufferScopedLock::Create<const jbyte>(
       *tensor_buffer, TensorBuffer::LockMode::kRead);
+  if (!lock_and_addr) {
+    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
+               lock_and_addr.Error().Message().c_str());
+    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
+                         lock_and_addr.Error().Message());
+    return nullptr;
+  }
+
   jbyteArray result = env->NewByteArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetByteArrayRegion(result, 0, *num_elements, lock_and_addr->second);
@@ -233,6 +257,14 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadBoolean(JNIEnv* env,
 
   auto lock_and_addr = TensorBufferScopedLock::Create<const jboolean>(
       *tensor_buffer, TensorBuffer::LockMode::kRead);
+  if (!lock_and_addr) {
+    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
+               lock_and_addr.Error().Message().c_str());
+    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
+                         lock_and_addr.Error().Message());
+    return nullptr;
+  }
+
   jbooleanArray result = env->NewBooleanArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetBooleanArrayRegion(result, 0, *num_elements, lock_and_addr->second);
@@ -262,6 +294,14 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadLong(JNIEnv* env,
 
   auto lock_and_addr = TensorBufferScopedLock::Create<const jlong>(
       *tensor_buffer, TensorBuffer::LockMode::kRead);
+  if (!lock_and_addr) {
+    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
+               lock_and_addr.Error().Message().c_str());
+    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
+                         lock_and_addr.Error().Message());
+    return nullptr;
+  }
+
   jlongArray result = env->NewLongArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetLongArrayRegion(result, 0, *num_elements, lock_and_addr->second);
