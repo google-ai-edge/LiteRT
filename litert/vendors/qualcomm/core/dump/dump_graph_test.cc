@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -136,11 +137,17 @@ TEST(IrJsonDump, MatMul) {
       created_tensors.emplace(&tensor_wrapper_ref.get());
     }
   }
-  const char* filename = "/tmp/qnn_graph.json";
-  DumpIrJson(created_tensors, graph_op_wrappers, "/tmp/", "qnn_graph");
+#ifdef __ANDROID__
+  constexpr const char* kGraphDir = "/data/local/tmp/";
+#else
+  constexpr const char* kGraphDir = "/tmp/";
+#endif
+  const auto graph_file = std::filesystem::path(kGraphDir) / "qnn_graph.json";
+  DumpIrJson(created_tensors, graph_op_wrappers, kGraphDir, "qnn_graph");
 
   // Retrieve Qnn JSON file.
-  std::ifstream input_file(filename);
+  std::ifstream input_file(graph_file);
+  ASSERT_TRUE(input_file.is_open());
 
   // Parse the JSON data.
   nlohmann::json qnn_ir;
@@ -221,7 +228,7 @@ TEST(IrJsonDump, MatMul) {
   ASSERT_TRUE(node.contains("type"));
   EXPECT_EQ(node["type"], "MatMul");
 
-  ASSERT_EQ(std::remove(filename), 0);
+  ASSERT_TRUE(std::filesystem::remove(graph_file));
 }
 }  // namespace
 }  // namespace qnn
