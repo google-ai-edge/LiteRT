@@ -800,6 +800,14 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any(ov_element_type);
       }
       break;
+    case LiteRtOpCode::kLiteRtOpCodeTflOneHot:
+      if (name == "axis") {
+        // TODO: Currently litert_options doesn't provide an option for this.
+        // Using the default value as per TFLite and OV spec.
+        int32_t axis = -1;
+        return ov::Any(axis);
+      }
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return ov::Any(nullptr);

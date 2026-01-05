@@ -90,6 +90,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflEmbeddingLookup,
     kLiteRtOpCodeTflConv3d,
     kLiteRtOpCodeTflArgMax,
+    kLiteRtOpCodeTflOneHot,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -130,6 +131,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflL2Normalization,
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflRelu0To1,
+    kLiteRtOpCodeTflSquare,
 };
 // clang format on
 
