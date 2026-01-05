@@ -131,6 +131,8 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeTflVarHandle,
     kLiteRtOpCodeTflWhere,
     kLiteRtOpCodeTflCustom,
+    // TODO: b/473918145 - Remove this once the bug is fixed.
+    kLiteRtOpCodeShloComposite,
 };
 // clang format on
 
