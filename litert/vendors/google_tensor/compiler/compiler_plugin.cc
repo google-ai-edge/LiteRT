@@ -131,6 +131,7 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeTflVarHandle,
     kLiteRtOpCodeTflWhere,
     kLiteRtOpCodeTflCustom,
+    kLiteRtOpCodeShloComposite,
     kLiteRtOpCodeShloScatter,
     kLiteRtOpCodeShloWindow,
 };
