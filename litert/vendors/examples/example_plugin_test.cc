@@ -79,7 +79,8 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
   ASSERT_EQ(byte_code_string,
-            "inputs:0,1\noutputs:3\ntensors:[2x2],[2x2],[2x2],[2x2]\nops:mul(0,"
+            "version:1\ninputs:0,1\noutputs:3\ntensors:[2x2],[2x2],[2x2],[2x2]"
+            "\nops:mul(0,"
             "0)(2)~mul(2,1)(3)");
 
   LiteRtParamIndex byte_code_idx;
@@ -105,6 +106,20 @@ TEST(TestCallDummyPlugin, RegisterAllTransformations) {
   ASSERT_EQ(num_transformations, 2);
   ASSERT_STREQ(transformations[0].name, "MyTransformation0");
   ASSERT_EQ(transformations[0].benefit, 100);
+}
+
+TEST(TestCallDummyPlugin, CheckCompilerCompatibility) {
+  auto plugin = CreatePlugin();
+  LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtEnvironmentOptions env = nullptr;
+  LiteRtOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      api_version, plugin.get(), env, options, "ExampleSocModel"));
+
+  EXPECT_EQ(
+      kLiteRtStatusErrorUnsupportedCompilerVersion,
+      LiteRtCompilerPluginCheckCompilerCompatibility(
+          api_version, plugin.get(), env, options, "UnsupportedSocModel"));
 }
 
 }  // namespace
