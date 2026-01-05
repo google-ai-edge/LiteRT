@@ -178,7 +178,10 @@ litert_bin(
         "@platforms//os:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = ["//litert:litert_public"],
+    visibility = [
+        # copybara:uncomment "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
+        "//litert:litert_public",
+    ],
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
