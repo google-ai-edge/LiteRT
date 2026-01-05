@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
-    runs-on: ubuntu-latest
+    runs-on: LiteRT_Linux_x64
     strategy:
       fail-fast: false # Allow other matrix jobs to continue if one fails
       matrix:
@@ -41,7 +41,6 @@ jobs:
           # TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           export NIGHTLY_RELEASE_DATE=$(date +%Y%m%d)
-          git submodule update --init --recursive
           if [[ -f "ci/build_pip_package_with_docker.sh" ]]; then
             chmod +x ci/build_pip_package_with_docker.sh
 
