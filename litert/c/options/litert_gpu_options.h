@@ -119,6 +119,14 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
     LiteRtOpaqueOptions gpu_accelerator_options, const char* model_cache_key);
 
+// The file descriptor to use for program caching.
+// If set, the delegate will use this file descriptor to read and write the
+// program cache.
+// If it is not set, the delegate will use the serialization_dir + model_token
+// to determine where to read and write the program cache from.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
+    LiteRtOpaqueOptions gpu_accelerator_options, int program_cache_fd);
+
 // When set to true AND the serialization_dir and model_cache_key are also set,
 // the delegate will serialize the program cache.
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
@@ -226,6 +234,9 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
 // LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey() API.
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
     const char** model_cache_key, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+    int* program_cache_fd, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
     bool* serialize_program_cache, LiteRtGpuOptionsPayload payload);

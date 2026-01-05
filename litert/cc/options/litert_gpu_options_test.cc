@@ -213,6 +213,22 @@ TEST(GpuAcceleratorCompilationOptions, SetModelCacheKey) {
   EXPECT_EQ(model_cache_key, "model_cache");
 }
 
+TEST(GpuAcceleratorCompilationOptions, SetProgramCacheFd) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+  // Check the default value.
+  int program_cache_fd = -1;
+  LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+      &program_cache_fd, payload));
+  EXPECT_EQ(program_cache_fd, -1);
+
+  options.SetProgramCacheFd(123);
+  LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+      &program_cache_fd, payload));
+  EXPECT_EQ(program_cache_fd, 123);
+}
+
 TEST(GpuAcceleratorCompilationOptions, SetSerializeProgramCache) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,

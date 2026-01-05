@@ -46,6 +46,9 @@ struct LiteRtGpuOptionsPayloadT {
   // The unique null-terminated token string that acts as a 'namespace' for
   // all serialization entries.
   const char* model_cache_key = nullptr;
+  // The file descriptor to use for program caching. If set, it overrides the
+  // serialization_dir.
+  int program_cache_fd = -1;
   // When set to true AND the serialization_dir and model_cache_key are also
   // set, the delegate will serialize the program cache.
   bool serialize_program_cache = true;
@@ -242,6 +245,14 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
+    LiteRtOpaqueOptions gpu_accelerator_options, int program_cache_fd) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->program_cache_fd = program_cache_fd;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
     LiteRtOpaqueOptions gpu_accelerator_options, bool serialize_program_cache) {
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
@@ -332,8 +343,7 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
 }
 
 LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    bool convert_weights_on_gpu) {
+    LiteRtOpaqueOptions gpu_accelerator_options, bool convert_weights_on_gpu) {
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->convert_weights_on_gpu = convert_weights_on_gpu;
@@ -476,6 +486,17 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *model_cache_key = payload->model_cache_key;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+    int* program_cache_fd, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(program_cache_fd,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`program_cache_fd` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *program_cache_fd = payload->program_cache_fd;
   return kLiteRtStatusOk;
 }
 

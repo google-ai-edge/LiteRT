@@ -83,6 +83,11 @@ LiteRtStatus GpuOptions::SetModelCacheKey(const char* model_cache_key) {
       Get(), model_cache_key);
 }
 
+LiteRtStatus GpuOptions::SetProgramCacheFd(int program_cache_fd) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
+      Get(), program_cache_fd);
+}
+
 LiteRtStatus GpuOptions::SetSerializeProgramCache(
     bool serialize_program_cache) {
   return LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(

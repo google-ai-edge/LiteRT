@@ -51,6 +51,7 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetPreferTextureWeights(bool prefer_texture_weights);
   LiteRtStatus SetSerializationDir(const char* serialization_dir);
   LiteRtStatus SetModelCacheKey(const char* model_cache_key);
+  LiteRtStatus SetProgramCacheFd(int program_cache_fd);
   LiteRtStatus SetSerializeProgramCache(bool serialize_program_cache);
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
   LiteRtStatus EnableExternalTensorsMode(bool enabled);
