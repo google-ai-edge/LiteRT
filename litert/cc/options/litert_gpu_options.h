@@ -75,8 +75,8 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetMadviseOriginalSharedTensors(
       bool madvise_original_shared_tensors);
 
-  /// @brief Sets the number of steps to prepare WebGPU command buffers in
-  /// advance.
+  /// @brief Sets the number of steps to prepare WebGPU or Vulkan command
+  /// buffers in advance.
   ///
   /// - `0` (default): No command buffer preparation in advance. This must be
   ///   used when any GPU resource bindings are changed during inference.
