@@ -22,4 +22,4 @@ services:
       dockerfile: hermetic_build.Dockerfile
     volumes:
       - .:/litert_build
-    command: bash -c "bazel build //litert/runtime:metrics"
+    command: bash -c "bazel build //litert/runtime:compiled_model"

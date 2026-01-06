@@ -64,13 +64,13 @@ else
 fi
 
 echo "----------------------------------------"
-echo "Checking .tf_configure.bazelrc:"
-if [ -f ".tf_configure.bazelrc" ]; then
-  echo ".tf_configure.bazelrc exists"
+echo "Checking .litert_configure.bazelrc:"
+if [ -f ".litert_configure.bazelrc" ]; then
+  echo ".litert_configure.bazelrc exists"
   echo "Contents:"
-  cat .tf_configure.bazelrc
+  cat .litert_configure.bazelrc
 else
-  echo ".tf_configure.bazelrc NOT FOUND"
+  echo ".litert_configure.bazelrc NOT FOUND"
 fi
 
 echo "----------------------------------------"
