@@ -86,14 +86,17 @@ struct LiteRtGpuOptionsPayloadT {
   // delegate.
   bool hint_fully_delegated_to_single_delegate = false;
   // Added in version 2.0.2a1.
-  // Number of threads for webgpu upload.
+  // Number of threads for WebGPU upload.
   int num_threads_to_upload = 0;
   // Added in version 2.0.2a1.
-  // Number of threads for webgpu kernel compilation.
+  // Number of threads for WebGPU kernel shader compilation.
   int num_threads_to_compile = 0;
   // Added in version 2.0.2a1.
   // Whether to convert weights on GPU. It's an experimental feature.
   bool convert_weights_on_gpu = false;
+  // Added in version 2.1.0.
+  // Whether to disable Vulkan kernel shader optimization to reduce init time.
+  bool disable_shader_optimization = false;
 };
 
 namespace litert {
@@ -263,6 +266,16 @@ LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->madvise_original_shared_tensors = madvise_original_shared_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool disable_shader_optimization) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->disable_shader_optimization = disable_shader_optimization;
   return kLiteRtStatusOk;
 }
 
@@ -520,6 +533,18 @@ LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *madvise_original_shared_tensors = payload->madvise_original_shared_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+    bool* disable_shader_optimization, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(disable_shader_optimization,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`disable_shader_compilation_optimization` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *disable_shader_optimization = payload->disable_shader_optimization;
   return kLiteRtStatusOk;
 }
 

@@ -137,6 +137,11 @@ LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
     LiteRtOpaqueOptions gpu_accelerator_options,
     bool madvise_original_shared_tensors);
 
+// Sets whether to disable Vulkan kernel shader optimization.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool disable_shader_optimization);
+
 // Sets the number of steps of command buffer preparations.
 LiteRtStatus
 LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
@@ -160,7 +165,7 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
 LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
     LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_upload);
 
-// Sets the number of threads for webgpu kernel compilation.
+// Sets the number of threads for webgpu kernel shader compilation.
 LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
     LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_compile);
 
@@ -241,6 +246,9 @@ LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
 LiteRtStatus
 LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
     bool* madvise_original_shared_tensors, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+    bool* disable_shader_optimization, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus
 LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(

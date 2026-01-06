@@ -21,12 +21,12 @@
 EXPORTS
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddOpaqueOptions
+  LiteRtClearTensorBufferEvent
   LiteRtCompiledModelIsFullyAccelerated
   LiteRtCompiledModelResizeInputTensor
   LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
-  LiteRtClearTensorBufferEvent
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
   LiteRtCreateCompilerOptions
@@ -79,6 +79,7 @@ EXPORTS
   LiteRtGetExternalLiteRtBufferContextTensorBuffer
   LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType
+  LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization
   LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern
   LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
   LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey
@@ -249,6 +250,7 @@ EXPORTS
   LiteRtSetDelegateFunction
   LiteRtSetDummyCompilerOptions
   LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
+  LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization
   LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
   LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey
   LiteRtSetGpuAcceleratorCompilationOptionsPrecision

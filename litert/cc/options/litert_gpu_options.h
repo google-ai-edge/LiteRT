@@ -118,7 +118,7 @@ class GpuOptions : public litert::OpaqueOptions {
   /// @brief Sets the number of threads for WebGPU upload.
   LiteRtStatus SetNumThreadsToUpload(int num_threads_to_upload);
 
-  /// @brief Sets the number of threads for WebGPU kernel compilation.
+  /// @brief Sets the number of threads for WebGPU kernel shader compilation.
   LiteRtStatus SetNumThreadsToCompile(int num_threads_to_compile);
 
   /// @brief Sets whether to convert weights on the GPU.
@@ -129,6 +129,9 @@ class GpuOptions : public litert::OpaqueOptions {
   /// delegate.
   LiteRtStatus SetHintFullyDelegatedToSingleDelegate(
       bool hint_fully_delegated_to_single_delegate);
+
+  /// @brief Sets whether to disable Vulkan kernel shader optimization.
+  LiteRtStatus DisableShaderOptimization(bool disable);
 };
 
 }  // namespace litert

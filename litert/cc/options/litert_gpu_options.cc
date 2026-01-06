@@ -163,4 +163,9 @@ LiteRtStatus GpuOptions::SetHintFullyDelegatedToSingleDelegate(
       Get(), hint_fully_delegated_to_single_delegate);
 }
 
+LiteRtStatus GpuOptions::DisableShaderOptimization(bool disable) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+      Get(), disable);
+}
+
 }  // namespace litert
