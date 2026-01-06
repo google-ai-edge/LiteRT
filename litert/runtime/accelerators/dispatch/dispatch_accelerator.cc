@@ -160,4 +160,24 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
 
 }  // extern "C"
 
+// Function pointer defined in auto_registration.cc.
+extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorNpu)(
+    LiteRtEnvironmentT& environment);
+
+namespace {
+
+class StaticNpuAcceleratorInitializer {
+ public:
+  StaticNpuAcceleratorInitializer() {
+    LiteRtRegisterStaticLinkedAcceleratorNpu =
+        [](LiteRtEnvironmentT& environment) -> LiteRtStatus {
+      return LiteRtRegisterNpuAccelerator(&environment);
+    };
+  }
+};
+
+StaticNpuAcceleratorInitializer g_npu_accelerator_initializer;
+
+}  // namespace
+
 #endif  // !LITERT_DISABLE_NPU

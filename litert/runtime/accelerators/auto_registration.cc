@@ -24,21 +24,33 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
-#include "litert/runtime/accelerators/xnnpack/xnnpack_accelerator.h"
-
-#if !defined(LITERT_DISABLE_NPU)
+#if !defined(LITERT_DISABLE_NPU) && defined(LITERT_BUILD_WITH_CMAKE)
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
-#endif  // !defined(LITERT_DISABLE_NPU)
+#endif  // !defined(LITERT_DISABLE_NPU) && defined(LITERT_BUILD_WITH_CMAKE)
+
+extern "C" {
+// Define a function pointer to allow the accelerator registration to be called
+// by the LiteRT environment. This is to use the CPU (XNNPACK) accelerator
+// statically linked.
+LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorCpu)(
+    LiteRtEnvironmentT& environment) = nullptr;
+
+// Define a function pointer to allow the accelerator registration to be called
+// by the LiteRT environment. This is to use the NPU (Dispatch) accelerator
+// statically linked.
+LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorNpu)(
+    LiteRtEnvironmentT& environment) = nullptr;
 
 // Define a function pointer to allow the accelerator registration to be
 // overridden by the LiteRT environment. This is to use the GPU accelerator
 // statically linked.
-extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
+LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
     LiteRtEnvironmentT& environment) = nullptr;
 
 // Define a function pointer for the WebNN accelerator.
-extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
+LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
     LiteRtEnvironmentT& environment) = nullptr;
+}
 
 namespace litert {
 namespace {
@@ -52,12 +64,31 @@ Expected<SharedLibrary> LoadSharedLibrary(absl::string_view shlib_path,
   return SharedLibrary::Load(RtldFlags::kDefault);
 }
 
+LiteRtStatus RegisterStaticAccelerator(
+    const char* name, LiteRtStatus (*registrar)(LiteRtEnvironmentT&),
+    LiteRtEnvironmentT& environment) {
+  if (registrar) {
+    if (auto status = registrar(environment); status == kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "%s accelerator registered.", name);
+      return kLiteRtStatusOk;
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "%s accelerator could not be loaded and registered: %s.", name,
+                 LiteRtGetStatusString(status));
+      return status;
+    }
+  }
+  return kLiteRtStatusErrorNotFound;
+}
+
 }  // namespace
 
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
   // Register the NPU accelerator.
 #if !defined(LITERT_DISABLE_NPU)
+#if defined(LITERT_BUILD_WITH_CMAKE)
+  // TODO: b/473862168 - Use `RegisterStaticAccelerator` for CMake build.
   if (auto npu_registration = LiteRtRegisterNpuAccelerator(&environment);
       npu_registration == kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
@@ -66,6 +97,10 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
                "NPU accelerator could not be loaded and registered: %s.",
                LiteRtGetStatusString(npu_registration));
   }
+#else
+  RegisterStaticAccelerator("NPU", LiteRtRegisterStaticLinkedAcceleratorNpu,
+                            environment);
+#endif
 #else
   LITERT_LOG(LITERT_VERBOSE, "NPU accelerator accelerator is disabled.");
 #endif
@@ -147,10 +182,9 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
                registration.Error().Message().data());
   }
   if (!gpu_accelerator_registered) {
-    if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
-        LiteRtRegisterStaticLinkedAcceleratorGpu(environment) ==
-            kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+    if (auto status = RegisterStaticAccelerator(
+            "GPU", LiteRtRegisterStaticLinkedAcceleratorGpu, environment);
+        status == kLiteRtStatusOk) {
       gpu_accelerator_registered = true;
     }
   }
@@ -163,14 +197,8 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #endif
 
   // Register the CPU accelerator.
-  if (auto cpu_registration = LiteRtRegisterCpuAccelerator(&environment);
-      cpu_registration == kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
-  } else {
-    LITERT_LOG(LITERT_WARNING,
-               "CPU accelerator could not be loaded and registered: %s.",
-               LiteRtGetStatusString(cpu_registration));
-  }
+  RegisterStaticAccelerator("CPU", LiteRtRegisterStaticLinkedAcceleratorCpu,
+                            environment);
 
   return {};
 };
