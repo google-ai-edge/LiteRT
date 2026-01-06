@@ -495,14 +495,13 @@ Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
                             compilation_options.GetGpuOptions());
     LITERT_RETURN_IF_ERROR(PopulateGpuOptions(
         env, gpu_options, gpu_options_keys, gpu_options_values));
+  }
 
-    if (env->GetArrayLength(qualcomm_options_keys) > 0) {
-      LITERT_ASSIGN_OR_RETURN(auto& qualcomm_options,
-                              compilation_options.GetQualcommOptions());
-      LITERT_RETURN_IF_ERROR(PopulateQualcommOptions(env, qualcomm_options,
-                                                     qualcomm_options_keys,
-                                                     qualcomm_options_values));
-    }
+  if (env->GetArrayLength(qualcomm_options_keys) > 0) {
+    LITERT_ASSIGN_OR_RETURN(auto& qualcomm_options,
+                            compilation_options.GetQualcommOptions());
+    LITERT_RETURN_IF_ERROR(PopulateQualcommOptions(
+        env, qualcomm_options, qualcomm_options_keys, qualcomm_options_values));
   }
   return std::move(compilation_options);
 }
