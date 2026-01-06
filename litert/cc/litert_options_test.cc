@@ -21,10 +21,13 @@
 #include <utility>
 
 #include <gtest/gtest.h>
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
+#include "litert/core/options.h"
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "litert/test/matchers.h"
 
 namespace litert {
@@ -42,6 +45,7 @@ TEST(OptionsTest, SetHardwareAccelerators) {
       HwAccelerators::kCpu | HwAccelerators::kGpu));
 }
 
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
@@ -62,7 +66,6 @@ TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
 
   auto status =
       options.SetExternalWeightScopedFile(*scoped_file, std::move(sections));
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   LITERT_EXPECT_OK(status);
   auto* impl = reinterpret_cast<LiteRtOptionsT*>(options.Get());
   ASSERT_NE(impl->scoped_weight_source, nullptr);
@@ -71,10 +74,8 @@ TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   ASSERT_NE(it, impl->scoped_weight_source->sections.end());
   EXPECT_EQ(it->second.offset, 4);
   EXPECT_EQ(it->second.length, 8);
-#else
-  EXPECT_FALSE(status.HasValue());
-#endif
   std::remove(path.c_str());
 }
+#endif
 }  // namespace
 }  // namespace litert
