@@ -386,10 +386,18 @@ if(NOT TARGET tensorflow-lite)
       "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a"
       "${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a"
     )
+    # On Linux/Android, use RESCAN to handle circular dependencies between static libs.
+    # On macOS (AppleClang), the linker handles library ordering automatically, so we
+    # just list them directly.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      set(_litert_tflite_interface_libs "${_litert_tflite_link_libs}")
+    else()
+      set(_litert_tflite_interface_libs "$<LINK_GROUP:RESCAN,${_litert_tflite_link_libs}>")
+    endif()
     set_target_properties(tensorflow-lite PROPERTIES
       IMPORTED_LOCATION "${TFLITE_BUILD_DIR}/libtensorflow-lite.a"
       INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_SOURCE_DIR};${TFLITE_BUILD_DIR}"
-      INTERFACE_LINK_LIBRARIES "$<LINK_GROUP:RESCAN,${_litert_tflite_link_libs}>"
+      INTERFACE_LINK_LIBRARIES "${_litert_tflite_interface_libs}"
     )
   endif()
 endif()

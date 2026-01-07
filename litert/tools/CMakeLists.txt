@@ -203,11 +203,8 @@ if(ANDROID OR APPLE)
             litert_core
             litert_core_model
             tensorflow-lite
-            absl::flags
-            absl::flags_parse
-            absl::log
-            absl::status
-            absl::statusor
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
     )
 else()
     target_link_libraries(analyze_model
@@ -293,3 +290,4 @@ endif()
 install(TARGETS run_model analyze_model apply_plugin_main
     RUNTIME DESTINATION bin
 )
+

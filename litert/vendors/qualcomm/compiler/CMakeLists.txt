@@ -19,6 +19,8 @@ add_library(qnn_compiler_plugin SHARED
 target_include_directories(qnn_compiler_plugin
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+    PRIVATE
+        ${TFLITE_BUILD_DIR}/flatbuffers/include
 )
 
 target_link_libraries(qnn_compiler_plugin
@@ -39,14 +41,23 @@ set_target_properties(qnn_compiler_plugin PROPERTIES
     OUTPUT_NAME "LiteRtCompilerPlugin_Qualcomm"
 )
 
-if(UNIX AND NOT APPLE)
-    target_link_options(qnn_compiler_plugin PRIVATE 
+if(APPLE)
+    target_link_libraries(qnn_compiler_plugin PRIVATE
+        litert_runtime_c_api_shared_lib
+        tensorflow-lite
+        Threads::Threads
+        litert_compiler_plugin
+        litert_cc_api
+        litert_cc_options
+    )
+elseif(UNIX)
+    target_link_options(qnn_compiler_plugin PRIVATE
         "-Wl,-soname=libLiteRtCompilerPlugin_Qualcomm.so"
     )
 
-    target_link_libraries(qnn_compiler_plugin PRIVATE 
+    target_link_libraries(qnn_compiler_plugin PRIVATE
         "-Wl,--start-group"
-        litert_runtime_c_api_shared_lib 
+        litert_runtime_c_api_shared_lib
         tensorflow-lite
         Threads::Threads
         litert_compiler_plugin
@@ -55,3 +66,4 @@ if(UNIX AND NOT APPLE)
         "-Wl,--end-group"
     )
 endif()
+
