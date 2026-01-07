@@ -51,6 +51,17 @@ void DequantizeInto(const absl::Span<const T>& in, const float scale,
   }
 }
 
+template <typename T, std::size_t N>
+std::array<std::add_pointer_t<std::add_const_t<T>>, N + 1>
+ObtainNullTermPtrArray(const std::array<T, N>& arr) {
+  std::array<std::add_pointer_t<std::add_const_t<T>>, N + 1> ret;
+  for (std::size_t i = 0; i < N; ++i) {
+    ret[i] = &arr[i];
+  }
+  ret[N] = nullptr;
+  return ret;
+}
+
 void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
                                   std::vector<std::uint16_t>& dst);
 
