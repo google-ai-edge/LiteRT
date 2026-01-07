@@ -204,6 +204,7 @@ EXPORTS
   LiteRtMediatekOptionsSetPerformanceMode
   LiteRtQualcommOptionsCreate
   LiteRtQualcommOptionsGet
+  LiteRtQualcommOptionsGetBackend
   LiteRtQualcommOptionsGetDlcDir
   LiteRtQualcommOptionsGetDumpTensorIds
   LiteRtQualcommOptionsGetEnableWeightSharing
@@ -220,6 +221,7 @@ EXPORTS
   LiteRtQualcommOptionsGetUseHtpPreference
   LiteRtQualcommOptionsGetUseQint16AsQuint16
   LiteRtQualcommOptionsGetVtcmSize
+  LiteRtQualcommOptionsSetBackend
   LiteRtQualcommOptionsSetDlcDir
   LiteRtQualcommOptionsSetDumpTensorIds
   LiteRtQualcommOptionsSetEnableWeightSharing
