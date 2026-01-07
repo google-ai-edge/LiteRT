@@ -30,66 +30,6 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Set up Homebrew
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> $HOME/.zprofile
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-          brew install pyenv openssl readline xz zlib tcl-tk
-
-      - name: Install pyenv
-        run: |
-          curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
-          echo 'export PYENV_ROOT="$HOME/.pyenv"' >> $GITHUB_ENV
-          echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> $GITHUB_ENV
-          echo 'eval "$(pyenv init --path)"' >> $GITHUB_ENV
-        shell: bash
-
-      - name: Install Python ${{ matrix.python-version }}
-        shell: bash
-        run: |
-          export PYENV_ROOT="$HOME/.pyenv"
-          export PATH="$PYENV_ROOT/bin:$PATH"
-          eval "$(pyenv init --path)"
-          eval "$(pyenv init -)"
-
-          brew update
-          brew install openssl readline sqlite3 xz zlib tcl-tk
-          export CFLAGS="-I$(brew --prefix openssl)/include -I$(brew --prefix readline)/include -I$(brew --prefix xz)/include -I$(brew --prefix zlib)/include -I$(brew --prefix tcl-tk)/include"
-          export LDFLAGS="-L$(brew --prefix openssl)/lib -L$(brew --prefix readline)/lib -L$(brew --prefix xz)/lib -L$(brew --prefix zlib)/lib -L$(brew --prefix tcl-tk)/lib"
-          export CONFIGURE_OPTS="--with-openssl=$(brew --prefix openssl) --with-readline=$(brew --prefix readline)"
-          export PYTHON_BUILD_OPTS="$CFLAGS $LDFLAGS"
-
-          pyenv install --skip-existing ${{ matrix.python-version }}
-          pyenv global ${{ matrix.python-version }}
-          python -m pip install --upgrade pip
-
-      - name: Install virtualenv and create venv
-        shell: bash
-        run: |
-          export PYENV_ROOT="$HOME/.pyenv"
-          export PATH="$PYENV_ROOT/bin:$PATH"
-          eval "$(pyenv init --path)"
-          eval "$(pyenv init -)"
-          pyenv global ${{ matrix.python-version }}
-
-          pip install virtualenv
-          python -m virtualenv litert_env_${{ matrix.python-version }}
-          source litert_env_${{ matrix.python-version }}/bin/activate
-          pip install setuptools build wheel
-
-      - name: Install Bazel (Manual via Homebrew)
-        run: |
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-          brew install bazel
-          # Optionally, pin to a specific version if needed, though Homebrew usually has recent versions.
-          # To install a specific version, you might need to tap other sources or download directly.
-          # For 7.6.1, you might need to download the binary from Bazel's releases:
-          # e.g., wget https://github.com/bazelbuild/bazel/releases/download/7.6.1/bazel-7.6.1-darwin-arm64
-          # And set it up in the PATH.
-          # Let's try the latest from Homebrew first.
-          bazel --version
-
       - name: Run build script
         shell: bash
         run: |
@@ -107,6 +47,8 @@ jobs:
           export HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}
           export USE_LOCAL_TF=false
           ./ci/build_pip_package_with_bazel.sh
+       
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wheels-py${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}
