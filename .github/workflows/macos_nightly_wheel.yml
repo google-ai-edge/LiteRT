@@ -18,9 +18,9 @@ concurrency:
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
-    runs-on: macos-15-large
+    runs-on: macos-15-large # Using an Apple Silicon runner
     strategy:
-      fail-fast: false # Allow other matrix jobs to continue if one fails
+      fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
@@ -31,10 +31,21 @@ jobs:
           submodules: 'recursive'
 
       - name: Set up Homebrew
+        id: set_up_homebrew
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           eval "$(/opt/homebrew/bin/brew shellenv)"
           brew install pyenv openssl readline xz zlib tcl-tk sqlite3
+
+      - name: Set Bazel version for Bazelisk
+        run: echo "7.6.1" > .bazelversion
+
+      - name: Check Bazel (via Bazelisk) version
+        run: |
+          # Bazelisk should be pre-installed on the runner PATH
+          # The 'bazel' command will invoke bazelisk
+          command -v bazel
+          bazel --version
 
       - name: Install Python ${{ matrix.python-version }}
         shell: bash
@@ -44,9 +55,6 @@ jobs:
           export PATH="$PYENV_ROOT/bin:$PATH"
           eval "$(pyenv init --path)"
           eval "$(pyenv init -)"
-
-          echo "Using pyenv at: $(command -v pyenv)"
-          pyenv --version
 
           export CFLAGS="-I$(brew --prefix openssl)/include -I$(brew --prefix readline)/include -I$(brew --prefix xz)/include -I$(brew --prefix zlib)/include -I$(brew --prefix tcl-tk)/include -I$(brew --prefix sqlite3)/include"
           export LDFLAGS="-L$(brew --prefix openssl)/lib -L$(brew --prefix readline)/lib -L$(brew --prefix xz)/lib -L$(brew --prefix zlib)/lib -L$(brew --prefix tcl-tk)/lib -L$(brew --prefix sqlite3)/lib"
@@ -69,13 +77,6 @@ jobs:
           source litert_env_${{ matrix.python-version }}/bin/activate
           pip install setuptools build wheel
 
-      - name: Install Bazel (Manual via Homebrew)
-        run: |
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-          brew install bazel
-          echo "Installed Bazel version:"
-          bazel --version
-
       - name: Run build script
         shell: bash
         run: |
@@ -85,15 +86,14 @@ jobs:
           eval "$(pyenv init --path)"
           eval "$(pyenv init -)"
 
-          # Ensure Homebrew bin is in PATH for the script
-          export PATH="/opt/homebrew/bin:$PATH"
-
           source litert_env_${{ matrix.python-version }}/bin/activate
 
           export CI_BUILD_PYTHON=python${{ matrix.python-version }}
           export HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}
           export USE_LOCAL_TF=false
-          
+
+          # The 'bazel' command will be intercepted by bazelisk,
+          # which will download/use the version specified in .bazelversion
           ./ci/build_pip_package_with_bazel.sh
 
       - name: Upload artifacts
