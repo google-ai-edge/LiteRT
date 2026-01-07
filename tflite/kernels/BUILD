@@ -2199,7 +2199,6 @@ cc_test(
         "//tflite/core:framework_stable",
         "//tflite/kernels/internal:tensor",
         "//tflite/schema:schema_fbs",
-        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -2575,7 +2574,6 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite/schema:schema_fbs",
-        "//tflite/types:half",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
