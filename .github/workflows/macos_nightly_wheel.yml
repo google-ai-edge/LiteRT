@@ -23,7 +23,7 @@ jobs:
       fail-fast: false # Allow other matrix jobs to continue if one fails
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-        
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -79,7 +79,7 @@ jobs:
           pip install setuptools build wheel
 
       - name: Install Bazel
-        uses: bazelbuild/setup-bazel@v2
+        uses: bazelbuild/setup-bazel@v4 # Updated from @v2 to @v4
         with:
           bazel-version: 7.6.1 # Match the version from the log
 
