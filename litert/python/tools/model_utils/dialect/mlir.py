@@ -14,9 +14,11 @@
 """MLIR builtin dialect definitions."""
 
 import abc
+import collections
 from typing import Any, Literal, Sequence, Union, cast, final
 
 from litert.python.mlir import ir
+from litert.python.mlir.dialects import quant as ir_quant_d
 import numpy as np
 import xdsl
 from xdsl import irdl
@@ -58,6 +60,13 @@ def type_from_mlir(ir_type: ir.Type):
   Returns:
     The ModelUtils type object.
   """
+  # Try upcast ir.Type to known specialized ir cls.
+  # TODO(cnchan): Isolate ir.Type upcasting from this function.
+  if ir_quant_d.UniformQuantizedType.isinstance(ir_type):
+    ir_type = ir_quant_d.UniformQuantizedType(ir_type)
+  elif ir_quant_d.UniformQuantizedPerAxisType.isinstance(ir_type):
+    ir_type = ir_quant_d.UniformQuantizedPerAxisType(ir_type)
+
   type_cls = core.mlir_transforms.get(ir_type) or core.mlir_transforms.get(
       type(ir_type)
   )
@@ -189,15 +198,19 @@ UNKNOWN_TYPE = _UnknownType()
 
 @core.register_mlir_transform(ir.StringAttr)
 @irdl.irdl_attr_definition
-class StringAttr(core.MlirAttributeBase, irdl.Data[str]):
+class StringAttr(
+    core.MlirAttributeBase, irdl.Data[Union[str, collections.UserString[str]]]
+):
   """MLIR builtin StringAttr."""
 
   name = "string"
 
-  def __init__(self, value: Union[str, "StringAttr"]):
+  def __init__(
+      self, value: Union[str, collections.UserString[str], "StringAttr"]
+  ):
     while isinstance(value, StringAttr):
       value = value.data
-    assert isinstance(value, str)
+    assert isinstance(value, (str, collections.UserString))
     super().__init__(value)
 
   @classmethod
@@ -221,10 +234,13 @@ class StringAttr(core.MlirAttributeBase, irdl.Data[str]):
     def fget(self: irdl.IRDLOperation):
       return cast(cls, self.attributes[attribute_name]).data
 
-    def fset(self: irdl.IRDLOperation, value: irdl.Attribute | str | None):
+    def fset(
+        self: irdl.IRDLOperation,
+        value: irdl.Attribute | str | collections.UserString[str] | None,
+    ):
       if isinstance(value, cls):
         self.attributes[attribute_name] = value
-      elif isinstance(value, str):
+      elif isinstance(value, (str, collections.UserString)):
         self.attributes[attribute_name] = cls(value)
       elif value is None:
         self.attributes.pop(attribute_name)
@@ -715,9 +731,22 @@ class RankedTensorType(
       element_type: str | np.dtype | ir.Type | StringAttr,
   ):
     if not isinstance(element_type, StringAttr):
+      # Numpy dtype to ir type.
       if isinstance(element_type, np.dtype):
         element_type = core.utils.dtype_to_ir_type(element_type)
-      element_type = StringAttr(str(element_type))
+
+      # IR type to str or str-like (via mlir transform).
+      if isinstance(element_type, ir.Type):
+        ir_transformed_type = type_from_mlir(element_type)
+        # If the transformed type is not a str-like object, use the original
+        # string representation of the IR type.
+        if not isinstance(ir_transformed_type, (str, collections.UserString)):
+          element_type = str(element_type)
+        else:
+          element_type = ir_transformed_type
+
+      assert isinstance(element_type, (str, collections.UserString, StringAttr))
+      element_type = StringAttr(element_type)
 
     if not isinstance(shape, DenseElementsAttr):
       if isinstance(shape, np.ndarray):
@@ -752,16 +781,16 @@ class RankedTensorType(
     return len(self.shape)
 
   @property
-  def element_type(self):
+  def element_type(self) -> str | collections.UserString[str]:
     return self._element_type.data
 
   @property
-  def elty(self):
+  def elty(self) -> str | collections.UserString[str]:
     return self.element_type
 
   @classmethod
   def from_mlir(cls, attr: ir.RankedTensorType):
-    return RankedTensorType(attr.shape, str(attr.element_type))
+    return RankedTensorType(attr.shape, attr.element_type)
 
   def _inner_str(self, abbreviated_type=False):
     shape = [str(d) if d >= 0 else "?" for d in self.shape]

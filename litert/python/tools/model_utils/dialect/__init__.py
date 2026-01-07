@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ModelUtils dialects."""
+
 from . import arith
 from . import func
 from . import mlir
+from . import quant
 from . import stablehlo
 from . import tfl

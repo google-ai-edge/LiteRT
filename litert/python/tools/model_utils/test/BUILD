@@ -68,3 +68,15 @@ pytype_strict_contrib_test(
         "@absl_py//absl/testing:absltest",
     ],
 )
+
+pytype_strict_contrib_test(
+    name = "quant_dialect_test",
+    srcs = ["quant_dialect_test.py"],
+    tags = ["no_oss"],
+    deps = [
+        "//litert/python/tools/model_utils",
+        "//litert/python/tools/model_utils:testing",
+        "//third_party/py/mlir:ir",
+        "@absl_py//absl/testing:absltest",
+    ],
+)

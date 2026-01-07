@@ -51,6 +51,7 @@ py_library(
             "//third_party/py/mlir:func_dialect",
             "//third_party/py/mlir:ir",
             "//third_party/py/mlir:pass_manager",
+            "//third_party/py/mlir:quant_dialect",
             "//third_party/py/mlir:stablehlo_dialect",
         ],
         [
