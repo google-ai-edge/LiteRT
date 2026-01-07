@@ -20,6 +20,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/types/half.h"
 
 namespace tflite {
 namespace ops {
@@ -155,6 +156,9 @@ TfLiteStatus SelectEval(TfLiteContext* context, TfLiteNode* node) {
       break;                                                                 \
     case kTfLiteFloat32:                                                     \
       TF_LITE_SELECT(float, op);                                             \
+      break;                                                                 \
+    case kTfLiteFloat16:                                                     \
+      TF_LITE_SELECT(half, op);                                              \
       break;                                                                 \
     case kTfLiteUInt8:                                                       \
       TF_LITE_SELECT(uint8_t, op);                                           \
