@@ -38,6 +38,7 @@ cc_library(
     hdrs = ["param_wrapper.h"],
     deps = [
         ":tensor_wrapper",
+        "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "@qairt//:qnn_lib_headers",
     ],
@@ -52,6 +53,7 @@ cc_library(
         ":tensor_wrapper",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
