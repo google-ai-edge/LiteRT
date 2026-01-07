@@ -15,15 +15,12 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
@@ -38,9 +35,7 @@ class LiteRtDispatchDeviceContextT {
 
   ~LiteRtDispatchDeviceContextT();
 
-  static litert::Expected<Ptr> Create(
-      const litert::DarwinnRuntimeOptions* darwinn_options,
-      const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types);
+  static litert::Expected<Ptr> Create();
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
@@ -63,7 +58,7 @@ class LiteRtDispatchDeviceContextT {
   void add_graph(ThrGraph* graph) { thr_graphs_.insert(graph); }
 
  private:
-  // Struct to store Darwinn runtime options for later application
+  // Struct to store DarwiNN runtime options for later application.
   struct DarwinnOptionsData {
     std::optional<uint32_t> inference_power_state;
     std::optional<uint32_t> inference_memory_power_state;
@@ -74,14 +69,7 @@ class LiteRtDispatchDeviceContextT {
 
   LiteRtDispatchDeviceContextT() = default;
 
-  bool IsSupportedTensorBufferType(LiteRtTensorBufferType type) const {
-    return std::find(supported_tensor_buffer_types_->begin(),
-                     supported_tensor_buffer_types_->end(), type) !=
-           supported_tensor_buffer_types_->end();
-  }
-
   std::optional<DarwinnOptionsData> darwinn_options_;
-  const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types_;
   ThrContext* thr_context_ = nullptr;
   absl::flat_hash_set<ThrGraph*> thr_graphs_;
 };

@@ -122,6 +122,10 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     "${SRC_DIR}/invocation_context.cc"
   )
 
+  if(VENDOR STREQUAL "GoogleTensor")
+    list(APPEND DISPATCH_SRCS "${SRC_DIR}/dispatch_api_config.cc")
+  endif()
+
   if(VENDOR STREQUAL "MediaTek")
     set(FLATC_EXECUTABLE "")
     if(CMAKE_SYSTEM_NAME STREQUAL "Android")
@@ -209,6 +213,7 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   target_link_libraries(${TGT}
     PUBLIC
       litert_runtime_c_api_static
+      absl::algorithm
       absl::str_format
       absl::strings
       absl::string_view

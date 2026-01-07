@@ -14,15 +14,10 @@
 
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
-#include <cstdio>
-#include <memory>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -32,35 +27,16 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
-#include "litert/vendors/cc/options_helper.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
-namespace {
-
-// All constants are initialized with valid values in `Initialize`.
-
-// Google Tensor Dispatch API build ID.
-char BuildId[256];
-
-// Optional DarwiNN-specific options provided by the application.
-std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
-
-// Tensor buffer types that are supported by the available SouthBound
-// implementation.
-std::vector<LiteRtTensorBufferType> TheSupportedTensorBufferTypes;
-
-}  // namespace
-
-namespace litert {
-namespace google_tensor {
+namespace litert::google_tensor {
 
 // /////////////////////////////////////////////////////////////////////////////
 // Basic Execution API
@@ -68,49 +44,12 @@ namespace google_tensor {
 
 LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
-  // Parse Darwinn runtime options from the opaque options
-  auto [env, opts, opq_opts, darwinn_opts] =
-      litert::ParseOptions<litert::DarwinnRuntimeOptions>(environment_options,
-                                                          options);
-
-  if (darwinn_opts) {
-    TheDarwinnOptions = std::make_unique<litert::DarwinnRuntimeOptions>(
-        std::move(*darwinn_opts));
-    LITERT_LOG(LITERT_INFO, "Found Darwinn runtime options");
-  } else {
-    LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found, using defaults");
-  }
-
   if (ThrStatus status = thrInitialize(); status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_INFO, "thr_initialize failed: %d", status);
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  TheSupportedTensorBufferTypes = {
-#if LITERT_HAS_AHWB_SUPPORT
-      kLiteRtTensorBufferTypeAhwb,
-#endif
-  };
-#if LITERT_HAS_DMABUF_SUPPORT
-  if (GoogleTensorSouthBoundFeatureSupported(
-          GoogleTensorSouthBoundFeature::kDmaBufRegistration)) {
-    TheSupportedTensorBufferTypes.push_back(kLiteRtTensorBufferTypeDmaBuf);
-  }
-#endif
-  if (TheSupportedTensorBufferTypes.empty()) {
-    TheSupportedTensorBufferTypes.push_back(kLiteRtTensorBufferTypeHostMemory);
-  }
-
-  const char* sb_api_version = thrGetVendorApiVersion();
-  const char* sb_vendor_id = thrGetVendorId();
-  snprintf(
-      BuildId, sizeof(BuildId),
-      "GoogleTensor Dispatch API version %d.%d.%d, SB API version %s, "
-      "vendor id: %s",
-      LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
-      LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
-
-  return kLiteRtStatusOk;
+  return InitializeDispatchApiConfig(environment_options, options);
 }
 
 LiteRtStatus GetVendorId(const char** vendor_id) {
@@ -119,7 +58,7 @@ LiteRtStatus GetVendorId(const char** vendor_id) {
 }
 
 LiteRtStatus GetBuildId(const char** build_id) {
-  *build_id = BuildId;
+  *build_id = GetTheBuildId();
   return kLiteRtStatusOk;
 }
 
@@ -131,9 +70,7 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
-  if (auto result = LiteRtDispatchDeviceContextT::Create(
-          TheDarwinnOptions.get(), &TheSupportedTensorBufferTypes);
-      result) {
+  if (auto result = LiteRtDispatchDeviceContextT::Create(); result) {
     *device_context = result->release();
     return kLiteRtStatusOk;
   } else {
@@ -207,8 +144,8 @@ LiteRtStatus InvocationContextCreate(
     LiteRtDispatchInvocationContext* invocation_context) {
   function_name = "";
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromBytecode(
-          &TheSupportedTensorBufferTypes, device_context, exec_type,
-          exec_bytecode_buffer, function_name, num_inputs, num_outputs);
+          device_context, exec_type, exec_bytecode_buffer, function_name,
+          num_inputs, num_outputs);
       result) {
     *invocation_context = result->release();
     return kLiteRtStatusOk;
@@ -557,7 +494,7 @@ LiteRtStatus InvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context) {
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromGraph(
-          &TheSupportedTensorBufferTypes, device_context, graph);
+          device_context, graph);
       result) {
     *invocation_context = result->release();
     return kLiteRtStatusOk;
@@ -583,8 +520,7 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
   return kLiteRtStatusOk;
 }
 
-}  // namespace google_tensor
-}  // namespace litert
+}  // namespace litert::google_tensor
 
 // /////////////////////////////////////////////////////////////////////////////
 

@@ -19,7 +19,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #if __ANDROID__
 #include <android/hardware_buffer.h>
@@ -33,6 +32,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/sb_dispatch_annotations.h"
@@ -51,13 +51,8 @@ LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
 }
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create(
-    const litert::DarwinnRuntimeOptions* darwinn_options,
-    const std::vector<LiteRtTensorBufferType>* supported_tensor_buffer_types) {
+LiteRtDispatchDeviceContextT::Create() {
   Ptr device_context(new LiteRtDispatchDeviceContextT());
-
-  device_context->supported_tensor_buffer_types_ =
-      supported_tensor_buffer_types;
 
   device_context->thr_context_ = thrContextCreate();
 
@@ -68,8 +63,10 @@ LiteRtDispatchDeviceContextT::Create(
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to enable Tachyon");
   }
 
-  // Store Darwinn options to be applied to graphs later
-  if (darwinn_options) {
+  // If provided, store DarwiNN options to be applied to graphs later.
+  if (litert::DarwinnRuntimeOptions* darwinn_options =
+          litert::google_tensor::GetTheDarwinnOptions();
+      darwinn_options != nullptr) {
     DarwinnOptionsData options_data;
 
     // Extract inference power state if available
@@ -104,6 +101,7 @@ LiteRtDispatchDeviceContextT::Create(
     LITERT_LOG(LITERT_INFO,
                "Darwinn runtime options will be applied to graphs");
   }
+
   return device_context;
 }
 
@@ -127,7 +125,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get tensor buffer type");
   }
-  if (!IsSupportedTensorBufferType(tensor_buffer_type)) {
+  if (!litert::google_tensor::IsTensorBufferTypeSupported(tensor_buffer_type)) {
     return Error(kLiteRtStatusErrorUnsupported,
                  "Unsupported tensor buffer type");
   }
