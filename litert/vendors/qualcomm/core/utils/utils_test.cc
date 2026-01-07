@@ -160,12 +160,4 @@ TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
   ASSERT_NE(api, nullptr);
 }
 
-TEST(MiscTests, DISABLED_LoadIrBackendApiTest) {
-  DLHandle handle = ::qnn::CreateDLHandle(::qnn::IrBackend::GetLibraryName());
-  auto api = ::qnn::ResolveQnnApi(
-      handle.get(), ::qnn::IrBackend::GetExpectedBackendVersion());
-
-  ASSERT_NE(api, nullptr);
-}
-
 }  // namespace qnn
