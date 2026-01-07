@@ -176,6 +176,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/core/util:flatbuffer_tools",
@@ -190,8 +191,10 @@ cc_test(
         ":flatbuffer_to_litert",
         "//litert/c:litert_model_types",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 

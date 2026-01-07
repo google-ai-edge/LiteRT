@@ -14,11 +14,13 @@
 
 #include "litert/core/model/flatbuffer_to_litert.h"
 
+#include <cstdint>
 #include <utility>
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/core/model/model.h"
@@ -123,14 +125,14 @@ Expected<TensorType> MapTensorType(const TflTensorType& tfl_tensor_type) {
   auto ranked_shape = AsDynamicShape(shape);
   if (!ranked_shape) {
     LITERT_LOG(LITERT_ERROR, "Only ranked tensors currently supported");
-    return Error(kLiteRtStatusErrorUnsupported);
+    return Error(Status::kErrorUnsupported);
   }
 
   auto litert_element_type = MapElementType(element_type);
   if (litert_element_type == kLiteRtElementTypeNone) {
     LITERT_LOG(LITERT_ERROR, "Element type (%d) not currently supported",
                element_type);
-    return Error(kLiteRtStatusErrorUnsupported);
+    return Error(Status::kErrorUnsupported);
   }
 
   TensorTypeDetail detail;
@@ -140,24 +142,59 @@ Expected<TensorType> MapTensorType(const TflTensorType& tfl_tensor_type) {
   return std::make_pair(kLiteRtRankedTensorType, detail);
 }
 
-Expected<Quantization> MapQuantization(const TflQuantization* tfl_quantization,
-                                       ScratchBufferProvider buffer_provider) {
-  if (!IsQuantized(tfl_quantization)) {
+Expected<Quantization> MapQuantization(
+    const TflPackedQuantization* tfl_quantization) {
+  // If quantization is not set, return empty quantization.
+  if (!tfl_quantization) {
+    return MakeEmptyQuantization();
+  }
+  const bool scale_empty =
+      !tfl_quantization->scale() || tfl_quantization->scale()->empty();
+  const bool zp_empty = !tfl_quantization->zero_point() ||
+                        tfl_quantization->zero_point()->empty();
+  if (scale_empty && zp_empty) {
     return MakeEmptyQuantization();
   }
 
-  if (auto tfl_qparams = AsPerTensorQparams(tfl_quantization)) {
-    return MakePerTensorQuantization(tfl_qparams->second, tfl_qparams->first);
+  const bool is_per_channel =
+      (!scale_empty && tfl_quantization->scale()->size() > 1) ||
+      (!zp_empty && tfl_quantization->zero_point()->size() > 1);
+  const bool is_per_tensor =
+      (!scale_empty && tfl_quantization->scale()->size() == 1) ||
+      (!zp_empty && tfl_quantization->zero_point()->size() == 1);
+
+  // Per tensor quantization.
+  if (is_per_tensor) {
+    const auto* scale_fb = tfl_quantization->scale()->data();
+    const auto* zp_fb = tfl_quantization->zero_point()->data();
+    return MakePerTensorQuantization(scale_fb[0], zp_fb[0]);
   }
 
-  if (auto tfl_qparams = AsPerChannelQparams(tfl_quantization)) {
-    [[maybe_unused]] const auto& [quantized_dimension, num_channels,
-                                  zero_points, scales] = *tfl_qparams;
-    return MakePerChannelQuantization(scales, zero_points, quantized_dimension,
-                                      buffer_provider);
+  // Per channel quantization.
+  if (is_per_channel) {
+    const auto* scales_fb = tfl_quantization->scale();
+    const auto* zero_points_fb = tfl_quantization->zero_point();
+    int32_t quantized_dimension = tfl_quantization->quantized_dimension();
+
+    if (!scales_fb || !zero_points_fb || scales_fb->empty() ||
+        scales_fb->size() != zero_points_fb->size()) {
+      LITERT_LOG(LITERT_ERROR, "Invalid per-channel quantization parameters");
+      return Error(Status::kErrorInvalidArgument);
+    }
+    Quantization litert_quantization;
+    litert_quantization.first = kLiteRtQuantizationPerChannel;
+    litert_quantization.second.per_channel.scales =
+        const_cast<float*>(scales_fb->data());
+    litert_quantization.second.per_channel.zero_points =
+        const_cast<int64_t*>(zero_points_fb->data());
+    litert_quantization.second.per_channel.num_channels = scales_fb->size();
+    litert_quantization.second.per_channel.quantized_dimension =
+        quantized_dimension;
+    return litert_quantization;
   }
 
-  LITERT_LOG(LITERT_ERROR, "Uknown tfl quantization type");
-  return Error(kLiteRtStatusErrorUnsupported);
+  // Unknown quantization type.
+  LITERT_LOG(LITERT_ERROR, "Unknown tfl quantization type");
+  return Error(Status::kErrorUnsupported);
 }
 }  // namespace litert::internal

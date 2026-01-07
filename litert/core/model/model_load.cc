@@ -224,8 +224,8 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
   // QUANTIZATION
 
   if (tfl_tensor.quantization()) {
-    TflQuantizationPtr tfl_quantization(tfl_tensor.quantization()->UnPack());
-    auto quantization = MapQuantization(tfl_quantization.get(), litert_tensor);
+    auto quantization =
+        MapQuantization(tfl_tensor.quantization());
     if (!quantization) {
       return quantization.Error().Status();
     }

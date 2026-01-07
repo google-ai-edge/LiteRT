@@ -54,6 +54,7 @@ using TflPackedModel = ::tflite::Model;
 using TflPackedSubgraph = ::tflite::SubGraph;
 using TflPackedOp = ::tflite::Operator;
 using TflPackedTensor = ::tflite::Tensor;
+using TflPackedQuantization = ::tflite::QuantizationParameters;
 using TflPackedBuffer = ::tflite::Buffer;
 
 using TflBufferPtr = std::unique_ptr<TflBuffer>;

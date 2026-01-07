@@ -35,8 +35,10 @@ LiteRtElementType MapElementType(TflElementType element_type);
 
 Expected<TensorType> MapTensorType(const TflTensorType& tfl_tensor_type);
 
-Expected<Quantization> MapQuantization(const TflQuantization* tfl_quantization,
-                                       ScratchBufferProvider buffer_provider);
+// Maps quantization parameters from flatbuffer to litert quantization, this
+// reuses the allocation of the flatbuffer.
+Expected<Quantization> MapQuantization(
+    const TflPackedQuantization* tfl_quantization);
 
 }  // namespace litert::internal
 

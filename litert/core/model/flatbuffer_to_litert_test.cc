@@ -17,12 +17,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
+#include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/c/litert_model_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
@@ -90,8 +94,7 @@ TEST(FlatbufferToLiteRtTest, MapDynamicTensorType) {
 }
 
 TEST(FlatbufferToLiteRtTest, MapNoQuantization) {
-  LiteRtTensorT tensor;
-  auto q = MapQuantization(nullptr, tensor);
+  auto q = MapQuantization(nullptr);
   ASSERT_TRUE(q);
   ASSERT_EQ(q->first, kLiteRtQuantizationNone);
 }
@@ -100,12 +103,20 @@ TEST(FlatbufferToLiteRtTest, MapPerTensorQuantization) {
   static constexpr float kScale = 1.0;
   static constexpr int64_t kZp = 2;
 
-  TflQuantization tfl_q;
-  tfl_q.scale.assign({kScale});
-  tfl_q.zero_point.assign({kZp});
+  flatbuffers::FlatBufferBuilder fbb;
+  std::vector<float> scales = {kScale};
+  std::vector<int64_t> zero_points = {kZp};
+  auto scales_fb = fbb.CreateVector(scales);
+  auto zero_points_fb = fbb.CreateVector(zero_points);
+  tflite::QuantizationParametersBuilder qpb(fbb);
+  qpb.add_scale(scales_fb);
+  qpb.add_zero_point(zero_points_fb);
+  auto q_offset = qpb.Finish();
+  fbb.Finish(q_offset);
+  auto* tfl_q = flatbuffers::GetRoot<tflite::QuantizationParameters>(
+      fbb.GetBufferPointer());
 
-  LiteRtTensorT tensor;
-  auto q = MapQuantization(&tfl_q, tensor);
+  auto q = MapQuantization(tfl_q);
   ASSERT_TRUE(q);
   ASSERT_EQ(q->first, kLiteRtQuantizationPerTensor);
   EXPECT_EQ(q->second.per_tensor.scale, kScale);
@@ -116,15 +127,23 @@ TEST(FlatbufferToLiteRtTest, MapPerChannelQuantization) {
   static constexpr size_t kRank = 2;
   static constexpr float kScales[kRank] = {1.0, 2.0};
   static constexpr int64_t kZps[kRank] = {2, 3};
-  static constexpr size_t kQDim = 1;
+  static constexpr int32_t kQDim = 1;
 
-  TflQuantization tfl_q;
-  tfl_q.scale.assign(kScales, kScales + kRank);
-  tfl_q.zero_point.assign(kZps, kZps + kRank);
-  tfl_q.quantized_dimension = kQDim;
+  flatbuffers::FlatBufferBuilder fbb;
+  std::vector<float> scales = {kScales[0], kScales[1]};
+  std::vector<int64_t> zero_points = {kZps[0], kZps[1]};
+  auto scales_fb = fbb.CreateVector(scales);
+  auto zero_points_fb = fbb.CreateVector(zero_points);
+  tflite::QuantizationParametersBuilder qpb(fbb);
+  qpb.add_scale(scales_fb);
+  qpb.add_zero_point(zero_points_fb);
+  qpb.add_quantized_dimension(kQDim);
+  auto q_offset = qpb.Finish();
+  fbb.Finish(q_offset);
+  auto* tfl_q = flatbuffers::GetRoot<tflite::QuantizationParameters>(
+      fbb.GetBufferPointer());
 
-  LiteRtTensorT tensor;
-  auto q = MapQuantization(&tfl_q, tensor);
+  auto q = MapQuantization(tfl_q);
   ASSERT_TRUE(q);
   ASSERT_EQ(q->first, kLiteRtQuantizationPerChannel);
   EXPECT_THAT(absl::MakeConstSpan(q->second.per_channel.scales, kRank),
