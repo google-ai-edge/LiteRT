@@ -119,7 +119,7 @@ RUN echo y | ${ANDROID_SDK_HOME}/cmdline-tools/latest/bin/sdkmanager --sdk_root=
 # Set up work directory
 WORKDIR /litert_build
 
-# Create a script to generate .tf_configure.bazelrc automatically and initialize git submodules
+# Create a script to generate .litert_configure.bazelrc automatically and initialize git submodules
 RUN echo '#!/bin/bash\n\
 \n\
 # Make the repository directory safe for git\n\
@@ -128,7 +128,7 @@ git config --global --add safe.directory /litert_build/third_party/tensorflow\n\
 \n\
 /litert_build/configure --workspace=/litert_build\n\
 \n\
-echo "Configuration complete. .tf_configure.bazelrc has been generated at /litert_build/.tf_configure.bazelrc"\n\
+echo "Configuration complete. .litert_configure.bazelrc has been generated at /litert_build/.litert_configure.bazelrc"\n\
 \n\
 # Execute the command passed to the entrypoint\n\
 exec "$@"\n\
@@ -151,7 +151,7 @@ if [ "${DISABLE_SVE_FOR_BAZEL:-}" = "1" ] && { [ "$arch" = "aarch64" ] || [ "$ar
   echo "[run_build] AArch64 detected; disabling SVE for Bazel host JVM" >&2\n\
 fi\n\
 \
-bazel ${EXTRA_STARTUP} build //litert/runtime:metrics\n\
+bazel ${EXTRA_STARTUP} build //litert/runtime:compiled_model\n\
 ' > /run_build.sh && chmod +x /run_build.sh
 
 # Default command runs the wrapper

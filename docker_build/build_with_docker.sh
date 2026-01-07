@@ -89,10 +89,13 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 echo "Build completed successfully!"
 echo ""
 echo "Container '${CONTAINER_NAME}' is preserved with all build outputs."
 echo "You can:"
 echo "  - Copy files out: docker cp ${CONTAINER_NAME}:/litert_build/bazel-bin/<path> ."
-echo "  - Or directly access the artifact from bazel-bin/ (or bazel-out)."
+echo "  - Open a shell to inspect bazel-bin:"
+echo "    docker run --rm -it --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un) -v ${REPO_ROOT}:/litert_build litert_build_env bash"
 echo "  - Remove container: docker rm -f ${CONTAINER_NAME}"
