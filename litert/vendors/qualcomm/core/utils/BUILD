@@ -27,6 +27,12 @@ cc_library(
 )
 
 cc_library(
+    name = "backend_utils",
+    hdrs = ["backend_utils.h"],
+    deps = [],
+)
+
+cc_library(
     name = "miscs",
     srcs = ["miscs.cc"],
     hdrs = ["miscs.h"],

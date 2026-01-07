@@ -11,7 +11,6 @@ target_sources(qnn_backends
     PRIVATE
         dsp_backend.cc
         htp_backend.cc
-        htp_perf_control.cc
         ir_backend.cc
         qnn_backend.cc
 )
