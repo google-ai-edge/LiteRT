@@ -78,10 +78,17 @@ jobs:
           source litert_env_${{ matrix.python-version }}/bin/activate
           pip install setuptools build wheel
 
-      - name: Install Bazel
-        uses: bazelbuild/setup-bazel@v4 # Updated from @v2 to @v4
-        with:
-          bazel-version: 7.6.1 # Match the version from the log
+      - name: Install Bazel (Manual via Homebrew)
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          brew install bazel
+          # Optionally, pin to a specific version if needed, though Homebrew usually has recent versions.
+          # To install a specific version, you might need to tap other sources or download directly.
+          # For 7.6.1, you might need to download the binary from Bazel's releases:
+          # e.g., wget https://github.com/bazelbuild/bazel/releases/download/7.6.1/bazel-7.6.1-darwin-arm64
+          # And set it up in the PATH.
+          # Let's try the latest from Homebrew first.
+          bazel --version
 
       - name: Run build script
         shell: bash
@@ -93,13 +100,13 @@ jobs:
           pyenv global ${{ matrix.python-version }}
           source litert_env_${{ matrix.python-version }}/bin/activate
 
+          # Add Homebrew Bazel to PATH if not already there
+          export PATH="/opt/homebrew/bin:$PATH"
+
           export CI_BUILD_PYTHON=python${{ matrix.python-version }}
           export HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}
           export USE_LOCAL_TF=false
-          
           ./ci/build_pip_package_with_bazel.sh
-
-      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wheels-py${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}
