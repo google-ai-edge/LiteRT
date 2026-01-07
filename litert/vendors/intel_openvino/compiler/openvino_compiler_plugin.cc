@@ -432,3 +432,10 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
   *num_patterns = 0;
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
+    LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
+    LiteRtEnvironmentOptions env, LiteRtOptions options,
+    const char* soc_model_name) {
+  return kLiteRtStatusOk;
+}

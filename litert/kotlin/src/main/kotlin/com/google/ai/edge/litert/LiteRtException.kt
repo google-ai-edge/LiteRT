@@ -61,7 +61,12 @@ enum class Status(val code: Int) {
 
   // Transformation related errors.
   PatternNoMatch(3000),
-  ErrorInvalidTransformation(3001);
+  ErrorInvalidTransformation(3001),
+
+  // Version related errors.
+  ErrorUnsupportedRuntimeVersion(4000),
+  ErrorUnsupportedCompilerVersion(4001),
+  ErrorIncompatibleByteCodeVersion(4002);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_common.h:status_codes)
 

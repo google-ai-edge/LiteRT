@@ -296,6 +296,12 @@ LiteRtStatus LiteRtInvoke(LiteRtDispatchInvocationContext invocation_context) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
+                                       LiteRtEnvironmentOptions env,
+                                       LiteRtOptions options) {
+  return kLiteRtStatusOk;
+}
+
 }  // namespace mediatek
 }  // namespace litert
 
@@ -323,6 +329,12 @@ LiteRtDispatchInterface TheInterface = {
     .detach_input = litert::mediatek::LiteRtDetachInput,
     .detach_output = litert::mediatek::LiteRtDetachOutput,
     .invoke = litert::mediatek::LiteRtInvoke,
+    .start_metrics_collection = nullptr,
+    .stop_metrics_collection = nullptr,
+    .get_num_metrics = nullptr,
+    .get_metric = nullptr,
+    .destroy_metrics = nullptr,
+    .check_runtime_compatibility = litert::mediatek::CheckRuntimeCompatibility,
 };
 
 LiteRtDispatchApi TheApi = {

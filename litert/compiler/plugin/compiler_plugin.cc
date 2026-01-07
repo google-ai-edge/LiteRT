@@ -166,6 +166,8 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
                    result.get_compiled_result_num_calls);
   RESOLVE_API_FUNC(kLiteRtCompilerPluginRegisterAllTransformations,
                    result.register_all_transformations);
+  RESOLVE_API_FUNC(kLiteRtCompilerPluginCheckCompilerCompatibility,
+                   result.check_compiler_compatibility);
 
   return kLiteRtStatusOk;
 }
@@ -233,6 +235,7 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
   LITERT_RETURN_IF_ERROR(ResolvePluginApi(plugin.lib_, plugin.plugin_api_));
   LITERT_LOG(LITERT_INFO, "Resolved plugin api at: %s", lib_path.data());
 
+  plugin.env_ = env;
   LITERT_RETURN_IF_ERROR(plugin.plugin_api_.create_compiler_plugin(
       &plugin.plugin_handle_, env, options));
   LITERT_LOG(LITERT_INFO, "Initialize plugin at: %s", lib_path.data());
@@ -295,6 +298,7 @@ CompilerPlugin::CompilerPlugin(CompilerPlugin&& other)
     : soc_models_(std::move(other.soc_models_)),
       lib_(std::move(other.lib_)),
       options_(other.options_),
+      env_(std::move(other.env_)),
       plugin_api_(std::move(other.plugin_api_)),
       plugin_handle_(std::move(other.plugin_handle_)) {
   other.soc_models_ = {};
@@ -302,12 +306,14 @@ CompilerPlugin::CompilerPlugin(CompilerPlugin&& other)
   other.lib_.Close();
   other.plugin_handle_ = nullptr;
   other.options_ = nullptr;
+  other.env_ = nullptr;
 }
 
 CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
   if (this != &other) {
     std::swap(soc_models_, other.soc_models_);
     std::swap(lib_, other.lib_);
+    std::swap(env_, other.env_);
     std::swap(plugin_api_, other.plugin_api_);
     std::swap(plugin_handle_, other.plugin_handle_);
     std::swap(options_, other.options_);
@@ -797,6 +803,14 @@ Expected<void> ApplyPlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
+  // Check compiler compatibility.
+  const auto compatibility =
+      compiler_plugin.CheckCompilerCompatibility(soc_model);
+  if (!compatibility) {
+    LITERT_LOG(LITERT_ERROR, "%s", compatibility.Error().Message().c_str());
+    return compatibility.Error();
+  }
+
   // Compiler Plugin: Transformation, apply transformations to model.
   auto status = TransformModel(compiler_plugin, model, soc_model);
   if (!status) {
@@ -913,6 +927,17 @@ Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
       kLiteRtStatusErrorRuntimeFailure,
       absl::StrFormat("No compiler plugin found for soc manufacturer %s",
                       soc_manufacturer));
+}
+
+Expected<bool> CompilerPlugin::CheckCompilerCompatibility(
+    absl::string_view soc_model) {
+  auto plugin_api_version = ApiVersion();
+  if (!plugin_api_version) {
+    return plugin_api_version.Error();
+  }
+  LITERT_RETURN_IF_ERROR(plugin_api_.check_compiler_compatibility(
+      *plugin_api_version, plugin_handle_, env_, options_, soc_model.data()));
+  return true;
 }
 
 }  // namespace litert::internal

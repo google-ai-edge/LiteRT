@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_COMMON_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_COMMON_H_
 
@@ -58,6 +57,12 @@ enum class Status : int {
   /// Transformation related errors.
   kPatternNoMatch = kLiteRtStatusPatternNoMatch,
   kInvalidTransformation = kLiteRtStatusInvalidTransformation,
+  // Version related errors.
+  kErrorUnsupportedRuntimeVersion = kLiteRtStatusErrorUnsupportedRuntimeVersion,
+  kErrorUnsupportedCompilerVersion =
+      kLiteRtStatusErrorUnsupportedCompilerVersion,
+  kErrorIncompatibleByteCodeVersion =
+      kLiteRtStatusErrorIncompatibleByteCodeVersion,
 };
 // LINT.ThenChange(../c/litert_common.h:status_codes)
 

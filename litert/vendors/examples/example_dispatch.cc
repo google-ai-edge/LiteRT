@@ -95,6 +95,11 @@ class LiteRtDispatchInvocationContextT {
             exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
             exec_bytecode_buffer->offset)));
 
+    if (example_graph.version() != "1") {
+      return litert::Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
+                             "Bytecode version is not compatible");
+    }
+
     return Ptr(new LiteRtDispatchInvocationContextT(
         device_context, exec_type, absl::string_view(function_name),
         std::move(example_graph)));
@@ -323,6 +328,13 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
+                                       LiteRtEnvironmentOptions env,
+                                       LiteRtOptions options) {
+  // Example dispatch does not depend on any runtime library, return OK.
+  return kLiteRtStatusOk;
+}
+
 // /////////////////////////////////////////////////////////////////////////////
 
 LiteRtDispatchInterface ExampleInterface = {
@@ -343,6 +355,12 @@ LiteRtDispatchInterface ExampleInterface = {
     /*.detach_input=*/DetachInput,
     /*.detach_output=*/DetachOutput,
     /*.invoke=*/Invoke,
+    /*.start_metrics_collection=*/nullptr,
+    /*.stop_metrics_collection=*/nullptr,
+    /*.get_num_metrics=*/nullptr,
+    /*.get_metric=*/nullptr,
+    /*.destroy_metrics=*/nullptr,
+    /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
 };
 
 LiteRtDispatchApi ExampleApi = {

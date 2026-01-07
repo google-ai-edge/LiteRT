@@ -31,12 +31,14 @@ using ::testing::Each;
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
 
-static constexpr absl::string_view kSingleOpExampleGraph = R"(inputs:0,1
+static constexpr absl::string_view kSingleOpExampleGraph = R"(version:1
+inputs:0,1
 outputs:2
 tensors:[2x2],[2x2],[2x2]
 ops:mul(0,1)(2))";
 
-static constexpr absl::string_view kMultipleOpsExampleGraph = R"(inputs:0,1
+static constexpr absl::string_view kMultipleOpsExampleGraph = R"(version:1
+inputs:0,1
 outputs:3
 tensors:[2x2],[2x2],[2x2],[2x2]
 ops:mul(0,1)(2)~sub(2,2)(3))";
@@ -62,6 +64,7 @@ TEST(SerializeExampleGraphTest, OneOp) {
   graph.EmplaceOp(OpCode::kMul, Inds{t0, t1}, Inds{t2});
   graph.SetInputs(t0, t1);
   graph.SetOutputs(t2);
+  graph.SetVersion("1");
   LITERT_ASSERT_OK_AND_ASSIGN(auto serialized, graph.Serialize());
   ASSERT_EQ(serialized.StrView(), kSingleOpExampleGraph);
 }
@@ -76,6 +79,7 @@ TEST(SerializeExampleGraphTest, MultipleOps) {
   graph.EmplaceOp(OpCode::kSub, Inds{t2, t2}, Inds{t3});
   graph.SetInputs(t0, t1);
   graph.SetOutputs(t3);
+  graph.SetVersion("1");
   LITERT_ASSERT_OK_AND_ASSIGN(auto serialized, graph.Serialize());
   ASSERT_EQ(serialized.StrView(), kMultipleOpsExampleGraph);
 }
@@ -100,6 +104,7 @@ TEST(ParseExampleGraphTest, OneOp) {
   EXPECT_THAT(graph.Inputs(), ElementsAreArray({0, 1}));
   EXPECT_THAT(graph.Outputs(), ElementsAreArray({2}));
   ASSERT_EQ(graph.Tensors().size(), 3);
+  EXPECT_THAT(graph.version(), Eq("1"));
   EXPECT_THAT(graph.Tensors(), Each(Eq(ExampleTensor(Dims{2, 2}))));
   EXPECT_THAT(graph.Ops(),
               ElementsAreArray({ExampleOp{OpCode::kMul, Inds{0, 1}, Inds{2}}}));
@@ -114,6 +119,7 @@ TEST(ParseExampleGraphTest, MultipleOps) {
   EXPECT_THAT(graph.Inputs(), ElementsAreArray({0, 1}));
   EXPECT_THAT(graph.Outputs(), ElementsAreArray({3}));
   ASSERT_EQ(graph.Tensors().size(), 4);
+  EXPECT_THAT(graph.version(), Eq("1"));
   EXPECT_THAT(graph.Tensors(), Each(Eq(ExampleTensor(Dims{2, 2}))));
   EXPECT_THAT(graph.Ops(),
               ElementsAreArray({ExampleOp{OpCode::kMul, Inds{0, 1}, Inds{2}},
