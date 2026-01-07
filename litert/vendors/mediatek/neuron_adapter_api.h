@@ -45,6 +45,12 @@ namespace litert::mediatek {
 static constexpr const char* kExtensionGeneralOpration =
     "com.mediatek.general_operation";
 static constexpr int32_t kMinMagicNumberForNeuronService = 300;
+
+/** Option `import_forever` has been recommended by MediaTek to reduce memory */
+/* footprint when using the same I/O buffers across multiple invocations. */
+static constexpr char kDefaultAotCompilationOptions[] =
+    "--apusys-config \"{ \\\"import_forever\\\": true }\"";
+
 // Extension operand
 enum {
   ADAPTER_EXTENSION_GENERAL_OPERAND_ARGSTRING = 0x0100,
@@ -83,9 +89,7 @@ class NeuronAdapterApi {
   const Api& api() const { return *api_; }
 
   absl::string_view AotCompileOptions() const {
-    // Option `import_forever` has been recommended by MediaTek to reduce memory
-    // footprint when using the same I/O buffers across multiple invocations.
-    return "--apusys-config \"{ \\\"import_forever\\\": true }\"";
+    return aot_compilation_options_;
   }
 
   absl::string_view JitCompileOptions() const { return ""; }
@@ -119,6 +123,7 @@ class NeuronAdapterApi {
   SharedLibrary dlib_;
   std::unique_ptr<Api> api_;
   NeuronRuntimeVersion runtime_version_;
+  std::string aot_compilation_options_;
 };
 
 // This is not part of the provided NeuronAdapter header for some reason.

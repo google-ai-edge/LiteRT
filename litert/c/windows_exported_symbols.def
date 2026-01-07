@@ -185,6 +185,7 @@ EXPORTS
   LiteRtLockTensorBuffer
   LiteRtMediatekOptionsCreate
   LiteRtMediatekOptionsGet
+  LiteRtMediatekOptionsGetAotCompilationOptions
   LiteRtMediatekOptionsGetDisableDlaDirRemoval
   LiteRtMediatekOptionsGetGemmaCompilerOptimizations
   LiteRtMediatekOptionsGetIdentifier
@@ -193,6 +194,7 @@ EXPORTS
   LiteRtMediatekOptionsGetNeronSDKVersionType
   LiteRtMediatekOptionsGetOptimizationHint
   LiteRtMediatekOptionsGetPerformanceMode
+  LiteRtMediatekOptionsSetAotCompilationOptions
   LiteRtMediatekOptionsSetDisableDlaDirRemoval
   LiteRtMediatekOptionsSetGemmaCompilerOptimizations
   LiteRtMediatekOptionsSetL1CacheOptimizations

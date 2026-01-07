@@ -130,6 +130,13 @@ LiteRtStatus LiteRtMediatekOptionsSetMediatekDlaDir(
 LiteRtStatus LiteRtMediatekOptionsGetMediatekDlaDir(
     LiteRtMediatekOptions options, const char** mediatek_dla_dir);
 
+// AoT compilation options --------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetAotCompilationOptions(
+    LiteRtMediatekOptions options, const char* aot_compilation_options);
+
+LiteRtStatus LiteRtMediatekOptionsGetAotCompilationOptions(
+    LiteRtMediatekOptions options, const char** aot_compilation_options);
+
 #ifdef __cplusplus
 
 }  // extern "C"

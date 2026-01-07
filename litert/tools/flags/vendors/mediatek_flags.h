@@ -44,6 +44,8 @@ ABSL_DECLARE_FLAG(bool, mediatek_disable_dla_dir_removal);
 
 ABSL_DECLARE_FLAG(std::string, mediatek_dla_dir);
 
+ABSL_DECLARE_FLAG(std::string, mediatek_aot_compilation_options);
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error);

@@ -15,6 +15,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 
 #include <string>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
@@ -68,6 +69,10 @@ class MediatekOptions : public OpaqueOptions {
   void SetMediatekDlaDir(const std::string& mediatek_dla_dir);
 
   absl::string_view GetMediatekDlaDir();
+
+  void SetAotCompilationOptions(const std::string& aot_compilation_options);
+
+  absl::string_view GetAotCompilationOptions();
 
  private:
   LiteRtMediatekOptions Data() const;

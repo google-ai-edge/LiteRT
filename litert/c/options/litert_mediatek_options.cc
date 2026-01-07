@@ -34,6 +34,7 @@ struct LiteRtMediatekOptionsT {
       kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
   bool disable_dla_dir_removal = false;
   std::string mediatek_dla_dir;
+  std::string aot_compilation_options;
 };
 
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -200,7 +201,6 @@ LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
   return kLiteRtStatusOk;
 }
 
-
 // disable_dla_dir_removal ---------------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetDisableDlaDirRemoval(
     LiteRtMediatekOptions options, bool disable_dla_dir_removal) {
@@ -243,5 +243,24 @@ LiteRtStatus LiteRtMediatekOptionsGetMediatekDlaDir(
 
   *mediatek_dla_dir = options->mediatek_dla_dir.c_str();
 
+  return kLiteRtStatusOk;
+}
+
+// AoT compilation options --------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetAotCompilationOptions(
+    LiteRtMediatekOptions options, const char* aot_compilation_options) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->aot_compilation_options = aot_compilation_options;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetAotCompilationOptions(
+    LiteRtMediatekOptions options, const char** aot_compilation_options) {
+  if (options == nullptr || aot_compilation_options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *aot_compilation_options = options->aot_compilation_options.c_str();
   return kLiteRtStatusOk;
 }

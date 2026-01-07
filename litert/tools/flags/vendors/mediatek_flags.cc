@@ -20,7 +20,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
 // NOLINTBEGIN(*alien-types*)
@@ -56,6 +55,9 @@ ABSL_FLAG(
     "stored in the provided directory path. Meant to be used in conjunction "
     "with `--mediatek_disable_dla_dir_removal` so that DLA's aren't cleaned "
     "up post compilation.");
+
+ABSL_FLAG(std::string, mediatek_aot_compilation_options, "",
+          "Aot compilation options for Mediatek Inference.");
 
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
@@ -188,6 +190,8 @@ Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options) {
   options.SetDisableDlaDirRemoval(
       absl::GetFlag(FLAGS_mediatek_disable_dla_dir_removal));
   options.SetMediatekDlaDir(absl::GetFlag(FLAGS_mediatek_dla_dir));
+  options.SetAotCompilationOptions(
+      absl::GetFlag(FLAGS_mediatek_aot_compilation_options));
   return {};
 }
 

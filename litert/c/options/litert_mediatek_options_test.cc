@@ -490,5 +490,50 @@ TEST(LiteRtMediatekOptionsTest, OptionsHash) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+// Modify the aot compilation options and check if the options are set
+// correctly.
+TEST(LiteRtMediatekOptionsTest, AotCompilationOptions) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  const char* aot_compilation_options;
+  // Check default value (empty string)
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetAotCompilationOptions(
+      options_data, &aot_compilation_options));
+  ASSERT_STREQ(aot_compilation_options, "");
+
+  // Set to a value
+  const char* test_options = "--test_flag=value --another_flag";
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsSetAotCompilationOptions(options_data,
+                                                                 test_options));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetAotCompilationOptions(
+      options_data, &aot_compilation_options));
+  ASSERT_STREQ(aot_compilation_options, test_options);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, AotCompilationOptionsInvalidArguments) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+  const char* aot_compilation_options;
+
+  EXPECT_EQ(LiteRtMediatekOptionsSetAotCompilationOptions(nullptr, "test"),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(
+      LiteRtMediatekOptionsGetAotCompilationOptions(options_data, nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsGetAotCompilationOptions(
+                nullptr, &aot_compilation_options),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 }  // namespace
 }  // namespace litert::mediatek

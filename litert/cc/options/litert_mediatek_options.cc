@@ -119,8 +119,7 @@ MediatekOptions::GetOptimizationHint() {
   return optimization_hint;
 }
 
-void MediatekOptions::SetDisableDlaDirRemoval(
-    bool disable_dla_dir_removal) {
+void MediatekOptions::SetDisableDlaDirRemoval(bool disable_dla_dir_removal) {
   internal::AssertOk(LiteRtMediatekOptionsSetDisableDlaDirRemoval, Data(),
                      disable_dla_dir_removal);
 }
@@ -142,6 +141,19 @@ absl::string_view MediatekOptions::GetMediatekDlaDir() {
   internal::AssertOk(LiteRtMediatekOptionsGetMediatekDlaDir, Data(),
                      &mediatek_dla_dir);
   return absl::string_view(mediatek_dla_dir);
+}
+
+void MediatekOptions::SetAotCompilationOptions(
+    const std::string& aot_compilation_options) {
+  internal::AssertOk(LiteRtMediatekOptionsSetAotCompilationOptions, Data(),
+                     aot_compilation_options.c_str());
+}
+
+absl::string_view MediatekOptions::GetAotCompilationOptions() {
+  const char* aot_compilation_options;
+  internal::AssertOk(LiteRtMediatekOptionsGetAotCompilationOptions, Data(),
+                     &aot_compilation_options);
+  return absl::string_view(aot_compilation_options);
 }
 
 }  // namespace litert::mediatek

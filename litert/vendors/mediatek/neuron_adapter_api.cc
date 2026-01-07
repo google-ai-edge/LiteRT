@@ -60,6 +60,17 @@ litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
     return status.Error();
   }
 
+  // Read the user provided aot compilation options, if any, otherwise use the
+  // default options.
+  auto aot_compilation_options = options->GetAotCompilationOptions();
+  if (!aot_compilation_options.empty()) {
+    neuron_adapter_api->aot_compilation_options_ =
+        std::string(aot_compilation_options);
+  } else {
+    neuron_adapter_api->aot_compilation_options_ =
+        kDefaultAotCompilationOptions;
+  }
+
   LITERT_RETURN_IF_ERROR(neuron_adapter_api->GetNeuronVersion());
 
   return neuron_adapter_api;

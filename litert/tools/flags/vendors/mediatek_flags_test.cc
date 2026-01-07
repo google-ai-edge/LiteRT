@@ -296,6 +296,18 @@ TEST(NeuronAdapterOptimizationHintFlagTest, Parse) {
   }
 }
 
+TEST(UpdateMediatekOptionsFromFlagsTest, SetAotCompilationOptions) {
+  const std::string test_options =
+      "a test flag that does absolutely nothing.";
+  absl::SetFlag(&FLAGS_mediatek_aot_compilation_options, test_options);
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetAotCompilationOptions(), test_options);
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_aot_compilation_options, "");
+}
+
 }  // namespace
 
 }  // namespace litert::mediatek
