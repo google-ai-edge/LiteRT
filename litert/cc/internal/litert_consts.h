@@ -17,11 +17,14 @@
 
 #include <cstddef>
 
+/// @file
+/// @brief Defines constants used for optimizing `absl::InlinedVector` sizes.
+
 namespace litert {
 
-// The following constants are used to properly size absl::InlinedVector<>
-// uses used in the LiteRT code. Their values don't need to be exact; they
-// are just optimization hints.
+/// @brief These constants are used to properly size `absl::InlinedVector`
+/// instances throughout the LiteRT code. Their values are optimization hints
+/// and do not need to be exact.
 static constexpr size_t kExpectedMaxTensorRank = 6;
 static constexpr size_t kExpectedMaxNumOfTensorUses = 8;
 static constexpr size_t kExpectedMaxNumOfOpInputs = 4;

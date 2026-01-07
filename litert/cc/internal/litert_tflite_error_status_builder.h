@@ -19,8 +19,15 @@
 #include "litert/cc/litert_macros.h"
 #include "tflite/c/c_api_types.h"
 
+/// @file
+/// @brief Provides a utility for converting LiteRT error statuses to
+///        TensorFlow Lite statuses.
+
 namespace litert {
 
+/// @brief Converts a LiteRT `ErrorStatusBuilder` to a `TfLiteStatus`.
+///
+/// This function is used to propagate LiteRT errors through the TFLite C API.
 inline TfLiteStatus AsTfLiteStatus(const ErrorStatusBuilder& e) {
   [[maybe_unused]] LiteRtStatus s = e;
   return kTfLiteError;

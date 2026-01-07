@@ -18,6 +18,10 @@
 #include <memory>
 #include <type_traits>
 
+/// @file
+/// @brief Defines handle classes for managing the lifetime of opaque C API
+/// handles.
+
 namespace litert {
 
 enum class OwnHandle { kNo, kYes };
@@ -27,10 +31,14 @@ namespace internal {
 template <typename H>
 inline void DummyDeleter(H) {}
 
-// This class is used to wrap and manage the lifetime of opaque handles from the
-// C API into an equivalent C++ object. The class is a wrapper on
-// std::unique_ptr<> that has a default constructor and doesn't crash if the
-// deleter is null.
+/// @brief A smart pointer-like class for managing the lifetime of opaque
+/// handles from the C API.
+///
+/// This class wraps a `std::unique_ptr` to provide automatic resource
+/// management for C-style handles. It supports both owning and non-owning
+/// semantics.
+/// @tparam H The handle type.
+/// @tparam deleter A function pointer to the deleter for the handle.
 template <typename H, void (*deleter)(H)>
 class Handle {
  public:
@@ -41,7 +49,7 @@ class Handle {
   Handle(H handle, OwnHandle own) noexcept
       : ptr_(handle, own == OwnHandle::kYes ? deleter : DummyDeleter<H>) {}
 
-  // Returns true if the underlying LiteRT handle is valid.
+  /// @brief Returns `true` if the underlying LiteRT handle is valid.
   explicit operator bool() const noexcept { return static_cast<bool>(ptr_); }
 
   bool operator==(const Handle& other) const noexcept {
@@ -51,18 +59,18 @@ class Handle {
     return Get() != other.Get();
   }
 
-  // Returns the underlying LiteRT handle.
+  /// @brief Returns the underlying LiteRT handle.
   H Get() const noexcept { return ptr_.get(); }
 
-  // Returns the deleter for the handle.
+  /// @brief Returns the deleter for the handle.
   Deleter GetDeleter() const noexcept { return ptr_.get_deleter(); }
 
-  // Releases the handle ownership.
-  //
-  // After this call, `Get` returns a null handle.
+  /// @brief Releases ownership of the handle.
+  ///
+  /// After this call, `Get()` returns a null handle.
   H Release() noexcept { return ptr_.release(); }
 
-  // Returns true if the underlying handle is managed by this object.
+  /// @brief Returns `true` if the underlying handle is managed by this object.
   bool IsOwned() const noexcept {
     return ptr_.get_deleter() != DummyDeleter<H>;
   }
@@ -72,8 +80,11 @@ class Handle {
                                                                  DummyDeleter};
 };
 
-// This class is similar to Handle, but the managed opaque handle is not owned
-// (i.e., it will not be destroyed).
+/// @brief A specialization of `Handle` for non-owned handles.
+///
+/// This class ensures that the managed opaque handle is not destroyed when the
+/// `NonOwnedHandle` object goes out of scope.
+/// @tparam H The handle type.
 template <typename H>
 class NonOwnedHandle : public Handle<H, DummyDeleter<H>> {
  public:

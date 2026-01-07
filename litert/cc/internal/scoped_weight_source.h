@@ -22,17 +22,21 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/cc/internal/scoped_file.h"
 
+/// @file
+/// @brief Defines structures for managing external model weights from a scoped
+/// file.
+
 namespace litert {
 
-// Describes a contiguous region inside a ScopedFile that backs a single
-// external buffer group.
+/// @brief Describes a contiguous region inside a `ScopedFile` that backs a
+/// single external buffer group.
 struct ScopedWeightSection {
   uint64_t offset = 0;
   uint64_t length = 0;
 };
 
-// Holds the ScopedFile handle plus all group sections that can be sliced out of
-// it to satisfy external weight loads.
+/// @brief Holds a `ScopedFile` handle and all group sections that can be
+/// sliced from it to satisfy external weight loads.
 struct ScopedWeightSource {
   ScopedWeightSource() = default;
   ScopedWeightSource(

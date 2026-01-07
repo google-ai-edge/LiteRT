@@ -17,6 +17,9 @@
 
 #include <cstdint>
 
+/// @file
+/// @brief Defines a class for representing source code locations.
+
 namespace litert {
 
 #if defined(__has_builtin)
@@ -33,17 +36,17 @@ namespace litert {
 #define LITERT_INTERNAL_BUILTIN_LINE 0
 #endif
 
-// Stores a file and a line number.
-//
-// Mimics a subset of `std::source_location` to be replaced by it when we update
-// to C++20.
+/// @brief Stores a file name and a line number.
+///
+/// This class mimics a subset of `std::source_location` and is intended to be
+/// replaced by it when the project updates to C++20.
 class SourceLocation {
   // We have this to prevent `current()` parameters from begin modified.
   struct PrivateTag {};
 
  public:
-  // Creates a SourceLocation with the line and file corresponding to the
-  // call site.
+  /// @brief Creates a `SourceLocation` with the line and file corresponding to
+  /// the call site.
   static constexpr SourceLocation current(
       PrivateTag = PrivateTag{},
       const char* file = LITERT_INTERNAL_BUILTIN_FILE,
@@ -55,10 +58,10 @@ class SourceLocation {
   constexpr uint32_t line() const { return line_; }
 
  private:
-  // Builds a SourceLocation object.
-  //
-  // Note: This is private as `std::source_location` doesn't provide a way of
-  // manually building a source location.
+  /// @brief Constructs a `SourceLocation` object.
+  ///
+  /// @note This is private, as `std::source_location` does not provide a way
+  /// to manually construct a source location.
   constexpr SourceLocation(const char* file, uint32_t line)
       : file_(file), line_(line) {}
 

@@ -25,8 +25,13 @@
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "tflite/c/common.h"
 
+/// @file
+/// @brief Defines the C++ wrapper for the external LiteRT buffer context.
+
 namespace litert {
 
+/// @brief Manages the external buffer context for LiteRT, providing an
+/// interface to interact with tensor buffers and their requirements.
 class ExternalLiteRtBufferContext
     : public internal::Handle<LiteRtExternalLiteRtBufferContext,
                               LiteRtDestroyExternalLiteRtBufferContext> {
@@ -37,19 +42,26 @@ class ExternalLiteRtBufferContext
       LiteRtExternalLiteRtBufferContext context, OwnHandle own_handle)
       : Handle(context, own_handle) {}
 
-  // Returns a TensorBuffer object for the given tensor. The returned
-  // TensorBuffer object is a duplicate (reference-counted) of the buffer
-  // context's registered TensorBuffer.
+  /// @brief Returns a `TensorBuffer` object for the given tensor.
+  ///
+  /// The returned `TensorBuffer` object is a duplicate (reference-counted) of
+  /// the buffer context's registered `TensorBuffer`.
+  /// @param tensor The tensor for which to retrieve the buffer.
+  /// @return An `Expected` object containing the `TensorBuffer`, or an error.
   Expected<TensorBuffer> GetTensorBuffer(const TfLiteTensor* tensor) {
     LiteRtTensorBuffer tensor_buffer;
-    // Note: Tensor buffer is duplicated by the C API.
+    // Note: The tensor buffer is duplicated by the C API.
     LITERT_RETURN_IF_ERROR(LiteRtGetExternalLiteRtBufferContextTensorBuffer(
         Get(), tensor, &tensor_buffer));
     return TensorBuffer::WrapCObject(tensor_buffer, OwnHandle::kYes);
   }
 
-  // Creates a TensorBuffer object for the given tensor. The returned object is
-  // owned by the caller.
+  /// @brief Creates a `TensorBuffer` object for the given tensor.
+  ///
+  /// The returned object is owned by the caller.
+  /// @param tensor The tensor for which to create the buffer.
+  /// @return An `Expected` object containing the new `TensorBuffer`, or an
+  /// error.
   Expected<TensorBuffer> CreateBufferForTensor(const TfLiteTensor* tensor) {
     LiteRtTensorBuffer buffer;
     LITERT_RETURN_IF_ERROR(
@@ -58,8 +70,13 @@ class ExternalLiteRtBufferContext
     return TensorBuffer::WrapCObject(buffer, OwnHandle::kYes);
   }
 
-  // Registers a TensorBuffer object for the given tensor. The buffer context
-  // assumes ownership of the TensorBuffer object.
+  /// @brief Registers a `TensorBuffer` object for the given tensor.
+  ///
+  /// The buffer context assumes ownership of the `TensorBuffer` object.
+  /// @param tensor The tensor to associate with the buffer.
+  /// @param tensor_buffer The `TensorBuffer` to register.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> RegisterTensorBuffer(const TfLiteTensor* tensor,
                                       TensorBuffer&& tensor_buffer) {
     LITERT_RETURN_IF_ERROR(
@@ -68,8 +85,13 @@ class ExternalLiteRtBufferContext
     return {};
   }
 
-  // Registers the buffer requirements for the given tensor. The buffer context
-  // assumes ownership of the buffer requirements.
+  /// @brief Registers the buffer requirements for the given tensor.
+  ///
+  /// The buffer context assumes ownership of the buffer requirements.
+  /// @param tensor The tensor to associate with the requirements.
+  /// @param buffer_requirements The `TensorBufferRequirements` to register.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
   Expected<void> RegisterBufferRequirements(
       const TfLiteTensor* tensor,
       TensorBufferRequirements&& buffer_requirements) {
@@ -79,8 +101,10 @@ class ExternalLiteRtBufferContext
     return {};
   }
 
-  // Returns the environment for the given buffer context. No ownership is
-  // transferred.
+  /// @brief Returns the environment for the given buffer context.
+  ///
+  /// No ownership is transferred.
+  /// @return An `Expected` object containing the `Environment`, or an error.
   Expected<litert::Environment> GetEnvironment() {
     LiteRtEnvironment env;
     LITERT_RETURN_IF_ERROR(

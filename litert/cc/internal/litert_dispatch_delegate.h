@@ -18,6 +18,9 @@
 #include "litert/c/litert_common.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 
+/// @file
+/// @brief Defines the interface for the LiteRT dispatch delegate.
+
 namespace litert {
 
 // TODO LUKE

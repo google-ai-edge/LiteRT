@@ -33,12 +33,16 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 
+/// @file
+/// @brief Defines an advanced `CompiledModel` with new and experimental
+/// features.
+
 namespace litert {
 
-//  Advanced CompiledModel with new / experimental features.
+/// @brief An advanced `CompiledModel` with new and experimental features.
 class CompiledModelNext : public CompiledModel {
  public:
-  // Hardware specific metrics collected by the CompiledModel.
+  /// @brief Hardware-specific metrics collected by the `CompiledModel`.
   struct Metrics {
     struct Metric {
       std::string name;
@@ -47,44 +51,46 @@ class CompiledModelNext : public CompiledModel {
     std::vector<Metric> metrics;
   };
 
-  // Creates a CompiledModelNext with the given model and non-const compilation
-  // options. The passed options will be built during the creation.
+  /// @brief Creates a `CompiledModelNext` with the given model and non-const
+  /// compilation options. The passed options will be built during creation.
   static Expected<CompiledModelNext> Create(litert::Environment& env,
                                             const litert::Model& model,
                                             Options& compilation_options);
 
-  // Similar to above, but takes const compilation options that are already
-  // built.
+  /// @brief Creates a `CompiledModelNext` with const compilation options that
+  /// are already built.
   static Expected<CompiledModelNext> Create(litert::Environment& env,
                                             const litert::Model& model,
                                             const Options& compilation_options);
 
-  // Simple version that only takes hardware accelerators.
+  /// @brief A simplified version that only takes hardware accelerators.
   static Expected<CompiledModelNext> Create(
       litert::Environment& env, const litert::Model& model,
       litert::HwAccelerators hardware_accelerators);
 
-  // Starts collection of HW-specific metrics at a specific level of detail.
+  /// @brief Starts the collection of hardware-specific metrics at a given
+  /// level of detail.
   Expected<void> StartMetricsCollection(int detail_level);
 
-  // Stops collection of HW-specific metrics and report the collected metrics.
+  /// @brief Stops the collection of hardware-specific metrics and reports the
+  /// collected data.
   Expected<Metrics> StopMetricsCollection();
 
-  // Sets a dispatch annotation on the compiled model. These annotations will be
-  // propagated to dispatch graphs when they are created during model execution.
-  // The annotations provide runtime hints and metadata that can be used by
-  // hardware accelerators for optimization.
-  //
-  // Parameters:
-  // - signature_index: the index of the signature (zero-based).
-  // - key: the annotation key.
-  // - value: the annotation value.
-  //
-  // Example annotations:
-  // - "priority": "high|medium|low" - execution priority hints
-  // - "memory_type": "shared|dedicated" - memory allocation preferences
-  // - "accelerator": "npu|gpu|dsp" - preferred hardware accelerator
-  // - "precision": "fp32|fp16|int8" - computation precision requirements
+  /// @brief Sets a dispatch annotation on the compiled model.
+  ///
+  /// These annotations are propagated to dispatch graphs during model
+  /// execution and provide runtime hints and metadata for hardware accelerator
+  /// optimization.
+  ///
+  /// @param signature_index The zero-based index of the signature.
+  /// @param key The annotation key.
+  /// @param value The annotation value.
+  ///
+  /// @par Example Annotations:
+  /// - `"priority"`: `"high|medium|low"` - Execution priority hints.
+  /// - `"memory_type"`: `"shared|dedicated"` - Memory allocation preferences.
+  /// - `"accelerator"`: `"npu|gpu|dsp"` - Preferred hardware accelerator.
+  /// - `"precision"`: `"fp32|fp16|int8"` - Computation precision requirements.
   Expected<void> SetDispatchAnnotation(size_t signature_index,
                                        absl::string_view key,
                                        absl::string_view value) {
@@ -93,14 +99,12 @@ class CompiledModelNext : public CompiledModel {
     return {};
   }
 
-  // Gets a dispatch annotation from the compiled model.
-  //
-  // Parameters:
-  // - signature_index: the index of the signature (zero-based).
-  // - key: the annotation key to look up.
-  //
-  // Returns:
-  // - The annotation value if found, or nullopt if the key doesn't exist.
+  /// @brief Gets a dispatch annotation from the compiled model.
+  ///
+  /// @param signature_index The zero-based index of the signature.
+  /// @param key The annotation key to look up.
+  /// @return The annotation value if found, or `std::nullopt` if the key does
+  /// not exist.
   Expected<std::optional<std::string>> GetDispatchAnnotation(
       size_t signature_index, absl::string_view key) {
     const char* value = nullptr;
@@ -112,13 +116,11 @@ class CompiledModelNext : public CompiledModel {
     return Expected<std::optional<std::string>>(std::string(value));
   }
 
-  // Removes a dispatch annotation from the compiled model.
-  //
-  // Parameters:
-  // - signature_index: the index of the signature (zero-based).
-  // - key: the annotation key to remove.
-  //
-  // Note: This function succeeds even if the key doesn't exist.
+  /// @brief Removes a dispatch annotation from the compiled model.
+  ///
+  /// @param signature_index The zero-based index of the signature.
+  /// @param key The annotation key to remove.
+  /// @note This function succeeds even if the key does not exist.
   Expected<void> RemoveDispatchAnnotation(size_t signature_index,
                                           absl::string_view key) {
     LITERT_RETURN_IF_ERROR(LiteRtCompiledModelRemoveDispatchAnnotation(
@@ -126,24 +128,25 @@ class CompiledModelNext : public CompiledModel {
     return {};
   }
 
-  // Overloaded version for the default signature (index 0).
+  /// @brief Overloaded version for the default signature (index 0).
   Expected<void> SetDispatchAnnotation(absl::string_view key,
                                        absl::string_view value) {
     return SetDispatchAnnotation(0, key, value);
   }
 
-  // Overloaded version for the default signature (index 0).
+  /// @brief Overloaded version for the default signature (index 0).
   Expected<std::optional<std::string>> GetDispatchAnnotation(
       absl::string_view key) {
     return GetDispatchAnnotation(0, key);
   }
 
-  // Overloaded version for the default signature (index 0).
+  /// @brief Overloaded version for the default signature (index 0).
   Expected<void> RemoveDispatchAnnotation(absl::string_view key) {
     return RemoveDispatchAnnotation(0, key);
   }
 
-  // Overloaded version that takes a signature name instead of index.
+  /// @brief Overloaded version that takes a signature name instead of an
+  /// index.
   Expected<void> SetDispatchAnnotation(absl::string_view signature_name,
                                        absl::string_view key,
                                        absl::string_view value) {
@@ -152,7 +155,8 @@ class CompiledModelNext : public CompiledModel {
     return SetDispatchAnnotation(signature_index, key, value);
   }
 
-  // Overloaded version that takes a signature name instead of index.
+  /// @brief Overloaded version that takes a signature name instead of an
+  /// index.
   Expected<std::optional<std::string>> GetDispatchAnnotation(
       absl::string_view signature_name, absl::string_view key) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
@@ -160,7 +164,8 @@ class CompiledModelNext : public CompiledModel {
     return GetDispatchAnnotation(signature_index, key);
   }
 
-  // Overloaded version that takes a signature name instead of index.
+  /// @brief Overloaded version that takes a signature name instead of an
+  /// index.
   Expected<void> RemoveDispatchAnnotation(absl::string_view signature_name,
                                           absl::string_view key) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,

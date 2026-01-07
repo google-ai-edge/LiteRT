@@ -19,8 +19,15 @@
 
 #include "litert/c/litert_tensor_buffer_types.h"
 
+/// @file
+/// @brief Provides utility functions for LiteRT tensor buffers.
+
 namespace litert {
 
+/// @brief Converts a `LiteRtTensorBufferType` enum to its string
+/// representation.
+/// @param buffer_type The buffer type to convert.
+/// @return The string representation of the buffer type.
 std::string BufferTypeToString(LiteRtTensorBufferType buffer_type);
 
 }  // namespace litert

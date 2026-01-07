@@ -32,6 +32,10 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 
+/// @file
+/// @brief Provides a collection of miscellaneous compile-time and runtime
+///        utilities.
+
 namespace litert {
 
 template <typename T>
@@ -49,14 +53,20 @@ struct SelectHelper<Cond, T> {
   using type = typename std::conditional_t<Cond::value, T, std::monostate>;
 };
 
-// Use std::conditional to support sequence of if, if-else..., else
-// std::monostate
-//
-// Example:
-//   using TestVal = int;
-//   using Test = SelectT<std::is_floating_point<TestVal>, double,
-//      std::is_integral<TestVal>, long, std::is_class<TestVal>, std::string>;
-//   static_assert(std::is_same_v<Test, long>);
+/// @brief A type trait for conditional type selection.
+///
+/// This works like a sequence of `if-else if-...-else`, where `std::monostate`
+/// is the default type if no condition is met.
+///
+/// Example:
+/// @code
+///   using TestVal = int;
+///   using Test = SelectT<std::is_floating_point<TestVal>, double,
+///                       std::is_integral<TestVal>, long,
+///                       std::is_class<TestVal>, std::string>;
+///   // Test will be `long`.
+///   static_assert(std::is_same_v<Test, long>);
+/// @endcode
 template <typename... Branches>
 struct Select {
   using type = typename SelectHelper<Branches...>::type;
@@ -89,50 +99,52 @@ void ExpandProductHelper(Functor& f, TypeList<SoFar...> sofar) {
   f.template operator()<C<SoFar...>>();
 }
 
-// Utillity for specializing a template against the cartesian product of given
-// type lists.
-//
-// The number of lists passed must match the number of template parameters of
-// the template being specialized, which is C. This template cannot have
-// non-type template parameters, but that behavior can be achieved with the
-// standard `std::integral_constant` template.
-//    The Functor is used to perform a call back templatated on each of the
-// members of the cartesian product. It must support a zero-arity void
-// () operatory with a single template parameter.
-//
-// EXAMPLE:
-//
-// template <typename LeftType, typename RightType>
-// struct MyStruct {
-//   using L = LeftType;
-//   using R = RightType;
-// };
-//
-// struct MyFunctor {
-//   template <typename T>
-//   void operator()() {
-//     std::cerr << typeid(T::L).name() << ", " << typeid(T::R).name() << "\n";
-//   }
-// };
-//
-//  ExpandProduct<MyStruct, TypeList<double, float>, TypeList<int, char,
-//    char>(MyFunctor());
-// /*
-//  d, i
-//  d, c
-//  d, c
-//  f, i
-//  f, c
-//  f, c
-// */
+/// @brief A utility for specializing a template against the Cartesian product
+///        of given type lists.
+///
+/// The number of lists passed must match the number of template parameters of
+/// the template `C`. `C` cannot have non-type template parameters, but this can
+/// be achieved using `std::integral_constant`.
+///
+/// The `Functor` is a callback that is templated on each member of the
+/// Cartesian product. It must support a zero-arity `operator()` with a single
+/// template parameter.
+///
+/// Example:
+/// @code
+/// template <typename LeftType, typename RightType>
+/// struct MyStruct {
+///   using L = LeftType;
+///   using R = RightType;
+/// };
+///
+/// struct MyFunctor {
+///   template <typename T>
+///   void operator()() {
+///     std::cerr << typeid(T::L).name() << ", " << typeid(T::R).name() << "\n";
+///   }
+/// };
+///
+/// ExpandProduct<MyStruct, TypeList<double, float>, TypeList<int, char, char>>
+///   (MyFunctor());
+///
+/// // Output:
+/// // d, i
+/// // d, c
+/// // d, c
+/// // f, i
+/// // f, c
+/// // f, c
+/// @endcode
 template <template <typename...> typename C, typename... Lists,
           typename Functor>
 void ExpandProduct(Functor& f) {
   ExpandProductHelper<C, Lists...>(f, TypeList<>());
 }
 
-// Inplace initialize an array from vector. This is required if T offers
-// no default constructor.
+/// @brief In-place initializes an array from a vector.
+///
+/// This is required if `T` does not have a default constructor.
 template <typename T, size_t... Is>
 auto VecToArrayHelper(std::vector<T>&& v, std::index_sequence<Is...>)
     -> std::array<T, sizeof...(Is)> {
@@ -147,13 +159,15 @@ std::array<T, N> VecToArray(std::vector<T>&& v) {
   return VecToArrayHelper(std::move(v), std::make_index_sequence<N>());
 }
 
-// See "std::construct_at" from C++20.
+/// @brief Constructs an object in-place.
+/// @see `std::construct_at` from C++20.
 template <class T, class... Args>
 T* ConstructAt(T* p, Args&&... args) {
   return ::new (static_cast<void*>(p)) T(std::forward<Args>(args)...);
 }
 
-// Reduce all over zipped iters of same size.
+/// @brief Checks if a binary predicate holds for all elements of two zipped
+///        iterables of the same size.
 template <typename LeftVals, typename RightVals = LeftVals>
 bool AllZip(const LeftVals& lhs, const RightVals& rhs,
             std::function<bool(const typename LeftVals::value_type&,
@@ -170,7 +184,8 @@ bool AllZip(const LeftVals& lhs, const RightVals& rhs,
   return true;
 }
 
-// Reduce any over zipped iters of same size.
+/// @brief Checks if a binary predicate holds for any element of two zipped
+///        iterables of the same size.
 template <typename LeftVals, typename RightVals = LeftVals>
 bool AnyZip(const LeftVals& lhs, const RightVals& rhs,
             std::function<bool(const typename LeftVals::value_type&,
@@ -180,26 +195,26 @@ bool AnyZip(const LeftVals& lhs, const RightVals& rhs,
   return !(AllZip(lhs, rhs, neg));
 }
 
-// Does element exist in range.
+/// @brief Checks if an element exists in a range.
 template <class It, class T>
 bool Contains(It begin, It end, const T& val) {
   return std::find(begin, end, val) != end;
 }
 
-// Does element exist in range satisfying pred.
+/// @brief Checks if an element satisfying a predicate exists in a range.
 template <class It, class UPred>
 bool ContainsIf(It begin, It end, UPred u_pred) {
   return std::find_if(begin, end, u_pred) != end;
 }
 
-// Get the ind of the given element if it is present.
+/// @brief Finds the index of a given element if it is present.
 template <class T, class It>
 std::optional<size_t> FindInd(It begin, It end, T val) {
   auto it = std::find(begin, end, val);
   return (it == end) ? std::nullopt : std::make_optional(it - begin);
 }
 
-// Average the container.
+/// @brief Computes the average of a container.
 template <typename It>
 auto Avg(It begin, It end) -> RemoveCvRefT<decltype(*std::declval<It>())> {
   using T = decltype(Avg(begin, end));
@@ -210,19 +225,22 @@ auto Avg(It begin, It end) -> RemoveCvRefT<decltype(*std::declval<It>())> {
   return std::accumulate(begin, end, T{}) / static_cast<T>(size);
 }
 
-// Check string prefix/suffix. Std ends with not supported until
-// C++20 & absl::StartsWith/EndsWith not portable.
+/// @brief Checks if a string starts with a given prefix.
+/// @note `std::string::ends_with` is not available until C++20, and
+/// `absl::StartsWith` is not portable.
 inline bool StartsWith(absl::string_view str, absl::string_view prefix) {
   return str.size() >= prefix.size() &&
          std::equal(prefix.begin(), prefix.end(), str.begin());
 }
+/// @brief Checks if a string ends with a given suffix.
+/// @note `std::string::ends_with` is not available until C++20, and
+/// `absl::EndsWith` is not portable.
 inline bool EndsWith(absl::string_view str, absl::string_view suffix) {
   return str.size() >= suffix.size() &&
          std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
 }
 
-// Compile time strings.
-
+/// @brief Compile-time strings.
 template <size_t Len>
 using StrLiteral = const char (&)[Len];
 
@@ -256,8 +274,7 @@ CtStr(CtStrData<N>&&) -> CtStr<N>;
 template <size_t N, class I = std::make_index_sequence<N - 1>>
 CtStr(StrLiteral<N>) -> CtStr<N - 1>;
 
-// Concat compile time strings.
-
+/// @brief Concatenates compile-time strings.
 template <size_t... Ns>
 constexpr auto CtStrConcat(StrLiteral<Ns>... strs) {
   using Out = CtStr<(Ns + ...) - sizeof...(Ns)>;
@@ -273,7 +290,7 @@ constexpr auto CtStrConcat(StrLiteral<Ns>... strs) {
   return CtStr(std::move(data));
 }
 
-// Constexpr friendly ceiling.
+/// @brief A constexpr-friendly ceiling function.
 template <typename T>
 constexpr T Ceil(T val, T divisor) {
   return (val + divisor - 1) / divisor;
@@ -281,21 +298,22 @@ constexpr T Ceil(T val, T divisor) {
 
 namespace internal {
 
-// Call function "get" and assert it returns value equal to given expected
-// value.
+/// @brief Calls a function `get` and asserts that its return value is equal to
+///        the expected value.
 template <class F, class Expected, typename... Args>
 inline void AssertEq(F get, Expected expected, Args&&... args) {
   auto status = get(std::forward<Args>(args)...);
   ABSL_CHECK_EQ(status, expected);
 }
 
-// Call function "get" and assert it returns true.
+/// @brief Calls a function `get` and asserts that it returns `true`.
 template <class F, typename... Args>
 inline void AssertTrue(F get, Args&&... args) {
   AssertEq(get, true, std::forward<Args>(args)...);
 }
 
-// Call function "get" and assert it returns an OK LiteRtStatus.
+/// @brief Calls a function `get` and asserts that it returns an OK
+/// `LiteRtStatus`.
 template <class F, typename... Args>
 inline void AssertOk(F get, Args&&... args) {
   AssertEq(get, kLiteRtStatusOk, std::forward<Args>(args)...);

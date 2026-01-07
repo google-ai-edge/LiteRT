@@ -25,10 +25,16 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_logging.h"
 
-// AbslStringify specializations for types in the litert c api.
-// TODO: lukeboyer - Migrate code in tools/dump.h to leverage the abseil
-// stringify framework.
+/// @file
+/// @brief Provides `AbslStringify` specializations for types in the LiteRT C
+/// API.
+///
+/// This allows LiteRT C types to be seamlessly used with Abseil's string
+/// formatting and logging utilities.
+/// @todo Migrate the code in `tools/dump.h` to leverage the Abseil stringify
+/// framework.
 
+/// @brief `AbslStringify` specialization for `LiteRtElementType`.
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtElementType& type) {
   std::string dtype_str;
@@ -74,6 +80,7 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
   absl::Format(&sink, "%s", dtype_str);
 }
 
+/// @brief `AbslStringify` specialization for `LiteRtLayout`.
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtLayout& layout) {
   absl::Format(
@@ -81,12 +88,14 @@ void AbslStringify(Sink& sink, const LiteRtLayout& layout) {
       absl::StrJoin(absl::MakeConstSpan(layout.dimensions, layout.rank), "x"));
 }
 
+/// @brief `AbslStringify` specialization for `LiteRtRankedTensorType`.
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtRankedTensorType& type) {
   const auto& layout = type.layout;
   absl::Format(&sink, "%ud_%v%v", layout.rank, type.element_type, layout);
 }
 
+/// @brief `AbslStringify` specialization for `LiteRtOpCode`.
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtOpCode& code) {
   std::string op_code_str;

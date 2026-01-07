@@ -24,9 +24,13 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
+/// @file
+/// @brief Defines a file wrapper that automatically closes on destruction.
+
 namespace litert {
 
-// A file wrapper that will automatically close on deletion.
+/// @brief A file wrapper that ensures the underlying file handle is
+/// automatically closed when the object goes out of scope.
 class ScopedFile {
  public:
 #if defined(_WIN32)
@@ -63,32 +67,32 @@ class ScopedFile {
   PlatformFile file() const { return file_; }
   bool IsValid() const { return file_ != kInvalidPlatformFile; }
 
-  // Returns the number of bytes of the file.
+  /// @brief Returns the size of the file in bytes.
   static absl::StatusOr<size_t> GetSize(PlatformFile file);
   absl::StatusOr<size_t> GetSize() const { return GetSize(file_); }
 
-  // Returns a ScopedFile pointing to the same underlying file as `this`.
+  /// @brief Returns a `ScopedFile` pointing to the same underlying file.
   absl::StatusOr<ScopedFile> Duplicate();
 
-  // Releases ownership of the current file as a C file descriptor.
-  //
-  // Windows notes:
-  // Releases ownership of the operating system file HANDLE and returns the
-  // corresponding C file descriptor.
-  //
-  // Note: Currently, this function only works if the file can be re-opened in
-  // read/write mode.
-  //
-  // Warning: Files opened in asynchronous mode (`FILE_FLAG_OVERLAPPED`) are not
-  // supported. Windows' POSIX C implementation does not support such I/O
-  // operations. This function tries to detect such invalid use case and return
-  // an error but doesn't guarantee it.
-  //
-  // Warning: If successful, the returned file descriptor owns the file which
-  // means it will need to be closed using `_close`.
-  //
-  // Warning: While it is possible to get a HANDLE back from the file
-  // descriptor, **ownership will stay with the file descriptor**.
+  /// @brief Releases ownership of the current file as a C file descriptor.
+  ///
+  /// @note Windows-specific behavior:
+  /// Releases ownership of the operating system file `HANDLE` and returns the
+  /// corresponding C file descriptor.
+  ///
+  /// This function currently only works if the file can be re-opened in
+  /// read/write mode.
+  ///
+  /// @warning Files opened in asynchronous mode (`FILE_FLAG_OVERLAPPED`) are
+  /// not supported. Windows' POSIX C implementation does not support such I/O
+  /// operations. This function attempts to detect and return an error for this
+  /// invalid use case, but it is not guaranteed.
+  ///
+  /// @warning If successful, the returned file descriptor owns the file and
+  /// must be closed using `_close`.
+  ///
+  /// @warning While it is possible to get a `HANDLE` back from the file
+  /// descriptor, **ownership will remain with the file descriptor**.
   absl::StatusOr<int> Release();
 
  private:
@@ -98,9 +102,10 @@ class ScopedFile {
     return temp;
   }
 
-  // Platform-specific file operations requiring platform-specific
-  // implementations. It may be assumed by the implementation that the passed
-  // `PlatformFile` is valid. This must be ensured by the caller.
+  /// @brief Platform-specific file operations.
+  ///
+  /// The implementation can assume that the passed `PlatformFile` is valid.
+  /// This must be ensured by the caller.
   static void CloseFile(PlatformFile file);
   static absl::StatusOr<size_t> GetSizeImpl(PlatformFile file);
 

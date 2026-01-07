@@ -17,30 +17,34 @@
 
 #include "litert/c/litert_platform_support.h"
 
+/// @file
+/// @brief Provides functions to check for platform-specific feature support
+/// in LiteRT.
+
 namespace litert {
 
-// Check whether LiteRT has been compiled with OpenCL support.
+/// @brief Checks whether LiteRT has been compiled with OpenCL support.
 inline bool HasOpenClSupport() { return LiteRtHasOpenClSupport(); }
 
-// Check whether LiteRT has been compiled with OpenGl support.
+/// @brief Checks whether LiteRT has been compiled with OpenGL support.
 inline bool HasOpenGlSupport() { return LiteRtHasOpenGlSupport(); }
 
-// Check whether LiteRT has been compiled with AHWB support.
+/// @brief Checks whether LiteRT has been compiled with AHWB support.
 inline bool HasAhwbSupport() { return LiteRtHasAhwbSupport(); }
 
-// Check whether LiteRT has been compiled with Ion support.
+/// @brief Checks whether LiteRT has been compiled with Ion support.
 inline bool HasIonSupport() { return LiteRtHasIonSupport(); }
 
-// Check whether LiteRT has been compiled with DMA-BUF support.
+/// @brief Checks whether LiteRT has been compiled with DMA-BUF support.
 inline bool HasDmaBufSupport() { return LiteRtHasDmaBufSupport(); }
 
-// Check whether LiteRT has been compiled with FastRPC support.
+/// @brief Checks whether LiteRT has been compiled with FastRPC support.
 inline bool HasFastRpcSupport() { return LiteRtHasFastRpcSupport(); }
 
-// Check whether LiteRT has been compiled with SyncFence support.
+/// @brief Checks whether LiteRT has been compiled with SyncFence support.
 inline bool HasSyncFenceSupport() { return LiteRtHasSyncFenceSupport(); }
 
-// Check whether LiteRT has been compiled with Metal support.
+/// @brief Checks whether LiteRT has been compiled with Metal support.
 inline bool HasMetalSupport() { return LiteRtHasMetalSupport(); }
 
 }  // namespace litert

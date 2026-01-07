@@ -38,9 +38,13 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 
+/// @file
+/// @brief Defines extended C++ wrappers for the LiteRT model components,
+/// providing more detailed introspection and manipulation capabilities.
+
 namespace litert {
 
-// Tensor weights. C++ equivalent of LiteRtWeights.
+/// @brief A C++ wrapper for `LiteRtWeights`, representing tensor weights.
 class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
  public:
   explicit Weights(LiteRtWeights weights)
@@ -60,7 +64,7 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
   }
 };
 
-// Tensor. C++ equivalent of LiteRtTensor.
+/// @brief A C++ wrapper for `LiteRtTensor`, representing a tensor in the model.
 class Tensor : public litert::SimpleTensor {
  public:
   explicit Tensor(LiteRtTensor tensor) : litert::SimpleTensor(tensor) {}
@@ -160,7 +164,7 @@ class Tensor : public litert::SimpleTensor {
 using OpInputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpInputs>;
 using OpOutputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpOutputs>;
 
-// Operator. C++ equivalent of LiteRtOp.
+/// @brief A C++ wrapper for `LiteRtOp`, representing an operator in the model.
 class Op : public internal::NonOwnedHandle<LiteRtOp> {
  public:
   explicit Op(LiteRtOp op) : NonOwnedHandle<LiteRtOp>(op) {}
@@ -171,7 +175,8 @@ class Op : public internal::NonOwnedHandle<LiteRtOp> {
     return opcode;
   }
 
-  // Get the custom code. Returns value if and only if the op is a custom op.
+  /// @brief Gets the custom code.
+  /// @return The custom code if the op is a custom op, otherwise an error.
   Expected<absl::string_view> CustomCode() const {
     const char* custom_code;
     auto stat = LiteRtGetCustomCode(Get(), &custom_code);
@@ -195,7 +200,8 @@ using SubgraphInputs =
 using SubgraphOutputs =
     absl::InlinedVector<Tensor, kExpectedMaxNumOfSubgraphOutputs>;
 
-// Model subgraph. C++ equivalent of LiteRtSubgraph.
+/// @brief A C++ wrapper for `LiteRtSubgraph`, representing a subgraph in the
+/// model.
 class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
  public:
   explicit Subgraph(LiteRtSubgraph subgraph)
@@ -205,14 +211,14 @@ class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
   SubgraphOutputs Outputs() const;
   std::vector<Op> Ops() const;
 
-  // Returns the input tensor with the given input signature name.
+  /// @brief Returns the input tensor with the given input signature name.
   Expected<Tensor> Input(absl::string_view name) const;
 
-  // Returns the output tensor with the given output signature name.
+  /// @brief Returns the output tensor with the given output signature name.
   Expected<Tensor> Output(absl::string_view name) const;
 };
 
-// Signature. C++ equivalent of LiteRtSignature.
+/// @brief A C++ wrapper for `LiteRtSignature`, representing a model signature.
 class Signature : public litert::SimpleSignature {
  public:
   explicit Signature(LiteRtSignature signature)
@@ -225,7 +231,8 @@ class Signature : public litert::SimpleSignature {
   }
 };
 
-// ExtendedModel. C++ equivalent of LiteRtModel.
+/// @brief An extended C++ wrapper for `LiteRtModel`, providing additional
+/// model introspection and manipulation capabilities.
 class ExtendedModel : public litert::Model {
  public:
   ExtendedModel() = default;
@@ -247,8 +254,10 @@ class ExtendedModel : public litert::Model {
     return CreateFromOwnedHandle(model);
   }
 
-  // The caller must ensure that the buffer remains valid for the lifetime of
-  // the model.
+  /// @brief Creates a model from a buffer.
+  ///
+  /// The caller must ensure that the buffer remains valid for the lifetime of
+  /// the model.
   static Expected<ExtendedModel> CreateFromBuffer(BufferRef<uint8_t> buffer) {
     LiteRtModel model;
     if (auto status =
@@ -316,7 +325,7 @@ class ExtendedModel : public litert::Model {
     return litert::Subgraph(subgraph);
   }
 
-  // Returns the list of signatures defined in the model.
+  /// @brief Returns the list of signatures defined in the model.
   Expected<std::vector<Signature>> GetSignatures() const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
@@ -331,7 +340,7 @@ class ExtendedModel : public litert::Model {
     return std::move(signatures);
   }
 
-  // Returns the list of signature key names defined in the signature.
+  /// @brief Returns the list of signature key names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
@@ -347,7 +356,7 @@ class ExtendedModel : public litert::Model {
     return signature_keys;
   }
 
-  // Returns the list of input names defined in the signature.
+  /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
@@ -357,12 +366,12 @@ class ExtendedModel : public litert::Model {
     return signature.InputNames();
   }
 
-  // Returns the list of input names defined in the signature.
+  /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
     return GetSignatureInputNames(/*signature_index=*/0);
   }
 
-  // Returns the list of input names defined in the signature.
+  /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
@@ -372,7 +381,7 @@ class ExtendedModel : public litert::Model {
     return signature->InputNames();
   }
 
-  // Returns the list of output names defined in the signature.
+  /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
@@ -382,12 +391,12 @@ class ExtendedModel : public litert::Model {
     return signature.OutputNames();
   }
 
-  // Returns the list of output names defined in the signature.
+  /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
     return GetSignatureOutputNames(/*signature_index=*/0);
   }
 
-  // Returns the list of output names defined in the signature.
+  /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
@@ -397,8 +406,9 @@ class ExtendedModel : public litert::Model {
     return signature->OutputNames();
   }
 
-  // Serializes a model to a buffer. Model would be released after
-  // serialization.
+  /// @brief Serializes a model to a buffer.
+  ///
+  /// The model is released after serialization.
   static Expected<OwningBufferRef<uint8_t>> Serialize(
       Model&& model, const LiteRtModelSerializationOptions& options) {
     OwningBufferRef<uint8_t> buf;
@@ -410,8 +420,8 @@ class ExtendedModel : public litert::Model {
   }
 
  private:
-  // Parameter `owned` indicates if the created TensorBuffer object should take
-  // ownership of the provided `tensor_buffer` handle.
+  /// @param owned Indicates if the created `TensorBuffer` object should take
+  /// ownership of the provided `tensor_buffer` handle.
   ExtendedModel(LiteRtModel model, OwnHandle owned)
       : litert::Model(model, owned) {}
 };

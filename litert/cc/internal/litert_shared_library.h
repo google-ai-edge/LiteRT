@@ -26,6 +26,9 @@
 #include <dlfcn.h>
 #endif
 
+/// @file
+/// @brief Defines a C++ wrapper for dynamically loaded shared libraries.
+
 namespace litert {
 
 struct RtldFlags {
@@ -86,7 +89,7 @@ struct RtldFlags {
   }
 };
 
-// Wraps a dynamically loaded shared library to offer RAII semantics.
+/// @brief Wraps a dynamically loaded shared library to provide RAII semantics.
 class SharedLibrary {
  public:
   SharedLibrary() = default;
@@ -96,40 +99,40 @@ class SharedLibrary {
   SharedLibrary& operator=(SharedLibrary&&) noexcept;
   ~SharedLibrary() noexcept;
 
-  // Loads the library at the given path.
+  /// @brief Loads the library at the given path.
   static Expected<SharedLibrary> Load(absl::string_view path,
                                       RtldFlags flags) noexcept {
     return LoadImpl(HandleKind::kPath, path, flags);
   }
 
-  // Loads the library as the RTLD_NEXT special handle.
+  /// @brief Loads the library as the `RTLD_NEXT` special handle.
   static Expected<SharedLibrary> Load(RtldFlags::NextTag) noexcept {
     return LoadImpl(HandleKind::kRtldNext, "", RtldFlags{});
   }
 
-  // Loads the library as the RTLD_DEFAULT special handle.
+  /// @brief Loads the library as the `RTLD_DEFAULT` special handle.
   static Expected<SharedLibrary> Load(RtldFlags::DefaultTag) noexcept {
     return LoadImpl(HandleKind::kRtldDefault, "", RtldFlags{});
   }
 
-  // Gets the last shared library operation error if there was one.
-  //
-  // If there was no error, returns an empty view.
+  /// @brief Gets the last shared library operation error, if any.
+  ///
+  /// If there was no error, returns an empty view.
   static absl::string_view DlError() noexcept;
 
   friend std::ostream& operator<<(std::ostream& os, const SharedLibrary& lib);
 
   bool Loaded() const noexcept { return handle_kind_ != HandleKind::kInvalid; }
 
-  // Unloads the shared library.
-  //
-  // Note: this is automatically done when the object is destroyed.
+  /// @brief Unloads the shared library.
+  ///
+  /// @note This is automatically called when the object is destroyed.
   void Close() noexcept;
 
-  // Looks up a symbol in the shared library.
-  //
-  // Note: This takes a `char*` because the underlying system call requires a
-  // null terminated string which a string view doesn't guarantee.
+  /// @brief Looks up a symbol in the shared library.
+  ///
+  /// @note This takes a `char*` because the underlying system call requires a
+  /// null-terminated string, which a `string_view` does not guarantee.
   template <class T>
   Expected<T> LookupSymbol(const char* symbol) const noexcept {
     static_assert(std::is_pointer_v<T>,
@@ -138,13 +141,13 @@ class SharedLibrary {
     return reinterpret_cast<T>(raw_symbol);
   }
 
-  // Returns the loaded library path.
+  /// @brief Returns the loaded library path.
   const std::string& Path() const noexcept { return path_; }
 
-  // Returns the underlying shared library handle.
-  //
-  // Warning: some special handle value may be NULL. Do not rely on this value
-  // to check whether a library is loaded or not.
+  /// @brief Returns the underlying shared library handle.
+  ///
+  /// @warning Some special handle values may be `NULL`. Do not rely on this
+  /// value to check whether a library is loaded.
   const void* Handle() const noexcept { return handle_; }
   void* Handle() noexcept { return handle_; }
 

@@ -37,14 +37,22 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
-// Various utilities and types for random number generation.
+/// @file
+/// @brief Provides various utilities and types for random number generation.
+///
+/// This file contains classes for creating random number generators, generating
+/// primitive data types with various distributions, and creating random tensor
+/// types and data for testing purposes.
 
 namespace litert {
 
 // STATEFUL RNG INTERFACE //////////////////////////////////////////////////////
 
-// Wraps variants of rng devices w/ seeds. Provides interop with logging and
-// other common litert/absl features.
+/// @brief A wrapper for random number generation engines.
+///
+/// This class wraps RNG engines (e.g., `std::mt19937`) and provides
+/// integration with logging and other common LiteRT/Abseil features.
+/// @tparam RngEngine The underlying random number generation engine.
 template <typename RngEngine>
 class RandomDevice {
  public:
@@ -56,31 +64,32 @@ class RandomDevice {
   RandomDevice(RandomDevice&&) = default;
   RandomDevice& operator=(RandomDevice&&) = default;
 
-  // Construct from given int seed.
+  /// @brief Constructs a random device with a given integer seed.
   explicit RandomDevice(int seed)
       : seed_(seed), rng_(seed), repr_(MakeRepr(seed)) {}
 
-  // Construct with implementation defined seed.
+  /// @brief Constructs a random device with an implementation-defined seed.
   RandomDevice() : seed_(std::nullopt), rng_(), repr_(MakeRepr(std::nullopt)) {}
 
-  // Wrapped method to return the next random value.
+  /// @brief Returns the next random value from the engine.
   ResultType operator()() { return rng_(); }
 
-  // Wrapped static methods to return the min and max values.
+  /// @brief Returns the minimum value that the engine can generate.
   static constexpr ResultType Min() { return Engine::min(); }
 
+  /// @brief Returns the maximum value that the engine can generate.
   static constexpr ResultType Max() { return Engine::max(); }
 
-  // Returns the string representation of the rng.
+  /// @brief Returns a string representation of the RNG.
   absl::string_view Repr() const { return repr_; }
 
-  // Support absl::StrFormat.
+  /// @brief Supports `absl::StrFormat`.
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const RandomDevice& rng) {
     absl::Format(&sink, "%s", rng.Repr());
   }
 
-  // Support printing to std out streams.
+  /// @brief Supports printing to `std::ostream`.
   friend std::ostream& operator<<(std::ostream& os, const RandomDevice& rng) {
     return os << rng.Repr();
   }
@@ -92,7 +101,9 @@ class RandomDevice {
   template <typename T>
   struct BaseHasName<T, decltype((void)T::kName, 0)> : std::true_type {};
 
-  // Use kName if the base defines it, otherwise use the typeid name.
+  /// @brief Returns the name of the RNG engine.
+  ///
+  /// Uses `Engine::kName` if defined, otherwise uses the typeid name.
   static constexpr absl::string_view Name() {
     constexpr auto kMaxTypeNameLen = 24;
     if constexpr (BaseHasName<Engine>::value) {
@@ -124,36 +135,42 @@ class RandomDevice {
 
 // PRIMITIVE DATA GENERATORS ///////////////////////////////////////////////////
 
-// Base class for generating data of a certain type.
+/// @brief Base class for generating data of a specific type.
+/// @tparam D The data type to generate.
 template <typename D>
 class DataGeneratorBase {
  public:
   using DataType = D;
 
-  // Bounds of distribution.
+  /// @brief Returns the maximum value of the distribution.
   virtual DataType Max() const = 0;
+  /// @brief Returns the minimum value of the distribution.
   virtual DataType Min() const = 0;
 
   virtual ~DataGeneratorBase() = default;
 };
 
-// Base class for generating data of a certain type from a specific
-// distribution.
+/// @brief Base class for generating data from a specific distribution.
+/// @tparam D The data type to generate.
+/// @tparam Dist The distribution to use.
 template <typename D, template <typename> typename Dist>
 class DataGenerator : public DataGeneratorBase<D> {
  public:
   using DataType = D;
   using Wide = WideType<D>;
 
-  // Bounds of distribution.
+  /// @brief Returns the maximum value of the distribution.
   DataType Max() const override { return dist_.max(); }
+  /// @brief Returns the minimum value of the distribution.
   DataType Min() const override { return dist_.min(); }
 
  protected:
   Dist<DataType> dist_;
 };
 
-// A data generator that generates data within a given range.
+/// @brief A data generator that produces values within a given range.
+/// @tparam D The data type to generate.
+/// @tparam Dist The distribution to use.
 template <typename D, template <typename> typename Dist>
 class RangedGenerator final : public DataGenerator<D, Dist> {
  private:
@@ -180,10 +197,14 @@ class RangedGenerator final : public DataGenerator<D, Dist> {
   }
 };
 
-// A rangeless float generator that casts random bits to the given float type.
-// This generally produces higher quality floats more repersentative of the
-// target distribution than a ranged generator. Particularly covers more values
-// around zero and infinities.
+/// @brief A rangeless float generator that reinterprets random bits as the
+/// given float type.
+///
+/// This approach generally produces higher quality floats that are more
+/// representative of the target distribution than a ranged generator,
+/// particularly for values around zero and infinities.
+/// @tparam D The floating-point type to generate.
+/// @tparam Dist The distribution to use.
 template <typename D, template <typename> typename Dist, typename Enable = void>
 class ReinterpretGenerator final : public DataGenerator<D, Dist> {};
 
@@ -219,16 +240,16 @@ class ReinterpretGenerator<D, Dist,
 template <typename D>
 class F16InF32Generator final {};
 
-// Generates valid f16 values stored as f32.
-// TODO: Add first class support for f16 in litert.
+/// @brief Generates valid f16 values stored as f32.
+/// @todo Add first-class support for f16 in LiteRT.
 template <>
 class F16InF32Generator<float> final {
  public:
-  // This works by generating 32 random bits and then masking and moving things
-  // around so there are a maximum of 10 significant mantissa bits and an
-  // an exponent component between 2^-14 and 2^15.
-  // NOTE: We will replace this in the future with a proper f16 -> f32
-  // converter.
+  /// This works by generating 32 random bits and then masking and manipulating
+  /// them to ensure a maximum of 10 significant mantissa bits and an exponent
+  /// component between 2^-14 and 2^15.
+  /// @note This will be replaced with a proper f16 -> f32 converter in the
+  /// future.
   template <typename Rng>
   float operator()(Rng& rng) {
     std::bitset<32> b = rng();
@@ -263,7 +284,7 @@ class F16InF32Generator<float> final {
 template <typename D>
 class SinGenerator final : public DataGeneratorBase<D> {};
 
-// Generates sin values in the range [-1, 1].
+/// @brief Generates sine values in the range [-1, 1].
 template <>
 class SinGenerator<float> final : public DataGeneratorBase<float> {
  public:
@@ -277,7 +298,8 @@ class SinGenerator<float> final : public DataGeneratorBase<float> {
   float Min() const override { return -1.0f; }
 };
 
-// Dummy primitive generator that returns a monotonically increasing sequence.
+/// @brief A dummy generator that returns a monotonically increasing sequence.
+/// @tparam D The data type to generate.
 template <typename D>
 class DummyGenerator final : public DataGeneratorBase<D> {
  public:
@@ -317,9 +339,11 @@ using DefaultDevice = RandomDevice<std::mt19937>;
 
 // RANDOM TENSOR TYPES /////////////////////////////////////////////////////////
 
-// This class composes the primitive data generators above to support
-// generating randomized tensor types (and shapes).
-// TODO: Update this to separate the type and shape generation.
+/// @brief Generates randomized tensor types (and shapes).
+///
+/// This class composes the primitive data generators to support generating
+/// random tensor types.
+/// @todo Update this to separate the type and shape generation.
 template <size_t Rank, size_t MaxSize, LiteRtElementType... ElementType>
 class RandomTensorType {
  private:
@@ -333,7 +357,7 @@ class RandomTensorType {
       kElementTypes = {ElementType...};
   static_assert(Rank < LITERT_TENSOR_MAX_RANK);
 
-  // std::pow not constexpr until c++26 sadly so no constexpr here.
+  // `std::pow` is not constexpr until C++26, so this cannot be constexpr.
   static DimSize MaxDimSize() {
     const double rank = std::max(1lu, Rank);
     const double exp = 1.0 / rank;
@@ -348,14 +372,14 @@ class RandomTensorType {
   using DimSpec = std::variant<DimSize, DimRange, RandDim>;
   using ShapeSpec = std::array<DimSpec, Rank>;
 
-  // Max number of elements we want a tensor to have.
+  /// The maximum number of elements a tensor can have.
   static constexpr size_t kMaxFlatSize = MaxSize;
 
-  // Cap single dimenions at the rankth root of the flat size to respect the
-  // max.
+  /// The maximum size of a single dimension, capped at the rank-th root of
+  /// `kMaxFlatSize` to respect the total size limit.
   static const DimSize kMaxDimSize;
 
-  // TODO: Explore need for 0 valued dims.
+  /// @todo Explore the need for 0-valued dimensions.
   static constexpr DimSize kMinDimSize = 1;
 
  private:
@@ -368,13 +392,18 @@ class RandomTensorType {
   };
 
  public:
-  // Generate a random tensor type from the specification provided. An
-  // element type is taken randomly from the template parameter. The shape
-  // spec must be of same rank as provided by the template parameter (this
-  // is checked at compile time). An element of the shape spec can be an
-  // explicit value, in which case it will not be random, a range, or a RandDim
-  // which signifies a range over all possible values of that dimension.
-  // `shuffle` can be used to permute the dimensions after generation.
+  /// @brief Generates a random tensor type.
+  ///
+  /// An element type is chosen randomly from the template parameter pack.
+  /// The shape specification must have the same rank as the template
+  /// parameter.
+  ///
+  /// A shape spec element can be an explicit value, a range, or a `RandDim`
+  /// (which signifies a range over all possible values for that dimension).
+  /// @param rng The random number generator.
+  /// @param spec The shape specification.
+  /// @param shuffle If `true`, the dimensions will be permuted after
+  /// generation.
   template <typename Rng>
   Expected<LiteRtRankedTensorType> operator()(
       Rng& rng, const ShapeSpec& spec = DefaultShapeSpec(),
@@ -388,9 +417,8 @@ class RandomTensorType {
 
   // LAYOUT ////////////////////////////////////////////////////////////////////
 
-  // Overloads that check the value of the dim spec against the max and
-  // handles any defaults.
-
+  /// @brief Checks the value of the dimension spec against the max and handles
+  /// any defaults.
   static Expected<ResolvedDimSpec> ResolveDimSpec(DimSize dim) {
     if (dim < kMinDimSize) {
       return Error(kLiteRtStatusErrorInvalidArgument, "Dimension must be > 0");
@@ -417,8 +445,7 @@ class RandomTensorType {
     return ResolvedDimSpec(std::make_pair(kMinDimSize, kMaxDimSize));
   }
 
-  // Overloads that produce the final dimension from a resolved dim spec.
-
+  /// @brief Produces the final dimension from a resolved dimension spec.
   template <typename Rng>
   static DimSize GenerateDim(Rng& rng, DimSize dim) {
     return dim;
@@ -466,32 +493,34 @@ const auto RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize =
 
 // RANDOM TENSOR DATA //////////////////////////////////////////////////////////
 
-// Base class for generating data for tensors.
+/// @brief Base class for generating data for tensors.
+/// @tparam D The data type of the tensor.
+/// @tparam Generator The primitive data generator to use.
 template <typename D, template <typename> typename Generator>
 class RandomTensorData {
  private:
-  // TODO: Support on standard types.
+  /// @todo Support on standard types.
   static_assert(std::is_integral_v<D> || std::is_floating_point_v<D>);
   using Gen = Generator<D>;
 
  public:
   using DataType = D;
 
-  // Fill out the pre-allocated buffer with random data.
+  /// @brief Fills a pre-allocated buffer with random data.
   template <typename Rng, typename Iter>
   Expected<void> operator()(Rng& rng, Iter start, Iter end) {
     std::generate(start, end, [&]() { return gen_(rng); });
     return {};
   }
 
-  // Fill out the pre-allocated buffer with random data.
+  /// @brief Fills a pre-allocated buffer with random data.
   template <typename Rng>
   Expected<void> operator()(Rng& rng, absl::Span<D> data) {
     return operator()(rng, data.begin(), data.end());
   }
 
-  // Allocate a new buffer with size matching the given layout and fill it with
-  // random data.
+  /// @brief Allocates a new buffer with a size matching the given layout and
+  /// fills it with random data.
   template <typename Rng>
   Expected<std::vector<D>> operator()(Rng& rng, const LiteRtLayout& layout) {
     size_t num_elements;
@@ -499,8 +528,8 @@ class RandomTensorData {
     return operator()(rng, num_elements);
   }
 
-  // Allocate a new buffer with the given number of elements and fill it with
-  // random data.
+  /// @brief Allocates a new buffer with the given number of elements and fills
+  /// it with random data.
   template <typename Rng>
   Expected<std::vector<D>> operator()(Rng& rng, size_t num_elements) {
     std::vector<D> res(num_elements);
@@ -522,8 +551,8 @@ class RandomTensorData {
   Gen gen_;
 };
 
-// Utility class to specify how tensor data generation should be performed
-// per-datatype without templates.
+/// @brief A utility class to specify how tensor data generation should be
+/// performed per-datatype without templates.
 class RandomTensorDataBuilder {
  public:
   RandomTensorDataBuilder() = default;
@@ -665,7 +694,11 @@ class RandomTensorDataBuilder {
   IntConfig<int64_t> int64_config_ = NullOpt();
 };
 
-// Scale random data values down to prevent overflow.
+/// @brief Scales down random data values to prevent overflow.
+/// @tparam It The iterator type.
+/// @param start The beginning of the range to scale.
+/// @param end The end of the range to scale.
+/// @param scale The scaling factor.
 template <typename It>
 void ScaleDown(It start, It end, uint32_t scale) {
   using T = typename std::iterator_traits<It>::value_type;

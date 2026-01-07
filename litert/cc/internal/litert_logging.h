@@ -22,12 +22,17 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 
+/// @file
+/// @brief Provides logging utilities for LiteRT, including log interception
+/// and formatting.
+
 namespace litert {
 
-// Indicates specialization of absl::Stringify has yet to be implemented.
+/// @brief A tag indicating that a specialization of `absl::Stringify` has not
+/// yet been implemented for a type.
 static constexpr auto kNoPrinterTag = "!no_printer";
 
-// Detects whether the current build is debug or not.
+/// @brief Detects whether the current build is a debug build.
 inline constexpr bool IsDbg() {
 #ifdef NDEBUG
   return false;
@@ -36,18 +41,20 @@ inline constexpr bool IsDbg() {
 #endif
 }
 
-// Sets up log interception and reverts it upon destruction.
-//
-// Useful to catch logs automatically dumped when the C API is called.
-//
-// ```cpp
-// Expected<int> DoSomething() {
-//   InterceptLogs intercepted_logs;
-//   LITERT_RETURN_IF_ERROR(LiteRtCApiFunction()) << intercepted_logs;
-//   LITERT_RETURN_IF_ERROR(litert::CppApiFunction()) << intercepted_logs;
-//   return 2;
-// }
-// ```
+/// @brief Sets up log interception and reverts it upon destruction.
+///
+/// This class is useful for capturing logs that are automatically dumped when
+/// the C API is called.
+///
+/// Example:
+/// @code
+/// Expected<int> DoSomething() {
+///   InterceptLogs intercepted_logs;
+///   LITERT_RETURN_IF_ERROR(LiteRtCApiFunction()) << intercepted_logs;
+///   LITERT_RETURN_IF_ERROR(litert::CppApiFunction()) << intercepted_logs;
+///   return 2;
+/// }
+/// @endcode
 class InterceptLogs {
  public:
   InterceptLogs() {
@@ -58,14 +65,15 @@ class InterceptLogs {
 
   ~InterceptLogs() { LiteRtSetDefaultLogger(original_logger_); }
 
-  // Clears the current default sink logger. No-op if the logger isn't a sink
-  // logger.
+  /// @brief Clears the current default sink logger.
+  ///
+  /// This is a no-op if the logger is not a sink logger.
   static void ClearLogs() {
     LiteRtLogger logger = LiteRtGetDefaultLogger();
     LiteRtClearSinkLogger(logger);
   }
 
-  // Streams the intercepted logs to an output stream.
+  /// @brief Streams the intercepted logs to an output stream.
   friend std::ostream& operator<<(std::ostream& os, const InterceptLogs&) {
     LiteRtLogger logger = LiteRtGetDefaultLogger();
     size_t sz = 0;
@@ -90,7 +98,8 @@ class InterceptLogs {
   LiteRtLogger original_logger_;
 };
 
-// Returns a human readable string representing the given number of bytes.
+/// @brief Returns a human-readable string representing the given number of
+/// bytes.
 inline std::string HumanReadableSize(size_t bytes) {
   static constexpr auto kGb = 1024 * 1024 * 1024;
   static constexpr auto kMb = 1024 * 1024;

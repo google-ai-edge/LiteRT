@@ -15,7 +15,6 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_
 
-// Model Builder. C++ equivalent of LiteRtBuilder.
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -34,9 +33,14 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
+/// @file
+/// @brief Defines the C++ equivalent of `LiteRtRewriter` for model
+/// modification.
+
 namespace litert {
 
-// TODO(yunandrew): Reuse the logic for generating RankedTensorType in testing.
+/// @brief Specification for a ranked tensor.
+/// @todo Reuse the logic for generating `RankedTensorType` in testing.
 struct RankedTensorSpec {
   RankedTensorType ranked_tensor_type;
   std::optional<Weights> weights;
@@ -45,8 +49,10 @@ struct RankedTensorSpec {
   std::optional<std::string> tensor_name;
 };
 
-// Builder for RankedTensorSpec. We need this class since LiteRT is pinned with
-// c++ 17, a version before designated initializers of structs were introduced.
+/// @brief A builder for `RankedTensorSpec`.
+///
+/// This class is necessary as LiteRT is pinned to C++17, which does not
+/// support designated initializers for structs.
 class RankedTensorSpecBuilder {
  public:
   explicit RankedTensorSpecBuilder(RankedTensorType type) {
@@ -94,10 +100,10 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
  public:
   explicit Builder(LiteRtBuilder builder)
       : internal::NonOwnedHandle<LiteRtBuilder>(builder) {}
-  // For ranked tensors.
+  /// @brief Builds a tensor from a `RankedTensorSpec`.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
 
-  // Build weights for a tensor.
+  /// @brief Builds weights for a tensor.
   template <typename T>
   Expected<Weights> BuildWeights(absl::Span<const T> data,
                                  Tensor& tensor) const {
@@ -109,19 +115,21 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
     return Weights(weights);
   }
 
-  // Trait for building scalars.
+  /// @brief A trait for building scalars.
   Expected<Tensor> BuildScalar(
       LiteRtElementType element_type,
       std::optional<std::string> name = std::nullopt) const;
 
   Op BuildOp(LiteRtOpCode op_code, OpInputs& inputs, OpOutputs& outputs) const;
-  // Clone the given op.
+  /// @brief Clones the given op.
   Op BuildOp(Op& src, OpInputs& inputs, OpOutputs& outputs) {
     return BuildOp(src.Code(), inputs, outputs);
   };
 
-  // Set the op options for the given op.
-  // The options must be a subclass of OpOptions, will return error otherwise.
+  /// @brief Sets the op options for the given op.
+  ///
+  /// The options must be a subclass of `OpOptions`; otherwise, an error is
+  /// returned.
   template <typename T>
   Expected<void> SetOpOptions(Op& op, T&& options) const {
     if constexpr (!std::is_base_of_v<OpOptions, T>) {
@@ -133,7 +141,7 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
     return Expected<void>();
   }
 
-  // Record the op to be erased.
+  /// @brief Records the op to be erased.
   void EraseOp(Op& op) const {
     internal::AssertOk(LiteRtBuilderEraseOp, this->Get(), op.Get());
   }
