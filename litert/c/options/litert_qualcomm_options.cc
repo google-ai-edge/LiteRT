@@ -39,6 +39,8 @@ struct LiteRtQualcommOptionsT {
   bool use_fold_relu = true;
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode =
+      kLiteRtQualcommDspPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
   std::string ir_json_dir;
   std::string dlc_dir;
@@ -69,13 +71,13 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
     const LiteRtQualcommOptionsT* options =
         reinterpret_cast<const LiteRtQualcommOptionsT*>(payload);
     uint64_t ans = 0;
-    litert::HashCombine(ans, options->log_level, options->profiling,
-                        options->use_htp_preference,
-                        options->use_qint16_as_quint16, options->qnn_backend,
-                        options->enable_weight_sharing,
-                        options->htp_performance_mode, options->ir_json_dir,
-                        options->dlc_dir, options->vtcm_size,
-                        options->num_hvx_threads, options->optimization_level);
+    litert::HashCombine(
+        ans, options->log_level, options->profiling,
+        options->use_htp_preference, options->use_qint16_as_quint16,
+        options->qnn_backend, options->enable_weight_sharing,
+        options->htp_performance_mode, options->dsp_performance_mode,
+        options->ir_json_dir, options->dlc_dir, options->vtcm_size,
+        options->num_hvx_threads, options->optimization_level);
     return ans;
   };
   LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, qti_hash));
@@ -339,6 +341,30 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
   }
 
   *htp_performance_mode = options->htp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_performance_mode = dsp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode* dsp_performance_mode) {
+  if (options == nullptr || dsp_performance_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_performance_mode = options->dsp_performance_mode;
 
   return kLiteRtStatusOk;
 }

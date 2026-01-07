@@ -163,15 +163,60 @@ target_link_libraries(utils_test
         GTest::gtest_main
 )
 
-# QNN backend test
-add_executable(qnn_backend_test)
+# IR backend test
+add_executable(ir_backend_test)
 
-target_sources(qnn_backend_test
+target_sources(ir_backend_test
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/qnn_backend_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/ir_backend_test.cc
 )
 
-target_link_libraries(qnn_backend_test
+target_link_libraries(ir_backend_test
+    PRIVATE
+        qnn_backends
+        qnn_core
+        GTest::gtest_main
+)
+
+# HTP backend test
+add_executable(htp_backend_test)
+
+target_sources(htp_backend_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/htp_backend_test.cc
+)
+
+target_link_libraries(htp_backend_test
+    PRIVATE
+        qnn_backends
+        qnn_core
+        GTest::gtest_main
+)
+
+# DSP backend test
+add_executable(dsp_backend_test)
+
+target_sources(dsp_backend_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/dsp_backend_test.cc
+)
+
+target_link_libraries(dsp_backend_test
+    PRIVATE
+        qnn_backends
+        qnn_core
+        GTest::gtest_main
+)
+
+# Backend utils test
+add_executable(backend_utils_test)
+
+target_sources(backend_utils_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/backends/backend_utils_test.cc
+)
+
+target_link_libraries(backend_utils_test
     PRIVATE
         qnn_backends
         qnn_core

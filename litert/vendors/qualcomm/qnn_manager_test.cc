@@ -15,6 +15,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
@@ -65,6 +66,8 @@ TEST(QnnManagerTest, GetOptions) {
             options_ref.GetEnableWeightSharing());
   EXPECT_EQ(options.GetHtpPerformanceMode(),
             options_ref.GetHtpPerformanceMode());
+  EXPECT_EQ(options.GetDspPerformanceMode(),
+            options_ref.GetDspPerformanceMode());
   EXPECT_EQ(options.GetDumpTensorIds(), options_ref.GetDumpTensorIds());
   EXPECT_EQ(options.GetIrJsonDir(), options_ref.GetIrJsonDir());
   EXPECT_EQ(options.GetDlcDir(), options_ref.GetDlcDir());
