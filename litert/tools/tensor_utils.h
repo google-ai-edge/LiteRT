@@ -19,11 +19,24 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <ios>
 #include <limits>
+#include <numeric>
 #include <type_traits>
 #include <vector>
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer.h"
 
 namespace litert {
 namespace tensor_utils {
@@ -194,6 +207,130 @@ void PrintTensorSamples(const std::vector<T>& data, size_t total_elements,
       print_element(i);
     }
   }
+}
+
+inline Expected<std::vector<char>> ReadTensorDataFromRawFile(
+    absl::string_view file_path) {
+  std::ifstream file(file_path.data(), std::ios::binary);
+  if (!file.is_open()) {
+    return Unexpected(
+        kLiteRtStatusErrorNotFound,
+        absl::StrFormat("Failed to find input file %s.", file_path));
+  }
+  std::vector<char> input_data(std::filesystem::file_size(file_path.data()));
+  file.read(input_data.data(), input_data.size());
+  return input_data;
+}
+
+template <typename T>
+void WriteBufferAs(TensorBuffer& buffer, const std::vector<char>& data) {
+  buffer.Write<T>(
+      absl::Span<T>(reinterpret_cast<T*>(const_cast<char*>(data.data())),
+                    data.size() / sizeof(T)));
+}
+
+// Fill tensor buffer with custom data
+inline Expected<void> FillBufferWithCustomData(TensorBuffer& buffer,
+                                               const std::vector<char>& data) {
+  auto buffer_size = buffer.Size();
+  if (data.size() != buffer_size.Value()) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Mismatched input size, input data size: %d bytes != "
+                        "model buffer size: %d bytes.",
+                        data.size(), buffer_size.Value()));
+  }
+  LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
+
+  switch (type.ElementType()) {
+    case ElementType::Float32:
+      WriteBufferAs<float>(buffer, data);
+      break;
+    case ElementType::Int64:
+      WriteBufferAs<int64_t>(buffer, data);
+      break;
+    case ElementType::Int32:
+      WriteBufferAs<int32_t>(buffer, data);
+      break;
+    case ElementType::Int16:
+      WriteBufferAs<int16_t>(buffer, data);
+      break;
+    case ElementType::Int8:
+      WriteBufferAs<int8_t>(buffer, data);
+      break;
+    case ElementType::UInt8:
+    case ElementType::Bool:
+      WriteBufferAs<uint8_t>(buffer, data);
+      break;
+
+    // Half-precision formats written as raw 16-bit payloads.
+    case ElementType::Float16:
+    case ElementType::BFloat16:
+      WriteBufferAs<uint16_t>(buffer, data);
+      break;
+
+    default:
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Unsupported element type.");
+  }
+  return {};
+}
+
+// Fill tensor buffer with random data
+inline Expected<void> FillBufferWithRandomData(TensorBuffer& buffer) {
+  constexpr float kScale = 0.12345f;
+  LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
+  const auto& layout = type.Layout();
+  size_t total_elements =
+      std::accumulate(layout.Dimensions().begin(), layout.Dimensions().end(), 1,
+                      std::multiplies<size_t>());
+  if (type.ElementType() == ElementType::Float16 ||
+      type.ElementType() == ElementType::Float32 ||
+      type.ElementType() == ElementType::BFloat16) {
+    std::vector<float> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = std::sin(i * kScale);
+    }
+    buffer.Write<float>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::Int32) {
+    std::vector<int32_t> data(total_elements);
+    unsigned int seed = 7;
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = rand_r(&seed) % 1024 + 1;
+    }
+    buffer.Write<int32_t>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::Int16) {
+    std::vector<int16_t> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = i % 2048;
+    }
+    buffer.Write<int16_t>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::Int64) {
+    std::vector<int64_t> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = i % 2048;
+    }
+    buffer.Write<int64_t>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::Int8) {
+    std::vector<int8_t> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = i % 256 - 128;
+    }
+    buffer.Write<int8_t>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::UInt8) {
+    std::vector<uint8_t> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = i % 256;
+    }
+    buffer.Write<uint8_t>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::Bool) {
+    std::vector<uint8_t> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = i % 2;
+    }
+    buffer.Write<uint8_t>(absl::MakeConstSpan(data));
+  }
+  return {};
 }
 
 }  // namespace tensor_utils
