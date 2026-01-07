@@ -200,13 +200,18 @@ TEST(OpWrapperTest, SwapOutputsTest) {
   EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
 }
 
+TEST(OpWrapperTest, GetName) {
+  OpWrapper op{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  EXPECT_STREQ(op.GetName().data(), "name");
+}
+
 TEST(OpWrapperTest, ChangeOpName) {
-  OpWrapper op_wrapper_1{"name", "OP_TYPE", QnnOpCode::kUnknown};
-  EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "name");
-  op_wrapper_1.AddPrefixToName("namespace/");
-  EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name");
-  op_wrapper_1.AddSuffixToName("_new");
-  EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
+  OpWrapper op{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  EXPECT_STREQ(op.GetName().data(), "name");
+  op.AddPrefixToName("namespace/");
+  EXPECT_STREQ(op.GetName().data(), "namespace/name");
+  op.AddSuffixToName("_new");
+  EXPECT_STREQ(op.GetName().data(), "namespace/name_new");
 }
 
 }  // namespace
