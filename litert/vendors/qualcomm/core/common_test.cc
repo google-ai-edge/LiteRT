@@ -109,6 +109,52 @@ TEST(QnnOptionTest, HtpPerformanceMode) {
   EXPECT_EQ(options.GetHtpPerformanceMode(), kExtremePowerSaver);
 }
 
+TEST(QnnOptionTest, DspPerformanceMode) {
+  Options options;
+
+  static constexpr DspPerformanceMode kDefault = DspPerformanceMode::kDefault;
+  options.SetDspPerformanceMode(kDefault);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kDefault);
+
+  static constexpr DspPerformanceMode kSustainedHighPerformance =
+      DspPerformanceMode::kSustainedHighPerformance;
+  options.SetDspPerformanceMode(kSustainedHighPerformance);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kSustainedHighPerformance);
+
+  static constexpr DspPerformanceMode kBurst = DspPerformanceMode::kBurst;
+  options.SetDspPerformanceMode(kBurst);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kBurst);
+
+  static constexpr DspPerformanceMode kHighPerformance =
+      DspPerformanceMode::kHighPerformance;
+  options.SetDspPerformanceMode(kHighPerformance);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kHighPerformance);
+
+  static constexpr DspPerformanceMode kPowerSaver =
+      DspPerformanceMode::kPowerSaver;
+  options.SetDspPerformanceMode(kPowerSaver);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kPowerSaver);
+
+  static constexpr DspPerformanceMode kLowPowerSaver =
+      DspPerformanceMode::kLowPowerSaver;
+  options.SetDspPerformanceMode(kLowPowerSaver);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kLowPowerSaver);
+
+  static constexpr DspPerformanceMode kHighPowerSaver =
+      DspPerformanceMode::kHighPowerSaver;
+  options.SetDspPerformanceMode(kHighPowerSaver);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kHighPowerSaver);
+
+  static constexpr DspPerformanceMode kLowBalanced =
+      DspPerformanceMode::kLowBalanced;
+  options.SetDspPerformanceMode(kLowBalanced);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kLowBalanced);
+
+  static constexpr DspPerformanceMode kBalanced = DspPerformanceMode::kBalanced;
+  options.SetDspPerformanceMode(kBalanced);
+  EXPECT_EQ(options.GetDspPerformanceMode(), kBalanced);
+}
+
 TEST(QnnOptionTest, UseHtpPreference) {
   Options options;
   options.SetUseHtpPreference(true);
@@ -217,6 +263,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
+  EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);

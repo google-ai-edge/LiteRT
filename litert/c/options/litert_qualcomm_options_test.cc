@@ -136,6 +136,24 @@ TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, DspPerformanceMode) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetDspPerformanceMode(
+      qualcomm_options, kLiteRtQualcommDspPerformanceModeBurst));
+
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetDspPerformanceMode(
+      qualcomm_options, &dsp_performance_mode));
+  EXPECT_EQ(dsp_performance_mode, kLiteRtQualcommDspPerformanceModeBurst);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -357,6 +375,12 @@ TEST(QualcommOptionsTest, CppApi) {
   options->SetHtpPerformanceMode(QualcommOptions::HtpPerformanceMode::kBurst);
   EXPECT_EQ(options->GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kBurst);
+
+  EXPECT_EQ(options->GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kDefault);
+  options->SetDspPerformanceMode(QualcommOptions::DspPerformanceMode::kBurst);
+  EXPECT_EQ(options->GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kBurst);
 
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
   options->SetProfiling(QualcommOptions::Profiling::kDetailed);
