@@ -22,8 +22,8 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/tools/flags/flag_types.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -102,7 +102,7 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
           litert::qualcomm::QualcommOptions::HtpPerformanceMode::kDefault,
           "HTP performance mode.");
 
-ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
+ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
 
@@ -378,13 +378,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);
 
-  const auto dump_tensor_ids = absl::GetFlag(FLAGS_qualcomm_dump_tensor_ids);
-  std::vector<std::int32_t> int32_ids;
-  std::for_each(dump_tensor_ids.begin(), dump_tensor_ids.end(),
-                [&int32_ids](const std::string& id) {
-                  int32_ids.push_back(std::stoi(id));
-                });
-  opts.SetDumpTensorIds(int32_ids);
+  const auto dump_tensor_ids =
+      absl::GetFlag(FLAGS_qualcomm_dump_tensor_ids).elements;
+  opts.SetDumpTensorIds(dump_tensor_ids);
 
   const std::string ir_json_dir = absl::GetFlag(FLAGS_qualcomm_ir_json_dir);
   opts.SetIrJsonDir(ir_json_dir);

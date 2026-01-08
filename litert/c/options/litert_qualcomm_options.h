@@ -104,10 +104,10 @@ LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
     LiteRtQualcommOptions options, bool* enable_weight_sharing);
 
 LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
-    LiteRtQualcommOptions options, const int32_t* ids, uint32_t number_of_ids);
+    LiteRtQualcommOptions options, const int32_t* ids, size_t number_of_ids);
 
 LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
-    LiteRtQualcommOptions options, int32_t** ids, uint32_t* number_of_ids);
+    LiteRtQualcommOptions options, const int32_t** ids, size_t* number_of_ids);
 
 // When using short conv hmx, one might have better performance, but convolution
 // that have short depth and/or weights that are not symmetric could exhibit

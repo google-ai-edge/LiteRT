@@ -1264,8 +1264,8 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   std::vector<::qnn::OpWrapper> graph_op_wrappers;
   std::ostringstream dump;
   auto ops = graph_mapper.Graph().Ops();
-  for (auto it = ops.begin(); it != ops.end(); ++it) {
-    const auto& op = *it;
+  for (size_t id = 0; id < ops.size(); ++id) {
+    const auto& op = ops.at(id);
     std::vector<::qnn::TensorWrapperRef> input_tensors;
     for (const auto& input : op.Inputs()) {
       if (const auto it = litert_tensor_to_wrapper.find(input.Get());
@@ -1298,9 +1298,8 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                                      op_wrappers));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
-      std::size_t idx = std::distance(std::begin(ops), it);
       op_wrapper.AddSuffixToName(
-          absl::StrCat("_LiteRt_OpId_", std::to_string(idx)));
+          absl::StrCat("_LiteRt_OpId_", std::to_string(id)));
     }
     if (!op.Outputs().empty()) {
       // Add op namespace inference based on output tensor names.

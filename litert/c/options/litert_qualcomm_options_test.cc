@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_qualcomm_options.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <utility>
@@ -267,8 +268,8 @@ TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LITERT_ASSERT_OK(LiteRtQualcommOptionsSetDumpTensorIds(
       qualcomm_options, kDumpTensorIds.data(), kDumpTensorIds.size()));
 
-  std::int32_t* ids;
-  std::uint32_t number_of_ids;
+  const std::int32_t* ids;
+  std::size_t number_of_ids;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsGetDumpTensorIds(qualcomm_options, &ids,
                                                          &number_of_ids));
   EXPECT_EQ(number_of_ids, kDumpTensorIds.size());
