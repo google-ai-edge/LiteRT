@@ -17,6 +17,20 @@ cd ./litert
 The generated build trees live under `cmake_build*`. Parallel builds can be
 controlled via `-j` with the desired core count.
 
+## Available Build Flavors
+
+LiteRT supports both **Release** and **Debug** build flavors:
+
+| Preset               | Platform      | Build Type | Output Directory                 |
+|---------------------|---------------|------------|----------------------------------|
+| `default`           | Host (macOS/Linux) | Release    | `cmake_build`                    |
+| `default-debug`     | Host (macOS/Linux) | Debug      | `cmake_build_debug`              |
+| `android-arm64`     | Android arm64 | Release    | `cmake_build_android_arm64`      |
+| `android-arm64-debug` | Android arm64 | Debug      | `cmake_build_android_arm64_debug` |
+
+**Release** builds use `-O3 -DNDEBUG` for optimized production binaries.
+**Debug** builds use `-O0 -g` for debugging with full symbol information.
+
 ## Android (arm64) Cross-Compilation
 
 1. Install the Android NDK and export the path so CMake can find it:
@@ -35,31 +49,48 @@ controlled via `-j` with the desired core count.
    generated FlatBuffers tools:
 
    ```bash
+   # For Release build:
    cmake --preset android-arm64 \
+     -DTFLITE_HOST_TOOLS_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build && pwd)"
+
+   # For Debug build:
+   cmake --preset android-arm64-debug \
      -DTFLITE_HOST_TOOLS_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build && pwd)"
    ```
 
 1. Build LiteRT for Android:
 
    ```bash
+   # For Release build:
    cmake --build cmake_build_android_arm64 -j
+
+   # For Debug build:
+   cmake --build cmake_build_android_arm64_debug -j
    ```
 
-Artifacts such as static libraries will be emitted under
-`cmake_build_android_arm64`.
+Artifacts such as static libraries will be emitted under the corresponding
+build directory (`cmake_build_android_arm64` or `cmake_build_android_arm64_debug`).
 
 ## Host Build from Mac OS and Linux
 
 1. Configure the default host preset:
 
    ```bash
+   # For Release build:
    cmake --preset default
+
+   # For Debug build:
+   cmake --preset default-debug
    ```
 
 1. Build LiteRT:
 
    ```bash
+   # For Release build:
    cmake --build cmake_build -j
+
+   # For Debug build:
+   cmake --build cmake_build_debug -j
    ```
 
 ## Customize your build target
