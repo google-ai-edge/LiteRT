@@ -149,6 +149,7 @@ cc_library(
         "//tflite:string_util",
         "//tflite:type_to_tflitetype",
         "//tflite:util",
+        "//tflite/converter:allocation",
         "//tflite/core:framework_stable",
         "//tflite/core:subgraph",
         "//tflite/core/api",
