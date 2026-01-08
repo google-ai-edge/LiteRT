@@ -131,6 +131,8 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeTflVarHandle,
     kLiteRtOpCodeTflWhere,
     kLiteRtOpCodeTflCustom,
+    kLiteRtOpCodeShloScatter,
+    kLiteRtOpCodeShloWindow,
 };
 // clang format on
 
@@ -506,6 +508,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_LOG(LITERT_INFO,
              "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
+
+  if (num_partitions == 0) {
+    LITERT_LOG(LITERT_ERROR,
+      "No subgraphs selected for GoogleTensor compilation.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   // Serialize model.
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
