@@ -429,9 +429,11 @@ cc_test(
 
 cc_library(
     name = "tensor_utils",
+    srcs = ["tensor_utils.cc"],
     hdrs = ["tensor_utils.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
