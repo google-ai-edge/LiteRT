@@ -362,11 +362,20 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->context_bin.resize(num_partitions);
   result->byte_code_index.resize(num_partitions);
   QnnManager* qnn_manager = compiler_plugin->QNN();
-  if (!qnn_manager) {
+  auto options = compiler_plugin->Options();
+  const bool ir_backend_override =
+      !options.GetDlcDir().empty() &&
+      options.GetBackendType() != ::qnn::BackendType::kIrBackend;
+  if (ir_backend_override) {
+    LITERT_LOG(LITERT_WARNING,
+               "Overriding backend type to IR Backend because DLC dir is set.");
+    options.SetBackendType(::qnn::BackendType::kIrBackend);
+  }
+  if (!qnn_manager || ir_backend_override) {
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
-    auto qnn_manager_or = QnnManager::Create(compiler_plugin->Options(),
-                                             std::nullopt, opt_soc_model);
+    auto qnn_manager_or =
+        QnnManager::Create(options, std::nullopt, opt_soc_model);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
@@ -414,8 +423,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       // We enable weight sharing by default, this could lead to issue when
       // support legacy SoC.
       auto context_configs = QnnManager::DefaultContextConfigs();
-      if (compiler_plugin->Options().GetEnableWeightSharing()) {
-        switch (compiler_plugin->Options().GetBackendType()) {
+      if (options.GetEnableWeightSharing()) {
+        switch (options.GetBackendType()) {
           case ::qnn::BackendType::kHtpBackend: {
             // Only enable weight sharing if we have multiple partitions and
             // the current SoC support weight sharing feature.
@@ -441,7 +450,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         }
       }
       auto context_handle = qnn_manager->CreateContextHandle(
-          context_configs, compiler_plugin->Options().GetProfiling());
+          context_configs, options.GetProfiling());
       if (!context_handle) {
         LITERT_LOG(LITERT_ERROR, "%s", context_handle.Error().Message().data());
         return context_handle.Error().Status();
@@ -471,12 +480,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         *qnn_manager, context_handles[context_handle_idx].get(),
         context_handles[context_handle_idx].get_profile_handle(),
-        partition.Get(), entry_point_name, compiler_plugin->Options()));
+        partition.Get(), entry_point_name, options));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }
 
-  if (compiler_plugin->Options().GetBackendType() ==
-      ::qnn::BackendType::kIrBackend) {
+  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
     LITERT_LOG(LITERT_WARNING,
                "Since IR backend is enabled, functional context binaries are "
                "excluded from the compiled TFLite.");
