@@ -41,7 +41,6 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
@@ -100,41 +99,6 @@ Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
   LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
   return options;
-}
-
-Expected<std::vector<TensorBuffer>> CreateAndFillInputBuffersWithRandomData(
-    const CompiledModel& compiled_model, size_t signature_index) {
-  LITERT_ASSIGN_OR_RETURN(auto input_buffers,
-                          compiled_model.CreateInputBuffers(signature_index));
-  for (auto& buffer : input_buffers) {
-    LITERT_RETURN_IF_ERROR(tensor_utils::FillBufferWithRandomData(buffer));
-  }
-  return input_buffers;
-}
-
-// Creates and fills input buffers for a given compiled model.
-Expected<std::vector<TensorBuffer>> CreateAndFillInputBuffersWithCustomData(
-    const Model& model, const CompiledModel& compiled_model,
-    size_t signature_index, const std::string& input_dir) {
-  std::vector<TensorBuffer> input_buffers;
-  LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
-  const auto input_names = signatures[signature_index].InputNames();
-  for (const auto& input_name : input_names) {
-    LITERT_ASSIGN_OR_RETURN(auto input_buffer,
-                            compiled_model.CreateInputBuffer(
-                                signatures[signature_index].Key(), input_name));
-
-    const auto input_file_path = std::filesystem::path(input_dir) /
-                                 (std::string(input_name.data()) + ".raw");
-    LITERT_ASSIGN_OR_RETURN(auto data, tensor_utils::ReadTensorDataFromRawFile(
-                                           input_file_path.string()));
-    LITERT_RETURN_IF_ERROR(
-        tensor_utils::FillBufferWithCustomData(input_buffer, data));
-
-    input_buffers.emplace_back(std::move(input_buffer));
-  }
-
-  return input_buffers;
 }
 
 // Creates output buffers for a given compiled model.
@@ -520,21 +484,18 @@ Expected<void> RunModel() {
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
   std::string input_dir = absl::GetFlag(FLAGS_input_dir);
 
-  std::vector<litert::TensorBuffer> cpu_input_buffers;
+  LITERT_ASSIGN_OR_RETURN(
+      auto cpu_input_buffers,
+      compiled_model_cpu.CreateInputBuffers(signature_index));
 
   // Create and fill input buffers
   if (!input_dir.empty()) {
-    ABSL_LOG(INFO) << "Using inputs from: " << input_dir;
-    LITERT_ASSIGN_OR_RETURN(
-        auto cpu_model, Model::CreateFromFile(absl::GetFlag(FLAGS_cpu_model)));
-    LITERT_ASSIGN_OR_RETURN(
-        cpu_input_buffers,
-        CreateAndFillInputBuffersWithCustomData(cpu_model, compiled_model_cpu,
-                                                signature_index, input_dir));
+    LITERT_RETURN_IF_ERROR(tensor_utils::FillInputBuffersWithCustomData(
+        compiled_model_cpu, signature_index, cpu_input_buffers, input_dir));
   } else {
-    LITERT_ASSIGN_OR_RETURN(cpu_input_buffers,
-                            CreateAndFillInputBuffersWithRandomData(
-                                compiled_model_cpu, signature_index));
+    for (auto& buffer : cpu_input_buffers) {
+      LITERT_RETURN_IF_ERROR(tensor_utils::FillBufferWithRandomData(buffer));
+    }
   }
 
   LITERT_ASSIGN_OR_RETURN(
