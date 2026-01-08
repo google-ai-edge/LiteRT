@@ -786,7 +786,7 @@ SELECT_LITERT_RUNTIME_C_API_SO = select({
     ":resolve_symbols_in_exec": [],
     "@platforms//os:ios": [":litert_runtime_c_api_dylib"],
     ":litert_macos_wheel_use_so": [":litert_runtime_c_api_so"],
-    ":litert_macos_default": [":litert_runtime_c_api_dylib"],
+    "@platforms//os:macos": [":litert_runtime_c_api_dylib"],
     "@platforms//os:windows": [],
     "//conditions:default": [":litert_runtime_c_api_so"],
 })
@@ -809,12 +809,6 @@ config_setting(
     name = "litert_macos_wheel_use_so",
     constraint_values = ["@platforms//os:macos"],
     define_values = {"litert_macos_wheel_use_so": "true"},
-)
-
-config_setting(
-    name = "litert_macos_default",
-    constraint_values = ["@platforms//os:macos"],
-    define_values = {"litert_macos_wheel_use_so": "false"},
 )
 
 filegroup(
