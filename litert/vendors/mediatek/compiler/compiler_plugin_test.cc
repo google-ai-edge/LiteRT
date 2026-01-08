@@ -50,6 +50,7 @@ const auto kSupportedOps = Values(
     "simple_softmax_op.tflite",
     "simple_mean_op.tflite",
     "simple_gelu_op.tflite",
+    "simple_leaky_relu_op.tflite",
     "simple_pad.tflite",
     "simple_logistic.tflite",
     "simple_sum_op.tflite",

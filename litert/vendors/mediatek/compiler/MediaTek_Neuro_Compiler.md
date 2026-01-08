@@ -62,6 +62,7 @@ the `VerifyCommonOp` function.
 | `kLiteRtOpCodeTflPad` | Legalized to `NEURON_PAD`. |
 | `kLiteRtOpCodeTflPadv2` | Legalized to `NEURON_PAD_V2`. |
 | `kLiteRtOpCodeTflPrelu` | Legalized to `NEURON_PRELU`. |
+| `kLiteRtOpCodeTflLeakyRelu` | Legalized to `NEURON_PRELU` via treating alpha in LeakyRelu as the input tensor of Prelu. |
 | `kLiteRtOpCodeTflQuantize` | Legalized to `NEURON_QUANTIZE`. |
 | `kLiteRtOpCodeTflReduceMax` | Legalized to `NEURON_REDUCE_MAX`. Supports `keep_dims` attribute. |
 | `kLiteRtOpCodeTflRelu` | Legalized to `NEURON_RELU`. |
