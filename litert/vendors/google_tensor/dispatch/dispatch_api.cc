@@ -50,6 +50,10 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
   return InitializeDispatchApiConfig(environment_options, options);
 }
 
+LiteRtStatus Destroy() {
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
@@ -504,6 +508,7 @@ namespace {
 
 LiteRtDispatchInterface TheInterface = {
     .initialize = litert::google_tensor::Initialize,
+    .destroy = litert::google_tensor::Destroy,
     .get_vendor_id = litert::google_tensor::GetVendorId,
     .get_build_id = litert::google_tensor::GetBuildId,
     .get_capabilities = litert::google_tensor::GetCapabilities,
