@@ -14,6 +14,10 @@ namespace qnn {
 std::vector<OpWrapper> BuildSliceOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
+
+bool BuildSliceOp(OpWrapper& op, const TensorWrapper& input,
+                  const TensorWrapper& output, const TensorWrapper& ranges);
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SLICE_OP_BUILDER_H_

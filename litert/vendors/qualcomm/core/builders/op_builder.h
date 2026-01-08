@@ -38,6 +38,8 @@ std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
     const std::uint32_t stride, const std::uint32_t dilation_rate,
     const PaddingType padding_type);
 
+std::string GetUniqueOpName(const char* op_type);
+
 OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type);
 
 OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
