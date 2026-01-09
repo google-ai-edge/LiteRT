@@ -163,3 +163,23 @@ LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment) {
 }
 
 }  // extern "C"
+
+// Function pointer defined in auto_registration.cc.
+extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorCpu)(
+    LiteRtEnvironmentT& environment);
+
+namespace {
+
+class StaticCpuAcceleratorInitializer {
+ public:
+  StaticCpuAcceleratorInitializer() {
+    LiteRtRegisterStaticLinkedAcceleratorCpu =
+        [](LiteRtEnvironmentT& environment) -> LiteRtStatus {
+      return LiteRtRegisterCpuAccelerator(&environment);
+    };
+  }
+};
+
+StaticCpuAcceleratorInitializer g_cpu_accelerator_initializer;
+
+}  // namespace
