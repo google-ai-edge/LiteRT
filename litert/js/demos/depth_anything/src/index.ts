@@ -42,6 +42,8 @@ export class DepthAnything extends LitElement {
   @state() private isProcessing = false;
   @state() private colormap: DepthEstimatorOptions['colormap'] = 'spectral_r';
   @state() private model: CompiledModel|null = null;
+  @state() private isWebcamActive = false;
+  private videoElement: HTMLVideoElement|null = null;
 
   override async firstUpdated() {
     try {
@@ -63,6 +65,11 @@ export class DepthAnything extends LitElement {
       }
     }
     await this.loadModel();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.stopWebcam();
   }
 
   private async loadModel() {
@@ -148,6 +155,66 @@ export class DepthAnything extends LitElement {
     }
   }
 
+  private async handleWebcamClick() {
+    if (this.isWebcamActive) {
+      this.captureFrame();
+      this.stopWebcam();
+    } else {
+      await this.startWebcam();
+    }
+  }
+
+  private async startWebcam() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({video: true});
+      this.isWebcamActive = true;
+      this.videoElement = document.createElement('video');
+      this.videoElement.srcObject = stream;
+      this.videoElement.autoplay = true;
+      this.videoElement.style.maxWidth = '100%';
+      this.videoElement.style.maxHeight = '70vh';
+      this.videoElement.style.objectFit = 'contain';
+
+      this.videoElement.onloadedmetadata = () => {
+        this.requestUpdate();
+      };
+
+    } catch (e) {
+      this.statusMessage = `Error accessing webcam: ${(e as Error).message}`;
+      console.error(e);
+    }
+  }
+
+  private stopWebcam() {
+    if (this.videoElement &&
+        this.videoElement.srcObject instanceof MediaStream) {
+      const stream = this.videoElement.srcObject;
+      stream.getTracks().forEach(track => track.stop());
+    }
+    this.isWebcamActive = false;
+    this.videoElement = null;
+    this.requestUpdate();
+  }
+
+  private captureFrame() {
+    if (!this.videoElement) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = this.videoElement.videoWidth;
+    canvas.height = this.videoElement.videoHeight;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
+
+    const img = new Image();
+    img.onload = () => {
+      this.originalImage = img;
+      this.resultCanvas = null;
+      this.statusMessage = 'Image captured. Click "Run".';
+    };
+    this.originalSrc = canvas.toDataURL('image/png');
+    img.src = this.originalSrc;
+  }
+
   override render() {
     return html`
       <div class="container">
@@ -170,13 +237,18 @@ export class DepthAnything extends LitElement {
                 Model License
               </a>
             </div>
-            <button @click=${this.handleDepthEstimation} .disabled=${
+            <div class="button-group">
+              <button @click=${this.handleDepthEstimation} .disabled=${
     !this.originalImage || !this.model || this.isProcessing}>
-              ${
+                ${
         this.isProcessing ?
         'Processing...' :
         '🚀 Run'}
-            </button>
+              </button>
+              <button @click=${this.handleWebcamClick}>
+                ${this.isWebcamActive ? 'Capture' : '📷 Webcam'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -185,10 +257,20 @@ export class DepthAnything extends LitElement {
           @dragover=${(e: DragEvent) => e.preventDefault()}
           @drop=${this.onDrop}
           @click=${
-        () => this.shadowRoot?.querySelector<HTMLInputElement>('#file-input')
-            ?.click()}
+        () => {
+          if (!this.isWebcamActive) {
+            this.shadowRoot?.querySelector<HTMLInputElement>('#file-input')
+                ?.click();
+          }
+        }}
         >
           ${
+        this.isWebcamActive && this.videoElement ?
+        html`
+              <div class="webcam-container">
+                ${this.videoElement}
+              </div>
+            ` :
         this.resultCanvas ?
         this.resultCanvas :
         this.originalSrc ?

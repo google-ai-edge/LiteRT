@@ -138,4 +138,15 @@ export const componentStyles = css`
     margin-top: 1rem;
     background-color: #5f6368;
   }
+  .button-group {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .webcam-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
 `;
