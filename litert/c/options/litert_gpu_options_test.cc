@@ -236,6 +236,30 @@ TEST(GpuAcceleratorPayload, SetAndGetModelToken) {
   LiteRtDestroyOpaqueOptions(compilation_options);
 }
 
+TEST(GpuAcceleratorPayload, SetAndGetProgramCacheFd) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  int program_cache_fd = -1;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+      &program_cache_fd, payload));
+  EXPECT_EQ(program_cache_fd, -1);
+
+  LITERT_EXPECT_OK(LiteRtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
+      compilation_options, 123));
+  LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+      &program_cache_fd, payload));
+  EXPECT_EQ(program_cache_fd, 123);
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
 TEST(GpuAcceleratorPayload, SetAndGetSerializeProgramCache) {
   LiteRtOpaqueOptions compilation_options;
   LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
