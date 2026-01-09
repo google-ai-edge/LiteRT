@@ -61,6 +61,11 @@ export class ImageUpscaler extends LitElement {
   @state() private originalSrc = '';
   @state() private upscaledCanvas: HTMLCanvasElement|null = null;
   @state() private isUpscaling = false;
+  @state() private sliderValue = 50;
+  @state() private isDraggingSlider = false;
+  @state() private preventClick = false;
+  private comparisonContainerRect: DOMRect|null = null;
+  private dragStartX: number|null = null;
 
   @state() private models: Record<string, CompiledModel|null> = {};
   @state() private selectedModelName: string = Object.keys(MODELS)[0];
@@ -127,6 +132,83 @@ export class ImageUpscaler extends LitElement {
   private onModelChange(e: Event) {
     this.selectedModelName = (e.target as HTMLSelectElement).value;
     this.loadModel(this.selectedModelName);
+  }
+
+  private readonly handleDragMove = (e: MouseEvent) => {
+    if (!this.isDraggingSlider || !this.comparisonContainerRect) {
+      return;
+    }
+
+    // If the mouse button was released outside the window, stop dragging.
+    if (e.buttons === 0) {
+      this.stopDrag();
+      return;
+    }
+
+    // If the mouse has moved more than a few pixels, treat it as a drag
+    // and prevent the click event from firing.
+    if (this.dragStartX !== null && Math.abs(e.clientX - this.dragStartX) > 5) {
+      this.preventClick = true;
+    }
+
+    const x = e.clientX - this.comparisonContainerRect.left;
+    const percent = (x / this.comparisonContainerRect.width) * 100;
+    this.sliderValue = Math.max(0, Math.min(100, percent));
+  };
+
+  private readonly stopDrag = () => {
+    this.isDraggingSlider = false;
+    this.comparisonContainerRect = null;
+    this.dragStartX = null;
+
+    window.removeEventListener('mousemove', this.handleDragMove);
+    window.removeEventListener('mouseup', this.stopDrag);
+
+    // Use a timeout to distinguish a drag from a click. If we just dragged,
+    // we don't want the click event on the drop-zone to fire.
+    setTimeout(() => {
+      this.preventClick = false;
+    }, 0);
+  };
+
+  private readonly startDrag = (e: MouseEvent) => {
+    // Only drag with the main mouse button
+    if (e.button !== 0) {
+      return;
+    }
+    e.preventDefault();  // Prevent text selection/image dragging
+
+    this.isDraggingSlider = true;
+    // Assume it's a click until the mouse moves significantly
+    this.preventClick = false;
+    this.dragStartX = e.clientX;
+    const container = e.currentTarget as HTMLElement;
+    this.comparisonContainerRect = container.getBoundingClientRect();
+
+    // Add global listeners to track mouse movement outside the container
+    window.addEventListener('mousemove', this.handleDragMove);
+    window.addEventListener('mouseup', this.stopDrag);
+  };
+
+
+  private renderComparison() {
+    return html`
+      <div class="comparison-container"
+           @mousedown=${this.startDrag}
+      >
+        <img
+          class="comparison-img"
+          src=${this.originalSrc}
+          draggable="false"
+        />
+        <div class="comparison-img-wrapper" style="clip-path: inset(0 0 0 ${
+        this.sliderValue}%)">
+          ${this.upscaledCanvas}
+        </div>
+        <div class="comparison-slider-bar" style="left: ${
+        this.sliderValue}%"></div>
+      </div>
+    `;
   }
 
   private async handleUpscale() {
@@ -206,12 +288,15 @@ export class ImageUpscaler extends LitElement {
           @dragover=${(e: DragEvent) => e.preventDefault()}
           @drop=${this.onDrop}
           @click=${
-        () => this.shadowRoot?.querySelector<HTMLInputElement>('#file-input')
-            ?.click()}
+        () => {
+          if (this.preventClick) return;
+          this.shadowRoot?.querySelector<HTMLInputElement>('#file-input')
+            ?.click();
+        }}
         >
           ${
-        this.upscaledCanvas ?
-        this.upscaledCanvas :
+        this.upscaledCanvas && this.originalSrc ?
+        this.renderComparison() :
         this.originalSrc ?
         html`
             <img src=${this.originalSrc} alt="display image" />

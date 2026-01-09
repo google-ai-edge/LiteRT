@@ -101,8 +101,8 @@ export const componentStyles = css`
   }
   .drop-zone img,
   .drop-zone canvas {
-    max-width: 100%;
-    max-height: 70vh;
+    width: 100%;
+    height: auto;
     object-fit: contain;
   }
   .footer {
@@ -132,5 +132,55 @@ export const componentStyles = css`
   .view-original {
     margin-top: 1rem;
     background-color: #5f6368;
+  }
+
+  .comparison-container {
+    position: relative;
+    width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    display: block;
+    cursor: ew-resize;
+    user-select: none; /* prevent text selection while dragging */
+  }
+
+  .comparison-container .comparison-img,
+  .comparison-container .comparison-img-wrapper {
+    display: block;
+    width: 100%;
+    object-fit: contain;
+    pointer-events: none; /* prevent dragging image */
+  }
+
+  .comparison-container .comparison-img-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+  }
+
+  .comparison-container .comparison-img-wrapper > canvas {
+    height: 100%;
+    width: 100%;
+    object-fit: contain;
+  }
+
+  .comparison-container .comparison-img {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+
+  .comparison-slider-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 1;
   }
 `;
