@@ -91,11 +91,11 @@ class OpWrapper final {
   QnnOpCode op_code_{QnnOpCode::kUnknown};
 };
 
-bool IsElementwiseMultiply(const OpWrapper& op);
+bool IsElementWiseMultiply(const OpWrapper& op);
 
-bool IsElementwiseAdd(const OpWrapper& op);
+bool IsElementWiseAdd(const OpWrapper& op);
 
-bool IsElementwiseNot(const OpWrapper& op);
+bool IsElementWiseNot(const OpWrapper& op);
 
 }  // namespace qnn
 
