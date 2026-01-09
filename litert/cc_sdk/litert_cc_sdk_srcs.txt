@@ -1,5 +1,4 @@
 litert/c/internal/litert_logging.cc
-litert/cc/internal/litert_op_options.cc
 litert/cc/internal/litert_shared_library.cc
 litert/cc/internal/litert_tensor_buffer_utils.cc
 litert/cc/internal/scoped_file.cc
