@@ -193,11 +193,11 @@ TEST(MHASHATest, EmbeddingGemma) {
   for (size_t i = 0; i < num_head; ++i) {
     ASSERT_TRUE(
         op_wrappers[3 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementwiseMultiply(op_wrappers[3 + sha_size * i]));
+    ASSERT_TRUE(IsElementWiseMultiply(op_wrappers[3 + sha_size * i]));
     ASSERT_TRUE(op_wrappers[4 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
         op_wrappers[5 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementwiseAdd(op_wrappers[5 + sha_size * i]));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[5 + sha_size * i]));
     ASSERT_TRUE(op_wrappers[6 + sha_size * i].IsOpCode(QnnOpCode::kSoftmax));
     ASSERT_TRUE(op_wrappers[7 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
   }
