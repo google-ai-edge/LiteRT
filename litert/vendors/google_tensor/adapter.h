@@ -44,6 +44,9 @@ class Adapter {
                                  size_t** compiled_code_sizes,
                                  size_t* num_bytecodes) = 0;
 
+  // Returns true if the adapter is for AOT compilation, false for ODC.
+  virtual bool IsAot() const = 0;
+
   virtual void FreeCompiledCode(char** compiled_code_data,
                                 size_t* compiled_code_sizes,
                                 size_t num_bytecodes) = 0;

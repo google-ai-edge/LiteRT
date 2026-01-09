@@ -486,24 +486,29 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
 
-#ifdef LITERT_GOOGLE_TENSOR_AOT
-  // soc_model is required for AOT mode.
-  if (soc_model == nullptr) {
-    LITERT_LOG(LITERT_ERROR, "%s", "soc_model is nullptr in AOT mode");
-    return kLiteRtStatusErrorInvalidArgument;
+  // Loading Google Tensor Compiler Adapter
+  LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
+  LITERT_ASSIGN_OR_RETURN(auto adapter,
+                          litert::google_tensor::Adapter::Create(
+                              /*shared_library_dir=*/std::nullopt));
+  if (adapter->IsAot()) {
+    // soc_model is required for AOT mode.
+    if (soc_model == nullptr) {
+      LITERT_LOG(LITERT_ERROR, "%s", "soc_model is nullptr in AOT mode");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  } else {
+    // Allow unspecified soc model for ODC mode.
+    if (soc_model == nullptr) {
+      soc_model = "Unspecified";
+    }
+    // Currently ODC only supports Single subgraph models.
+    if (num_partitions > 1) {
+      LITERT_LOG(LITERT_ERROR, "%s",
+                 "ODC mode does not support multiple subgraphs");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
   }
-#else
-  // Allow unspecified soc model for ODC mode.
-  if (soc_model == nullptr) {
-    soc_model = "Unspecified";
-  }
-  // Currently ODC only supports Single subgraph models.
-  if (num_partitions > 1) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               "ODC mode does not support multiple subgraphs");
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-#endif  // LITERT_GOOGLE_TENSOR_AOT
 
   LITERT_LOG(LITERT_INFO,
              "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",
@@ -539,11 +544,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
                                buf.Size());
 
-  // Loading Google Tensor Compiler Adapter
-  LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
-  LITERT_ASSIGN_OR_RETURN(auto adapter,
-                          litert::google_tensor::Adapter::Create(
-                              /*shared_library_dir=*/std::nullopt));
   // Compile model.
   LITERT_LOG(LITERT_INFO, "%s", "Compiling model...");
 
@@ -581,15 +581,34 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   compiler_config->set_compilation_client(
       GoogleTensorCompilerConfig::COMPILATION_CLIENT_LITERT_PLUGIN);
 
-  // Set device type.
-  DeviceType device_type;
-  LiteRtStatus status = google_tensor::GetDeviceType(soc_model, &device_type);
-  if (status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Invalid soc model for device type: %s",
-               soc_model);
-    return kLiteRtStatusErrorInvalidArgument;
+  // In the ODC flow, LiteRT doesn't set a valid value to soc_model, relying on
+  // underlying layers to infer it. This allows the device type to be set as
+  // unspecified. On the other hand, the AOT flow requires soc_model to
+  // determine the device type for ahead-of-time compilation.
+  if (adapter->IsAot()) {
+    std::string valid_soc_model(soc_model);
+    if (valid_soc_model == "g5" || valid_soc_model == "g4" ||
+        valid_soc_model == "g3") {
+      LITERT_LOG(LITERT_WARNING,
+                 "g3/g4/g5 is deprecated. Please use Tensor_G3/G4/G5 instead.");
+      valid_soc_model =
+          absl::StrCat("Tensor_", absl::AsciiStrToUpper(valid_soc_model));
+    }
+    // Set device type.
+    DeviceType device_type;
+    LiteRtStatus status =
+        google_tensor::GetDeviceType(valid_soc_model, &device_type);
+    if (status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Invalid soc model for device type: %s",
+                 valid_soc_model.c_str());
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    compiler_config->set_device(device_type);
+  } else {
+    compiler_config->set_device(
+        ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+            DEVICE_TYPE_UNSPECIFIED);
   }
-  compiler_config->set_device(device_type);
 
   // serialize to string
   std::string google_tensor_options_str;
@@ -597,15 +616,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_ERROR, "%s", "Failed to serialize opaque options proto.");
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  std::string valid_soc_model(soc_model);
 
-  if (strcmp(soc_model, "g5") == 0 || strcmp(soc_model, "g4") == 0 ||
-      strcmp(soc_model, "g3") == 0) {
-    LITERT_LOG(LITERT_WARNING,
-               "g3/g4/g5 is deprecated. Please use Tensor_G3/G4/G5 instead.");
-    valid_soc_model =
-        absl::StrCat("Tensor_", absl::AsciiStrToUpper(valid_soc_model));
-  }
   // TODO(b/398984678): add support for multiple bytecodes
   absl::string_view model_buffer_view(buffer_str);
 

@@ -44,6 +44,8 @@ class AdapterOdc : public Adapter {
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;
 
+  bool IsAot() const override { return false; }
+
   void FreeCompiledCode(char** compiled_code_data, size_t* compiled_code_sizes,
                         size_t num_bytecodes) override;
 
