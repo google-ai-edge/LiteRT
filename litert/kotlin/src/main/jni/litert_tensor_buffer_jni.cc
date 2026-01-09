@@ -26,24 +26,11 @@ namespace {
 using ::litert::TensorBuffer;
 using ::litert::TensorBufferScopedLock;
 using ::litert::jni::ThrowLiteRtException;
-}  // namespace
 
-#ifdef __cplusplus
-extern "C" {
-#endif  // __cplusplus
-
-// TensorBuffer
-JNIEXPORT void JNICALL
-Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt(JNIEnv* env,
-                                                           jclass clazz,
-                                                           jlong handle,
-                                                           jintArray input) {
-  AUTO_CLEANUP_JNI_INT_ARRAY(env, input);
-  auto num_elements = env->GetArrayLength(input);
-  auto input_span = absl::MakeConstSpan(input_array, num_elements);
-
+template <typename T>
+void WriteImp(JNIEnv* env, jlong handle, absl::Span<const T> input_span) {
   auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto write_result = tensor_buffer->Write<int>(input_span);
+  auto write_result = tensor_buffer->Write<T>(input_span);
   if (!write_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
                write_result.Error().Message().c_str());
@@ -52,82 +39,10 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt(JNIEnv* env,
   }
 }
 
-JNIEXPORT void JNICALL
-Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteFloat(
-    JNIEnv* env, jclass clazz, jlong handle, jfloatArray input) {
-  AUTO_CLEANUP_JNI_FLOAT_ARRAY(env, input);
-  auto num_elements = env->GetArrayLength(input);
-  auto input_span = absl::MakeConstSpan(input_array, num_elements);
-
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto write_result = tensor_buffer->Write<jfloat>(input_span);
-  if (!write_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
-               write_result.Error().Message().c_str());
-    ThrowLiteRtException(env, write_result.Error().Status(),
-                         write_result.Error().Message());
-  }
-}
-
-JNIEXPORT void JNICALL
-Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt8(JNIEnv* env,
-                                                            jclass clazz,
-                                                            jlong handle,
-                                                            jbyteArray input) {
-  AUTO_CLEANUP_JNI_BYTE_ARRAY(env, input);
-  auto num_elements = env->GetArrayLength(input);
-  auto input_span = absl::MakeConstSpan(input_array, num_elements);
-
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto write_result = tensor_buffer->Write<jbyte>(input_span);
-  if (!write_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
-               write_result.Error().Message().c_str());
-    ThrowLiteRtException(env, write_result.Error().Status(),
-                         write_result.Error().Message());
-  }
-}
-
-JNIEXPORT void JNICALL
-Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteBoolean(
-    JNIEnv* env, jclass clazz, jlong handle, jbooleanArray input) {
-  AUTO_CLEANUP_JNI_BOOLEAN_ARRAY(env, input);
-  auto num_elements = env->GetArrayLength(input);
-  auto input_span = absl::MakeConstSpan(input_array, num_elements);
-
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto write_result = tensor_buffer->Write<jboolean>(input_span);
-  if (!write_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
-               write_result.Error().Message().c_str());
-    ThrowLiteRtException(env, write_result.Error().Status(),
-                         write_result.Error().Message());
-  }
-}
-
-JNIEXPORT void JNICALL
-Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteLong(JNIEnv* env,
-                                                            jclass clazz,
-                                                            jlong handle,
-                                                            jlongArray input) {
-  AUTO_CLEANUP_JNI_LONG_ARRAY(env, input);
-  auto num_elements = env->GetArrayLength(input);
-  auto input_span = absl::MakeConstSpan(input_array, num_elements);
-
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto write_result = tensor_buffer->Write<jlong>(input_span);
-  if (!write_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
-               write_result.Error().Message().c_str());
-    ThrowLiteRtException(env, write_result.Error().Status(),
-                         write_result.Error().Message());
-  }
-}
-
-JNIEXPORT jintArray JNICALL
-Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
-                                                          jclass clazz,
-                                                          jlong handle) {
+template <typename T, typename JArray>
+JArray ReadImp(JNIEnv* env, jlong handle, JArray (JNIEnv::*new_array)(jsize),
+               void (JNIEnv::*set_array_region)(JArray, jsize, jsize,
+                                                const T*)) {
   auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
   auto tensor_type = tensor_buffer->TensorType();
   if (!tensor_type) {
@@ -144,7 +59,7 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                          "Failed to get tensor num elements.");
     return nullptr;
   }
-  auto lock_and_addr = TensorBufferScopedLock::Create<const int>(
+  auto lock_and_addr = TensorBufferScopedLock::Create<const T>(
       *tensor_buffer, TensorBuffer::LockMode::kRead);
   if (!lock_and_addr) {
     LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
@@ -154,158 +69,108 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
     return nullptr;
   }
 
-  jintArray result = env->NewIntArray(*num_elements);
+  JArray result = (env->*new_array)(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
-  env->SetIntArrayRegion(result, 0, *num_elements, lock_and_addr->second);
+  (env->*set_array_region)(result, 0, *num_elements, lock_and_addr->second);
   return result;
+}
+
+}  // namespace
+
+#ifdef __cplusplus
+extern "C" {
+#endif  // __cplusplus
+
+// TensorBuffer
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt(JNIEnv* env,
+                                                           jclass clazz,
+                                                           jlong handle,
+                                                           jintArray input) {
+  AUTO_CLEANUP_JNI_INT_ARRAY(env, input);
+  auto num_elements = env->GetArrayLength(input);
+  auto input_span = absl::MakeConstSpan(input_array, num_elements);
+  WriteImp<int>(env, handle, input_span);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteFloat(
+    JNIEnv* env, jclass clazz, jlong handle, jfloatArray input) {
+  AUTO_CLEANUP_JNI_FLOAT_ARRAY(env, input);
+  auto num_elements = env->GetArrayLength(input);
+  auto input_span = absl::MakeConstSpan(input_array, num_elements);
+  WriteImp<jfloat>(env, handle, input_span);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt8(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jlong handle,
+                                                            jbyteArray input) {
+  AUTO_CLEANUP_JNI_BYTE_ARRAY(env, input);
+  auto num_elements = env->GetArrayLength(input);
+  auto input_span = absl::MakeConstSpan(input_array, num_elements);
+  WriteImp<jbyte>(env, handle, input_span);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteBoolean(
+    JNIEnv* env, jclass clazz, jlong handle, jbooleanArray input) {
+  AUTO_CLEANUP_JNI_BOOLEAN_ARRAY(env, input);
+  auto num_elements = env->GetArrayLength(input);
+  auto input_span = absl::MakeConstSpan(input_array, num_elements);
+  WriteImp<jboolean>(env, handle, input_span);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteLong(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jlong handle,
+                                                            jlongArray input) {
+  AUTO_CLEANUP_JNI_LONG_ARRAY(env, input);
+  auto num_elements = env->GetArrayLength(input);
+  auto input_span = absl::MakeConstSpan(input_array, num_elements);
+  WriteImp<jlong>(env, handle, input_span);
+}
+
+JNIEXPORT jintArray JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
+                                                          jclass clazz,
+                                                          jlong handle) {
+  return ReadImp<jint, jintArray>(env, handle, &JNIEnv::NewIntArray,
+                                  &JNIEnv::SetIntArrayRegion);
 }
 
 JNIEXPORT jfloatArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadFloat(JNIEnv* env,
                                                             jclass clazz,
                                                             jlong handle) {
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto tensor_type = tensor_buffer->TensorType();
-  if (!tensor_type) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
-               tensor_type.Error().Message().c_str());
-    ThrowLiteRtException(env, tensor_type.Error().Status(),
-                         "Failed to get tensor type.");
-    return nullptr;
-  }
-  auto num_elements = tensor_type->Layout().NumElements();
-  if (!num_elements) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor num elements.");
-    ThrowLiteRtException(env, kLiteRtStatusErrorUnsupported,
-                         "Failed to get tensor num elements.");
-    return nullptr;
-  }
-
-  auto lock_and_addr = TensorBufferScopedLock::Create<const float>(
-      *tensor_buffer, TensorBuffer::LockMode::kRead);
-  if (!lock_and_addr) {
-    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
-               lock_and_addr.Error().Message().c_str());
-    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
-                         lock_and_addr.Error().Message());
-    return nullptr;
-  }
-
-  jfloatArray result = env->NewFloatArray(*num_elements);
-  // Copy the data from the locked tensor buffer to the JVM array.
-  env->SetFloatArrayRegion(result, 0, *num_elements, lock_and_addr->second);
-  return result;
+  return ReadImp<jfloat, jfloatArray>(env, handle, &JNIEnv::NewFloatArray,
+                                      &JNIEnv::SetFloatArrayRegion);
 }
 
 JNIEXPORT jbyteArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt8(JNIEnv* env,
                                                            jclass clazz,
                                                            jlong handle) {
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto tensor_type = tensor_buffer->TensorType();
-  if (!tensor_type) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
-               tensor_type.Error().Message().c_str());
-    ThrowLiteRtException(env, tensor_type.Error().Status(),
-                         "Failed to get tensor type.");
-    return nullptr;
-  }
-  auto num_elements = tensor_type->Layout().NumElements();
-  if (!num_elements) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor num elements.");
-    ThrowLiteRtException(env, kLiteRtStatusErrorUnsupported,
-                         "Failed to get tensor num elements.");
-    return nullptr;
-  }
-
-  auto lock_and_addr = TensorBufferScopedLock::Create<const jbyte>(
-      *tensor_buffer, TensorBuffer::LockMode::kRead);
-  if (!lock_and_addr) {
-    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
-               lock_and_addr.Error().Message().c_str());
-    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
-                         lock_and_addr.Error().Message());
-    return nullptr;
-  }
-
-  jbyteArray result = env->NewByteArray(*num_elements);
-  // Copy the data from the locked tensor buffer to the JVM array.
-  env->SetByteArrayRegion(result, 0, *num_elements, lock_and_addr->second);
-  return result;
+  return ReadImp<jbyte, jbyteArray>(env, handle, &JNIEnv::NewByteArray,
+                                    &JNIEnv::SetByteArrayRegion);
 }
 
 JNIEXPORT jbooleanArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadBoolean(JNIEnv* env,
                                                               jclass clazz,
                                                               jlong handle) {
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto tensor_type = tensor_buffer->TensorType();
-  if (!tensor_type) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
-               tensor_type.Error().Message().c_str());
-    ThrowLiteRtException(env, tensor_type.Error().Status(),
-                         "Failed to get tensor type.");
-    return nullptr;
-  }
-  auto num_elements = tensor_type->Layout().NumElements();
-  if (!num_elements) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor num elements.");
-    ThrowLiteRtException(env, kLiteRtStatusErrorUnsupported,
-                         "Failed to get tensor num elements.");
-    return nullptr;
-  }
-
-  auto lock_and_addr = TensorBufferScopedLock::Create<const jboolean>(
-      *tensor_buffer, TensorBuffer::LockMode::kRead);
-  if (!lock_and_addr) {
-    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
-               lock_and_addr.Error().Message().c_str());
-    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
-                         lock_and_addr.Error().Message());
-    return nullptr;
-  }
-
-  jbooleanArray result = env->NewBooleanArray(*num_elements);
-  // Copy the data from the locked tensor buffer to the JVM array.
-  env->SetBooleanArrayRegion(result, 0, *num_elements, lock_and_addr->second);
-  return result;
+  return ReadImp<jboolean, jbooleanArray>(env, handle, &JNIEnv::NewBooleanArray,
+                                          &JNIEnv::SetBooleanArrayRegion);
 }
 
 JNIEXPORT jlongArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadLong(JNIEnv* env,
                                                            jclass clazz,
                                                            jlong handle) {
-  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
-  auto tensor_type = tensor_buffer->TensorType();
-  if (!tensor_type) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
-               tensor_type.Error().Message().c_str());
-    ThrowLiteRtException(env, tensor_type.Error().Status(),
-                         "Failed to get tensor type.");
-    return nullptr;
-  }
-  auto num_elements = tensor_type->Layout().NumElements();
-  if (!num_elements) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor num elements.");
-    ThrowLiteRtException(env, kLiteRtStatusErrorUnsupported,
-                         "Failed to get tensor num elements.");
-    return nullptr;
-  }
-
-  auto lock_and_addr = TensorBufferScopedLock::Create<const jlong>(
-      *tensor_buffer, TensorBuffer::LockMode::kRead);
-  if (!lock_and_addr) {
-    LITERT_LOG(LITERT_ERROR, "Unable to lock the tensor buffer: %s",
-               lock_and_addr.Error().Message().c_str());
-    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
-                         lock_and_addr.Error().Message());
-    return nullptr;
-  }
-
-  jlongArray result = env->NewLongArray(*num_elements);
-  // Copy the data from the locked tensor buffer to the JVM array.
-  env->SetLongArrayRegion(result, 0, *num_elements, lock_and_addr->second);
-  return result;
+  return ReadImp<jlong, jlongArray>(env, handle, &JNIEnv::NewLongArray,
+                                    &JNIEnv::SetLongArrayRegion);
 }
 
 JNIEXPORT void JNICALL
