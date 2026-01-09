@@ -57,7 +57,7 @@ static const ov::element::Type MapLiteTypeToOV(
       ov_type = ov::element::bf16;
       break;
     default:
-      ov_type = ov::element::undefined;
+      ov_type = ov::element::dynamic;
   }
   return ov_type;
 }
