@@ -60,6 +60,7 @@ litert_dynamic_lib(
     hdrs = [
         "dispatch_api.h",
         "dispatch_api_config.h",
+        "dispatch_api_macros.h",
         "litert_dispatch_device_context.h",
         "litert_dispatch_graph.h",
         "litert_dispatch_invocation_context.h",

@@ -30,6 +30,7 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
@@ -44,25 +45,34 @@ namespace litert::google_tensor {
 
 LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
-  if (ThrStatus status = thrInitialize(); status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_INFO, "thr_initialize failed: %d", status);
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(thrInitialize(), "Failed to initialize SB");
 
   return InitializeDispatchApiConfig(environment_options, options);
 }
 
+LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
+                                       LiteRtEnvironmentOptions env,
+                                       LiteRtOptions options) {
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus GetVendorId(const char** vendor_id) {
+  GT_LOG_RETURN_IF_NULL(vendor_id);
+
   *vendor_id = "Google";
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus GetBuildId(const char** build_id) {
+  GT_LOG_RETURN_IF_NULL(build_id);
+
   *build_id = GetTheBuildId();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus GetCapabilities(int* capabilities) {
+  GT_LOG_RETURN_IF_NULL(capabilities);
+
   *capabilities = kLiteRtDispatchCapabilitiesBasic |
                   kLiteRtDispatchCapabilitiesAsync |
                   kLiteRtDispatchCapabilitiesGraph;
@@ -70,14 +80,9 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
-  if (auto result = LiteRtDispatchDeviceContextT::Create(); result) {
-    *device_context = result->release();
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(device_context);
+
+  return LiteRtDispatchDeviceContextT::Create(*device_context);
 }
 
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
@@ -115,25 +120,17 @@ LiteRtStatus GetOutputRequirements(
 LiteRtStatus RegisterTensorBuffer(
     LiteRtDispatchDeviceContext device_context, LiteRtTensorBuffer buffer,
     LiteRtTensorBufferHandle* tensor_buffer_handle) {
-  if (auto status = device_context->RegisterTensorBuffer(buffer); status) {
-    *tensor_buffer_handle = *status;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to register buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(device_context);
+  GT_LOG_RETURN_IF_NULL(tensor_buffer_handle);
+
+  return device_context->RegisterTensorBuffer(buffer, *tensor_buffer_handle);
 }
 
 LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
                                     LiteRtTensorBufferHandle handle) {
-  if (auto status = device_context->UnregisterTensorBuffer(handle); status) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to unregister buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(device_context);
+
+  return device_context->UnregisterTensorBuffer(handle);
 }
 
 LiteRtStatus InvocationContextCreate(
@@ -321,24 +318,16 @@ LiteRtStatus DestroyMetrics(LiteRtDispatchMetrics metrics) {
 
 LiteRtStatus GraphCreate(LiteRtDispatchDeviceContext device_context,
                          LiteRtDispatchGraph* graph) {
-  if (auto result = device_context->CreateGraph(); result) {
-    *graph = *result;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create graph: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(device_context);
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return device_context->CreateGraph(*graph);
 }
 
 LiteRtStatus GraphDestroy(LiteRtDispatchGraph graph) {
-  if (auto result = graph->device_context()->DestroyGraph(graph); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to delete graph: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return graph->device_context()->DestroyGraph(graph);
 }
 
 LiteRtStatus AddNode(LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
@@ -414,26 +403,18 @@ LiteRtStatus LoadExecutable(LiteRtDispatchDeviceContext device_context,
                             LiteRtDispatchExecutableType type,
                             const LiteRtMemBuffer* bytecode_buffer,
                             LiteRtDispatchExecutableHandle* exec_handle) {
-  if (auto result = device_context->LoadExecutable(type, bytecode_buffer);
-      result) {
-    *exec_handle = *result;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to load executable: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(device_context);
+  GT_LOG_RETURN_IF_NULL(bytecode_buffer);
+  GT_LOG_RETURN_IF_NULL(exec_handle);
+
+  return device_context->LoadExecutable(type, *bytecode_buffer, *exec_handle);
 }
 
 LiteRtStatus UnloadExecutable(LiteRtDispatchDeviceContext device_context,
                               LiteRtDispatchExecutableHandle exec_handle) {
-  if (auto result = device_context->UnloadExecutable(exec_handle); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to unload executable: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(device_context);
+
+  return device_context->UnloadExecutable(exec_handle);
 }
 
 LiteRtStatus AssignNodeFunction(LiteRtDispatchGraph graph,
@@ -514,11 +495,6 @@ LiteRtStatus InvocationContextGetGraph(
   *graph = invocation_context->graph();
   return kLiteRtStatusOk;
 }
-LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
-                                       LiteRtEnvironmentOptions env,
-                                       LiteRtOptions options) {
-  return kLiteRtStatusOk;
-}
 
 }  // namespace litert::google_tensor
 
@@ -592,6 +568,8 @@ LiteRtDispatchApi TheApi = {
 }  // namespace
 
 LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
+  GT_LOG_RETURN_IF_NULL(api);
+
   *api = TheApi;
   return kLiteRtStatusOk;
 }

@@ -23,6 +23,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
@@ -54,10 +55,8 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs) {
-  auto graph = device_context->CreateGraph();
-  if (!graph) {
-    return graph.Error();
-  }
+  LiteRtDispatchGraph graph;
+  LITERT_RETURN_IF_ERROR(device_context->CreateGraph(graph));
 
   LiteRtDispatchNodeId node_id = 0;
   LiteRtDispatchNodeType node_type;
@@ -74,18 +73,17 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
                    "Unexpected executable type");
   }
 
-  if (auto status = (*graph)->AddNode(node_id, node_type); !status) {
+  if (auto status = graph->AddNode(node_id, node_type); !status) {
     return status.Error();
   }
 
-  auto exec_handle =
-      device_context->LoadExecutable(exec_type, exec_bytecode_buffer);
-  if (!exec_handle) {
-    return exec_handle.Error();
-  }
+  LiteRtDispatchExecutableHandle exec_handle;
+  LITERT_RETURN_IF_ERROR(
+      device_context->LoadExecutable(exec_type, *exec_bytecode_buffer,
+                                     exec_handle));
 
   if (auto status =
-          (*graph)->AssignNodeFunction(node_id, *exec_handle, function_name);
+          graph->AssignNodeFunction(node_id, exec_handle, function_name);
       !status) {
     return status.Error();
   }
@@ -94,14 +92,14 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
 
   for (auto input_index = 0; input_index < num_inputs; ++input_index) {
     LiteRtDispatchEdgeId edge_id = next_edge_id++;
-    if (auto status = (*graph)->AddEdge(edge_id); !status) {
+    if (auto status = graph->AddEdge(edge_id); !status) {
       return status.Error();
     }
-    if (auto status = (*graph)->ConnectGraphInput(input_index, edge_id);
+    if (auto status = graph->ConnectGraphInput(input_index, edge_id);
         !status) {
       return status.Error();
     }
-    if (auto status = (*graph)->ConnectNodeInput(node_id, input_index, edge_id);
+    if (auto status = graph->ConnectNodeInput(node_id, input_index, edge_id);
         !status) {
       return status.Error();
     }
@@ -109,26 +107,26 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
 
   for (auto output_index = 0; output_index < num_outputs; ++output_index) {
     LiteRtDispatchEdgeId edge_id = next_edge_id++;
-    if (auto status = (*graph)->AddEdge(edge_id); !status) {
+    if (auto status = graph->AddEdge(edge_id); !status) {
       return status.Error();
     }
     if (auto status =
-            (*graph)->ConnectNodeOutput(node_id, output_index, edge_id);
+            graph->ConnectNodeOutput(node_id, output_index, edge_id);
         !status) {
       return status.Error();
     }
-    if (auto status = (*graph)->ConnectGraphOutput(output_index, edge_id);
+    if (auto status = graph->ConnectGraphOutput(output_index, edge_id);
         !status) {
       return status.Error();
     }
   }
 
-  auto invocation_context = CreateFromGraph(device_context, *graph);
+  auto invocation_context = CreateFromGraph(device_context, graph);
   if (!invocation_context) {
     return invocation_context.Error();
   }
 
-  (*invocation_context)->AttachExecutable(*exec_handle);
+  (*invocation_context)->AttachExecutable(exec_handle);
 
   return invocation_context;
 }

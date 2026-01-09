@@ -18,47 +18,42 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
-namespace litert {
-class DarwinnRuntimeOptions;
-}  // namespace litert
-
 class LiteRtDispatchDeviceContextT {
  public:
-  using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
+  static LiteRtStatus Create(LiteRtDispatchDeviceContext& device_context);
 
   ~LiteRtDispatchDeviceContextT();
 
-  static litert::Expected<Ptr> Create();
+  LiteRtStatus RegisterTensorBuffer(
+      LiteRtTensorBuffer tensor_buffer,
+      LiteRtTensorBufferHandle& tensor_buffer_handle);
 
-  litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
-      LiteRtTensorBuffer tensor_buffer);
-
-  litert::Expected<void> UnregisterTensorBuffer(
+  LiteRtStatus UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
-  litert::Expected<LiteRtDispatchGraph> CreateGraph();
-  litert::Expected<void> DestroyGraph(LiteRtDispatchGraph graph);
+  LiteRtStatus CreateGraph(LiteRtDispatchGraph& graph);
 
-  litert::Expected<LiteRtDispatchExecutableHandle> LoadExecutable(
-      LiteRtDispatchExecutableType type,
-      const LiteRtMemBuffer* bytecode_buffer);
+  LiteRtStatus DestroyGraph(LiteRtDispatchGraph graph);
 
-  litert::Expected<void> UnloadExecutable(
-      LiteRtDispatchExecutableHandle exec_handle);
+  LiteRtStatus LoadExecutable(LiteRtDispatchExecutableType type,
+                              const LiteRtMemBuffer& bytecode_buffer,
+                              LiteRtDispatchExecutableHandle& exec_handle);
 
-  ThrContext* thr_context() { return thr_context_; }
+  LiteRtStatus UnloadExecutable(LiteRtDispatchExecutableHandle exec_handle);
+
+  ThrContext* thr_context() { return thr_context_.get(); }
 
   void add_graph(ThrGraph* graph) { thr_graphs_.insert(graph); }
 
  private:
-  // Struct to store DarwiNN runtime options for later application.
+  // Struct to store DarwiNN options for later application.
   struct DarwinnOptionsData {
     std::optional<uint32_t> inference_power_state;
     std::optional<uint32_t> inference_memory_power_state;
@@ -67,10 +62,19 @@ class LiteRtDispatchDeviceContextT {
     bool prefer_coherent = false;
   };
 
-  LiteRtDispatchDeviceContextT() = default;
+  static void ThrContextDeleter(ThrContext* thr_context);
 
+  using ThrContextPtr = std::unique_ptr<ThrContext,
+                                        decltype(&ThrContextDeleter)>;
+
+  LiteRtDispatchDeviceContextT(
+      ThrContextPtr thr_context,
+      std::optional<DarwinnOptionsData> darwinn_options)
+      : thr_context_(std::move(thr_context)),
+        darwinn_options_(std::move(darwinn_options)) {}
+
+  ThrContextPtr thr_context_;
   std::optional<DarwinnOptionsData> darwinn_options_;
-  ThrContext* thr_context_ = nullptr;
   absl::flat_hash_set<ThrGraph*> thr_graphs_;
 };
 

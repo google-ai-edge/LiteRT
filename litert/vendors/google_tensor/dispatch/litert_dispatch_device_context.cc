@@ -14,9 +14,11 @@
 
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
+#include <inttypes.h>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -30,142 +32,125 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/sb_dispatch_annotations.h"
 
-using litert::Error;
-using litert::Expected;
+namespace gt = litert::google_tensor;
+
+void LiteRtDispatchDeviceContextT::ThrContextDeleter(ThrContext* thr_context) {
+  GT_LOG_IF_SB_ERROR(thrContextDelete(thr_context),
+                     "Failed to delete SB context");
+}
+
+LiteRtStatus LiteRtDispatchDeviceContextT::Create(
+    LiteRtDispatchDeviceContext& device_context) {
+  ThrContext* thr_context_raw = thrContextCreate();
+  if (thr_context_raw == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create SB context");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  ThrContextPtr thr_context(thr_context_raw, ThrContextDeleter);
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrVendorSetSystemAttributeStr(
+          thr_context.get(), "edgetpu_use_tpu_tachyon", "1"),
+      "Failed to enable Tachyon SB");
+
+  // If provided, store DarwiNN options to be applied to graphs.
+  std::optional<DarwinnOptionsData> options_data;
+
+  if (litert::DarwinnRuntimeOptions* darwinn_options =
+          gt::GetTheDarwinnOptions(); darwinn_options != nullptr) {
+    options_data.emplace();
+
+    if (litert::Expected<uint32_t> inference_power_state =
+            darwinn_options->GetInferencePowerState();
+        inference_power_state.HasValue()) {
+      options_data->inference_power_state = *inference_power_state;
+    }
+
+    if (litert::Expected<uint32_t> mem_power_state =
+            darwinn_options->GetInferenceMemoryPowerState();
+        mem_power_state.HasValue()) {
+      options_data->inference_memory_power_state = *mem_power_state;
+    }
+
+    if (litert::Expected<int8_t> priority =
+            darwinn_options->GetInferencePriority(); priority.HasValue()) {
+      options_data->inference_priority = *priority;
+    }
+
+    if (litert::Expected<bool> atomic = darwinn_options->GetAtomicInference();
+        atomic.HasValue()) {
+      options_data->atomic_inference = *atomic;
+    }
+
+    if (litert::Expected<bool> prefer_coherent =
+            darwinn_options->GetPreferCoherent(); prefer_coherent.HasValue()) {
+      options_data->prefer_coherent = *prefer_coherent;
+    }
+
+    LITERT_LOG(LITERT_INFO,
+               "DarwiNN runtime options will be applied to graphs");
+  }
+
+  device_context =
+      new LiteRtDispatchDeviceContextT(std::move(thr_context),
+                                       std::move(options_data));
+  return kLiteRtStatusOk;
+}
 
 LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
-  for (auto* thr_graph : thr_graphs_) {
-    thrGraphDelete(thr_graph);
-  }
-
-  if (thr_context_) {
-    thrContextDelete(thr_context_);
+  for (ThrGraph* graph : thr_graphs_) {
+    GT_LOG_IF_SB_ERROR(thrGraphDelete(graph), "Failed to delete SB graph");
   }
 }
 
-Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create() {
-  Ptr device_context(new LiteRtDispatchDeviceContextT());
-
-  device_context->thr_context_ = thrContextCreate();
-
-  if (auto status = thrVendorSetSystemAttributeStr(
-          device_context->thr_context_, "edgetpu_use_tpu_tachyon", "1");
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "Failed to enable Tachyon");
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to enable Tachyon");
-  }
-
-  // If provided, store DarwiNN options to be applied to graphs later.
-  if (litert::DarwinnRuntimeOptions* darwinn_options =
-          litert::google_tensor::GetTheDarwinnOptions();
-      darwinn_options != nullptr) {
-    DarwinnOptionsData options_data;
-
-    // Extract inference power state if available
-    if (auto power_state = darwinn_options->GetInferencePowerState();
-        power_state) {
-      options_data.inference_power_state = *power_state;
-    }
-
-    // Extract inference memory power state if available
-    if (auto mem_power_state = darwinn_options->GetInferenceMemoryPowerState();
-        mem_power_state) {
-      options_data.inference_memory_power_state = *mem_power_state;
-    }
-
-    // Extract inference priority if available
-    if (auto priority = darwinn_options->GetInferencePriority(); priority) {
-      options_data.inference_priority = *priority;
-    }
-
-    // Extract atomic inference if available
-    if (auto atomic = darwinn_options->GetAtomicInference(); atomic) {
-      options_data.atomic_inference = *atomic;
-    }
-
-    // Extract prefer coherent if available
-    if (auto prefer_coherent = darwinn_options->GetPreferCoherent();
-        prefer_coherent) {
-      options_data.prefer_coherent = *prefer_coherent;
-    }
-
-    device_context->darwinn_options_ = std::move(options_data);
-    LITERT_LOG(LITERT_INFO,
-               "Darwinn runtime options will be applied to graphs");
-  }
-
-  return device_context;
-}
-
-Expected<LiteRtTensorBufferHandle>
-LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
-    LiteRtTensorBuffer tensor_buffer) {
+LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
+    LiteRtTensorBuffer tensor_buffer,
+    LiteRtTensorBufferHandle& tensor_buffer_handle) {
   LiteRtRankedTensorType tensor_type;
-  if (auto status =
-          LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type);
-      status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get tensor buffer tensor type");
-  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type));
   if (tensor_type.layout.has_strides) {
-    return Error(kLiteRtStatusErrorUnsupported,
-                 "Tensor strides are not supported");
+    LITERT_LOG(LITERT_ERROR, "Tensor strides are not supported");
+    return kLiteRtStatusErrorUnsupported;
   }
 
   LiteRtTensorBufferType tensor_buffer_type;
-  if (auto status =
-          LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type);
-      status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get tensor buffer type");
-  }
-  if (!litert::google_tensor::IsTensorBufferTypeSupported(tensor_buffer_type)) {
-    return Error(kLiteRtStatusErrorUnsupported,
-                 "Unsupported tensor buffer type");
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type));
+  if (!gt::IsTensorBufferTypeSupported(tensor_buffer_type)) {
+    LITERT_LOG(LITERT_ERROR, "Unsupported tensor buffer type %d",
+               tensor_buffer_type);
+    return kLiteRtStatusErrorUnsupported;
   }
 
   size_t tensor_buffer_size;
-  if (auto status =
-          LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size);
-      status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get tensor buffer size");
-  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size));
 
   size_t tensor_buffer_offset;
-  if (auto status =
-          LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset);
-      status != kLiteRtStatusOk) {
-    if (status == kLiteRtStatusErrorNotFound) {
-      tensor_buffer_offset = 0;
-    } else {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "Failed to get tensor buffer offset");
-    }
-  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset));
 
-  ThrBufferHandle thr_buffer_handle;
   switch (tensor_buffer_type) {
 #if LITERT_HAS_AHWB_SUPPORT
     case kLiteRtTensorBufferTypeAhwb: {
       AHardwareBuffer* ahwb;
-      if (auto status = LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb);
-          status != kLiteRtStatusOk) {
-        return Error(status, "Failed to get ahwb");
-      }
+      LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb));
 
-      if (auto status = thrRegisterBufferWithOffset(
-              thr_context_, kThrBufferTypeAHardwareBuffer, ahwb,
-              tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
-          status != kThrStatusSuccess) {
-        return Error(kLiteRtStatusErrorRuntimeFailure,
-                     "Failed to register ahwb");
-      }
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrRegisterBufferWithOffset(
+              thr_context_.get(), kThrBufferTypeAHardwareBuffer, ahwb,
+              tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
+          "Failed to register AHardwareBuffer with SB");
       break;
     }
 #endif
@@ -173,79 +158,63 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     case kLiteRtTensorBufferTypeDmaBuf: {
       void* dmabuf_buffer_addr;
       int dmabuf_buffer_fd;
-      if (auto status =
-              LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer,
-                                  &dmabuf_buffer_addr, &dmabuf_buffer_fd);
-          status != kLiteRtStatusOk) {
-        return Error(status, "Failed to get dma-buf buffer");
-      }
+      LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferDmaBufBuffer(
+          tensor_buffer, &dmabuf_buffer_addr, &dmabuf_buffer_fd));
 
-      if (auto status = thrRegisterBufferDmaBufWithOffset(
-              thr_context_, dmabuf_buffer_fd,
-              tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
-          status != kThrStatusSuccess) {
-        return Error(kLiteRtStatusErrorRuntimeFailure,
-                     "Failed to register dma-buf buffer");
-      }
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrRegisterBufferDmaBufWithOffset(
+              thr_context_.get(), dmabuf_buffer_fd, tensor_buffer_offset,
+              tensor_buffer_size, &tensor_buffer_handle),
+          "Failed to register dma-buf with SB");
       break;
     }
 #endif
     case kLiteRtTensorBufferTypeHostMemory: {
       void* host_memory_addr;
-      if (auto status = LiteRtGetTensorBufferHostMemory(tensor_buffer,
-                                                        &host_memory_addr);
-          status != kLiteRtStatusOk) {
-        return Error(status, "Failed to get host memory");
-      }
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetTensorBufferHostMemory(tensor_buffer, &host_memory_addr));
 
-      if (auto status = thrRegisterBufferWithOffset(
-              thr_context_, kThrBufferTypeHostMemory, host_memory_addr,
-              tensor_buffer_offset, tensor_buffer_size, &thr_buffer_handle);
-          status != kThrStatusSuccess) {
-        return Error(kLiteRtStatusErrorRuntimeFailure,
-                     "Failed to register host memory");
-      }
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrRegisterBufferWithOffset(
+              thr_context_.get(), kThrBufferTypeHostMemory, host_memory_addr,
+              tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
+          "Failed to register host memory with SB");
       break;
     }
     default:
-      LITERT_FATAL("Unsupported tensor buffer type '%d'", tensor_buffer_type);
+      LITERT_FATAL("Unsupported tensor buffer type %d", tensor_buffer_type);
   }
 
-  return thr_buffer_handle;
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
+LiteRtStatus LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
     LiteRtTensorBufferHandle tensor_buffer_handle) {
-  ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thrUnregisterBuffer(thr_context_, thr_buffer_handle);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_unregister_buffer failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_unregister_buffer failed");
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrUnregisterBuffer(thr_context_.get(), tensor_buffer_handle),
+      "Failed to unregister buffer %" PRIu64 " from SB", tensor_buffer_handle);
 
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<LiteRtDispatchGraph>
-LiteRtDispatchDeviceContextT::CreateGraph() {
-  ThrGraph* thr_graph = thrGraphCreate(thr_context_);
-  if (!thr_graph) {
-    return Error(kLiteRtStatusErrorRuntimeFailure, "thr_graph_create failed");
+LiteRtStatus LiteRtDispatchDeviceContextT::CreateGraph(
+    LiteRtDispatchGraph& graph) {
+  ThrGraph* thr_graph = thrGraphCreate(thr_context_.get());
+  if (thr_graph == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create SB graph");
+    return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  auto* graph = new LiteRtDispatchGraphT(thr_graph, this);
+  auto dispatch_graph = std::make_unique<LiteRtDispatchGraphT>(thr_graph, this);
 
-  // Apply Darwinn options as graph annotations
   if (darwinn_options_.has_value()) {
-    const auto& options = darwinn_options_.value();
+    if (std::optional<uint32_t> device_power_state =
+            darwinn_options_->inference_power_state;
+        device_power_state.has_value()) {
+      auto status = dispatch_graph->AnnotateGraph(
+          gt::DispatchDirectiveAnnotations::kEdgetpuDevicePowerState.data(),
+          std::to_string(*device_power_state).c_str());
 
-    // Apply inference power state annotation
-    if (options.inference_power_state.has_value()) {
-      auto status = graph->AnnotateGraph(
-          litert::google_tensor::DispatchDirectiveAnnotations::
-              kEdgetpuDevicePowerState.data(),
-          std::to_string(options.inference_power_state.value()).c_str());
       if (!status) {
         LITERT_LOG(LITERT_WARNING,
                    "Failed to apply inference_power_state annotation: %s",
@@ -253,12 +222,13 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
       }
     }
 
-    // Apply inference memory power state annotation
-    if (options.inference_memory_power_state.has_value()) {
-      auto status = graph->AnnotateGraph(
-          litert::google_tensor::DispatchDirectiveAnnotations::
-              kEdgetpuMemoryPowerState.data(),
-          std::to_string(options.inference_memory_power_state.value()).c_str());
+    if (std::optional<uint32_t> memory_power_state =
+            darwinn_options_->inference_memory_power_state;
+        memory_power_state.has_value()) {
+      auto status = dispatch_graph->AnnotateGraph(
+          gt::DispatchDirectiveAnnotations::kEdgetpuMemoryPowerState.data(),
+          std::to_string(*memory_power_state).c_str());
+
       if (!status) {
         LITERT_LOG(
             LITERT_WARNING,
@@ -266,11 +236,14 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
             status.Error().Message().c_str());
       }
     }
-    // Apply inference priority annotation
-    if (options.inference_priority.has_value()) {
-      auto status = graph->AnnotateGraph(
-          litert::google_tensor::DispatchDirectiveAnnotations::kPriority.data(),
-          std::to_string(options.inference_priority.value()).c_str());
+
+    if (std::optional<int8_t> inference_priority =
+            darwinn_options_->inference_priority;
+        inference_priority.has_value()) {
+      auto status = dispatch_graph->AnnotateGraph(
+          gt::DispatchDirectiveAnnotations::kPriority.data(),
+          std::to_string(*inference_priority).c_str());
+
       if (!status) {
         LITERT_LOG(LITERT_WARNING,
                    "Failed to apply inference_priority annotation: %s",
@@ -278,12 +251,11 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
       }
     }
 
-    // Apply atomic inference annotation
-    if (options.atomic_inference) {
-      auto status = graph->AnnotateGraph(
-          litert::google_tensor::DispatchDirectiveAnnotations::
-              kEdgetpuAtomicInference.data(),
+    if (darwinn_options_->atomic_inference) {
+      auto status = dispatch_graph->AnnotateGraph(
+          gt::DispatchDirectiveAnnotations::kEdgetpuAtomicInference.data(),
           "1");
+
       if (!status) {
         LITERT_LOG(LITERT_WARNING,
                    "Failed to apply atomic_inference annotation: %s",
@@ -291,12 +263,11 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
       }
     }
 
-    // Apply prefer coherent annotation
-    if (options.prefer_coherent) {
-      auto status = graph->AnnotateGraph(
-          litert::google_tensor::GraphDirectiveAnnotations::kPreferCoherent
-              .data(),
+    if (darwinn_options_->prefer_coherent) {
+      auto status = dispatch_graph->AnnotateGraph(
+          gt::GraphDirectiveAnnotations::kPreferCoherent.data(),
           "1");
+
       if (!status) {
         LITERT_LOG(LITERT_WARNING,
                    "Failed to apply prefer_coherent annotation: %s",
@@ -305,29 +276,29 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
     }
 
     LITERT_LOG(LITERT_INFO,
-               "Applied Darwinn runtime options as graph annotations");
+               "Successfully applied Darwinn options as graph annotations");
   }
 
-  return graph;
+  graph = dispatch_graph.release();
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchDeviceContextT::DestroyGraph(
-    LiteRtDispatchGraph graph) {
+LiteRtStatus LiteRtDispatchDeviceContextT::DestroyGraph(
+  LiteRtDispatchGraph graph) {
+  GT_LOG_RETURN_IF_NULL(graph);
+
   thr_graphs_.erase(graph->thr_graph());
 
-  ThrGraph* thr_graph = graph->thr_graph();
-  if (auto status = thrGraphDelete(thr_graph); status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_destroy failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure, "thr_graph_destroy failed");
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(thrGraphDelete(graph->thr_graph()),
+                            "Failed to delete SB graph");
 
   delete graph;
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<LiteRtDispatchExecutableHandle>
-LiteRtDispatchDeviceContextT::LoadExecutable(
-    LiteRtDispatchExecutableType type, const LiteRtMemBuffer* bytecode_buffer) {
+LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
+    LiteRtDispatchExecutableType type, const LiteRtMemBuffer& bytecode_buffer,
+    LiteRtDispatchExecutableHandle& exec_handle) {
   ThrSqContainerType thr_type;
   switch (type) {
     case kLiteRtDispatchExecutableTypeDspLibrary:
@@ -337,48 +308,39 @@ LiteRtDispatchDeviceContextT::LoadExecutable(
       thr_type = kThrSqContainerTypeMlModel;
       break;
     default:
-      LITERT_LOG(LITERT_ERROR, "Unexpected executable type: %d", type);
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "Unexpected executable type");
+      LITERT_LOG(LITERT_ERROR, "Invalid executable type %d", type);
+      return kLiteRtStatusErrorInvalidArgument;
   }
 
-  ThrSqContainerHandle sq_handle;
-  ThrStatus status;
-  if (bytecode_buffer->fd >= 0 &&
-      // Unfortunately thrLoadSqContainerFd doesn't support passing an
-      // offset. So if the offset is non-zero, we fallback to passing a CPU
-      // memory address right below.
-      (bytecode_buffer->offset == 0)) {
-    bool lazy_loading = false;
-    status = thrLoadSqContainerFd(
-        thr_context_, thr_type, bytecode_buffer->fd, bytecode_buffer->size,
-        lazy_loading, &sq_handle);
+  if (bytecode_buffer.fd >= 0) {
+    GT_LOG_RETURN_IF_SB_ERROR(
+        thrLoadSqContainerFdWithOffset(
+            thr_context_.get(), thr_type, bytecode_buffer.fd,
+            bytecode_buffer.size, bytecode_buffer.offset,
+            /*lazy_loading=*/false, &exec_handle),
+        "Failed to load SQ container from fd %d with size %zu and offset %zu",
+        bytecode_buffer.fd, bytecode_buffer.size, bytecode_buffer.offset);
   } else {
-    auto bytecode_ptr =
-        static_cast<const uint8_t*>(bytecode_buffer->base_addr) +
-        bytecode_buffer->offset;
-    status = thrLoadSqContainer(
-        thr_context_, thr_type, bytecode_ptr, bytecode_buffer->size,
-        &sq_handle);
-  }
-  if (status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_load_sq_container failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_load_sq_container failed");
+    const auto* sq_bytecode =
+        static_cast<const std::byte*>(bytecode_buffer.base_addr) +
+        bytecode_buffer.offset;
+
+    GT_LOG_RETURN_IF_SB_ERROR(
+        thrLoadSqContainer(
+            thr_context_.get(), thr_type, sq_bytecode, bytecode_buffer.size,
+            &exec_handle),
+        "Failed to load SQ container from buffer with base 0x%p and size %zu",
+        sq_bytecode, bytecode_buffer.size);
   }
 
-  return sq_handle;
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchDeviceContextT::UnloadExecutable(
+LiteRtStatus LiteRtDispatchDeviceContextT::UnloadExecutable(
     LiteRtDispatchExecutableHandle exec_handle) {
-  ThrSqContainerHandle sq_handle = exec_handle;
-  if (auto status = thrUnloadSqContainer(thr_context_, sq_handle);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_unload_sq_container failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_unload_sq_container failed");
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrUnloadSqContainer(thr_context_.get(), exec_handle),
+      "Failed to unload SQ container %" PRIu64, exec_handle);
 
-  return {};
+  return kLiteRtStatusOk;
 }
