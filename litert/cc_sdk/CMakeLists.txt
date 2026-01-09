@@ -63,6 +63,12 @@ set_target_properties(litert_cc_api PROPERTIES
     PUBLIC_HEADER "${LITERT_CC_HEADERS}"
 )
 
+# Disable OpenCL support since prebuilt library doesn't support it.
+target_compile_definitions(litert_cc_api
+    PRIVATE
+        LITERT_DISABLE_OPENCL_SUPPORT
+)
+
 target_include_directories(litert_cc_api
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
