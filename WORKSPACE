@@ -299,6 +299,11 @@ load("//third_party/litert_gpu:workspace.bzl", "litert_gpu")
 
 litert_gpu()
 
+# LiteRT Prebuilts ---------------------------------------------------------------------------------
+load("//third_party/litert_prebuilts:workspace.bzl", "litert_prebuilts")
+
+litert_prebuilts()
+
 # INTEL OPENVINO ---------------------------------------------------------------------------------
 load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 

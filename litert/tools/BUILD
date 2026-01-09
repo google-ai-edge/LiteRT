@@ -17,6 +17,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
+load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_deps", "litert_gpu_accelerator_prebuilts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 load("//litert/integration_test:litert_device_common.bzl", "dispatch_device_rlocation", "plugin_device_rlocation")
 load("//litert/tools:tool_test.bzl", "runfile_path", "tool_test")
@@ -25,27 +26,6 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
 )
-
-GPU_ACCELERATOR_DEPS = select({
-    # copybara:uncomment_begin(google-only)
-    # "@platforms//os:linux": [
-    # "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",
-    # ],
-    # "@platforms//os:macos": [
-    # "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-    # ],
-    # "@platforms//os:ios": [
-    # "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-    # ],
-    # "@platforms//os:windows": [
-    # "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",
-    # ],
-    # "@org_tensorflow//tensorflow:android": [
-    # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
-    # ],
-    # copybara:uncomment_end
-    "//conditions:default": [],
-})
 
 # This user library should depend on libLiteRt.so to allow
 # CompilerPlugin to use the same libLiteRt.so
@@ -468,6 +448,7 @@ cc_binary(
     copts = [
         "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
     ],
+    data = litert_gpu_accelerator_prebuilts(),
     deps = [
         ":tensor_utils",
         "//litert/c:litert_common",
@@ -493,7 +474,7 @@ cc_binary(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-    ] + GPU_ACCELERATOR_DEPS,
+    ] + litert_gpu_accelerator_deps(),
 )
 
 [
@@ -588,13 +569,14 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check",
     srcs = ["gpu_numerics_check.cc"],
+    data = litert_gpu_accelerator_prebuilts(),
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc:litert_common",
         "//litert/cc/options:litert_gpu_options",
         "//litert/core:filesystem",
         "//tflite/c:c_api_types",
         "//tflite/tools:utils",
-    ] + GPU_ACCELERATOR_DEPS,
+    ] + litert_gpu_accelerator_deps(),
 )
 
 cc_binary(
@@ -683,9 +665,10 @@ cc_library(
 
 litert_bin(
     name = "benchmark_model",
+    data = litert_gpu_accelerator_prebuilts(),
     export_litert_only = True,
     ungrte = True,
-    deps = [":benchmark_model_main"] + GPU_ACCELERATOR_DEPS,
+    deps = [":benchmark_model_main"] + litert_gpu_accelerator_deps(),
 )
 
 cc_binary(

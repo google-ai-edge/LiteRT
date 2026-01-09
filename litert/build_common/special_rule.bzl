@@ -82,3 +82,49 @@ def litert_metal_deps():
         "@platforms//os:macos": ["//litert/runtime:metal_info"],
         "//conditions:default": [],
     })
+
+# Dependencies for GPU accelerators for each platform.
+def litert_gpu_accelerator_deps():
+    return []
+
+# Prebuilt dependencies for GPU accelerators for each platform.
+def litert_gpu_accelerator_prebuilts():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            "@litert_prebuilts//:linux_x86_64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
+        ],
+        "@org_tensorflow//tensorflow:linux_aarch64": [
+            "@litert_prebuilts//:linux_arm64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
+        ],
+        "@org_tensorflow//tensorflow:macos_arm64": [
+            "@litert_prebuilts//:macos_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
+        ],
+        "@platforms//os:windows": [
+            "@litert_prebuilts//:windows_x86_64/libLiteRtWebGpuAccelerator.dll",  # copybara:comment
+        ],
+        "@org_tensorflow//tensorflow:android_arm64": [
+            "@litert_prebuilts//:android_arm64/libLiteRtGpuAccelerator.so",  # copybara:comment
+        ],
+        "//conditions:default": [],
+    })
+
+# Prebuilt dependencies for LiteRT runtime shared library for each platform.
+def litert_runtime_prebuilts():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            "@litert_prebuilts//:linux_x86_64/libLiteRt.so",  # copybara:comment
+        ],
+        "@org_tensorflow//tensorflow:linux_aarch64": [
+            "@litert_prebuilts//:linux_arm64/libLiteRt.so",  # copybara:comment
+        ],
+        "@org_tensorflow//tensorflow:macos_arm64": [
+            "@litert_prebuilts//:macos_arm64/libLiteRt.dylib",  # copybara:comment
+        ],
+        "@platforms//os:windows": [
+            "@litert_prebuilts//:windows_x86_64/libLiteRt.dll",  # copybara:comment
+        ],
+        "@org_tensorflow//tensorflow:android_arm64": [
+            "@litert_prebuilts//:android_arm64/libLiteRt.so",  # copybara:comment
+        ],
+        "//conditions:default": [],
+    })
