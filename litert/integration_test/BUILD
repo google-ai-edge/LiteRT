@@ -21,7 +21,7 @@ load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_libs")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script", "make_download_model_provider")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_mediatek_mh_guitar_test", "litert_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_intel_openvino_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -338,6 +338,52 @@ litert_integration_test(
 #         tests = [
 #             litert_mediatek_mh_guitar_test(
 #                 targets = MEDIATEK_GUITAR_TARGS_SMALL,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# # Guitar INTEL OPENVINO ----------------------------------------------------------------------------
+#
+# INTEL_OPENVINO_GUITAR_TARGS_SMALL = [
+#     ":intel_openvino_smoketest",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_guitar_device_tests_small_intel_openvino",
+#     auto_deps = INTEL_OPENVINO_GUITAR_TARGS_SMALL,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_intel_openvino_mh_guitar_test(
+#                 targets = INTEL_OPENVINO_GUITAR_TARGS_SMALL,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# INTEL_OPENVINO_GUITAR_TARGS_INTEGRATION = [
+#     ":classic_ml_device_tests_intel_openvino_JIT",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_guitar_device_integration_tests_intel_openvino",
+#     auto_deps = INTEL_OPENVINO_GUITAR_TARGS_INTEGRATION,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_intel_openvino_mh_guitar_test(
+#                 targets = INTEL_OPENVINO_GUITAR_TARGS_INTEGRATION,
 #             ),
 #         ],
 #     ),
