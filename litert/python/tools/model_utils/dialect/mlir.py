@@ -62,9 +62,9 @@ def type_from_mlir(ir_type: ir.Type):
   """
   # Try upcast ir.Type to known specialized ir cls.
   # TODO(cnchan): Isolate ir.Type upcasting from this function.
-  if ir_quant_d.UniformQuantizedType.isinstance(ir_type):
+  if isinstance(ir_type, ir_quant_d.UniformQuantizedType):
     ir_type = ir_quant_d.UniformQuantizedType(ir_type)
-  elif ir_quant_d.UniformQuantizedPerAxisType.isinstance(ir_type):
+  elif isinstance(ir_type, ir_quant_d.UniformQuantizedPerAxisType):
     ir_type = ir_quant_d.UniformQuantizedPerAxisType(ir_type)
 
   type_cls = core.mlir_transforms.get(ir_type) or core.mlir_transforms.get(
