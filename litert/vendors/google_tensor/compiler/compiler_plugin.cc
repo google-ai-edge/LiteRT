@@ -516,7 +516,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   if (num_partitions == 0) {
     LITERT_LOG(LITERT_ERROR,
-      "No subgraphs selected for GoogleTensor compilation.");
+               "No subgraphs selected for GoogleTensor compilation.");
     return kLiteRtStatusErrorInvalidArgument;
   }
 
