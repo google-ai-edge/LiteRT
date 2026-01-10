@@ -73,11 +73,7 @@ namespace litert {
 template <typename ByteT = uint8_t>
 struct Mallocator {
   /// @brief Frees the given memory block.
-  void operator()(ByteT* d) {
-    if (d != nullptr) {
-      free(d);
-    }
-  }
+  void operator()(ByteT* d) { free(d); }
 
   /// @brief Allocates a memory block of the specified size.
   /// @param bytes The size of the memory block in bytes.
@@ -92,11 +88,7 @@ struct Mallocator {
 template <typename ByteT = uint8_t>
 struct Newlocator {
   /// @brief Deletes the given array.
-  void operator()(ByteT* d) {
-    if (d != nullptr) {
-      delete[] d;
-    }
-  }
+  void operator()(ByteT* d) { delete[] d; }
 
   /// @brief Allocates an array of the specified size.
   /// @param bytes The size of the array in bytes.
