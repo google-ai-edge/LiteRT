@@ -93,10 +93,10 @@ function parseData(remainingArgs: Arg[]): {
   const liteRtWasm = getGlobalLiteRt().liteRtWasm;
   if (data instanceof liteRtWasm.LiteRtTensorBuffer) {
     return {liteRtTensorBuffer: data};
-  } else if (data instanceof GPUBuffer) {
-    return {gpuBuffer: data};
   } else if (ArrayBuffer.isView(data)) {
     return {typedArray: data};
+  } else if (data instanceof GPUBuffer) {
+    return {gpuBuffer: data};
   } else {
     throw new Error(`Unknown type (${
         data?.constructor.name ?? data}) provided to create a Tensor`);
