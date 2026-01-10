@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_qualcomm_options.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <utility>
@@ -279,6 +280,29 @@ TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, SkipOpIds) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  const std::vector<std::uint32_t> kSkipOpIds{1, 2, 3};
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetSkipOpIds(
+      qualcomm_options, kSkipOpIds.data(), kSkipOpIds.size()));
+
+  std::uint32_t* ids;
+  size_t number_of_ids;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetSkipOpIds(qualcomm_options, &ids,
+                                                         &number_of_ids));
+  EXPECT_EQ(number_of_ids, kSkipOpIds.size());
+  for (size_t i = 0; i < kSkipOpIds.size(); i++) {
+    EXPECT_EQ(kSkipOpIds[i], ids[i]);
+  }
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, UseConvHMX) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -346,9 +370,17 @@ TEST(QualcommOptionsTest, CppApi) {
   const std::vector<std::int32_t> kDumpTensorIds{1, 2, 3};
   EXPECT_TRUE(options->GetDumpTensorIds().empty());
   options->SetDumpTensorIds(kDumpTensorIds);
-  auto ids = options->GetDumpTensorIds();
+  auto dump_ids = options->GetDumpTensorIds();
   for (size_t i = 0; i < kDumpTensorIds.size(); i++) {
-    EXPECT_EQ(ids[i], kDumpTensorIds[i]);
+    EXPECT_EQ(dump_ids[i], kDumpTensorIds[i]);
+  }
+
+  const std::vector<std::uint32_t> kSkipOpIds{1, 2, 3};
+  EXPECT_TRUE(options->GetSkipOpIds().empty());
+  options->SetSkipOpIds(kSkipOpIds);
+  auto skip_ids = options->GetSkipOpIds();
+  for (size_t i = 0; i < kSkipOpIds.size(); i++) {
+    EXPECT_EQ(skip_ids[i], kSkipOpIds[i]);
   }
 
   EXPECT_EQ(options->GetIrJsonDir(), "");
