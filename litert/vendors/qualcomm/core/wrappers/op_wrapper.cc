@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -32,6 +33,28 @@ OpWrapper& OpWrapper::operator=(const OpWrapper& other) {
     new (this) OpWrapper(other);
   }
   return *this;
+}
+
+bool OpWrapper::operator==(const OpWrapper& other) const {
+  if (op_code_ != other.op_code_) return false;
+  if (!IsStrEq(type_name_, other.type_name_)) return false;
+
+  if (!std::equal(
+          input_tensors_.begin(), input_tensors_.end(),
+          other.input_tensors_.begin(), other.input_tensors_.end(),
+          [](const auto& a, const auto& b) { return a.get() == b.get(); })) {
+    return false;
+  }
+
+  if (!std::equal(
+          output_tensors_.begin(), output_tensors_.end(),
+          other.output_tensors_.begin(), other.output_tensors_.end(),
+          [](const auto& a, const auto& b) { return a.get() == b.get(); })) {
+    return false;
+  }
+
+  return scalar_params_ == other.scalar_params_ &&
+         tensor_params_ == other.tensor_params_;
 }
 
 OpWrapper::OpWrapper(OpWrapper&& other)
