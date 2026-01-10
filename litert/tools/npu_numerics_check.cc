@@ -41,7 +41,6 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
@@ -520,21 +519,18 @@ Expected<void> RunModel() {
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
   std::string input_dir = absl::GetFlag(FLAGS_input_dir);
 
-  std::vector<litert::TensorBuffer> cpu_input_buffers;
+  LITERT_ASSIGN_OR_RETURN(
+      auto cpu_input_buffers,
+      compiled_model_cpu.CreateInputBuffers(signature_index));
 
   // Create and fill input buffers
   if (!input_dir.empty()) {
-    ABSL_LOG(INFO) << "Using inputs from: " << input_dir;
-    LITERT_ASSIGN_OR_RETURN(
-        auto cpu_model, Model::CreateFromFile(absl::GetFlag(FLAGS_cpu_model)));
-    LITERT_ASSIGN_OR_RETURN(
-        cpu_input_buffers,
-        CreateAndFillInputBuffersWithCustomData(cpu_model, compiled_model_cpu,
-                                                signature_index, input_dir));
+    LITERT_RETURN_IF_ERROR(tensor_utils::FillInputBuffersWithCustomData(
+        compiled_model_cpu, signature_index, cpu_input_buffers, input_dir));
   } else {
-    LITERT_ASSIGN_OR_RETURN(cpu_input_buffers,
-                            CreateAndFillInputBuffersWithRandomData(
-                                compiled_model_cpu, signature_index));
+    for (auto& buffer : cpu_input_buffers) {
+      LITERT_RETURN_IF_ERROR(tensor_utils::FillBufferWithRandomData(buffer));
+    }
   }
 
   LITERT_ASSIGN_OR_RETURN(
