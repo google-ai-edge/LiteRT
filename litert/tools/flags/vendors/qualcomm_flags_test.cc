@@ -332,6 +332,47 @@ TEST(GraphPriorityTest, Parse) {
   }
 }
 
+TEST(BackendTest, Parse) {
+  std::string error;
+  QualcommOptions::Backend value;
+
+  {
+    static constexpr absl::string_view kBackend = "gpu";
+    static constexpr QualcommOptions::Backend kBackendEnum =
+        QualcommOptions::Backend::kGpu;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kBackend = "htp";
+    static constexpr QualcommOptions::Backend kBackendEnum =
+        QualcommOptions::Backend::kHtp;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kBackend = "dsp";
+    static constexpr QualcommOptions::Backend kBackendEnum =
+        QualcommOptions::Backend::kDsp;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kBackend = "ir";
+    static constexpr QualcommOptions::Backend kBackendEnum =
+        QualcommOptions::Backend::kIr;
+    EXPECT_TRUE(AbslParseFlag(kBackend, &value, &error));
+    EXPECT_EQ(value, kBackendEnum);
+    EXPECT_EQ(kBackend, AbslUnparseFlag(value));
+  }
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());
@@ -352,6 +393,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
+  EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
 }
 
 }  // namespace

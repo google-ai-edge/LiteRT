@@ -56,22 +56,18 @@ if(NOT NEUROPILOT_HEADERS_DIR)
   endif()
 endif()
 
+# LINT.IfChange(qairt_headers_dir)
 if(NOT QAIRT_HEADERS_DIR)
   if(NOT QAIRT_HEADERS_URL AND NOT QAIRT_GIT_REPO)
-    set(QAIRT_HEADERS_URL "https://storage.googleapis.com/litert/litert_qualcomm_sdk_2_37_1_release.tar.gz")
-    set(QAIRT_HEADERS_SUBDIR "latest")
+    set(QAIRT_HEADERS_URL "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.41.0.251128/v2.41.0.251128.zip")
+    set(QAIRT_HEADERS_SUBDIR "qairt/2.41.0.251128")
   endif()
   if(QAIRT_HEADERS_URL)
-    set(_qnn_archive "${CMAKE_BINARY_DIR}/_deps/qnn_headers.tgz")
+    set(_qnn_archive "${CMAKE_BINARY_DIR}/_deps/qnn_headers.zip")
     file(DOWNLOAD "${QAIRT_HEADERS_URL}" "${_qnn_archive}" SHOW_PROGRESS)
     set(_qnn_extract_dir "${CMAKE_BINARY_DIR}/_deps/qnn_headers")
     file(MAKE_DIRECTORY "${_qnn_extract_dir}")
-    execute_process(COMMAND tar -xzf "${_qnn_archive}" -C "${_qnn_extract_dir}"
-                    RESULT_VARIABLE _qnn_tar_rc
-                    ERROR_VARIABLE _qnn_tar_err)
-    if(NOT _qnn_tar_rc EQUAL 0)
-      message(FATAL_ERROR "Failed to extract QAIRT headers: ${_qnn_tar_err}")
-    endif()
+    file(ARCHIVE_EXTRACT INPUT "${_qnn_archive}" DESTINATION "${_qnn_extract_dir}")
     set(QAIRT_HEADERS_DIR "${_qnn_extract_dir}")
   elseif(QAIRT_GIT_REPO)
     FetchContent_Declare(qairt_headers GIT_REPOSITORY ${QAIRT_GIT_REPO} GIT_TAG ${QAIRT_GIT_TAG})
@@ -97,6 +93,12 @@ if(NOT QAIRT_HEADERS_DIR)
   endforeach()
   message(STATUS "QAIRT/QNN headers at: ${QAIRT_HEADERS_DIR}")
 endif()
+
+# LINT.ThenChange(
+#     ../../opensource_only/ci/tools/python/vendor_sdk/qualcomm/setup.py:wheel_qairt_sdk_version,
+#     ../google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
+#     ../google/npu_runtime_libraries/fetch_qualcomm_library_jit.sh:fetch_qairt_sdk_version,
+# )
 
 if(NEUROPILOT_HEADERS_DIR)
   list(APPEND CMAKE_REQUIRED_INCLUDES ${NEUROPILOT_HEADERS_DIR})
