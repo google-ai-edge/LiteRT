@@ -222,8 +222,8 @@ int main(int argc, char **argv) {
     quant_specs.serialized_quant_stats = file->getBuffer().str();
   }
 
-  tflite::ConverterFlags::ModelOriginFramework model_origin_framework_enum;
-  tflite::ConverterFlags::ModelOriginFramework_Parse(
+  litert::ConverterFlags::ModelOriginFramework model_origin_framework_enum;
+  litert::ConverterFlags::ModelOriginFramework_Parse(
       model_origin_framework, &model_origin_framework_enum);
 
   mlir::TFL::PassConfig pass_config(quant_specs);
@@ -245,7 +245,7 @@ int main(int argc, char **argv) {
   pass_config.enable_composite_direct_lowering =
       enable_composite_direct_lowering;
 
-  tflite::ConverterFlags converter_flags;
+  litert::ConverterFlags converter_flags;
   converter_flags.set_force_select_tf_ops(!emit_builtin_tflite_ops);
   converter_flags.set_enable_select_tf_ops(emit_select_tf_ops);
   converter_flags.set_allow_custom_ops(emit_custom_ops);

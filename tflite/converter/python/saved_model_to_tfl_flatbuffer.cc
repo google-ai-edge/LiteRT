@@ -57,7 +57,7 @@ namespace tensorflow {
 using tensorflow::quantization::PyFunctionLibrary;
 
 absl::Status HandleInputOutputArraysWithModule(
-    const tflite::ModelFlags& model_flags,
+    const litert::ModelFlags& model_flags,
     mlir::OwningOpRef<mlir::ModuleOp>* module) {
   mlir::func::FuncOp entry_function = nullptr;
   for (auto func : module->get().getOps<mlir::func::FuncOp>()) {
@@ -133,8 +133,8 @@ absl::Status HandleInputOutputArraysWithModule(
 }
 
 absl::Status ConvertSavedModelToTFLiteFlatBuffer(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags, std::string* result,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags, std::string* result,
     const PyFunctionLibrary* quantization_py_function_lib) {
   auto context = std::make_unique<mlir::MLIRContext>();
   mlir::TFL::QuantizationSpecs quant_specs;
@@ -196,7 +196,7 @@ absl::Status ConvertSavedModelToTFLiteFlatBuffer(
   pass_config.lower_tensor_list_ops = converter_flags.lower_tensor_list_ops();
   // Disable the unfolding of the 16x16 TF::BatchMatMulOp to avoid the
   // conversion to an unsupported 16x16 TFL::FullyConnectedOp.
-  if (converter_flags.inference_type() == tflite::IODataType::QUANTIZED_INT16) {
+  if (converter_flags.inference_type() == litert::IODataType::QUANTIZED_INT16) {
     pass_config.unfold_batch_matmul = false;
   }
   pass_config.unfold_large_splat_constant =

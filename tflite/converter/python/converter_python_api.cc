@@ -92,13 +92,13 @@ PyObject* Convert(PyObject* model_flags_proto_txt_raw,
   }
 
   // Produce new outputs.
-  tflite::ModelFlags model_flags;
+  litert::ModelFlags model_flags;
   if (!model_flags.ParseFromString(model_flags_proto_txt)) {
     PyErr_SetString(PyExc_ValueError,
                     "Failed to convert Model to Python String.");
     return nullptr;
   }
-  tflite::ConverterFlags converter_flags;
+  litert::ConverterFlags converter_flags;
   if (!converter_flags.ParseFromString(converter_flags_proto_txt)) {
     PyErr_SetString(PyExc_ValueError,
                     "Failed to convert ConverterFlags to Python String.");
@@ -177,15 +177,15 @@ PyObject* Convert(PyObject* model_flags_proto_txt_raw,
 
 tflite::TensorType FromConverterFlagsToTfLiteDType(int inference_type) {
   switch (inference_type) {
-    case tflite::IODataType::QUANTIZED_INT16:
+    case litert::IODataType::QUANTIZED_INT16:
       return tflite::TensorType_INT16;
-    case tflite::IODataType::QUANTIZED_UINT8:
+    case litert::IODataType::QUANTIZED_UINT8:
       return tflite::TensorType_UINT8;
-    case tflite::IODataType::UINT8:
+    case litert::IODataType::UINT8:
       return tflite::TensorType_UINT8;
-    case tflite::IODataType::QUANTIZED_INT8:
+    case litert::IODataType::QUANTIZED_INT8:
       return tflite::TensorType_INT8;
-    case tflite::IODataType::INT8:
+    case litert::IODataType::INT8:
       return tflite::TensorType_INT8;
     default:
       return tflite::TensorType_FLOAT32;
@@ -245,8 +245,8 @@ PyObject* MlirQuantizeModel(PyObject* data, bool disable_per_channel,
     return nullptr;
   }
 
-  std::optional<tensorflow::converter::DebugOptions> debug_options =
-      tensorflow::converter::DebugOptions();
+  std::optional<litert::converter::DebugOptions> debug_options =
+      litert::converter::DebugOptions();
   if (debug_options_proto_txt_raw != nullptr) {
     auto ConvertArg = [&](PyObject* obj, bool* error) {
       char* buf;

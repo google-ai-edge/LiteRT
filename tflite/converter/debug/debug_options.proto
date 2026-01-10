@@ -15,7 +15,7 @@ limitations under the License.
 
 syntax = "proto2";
 
-package tensorflow.converter;
+package litert.converter;
 
 // Additional parameters that control the debug behavior of the Converter.
 //

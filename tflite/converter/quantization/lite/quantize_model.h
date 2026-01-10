@@ -57,7 +57,7 @@ absl::Status QuantizeModel(
     const absl::flat_hash_set<std::string> &denylisted_nodes = {},
     bool enable_variable_quantization = false,
     bool disable_per_channel_for_dense_layers = false,
-    const std::optional<const tensorflow::converter::DebugOptions>
+    const std::optional<const litert::converter::DebugOptions>
         &debug_options = std::nullopt);
 
 }  // namespace lite
