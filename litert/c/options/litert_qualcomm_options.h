@@ -158,6 +158,28 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsHtpPerformanceMode* htp_performance_mode);
 
+// dsp_performance_mode
+
+typedef enum LiteRtQualcommOptionsDspPerformanceMode {
+  kLiteRtQualcommDspPerformanceModeDefault = 0,
+  kLiteRtQualcommDspPerformanceModeSustainedHighPerformance = 1,
+  kLiteRtQualcommDspPerformanceModeBurst = 2,
+  kLiteRtQualcommDspPerformanceModeHighPerformance = 3,
+  kLiteRtQualcommDspPerformanceModePowerSaver = 4,
+  kLiteRtQualcommDspPerformanceModeLowPowerSaver = 5,
+  kLiteRtQualcommDspPerformanceModeHighPowerSaver = 6,
+  kLiteRtQualcommDspPerformanceModeLowBalanced = 7,
+  kLiteRtQualcommDspPerformanceModeBalanced = 8,
+} LiteRtQualcommOptionsDspPerformanceMode;
+
+LiteRtStatus LiteRtQualcommOptionsSetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode);
+
+LiteRtStatus LiteRtQualcommOptionsGetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
+
 // profiling
 
 // This option controls the profiling level. A higher level results in a more
@@ -230,6 +252,14 @@ LiteRtStatus LiteRtQualcommOptionsSetGraphPriority(
 LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
     LiteRtQualcommOptions options,
     LiteRtQualcommOptionsGraphPriority* graph_priority);
+
+// This option controls whether to enable dsp backend, enable it if the device
+// arch <= v66. Default is disabled.
+LiteRtStatus LiteRtQualcommOptionsSetEnableDspBackend(
+    LiteRtQualcommOptions options, bool enable_dsp_backend);
+
+LiteRtStatus LiteRtQualcommOptionsGetEnableDspBackend(
+    LiteRtQualcommOptions options, bool* enable_dsp_backend);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -33,6 +33,12 @@ class QnnBackendTest : public testing::TestWithParam<BackendType> {
             handle_.get(), ::qnn::IrBackend::GetExpectedBackendVersion()));
 
         break;
+      case BackendType::kDspBackend:
+        handle_ = ::qnn::CreateDLHandle(::qnn::IrBackend::GetLibraryName());
+        backend_ = std::make_unique<::qnn::IrBackend>(::qnn::ResolveQnnApi(
+            handle_.get(), ::qnn::IrBackend::GetExpectedBackendVersion()));
+
+        break;
       default:
         break;
     }
@@ -44,7 +50,8 @@ class QnnBackendTest : public testing::TestWithParam<BackendType> {
 
 INSTANTIATE_TEST_SUITE_P(QnnBackendTest, QnnBackendTest,
                          testing::Values(BackendType::kHtpBackend,
-                                         BackendType::kIrBackend));
+                                         BackendType::kIrBackend,
+                                         BackendType::kDspBackend));
 
 TEST_P(QnnBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
   Options options;
@@ -58,6 +65,10 @@ TEST_P(QnnBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
       break;
     case BackendType::kIrBackend:
       options.SetBackendType(BackendType::kIrBackend);
+      ASSERT_TRUE(backend_->Init(options, std::nullopt));
+      ASSERT_EQ(backend_->GetDeviceHandle(), nullptr);
+      break;
+    case BackendType::kDspBackend:
       ASSERT_TRUE(backend_->Init(options, std::nullopt));
       ASSERT_EQ(backend_->GetDeviceHandle(), nullptr);
       break;
@@ -81,6 +92,10 @@ TEST_P(QnnBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
       break;
     case BackendType::kIrBackend:
       options.SetBackendType(BackendType::kIrBackend);
+      ASSERT_TRUE(backend_->Init(options, std::nullopt));
+      ASSERT_EQ(backend_->GetDeviceHandle(), nullptr);
+      break;
+    case BackendType::kDspBackend:
       ASSERT_TRUE(backend_->Init(options, std::nullopt));
       ASSERT_EQ(backend_->GetDeviceHandle(), nullptr);
       break;

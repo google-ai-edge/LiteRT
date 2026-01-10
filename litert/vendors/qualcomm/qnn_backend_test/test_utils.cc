@@ -34,6 +34,9 @@ std::string QnnTestPrinter(
     case ::qnn::BackendType::kIrBackend:
       ss << "Ir";
       break;
+    case ::qnn::BackendType::kDspBackend:
+      ss << "Dsp";
+      break;
     default:
       ss << "UndefinedBackend";
       break;

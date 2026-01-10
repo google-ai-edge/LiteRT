@@ -9,6 +9,12 @@ constexpr SocInfo kSocInfos[] = {
     {SocInfo("UNKNOWN_SDM", SnapdragonModel::UNKNOWN_SDM, DspArch::NONE,
              0  // vtcm_size_in_mb
              )},
+    {SocInfo("SDM865", SnapdragonModel::SDM865, DspArch::V66,
+             0  // vtcm_size_in_mb
+             )},
+    {SocInfo("SM6350", SnapdragonModel::SM6350, DspArch::V66,
+             0  // vtcm_size_in_mb
+             )},
     {SocInfo("SA8255", SnapdragonModel::SA8255, DspArch::V73,
              8  // vtcm_size_in_mb
              )},

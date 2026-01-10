@@ -253,6 +253,11 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
           &QnnGraph()));
       break;
     }
+    case ::qnn::BackendType::kDspBackend: {
+      LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
+          context_handle_, qnn_graph_name.data(), nullptr, &QnnGraph()));
+      break;
+    }
     default: {
       LITERT_LOG(LITERT_ERROR, "Unsupported Backend to create graph");
       return kLiteRtStatusErrorUnsupported;
