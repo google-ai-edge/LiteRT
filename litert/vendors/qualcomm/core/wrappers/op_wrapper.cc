@@ -48,6 +48,13 @@ OpWrapper::OpWrapper(OpWrapper&& other)
 
 OpWrapper::~OpWrapper() = default;
 
+void OpWrapper::SetName(std::string name) { name_ = std::move(name); }
+
+void OpWrapper::SetType(const char* op_type, QnnOpCode op_code) {
+  type_name_ = op_type;
+  op_code_ = op_code;
+}
+
 void OpWrapper::AddInputTensor(const TensorWrapper& tensor) {
   input_tensors_.emplace_back(tensor);
 }
@@ -124,8 +131,6 @@ const qnn::TensorParamWrapper& OpWrapper::GetTensorPararm(size_t i) const {
 void OpWrapper::SwapOutputs(OpWrapper& other) {
   this->output_tensors_.swap(other.output_tensors_);
 }
-
-void OpWrapper::ClearTensorParams() { tensor_params_.clear(); }
 
 void OpWrapper::UpdateTensors(
     const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
