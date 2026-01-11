@@ -4,11 +4,11 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_HTP_BACKEND_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_HTP_BACKEND_H_
 
+#include <array>
 #include <list>
 #include <memory>
 #include <optional>
 
-#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -67,13 +67,13 @@ class HtpBackend : public QnnBackend {
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
 
   // TODO: Remove this after user can pass graph options to QNN
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
+  ::qnn::SocInfo soc_info_ = kSocInfos[7];  // V75
+  QnnDevicePlatformInfo qnn_device_platform_info_;
   std::list<QnnHtpDevice_CustomConfig_t> htp_device_configs_;
   std::list<QnnHtpDevice_DeviceInfoExtension_t> htp_device_info_extensions_;
-  QnnDevicePlatformInfo qnn_device_platform_info_;
-  std::unique_ptr<PerfControl> perf_control_{nullptr};
+  class HtpPerfControl;
+  std::unique_ptr<HtpPerfControl> htp_perf_control_{nullptr};
 };
-
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_HTP_BACKEND_H_

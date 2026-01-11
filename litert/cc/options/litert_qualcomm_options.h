@@ -76,6 +76,22 @@ class QualcommOptions : public OpaqueOptions {
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode();
 
+  enum class DspPerformanceMode : int {
+    kDefault = kLiteRtQualcommDspPerformanceModeDefault,
+    kSustainedHighPerformance =
+        kLiteRtQualcommDspPerformanceModeSustainedHighPerformance,
+    kBurst = kLiteRtQualcommDspPerformanceModeBurst,
+    kHighPerformance = kLiteRtQualcommDspPerformanceModeHighPerformance,
+    kPowerSaver = kLiteRtQualcommDspPerformanceModePowerSaver,
+    kLowPowerSaver = kLiteRtQualcommDspPerformanceModeLowPowerSaver,
+    kHighPowerSaver = kLiteRtQualcommDspPerformanceModeHighPowerSaver,
+    kLowBalanced = kLiteRtQualcommDspPerformanceModeLowBalanced,
+    kBalanced = kLiteRtQualcommDspPerformanceModeBalanced,
+  };
+
+  void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
+  DspPerformanceMode GetDspPerformanceMode();
+
   void SetUseHtpPreference(bool use_htp_preference);
   bool GetUseHtpPreference();
 
@@ -152,6 +168,17 @@ class QualcommOptions : public OpaqueOptions {
 
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority();
+
+  enum class Backend : int {
+    kUndefined = kLiteRtQualcommBackendUndefined,
+    kGpu = kLiteRtQualcommBackendGpu,
+    kHtp = kLiteRtQualcommBackendHtp,
+    kDsp = kLiteRtQualcommBackendDsp,
+    kIr = kLiteRtQualcommBackendIr,
+  };
+
+  void SetBackend(Backend qnn_backend);
+  Backend GetBackend();
 
  private:
   LiteRtQualcommOptions Data() const;

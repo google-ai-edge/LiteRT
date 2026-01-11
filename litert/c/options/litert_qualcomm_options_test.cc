@@ -135,6 +135,24 @@ TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, DspPerformanceMode) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetDspPerformanceMode(
+      qualcomm_options, kLiteRtQualcommDspPerformanceModeBurst));
+
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetDspPerformanceMode(
+      qualcomm_options, &dsp_performance_mode));
+  EXPECT_EQ(dsp_performance_mode, kLiteRtQualcommDspPerformanceModeBurst);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -339,6 +357,12 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kBurst);
 
+  EXPECT_EQ(options->GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kDefault);
+  options->SetDspPerformanceMode(QualcommOptions::DspPerformanceMode::kBurst);
+  EXPECT_EQ(options->GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kBurst);
+
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
   options->SetProfiling(QualcommOptions::Profiling::kDetailed);
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kDetailed);
@@ -386,6 +410,10 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetUseFoldReLU());
   options->SetUseFoldReLU(false);
   EXPECT_FALSE(options->GetUseFoldReLU());
+
+  EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
+  options->SetBackend(QualcommOptions::Backend::kDsp);
+  EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kDsp);
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {
@@ -428,6 +456,24 @@ TEST(LiteRtQualcommOptionsTest, Hash) {
 
   LiteRtDestroyOpaqueOptions(options1);
   LiteRtDestroyOpaqueOptions(options2);
+}
+
+TEST(LiteRtQualcommOptionsTest, Backend) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetBackend(qualcomm_options,
+                                                   kLiteRtQualcommBackendDsp));
+
+  LiteRtQualcommOptionsBackend qnn_backend;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetBackend(qualcomm_options, &qnn_backend));
+  EXPECT_EQ(qnn_backend, kLiteRtQualcommBackendDsp);
+
+  LiteRtDestroyOpaqueOptions(options);
 }
 
 }  // namespace

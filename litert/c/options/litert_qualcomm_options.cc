@@ -33,11 +33,14 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsProfiling profiling = kLiteRtQualcommProfilingOff;
   bool use_htp_preference = false;
   bool use_qint16_as_quint16 = false;
+  LiteRtQualcommOptionsBackend qnn_backend = kLiteRtQualcommBackendHtp;
   bool enable_weight_sharing = false;
   bool use_conv_hmx = true;
   bool use_fold_relu = true;
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode =
+      kLiteRtQualcommDspPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
   std::string ir_json_dir;
   std::string dlc_dir;
@@ -70,7 +73,8 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
     litert::HashCombine(
         ans, options->log_level, options->profiling,
         options->use_htp_preference, options->use_qint16_as_quint16,
-        options->enable_weight_sharing, options->htp_performance_mode,
+        options->qnn_backend, options->enable_weight_sharing,
+        options->htp_performance_mode, options->dsp_performance_mode,
         options->ir_json_dir, options->dlc_dir, options->vtcm_size,
         options->num_hvx_threads, options->optimization_level);
     return ans;
@@ -317,6 +321,30 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtQualcommOptionsSetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_performance_mode = dsp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDspPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsDspPerformanceMode* dsp_performance_mode) {
+  if (options == nullptr || dsp_performance_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_performance_mode = options->dsp_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
                                                const char* ir_json_dir) {
   if (options == nullptr) {
@@ -449,6 +477,28 @@ LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
   }
 
   *graph_priority = options->graph_priority;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetBackend(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend qnn_backend) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->qnn_backend = qnn_backend;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetBackend(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend* qnn_backend) {
+  if (qnn_backend == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *qnn_backend = options->qnn_backend;
 
   return kLiteRtStatusOk;
 }

@@ -71,6 +71,20 @@ QualcommOptions::HtpPerformanceMode QualcommOptions::GetHtpPerformanceMode() {
   return static_cast<QualcommOptions::HtpPerformanceMode>(htp_performance_mode);
 }
 
+void QualcommOptions::SetDspPerformanceMode(
+    QualcommOptions::DspPerformanceMode dsp_performance_mode) {
+  internal::AssertOk(LiteRtQualcommOptionsSetDspPerformanceMode, Data(),
+                     static_cast<LiteRtQualcommOptionsDspPerformanceMode>(
+                         dsp_performance_mode));
+}
+
+QualcommOptions::DspPerformanceMode QualcommOptions::GetDspPerformanceMode() {
+  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode;
+  internal::AssertOk(LiteRtQualcommOptionsGetDspPerformanceMode, Data(),
+                     &dsp_performance_mode);
+  return static_cast<QualcommOptions::DspPerformanceMode>(dsp_performance_mode);
+}
+
 void QualcommOptions::SetEnableWeightSharing(bool weight_sharing_enabled) {
   internal::AssertOk(LiteRtQualcommOptionsSetEnableWeightSharing, Data(),
                      weight_sharing_enabled);
@@ -230,6 +244,17 @@ bool QualcommOptions::GetUseFoldReLU() {
   internal::AssertOk(LiteRtQualcommOptionsGetUseFoldReLU, Data(),
                      &use_fold_relu);
   return use_fold_relu;
+}
+
+void QualcommOptions::SetBackend(Backend qnn_backend) {
+  internal::AssertOk(LiteRtQualcommOptionsSetBackend, Data(),
+                     static_cast<LiteRtQualcommOptionsBackend>(qnn_backend));
+}
+
+QualcommOptions::Backend QualcommOptions::GetBackend() {
+  LiteRtQualcommOptionsBackend qnn_backend;
+  internal::AssertOk(LiteRtQualcommOptionsGetBackend, Data(), &qnn_backend);
+  return static_cast<QualcommOptions::Backend>(qnn_backend);
 }
 
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {

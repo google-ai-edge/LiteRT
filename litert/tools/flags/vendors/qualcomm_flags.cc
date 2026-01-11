@@ -102,6 +102,11 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
           litert::qualcomm::QualcommOptions::HtpPerformanceMode::kDefault,
           "HTP performance mode.");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerformanceMode,
+          qualcomm_dsp_performance_mode,
+          litert::qualcomm::QualcommOptions::DspPerformanceMode::kDefault,
+          "DSP performance mode.");
+
 ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
@@ -177,6 +182,72 @@ std::string AbslUnparseFlag(QualcommOptions::HtpPerformanceMode options) {
       return "balanced";
     case QualcommOptions::HtpPerformanceMode::kExtremePowerSaver:
       return "extreme_power_saver";
+  }
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::DspPerformanceMode* options,
+                   std::string* error) {
+  if (text == "default") {
+    *options = QualcommOptions::DspPerformanceMode::kDefault;
+    return true;
+  }
+  if (text == "sustained_high_performance") {
+    *options = QualcommOptions::DspPerformanceMode::kSustainedHighPerformance;
+    return true;
+  }
+  if (text == "burst") {
+    *options = QualcommOptions::DspPerformanceMode::kBurst;
+    return true;
+  }
+  if (text == "high_performance") {
+    *options = QualcommOptions::DspPerformanceMode::kHighPerformance;
+    return true;
+  }
+  if (text == "power_saver") {
+    *options = QualcommOptions::DspPerformanceMode::kPowerSaver;
+    return true;
+  }
+  if (text == "low_power_saver") {
+    *options = QualcommOptions::DspPerformanceMode::kLowPowerSaver;
+    return true;
+  }
+  if (text == "high_power_saver") {
+    *options = QualcommOptions::DspPerformanceMode::kHighPowerSaver;
+    return true;
+  }
+  if (text == "low_balanced") {
+    *options = QualcommOptions::DspPerformanceMode::kLowBalanced;
+    return true;
+  }
+  if (text == "balanced") {
+    *options = QualcommOptions::DspPerformanceMode::kBalanced;
+    return true;
+  }
+  *error = "Unknown dsp performance mode";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options) {
+  switch (options) {
+    case QualcommOptions::DspPerformanceMode::kDefault:
+      return "default";
+    case QualcommOptions::DspPerformanceMode::kSustainedHighPerformance:
+      return "sustained_high_performance";
+    case QualcommOptions::DspPerformanceMode::kBurst:
+      return "burst";
+    case QualcommOptions::DspPerformanceMode::kHighPerformance:
+      return "high_performance";
+    case QualcommOptions::DspPerformanceMode::kPowerSaver:
+      return "power_saver";
+    case QualcommOptions::DspPerformanceMode::kLowPowerSaver:
+      return "low_power_saver";
+    case QualcommOptions::DspPerformanceMode::kHighPowerSaver:
+      return "high_power_saver";
+    case QualcommOptions::DspPerformanceMode::kLowBalanced:
+      return "low_balanced";
+    case QualcommOptions::DspPerformanceMode::kBalanced:
+      return "balanced";
   }
 }
 
@@ -354,6 +425,51 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
 
 // NOLINTEND(*alien-types*)
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
+          litert::qualcomm::QualcommOptions::Backend::kHtp,
+          "QNN backend to use.");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,
+                   std::string* error) {
+  if (text == "gpu") {
+    *options = QualcommOptions::Backend::kGpu;
+    return true;
+  }
+  if (text == "htp") {
+    *options = QualcommOptions::Backend::kHtp;
+    return true;
+  }
+  if (text == "dsp") {
+    *options = QualcommOptions::Backend::kDsp;
+    return true;
+  }
+  if (text == "ir") {
+    *options = QualcommOptions::Backend::kIr;
+    return true;
+  }
+  *error = "Unknown QNN backend";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::Backend options) {
+  switch (options) {
+    case QualcommOptions::Backend::kUndefined:
+      return "undefined";
+    case QualcommOptions::Backend::kGpu:
+      return "gpu";
+    case QualcommOptions::Backend::kHtp:
+      return "htp";
+    case QualcommOptions::Backend::kDsp:
+      return "dsp";
+    case QualcommOptions::Backend::kIr:
+      return "ir";
+  }
+}
+
+}  // namespace litert::qualcomm
+
 namespace litert::qualcomm {
 
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
@@ -374,6 +490,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto htp_performance_mode =
       absl::GetFlag(FLAGS_qualcomm_htp_performance_mode);
   opts.SetHtpPerformanceMode(htp_performance_mode);
+
+  const auto dsp_performance_mode =
+      absl::GetFlag(FLAGS_qualcomm_dsp_performance_mode);
+  opts.SetDspPerformanceMode(dsp_performance_mode);
 
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);
@@ -410,6 +530,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
+
+  const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
+  opts.SetBackend(qnn_backend);
 
   return {};
 }

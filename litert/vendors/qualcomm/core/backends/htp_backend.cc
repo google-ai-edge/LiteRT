@@ -5,25 +5,379 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
-#include <optional>
 #include <utility>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 
 namespace qnn {
 
+// HTP PERF CONTROL /////////////////////////////////////////////////////////
+class HtpBackend::HtpPerfControl {
+ public:
+  static constexpr int kNumPowerConfigs = 1;
+  static constexpr int kNumRpcPollingPowerConfigs = 2;
+  static constexpr int kNumRpcPollingPowerConfigsPtr = 3;
+
+  explicit HtpPerfControl(const QNN_INTERFACE_VER_TYPE* api) : api_(api) {}
+
+  ~HtpPerfControl() {
+    DownVote();
+    if (htp_perf_infra_ != nullptr && power_config_id_ != 0) {
+      htp_perf_infra_->perfInfra.destroyPowerConfigId(power_config_id_);
+    }
+  }
+
+  bool Init(HtpPerformanceMode performance_mode) {
+    QnnDevice_Infrastructure_t local_htp_perf_infra = nullptr;
+    Qnn_ErrorHandle_t error = QNN_SUCCESS;
+
+    if (error = api_->deviceGetInfrastructure(&local_htp_perf_infra);
+        error != QNN_SUCCESS) {
+      QNN_LOG_ERROR(
+          "DSP backend unable to create device infrastructure. Error %d",
+          QNN_GET_ERROR_CODE(error));
+      return false;
+    }
+
+    if (local_htp_perf_infra->infraType !=
+        QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
+      QNN_LOG_ERROR("HTP infra type = %d, which is not perf infra type.",
+                    local_htp_perf_infra->infraType);
+      return false;
+    }
+
+    if (error = local_htp_perf_infra->perfInfra.createPowerConfigId(
+            /*device_id=*/0, /*core_id=*/0, &power_config_id_);
+        error != QNN_SUCCESS) {
+      QNN_LOG_ERROR("HTP backend unable to create power config. Error %d",
+                    QNN_GET_ERROR_CODE(error));
+      return false;
+    }
+
+    // Initialize power configurations.
+    // We need to prepare both:
+    // 1. UpVote config: for entering performance mode.
+    // 2. DownVote config: for resetting/cleanup.
+    if (!InitUpVotePowerConfigs(performance_mode)) {
+      QNN_LOG_ERROR(
+          "Failed to init perf control, using default performance mode.");
+      return false;
+    }
+    perf_power_configs_ptr_ = ObtainNullTermPtrArray(*perf_power_configs_);
+
+    if (!InitDownVotePowerConfigs(performance_mode)) {
+      QNN_LOG_ERROR(
+          "Failed to init perf control, using default performance mode.");
+      return false;
+    }
+    down_vote_power_configs_ptr_ =
+        ObtainNullTermPtrArray(*down_vote_power_configs_);
+
+    htp_perf_infra_ = std::move(local_htp_perf_infra);
+
+    return true;
+  }
+
+  bool InitRpcPolling(HtpPerformanceMode performance_mode) {
+    if (!InitRpcPollingPowerConfig(performance_mode)) {
+      QNN_LOG_ERROR("Failed to init RPC polling power config!");
+      return false;
+    }
+    rpc_power_configs_ptr_ = ObtainNullTermPtrArray(rpc_power_configs_);
+
+    if (htp_perf_infra_) {
+      htp_perf_infra_->perfInfra.setPowerConfig(power_config_id_,
+                                                rpc_power_configs_ptr_.data());
+    }
+
+    return true;
+  }
+
+  void UpVote() {
+    if (htp_perf_infra_) {
+      htp_perf_infra_->perfInfra.setPowerConfig(power_config_id_,
+                                                perf_power_configs_ptr_.data());
+    }
+  }
+
+  void DownVote() {
+    if (htp_perf_infra_ && !down_vote_power_configs_ptr_.empty()) {
+      htp_perf_infra_->perfInfra.setPowerConfig(
+          power_config_id_, down_vote_power_configs_ptr_.data());
+    }
+  }
+
+ private:
+  void SetPowerConfigs(
+      QnnHtpPerfInfrastructure_DcvsV3_t& dcvs_v3,
+      const QnnHtpPerfInfrastructure_PowerMode_t& power_mode,
+      const int& sleep_latency,
+      const QnnHtpPerfInfrastructure_VoltageCorner_t& bus_voltage_corner_min,
+      const QnnHtpPerfInfrastructure_VoltageCorner_t& bus_voltage_corner_max,
+      const QnnHtpPerfInfrastructure_VoltageCorner_t& bus_voltage_corner_target,
+      const QnnHtpPerfInfrastructure_VoltageCorner_t& core_voltage_corner_min,
+      const QnnHtpPerfInfrastructure_VoltageCorner_t& core_voltage_corner_max,
+      const QnnHtpPerfInfrastructure_VoltageCorner_t&
+          core_voltage_corner_target) {
+    dcvs_v3.powerMode = power_mode;
+    dcvs_v3.sleepLatency = sleep_latency;
+
+    dcvs_v3.busVoltageCornerMin = bus_voltage_corner_min;
+    dcvs_v3.busVoltageCornerTarget = bus_voltage_corner_max;
+    dcvs_v3.busVoltageCornerMax = bus_voltage_corner_target;
+
+    dcvs_v3.coreVoltageCornerMin = core_voltage_corner_min;
+    dcvs_v3.coreVoltageCornerTarget = core_voltage_corner_max;
+    dcvs_v3.coreVoltageCornerMax = core_voltage_corner_target;
+  }
+  bool InitUpVotePowerConfigs(HtpPerformanceMode performance_mode) {
+    auto& power_configs = perf_power_configs_.emplace();
+    QnnHtpPerfInfrastructure_PowerConfig_t& dcvs_config = power_configs[0];
+    dcvs_config.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_V3;
+    QnnHtpPerfInfrastructure_DcvsV3_t& dcvs_v3 = dcvs_config.dcvsV3Config;
+
+    dcvs_v3.contextId = power_config_id_;
+    dcvs_v3.setSleepDisable = 0;  // false
+    dcvs_v3.sleepDisable = 0;     // false
+    dcvs_v3.setDcvsEnable = 1;    // true
+    dcvs_v3.setSleepLatency = 1;  // true
+    dcvs_v3.setBusParams = 1;     // true
+    dcvs_v3.setCoreParams = 1;    // true
+
+    switch (performance_mode) {
+      case ::qnn::HtpPerformanceMode::kBurst:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsDisable;
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_ADJUST_UP_DOWN,
+                        ::qnn::PowerConfig::kSleepMinLatency,
+                        DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER);
+        break;
+      case ::qnn::HtpPerformanceMode::kSustainedHighPerformance:
+      case ::qnn::HtpPerformanceMode::kHighPerformance:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsDisable;
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_ADJUST_UP_DOWN,
+                        ::qnn::PowerConfig::kSleepLowLatency,
+                        DCVS_VOLTAGE_VCORNER_TURBO, DCVS_VOLTAGE_VCORNER_TURBO,
+                        DCVS_VOLTAGE_VCORNER_TURBO, DCVS_VOLTAGE_VCORNER_TURBO,
+                        DCVS_VOLTAGE_VCORNER_TURBO, DCVS_VOLTAGE_VCORNER_TURBO);
+        break;
+      case ::qnn::HtpPerformanceMode::kPowerSaver:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsEnable;
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
+                        ::qnn::PowerConfig::kSleepMediumLatency,
+                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS,
+                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS,
+                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS);
+        break;
+      case ::qnn::HtpPerformanceMode::kLowPowerSaver:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsEnable;
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
+                        ::qnn::PowerConfig::kSleepMediumLatency,
+                        DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS2,
+                        DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS2,
+                        DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS2);
+        break;
+      case ::qnn::HtpPerformanceMode::kHighPowerSaver:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsEnable;
+        SetPowerConfigs(
+            dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
+            ::qnn::PowerConfig::kSleepMediumLatency,
+            DCVS_VOLTAGE_VCORNER_SVS_PLUS, DCVS_VOLTAGE_VCORNER_SVS_PLUS,
+            DCVS_VOLTAGE_VCORNER_SVS_PLUS, DCVS_VOLTAGE_VCORNER_SVS_PLUS,
+            DCVS_VOLTAGE_VCORNER_SVS_PLUS, DCVS_VOLTAGE_VCORNER_SVS_PLUS);
+        break;
+      case ::qnn::HtpPerformanceMode::kLowBalanced:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsEnable;
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
+                        ::qnn::PowerConfig::kSleepMediumLatency,
+                        DCVS_VOLTAGE_VCORNER_NOM, DCVS_VOLTAGE_VCORNER_NOM,
+                        DCVS_VOLTAGE_VCORNER_NOM, DCVS_VOLTAGE_VCORNER_NOM,
+                        DCVS_VOLTAGE_VCORNER_NOM, DCVS_VOLTAGE_VCORNER_NOM);
+        break;
+      case ::qnn::HtpPerformanceMode::kBalanced:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsEnable;
+        SetPowerConfigs(
+            dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
+            ::qnn::PowerConfig::kSleepMediumLatency,
+            DCVS_VOLTAGE_VCORNER_NOM_PLUS, DCVS_VOLTAGE_VCORNER_NOM_PLUS,
+            DCVS_VOLTAGE_VCORNER_NOM_PLUS, DCVS_VOLTAGE_VCORNER_NOM_PLUS,
+            DCVS_VOLTAGE_VCORNER_NOM_PLUS, DCVS_VOLTAGE_VCORNER_NOM_PLUS);
+        break;
+      case ::qnn::HtpPerformanceMode::kExtremePowerSaver:
+        dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsEnable;
+        SetPowerConfigs(
+            dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
+            ::qnn::PowerConfig::kSleepMediumLatency,
+            DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE,
+            DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE,
+            DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE);
+        break;
+      default:
+        QNN_LOG_ERROR(
+            "Invalid performance profile %d to set power configs during "
+            "upvote.",
+            performance_mode);
+        return false;
+    }
+    return true;
+  }
+
+  bool InitDownVotePowerConfigs(HtpPerformanceMode performance_mode) {
+    auto& power_configs = down_vote_power_configs_.emplace();
+    QnnHtpPerfInfrastructure_PowerConfig_t& dcvs_config = power_configs[0];
+    dcvs_config.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_V3;
+    QnnHtpPerfInfrastructure_DcvsV3_t& dcvs_v3 = dcvs_config.dcvsV3Config;
+
+    dcvs_v3.contextId = power_config_id_;
+    dcvs_v3.setSleepDisable = 0;  // false
+    dcvs_v3.sleepDisable = 0;     // false
+    dcvs_v3.setDcvsEnable = 1;    // true
+    dcvs_v3.setSleepLatency = 1;  // true
+    dcvs_v3.setBusParams = 1;     // true
+    dcvs_v3.setCoreParams = 1;    // true
+
+    dcvs_v3.dcvsEnable = ::qnn::PowerConfig::kDcvsEnable;
+
+    switch (performance_mode) {
+      case ::qnn::HtpPerformanceMode::kBurst:
+      case ::qnn::HtpPerformanceMode::kSustainedHighPerformance:
+      case ::qnn::HtpPerformanceMode::kHighPerformance:
+      case ::qnn::HtpPerformanceMode::kBalanced:
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_ADJUST_UP_DOWN,
+                        ::qnn::PowerConfig::kSleepMaxLatency,
+                        DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS,
+                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS2,
+                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS);
+        break;
+      case ::qnn::HtpPerformanceMode::kPowerSaver:
+      case ::qnn::HtpPerformanceMode::kLowPowerSaver:
+      case ::qnn::HtpPerformanceMode::kHighPowerSaver:
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
+                        ::qnn::PowerConfig::kSleepMaxLatency,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
+                        DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER);
+        break;
+      case ::qnn::HtpPerformanceMode::kLowBalanced:
+        SetPowerConfigs(dcvs_v3,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
+                        ::qnn::PowerConfig::kSleepMaxLatency,
+                        DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS,
+                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS2,
+                        DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS);
+        break;
+      case ::qnn::HtpPerformanceMode::kExtremePowerSaver:
+        SetPowerConfigs(
+            dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
+            ::qnn::PowerConfig::kSleepMaxLatency, DCVS_VOLTAGE_CORNER_DISABLE,
+            DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE,
+            DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE,
+            DCVS_VOLTAGE_CORNER_DISABLE);
+        break;
+      default:
+        QNN_LOG_ERROR(
+            "Invalid performance profile %d to set power configs "
+            "during downvote.",
+            performance_mode);
+        return false;
+    }
+    return true;
+  }
+
+  bool InitRpcPollingPowerConfig(HtpPerformanceMode performance_mode) {
+    rpc_power_configs_ = {
+        {{QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_UNKNOWN},
+         {QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_UNKNOWN}}};
+    int config_count = 0;
+
+    QnnHtpPerfInfrastructure_PowerConfig_t rpc_control_latency;
+    rpc_control_latency.option =
+        QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_UNKNOWN;
+    QnnHtpPerfInfrastructure_PowerConfig_t rpc_polling_time;
+    rpc_polling_time.option =
+        QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_UNKNOWN;
+
+    switch (performance_mode) {
+      case ::qnn::HtpPerformanceMode::kBurst:
+      case ::qnn::HtpPerformanceMode::kSustainedHighPerformance:
+      case ::qnn::HtpPerformanceMode::kHighPerformance:
+        rpc_polling_time.option =
+            QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_POLLING_TIME;
+        rpc_polling_time.rpcPollingTimeConfig =
+            ::qnn::PowerConfig::kRpcPollingTimeHighPower;
+        rpc_power_configs_[config_count++] = rpc_polling_time;
+        ABSL_FALLTHROUGH_INTENDED;
+        // intentionally no break here.
+      case ::qnn::HtpPerformanceMode::kPowerSaver:
+      case ::qnn::HtpPerformanceMode::kLowPowerSaver:
+      case ::qnn::HtpPerformanceMode::kHighPowerSaver:
+      case ::qnn::HtpPerformanceMode::kLowBalanced:
+      case ::qnn::HtpPerformanceMode::kBalanced:
+      case ::qnn::HtpPerformanceMode::kDefault:
+      case ::qnn::HtpPerformanceMode::kExtremePowerSaver:
+        rpc_control_latency.option =
+            QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_CONTROL_LATENCY;
+        rpc_control_latency.rpcControlLatencyConfig =
+            ::qnn::PowerConfig::kRpcControlLatency;
+        rpc_power_configs_[config_count++] = rpc_control_latency;
+        break;
+      default:
+        QNN_LOG_ERROR("Invalid performance profile %d to set power configs",
+                      performance_mode);
+        return false;
+    }
+    return true;
+  }
+
+  // Performance control
+  const QNN_INTERFACE_VER_TYPE* api_{nullptr};
+  std::uint32_t power_config_id_{0};
+  QnnDevice_Infrastructure_t htp_perf_infra_{nullptr};
+  std::optional<
+      std::array<QnnHtpPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>>
+      perf_power_configs_;
+  std::optional<
+      std::array<QnnHtpPerfInfrastructure_PowerConfig_t, kNumPowerConfigs>>
+      down_vote_power_configs_;
+  std::array<QnnHtpPerfInfrastructure_PowerConfig_t, kNumRpcPollingPowerConfigs>
+      rpc_power_configs_;
+  std::array<const QnnHtpPerfInfrastructure_PowerConfig_t*,
+             kNumRpcPollingPowerConfigsPtr>
+      rpc_power_configs_ptr_;
+  std::array<const QnnHtpPerfInfrastructure_PowerConfig_t*,
+             kNumPowerConfigs + 1>
+      perf_power_configs_ptr_;
+  std::array<const QnnHtpPerfInfrastructure_PowerConfig_t*,
+             kNumPowerConfigs + 1>
+      down_vote_power_configs_ptr_;
+};
+
+// HTP BACKEND /////////////////////////////////////////////////////////
 namespace {
 std::optional<::qnn::SocInfo> FindSocInfo(
     const ::qnn::SnapdragonModel& soc_model) {
@@ -41,9 +395,7 @@ HtpBackend::HtpBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api),
       qnn_device_platform_info_(nullptr, PlatformInfoDeleter{QnnApi()}) {}
 
-HtpBackend::~HtpBackend() {
-  if (perf_control_) perf_control_->Terminate();
-}
+HtpBackend::~HtpBackend() {}
 
 HtpBackend::QnnDevicePlatformInfo HtpBackend::CreateDevicePlatformInfo() {
   const QnnDevice_PlatformInfo_t* local_qnn_device_platform_info = nullptr;
@@ -201,11 +553,8 @@ bool HtpBackend::Init(const Options& options,
   }
 
   // HTP Performance Settings
-  if (options.GetHtpPerformanceMode() != ::qnn::HtpPerformanceMode::kDefault) {
-    QNN_LOG_INFO("Set HTP performance mode: %d",
-                 options.GetHtpPerformanceMode());
-    perf_control_ = std::make_unique<PerfControl>(
-        QnnApi(), options.GetHtpPerformanceMode());
+  HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
+  if (performance_mode != HtpPerformanceMode::kDefault) {
     if (!local_qnn_device_platform_info) {
       QNN_LOG_WARNING(
           "The platforminfo is not available, using default performance mode.");
@@ -213,11 +562,20 @@ bool HtpBackend::Init(const Options& options,
       QnnHtpDevice_Arch_t local_arch =
           local_qnn_device_platform_info->v1.hwDevices->v1.deviceInfoExtension
               ->onChipDevice.arch;
-      if (auto status = perf_control_->Init(local_arch); !status) {
-        QNN_LOG_ERROR(
-            "Failed to init perf control, using default performance mode.");
+      htp_perf_control_ = std::make_unique<HtpPerfControl>(QnnApi());
+      if (!htp_perf_control_->Init(performance_mode)) {
+        QNN_LOG_ERROR("Failed to initialize HTP performance Control!");
         return false;
       }
+
+      if (local_arch >= QNN_HTP_DEVICE_ARCH_V69) {
+        if (!htp_perf_control_->InitRpcPolling(performance_mode)) {
+          QNN_LOG_ERROR("Failed to initialize HTP RPC polling!");
+          return false;
+        }
+      }
+
+      htp_perf_control_->UpVote();
     }
   }
 
