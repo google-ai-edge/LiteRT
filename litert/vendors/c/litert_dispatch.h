@@ -228,38 +228,38 @@ typedef enum LiteRtDispatchNodeType {
 } LiteRtDispatchNodeType;
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGraphCreate(
-    LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph** graph);
+    LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph* graph);
 
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchGraphDestroy(LiteRtDispatchGraph* graph);
+LiteRtDispatchGraphDestroy(LiteRtDispatchGraph graph);
 
 // Add a compute node to a given graph. Parameter node_id should be unique to
 // the graph.
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchAddNode(LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id,
+LiteRtDispatchAddNode(LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
                       LiteRtDispatchNodeType node_type);
 
 // Add an edge a given graph. Parameter edge_id should be unique to the graph.
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchAddEdge(LiteRtDispatchGraph* graph, LiteRtDispatchEdgeId edge_id);
+LiteRtDispatchAddEdge(LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id);
 
 // Connect a given node's input.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectNodeInput(
-    LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id, int input_index,
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id, int input_index,
     LiteRtDispatchEdgeId edge_id);
 
 // Connect a given node's output.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectNodeOutput(
-    LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id, int output_index,
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id, int output_index,
     LiteRtDispatchEdgeId edge_id);
 
 // Connect a given graph's input.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectGraphInput(
-    LiteRtDispatchGraph* graph, int input_index, LiteRtDispatchEdgeId edge_id);
+    LiteRtDispatchGraph graph, int input_index, LiteRtDispatchEdgeId edge_id);
 
 // Connect a given graph's output.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectGraphOutput(
-    LiteRtDispatchGraph* graph, int output_index, LiteRtDispatchEdgeId edge_id);
+    LiteRtDispatchGraph graph, int output_index, LiteRtDispatchEdgeId edge_id);
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchLoadExecutable(
     LiteRtDispatchDeviceContext device_context,
@@ -273,26 +273,26 @@ LiteRtDispatchUnloadExecutable(LiteRtDispatchDeviceContext device_context,
 // Assign an executable function to a graph node. Parameter `function_name` is
 // mandatory if the given executable includes multiple functions.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAssignNodeFunction(
-    LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id,
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
     LiteRtDispatchExecutableHandle exec_handle, const char* function_name);
 
 // Add an annotation to an entire graph.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateGraph(
-    LiteRtDispatchGraph* graph, const char* key, const char* value);
+    LiteRtDispatchGraph graph, const char* key, const char* value);
 
 // Add an annotation to a specified node.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateNode(
-    LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id, const char* key,
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id, const char* key,
     const char* value);
 
 // Add an annotation to a specified edge.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateEdge(
-    LiteRtDispatchGraph* graph, LiteRtDispatchEdgeId edge_id, const char* key,
+    LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id, const char* key,
     const char* value);
 
 // Create an invocation context from a given graph.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
-    LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph* graph,
+    LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context);
 
 // Get the dispatch graph associated with an invocation context.
