@@ -47,6 +47,9 @@ struct LiteRtGpuOptionsPayloadT {
   // The unique null-terminated token string that acts as a 'namespace' for
   // all serialization entries.
   const char* model_cache_key = nullptr;
+  // The file descriptor to use for program caching. If set, it overrides the
+  // serialization_dir.
+  int program_cache_fd = -1;
   // When set to true AND the serialization_dir and model_cache_key are also
   // set, the delegate will serialize the program cache.
   bool serialize_program_cache = true;
