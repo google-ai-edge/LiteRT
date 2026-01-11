@@ -52,8 +52,11 @@ TEST_P(QnnBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
 
   switch (GetParam()) {
     case BackendType::kHtpBackend:
-      // Use V75 to test with HTP backend
-      ASSERT_TRUE(backend_->Init(options, ::qnn::kSocInfos[7]));
+#ifdef __ANDROID__
+      ASSERT_TRUE(backend_->Init(options, std::nullopt));
+#else
+      ASSERT_TRUE(backend_->Init(options, ::qnn::kSocInfos[8]));
+#endif
       ASSERT_NE(backend_->GetDeviceHandle(), nullptr);
       break;
     case BackendType::kIrBackend:

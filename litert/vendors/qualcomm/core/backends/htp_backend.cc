@@ -38,8 +38,7 @@ std::optional<::qnn::SocInfo> FindSocInfo(
 }  // namespace
 
 HtpBackend::HtpBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
-    : QnnBackend(qnn_api),
-      qnn_device_platform_info_(nullptr, PlatformInfoDeleter{QnnApi()}) {}
+    : QnnBackend(qnn_api) {}
 
 HtpBackend::~HtpBackend() {
   if (perf_control_) perf_control_->Terminate();
@@ -81,43 +80,27 @@ bool HtpBackend::Init(const Options& options,
   // this API is called during offline preparation. However, it will always
   // return the default SoC info (SM8350). If user specifies a SoC, we will
   // override the default.
-  std::optional<::qnn::SocInfo> soc_info_online;
-  auto local_qnn_device_platform_info = CreateDevicePlatformInfo();
-  if (local_qnn_device_platform_info) {
-    auto online_soc_model = local_qnn_device_platform_info->v1.hwDevices->v1
-                                .deviceInfoExtension->onChipDevice.socModel;
-    soc_info_online =
-        FindSocInfo(static_cast<::qnn::SnapdragonModel>(online_soc_model));
-    QNN_LOG_INFO(
-        "Succssfully get platform info. SoC model: %d. SoC name: %s.",
-        online_soc_model,
-        soc_info_online.has_value() ? soc_info_online->soc_name : "NotFound");
-  }
-
-#if defined(__ANDROID__)
-  if (soc_info_online.has_value()) {
-    QNN_LOG_INFO("Using online SoC info. SoC name: %s.",
-                 soc_info_online->soc_name);
-    soc_info_ = *soc_info_online;
-  } else if (soc_info.has_value()) {
-    QNN_LOG_INFO("Using provided SoC info. SoC name: %s.", soc_info->soc_name);
-    soc_info_ = *soc_info;
-  } else {
-    QNN_LOG_WARNING("Fail to get SoC info, using default.");
-  }
-#else
   if (soc_info.has_value()) {
     QNN_LOG_INFO("Using provided SoC info. SoC name: %s.", soc_info->soc_name);
     soc_info_ = *soc_info;
-  } else if (soc_info_online.has_value()) {
-    QNN_LOG_INFO("Using online SoC info. SoC name: %s.",
-                 soc_info_online->soc_name);
-    soc_info_ = *soc_info_online;
   } else {
-    QNN_LOG_WARNING("Fail to get SoC info, using default.");
+    if (auto device_platform_info = CreateDevicePlatformInfo();
+        device_platform_info) {
+      auto soc_model = device_platform_info->v1.hwDevices->v1
+                           .deviceInfoExtension->onChipDevice.socModel;
+      auto soc_info_online =
+          FindSocInfo(static_cast<::qnn::SnapdragonModel>(soc_model));
+      QNN_LOG_INFO(
+          "Succssfully get platform info. SoC model: %d. SoC name: %s.",
+          soc_model,
+          soc_info_online.has_value() ? soc_info_online->soc_name : "NotFound");
+      soc_info_ = soc_info_online.value_or(soc_info_);
+    }
   }
-#endif
-
+  if (soc_info_.dsp_arch == DspArch::NONE) {
+    QNN_LOG_ERROR("SoC info was not configured successfully.")
+    return false;
+  }
   QNN_LOG_INFO("Initializing QNN backend for SoC model: %s",
                soc_info_.soc_name);
 
@@ -131,47 +114,47 @@ bool HtpBackend::Init(const Options& options,
   device_custom_configs.emplace_back(
       static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config));
 
-#ifdef __ANDROID__
   std::vector<QnnDevice_PlatformInfo_t*> device_platform_infos = {};
-#else
-  std::vector<QnnDevice_PlatformInfo_t*> device_platform_infos;
+  if (soc_info.has_value()) {
+    std::vector<QnnDevice_PlatformInfo_t*> device_platform_infos;
 
-  QnnDevice_PlatformInfo_t* device_platform_info =
-      &AllocateDevicePlatformInfo();
-  device_platform_info->version = QNN_DEVICE_PLATFORM_INFO_VERSION_1;
-  device_platform_info->v1.numHwDevices = 1;
+    QnnDevice_PlatformInfo_t* device_platform_info =
+        &AllocateDevicePlatformInfo();
+    device_platform_info->version = QNN_DEVICE_PLATFORM_INFO_VERSION_1;
+    device_platform_info->v1.numHwDevices = 1;
 
-  QnnDevice_HardwareDeviceInfo_t* hardware_device_info =
-      &AllocateDeviceHardwareInfo();
-  hardware_device_info->version = QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1;
-  hardware_device_info->v1.deviceId = 0;
-  hardware_device_info->v1.deviceType = 0;
-  hardware_device_info->v1.numCores = 1;
+    QnnDevice_HardwareDeviceInfo_t* hardware_device_info =
+        &AllocateDeviceHardwareInfo();
+    hardware_device_info->version = QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1;
+    hardware_device_info->v1.deviceId = 0;
+    hardware_device_info->v1.deviceType = 0;
+    hardware_device_info->v1.numCores = 1;
 
-  QnnHtpDevice_DeviceInfoExtension_t* htp_device_info_extension =
-      &AllocHtpDeviceInfoExtension();
-  htp_device_info_extension->devType = QNN_HTP_DEVICE_TYPE_ON_CHIP;
-  htp_device_info_extension->onChipDevice.vtcmSize = soc_info_.vtcm_size_in_mb;
-  // TODO(jiunkaiy): Given by user, default value is unsigned pd
-  htp_device_info_extension->onChipDevice.signedPdSupport = false;
-  htp_device_info_extension->onChipDevice.socModel =
-      static_cast<uint32_t>(soc_info_.soc_model);
-  htp_device_info_extension->onChipDevice.arch =
-      static_cast<QnnHtpDevice_Arch_t>(soc_info_.dsp_arch);
-  // TODO(jiunkaiy): For Htp, dlbcSupport is true
-  htp_device_info_extension->onChipDevice.dlbcSupport = true;
-  hardware_device_info->v1.deviceInfoExtension = htp_device_info_extension;
+    QnnHtpDevice_DeviceInfoExtension_t* htp_device_info_extension =
+        &AllocHtpDeviceInfoExtension();
+    htp_device_info_extension->devType = QNN_HTP_DEVICE_TYPE_ON_CHIP;
+    htp_device_info_extension->onChipDevice.vtcmSize =
+        soc_info_.vtcm_size_in_mb;
+    // TODO(jiunkaiy): Given by user, default value is unsigned pd
+    htp_device_info_extension->onChipDevice.signedPdSupport = false;
+    htp_device_info_extension->onChipDevice.socModel =
+        static_cast<uint32_t>(soc_info_.soc_model);
+    htp_device_info_extension->onChipDevice.arch =
+        static_cast<QnnHtpDevice_Arch_t>(soc_info_.dsp_arch);
+    // TODO(jiunkaiy): For Htp, dlbcSupport is true
+    htp_device_info_extension->onChipDevice.dlbcSupport = true;
+    hardware_device_info->v1.deviceInfoExtension = htp_device_info_extension;
 
-  QnnDevice_CoreInfo_t* device_core_info = &AllocateDeviceCoreInfo();
-  device_core_info->version = QNN_DEVICE_CORE_INFO_VERSION_1;
-  device_core_info->v1.coreId = 0;
-  device_core_info->v1.coreType = 0;
-  device_core_info->v1.coreInfoExtension = nullptr;
-  hardware_device_info->v1.cores = device_core_info;
+    QnnDevice_CoreInfo_t* device_core_info = &AllocateDeviceCoreInfo();
+    device_core_info->version = QNN_DEVICE_CORE_INFO_VERSION_1;
+    device_core_info->v1.coreId = 0;
+    device_core_info->v1.coreType = 0;
+    device_core_info->v1.coreInfoExtension = nullptr;
+    hardware_device_info->v1.cores = device_core_info;
 
-  device_platform_info->v1.hwDevices = hardware_device_info;
-  device_platform_infos.emplace_back(device_platform_info);
-#endif
+    device_platform_info->v1.hwDevices = hardware_device_info;
+    device_platform_infos.emplace_back(device_platform_info);
+  }
 
   std::vector<const QnnDevice_Config_t*> device_configs;
   uint32_t num_custom_configs =
@@ -206,23 +189,16 @@ bool HtpBackend::Init(const Options& options,
                  options.GetHtpPerformanceMode());
     perf_control_ = std::make_unique<PerfControl>(
         QnnApi(), options.GetHtpPerformanceMode());
-    if (!local_qnn_device_platform_info) {
-      QNN_LOG_WARNING(
-          "The platforminfo is not available, using default performance mode.");
-    } else {
-      QnnHtpDevice_Arch_t local_arch =
-          local_qnn_device_platform_info->v1.hwDevices->v1.deviceInfoExtension
-              ->onChipDevice.arch;
-      if (auto status = perf_control_->Init(local_arch); !status) {
-        QNN_LOG_ERROR(
-            "Failed to init perf control, using default performance mode.");
-        return false;
-      }
+    if (auto status = perf_control_->Init(
+            static_cast<QnnHtpDevice_Arch_t>(soc_info_.dsp_arch));
+        !status) {
+      QNN_LOG_ERROR(
+          "Failed to init perf control, using default performance mode.");
+      return false;
     }
   }
 
   // Follow RAII pattern to manage handles
-  qnn_device_platform_info_ = std::move(local_qnn_device_platform_info);
   log_handle_ = std::move(local_log_handle);
   backend_handle_ = std::move(local_backend_handle);
   device_handle_ = std::move(local_device_handle);

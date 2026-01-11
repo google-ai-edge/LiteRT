@@ -171,6 +171,11 @@ const auto kSupportedSocModels = Values(
     "SM8850"
 );
 // clang-format on
+#ifdef __ANDROID__
+const char* kSoCModel = nullptr;
+#else
+const char* kSoCModel = "SM8750";
+#endif
 
 TEST(TestQnnPlugin, GetConfigInfo) {
   EXPECT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Qualcomm");
@@ -196,7 +201,7 @@ TEST(TestQnnPlugin, PartitionMulOps) {
 
   LiteRtOpListT selected_op_list;
   LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+      plugin.get(), kSoCModel, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 1);
@@ -362,8 +367,9 @@ TEST_P(QnnPluginOpValidationTest, SupportedOpsTest) {
   LiteRtSubgraph litert_subgraph = subgraph->Get();
 
   LiteRtOpListT selected_ops;
+
   LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, litert_subgraph, &selected_ops));
+      plugin.get(), kSoCModel, litert_subgraph, &selected_ops));
 
   EXPECT_EQ(selected_ops.Values().size(), litert_subgraph->Ops().size());
 }
