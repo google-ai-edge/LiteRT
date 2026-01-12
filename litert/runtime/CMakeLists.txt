@@ -119,6 +119,7 @@ endif()
 # Add platform-specific compile definitions
 target_compile_definitions(litert_runtime
     PRIVATE
+        LITERT_BUILD_WITH_CMAKE
         $<$<BOOL:${LITERT_PLATFORM_MACOS}>:LITERT_PLATFORM_MACOS>
         $<$<BOOL:${LITERT_PLATFORM_LINUX}>:LITERT_PLATFORM_LINUX>
         $<$<BOOL:${LITERT_PLATFORM_ANDROID}>:LITERT_PLATFORM_ANDROID>
