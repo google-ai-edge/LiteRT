@@ -25,7 +25,7 @@ std::vector<OpWrapper> TransformToSelectOp(
   auto& pattern_output = const_cast<TensorWrapper&>(
       original_ops[start_index + pattern_size - 1].GetOutputTensor(0));
   const auto& quant_param = pattern_output.GetQuantParams();
-  const auto& tensor_dims = pattern_input.GetDims();
+  const auto& tensor_dims = pattern_input.GetDimensions();
   const std::uint32_t num_element = pattern_input.GetTensorNumElements();
 
   std::vector<std::int16_t> all_zero_data(num_element, 0);

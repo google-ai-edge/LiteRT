@@ -166,7 +166,7 @@ TensorWrapper::TensorWrapper(TensorWrapper&& other)
 
 TensorWrapper::~TensorWrapper() = default;
 
-std::uint32_t TensorWrapper::GetDim(size_t index) const {
+std::uint32_t TensorWrapper::GetDimension(size_t index) const {
   return dimentions_[index];
 }
 
@@ -183,9 +183,10 @@ Qnn_TensorType_t TensorWrapper::GetTensorType() const {
 }
 
 std::uint32_t TensorWrapper::GetTensorNumElements() const {
-  return GetDims().empty() ? 0
-                           : std::accumulate(GetDims().begin(), GetDims().end(),
-                                             1, std::multiplies<>());
+  return GetDimensions().empty()
+             ? 0
+             : std::accumulate(GetDimensions().begin(), GetDimensions().end(),
+                               1, std::multiplies<>());
 }
 
 size_t TensorWrapper::GetTensorBytes() const {

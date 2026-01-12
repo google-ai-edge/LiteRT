@@ -40,7 +40,7 @@ std::vector<OpWrapper> BuildTransposeConvOp(
 
   // reshape filter
   TensorWrapper& filter_tensor = inputs[kFilterIndex];
-  const std::vector<uint32_t>& filters_dims = filter_tensor.GetDims();
+  const std::vector<uint32_t>& filters_dims = filter_tensor.GetDimensions();
   auto& filter_quant_params = filter_tensor.GetQuantParams();
   std::vector<std::uint32_t> permute_dims{filters_dims[1], filters_dims[2],
                                           filters_dims[3], filters_dims[0]};
@@ -120,12 +120,12 @@ std::vector<OpWrapper> BuildTransposeConvOp(
 
   // padding param
   const auto [padding_before_height, padding_after_height] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kHeightIndex),
-                                filter_tensor.GetDim(kFilterHeightIndex),
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
+                                filter_tensor.GetDimension(kFilterHeightIndex),
                                 stride_h, 1, padding_type);
   const auto [padding_before_width, padding_after_width] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kWidthIndex),
-                                filter_tensor.GetDim(kFilterWidthIndex),
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kWidthIndex),
+                                filter_tensor.GetDimension(kFilterWidthIndex),
                                 stride_w, 1, padding_type);
   const std::array<std::uint32_t, 4> padding_data = {
       padding_before_height, padding_after_height, padding_before_width,
