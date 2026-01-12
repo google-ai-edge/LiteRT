@@ -87,14 +87,11 @@ TEST(OpWrapperTest, OpConfigTest) {
       std::accumulate(dummy_dims.begin(), dummy_dims.end(),
                       sizeof(decltype(data)::value_type), std::multiplies<>());
 
-  TensorWrapper tensor_wrapper{"",
-                               QNN_TENSOR_TYPE_APP_WRITE,
-                               QNN_DATATYPE_UFIXED_POINT_8,
-                               QuantizeParamsWrapperVariant(),
-                               dummy_dims,
-                               static_cast<uint32_t>(data_size),
-                               data_ptr,
-                               true};
+  TensorWrapper tensor_wrapper;
+  tensor_wrapper.SetTensorType(QNN_TENSOR_TYPE_APP_WRITE);
+  tensor_wrapper.SetDataType(QNN_DATATYPE_UFIXED_POINT_8);
+  tensor_wrapper.SetDimensions(dummy_dims);
+  tensor_wrapper.SetData(static_cast<uint32_t>(data_size), data_ptr, true);
 
   Qnn_Tensor_t golden_qnn_tensor;
   tensor_wrapper.CloneTo(golden_qnn_tensor);
@@ -132,14 +129,12 @@ TEST(OpWrapperTest, MoveConstructorTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   std::vector<std::uint8_t> data = {1, 2, 3};
   void* data_ptr = reinterpret_cast<void*>(data.data());
-  TensorWrapper tensor_wrapper{"",
-                               QNN_TENSOR_TYPE_APP_WRITE,
-                               QNN_DATATYPE_UFIXED_POINT_8,
-                               QuantizeParamsWrapperVariant(),
-                               dummy_dims,
-                               static_cast<uint32_t>(data.size()),
-                               data_ptr,
-                               true};
+  TensorWrapper tensor_wrapper;
+  tensor_wrapper.SetTensorType(QNN_TENSOR_TYPE_APP_WRITE);
+  tensor_wrapper.SetDataType(QNN_DATATYPE_UFIXED_POINT_8);
+  tensor_wrapper.SetDimensions(dummy_dims);
+  tensor_wrapper.SetData(static_cast<uint32_t>(data.size()), data_ptr, true);
+
   Qnn_Tensor_t golden_qnn_tensor;
   tensor_wrapper.CloneTo(golden_qnn_tensor);
   std::uint8_t value = 255;

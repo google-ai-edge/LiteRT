@@ -21,6 +21,11 @@ class UndefinedQuantizeParamsWrapper final {
 
   UndefinedQuantizeParamsWrapper(UndefinedQuantizeParamsWrapper&&);
 
+  UndefinedQuantizeParamsWrapper& operator=(
+      const UndefinedQuantizeParamsWrapper&) = default;
+  UndefinedQuantizeParamsWrapper& operator=(UndefinedQuantizeParamsWrapper&&) =
+      default;
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
  private:
@@ -37,6 +42,11 @@ class ScaleOffsetQuantizeParamsWrapper final {
   ScaleOffsetQuantizeParamsWrapper(const ScaleOffsetQuantizeParamsWrapper&);
 
   ScaleOffsetQuantizeParamsWrapper(ScaleOffsetQuantizeParamsWrapper&&);
+
+  ScaleOffsetQuantizeParamsWrapper& operator=(
+      const ScaleOffsetQuantizeParamsWrapper&) = default;
+  ScaleOffsetQuantizeParamsWrapper& operator=(
+      ScaleOffsetQuantizeParamsWrapper&&) = default;
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
@@ -71,6 +81,11 @@ class AxisScaleOffsetQuantizeParamsWrapper final {
   AxisScaleOffsetQuantizeParamsWrapper(
       AxisScaleOffsetQuantizeParamsWrapper&& rhs);
 
+  AxisScaleOffsetQuantizeParamsWrapper& operator=(
+      const AxisScaleOffsetQuantizeParamsWrapper& rhs);
+  AxisScaleOffsetQuantizeParamsWrapper& operator=(
+      AxisScaleOffsetQuantizeParamsWrapper&& rhs);
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
   std::int32_t GetAxis() const;
@@ -97,6 +112,11 @@ class BwScaleOffsetQuantizeParamsWrapper final {
 
   BwScaleOffsetQuantizeParamsWrapper(BwScaleOffsetQuantizeParamsWrapper&& rhs);
 
+  BwScaleOffsetQuantizeParamsWrapper& operator=(
+      const BwScaleOffsetQuantizeParamsWrapper&) = default;
+  BwScaleOffsetQuantizeParamsWrapper& operator=(
+      BwScaleOffsetQuantizeParamsWrapper&&) = default;
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
   std::uint32_t GetBitwidth() const {
@@ -118,6 +138,11 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
       const BwAxisScaleOffsetQuantizeParamsWrapper& rhs);
 
   BwAxisScaleOffsetQuantizeParamsWrapper(
+      BwAxisScaleOffsetQuantizeParamsWrapper&& rhs);
+
+  BwAxisScaleOffsetQuantizeParamsWrapper& operator=(
+      const BwAxisScaleOffsetQuantizeParamsWrapper& rhs);
+  BwAxisScaleOffsetQuantizeParamsWrapper& operator=(
       BwAxisScaleOffsetQuantizeParamsWrapper&& rhs);
 
   void CloneTo(Qnn_QuantizeParams_t& dst);

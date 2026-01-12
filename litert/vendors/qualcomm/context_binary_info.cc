@@ -37,7 +37,8 @@ Expected<void> InsertQnnTensors(int num_qnn_tensors, Qnn_Tensor_t* qnn_tensors,
   tensors.clear();
   tensors.reserve(num_qnn_tensors);
   for (auto i = 0; i < num_qnn_tensors; ++i) {
-    tensors.emplace_back(qnn_tensors[i]);
+    tensors.emplace_back();
+    tensors.back().SetQnnTensor(qnn_tensors[i]);
     // TODO: chunhsue@qti handle invalid access of qnn_tensor error.
   }
   return {};

@@ -93,19 +93,6 @@ class TensorWrapper final {
  public:
   explicit TensorWrapper();
 
-  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
-                         Qnn_DataType_t data_type,
-                         const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimensions);
-
-  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
-                         Qnn_DataType_t data_type,
-                         const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimensions,
-                         std::uint32_t bytes, const void* data, bool copy_data);
-
-  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
-
   TensorWrapper(const TensorWrapper& other);
 
   TensorWrapper(TensorWrapper&& other);
@@ -115,6 +102,21 @@ class TensorWrapper final {
   bool operator==(const TensorWrapper& other) const { return this == &other; }
 
   bool operator!=(const TensorWrapper& other) const { return this != &other; }
+
+  void SetName(const std::string& name);
+
+  void SetTensorType(const Qnn_TensorType_t tensor_type);
+
+  void SetDataType(const Qnn_DataType_t data_type);
+
+  void SetQuantizeParams(const QuantizeParamsWrapperVariant& quantize_params);
+
+  void SetDimensions(const std::vector<std::uint32_t>& dimensions);
+
+  void SetData(const std::uint32_t bytes, const void* data,
+               const bool copy_data);
+
+  void SetQnnTensor(const Qnn_Tensor_t& qnn_tensor);
 
   void CloneTo(Qnn_Tensor_t& dst) const;
 
@@ -131,7 +133,7 @@ class TensorWrapper final {
   std::uint32_t GetDimension(size_t index) const;
 
   const std::vector<std::uint32_t>& GetDimensions() const {
-    return dimentions_;
+    return dimensions_;
   };
 
   std::uint32_t GetTensorNumElements() const;
@@ -333,14 +335,6 @@ class TensorWrapper final {
         quantize_params_);
   }
   Qnn_TensorType_t GetTensorType() const;
-
-  void SetTensorType(Qnn_TensorType_t tensor_type) {
-    qnn_tensor_.v2.type = tensor_type;
-  }
-
-  void SetDataType(Qnn_DataType_t data_type) {
-    qnn_tensor_.v2.dataType = data_type;
-  }
 
   void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
 
