@@ -22,17 +22,10 @@ class OpWrapper final {
  public:
   explicit OpWrapper() = default;
 
-  explicit OpWrapper(std::string name, const char* op_type, QnnOpCode op_code);
-
-  OpWrapper(const OpWrapper& other);
-
-  OpWrapper& operator=(const OpWrapper& other);
+  explicit OpWrapper(std::string name, const char* op_type, QnnOpCode op_code)
+      : type_name_{op_type}, name_{std::move(name)}, op_code_{op_code} {}
 
   bool operator==(const OpWrapper& other) const;
-
-  OpWrapper(OpWrapper&& other);
-
-  ~OpWrapper();
 
   void SetName(std::string name);
 

@@ -23,19 +23,6 @@
 
 namespace qnn {
 
-OpWrapper::OpWrapper(std::string name, const char* op_type, QnnOpCode op_code)
-    : type_name_{op_type}, name_{std::move(name)}, op_code_{op_code} {}
-
-OpWrapper::OpWrapper(const OpWrapper& other) = default;
-
-OpWrapper& OpWrapper::operator=(const OpWrapper& other) {
-  if (this != &other) {
-    this->~OpWrapper();
-    new (this) OpWrapper(other);
-  }
-  return *this;
-}
-
 bool OpWrapper::operator==(const OpWrapper& other) const {
   if (op_code_ != other.op_code_) return false;
   if (!miscs::IsStrEq(type_name_, other.type_name_)) return false;
@@ -57,20 +44,6 @@ bool OpWrapper::operator==(const OpWrapper& other) const {
   return scalar_params_ == other.scalar_params_ &&
          tensor_params_ == other.tensor_params_;
 }
-
-OpWrapper::OpWrapper(OpWrapper&& other)
-    : type_name_{other.type_name_},
-      name_{std::move(other.name_)},
-      input_tensors_{std::move(other.input_tensors_)},
-      output_tensors_{std::move(other.output_tensors_)},
-      scalar_params_{std::move(other.scalar_params_)},
-      tensor_params_{std::move(other.tensor_params_)},
-      qnn_input_tensors_{std::move(other.qnn_input_tensors_)},
-      qnn_output_tensors_{std::move(other.qnn_output_tensors_)},
-      qnn_params_{std::move(other.qnn_params_)},
-      op_code_{other.op_code_} {}
-
-OpWrapper::~OpWrapper() = default;
 
 void OpWrapper::SetName(std::string name) { name_ = std::move(name); }
 
