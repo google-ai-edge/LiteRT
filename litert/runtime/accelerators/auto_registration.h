@@ -25,7 +25,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment);
 
 Expected<void> RegisterSharedObjectAccelerator(
-    LiteRtEnvironmentT& environment, absl::string_view plugin_path,
+    LiteRtEnvironmentT& environment, absl::string_view shlib_path,
     absl::string_view registration_function_name,
     bool try_symbol_already_loaded = true);
 
