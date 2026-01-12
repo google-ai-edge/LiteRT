@@ -96,12 +96,12 @@ class TensorWrapper final {
   explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimentions);
+                         const std::vector<std::uint32_t>& dimensions);
 
   explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimentions,
+                         const std::vector<std::uint32_t>& dimensions,
                          std::uint32_t bytes, const void* data, bool copy_data);
 
   TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
@@ -128,9 +128,11 @@ class TensorWrapper final {
 
   std::uint32_t GetRank() const;
 
-  std::uint32_t GetDim(size_t index) const;
+  std::uint32_t GetDimension(size_t index) const;
 
-  const std::vector<std::uint32_t>& GetDims() const { return dimentions_; };
+  const std::vector<std::uint32_t>& GetDimensions() const {
+    return dimentions_;
+  };
 
   std::uint32_t GetTensorNumElements() const;
 
@@ -350,7 +352,7 @@ class TensorWrapper final {
   Qnn_Tensor_t qnn_tensor_{.version = QNN_TENSOR_VERSION_2,
                            .v2 = QNN_TENSOR_V2_INIT};
   std::string name_{};
-  std::vector<std::uint32_t> dimentions_{};
+  std::vector<std::uint32_t> dimensions_{};
   QuantizeParamsWrapperVariant quantize_params_{};
   std::vector<std::byte> owned_data_{};
 };

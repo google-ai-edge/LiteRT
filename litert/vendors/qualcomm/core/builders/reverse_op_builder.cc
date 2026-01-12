@@ -36,7 +36,7 @@ std::vector<OpWrapper> BuildReverseOp(
   }
 
   // TODO: Support more axis and remove this check
-  if (axis_tensor.GetRank() != 1 || axis_tensor.GetDims()[0] != 1) {
+  if (axis_tensor.GetRank() != 1 || axis_tensor.GetDimensions()[0] != 1) {
     QNN_LOG_ERROR("Qnn supports ReverseV2 with a single axis for now.");
     return {};
   }
@@ -66,7 +66,7 @@ std::vector<OpWrapper> BuildReverseOp(
 
   // For the axis which is reversed, use (begin, end, stride) = (dim[axis]-1,
   // -1, -1) Otherwise, use (0, dim[axis], 1)
-  auto& input_dims = input_tensor.GetDims();
+  auto& input_dims = input_tensor.GetDimensions();
   std::vector<std::int32_t> ranges(
       static_cast<uint32_t>(input_rank * range_num_elements));
   for (size_t i = 0; i < input_rank; ++i) {
