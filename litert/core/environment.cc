@@ -18,6 +18,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
@@ -28,6 +29,15 @@ litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
     absl::Span<const LiteRtEnvOption> options) {
   LITERT_LOG(LITERT_INFO, "Creating LiteRT environment with options");
   auto env = std::make_unique<LiteRtEnvironmentT>();
+  LiteRtAny env_any{
+      .type = kLiteRtAnyTypeVoidPtr,
+      .ptr_value = reinterpret_cast<void*>(env.get()),
+  };
+  LiteRtEnvOption env_option{
+      .tag = kLiteRtEnvOptionTagEnvironment,
+      .value = env_any,
+  };
+  env->options_.SetOption(env_option);
   for (const auto& opt : options) {
     env->options_.SetOption(opt);
   }
