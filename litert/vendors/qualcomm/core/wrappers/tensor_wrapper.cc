@@ -88,17 +88,17 @@ TensorWrapper::TensorWrapper() = default;
 TensorWrapper::TensorWrapper(
     std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
-    const std::vector<std::uint32_t>& dimentions)
+    const std::vector<std::uint32_t>& dimensions)
     : name_{std::move(name)},
-      dimentions_{dimentions},
+      dimensions_{dimensions},
       quantize_params_{quantize_params} {
   qnn_tensor_.v2.name = name_.c_str();
   qnn_tensor_.v2.type = tensor_type;
   qnn_tensor_.v2.dataFormat = QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER;
   qnn_tensor_.v2.dataType = data_type;
   UpdateQnnQuantParams();
-  qnn_tensor_.v2.rank = dimentions_.size();
-  qnn_tensor_.v2.dimensions = dimentions_.data();
+  qnn_tensor_.v2.rank = dimensions_.size();
+  qnn_tensor_.v2.dimensions = dimensions_.data();
   qnn_tensor_.v2.memType = QNN_TENSORMEMTYPE_RAW;
 }
 
@@ -114,10 +114,10 @@ void TensorWrapper::ConvertAxisScaleOffsetToScaleOffset() {
 TensorWrapper::TensorWrapper(
     std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
-    const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
+    const std::vector<std::uint32_t>& dimensions, std::uint32_t bytes,
     const void* data, bool copy_data)
     : TensorWrapper(std::move(name), tensor_type, data_type, quantize_params,
-                    dimentions) {
+                    dimensions) {
   // Already map to QNN_DATATYPE_SFIXED_POINT_8 for 4-bit and 2-bit
   // quantization
   if (IsNBitQuant(quantize_params, kQuantBitWidth4)) {
@@ -139,11 +139,11 @@ TensorWrapper::TensorWrapper(
 TensorWrapper::TensorWrapper(const TensorWrapper& other)
     : qnn_tensor_{other.qnn_tensor_},
       name_{other.name_},
-      dimentions_{other.dimentions_},
+      dimensions_{other.dimensions_},
       quantize_params_{other.quantize_params_},
       owned_data_{other.owned_data_} {
   qnn_tensor_.v2.name = name_.c_str();
-  qnn_tensor_.v2.dimensions = dimentions_.data();
+  qnn_tensor_.v2.dimensions = dimensions_.data();
   if (!owned_data_.empty()) {
     qnn_tensor_.v2.clientBuf.data = owned_data_.data();
   }
@@ -153,11 +153,11 @@ TensorWrapper::TensorWrapper(const TensorWrapper& other)
 TensorWrapper::TensorWrapper(TensorWrapper&& other)
     : qnn_tensor_{other.qnn_tensor_},
       name_{std::move(other.name_)},
-      dimentions_{std::move(other.dimentions_)},
+      dimensions_{std::move(other.dimensions_)},
       quantize_params_{std::move(other.quantize_params_)},
       owned_data_{std::move(other.owned_data_)} {
   qnn_tensor_.v2.name = name_.c_str();
-  qnn_tensor_.v2.dimensions = dimentions_.data();
+  qnn_tensor_.v2.dimensions = dimensions_.data();
   if (!owned_data_.empty()) {
     qnn_tensor_.v2.clientBuf.data = owned_data_.data();
   }
@@ -166,8 +166,8 @@ TensorWrapper::TensorWrapper(TensorWrapper&& other)
 
 TensorWrapper::~TensorWrapper() = default;
 
-std::uint32_t TensorWrapper::GetDim(size_t index) const {
-  return dimentions_[index];
+std::uint32_t TensorWrapper::GetDimension(size_t index) const {
+  return dimensions_[index];
 }
 
 Qnn_DataType_t TensorWrapper::GetDataType() const {
@@ -217,9 +217,10 @@ Qnn_TensorType_t TensorWrapper::GetTensorType() const {
 }
 
 std::uint32_t TensorWrapper::GetTensorNumElements() const {
-  return GetDims().empty() ? 0
-                           : std::accumulate(GetDims().begin(), GetDims().end(),
-                                             1, std::multiplies<>());
+  return GetDimensions().empty()
+             ? 0
+             : std::accumulate(GetDimensions().begin(), GetDimensions().end(),
+                               1, std::multiplies<>());
 }
 
 size_t TensorWrapper::GetTensorBytes() const {
@@ -349,12 +350,12 @@ TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
   if (qnn_tensor_.version == QNN_TENSOR_VERSION_1) {
     name_ = qnn_tensor_.v1.name;
     qnn_tensor_.v1.name = name_.data();
-    dimentions_.reserve(qnn_tensor_.v1.rank);
+    dimensions_.reserve(qnn_tensor_.v1.rank);
     std::copy(
         qnn_tensor_.v1.dimensions,
         qnn_tensor_.v1.dimensions + qnn_tensor_.v1.rank,
-        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
-    qnn_tensor_.v1.dimensions = dimentions_.data();
+        std::back_insert_iterator<std::vector<std::uint32_t>>(dimensions_));
+    qnn_tensor_.v1.dimensions = dimensions_.data();
     if (const auto& quant_params = qnn_tensor_.v1.quantizeParams;
         quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
       if (quant_params.quantizationEncoding ==
@@ -375,12 +376,12 @@ TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
     // TODO: support v2 only
     name_ = qnn_tensor_.v2.name;
     qnn_tensor_.v2.name = name_.data();
-    dimentions_.reserve(qnn_tensor_.v2.rank);
+    dimensions_.reserve(qnn_tensor_.v2.rank);
     std::copy(
         qnn_tensor_.v2.dimensions,
         qnn_tensor_.v2.dimensions + qnn_tensor_.v2.rank,
-        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
-    qnn_tensor_.v2.dimensions = dimentions_.data();
+        std::back_insert_iterator<std::vector<std::uint32_t>>(dimensions_));
+    qnn_tensor_.v2.dimensions = dimensions_.data();
     if (const auto& quant_params = qnn_tensor_.v2.quantizeParams;
         quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
       if (quant_params.quantizationEncoding ==
