@@ -105,6 +105,30 @@ AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
       scale_offsets_.data();
 }
 
+AxisScaleOffsetQuantizeParamsWrapper&
+AxisScaleOffsetQuantizeParamsWrapper::operator=(
+    const AxisScaleOffsetQuantizeParamsWrapper& rhs) {
+  if (this != &rhs) {
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    scale_offsets_ = rhs.scale_offsets_;
+    qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset =
+        scale_offsets_.data();
+  }
+  return *this;
+}
+
+AxisScaleOffsetQuantizeParamsWrapper&
+AxisScaleOffsetQuantizeParamsWrapper::operator=(
+    AxisScaleOffsetQuantizeParamsWrapper&& rhs) {
+  if (this != &rhs) {
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    scale_offsets_ = std::move(rhs.scale_offsets_);
+    qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset =
+        scale_offsets_.data();
+  }
+  return *this;
+}
+
 void AxisScaleOffsetQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
   dst = qnn_quantize_param_;
 }
@@ -192,6 +216,32 @@ BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
       offsets_{std::move(rhs.offsets_)} {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+}
+
+BwAxisScaleOffsetQuantizeParamsWrapper&
+BwAxisScaleOffsetQuantizeParamsWrapper::operator=(
+    const BwAxisScaleOffsetQuantizeParamsWrapper& rhs) {
+  if (this != &rhs) {
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    scales_ = rhs.scales_;
+    offsets_ = rhs.offsets_;
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+  }
+  return *this;
+}
+
+BwAxisScaleOffsetQuantizeParamsWrapper&
+BwAxisScaleOffsetQuantizeParamsWrapper::operator=(
+    BwAxisScaleOffsetQuantizeParamsWrapper&& rhs) {
+  if (this != &rhs) {
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    scales_ = std::move(rhs.scales_);
+    offsets_ = std::move(rhs.offsets_);
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+  }
+  return *this;
 }
 
 void BwAxisScaleOffsetQuantizeParamsWrapper::CloneTo(

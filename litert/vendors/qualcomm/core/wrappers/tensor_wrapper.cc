@@ -17,11 +17,11 @@
 #include <variant>
 #include <vector>
 
+#include "QnnTypes.h"         // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -83,23 +83,55 @@ std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
   return bytes;
 }
 
-TensorWrapper::TensorWrapper() = default;
-
-TensorWrapper::TensorWrapper(
-    std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
-    const QuantizeParamsWrapperVariant& quantize_params,
-    const std::vector<std::uint32_t>& dimentions)
-    : name_{std::move(name)},
-      dimentions_{dimentions},
-      quantize_params_{quantize_params} {
-  qnn_tensor_.v2.name = name_.c_str();
-  qnn_tensor_.v2.type = tensor_type;
+TensorWrapper::TensorWrapper() {
   qnn_tensor_.v2.dataFormat = QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER;
+  qnn_tensor_.v2.memType = QNN_TENSORMEMTYPE_RAW;
+}
+
+void TensorWrapper::SetName(const std::string& name) {
+  name_ = name;
+  qnn_tensor_.v2.name = name_.c_str();
+}
+
+void TensorWrapper::SetTensorType(const Qnn_TensorType_t tensor_type) {
+  qnn_tensor_.v2.type = tensor_type;
+}
+
+void TensorWrapper::SetDataType(const Qnn_DataType_t data_type) {
   qnn_tensor_.v2.dataType = data_type;
+}
+
+void TensorWrapper::SetQuantizeParams(
+    const QuantizeParamsWrapperVariant& quantize_params) {
+  quantize_params_ = quantize_params;
   UpdateQnnQuantParams();
+}
+
+void TensorWrapper::SetDimensions(
+    const std::vector<std::uint32_t>& dimentions) {
+  dimentions_ = dimentions;
   qnn_tensor_.v2.rank = dimentions_.size();
   qnn_tensor_.v2.dimensions = dimentions_.data();
-  qnn_tensor_.v2.memType = QNN_TENSORMEMTYPE_RAW;
+}
+
+void TensorWrapper::SetData(const std::uint32_t bytes, const void* data,
+                            const bool copy_data) {
+  // Already map to QNN_DATATYPE_SFIXED_POINT_8 for 4-bit and 2-bit
+  // quantization
+  if (IsNBitQuant(quantize_params_, kQuantBitWidth4)) {
+    std::vector<std::int8_t> int8_data;
+    QNN_LOG_DEBUG("4-bit Qunat, converting data to 8-bit for QNN.");
+    ConvertDataFromInt4ToInt8(data, bytes, int8_data);
+    // Set copy_data to true to prevent loss of int8_data.
+    SetDataBy(GetTensorBytes(), int8_data.data(), true);
+  } else if (IsNBitQuant(quantize_params_, kQuantBitWidth2)) {
+    std::vector<std::int8_t> int8_data;
+    QNN_LOG_DEBUG("2-bit Qunat, converting data to 8-bit for QNN.");
+    ConvertDataFromInt2ToInt8(data, bytes, int8_data);
+    SetDataBy(GetTensorBytes(), int8_data.data(), true);
+  } else {
+    SetDataBy(bytes, data, copy_data);
+  }
 }
 
 void TensorWrapper::ConvertAxisScaleOffsetToScaleOffset() {
@@ -109,31 +141,6 @@ void TensorWrapper::ConvertAxisScaleOffsetToScaleOffset() {
   }
   quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(0.0, 0);
   UpdateQnnQuantParams();
-}
-
-TensorWrapper::TensorWrapper(
-    std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
-    const QuantizeParamsWrapperVariant& quantize_params,
-    const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
-    const void* data, bool copy_data)
-    : TensorWrapper(std::move(name), tensor_type, data_type, quantize_params,
-                    dimentions) {
-  // Already map to QNN_DATATYPE_SFIXED_POINT_8 for 4-bit and 2-bit
-  // quantization
-  if (IsNBitQuant(quantize_params, kQuantBitWidth4)) {
-    std::vector<std::int8_t> int8_data;
-    QNN_LOG_DEBUG("4-bit Qunat, converting data to 8-bit for QNN.");
-    ConvertDataFromInt4ToInt8(data, bytes, int8_data);
-    // Set copy_data to true to prevent loss of int8_data.
-    SetDataBy(GetTensorBytes(), int8_data.data(), true);
-  } else if (IsNBitQuant(quantize_params, kQuantBitWidth2)) {
-    std::vector<std::int8_t> int8_data;
-    QNN_LOG_DEBUG("2-bit Qunat, converting data to 8-bit for QNN.");
-    ConvertDataFromInt2ToInt8(data, bytes, int8_data);
-    SetDataBy(GetTensorBytes(), int8_data.data(), true);
-  } else {
-    SetDataBy(bytes, data, copy_data);
-  }
 }
 
 TensorWrapper::TensorWrapper(const TensorWrapper& other)
@@ -166,7 +173,7 @@ TensorWrapper::TensorWrapper(TensorWrapper&& other)
 
 TensorWrapper::~TensorWrapper() = default;
 
-std::uint32_t TensorWrapper::GetDim(size_t index) const {
+std::uint32_t TensorWrapper::GetDimension(size_t index) const {
   return dimentions_[index];
 }
 
@@ -183,9 +190,10 @@ Qnn_TensorType_t TensorWrapper::GetTensorType() const {
 }
 
 std::uint32_t TensorWrapper::GetTensorNumElements() const {
-  return GetDims().empty() ? 0
-                           : std::accumulate(GetDims().begin(), GetDims().end(),
-                                             1, std::multiplies<>());
+  return GetDimensions().empty()
+             ? 0
+             : std::accumulate(GetDimensions().begin(), GetDimensions().end(),
+                               1, std::multiplies<>());
 }
 
 size_t TensorWrapper::GetTensorBytes() const {
@@ -310,8 +318,8 @@ void TensorWrapper::ConvertQint16ToQuint16() {
       "compatibility.");
 }
 
-TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
-    : qnn_tensor_{qnn_tensor} {
+void TensorWrapper::SetQnnTensor(const Qnn_Tensor_t& qnn_tensor) {
+  qnn_tensor_ = qnn_tensor;
   if (qnn_tensor_.version == QNN_TENSOR_VERSION_1) {
     name_ = qnn_tensor_.v1.name;
     qnn_tensor_.v1.name = name_.data();

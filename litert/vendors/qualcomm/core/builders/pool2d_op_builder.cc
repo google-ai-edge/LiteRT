@@ -60,11 +60,11 @@ std::vector<OpWrapper> BuildPool2dOp(
 
   // padding
   const auto [padding_before_height, padding_after_height] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kHeightIndex),
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
                                 filter_height, stride_height, 1, padding_type);
   const auto [padding_before_width, padding_after_width] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kWidthIndex), filter_width,
-                                stride_width, 1, padding_type);
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kWidthIndex),
+                                filter_width, stride_width, 1, padding_type);
   const std::vector<std::uint32_t> padding_shape{2, 2};
   const std::array<std::uint32_t, 4> padding_data{
       padding_before_height, padding_after_height, padding_before_width,

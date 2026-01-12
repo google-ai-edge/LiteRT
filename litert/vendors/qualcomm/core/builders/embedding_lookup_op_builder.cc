@@ -50,7 +50,7 @@ std::vector<OpWrapper> BuildEmbeddingLookupOp(
 
     TensorWrapper& int16_table_tensor = tensor_pool.CreateStaticTensor(
         output_tensor.GetDataType(), table_tensor.GetQuantParams(),
-        table_tensor.GetDims(),
+        table_tensor.GetDimensions(),
         sizeof(decltype(int16_data)::value_type) * int16_data.size(),
         reinterpret_cast<void*>(int16_data.data()));
 

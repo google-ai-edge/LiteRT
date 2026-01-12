@@ -13,10 +13,10 @@
 #include <utility>
 #include <vector>
 
+#include "QnnTypes.h"  // from @qairt
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 static const char* kQnnSuffix = "_qnn";
@@ -165,10 +165,13 @@ TensorWrapper* TensorPool::ConvertStaticTensorFrom(
   }
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  auto& back = tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC,
-      GetQnnDataType<T>(src_tensor.IsQuant()), src_tensor.GetQuantParams(),
-      src_tensor.GetDims(), sizeof(T) * dst_data.size(), dst_data.data(), true);
+  auto& back = tensor_wrappers_.emplace_back();
+  back.SetName(std::move(tensor_name));
+  back.SetTensorType(QNN_TENSOR_TYPE_STATIC);
+  back.SetDataType(GetQnnDataType<T>(src_tensor.IsQuant()));
+  back.SetQuantizeParams(src_tensor.GetQuantParams());
+  back.SetDimensions(src_tensor.GetDimensions());
+  back.SetData(sizeof(T) * dst_data.size(), dst_data.data(), true);
   return &back;
 }
 

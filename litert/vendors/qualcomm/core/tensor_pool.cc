@@ -13,11 +13,11 @@
 #include <variant>
 #include <vector>
 
+#include "QnnTypes.h"  // from @qairt
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -28,9 +28,13 @@ TensorWrapper& TensorPool::CreateInputTensorWithSuffix(
     const std::vector<std::uint32_t>& dimentions, std::string_view suffix) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
-                                       QNN_TENSOR_TYPE_APP_WRITE, data_type,
-                                       quant_params, dimentions);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_APP_WRITE);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(quant_params);
+  tensor.SetDimensions(dimentions);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CreateOutpuTensorWithSuffix(
@@ -38,9 +42,13 @@ TensorWrapper& TensorPool::CreateOutpuTensorWithSuffix(
     const std::vector<std::uint32_t>& dimentions, std::string_view suffix) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
-                                       QNN_TENSOR_TYPE_APP_READ, data_type,
-                                       quant_params, dimentions);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_APP_READ);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(quant_params);
+  tensor.SetDimensions(dimentions);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CreateNativeTensor(
@@ -48,9 +56,13 @@ TensorWrapper& TensorPool::CreateNativeTensor(
     const std::vector<std::uint32_t>& dimentions) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
-                                       QNN_TENSOR_TYPE_NATIVE, data_type,
-                                       quant_params, dimentions);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_NATIVE);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(quant_params);
+  tensor.SetDimensions(dimentions);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CreateNativeTensorWithSuffix(
@@ -58,9 +70,13 @@ TensorWrapper& TensorPool::CreateNativeTensorWithSuffix(
     const std::vector<std::uint32_t>& dimentions, std::string_view suffix) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
-                                       QNN_TENSOR_TYPE_NATIVE, data_type,
-                                       quant_params, dimentions);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_NATIVE);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(quant_params);
+  tensor.SetDimensions(dimentions);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CreateStaticTensor(
@@ -69,9 +85,14 @@ TensorWrapper& TensorPool::CreateStaticTensor(
     const void* data) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
-      dimentions, bytes, data, true);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_STATIC);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(quant_params);
+  tensor.SetDimensions(dimentions);
+  tensor.SetData(bytes, data, true);
+  return tensor;
 }
 
 TensorWrapper* TensorPool::CreateStaticTensorWithValue(
@@ -193,9 +214,14 @@ TensorWrapper* TensorPool::CreateStaticTensorWithValue(
     return nullptr;
   }
 
-  return &tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
-      dimentions, data_bytes, data_ptr, true);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_STATIC);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(quant_params);
+  tensor.SetDimensions(dimentions);
+  tensor.SetData(data_bytes, data_ptr, true);
+  return &tensor;
 }
 
 TensorWrapper& TensorPool::CreateStaticTensorWithSuffix(
@@ -204,48 +230,69 @@ TensorWrapper& TensorPool::CreateStaticTensorWithSuffix(
     std::uint32_t bytes, const void* data, bool copy_data) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
-  return tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
-      dimentions, bytes, data, copy_data);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_STATIC);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(quant_params);
+  tensor.SetDimensions(dimentions);
+  tensor.SetData(bytes, data, copy_data);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CloneNativeTensorFrom(const TensorWrapper& src) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_NATIVE, src.GetDataType(),
-      src.quantize_params_, src.dimentions_);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_NATIVE);
+  tensor.SetDataType(src.GetDataType());
+  tensor.SetQuantizeParams(src.quantize_params_);
+  tensor.SetDimensions(src.dimentions_);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CloneNativeTensorFrom(
     const TensorWrapper& src, const std::vector<std::uint32_t>& dimentions) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_NATIVE, src.GetDataType(),
-      src.quantize_params_, dimentions);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_NATIVE);
+  tensor.SetDataType(src.GetDataType());
+  tensor.SetQuantizeParams(src.quantize_params_);
+  tensor.SetDimensions(dimentions);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CloneStaticTensorFrom(const TensorWrapper& src,
                                                  Qnn_DataType_t data_type) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
-                                       QNN_TENSOR_TYPE_STATIC, data_type,
-                                       src.quantize_params_, src.dimentions_,
-                                       src.qnn_tensor_.v2.clientBuf.dataSize,
-                                       src.qnn_tensor_.v2.clientBuf.data, true);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_STATIC);
+  tensor.SetDataType(data_type);
+  tensor.SetQuantizeParams(src.quantize_params_);
+  tensor.SetDimensions(src.dimentions_);
+  tensor.SetData(src.qnn_tensor_.v2.clientBuf.dataSize,
+                 src.qnn_tensor_.v2.clientBuf.data, true);
+  return tensor;
 }
 
 TensorWrapper& TensorPool::CloneStaticTensorFrom(
     const TensorWrapper& src, const std::vector<std::uint32_t>& dimentions) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC,
-      src.qnn_tensor_.v2.dataType, src.quantize_params_, dimentions,
-      src.qnn_tensor_.v2.clientBuf.dataSize, src.qnn_tensor_.v2.clientBuf.data,
-      true);
+  auto& tensor = tensor_wrappers_.emplace_back();
+  tensor.SetName(std::move(tensor_name));
+  tensor.SetTensorType(QNN_TENSOR_TYPE_STATIC);
+  tensor.SetDataType(src.qnn_tensor_.v2.dataType);
+  tensor.SetQuantizeParams(src.quantize_params_);
+  tensor.SetDimensions(dimentions);
+  tensor.SetData(src.qnn_tensor_.v2.clientBuf.dataSize,
+                 src.qnn_tensor_.v2.clientBuf.data, true);
+  return tensor;
 }
 
 }  // namespace qnn
