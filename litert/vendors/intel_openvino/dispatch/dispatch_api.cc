@@ -99,19 +99,10 @@ LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
                device.c_str());
 
 #if defined(LITERT_WINDOWS_OS)
-  LiteRtEnvOption env_option{
-      /*tag=*/kLiteRtEnvOptionTagCustomTensorBufferHandlers,
-      /*value=*/{/*type=*/kLiteRtAnyTypeVoidPtr}};
-  // TODO:: How to free custom_tensor_buffer_handlers.
-  LiteRtCustomTensorBufferHandlers* custom_tensor_buffer_handlers =
-      (LiteRtCustomTensorBufferHandlers*)malloc(
-          sizeof(LiteRtCustomTensorBufferHandlers));
-  custom_tensor_buffer_handlers->create_func = CreateRemoteTensorBuffer;
-  custom_tensor_buffer_handlers->destroy_func = DestroyRemoteTensorBuffer;
-  custom_tensor_buffer_handlers->lock_func = LockRemoteTensorBuffer;
-  custom_tensor_buffer_handlers->unlock_func = UnlockRemoteTensorBuffer;
-  env_option.value.ptr_value = custom_tensor_buffer_handlers;
-  LiteRtSetEnvironmentOptionsValue(environment_options, env_option);
+  LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
+      env, kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+      CreateRemoteTensorBuffer, DestroyRemoteTensorBuffer,
+      LockRemoteTensorBuffer, UnlockRemoteTensorBuffer, nullptr));
 #endif  // LITERT_WINDOWS_OS
 
   return kLiteRtStatusOk;

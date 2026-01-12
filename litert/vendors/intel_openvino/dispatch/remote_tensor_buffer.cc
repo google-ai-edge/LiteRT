@@ -29,11 +29,6 @@
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
-RemoteTensorBuffer::RemoteTensorBuffer()
-    : level_zero_buffer_({}), allocated_(false) {}
-
-RemoteTensorBuffer::~RemoteTensorBuffer() = default;
-
 litert::Expected<void> RemoteTensorBuffer::Alloc(
     const LiteRtRankedTensorType& tensor_type, size_t size) {
   if (allocated_) {
@@ -47,7 +42,7 @@ litert::Expected<void> RemoteTensorBuffer::Alloc(
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
   std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
-  for (int i = 0; i < ov_shape_vec.size(); i++)
+  for (size_t i = 0; i < ov_shape_vec.size(); i++)
     ov_shape_vec[i] = tensor_type.layout.dimensions[i];
   auto level_zero_buffer = context.create_l0_host_tensor(
       ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()});

@@ -28,8 +28,8 @@ class RemoteTensorBuffer {
   RemoteTensorBuffer(RemoteTensorBuffer&&) = default;
   RemoteTensorBuffer& operator=(RemoteTensorBuffer&&) = default;
 
-  RemoteTensorBuffer();
-  ~RemoteTensorBuffer();
+  RemoteTensorBuffer() : level_zero_buffer_({}), allocated_(false) {};
+  ~RemoteTensorBuffer() = default;
 
   litert::Expected<void> Alloc(const LiteRtRankedTensorType& tensor_type,
                                size_t size);
