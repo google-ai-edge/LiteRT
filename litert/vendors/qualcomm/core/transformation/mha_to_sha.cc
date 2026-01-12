@@ -120,7 +120,7 @@ TensorWrapper& BuildSingleSHA(
   EmplaceOpWithIO(new_ops, softmax, {add_1_output}, {softmax_output});
 
   // Slice 1
-  auto slice_1_ranges = slice_1.GetTensorPararm(0).GetTensor();
+  const auto& slice_1_ranges = slice_1.GetTensorPararm(0).GetTensor();
   auto slice_1_rangs_data = slice_1_ranges.GetTensorData<int32_t>();
   std::vector<int32_t> sha_slice_1_ranges_data(
       slice_1_rangs_data.value().begin(), slice_1_rangs_data.value().end());
@@ -137,7 +137,7 @@ TensorWrapper& BuildSingleSHA(
                sha_slice_1_ranges);
 
   // Slice 2
-  auto slice_2_ranges = slice_2.GetTensorPararm(0).GetTensor();
+  const auto& slice_2_ranges = slice_2.GetTensorPararm(0).GetTensor();
   auto slice_2_ranges_data = slice_2_ranges.GetTensorData<int32_t>();
   std::vector<int32_t> sha_slice_2_ranges_data(
       slice_2_ranges_data.value().begin(), slice_2_ranges_data.value().end());
@@ -260,7 +260,7 @@ TensorWrapper& BuildSingleSHA(
   EmplaceOpWithIO(new_ops, softmax, {reshape_3_output}, {softmax_output});
 
   // Slice 1
-  auto slice_1_param = slice_1.GetTensorPararm(0).GetTensor();
+  const auto& slice_1_param = slice_1.GetTensorPararm(0).GetTensor();
   auto slice_1_param_data = slice_1_param.GetTensorData<int32_t>();
   std::vector<int32_t> slice_1_ranges(slice_1_param_data.value().begin(),
                                       slice_1_param_data.value().end());
@@ -281,7 +281,7 @@ TensorWrapper& BuildSingleSHA(
                slice_1_param_tensor);
 
   // Slice 2
-  auto slice_2_param = slice_2.GetTensorPararm(0).GetTensor();
+  const auto& slice_2_param = slice_2.GetTensorPararm(0).GetTensor();
   auto slice_2_param_data = slice_2_param.GetTensorData<int32_t>();
   std::vector<int32_t> slice_2_ranges(slice_2_param_data.value().begin(),
                                       slice_2_param_data.value().end());
@@ -1186,10 +1186,10 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
     auto k_unpack_dims = mul_k_in.GetDims();
     const auto& transpose_v_in =
         ops[select_index + kAttnTransposeIn].GetInputTensor(0);
-    auto transpose_v_perm =
+    const auto& transpose_v_perm =
         ops[select_index + kAttnTransposeIn].GetTensorPararm(0).GetTensor();
     std::vector<uint32_t> perm_data = {0, 2, 1};
-    auto perm_tensor = tensor_pool.CreateStaticTensor(
+    auto& perm_tensor = tensor_pool.CreateStaticTensor(
         transpose_v_perm.GetDataType(), transpose_v_perm.GetQuantParams(), {3},
         perm_data.size() * sizeof(perm_data[0]), perm_data.data());
     auto v_unpack_dims = transpose_v_in.GetDims();
