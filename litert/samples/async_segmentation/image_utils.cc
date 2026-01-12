@@ -27,7 +27,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"  // from @stblib
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include "deprecated/stb_image_resize.h"  // from @stblib
+#include "stb_image_resize.h"  // from @stblib
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"  // from @stblib
 
