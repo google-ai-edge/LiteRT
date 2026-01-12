@@ -106,11 +106,15 @@ class TensorWrapper final {
 
   TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
 
-  TensorWrapper(const TensorWrapper& other);
+  TensorWrapper(const TensorWrapper&) = delete;
 
-  TensorWrapper(TensorWrapper&& other);
+  TensorWrapper& operator=(const TensorWrapper&) = delete;
 
-  ~TensorWrapper();
+  TensorWrapper(TensorWrapper&& other) = delete;
+
+  TensorWrapper& operator=(TensorWrapper&&) = delete;
+
+  ~TensorWrapper() = default;
 
   bool operator==(const TensorWrapper& other) const;
 
@@ -325,13 +329,8 @@ class TensorWrapper final {
   }
 
  private:
-  void UpdateQnnQuantParams() {
-    std::visit(
-        [this](auto&& quantize_params) -> void {
-          quantize_params.CloneTo(qnn_tensor_.v2.quantizeParams);
-        },
-        quantize_params_);
-  }
+  void UpdateQnnQuantParams();
+
   Qnn_TensorType_t GetTensorType() const;
 
   void SetTensorType(Qnn_TensorType_t tensor_type) {
@@ -349,12 +348,13 @@ class TensorWrapper final {
            qnn_tensor_.v2.clientBuf.data != nullptr;
   }
 
-  Qnn_Tensor_t qnn_tensor_{.version = QNN_TENSOR_VERSION_2,
-                           .v2 = QNN_TENSOR_V2_INIT};
   std::string name_{};
   std::vector<std::uint32_t> dimentions_{};
   QuantizeParamsWrapperVariant quantize_params_{};
   std::vector<std::byte> owned_data_{};
+
+  Qnn_Tensor_t qnn_tensor_{.version = QNN_TENSOR_VERSION_2,
+                           .v2 = QNN_TENSOR_V2_INIT};
 };
 
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
@@ -390,7 +390,7 @@ std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {
   }
 
   return absl::MakeConstSpan(
-      reinterpret_cast<const T*>(qnn_tensor_.v2.clientBuf.data), num_elements);
+      static_cast<const T*>(qnn_tensor_.v2.clientBuf.data), num_elements);
 }
 }  // namespace qnn
 

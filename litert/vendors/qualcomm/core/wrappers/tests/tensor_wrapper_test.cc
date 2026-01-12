@@ -45,73 +45,10 @@ TEST(TensorWrapperTest, SanityTest) {
   EXPECT_EQ(tensor_wrapper.GetTensorData<std::uint8_t>(), std::nullopt);
 }
 
-TEST(TensorWrapperTest, CopyTensorTest) {
-  std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
-  ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
-  TensorWrapper tensor_wrapper{"", QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_UFIXED_POINT_8, q_param,
-                               dummy_dims};
-  TensorWrapper copied{tensor_wrapper};
-
-  EXPECT_EQ(copied.GetRank(), 3);
-  EXPECT_EQ(copied.GetDims(), dummy_dims);
-  EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
-      copied.GetQuantParams()));
-  EXPECT_FALSE(copied.IsPerTensorQuantWithOffsetDiff(copied));
-  EXPECT_TRUE(copied.IsQuant8());
-  EXPECT_FALSE(copied.IsQuant16());
-  EXPECT_EQ(copied.GetDataType(), QNN_DATATYPE_UFIXED_POINT_8);
-  EXPECT_FALSE(copied.IsSubgraphInput());
-  EXPECT_FALSE(copied.IsSubgraphOutput());
-  EXPECT_TRUE(copied.IsTensorStatic());
-  EXPECT_EQ(copied.GetTensorData<std::uint8_t>(), std::nullopt);
-  std::vector<std::uint8_t> data = {1, 2, 3};
-  copied.SetTensorData<std::uint8_t>(absl::MakeSpan(data.data(), data.size()));
-  const auto tensor_data = copied.GetTensorData<std::uint8_t>();
-  EXPECT_TRUE(tensor_data.has_value());
-  for (size_t i = 0; i < data.size(); i++) {
-    EXPECT_EQ((*tensor_data)[i], data[i]);
-  }
-}
-
-TEST(TensorWrapperTest, MoveTensorTest) {
-  std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
-  ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
-  std::vector<std::uint8_t> data = {1, 2, 3};
-  void* data_ptr = reinterpret_cast<void*>(data.data());
-  TensorWrapper tensor_wrapper{"",
-                               QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_UFIXED_POINT_8,
-                               q_param,
-                               dummy_dims,
-
-                               static_cast<uint32_t>(data.size()),
-                               data_ptr,
-                               true};
-  TensorWrapper moved{tensor_wrapper};
-
-  EXPECT_EQ(moved.GetRank(), 3);
-  EXPECT_EQ(moved.GetDims(), dummy_dims);
-  EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
-      moved.GetQuantParams()));
-  EXPECT_FALSE(moved.IsPerTensorQuantWithOffsetDiff(moved));
-  EXPECT_TRUE(moved.IsQuant8());
-  EXPECT_FALSE(moved.IsQuant16());
-  EXPECT_EQ(moved.GetDataType(), QNN_DATATYPE_UFIXED_POINT_8);
-  EXPECT_FALSE(moved.IsSubgraphInput());
-  EXPECT_FALSE(moved.IsSubgraphOutput());
-  EXPECT_TRUE(moved.IsTensorStatic());
-  const auto tensor_data = moved.GetTensorData<std::uint8_t>();
-  EXPECT_TRUE(tensor_data.has_value());
-  for (size_t i = 0; i < data.size(); i++) {
-    EXPECT_EQ(tensor_data.value()[i], data[i]);
-  }
-}
-
 TEST(TensorWrapperTest, QnnTensorTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   std::vector<std::uint8_t> data = {1, 2, 3};
-  void* data_ptr = reinterpret_cast<void*>(data.data());
+  void* data_ptr = static_cast<void*>(data.data());
   const auto data_size =
       std::accumulate(dummy_dims.begin(), dummy_dims.end(),
                       sizeof(decltype(data)::value_type), std::multiplies<>());
@@ -141,7 +78,7 @@ TEST(TensorWrapperTest, QnnTensorTest) {
   EXPECT_EQ(cloned.v2.memType, QNN_TENSORMEMTYPE_RAW);
   EXPECT_EQ(cloned.v2.clientBuf.dataSize, data_size);
   const auto* cloned_data =
-      reinterpret_cast<const std::uint8_t*>(cloned.v2.clientBuf.data);
+      static_cast<const std::uint8_t*>(cloned.v2.clientBuf.data);
   for (size_t i = 0; i < data.size(); i++) {
     EXPECT_EQ(cloned_data[i], data[i]);
   }
@@ -160,7 +97,7 @@ TEST(TensorWrapperTest, QnnTensorTest) {
   EXPECT_EQ(ref.v2.memType, QNN_TENSORMEMTYPE_RAW);
   EXPECT_EQ(ref.v2.clientBuf.dataSize, data_size);
   const auto* ref_data =
-      reinterpret_cast<const std::uint8_t*>(ref.v2.clientBuf.data);
+      static_cast<const std::uint8_t*>(ref.v2.clientBuf.data);
   for (size_t i = 0; i < data.size(); i++) {
     EXPECT_EQ(ref_data[i], data[i]);
   }
