@@ -48,7 +48,7 @@ std::vector<OpWrapper> BuildFullyConnectedOpHtp(
   // Reshape
   qnn::OpWrapper& reshape_op_1 = CreateOpWrapper(res, QNN_OP_RESHAPE);
   reshape_op_1.AddInputTensor(input_tensor);
-  std::vector<uint32_t> conv_input_dims = input_tensor.GetDims();
+  std::vector<uint32_t> conv_input_dims = input_tensor.GetDimensions();
   conv_input_dims.insert(conv_input_dims.begin() + 1, 1);
   qnn::TensorWrapper& conv_input_tensor =
       tensor_pool.CloneNativeTensorFrom(input_tensor, conv_input_dims);
@@ -64,11 +64,11 @@ std::vector<OpWrapper> BuildFullyConnectedOpHtp(
                  quant_params)) {
     std::get<BwAxisScaleOffsetQuantizeParamsWrapper>(quant_params).SetAxis(3);
   }
-  std::vector<uint32_t> weight_dims{1, 1, weight_tensor.GetDim(1),
-                                    weight_tensor.GetDim(0)};
+  std::vector<uint32_t> weight_dims{1, 1, weight_tensor.GetDimension(1),
+                                    weight_tensor.GetDimension(0)};
   size_t weight_bytes = weight_tensor.GetTensorBytes();
-  const std::vector<std::uint32_t> transpose_dim{weight_tensor.GetDim(0), 1, 1,
-                                                 weight_tensor.GetDim(1)};
+  const std::vector<std::uint32_t> transpose_dim{
+      weight_tensor.GetDimension(0), 1, 1, weight_tensor.GetDimension(1)};
   TensorWrapper* weight;
   if (weight_tensor.GetDataType() == QNN_DATATYPE_SFIXED_POINT_8) {
     std::vector<std::int8_t> conv_weight;

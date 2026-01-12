@@ -67,7 +67,7 @@ std::vector<OpWrapper> BuildStridedSliceOp(
   for (size_t i = 0; i < input_rank; ++i) {
     std::int32_t begin = begin_data[i];
     if (begin < 0) {
-      begin += input_tensor.GetDim(i);
+      begin += input_tensor.GetDimension(i);
     }
 
     std::int32_t stride = strides_data[i];
@@ -78,7 +78,7 @@ std::vector<OpWrapper> BuildStridedSliceOp(
       // for stride > 0, end should be in [0, dimensions[i]]
       // for stride < 0, end should be in [-1, dimensions[i] - 1]
       if ((stride > 0 && end < 0) || (stride < 0 && end < -1)) {
-        end += input_tensor.GetDim(i);
+        end += input_tensor.GetDimension(i);
       }
     }
 

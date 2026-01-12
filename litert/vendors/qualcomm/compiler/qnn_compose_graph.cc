@@ -210,19 +210,19 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
                                          litert_tensor.HasQuantization(),
                                          qnn_data_type));
 
-  std::vector<std::uint32_t> dimentions;
+  std::vector<std::uint32_t> dimensions;
   const auto litert_layout = ranked_tensor_type->Layout();
   if (litert_layout.Rank() == 0) {
-    dimentions.resize(1, 1);
+    dimensions.resize(1, 1);
   } else {
-    dimentions.resize(litert_layout.Rank());
-    for (size_t i = 0; i < dimentions.size(); ++i) {
+    dimensions.resize(litert_layout.Rank());
+    for (size_t i = 0; i < dimensions.size(); ++i) {
       // TODO(jiunkaiy): Integrate QNN dynamic dimension.
       // If any dimension sizes are unknown, they are indicated with -1.
       if (litert_layout.Dimensions()[i] == -1) {
-        dimentions[i] = 1;
+        dimensions[i] = 1;
       } else {
-        dimentions[i] = litert_layout.Dimensions()[i];
+        dimensions[i] = litert_layout.Dimensions()[i];
       }
     }
   }
@@ -295,11 +295,11 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
       "_" + std::string(kLiteRtStr) + "_" + std::to_string(tensor_index);
   if (litert_tensor.IsSubgraphInput()) {
     auto& res = tensor_pool.CreateInputTensorWithSuffix(
-        qnn_data_type, quantize_params, dimentions, litert_suffix);
+        qnn_data_type, quantize_params, dimensions, litert_suffix);
     tensor_wrapper = &res;
   } else if (litert_tensor.Uses().empty() || is_tensor_read_and_write) {
     auto& res = tensor_pool.CreateOutpuTensorWithSuffix(
-        qnn_data_type, quantize_params, dimentions, litert_suffix);
+        qnn_data_type, quantize_params, dimensions, litert_suffix);
     tensor_wrapper = &res;
   } else if (litert_tensor.IsConstant()) {
     LITERT_RETURN_IF_ERROR(
@@ -307,14 +307,14 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
         ErrorStatusBuilder(kLiteRtStatusErrorInvalidLegalization))
         << "Empty weights for constant tensor.";
     auto& res = tensor_pool.CreateStaticTensorWithSuffix(
-        qnn_data_type, quantize_params, dimentions, litert_suffix,
+        qnn_data_type, quantize_params, dimensions, litert_suffix,
         litert_tensor.Weights().Bytes().size(),
         reinterpret_cast<const void*>(litert_tensor.Weights().Bytes().data()),
         false);
     tensor_wrapper = &res;
   } else {
     auto& res = tensor_pool.CreateNativeTensorWithSuffix(
-        qnn_data_type, quantize_params, dimentions, litert_suffix);
+        qnn_data_type, quantize_params, dimensions, litert_suffix);
     // -1 in ids_to_dump will dump all tensors
     if (ids_to_dump.count(-1) > 0 || ids_to_dump.count(tensor_index) > 0) {
       LITERT_LOG(LITERT_INFO, "LiteRT tensor index: %d is dumped",

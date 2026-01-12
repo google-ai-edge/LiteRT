@@ -46,7 +46,7 @@ std::vector<OpWrapper> BuildTileOp(
     }
     TensorWrapper& uint32_multiples_tensor = tensor_pool.CreateStaticTensor(
         QNN_DATATYPE_UINT_32, multiples_tensor.GetQuantParams(),
-        multiples_tensor.GetDims(),
+        multiples_tensor.GetDimensions(),
         sizeof(decltype(uint32_data)::value_type) * uint32_data.size(),
         reinterpret_cast<void*>(uint32_data.data()));
 

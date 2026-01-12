@@ -51,7 +51,7 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
       }
       auto& converted_bias_tensor = tensor_pool.CreateStaticTensor(
           QNN_DATATYPE_SFIXED_POINT_32, bias_tensor.GetQuantParams(),
-          bias_tensor.GetDims(),
+          bias_tensor.GetDimensions(),
           num_elements * sizeof(decltype(converted_data)::value_type),
           converted_data.data());
 
@@ -65,11 +65,11 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
 
   TensorWrapper& output_tensor = outputs[0];
   if (keep_num_dims) {
-    auto& input_dims = input_tensor.GetDims();
+    auto& input_dims = input_tensor.GetDimensions();
     std::uint32_t input_size = std::accumulate(
         input_dims.begin(), input_dims.end(), 1, std::multiplies<>());
-    const std::uint32_t num_units = weight_tensor.GetDim(0);
-    const std::uint32_t num_input_elem = weight_tensor.GetDim(1);
+    const std::uint32_t num_units = weight_tensor.GetDimension(0);
+    const std::uint32_t num_input_elem = weight_tensor.GetDimension(1);
 
     // input_size must be divisible by num_input_elem. This should be validated
     // by QNN.

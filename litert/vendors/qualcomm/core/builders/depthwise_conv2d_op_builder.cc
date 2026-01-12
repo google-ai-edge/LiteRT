@@ -42,8 +42,10 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
 
   // 1HWC to HW1C, only need reshape instead of transpose.
   const std::vector<std::uint32_t> reshape_dims{
-      filter_tensor.GetDim(kHeightIndex), filter_tensor.GetDim(kWidthIndex),
-      filter_tensor.GetDim(kBatchIndex), filter_tensor.GetDim(kChannelIndex)};
+      filter_tensor.GetDimension(kHeightIndex),
+      filter_tensor.GetDimension(kWidthIndex),
+      filter_tensor.GetDimension(kBatchIndex),
+      filter_tensor.GetDimension(kChannelIndex)};
   TensorWrapper* reshaped_filter_tensor = nullptr;
   if (filter_tensor.IsTensorStatic()) {
     reshaped_filter_tensor =
@@ -93,13 +95,13 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
 
   // padding param
   const auto [padding_before_height, padding_after_height] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kHeightIndex),
-                                filter_tensor.GetDim(kHeightIndex), stride_h,
-                                dilation_h, padding_type);
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
+                                filter_tensor.GetDimension(kHeightIndex),
+                                stride_h, dilation_h, padding_type);
   const auto [padding_before_width, padding_after_width] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kWidthIndex),
-                                filter_tensor.GetDim(kWidthIndex), stride_w,
-                                dilation_w, padding_type);
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kWidthIndex),
+                                filter_tensor.GetDimension(kWidthIndex),
+                                stride_w, dilation_w, padding_type);
   const std::array<std::uint32_t, 4> padding_data = {
       padding_before_height, padding_after_height, padding_before_width,
       padding_after_width};

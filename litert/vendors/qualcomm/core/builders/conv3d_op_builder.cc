@@ -72,16 +72,16 @@ std::vector<OpWrapper> BuildConv3dOp(
 
   // padding param
   const auto [padding_before_depth, padding_after_depth] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kDepthIndex),
-                                filter_tensor.GetDim(kFilterDepthIndex),
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kDepthIndex),
+                                filter_tensor.GetDimension(kFilterDepthIndex),
                                 stride_d, dilation_d, padding_type);
   const auto [padding_before_height, padding_after_height] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kHeightIndex),
-                                filter_tensor.GetDim(kFilterHeightIndex),
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
+                                filter_tensor.GetDimension(kFilterHeightIndex),
                                 stride_h, dilation_h, padding_type);
   const auto [padding_before_width, padding_after_width] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kWidthIndex),
-                                filter_tensor.GetDim(kFilterWidthIndex),
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kWidthIndex),
+                                filter_tensor.GetDimension(kFilterWidthIndex),
                                 stride_w, dilation_w, padding_type);
   const std::array<std::uint32_t, 6> padding_data = {
       padding_before_depth, padding_after_depth,  padding_before_height,
@@ -92,8 +92,8 @@ std::vector<OpWrapper> BuildConv3dOp(
       sizeof(padding_data[0]) * padding_data.size(), padding_data.data());
   conv_op.AddTensorParam(QNN_OP_CONV_3D_PARAM_PAD_AMOUNT, padding_tensor);
 
-  const std::vector<uint32_t>& input_dims = input_tensor.GetDims();
-  const std::vector<uint32_t>& filters_dims = filter_tensor.GetDims();
+  const std::vector<uint32_t>& input_dims = input_tensor.GetDimensions();
+  const std::vector<uint32_t>& filters_dims = filter_tensor.GetDimensions();
 
   // group param
   const std::uint32_t input_channel = input_dims[4];
