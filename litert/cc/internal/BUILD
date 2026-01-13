@@ -601,3 +601,27 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "litert_runtime_proxy",
+    hdrs = ["litert_runtime_proxy.h"],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_profiler_event",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_runtime_c_api",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:die_if_null",
+        "@opencl_headers",
+    ],
+)
