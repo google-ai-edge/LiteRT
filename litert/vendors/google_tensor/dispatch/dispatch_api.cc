@@ -14,19 +14,20 @@
 
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
-#include <string>
-
-#include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model_types.h"
-#include "litert/cc/litert_macros.h"
-
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
+#include <cstddef>
+#include <optional>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_expected.h"
+#include "litert/c/litert_metrics.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
@@ -38,6 +39,35 @@
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace litert::google_tensor {
+
+namespace {
+
+constexpr size_t kEdgeTpuPadding = 64;
+
+template <typename X, typename Align>
+constexpr auto Pad(X x, Align align) {
+  return ((x + align - 1) / align) * align;
+}
+
+LiteRtStatus CreateTensorBufferRequirements(
+    const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferRequirements& requirements) {
+  if (tensor_type.layout.has_strides) {
+    LITERT_LOG(LITERT_ERROR, "Tensor strides are not supported");
+    return kLiteRtStatusErrorUnsupported;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(size_t size_bytes,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+
+  return LiteRtCreateTensorBufferRequirements(
+      GetTheSupportedTensorBufferTypes().size(),
+      GetTheSupportedTensorBufferTypes().data(),
+      Pad(size_bytes, kEdgeTpuPadding), /*num_strides=*/0,
+      /*strides=*/nullptr, &requirements);
+}
+
+}  // namespace
 
 // /////////////////////////////////////////////////////////////////////////////
 // Basic Execution API
@@ -84,35 +114,31 @@ LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
 }
 
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
-  delete device_context;
-  return kLiteRtStatusOk;
+  GT_LOG_RETURN_IF_NULL(device_context);
+
+  return device_context->Destroy();
 }
 
 LiteRtStatus GetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  LITERT_ASSIGN_OR_RETURN(
-      *tensor_buffer_requirements,
-      invocation_context->GetInputRequirements(input_index, *tensor_type),
-      _ << "Failed to get input requirements.");
-  return kLiteRtStatusOk;
+  GT_LOG_RETURN_IF_NULL(tensor_type);
+  GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
+
+  return CreateTensorBufferRequirements(*tensor_type,
+                                        *tensor_buffer_requirements);
 }
 
 LiteRtStatus GetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  if (auto result =
-          invocation_context->GetOutputRequirements(output_index, *tensor_type);
-      result) {
-    *tensor_buffer_requirements = *result;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to get output requirements: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(tensor_type);
+  GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
+
+  return CreateTensorBufferRequirements(*tensor_type,
+                                        *tensor_buffer_requirements);
 }
 
 LiteRtStatus RegisterTensorBuffer(
@@ -137,90 +163,62 @@ LiteRtStatus InvocationContextCreate(
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
+  GT_LOG_RETURN_IF_NULL(exec_bytecode_buffer);
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
   function_name = "";
-  if (auto result = LiteRtDispatchInvocationContextT::CreateFromBytecode(
-          device_context, exec_type, exec_bytecode_buffer, function_name,
-          num_inputs, num_outputs);
-      result) {
-    *invocation_context = result->release();
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create invocation context: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  return LiteRtDispatchInvocationContextT::CreateFromBytecode(
+      device_context, exec_type, *exec_bytecode_buffer, function_name,
+      num_inputs, num_outputs, *invocation_context);
 }
 
 LiteRtStatus InvocationContextDestroy(
     LiteRtDispatchInvocationContext invocation_context) {
-  delete invocation_context;
-  return kLiteRtStatusOk;
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->Destroy();
 }
 
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->AttachInput(graph_input_index,
-                                                    tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach input: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->AttachInput(graph_input_index,
+                                         tensor_buffer_handle);
 }
 
 LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
                           int graph_output_index,
                           LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->AttachOutput(graph_output_index,
-                                                     tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach output: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->AttachOutput(graph_output_index,
+                                          tensor_buffer_handle);
 }
 
 LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->DetachInput(graph_input_index,
-                                                    tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to detatch input: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->DetachInput(graph_input_index,
+                                         tensor_buffer_handle);
 }
 
 LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
                           int graph_output_index,
                           LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->DetachOutput(graph_output_index,
-                                                     tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to detatch output: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->DetachOutput(graph_output_index,
+                                          tensor_buffer_handle);
 }
 
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
-  if (auto result = invocation_context->Invoke(); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to invoke: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->Invoke();
 }
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -230,28 +228,17 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
 LiteRtStatus AttachInputEvent(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtEvent input_event) {
-  if (auto result =
-          invocation_context->AttachInputEvent(graph_input_index, input_event);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach input event: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->AttachInputEvent(graph_input_index, input_event);
 }
 
 LiteRtStatus InvokeAsync(LiteRtDispatchInvocationContext invocation_context,
                          int num_output_events, LiteRtEvent* output_events) {
-  if (auto result =
-          invocation_context->InvokeAsync(num_output_events, output_events);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to invoke asynchronously: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->InvokeAsync(
+      absl::MakeSpan(output_events, num_output_events));
 }
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -260,53 +247,40 @@ LiteRtStatus InvokeAsync(LiteRtDispatchInvocationContext invocation_context,
 
 LiteRtStatus StartMetricsCollection(
     LiteRtDispatchInvocationContext invocation_context, int detail_level) {
-  if (auto result = invocation_context->StartMetricsCollection(detail_level);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to start metrics collection: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return invocation_context->StartMetricsCollection(detail_level);
 }
 
 LiteRtStatus StopMetricsCollection(
     LiteRtDispatchInvocationContext invocation_context,
     LiteRtDispatchMetrics* metrics) {
-  if (auto result = invocation_context->StopMetricsCollection(metrics);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to stop metrics collection: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+  GT_LOG_RETURN_IF_NULL(metrics);
+
+  return invocation_context->StopMetricsCollection(*metrics);
 }
 
 LiteRtStatus GetNumMetrics(LiteRtDispatchMetrics metrics, int* num_metrics) {
-  if (metrics == nullptr) {
-    LITERT_LOG(LITERT_ERROR,
-               "GetNumMetrics failed: metrics should not be null");
-    return kLiteRtStatusErrorInvalidArgument;
-  }
+  GT_LOG_RETURN_IF_NULL(metrics);
+  GT_LOG_RETURN_IF_NULL(num_metrics);
+
   *num_metrics = metrics->GetNumMetrics();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus GetMetric(LiteRtDispatchMetrics metrics, int metric_index,
                        LiteRtMetric* metric) {
-  if (metrics == nullptr) {
-    LITERT_LOG(LITERT_ERROR, "GetMetric failed: metrics should not be null");
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *metric = metrics->GetMetric(metric_index);
-  return kLiteRtStatusOk;
+  GT_LOG_RETURN_IF_NULL(metrics);
+  GT_LOG_RETURN_IF_NULL(metric);
+
+  return metrics->GetMetric(metric_index, *metric);
 }
 
 LiteRtStatus DestroyMetrics(LiteRtDispatchMetrics metrics) {
-  if (metrics) {
-    delete metrics;
-  }
+  GT_LOG_RETURN_IF_NULL(metrics);
+
+  delete metrics;
   return kLiteRtStatusOk;
 }
 
@@ -316,16 +290,15 @@ LiteRtStatus DestroyMetrics(LiteRtDispatchMetrics metrics) {
 
 LiteRtStatus GraphCreate(LiteRtDispatchDeviceContext device_context,
                          LiteRtDispatchGraph* graph) {
-  GT_LOG_RETURN_IF_NULL(device_context);
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return device_context->CreateGraph(*graph);
+  return LiteRtDispatchGraphT::Create(device_context, *graph);
 }
 
 LiteRtStatus GraphDestroy(LiteRtDispatchGraph graph) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return graph->device_context()->DestroyGraph(graph);
+  return graph->Destroy();
 }
 
 LiteRtStatus AddNode(LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
@@ -434,16 +407,10 @@ LiteRtStatus AnnotateEdge(LiteRtDispatchGraph graph,
 LiteRtStatus InvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context) {
-  if (auto result = LiteRtDispatchInvocationContextT::CreateFromGraph(
-          device_context, graph);
-      result) {
-    *invocation_context = result->release();
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create invocation context: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+
+  return LiteRtDispatchInvocationContextT::CreateFromGraph(
+      device_context, /*exec_handle=*/std::nullopt, graph, *invocation_context);
 }
 
 LiteRtStatus InvocationContextGetGraph(

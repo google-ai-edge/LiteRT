@@ -9,6 +9,7 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -568,5 +569,103 @@ TEST(TensorWrapperDatatypeTest, SFIXED_POINT_2) {
       QNN_DATATYPE_SFIXED_POINT_8);
 }
 
+using TensorEqualParams =
+    std::tuple<Qnn_TensorType_t, Qnn_TensorType_t, Qnn_DataType_t,
+               Qnn_DataType_t, std::vector<uint32_t>, std::vector<uint32_t>,
+               bool>;
+class TensorWrapperEqualTest
+    : public ::testing::TestWithParam<TensorEqualParams> {};
+TEST_P(TensorWrapperEqualTest, EqualityOperator) {
+  auto [tensor_type1, tensor_type2, data_tensor_type1, data_tensor_type2, dims1,
+        dims2, tweak_data] = GetParam();
+
+  auto make_data = [](const std::vector<uint32_t>& dims,
+                      Qnn_DataType_t data_type, uint8_t fill) {
+    uint32_t count =
+        std::accumulate(dims.begin(), dims.end(), 1u, std::multiplies<>());
+    return std::vector<uint8_t>(count * GetDataTypeSize(data_type), fill);
+  };
+  std::vector<uint8_t> data1 = make_data(dims1, data_tensor_type1, 1);
+  std::vector<uint8_t> data2 = make_data(dims2, data_tensor_type2, 1);
+
+  if (tweak_data && tensor_type1 == tensor_type2 &&
+      data_tensor_type1 == data_tensor_type2 && dims1 == dims2 &&
+      !data2.empty()) {
+    data2[0] = 100;
+  }
+
+  TensorWrapper wrapper1{"",
+                         tensor_type1,
+                         data_tensor_type1,
+                         QuantizeParamsWrapperVariant(),
+                         dims1,
+                         static_cast<uint32_t>(data1.size()),
+                         data1.data(),
+                         true};
+  TensorWrapper wrapper2{"",
+                         tensor_type2,
+                         data_tensor_type2,
+                         QuantizeParamsWrapperVariant(),
+                         dims2,
+                         static_cast<uint32_t>(data2.size()),
+                         data2.data(),
+                         true};
+
+  const bool expected_equal = (tensor_type1 == tensor_type2) &&
+                              (data_tensor_type1 == data_tensor_type2) &&
+                              (dims1 == dims2) && !tweak_data;
+  EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+}
+INSTANTIATE_TEST_SUITE_P(TensorWrapperTest_Combinations, TensorWrapperEqualTest,
+                         ::testing::Values(
+                             // All fields same
+                             TensorEqualParams{QNN_TENSOR_TYPE_STATIC,
+                                               QNN_TENSOR_TYPE_STATIC,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               {1, 1, 3},
+                                               {1, 1, 3},
+                                               false},
+                             // Tensor type
+                             TensorEqualParams{
+                                 QNN_TENSOR_TYPE_STATIC,
+                                 QNN_TENSOR_TYPE_UPDATEABLE_STATIC,
+                                 QNN_DATATYPE_UFIXED_POINT_8,
+                                 QNN_DATATYPE_UFIXED_POINT_8,
+                                 {1, 1, 3},
+                                 {1, 1, 3},
+                                 false},
+                             // Data type
+                             TensorEqualParams{QNN_TENSOR_TYPE_STATIC,
+                                               QNN_TENSOR_TYPE_STATIC,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               QNN_DATATYPE_FLOAT_32,
+                                               {1, 1, 3},
+                                               {1, 1, 3},
+                                               false},
+                             // Rank
+                             TensorEqualParams{QNN_TENSOR_TYPE_STATIC,
+                                               QNN_TENSOR_TYPE_STATIC,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               {1, 1, 3},
+                                               {1, 1, 3, 1},
+                                               false},
+                             // Dimensions
+                             TensorEqualParams{QNN_TENSOR_TYPE_STATIC,
+                                               QNN_TENSOR_TYPE_STATIC,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               {1, 1, 3},
+                                               {1, 1, 4},
+                                               false},
+                             // Data value
+                             TensorEqualParams{QNN_TENSOR_TYPE_STATIC,
+                                               QNN_TENSOR_TYPE_STATIC,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               QNN_DATATYPE_UFIXED_POINT_8,
+                                               {1, 1, 3},
+                                               {1, 1, 3},
+                                               true}));
 }  // namespace
 }  // namespace qnn
