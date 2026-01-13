@@ -572,6 +572,7 @@ cc_library(
         ":litert_common",
         ":litert_model",
         ":litert_op_code",
+        ":litert_op_options",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/core/util:flatbuffer_tools",
