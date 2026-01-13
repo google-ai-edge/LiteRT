@@ -101,6 +101,7 @@ class IrAllocator {
   // provided, only the objects at the given indices are transferred.
   void TransferFrom(IrAllocator& other,
                     std::optional<std::vector<size_t>> indices = std::nullopt) {
+    if (&other == this) return;
     if (!indices) {
       storage_.splice(storage_.cend(), other.storage_);
       refs_->insert(refs_->end(), other.refs_->cbegin(), other.refs_->cend());
@@ -110,6 +111,7 @@ class IrAllocator {
 
     auto& inds = *indices;
     std::sort(inds.begin(), inds.end());
+    inds.erase(std::unique(inds.begin(), inds.end()), inds.end());
     std::vector<typename Storage::iterator> its;
     auto i = 0;
     auto it = other.storage_.begin();
@@ -129,19 +131,37 @@ class IrAllocator {
   // Transfers ownership of the given object to this allocator with at specified
   // index of this allocator.
   void TransferFrom(IrAllocator& other, size_t index) {
+    if (&other == this) return;
+    if (other.Size() == 0) {
+      return;
+    }
+    if (index > Size()) {
+      // Or handle as an error, for now, clamp to the end.
+      index = Size();
+    }
+
     auto storage_it = storage_.begin();
     std::advance(storage_it, index);
+
+    const size_t num_moved = other.storage_.size();
     storage_.splice(storage_it, other.storage_);
+
+    // The elements from other.storage_ are inserted before storage_it.
+    // The range of new elements is [std::prev(storage_it, num_moved),
+    // storage_it).
+    auto insert_start_it = std::prev(storage_it, num_moved);
 
     auto refs_it = refs_->begin();
     std::advance(refs_it, index);
-    for (auto it = std::prev(storage_it, other.storage_.size());
-         it != storage_.end(); ++it) {
-      refs_->insert(refs_it, &*it);
-    }
 
-    other.ResetRefs();
-    ResetRefs();
+    std::vector<Ir*> new_refs;
+    new_refs.reserve(num_moved);
+    for (auto it = insert_start_it; it != storage_it; ++it) {
+      new_refs.push_back(&*it);
+    }
+    refs_->insert(refs_it, new_refs.begin(), new_refs.end());
+
+    other.ResetRefs();  // other.storage_ is now empty.
   }
 
   // Override for rvalues.
