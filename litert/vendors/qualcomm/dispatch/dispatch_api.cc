@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -40,9 +41,12 @@ namespace {
 
 using ::litert::qnn::QnnManager;
 
-static std::unique_ptr<QnnManager> TheQnnManager;
+static std::unique_ptr<QnnManager>& QnnManagerStorage() {
+  static absl::NoDestructor<std::unique_ptr<QnnManager>> storage;
+  return *storage;
+}
 
-QnnManager& Qnn() { return *TheQnnManager; }
+QnnManager& Qnn() { return *QnnManagerStorage(); }
 
 LiteRtEnvironmentOptions TheEnvironmentOptions = nullptr;
 
@@ -97,7 +101,7 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
   } else {
-    std::swap(TheQnnManager, *qnn_manager);
+    std::swap(QnnManagerStorage(), *qnn_manager);
   }
 
   Qnn_ApiVersion_t qnn_api_version;
