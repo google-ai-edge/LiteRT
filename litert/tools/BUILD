@@ -159,8 +159,8 @@ litert_bin(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = [
-        # copybara:uncomment "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
         "//litert:litert_public",
+        "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
         ":apply_plugin_runtimecapi",
@@ -376,6 +376,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/profiling:model_runtime_info",
         "//tflite/profiling:profile_buffer",
+        "//tflite/profiling:profile_summarizer",
         "//tflite/tools:command_line_flags",
         "//tflite/tools:utils",
         "//tflite/tools/benchmark:benchmark_model_lib",
@@ -634,6 +635,10 @@ cc_binary(
 cc_binary(
     name = "analyze_model_main",
     srcs = ["analyze_model_main.cc"],
+    visibility = [
+        "//litert:litert_internal_users",
+        "//platforms/darwinn/tests/sdk_3p/litert_tools:__pkg__",
+    ],
     deps = [
         ":dump",
         ":tool_display",

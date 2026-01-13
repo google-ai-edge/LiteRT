@@ -53,6 +53,7 @@ litert_dynamic_lib(
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
+        "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
         "//third_party/darwinn/litert:__subpackages__",
     ],
     deps = [

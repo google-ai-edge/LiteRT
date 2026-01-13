@@ -88,8 +88,8 @@ litert_dynamic_lib(
         "nobuilder",
     ],
     visibility = [
-        # copybara:uncomment "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
         "//litert:litert_public",
+        "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
         "@com_google_absl//absl/algorithm:container",
