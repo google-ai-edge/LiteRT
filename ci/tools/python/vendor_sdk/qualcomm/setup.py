@@ -49,7 +49,8 @@ QAIRT_CONTENT_DIR = 'qairt/2.41.0.251128'
 # LINT.ThenChange(
 # ../../../../../../opensource_only/third_party/qairt/workspace.bzl:bazel_qairt_sdk_version,
 # ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
-# ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library_jit.sh:fetch_qairt_sdk_version
+# ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library_jit.sh:fetch_qairt_sdk_version,
+# ../../../../../../litert/vendors/CMakeLists.txt:qairt_headers_dir,
 # )
 QAIRT_TARGET_DIR = 'ai_edge_litert_sdk_qualcomm/data'
 # ---

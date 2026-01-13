@@ -21,7 +21,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_element_type.h"
@@ -29,6 +29,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpMem.h"  // from @qairt
@@ -82,20 +83,6 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to get tensor buffer type");
-  }
-
-  size_t tensor_buffer_size;
-  if (auto status =
-          LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to get tensor buffer size");
-  }
-
-  size_t tensor_buffer_offset;
-  if (auto status =
-          LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to get tensor buffer offset");
   }
 
   LiteRtRankedTensorType tensor_type;
@@ -157,12 +144,6 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                         "Unsupported tensor buffer type");
   }
 
-  QnnMemHtp_Descriptor_t mem_htp_descriptor = {};
-  mem_htp_descriptor.type = QNN_HTP_MEM_SHARED_BUFFER;
-  mem_htp_descriptor.size = tensor_buffer_size;
-  mem_htp_descriptor.sharedBufferConfig =
-      QnnHtpMem_SharedBufferConfig_t{buffer_fd, tensor_buffer_offset};
-
   Qnn_MemDescriptor_t mem_descriptor = {};
   // QNN does not support 0-dimensional tensors.
   std::array<uint32_t, 1> dim{1};
@@ -172,8 +153,41 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     mem_descriptor.memShape = {tensor_rank, tensor_dimensions, nullptr};
   }
   mem_descriptor.dataType = tensor_data_type;
-  mem_descriptor.memType = QNN_MEM_TYPE_CUSTOM;
-  mem_descriptor.customInfo = &mem_htp_descriptor;
+
+  QnnMemHtp_Descriptor_t mem_htp_descriptor = {};
+  switch (qnn_manager_.GetOptions().GetBackendType()) {
+    // DSP Backend only supports QNN_MEM_TYPE_ION.
+    case ::qnn::BackendType::kDspBackend:
+      mem_descriptor.memType = QNN_MEM_TYPE_ION;
+      mem_descriptor.ionInfo.fd = buffer_fd;
+
+      break;
+    case ::qnn::BackendType::kHtpBackend:
+      [[fallthrough]];
+    default:
+      size_t tensor_buffer_size;
+      if (auto status =
+              LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size);
+          status != kLiteRtStatusOk) {
+        return Unexpected(status, "Failed to get tensor buffer size");
+      }
+
+      size_t tensor_buffer_offset;
+      if (auto status =
+              LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset);
+          status != kLiteRtStatusOk) {
+        return Unexpected(status, "Failed to get tensor buffer offset");
+      }
+
+      mem_htp_descriptor.type = QNN_HTP_MEM_SHARED_BUFFER;
+      mem_htp_descriptor.size = tensor_buffer_size;
+      mem_htp_descriptor.sharedBufferConfig =
+          QnnHtpMem_SharedBufferConfig_t{buffer_fd, tensor_buffer_offset};
+      mem_descriptor.memType = QNN_MEM_TYPE_CUSTOM;
+      mem_descriptor.customInfo = &mem_htp_descriptor;
+
+      break;
+  }
 
   if (invocation_context_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,

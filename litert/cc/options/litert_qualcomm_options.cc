@@ -232,6 +232,17 @@ bool QualcommOptions::GetUseFoldReLU() {
   return use_fold_relu;
 }
 
+void QualcommOptions::SetBackend(Backend qnn_backend) {
+  internal::AssertOk(LiteRtQualcommOptionsSetBackend, Data(),
+                     static_cast<LiteRtQualcommOptionsBackend>(qnn_backend));
+}
+
+QualcommOptions::Backend QualcommOptions::GetBackend() {
+  LiteRtQualcommOptionsBackend qnn_backend;
+  internal::AssertOk(LiteRtQualcommOptionsGetBackend, Data(), &qnn_backend);
+  return static_cast<QualcommOptions::Backend>(qnn_backend);
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {

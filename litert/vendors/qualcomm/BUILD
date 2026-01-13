@@ -76,6 +76,7 @@ litert_cc_lib_with_qnn(
         "//litert/cc/internal:litert_shared_library",
         "//litert/core:dynamic_loading",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/backends:dsp_backend",
         "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:ir_backend",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",

@@ -239,25 +239,25 @@ LiteRtStatus GraphMapper::IsLiteRtSubgraphSupported() {
 
 LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
                                        const ::qnn::Options& options) {
+  absl::Span<const QnnGraph_Config_t*> graph_configs;
   switch (options.GetBackendType()) {
-    case ::qnn::BackendType::kHtpBackend: {
-      LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
-          context_handle_, qnn_graph_name.data(),
-          PickGraphConfigHeuristic(options).data(), &QnnGraph()));
+    case ::qnn::BackendType::kHtpBackend:
+      graph_configs = PickGraphConfigHeuristic(options);
       break;
-    }
-    case ::qnn::BackendType::kIrBackend: {
-      LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
-          context_handle_, qnn_graph_name.data(),
-          GetDefaultIrGraphConfigs(options, qnn_graph_name).data(),
-          &QnnGraph()));
+    case ::qnn::BackendType::kIrBackend:
+      graph_configs = GetDefaultIrGraphConfigs(options, qnn_graph_name);
       break;
-    }
-    default: {
+    case ::qnn::BackendType::kDspBackend:
+      // No graph configs for DSP backend.
+      break;
+    default:
       LITERT_LOG(LITERT_ERROR, "Unsupported Backend to create graph");
       return kLiteRtStatusErrorUnsupported;
-    }
   }
+
+  LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
+      qnn_.Api()->graphCreate(context_handle_, qnn_graph_name.data(),
+                              graph_configs.data(), &QnnGraph()));
 
   return kLiteRtStatusOk;
 }

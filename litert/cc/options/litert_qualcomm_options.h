@@ -153,6 +153,17 @@ class QualcommOptions : public OpaqueOptions {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority();
 
+  enum class Backend : int {
+    kUndefined = kLiteRtQualcommBackendUndefined,
+    kGpu = kLiteRtQualcommBackendGpu,
+    kHtp = kLiteRtQualcommBackendHtp,
+    kDsp = kLiteRtQualcommBackendDsp,
+    kIr = kLiteRtQualcommBackendIr,
+  };
+
+  void SetBackend(Backend qnn_backend);
+  Backend GetBackend();
+
  private:
   LiteRtQualcommOptions Data() const;
 };

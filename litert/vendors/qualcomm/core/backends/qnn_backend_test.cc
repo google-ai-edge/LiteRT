@@ -7,6 +7,7 @@
 #include <optional>
 
 #include <gtest/gtest.h>
+#include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -33,6 +34,12 @@ class QnnBackendTest : public testing::TestWithParam<BackendType> {
             handle_.get(), ::qnn::IrBackend::GetExpectedBackendVersion()));
 
         break;
+      case BackendType::kDspBackend:
+        handle_ = ::qnn::CreateDLHandle(::qnn::DspBackend::GetLibraryName());
+        backend_ = std::make_unique<::qnn::DspBackend>(::qnn::ResolveQnnApi(
+            handle_.get(), ::qnn::DspBackend::GetExpectedBackendVersion()));
+
+        break;
       default:
         break;
     }
@@ -44,7 +51,8 @@ class QnnBackendTest : public testing::TestWithParam<BackendType> {
 
 INSTANTIATE_TEST_SUITE_P(QnnBackendTest, QnnBackendTest,
                          testing::Values(BackendType::kHtpBackend,
-                                         BackendType::kIrBackend));
+                                         BackendType::kIrBackend,
+                                         BackendType::kDspBackend));
 
 TEST_P(QnnBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
   Options options;
@@ -59,7 +67,11 @@ TEST_P(QnnBackendTest, DISABLED_InitializeWithLogLevelOffTest) {
     case BackendType::kIrBackend:
       options.SetBackendType(BackendType::kIrBackend);
       ASSERT_TRUE(backend_->Init(options, std::nullopt));
-      ASSERT_EQ(backend_->GetDeviceHandle(), nullptr);
+      ASSERT_FALSE(backend_->GetDeviceHandle());
+      break;
+    case BackendType::kDspBackend:
+      ASSERT_TRUE(backend_->Init(options, std::nullopt));
+      ASSERT_FALSE(backend_->GetDeviceHandle());
       break;
     default:
       break;
@@ -82,7 +94,11 @@ TEST_P(QnnBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
     case BackendType::kIrBackend:
       options.SetBackendType(BackendType::kIrBackend);
       ASSERT_TRUE(backend_->Init(options, std::nullopt));
-      ASSERT_EQ(backend_->GetDeviceHandle(), nullptr);
+      ASSERT_FALSE(backend_->GetDeviceHandle());
+      break;
+    case BackendType::kDspBackend:
+      ASSERT_TRUE(backend_->Init(options, std::nullopt));
+      ASSERT_FALSE(backend_->GetDeviceHandle());
       break;
     default:
       break;

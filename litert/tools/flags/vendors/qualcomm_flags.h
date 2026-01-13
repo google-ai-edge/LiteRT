@@ -40,6 +40,17 @@ bool AbslParseFlag(absl::string_view text, QualcommOptions::LogLevel* options,
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::Backend options);
+
+}  // namespace litert::qualcomm
+
 #endif
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////

@@ -13,6 +13,7 @@ cc_library(
             "include/QNN/HTP/*.h",
             "include/QNN/System/*.h",
             "include/QNN/IR/*.h",
+            "include/QNN/DSP/*.h",
         ],
         exclude = [
             "include/QNN/HTA/**/*.h",
