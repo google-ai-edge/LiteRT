@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # copybara:uncomment load("INTERNAL_ACCEL_RUNTIME/common:build_defs.bzl", "compile_model")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
@@ -110,6 +111,24 @@ litert_dynamic_lib(
     ],
 )
 
+cc_library(
+    name = "dispatch_api_test_fixtures",
+    testonly = True,
+    srcs = ["dispatch_api_test_fixtures.cc"],
+    hdrs = ["dispatch_api_test_fixtures.h"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core:filesystem_testonly",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model_npu",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//testing/base/public:gunit_for_library_testonly",
+        "@com_google_absl//absl/base:no_destructor",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # compile_model(
 #     name = "simple_model_reference_bin",
@@ -120,25 +139,18 @@ litert_dynamic_lib(
 # )
 #
 # cc_test(
-#     name = "dispatch_api_google_tensor_test_x86",
-#     srcs = ["dispatch_api_google_tensor_test.cc"],
+#     name = "dispatch_api_simple_model_test_x86",
+#     srcs = ["dispatch_api_simple_model_test.cc"],
 #     data = [
 #         "simple_model_reference_google_tensor.bin",
 #         ":dispatch_api_so",
 #         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
 #     ],
 #     deps = [
+#         ":dispatch_api_test_fixtures",
 #         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/base:no_destructor",
-#         "@com_google_absl//absl/log",
-#         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/types:span",
 #         "//litert/c:litert_runtime_c_api_shared_lib",
-#         "//litert/cc:litert_expected",
-#         "//litert/cc/dynamic_runtime:litert_environment",
-#         "//litert/cc/dynamic_runtime:litert_options",
-#         "//litert/core:filesystem_testonly",
-#         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model_npu",
 #         "//litert/vendors/c:litert_dispatch_c_api",
@@ -147,12 +159,11 @@ litert_dynamic_lib(
 # copybara:uncomment_end
 
 litert_device_test(
-    name = "dispatch_api_google_tensor_test",
-    srcs = ["dispatch_api_google_tensor_test.cc"],
+    name = "dispatch_api_simple_model_test",
+    srcs = ["dispatch_api_simple_model_test.cc"],
     backend_id = "google_tensor",
     data = [
         "//litert/test:testdata/simple_model_google_tensor.bin",
-        "//litert/test:testdata/simple_model_npu.tflite",
     ],
     # TODO: google_tensor team fix visibility for fence deps.
     tags = [
@@ -160,18 +171,11 @@ litert_device_test(
         "notap",
     ],
     deps = [
+        ":dispatch_api_test_fixtures",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_environment",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/core:filesystem_testonly",
-        "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "@com_google_absl//absl/base:no_destructor",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
