@@ -4,6 +4,7 @@
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -51,6 +52,14 @@ std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
   result.first = total_padding / 2;
   result.second = result.first + total_padding % 2;
   return result;
+}
+
+std::string GetUniqueOpName(const char* op_type) {
+  // TODO(jiunkaiy): Remove the static op_index to ensure each op has a unique
+  // name.
+  static uint32_t op_index = 0;
+  const auto name = absl::StrCat(op_type, "_", op_index++);
+  return name;
 }
 
 OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
@@ -214,11 +223,7 @@ OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
           {QNN_OP_UN_PACK, QnnOpCode::kUnPack},
       };
 
-  // TODO(jiunkaiy): Remove the static op_index to ensure each op has a unique
-  // name.
-  static uint32_t op_index = 0;
-  const auto name = absl::StrCat(op_type, "_", op_index++);
-
+  auto name = GetUniqueOpName(op_type);
   return ops.emplace_back(std::move(name), op_type, code_type_map->at(op_type));
 }
 

@@ -5,9 +5,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -64,12 +66,19 @@ std::vector<OpWrapper> BuildSliceOp(
       {input_rank, kRangeNumElements}, sizeof(std::int32_t) * range_data.size(),
       range_data.data());
 
-  auto& slice_op = CreateOpWrapper(res, QNN_OP_STRIDED_SLICE);
-  slice_op.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES, range_tensor);
-  slice_op.AddInputTensor(input_tensor);
-  slice_op.AddOutputTensor(outputs[0]);
-
+  BuildSliceOp(res.emplace_back(), input_tensor, outputs[0], range_tensor);
   return res;
+}
+
+bool BuildSliceOp(OpWrapper& op, const TensorWrapper& input,
+                  const TensorWrapper& output, const TensorWrapper& ranges) {
+  auto name = GetUniqueOpName(QNN_OP_STRIDED_SLICE);
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_STRIDED_SLICE, QnnOpCode::kStridedSlice);
+  op.AddInputTensor(input);
+  op.AddOutputTensor(output);
+  op.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES, ranges);
+  return true;
 }
 
 }  // namespace qnn

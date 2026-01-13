@@ -272,6 +272,7 @@ cc_library(
     hdrs = ["slice_op_builder.h"],
     deps = [
         ":op_builder",
+        "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
