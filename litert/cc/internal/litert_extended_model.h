@@ -44,6 +44,9 @@
 
 namespace litert {
 
+// Forward declaration of Op class.
+class Op;
+
 /// @brief A C++ wrapper for `LiteRtWeights`, representing tensor weights.
 class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
  public:
@@ -157,8 +160,13 @@ class Tensor : public litert::SimpleTensor {
     return std::nullopt;
   }
 
+  Expected<Op> GetDefiningOp() const;
+
   bool IsSubgraphInput() const;
   bool IsConstant() const;
+
+  bool operator==(const Tensor& other) const { return Get() == other.Get(); }
+  bool operator!=(const Tensor& other) const { return Get() != other.Get(); }
 };
 
 using OpInputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpInputs>;
@@ -188,6 +196,13 @@ class Op : public internal::NonOwnedHandle<LiteRtOp> {
 
   OpInputs Inputs() const;
   OpOutputs Outputs() const;
+
+  bool Is(LiteRtOpCode code) const { return Code() == code; }
+
+  Expected<Tensor> Input(size_t index) const;
+  Expected<Tensor> Output(size_t index) const;
+
+  Expected<Op> InputDefiningOp(size_t index) const;
 };
 
 struct Tensor::TensorUse {

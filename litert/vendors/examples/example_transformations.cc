@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <utility>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_builder.h"
@@ -41,25 +43,48 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
 
 LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
                                           LiteRtOp op) {
-  Builder builder = Builder(builder_ptr);
-  Op root_op = Op(op);
+  Builder builder(builder_ptr);
+  Op root_op(op);
 
   // Pattern Match
-  if (root_op.Code() != kLiteRtOpCodeTflSqrt) {
+  if (!root_op.Is(kLiteRtOpCodeTflSqrt)) {
     return kLiteRtStatusPatternNoMatch;
   }
-  Op mean_op = Op(root_op.Inputs().front().DefiningOp().value().op);
-  if (mean_op.Code() != kLiteRtOpCodeTflMean) {
+
+  auto input_tensor = root_op.Input(0);
+  if (!input_tensor) {
     return kLiteRtStatusPatternNoMatch;
   }
-  Op square_op = Op(mean_op.Inputs().front().DefiningOp().value().op);
-  if (square_op.Code() != kLiteRtOpCodeTflMul) {
+  auto mean_op_res = input_tensor->GetDefiningOp();
+  if (!mean_op_res) {
     return kLiteRtStatusPatternNoMatch;
   }
-  if (square_op.Inputs().size() != 2) {
+  Op mean_op = std::move(*mean_op_res);
+
+  if (!mean_op.Is(kLiteRtOpCodeTflMean)) {
     return kLiteRtStatusPatternNoMatch;
   }
-  if (square_op.Inputs().at(0).Get() != square_op.Inputs().at(1).Get()) {
+
+  auto mean_input = mean_op.Input(0);
+  if (!mean_input) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  auto square_op_res = mean_input->GetDefiningOp();
+  if (!square_op_res) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  Op square_op = std::move(*square_op_res);
+
+  if (!square_op.Is(kLiteRtOpCodeTflMul)) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  auto sq_in0 = square_op.Input(0);
+  auto sq_in1 = square_op.Input(1);
+  if (!sq_in0 || !sq_in1) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+
+  if (sq_in0->Get() != sq_in1->Get()) {
     return kLiteRtStatusPatternNoMatch;
   }
   // Reuse the inputs of the mul(square op).
