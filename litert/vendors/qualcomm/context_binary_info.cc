@@ -32,13 +32,12 @@ namespace qnn {
 
 namespace {
 
-Expected<void> InsertQnnTensors(int num_qnn_tensors, Qnn_Tensor_t* qnn_tensors,
-                                std::vector<::qnn::TensorWrapper>& tensors) {
+Expected<void> CloneQnnTensors(int num_qnn_tensors, Qnn_Tensor_t* qnn_tensors,
+                               std::vector<Qnn_Tensor_t*>& tensors) {
   tensors.clear();
   tensors.reserve(num_qnn_tensors);
   for (auto i = 0; i < num_qnn_tensors; ++i) {
-    tensors.emplace_back(qnn_tensors[i]);
-    // TODO: chunhsue@qti handle invalid access of qnn_tensor error.
+    tensors.emplace_back(qnn_tensors + i);
   }
   return {};
 }
@@ -78,13 +77,13 @@ Expected<void> GraphInfo::Init(const QnnSystemContext_GraphInfo_t& graph_info) {
     name_ = graph_info_.graphName;
     LITERT_LOG(LITERT_INFO, "Found qnn graph: %s", name_.c_str());
 
-    if (auto status = InsertQnnTensors(graph_info_.numGraphInputs,
-                                       graph_info_.graphInputs, inputs_);
+    if (auto status = CloneQnnTensors(graph_info_.numGraphInputs,
+                                      graph_info_.graphInputs, inputs_);
         !status) {
       return Unexpected(status.Error());
     }
-    if (auto status = InsertQnnTensors(graph_info_.numGraphOutputs,
-                                       graph_info_.graphOutputs, outputs_);
+    if (auto status = CloneQnnTensors(graph_info_.numGraphOutputs,
+                                      graph_info_.graphOutputs, outputs_);
         !status) {
       return Unexpected(status.Error());
     }
@@ -94,13 +93,13 @@ Expected<void> GraphInfo::Init(const QnnSystemContext_GraphInfo_t& graph_info) {
     name_ = graph_info_.graphName;
     LITERT_LOG(LITERT_INFO, "Found qnn graph: %s", name_.c_str());
 
-    if (auto status = InsertQnnTensors(graph_info_.numGraphInputs,
-                                       graph_info_.graphInputs, inputs_);
+    if (auto status = CloneQnnTensors(graph_info_.numGraphInputs,
+                                      graph_info_.graphInputs, inputs_);
         !status) {
       return Unexpected(status.Error());
     }
-    if (auto status = InsertQnnTensors(graph_info_.numGraphOutputs,
-                                       graph_info_.graphOutputs, outputs_);
+    if (auto status = CloneQnnTensors(graph_info_.numGraphOutputs,
+                                      graph_info_.graphOutputs, outputs_);
         !status) {
       return Unexpected(status.Error());
     }
@@ -109,13 +108,13 @@ Expected<void> GraphInfo::Init(const QnnSystemContext_GraphInfo_t& graph_info) {
     name_ = graph_info_.graphName;
     LITERT_LOG(LITERT_INFO, "Found qnn graph: %s", name_.c_str());
 
-    if (auto status = InsertQnnTensors(graph_info_.numGraphInputs,
-                                       graph_info_.graphInputs, inputs_);
+    if (auto status = CloneQnnTensors(graph_info_.numGraphInputs,
+                                      graph_info_.graphInputs, inputs_);
         !status) {
       return Unexpected(status.Error());
     }
-    if (auto status = InsertQnnTensors(graph_info_.numGraphOutputs,
-                                       graph_info_.graphOutputs, outputs_);
+    if (auto status = CloneQnnTensors(graph_info_.numGraphOutputs,
+                                      graph_info_.graphOutputs, outputs_);
         !status) {
       return Unexpected(status.Error());
     }
@@ -131,9 +130,9 @@ Expected<void> ContextBinaryInfo::Init(
     const QnnSystemContext_BinaryInfo_t& binary_info) {
   if (binary_info.version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1) {
     const auto& context_binary_info = binary_info.contextBinaryInfoV1;
-    if (auto status = InsertQnnTensors(context_binary_info.numContextTensors,
-                                       context_binary_info.contextTensors,
-                                       context_tensors_);
+    if (auto status = CloneQnnTensors(context_binary_info.numContextTensors,
+                                      context_binary_info.contextTensors,
+                                      context_tensors_);
         !status) {
       return Unexpected(status.Error());
     }
@@ -145,9 +144,9 @@ Expected<void> ContextBinaryInfo::Init(
 
   } else if (binary_info.version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
     const auto& context_binary_info = binary_info.contextBinaryInfoV2;
-    if (auto status = InsertQnnTensors(context_binary_info.numContextTensors,
-                                       context_binary_info.contextTensors,
-                                       context_tensors_);
+    if (auto status = CloneQnnTensors(context_binary_info.numContextTensors,
+                                      context_binary_info.contextTensors,
+                                      context_tensors_);
         !status) {
       return Unexpected(status.Error());
     }
@@ -158,9 +157,9 @@ Expected<void> ContextBinaryInfo::Init(
     }
   } else if (binary_info.version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
     const auto& context_binary_info = binary_info.contextBinaryInfoV3;
-    if (auto status = InsertQnnTensors(context_binary_info.numContextTensors,
-                                       context_binary_info.contextTensors,
-                                       context_tensors_);
+    if (auto status = CloneQnnTensors(context_binary_info.numContextTensors,
+                                      context_binary_info.contextTensors,
+                                      context_tensors_);
         !status) {
       return Unexpected(status.Error());
     }
@@ -182,7 +181,7 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   if (!system_context_handle) {
     return Unexpected(system_context_handle.Error());
   }
-
+  // Used to hold the address of binary info owned by QNN.
   const QnnSystemContext_BinaryInfo_t* binary_info = nullptr;
   Qnn_ContextBinarySize_t binary_info_size = 0;
   if (auto status = qnn.SystemApi()->systemContextGetBinaryInfo(

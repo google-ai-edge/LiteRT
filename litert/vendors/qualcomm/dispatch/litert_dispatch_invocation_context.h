@@ -90,7 +90,7 @@ class LiteRtDispatchInvocationContextT {
       LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes);
 
   litert::Expected<void> WriteTensorTo(
-      const std::filesystem::path& output_folder, ::qnn::TensorWrapper& tensor);
+      const std::filesystem::path& output_folder, Qnn_Tensor_t& tensor);
 
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContextT& device_context_;
@@ -98,10 +98,12 @@ class LiteRtDispatchInvocationContextT {
   Qnn_ProfileHandle_t profile_handle_;
   int graph_index_;
   Qnn_GraphHandle_t graph_handle_;
-  std::vector<::qnn::TensorWrapper> inputs_;
-  std::vector<::qnn::TensorWrapper> outputs_;
+  std::vector<Qnn_Tensor_t*> inputs_;
+  std::vector<Qnn_Tensor_t*> outputs_;
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
   std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
+  std::vector<std::byte> dump_buffer_;
+  bool is_uint16_{false};
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

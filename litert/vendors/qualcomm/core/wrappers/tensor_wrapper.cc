@@ -379,4 +379,15 @@ TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
   }
 }
 
+std::uint32_t GetTensorNumElements(Qnn_Tensor_t& qnn_tensor) {
+  return std::accumulate(qnn_tensor.v1.dimensions,
+                         qnn_tensor.v1.dimensions + qnn_tensor.v1.rank, 1,
+                         std::multiplies<>());
+}
+
+size_t GetTensorBytes(Qnn_Tensor_t& qnn_tensor) {
+  return GetDataTypeSize(qnn_tensor.v2.dataType) *
+         GetTensorNumElements(qnn_tensor);
+}
+
 }  // namespace qnn

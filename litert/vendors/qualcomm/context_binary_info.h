@@ -31,15 +31,15 @@ class GraphInfo {
   static Expected<GraphInfo> Create(
       const QnnSystemContext_GraphInfo_t& graph_info);
   const std::string& Name() const { return name_; }
-  const std::vector<::qnn::TensorWrapper>& Inputs() const { return inputs_; }
-  const std::vector<::qnn::TensorWrapper>& Outputs() const { return outputs_; }
+  const std::vector<Qnn_Tensor_t*>& Inputs() const { return inputs_; }
+  const std::vector<Qnn_Tensor_t*>& Outputs() const { return outputs_; }
 
  private:
   GraphInfo() = default;
   Expected<void> Init(const QnnSystemContext_GraphInfo_t& graph_info);
   std::string name_;
-  std::vector<::qnn::TensorWrapper> inputs_;
-  std::vector<::qnn::TensorWrapper> outputs_;
+  std::vector<Qnn_Tensor_t*> inputs_;
+  std::vector<Qnn_Tensor_t*> outputs_;
 };
 
 class ContextBinaryInfo {
@@ -47,7 +47,7 @@ class ContextBinaryInfo {
   static Expected<ContextBinaryInfo> Create(QnnManager& qnn,
                                             const void* exec_bytecode_ptr,
                                             size_t exec_bytecode_size);
-  const std::vector<::qnn::TensorWrapper>& ContextTensors() const {
+  const std::vector<Qnn_Tensor_t*>& ContextTensors() const {
     return context_tensors_;
   }
   const std::vector<GraphInfo>& Graphs() const { return graphs_; }
@@ -56,7 +56,7 @@ class ContextBinaryInfo {
   ContextBinaryInfo() = default;
   Expected<void> Init(const QnnSystemContext_BinaryInfo_t& binary_info);
   std::vector<GraphInfo> graphs_;
-  std::vector<::qnn::TensorWrapper> context_tensors_;
+  std::vector<Qnn_Tensor_t*> context_tensors_;
 };
 
 }  // namespace litert::qnn
