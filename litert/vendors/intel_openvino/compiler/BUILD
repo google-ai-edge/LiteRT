@@ -129,10 +129,7 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/intel_openvino:ov_utils",
         "//tflite/schema:schema_fbs",

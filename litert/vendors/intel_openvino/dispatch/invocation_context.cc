@@ -17,6 +17,8 @@
 
 #include <chrono>  // NOLINT
 
+#include "openvino/core/any.hpp"
+#include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -52,7 +54,10 @@ LiteRtDispatchInvocationContextT::Create(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get OpenVINO core from device context");
   }
-  ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
+  ov::AnyMap configs_map;
+  configs_map["NPU_TURBO"] = "YES";
+  ov::CompiledModel compiled_model =
+      core->import_model(model_stream, "NPU", configs_map);
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model

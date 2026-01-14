@@ -3,6 +3,7 @@
 
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
+#include "openvino/core/type/element_type.hpp"
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
 #include "litert/c/litert_model.h"
 #include "litert/cc/internal/litert_extended_model.h"
@@ -57,7 +58,7 @@ static const ov::element::Type MapLiteTypeToOV(
       ov_type = ov::element::bf16;
       break;
     default:
-      ov_type = ov::element::undefined;
+      ov_type = ov::element::dynamic;
   }
   return ov_type;
 }
