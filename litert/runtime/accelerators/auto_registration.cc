@@ -125,33 +125,34 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #endif  // LITERT_HAS_VULKAN_SUPPORT
   };
   bool gpu_accelerator_registered = false;
-  for (auto plugin_path : kGpuAcceleratorLibs) {
-    LITERT_LOG(LITERT_VERBOSE, "Loading GPU accelerator(%s).",
-               plugin_path.data());
-    auto registration = RegisterSharedObjectAccelerator(
-        environment, plugin_path, "LiteRtRegisterGpuAccelerator",
-        /*try_symbol_already_loaded=*/false);
-    if (registration.HasValue()) {
-      LITERT_LOG(LITERT_INFO,
-                 "Dynamically loaded GPU accelerator(%s) registered.",
-                 plugin_path.data());
-      gpu_accelerator_registered = true;
-      break;
-    }
-    const auto& error = registration.Error();
-    auto log_level = absl::StrContains(error.Message(), "cannot locate symbol")
-                         ? LITERT_WARNING
-                         : LITERT_VERBOSE;
-    LITERT_LOG(log_level, "Failed to load GPU accelerator(%s): %s, %s.",
-               plugin_path.data(), LiteRtGetStatusString(error.Status()),
-               registration.Error().Message().data());
+  if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
+      LiteRtRegisterStaticLinkedAcceleratorGpu(environment) ==
+          kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+    gpu_accelerator_registered = true;
   }
   if (!gpu_accelerator_registered) {
-    if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
-        LiteRtRegisterStaticLinkedAcceleratorGpu(environment) ==
-            kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
-      gpu_accelerator_registered = true;
+    for (auto plugin_path : kGpuAcceleratorLibs) {
+      LITERT_LOG(LITERT_VERBOSE, "Loading GPU accelerator(%s).",
+                 plugin_path.data());
+      auto registration = RegisterSharedObjectAccelerator(
+          environment, plugin_path, "LiteRtRegisterGpuAccelerator",
+          /*try_symbol_already_loaded=*/false);
+      if (registration.HasValue()) {
+        LITERT_LOG(LITERT_INFO,
+                   "Dynamically loaded GPU accelerator(%s) registered.",
+                   plugin_path.data());
+        gpu_accelerator_registered = true;
+        break;
+      }
+      const auto& error = registration.Error();
+      auto log_level =
+          absl::StrContains(error.Message(), "cannot locate symbol")
+              ? LITERT_WARNING
+              : LITERT_VERBOSE;
+      LITERT_LOG(log_level, "Failed to load GPU accelerator(%s): %s, %s.",
+                 plugin_path.data(), LiteRtGetStatusString(error.Status()),
+                 registration.Error().Message().data());
     }
   }
   if (!gpu_accelerator_registered) {
