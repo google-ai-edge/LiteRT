@@ -199,87 +199,50 @@ LiteRtStatus LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
 
 LiteRtStatus LiteRtDispatchDeviceContextT::CreateGraph(
     LiteRtDispatchGraph& graph) {
-  ThrGraph* thr_graph = thrGraphCreate(thr_context_.get());
-  if (thr_graph == nullptr) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create SB graph");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-
-  auto dispatch_graph = std::make_unique<LiteRtDispatchGraphT>(thr_graph, this);
+  std::unique_ptr<LiteRtDispatchGraphT> raii_graph;
+  LITERT_RETURN_IF_ERROR(LiteRtDispatchGraphT::Create(this, raii_graph));
 
   if (darwinn_options_.has_value()) {
     if (std::optional<uint32_t> device_power_state =
             darwinn_options_->inference_power_state;
         device_power_state.has_value()) {
-      auto status = dispatch_graph->AnnotateGraph(
+      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
           gt::DispatchDirectiveAnnotations::kEdgetpuDevicePowerState.data(),
-          std::to_string(*device_power_state).c_str());
-
-      if (!status) {
-        LITERT_LOG(LITERT_WARNING,
-                   "Failed to apply inference_power_state annotation: %s",
-                   status.Error().Message().c_str());
-      }
+          std::to_string(*device_power_state).c_str()));
     }
 
     if (std::optional<uint32_t> memory_power_state =
             darwinn_options_->inference_memory_power_state;
         memory_power_state.has_value()) {
-      auto status = dispatch_graph->AnnotateGraph(
+      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
           gt::DispatchDirectiveAnnotations::kEdgetpuMemoryPowerState.data(),
-          std::to_string(*memory_power_state).c_str());
-
-      if (!status) {
-        LITERT_LOG(
-            LITERT_WARNING,
-            "Failed to apply inference_memory_power_state annotation: %s",
-            status.Error().Message().c_str());
-      }
+          std::to_string(*memory_power_state).c_str()));
     }
 
     if (std::optional<int8_t> inference_priority =
             darwinn_options_->inference_priority;
         inference_priority.has_value()) {
-      auto status = dispatch_graph->AnnotateGraph(
+      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
           gt::DispatchDirectiveAnnotations::kPriority.data(),
-          std::to_string(*inference_priority).c_str());
-
-      if (!status) {
-        LITERT_LOG(LITERT_WARNING,
-                   "Failed to apply inference_priority annotation: %s",
-                   status.Error().Message().c_str());
-      }
+          std::to_string(*inference_priority).c_str()));
     }
 
     if (darwinn_options_->atomic_inference) {
-      auto status = dispatch_graph->AnnotateGraph(
+      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
           gt::DispatchDirectiveAnnotations::kEdgetpuAtomicInference.data(),
-          "1");
-
-      if (!status) {
-        LITERT_LOG(LITERT_WARNING,
-                   "Failed to apply atomic_inference annotation: %s",
-                   status.Error().Message().c_str());
-      }
+          "1"));
     }
 
     if (darwinn_options_->prefer_coherent) {
-      auto status = dispatch_graph->AnnotateGraph(
-          gt::GraphDirectiveAnnotations::kPreferCoherent.data(),
-          "1");
-
-      if (!status) {
-        LITERT_LOG(LITERT_WARNING,
-                   "Failed to apply prefer_coherent annotation: %s",
-                   status.Error().Message().c_str());
-      }
+      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
+          gt::GraphDirectiveAnnotations::kPreferCoherent.data(), "1"));
     }
 
     LITERT_LOG(LITERT_INFO,
                "Successfully applied Darwinn options as graph annotations");
   }
 
-  graph = dispatch_graph.release();
+  graph = raii_graph.release();
   return kLiteRtStatusOk;
 }
 

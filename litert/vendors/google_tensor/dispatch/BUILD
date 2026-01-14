@@ -53,6 +53,7 @@ litert_dynamic_lib(
     srcs = [
         "dispatch_api.cc",
         "dispatch_api_config.cc",
+        "dispatch_api_utils.cc",
         "litert_dispatch_device_context.cc",
         "litert_dispatch_graph.cc",
         "litert_dispatch_invocation_context.cc",
@@ -62,6 +63,7 @@ litert_dynamic_lib(
         "dispatch_api.h",
         "dispatch_api_config.h",
         "dispatch_api_macros.h",
+        "dispatch_api_utils.h",
         "litert_dispatch_device_context.h",
         "litert_dispatch_graph.h",
         "litert_dispatch_invocation_context.h",
@@ -94,6 +96,9 @@ litert_dynamic_lib(
     ],
     deps = [
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",

@@ -15,7 +15,6 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 
 #include <cstdio>
-
 #include <memory>
 #include <utility>
 #include <vector>
@@ -25,6 +24,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_darwinn_options.h"
+#include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
@@ -54,6 +54,9 @@ std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
 // Google Tensor Dispatch API build ID.
 char TheBuildId[256];
 
+// Capabilities of the available SouthBound implementation.
+int TheCapabilities = 0;
+
 // Tensor buffer types that are supported by the available SouthBound
 // implementation.
 std::vector<LiteRtTensorBufferType> TheSupportedTensorBufferTypes;
@@ -74,6 +77,21 @@ LiteRtStatus InitializeDispatchApiConfig(
     LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found, using defaults");
   }
 
+  const char* sb_api_version = thrGetVendorApiVersion();
+  const char* sb_vendor_id = thrGetVendorId();
+  snprintf(TheBuildId, sizeof(TheBuildId),
+           "GoogleTensor Dispatch API version %d.%d.%d, SB API version %s, "
+           "vendor id: %s",
+           LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
+           LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
+
+  TheCapabilities =
+      kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
+  if (GoogleTensorSouthBoundFeatureSupported(
+          GoogleTensorSouthBoundFeature::kIndexedNodeBinding)) {
+    TheCapabilities |= kLiteRtDispatchCapabilitiesGraph;
+  }
+
   TheSupportedTensorBufferTypes = {
 #if LITERT_HAS_AHWB_SUPPORT
       kLiteRtTensorBufferTypeAhwb,
@@ -89,15 +107,6 @@ LiteRtStatus InitializeDispatchApiConfig(
     TheSupportedTensorBufferTypes.push_back(kLiteRtTensorBufferTypeHostMemory);
   }
 
-  const char* sb_api_version = thrGetVendorApiVersion();
-  const char* sb_vendor_id = thrGetVendorId();
-  snprintf(
-      TheBuildId, sizeof(TheBuildId),
-      "GoogleTensor Dispatch API version %d.%d.%d, SB API version %s, "
-      "vendor id: %s",
-      LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
-      LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
-
   TheDispatchApiConfigIsInitialized = true;
   return kLiteRtStatusOk;
 }
@@ -110,6 +119,11 @@ DarwinnRuntimeOptions* GetTheDarwinnOptions() {
 const char* GetTheBuildId() {
   CHECK_DISPATCH_API_CONFIG_INIT();
   return TheBuildId;
+}
+
+int GetTheCapabilities() {
+  CHECK_DISPATCH_API_CONFIG_INIT();
+  return TheCapabilities;
 }
 
 absl::Span<const LiteRtTensorBufferType> GetTheSupportedTensorBufferTypes() {

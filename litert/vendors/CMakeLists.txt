@@ -125,7 +125,10 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   )
 
   if(VENDOR STREQUAL "GoogleTensor")
-    list(APPEND DISPATCH_SRCS "${SRC_DIR}/dispatch_api_config.cc")
+    list(APPEND DISPATCH_SRCS
+      "${SRC_DIR}/dispatch_api_config.cc"
+      "${SRC_DIR}/dispatch_api_utils.cc"
+    )
   endif()
 
   if(VENDOR STREQUAL "MediaTek")
@@ -216,6 +219,9 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     PUBLIC
       litert_runtime_c_api_static
       absl::algorithm
+      absl::base
+      absl::flat_hash_map
+      absl::flat_hash_set
       absl::str_format
       absl::strings
       absl::string_view

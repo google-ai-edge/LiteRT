@@ -17,26 +17,38 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 
+#include "absl/base/nullability.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 class LiteRtDispatchGraphT {
  public:
-  LiteRtDispatchGraphT(ThrGraph* thr_graph,
-                       LiteRtDispatchDeviceContext device_context) :
-        thr_graph_(thr_graph),
-        device_context_(device_context) {}
+  static LiteRtStatus Create(LiteRtDispatchDeviceContext device_context,
+                             LiteRtDispatchGraph& graph);
 
-  ThrGraph* thr_graph() { return thr_graph_; }
+  static LiteRtStatus Create(
+      LiteRtDispatchDeviceContext device_context,
+      absl_nullable std::unique_ptr<LiteRtDispatchGraphT>& graph) {
+    LiteRtDispatchGraph raw_graph;
+    LITERT_RETURN_IF_ERROR(Create(device_context, raw_graph));
+
+    graph = std::unique_ptr<LiteRtDispatchGraphT>(raw_graph);
+    return kLiteRtStatusOk;
+  }
+
+  ThrGraph* absl_nonnull thr_graph() { return thr_graph_; }
 
   LiteRtDispatchDeviceContext device_context() { return device_context_; }
 
-  litert::Expected<void> AddNode(LiteRtDispatchNodeId node_id,
-                                 LiteRtDispatchNodeType node_type);
-  litert::Expected<void> AddEdge(LiteRtDispatchEdgeId edge_id);
+  LiteRtStatus AddNode(LiteRtDispatchNodeId node_id,
+                       LiteRtDispatchNodeType node_type);
+
+  LiteRtStatus AddEdge(LiteRtDispatchEdgeId edge_id);
 
   litert::Expected<LiteRtDispatchEdgeId> InputEdge(int input_index) const {
     return IoEdge(input_index, input_edges_);
@@ -48,47 +60,37 @@ class LiteRtDispatchGraphT {
 
   size_t NumOutputs() const { return output_edges_.size(); }
 
-  litert::Expected<void> ConnectNodeInput(LiteRtDispatchNodeId node_id,
-                                          int input_index,
-                                          LiteRtDispatchEdgeId edge_id);
+  LiteRtStatus ConnectNodeInput(LiteRtDispatchNodeId node_id, int input_index,
+                                LiteRtDispatchEdgeId edge_id);
 
-  litert::Expected<void> ConnectNodeOutput(LiteRtDispatchNodeId node_id,
-                                           int output_index,
-                                           LiteRtDispatchEdgeId edge_id);
+  LiteRtStatus ConnectNodeOutput(LiteRtDispatchNodeId node_id, int output_index,
+                                 LiteRtDispatchEdgeId edge_id);
 
-  litert::Expected<void> ConnectGraphInput(int input_index,
-                                           LiteRtDispatchEdgeId edge_id);
+  LiteRtStatus ConnectGraphInput(LiteRtDispatchEdgeId edge_id);
 
-  litert::Expected<void> ConnectGraphOutput(int output_index,
-                                            LiteRtDispatchEdgeId edge_id);
+  LiteRtStatus ConnectGraphOutput(LiteRtDispatchEdgeId edge_id);
 
-  litert::Expected<void> AssignNodeFunction(
-      LiteRtDispatchNodeId node_id, LiteRtDispatchExecutableHandle exec_handle,
-      const char* function_name);
+  LiteRtStatus AssignNodeFunction(LiteRtDispatchNodeId node_id,
+                                  LiteRtDispatchExecutableHandle exec_handle,
+                                  const char* absl_nullable function_name);
 
-  litert::Expected<void> AnnotateGraph(const char* key, const char* value);
+  LiteRtStatus AnnotateGraph(const char* absl_nonnull key,
+                             const char* absl_nonnull value);
 
-  litert::Expected<void> AnnotateNode(LiteRtDispatchNodeId node_id,
-                                      const char* key, const char* value);
+  LiteRtStatus AnnotateNode(LiteRtDispatchNodeId node_id,
+                            const char* absl_nonnull key,
+                            const char* absl_nonnull value);
 
-  litert::Expected<void> AnnotateEdge(LiteRtDispatchEdgeId edge_id,
-                                      const char* key, const char* value);
+  LiteRtStatus AnnotateEdge(LiteRtDispatchEdgeId edge_id,
+                            const char* absl_nonnull key,
+                            const char* absl_nonnull value);
 
  private:
-  using NextNodeIoIndexMap = std::map<LiteRtDispatchNodeId, int>;
   using IoIndexToEdgeIdMap = std::map<int, LiteRtDispatchEdgeId>;
 
-  int NextNodeOutputIndex(LiteRtDispatchNodeId node_id) {
-    return NextNodeIoIndex(node_id, next_node_output_index_);
-  }
-
-  int NextGraphInputIndex() { return next_graph_input_index_++; }
-
-  int NextGraphOutputIndex() { return next_graph_output_index_++; }
-
-  int NextNodeIoIndex(LiteRtDispatchNodeId node_id, NextNodeIoIndexMap& map) {
-    return map[node_id]++;
-  }
+  LiteRtDispatchGraphT(LiteRtDispatchDeviceContext device_context,
+                       ThrGraph* absl_nonnull thr_graph)
+      : device_context_(device_context), thr_graph_(thr_graph) {}
 
   litert::Expected<LiteRtDispatchEdgeId> IoEdge(
       int io_index, const IoIndexToEdgeIdMap& map) const {
@@ -100,10 +102,6 @@ class LiteRtDispatchGraphT {
     return iter->second;
   }
 
-  int NextNodeInputIndex(LiteRtDispatchNodeId node_id) {
-    return NextNodeIoIndex(node_id, next_node_input_index_);
-  }
-
   void AddInputEdge(int input_index, LiteRtDispatchEdgeId edge_id) {
     input_edges_[input_index] = edge_id;
   }
@@ -112,12 +110,8 @@ class LiteRtDispatchGraphT {
     output_edges_[output_index] = edge_id;
   }
 
-  ThrGraph* thr_graph_;
   LiteRtDispatchDeviceContext device_context_;
-  NextNodeIoIndexMap next_node_input_index_;
-  NextNodeIoIndexMap next_node_output_index_;
-  int next_graph_input_index_ = 0;
-  int next_graph_output_index_ = 0;
+  ThrGraph* absl_nonnull thr_graph_;
   IoIndexToEdgeIdMap input_edges_;
   IoIndexToEdgeIdMap output_edges_;
 };

@@ -73,9 +73,7 @@ LiteRtStatus GetBuildId(const char** build_id) {
 LiteRtStatus GetCapabilities(int* capabilities) {
   GT_LOG_RETURN_IF_NULL(capabilities);
 
-  *capabilities = kLiteRtDispatchCapabilitiesBasic |
-                  kLiteRtDispatchCapabilitiesAsync |
-                  kLiteRtDispatchCapabilitiesGraph;
+  *capabilities = GetTheCapabilities();
   return kLiteRtStatusOk;
 }
 
@@ -332,71 +330,45 @@ LiteRtStatus GraphDestroy(LiteRtDispatchGraph graph) {
 
 LiteRtStatus AddNode(LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
                      LiteRtDispatchNodeType node_type) {
-  if (auto result = graph->AddNode(node_id, node_type); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to add node: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return graph->AddNode(node_id, node_type);
 }
 
 LiteRtStatus AddEdge(LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id) {
-  if (auto result = graph->AddEdge(edge_id); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to add edge: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return graph->AddEdge(edge_id);
 }
 
 LiteRtStatus ConnectNodeInput(LiteRtDispatchGraph graph,
                               LiteRtDispatchNodeId node_id, int input_index,
                               LiteRtDispatchEdgeId edge_id) {
-  if (auto result = graph->ConnectNodeInput(node_id, input_index, edge_id);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to connect node input: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return graph->ConnectNodeInput(node_id, input_index, edge_id);
 }
 
 LiteRtStatus ConnectNodeOutput(LiteRtDispatchGraph graph,
                                LiteRtDispatchNodeId node_id, int output_index,
                                LiteRtDispatchEdgeId edge_id) {
-  if (auto result = graph->ConnectNodeOutput(node_id, output_index, edge_id);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to connect node output: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return graph->ConnectNodeOutput(node_id, output_index, edge_id);
 }
 
 LiteRtStatus ConnectGraphInput(LiteRtDispatchGraph graph, int input_index,
                                LiteRtDispatchEdgeId edge_id) {
-  if (auto result = graph->ConnectGraphInput(input_index, edge_id); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to connect graph input: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return graph->ConnectGraphInput(input_index);
 }
 
 LiteRtStatus ConnectGraphOutput(LiteRtDispatchGraph graph, int output_index,
                                 LiteRtDispatchEdgeId edge_id) {
-  if (auto result = graph->ConnectGraphOutput(output_index, edge_id); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to connect graph output: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  return graph->ConnectGraphOutput(edge_id);
 }
 
 LiteRtStatus LoadExecutable(LiteRtDispatchDeviceContext device_context,
@@ -421,54 +393,42 @@ LiteRtStatus AssignNodeFunction(LiteRtDispatchGraph graph,
                                 LiteRtDispatchNodeId node_id,
                                 LiteRtDispatchExecutableHandle exec_handle,
                                 const char* function_name) {
+  GT_LOG_RETURN_IF_NULL(graph);
+
   // TODO - b/397771624: Southbound currently doesn't support function names, so
   // overriding function names to empty strings as a temporary fix. We need to
   // investigate with the CoreML team to find a more robust solution.
   function_name = "";
-  if (auto result =
-          graph->AssignNodeFunction(node_id, exec_handle, function_name);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to assign node function: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  return graph->AssignNodeFunction(node_id, exec_handle, function_name);
 }
 
 LiteRtStatus AnnotateGraph(LiteRtDispatchGraph graph, const char* key,
                            const char* value) {
-  if (auto result = graph->AnnotateGraph(key, value); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to annotate graph: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+  GT_LOG_RETURN_IF_NULL(key);
+  GT_LOG_RETURN_IF_NULL(value);
+
+  return graph->AnnotateGraph(key, value);
 }
 
 LiteRtStatus AnnotateNode(LiteRtDispatchGraph graph,
                           LiteRtDispatchNodeId node_id, const char* key,
                           const char* value) {
-  if (auto result = graph->AnnotateNode(node_id, key, value); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to annotate node: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+  GT_LOG_RETURN_IF_NULL(key);
+  GT_LOG_RETURN_IF_NULL(value);
+
+  return graph->AnnotateNode(node_id, key, value);
 }
 
 LiteRtStatus AnnotateEdge(LiteRtDispatchGraph graph,
                           LiteRtDispatchEdgeId edge_id, const char* key,
                           const char* value) {
-  if (auto result = graph->AnnotateEdge(edge_id, key, value); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to annotate edge: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  GT_LOG_RETURN_IF_NULL(graph);
+  GT_LOG_RETURN_IF_NULL(key);
+  GT_LOG_RETURN_IF_NULL(value);
+
+  return graph->AnnotateEdge(edge_id, key, value);
 }
 
 LiteRtStatus InvocationContextCreateFromGraph(
@@ -489,9 +449,9 @@ LiteRtStatus InvocationContextCreateFromGraph(
 LiteRtStatus InvocationContextGetGraph(
     LiteRtDispatchInvocationContext invocation_context,
     LiteRtDispatchGraph* graph) {
-  if (!invocation_context || !graph) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+  GT_LOG_RETURN_IF_NULL(graph);
+
   *graph = invocation_context->graph();
   return kLiteRtStatusOk;
 }

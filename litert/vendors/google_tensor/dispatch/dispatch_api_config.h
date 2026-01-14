@@ -54,6 +54,11 @@ DarwinnRuntimeOptions* GetTheDarwinnOptions();
 // NOTE: the returned pointer is never null.
 const char* GetTheBuildId();
 
+// Returns the capabilities of the available SouthBound implementation.
+//
+// NOTE: the returned value is a bitmask of `LiteRtDispatchCapabilities`.
+int GetTheCapabilities();
+
 // Returns the tensor buffer types that are supported by the available
 // SouthBound implementation.
 absl::Span<const LiteRtTensorBufferType> GetTheSupportedTensorBufferTypes();

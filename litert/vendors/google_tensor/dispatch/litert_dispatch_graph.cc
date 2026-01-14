@@ -14,47 +14,35 @@
 
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 
-#include <set>
-#include <string>
+#include <cinttypes>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/base/nullability.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
+#include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
-using litert::Error;
-using litert::Expected;
+namespace gt = litert::google_tensor;
 
-namespace {
+LiteRtStatus LiteRtDispatchGraphT::Create(
+    LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph& graph) {
+  GT_LOG_RETURN_IF_NULL(device_context);
 
-// We store THR names in a global set as a workaround to b/369144429.
-std::set<std::string>* ThrNames = new std::set<std::string>();
-
-absl::string_view ThrNodeIdStr(LiteRtDispatchNodeId node_id) {
-  auto str = "node_" + std::to_string(node_id);
-  auto iter = ThrNames->find(str);
-  if (iter == ThrNames->end()) {
-    iter = ThrNames->insert(iter, str);
+  ThrGraph* thr_graph = thrGraphCreate(device_context->thr_context());
+  if (thr_graph == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create SB graph");
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  return *iter;
+
+  graph = new LiteRtDispatchGraphT(device_context, thr_graph);
+  return kLiteRtStatusOk;
 }
 
-}  // namespace
-
-absl::string_view ThrEdgeIdStr(LiteRtDispatchEdgeId edge_id) {
-  auto str = "edge_" + std::to_string(edge_id);
-  auto iter = ThrNames->find(str);
-  if (iter == ThrNames->end()) {
-    iter = ThrNames->insert(iter, str);
-  }
-  return *iter;
-}
-
-litert::Expected<void> LiteRtDispatchGraphT::AddNode(
-    LiteRtDispatchNodeId node_id, LiteRtDispatchNodeType node_type) {
-  auto thr_node_id = ThrNodeIdStr(node_id);
+LiteRtStatus LiteRtDispatchGraphT::AddNode(LiteRtDispatchNodeId node_id,
+                                           LiteRtDispatchNodeType node_type) {
   ThrNodeType thr_node_type;
   switch (node_type) {
     case kLiteRtDispatchNodeTypeDsp:
@@ -64,180 +52,118 @@ litert::Expected<void> LiteRtDispatchGraphT::AddNode(
       thr_node_type = kThrNodeTypeNpu;
       break;
     default:
-      LITERT_LOG(LITERT_ERROR, "Unexpected node type: %d", node_type);
-      return Error(kLiteRtStatusErrorRuntimeFailure, "Unexpected node type");
+      LITERT_LOG(LITERT_ERROR, "Invalid node type %d", node_type);
+      return kLiteRtStatusErrorInvalidArgument;
   }
 
-  if (auto status =
-          thrGraphAddSqNode(thr_graph_, thr_node_id.data(), thr_node_type);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_add_sq_node failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_add_sq_node failed");
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphAddSqNodeWithInterfaceBindingMode(
+          thr_graph_, gt::ToThrNodeId(node_id), thr_node_type,
+          kThrNodeInterfaceBindingModeIndexed),
+      "Failed to add node %" PRIu64 " with type %d to SB graph", node_id,
+      node_type);
 
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::AddEdge(
-    LiteRtDispatchEdgeId edge_id) {
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  ThrEdgeType thr_edge_type = kThrEdgeNoType;
-  if (auto status =
-          thrGraphAddEdge(thr_graph_, thr_edge_id.data(), thr_edge_type);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_add_edge failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure, "thr_graph_add_edge failed");
-  }
+LiteRtStatus LiteRtDispatchGraphT::AddEdge(LiteRtDispatchEdgeId edge_id) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphAddEdge(thr_graph_, gt::ToThrEdgeId(edge_id), kThrEdgeTypeTensor),
+      "Failed to add edge %" PRIu64 " to SB graph", edge_id);
 
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::ConnectNodeInput(
+LiteRtStatus LiteRtDispatchGraphT::ConnectNodeInput(
     LiteRtDispatchNodeId node_id, int input_index,
     LiteRtDispatchEdgeId edge_id) {
-  int next_input_index = NextNodeInputIndex(node_id);
-  if (input_index != next_input_index) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected input index %d, expected %d",
-               input_index, next_input_index);
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Unexpected input index");
-  }
-
-  auto thr_node_id = ThrNodeIdStr(node_id);
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thrGraphConnectNodeInput(thr_graph_, thr_node_id.data(),
-                                                 thr_edge_id.data());
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_set_input_edge failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_set_input_edge failed");
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(thrGraphConnectNodeInputWithPortIndex(
+                                thr_graph_, gt::ToThrNodeId(node_id),
+                                gt::ToThrEdgeId(edge_id), input_index),
+                            "Failed to connect node %" PRIu64
+                            " to input edge %" PRIu64 " at index %d",
+                            node_id, edge_id, input_index);
 
   AddInputEdge(input_index, edge_id);
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::ConnectNodeOutput(
+LiteRtStatus LiteRtDispatchGraphT::ConnectNodeOutput(
     LiteRtDispatchNodeId node_id, int output_index,
     LiteRtDispatchEdgeId edge_id) {
-  int next_output_index = NextNodeOutputIndex(node_id);
-  if (output_index != next_output_index) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected output index %d, expected %d",
-               output_index, next_output_index);
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Unexpected output index");
-  }
-
-  auto thr_node_id = ThrNodeIdStr(node_id);
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thrGraphConnectNodeOutput(
-          thr_graph_, thr_node_id.data(), thr_edge_id.data());
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_set_output_edge failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_set_output_edge failed");
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(thrGraphConnectNodeOutputWithPortIndex(
+                                thr_graph_, gt::ToThrNodeId(node_id),
+                                gt::ToThrEdgeId(edge_id), output_index),
+                            "Failed to connect node %" PRIu64
+                            " to output edge %" PRIu64 " at index %d",
+                            node_id, edge_id, output_index);
 
   AddOutputEdge(output_index, edge_id);
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::ConnectGraphInput(
-    int input_index, LiteRtDispatchEdgeId edge_id) {
-  int next_input_index = NextGraphInputIndex();
-  if (input_index != next_input_index) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected input index %d, expected %d",
-               input_index, next_input_index);
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Unexpected input index");
-  }
+LiteRtStatus LiteRtDispatchGraphT::ConnectGraphInput(
+    LiteRtDispatchEdgeId edge_id) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphSetInputEdge(thr_graph_, gt::ToThrEdgeId(edge_id)),
+      "Failed to set input edge %" PRIu64 " on SB graph", edge_id);
 
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thrGraphSetInputEdge(thr_graph_, thr_edge_id.data());
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_set_input_edge failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_set_input_edge failed");
-  }
-
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::ConnectGraphOutput(
-    int output_index, LiteRtDispatchEdgeId edge_id) {
-  int next_output_index = NextGraphOutputIndex();
-  if (output_index != next_output_index) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected output index %d, expected %d",
-               output_index, next_output_index);
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Unexpected output index");
-  }
+LiteRtStatus LiteRtDispatchGraphT::ConnectGraphOutput(
+    LiteRtDispatchEdgeId edge_id) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphSetOutputEdge(thr_graph_, gt::ToThrEdgeId(edge_id)),
+      "Failed to set output edge %" PRIu64 " on SB graph", edge_id);
 
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status = thrGraphSetOutputEdge(thr_graph_, thr_edge_id.data());
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_set_output_edge failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_set_output_edge failed");
-  }
-
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::AssignNodeFunction(
+LiteRtStatus LiteRtDispatchGraphT::AssignNodeFunction(
     LiteRtDispatchNodeId node_id, LiteRtDispatchExecutableHandle exec_handle,
-    const char* function_name) {
-  auto thr_node_id = ThrNodeIdStr(node_id);
-  ThrSqContainerHandle sq_handle = exec_handle;
-  // An empty function name represent no function name being provided and
-  // therefore we must pass a nullptr to the call below, otherwise the SB API
-  // will expect a model with a signature. See b/378913220.
-  const char* function_name_ptr =
-      absl::string_view(function_name).empty() ? nullptr : function_name;
-  if (auto status = thrGraphAssignSq(thr_graph_, thr_node_id.data(),
-                                        sq_handle, function_name_ptr);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_assign_sq failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_assign_sq failed");
-  }
+    const char* absl_nullable function_name) {
+  // An empty function name represents no function name being provided, and
+  // therefore we must pass `nullptr` to the call below, otherwise SB expects a
+  // model with a signature - b/378913220.
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphAssignSq(
+          thr_graph_, gt::ToThrNodeId(node_id), exec_handle,
+          !function_name || *function_name == '\0' ? nullptr : function_name),
+      "Failed to assign function '%s' from executable %" PRIu64
+      " to node %" PRIu64,
+      function_name, exec_handle, node_id);
 
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::AnnotateGraph(const char* key,
-                                                           const char* value) {
-  if (auto status = thrGraphAnnotateGraph(thr_graph_, key, value);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_annotate_graph failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_annotate_graph failed");
-  }
+LiteRtStatus LiteRtDispatchGraphT::AnnotateGraph(
+    const char* absl_nonnull key, const char* absl_nonnull value) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphAnnotateGraph(thr_graph_, key, value),
+      "Failed to annotate SB graph with key '%s' and value '%s'", key, value);
 
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::AnnotateNode(
-    LiteRtDispatchNodeId node_id, const char* key, const char* value) {
-  auto thr_node_id = ThrNodeIdStr(node_id);
-  if (auto status =
-          thrGraphAnnotateNode(thr_graph_, thr_node_id.data(), key, value);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_annotate_node failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_annotate_node failed");
-  }
+LiteRtStatus LiteRtDispatchGraphT::AnnotateNode(
+    LiteRtDispatchNodeId node_id, const char* absl_nonnull key,
+    const char* absl_nonnull value) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphAnnotateNode(thr_graph_, gt::ToThrNodeId(node_id), key, value),
+      "Failed to annotate node %" PRIu64 " with key '%s' and value '%s'",
+      node_id, key, value);
 
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchGraphT::AnnotateEdge(
-    LiteRtDispatchEdgeId edge_id, const char* key, const char* value) {
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
-  if (auto status =
-          thrGraphAnnotateEdge(thr_graph_, thr_edge_id.data(), key, value);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_graph_annotate_edge failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_graph_annotate_edge failed");
-  }
+LiteRtStatus LiteRtDispatchGraphT::AnnotateEdge(
+    LiteRtDispatchEdgeId edge_id, const char* absl_nonnull key,
+    const char* absl_nonnull value) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphAnnotateEdge(thr_graph_, gt::ToThrEdgeId(edge_id), key, value),
+      "Failed to annotate edge %" PRIu64 " with key '%s' and value '%s'",
+      edge_id, key, value);
 
-  return {};
+  return kLiteRtStatusOk;
 }

@@ -16,7 +16,6 @@
 
 #include <cstddef>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
@@ -27,16 +26,17 @@
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
+namespace gt = litert::google_tensor;
+
 using litert::Error;
 using litert::Expected;
 using litert::Unexpected;
-
-extern absl::string_view ThrEdgeIdStr(LiteRtDispatchEdgeId edge_id);
 
 namespace {
 
@@ -55,6 +55,10 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs) {
+  LiteRtDispatchExecutableHandle exec_handle;
+  LITERT_RETURN_IF_ERROR(device_context->LoadExecutable(
+      exec_type, *exec_bytecode_buffer, exec_handle));
+
   LiteRtDispatchGraph graph;
   LITERT_RETURN_IF_ERROR(device_context->CreateGraph(graph));
 
@@ -68,57 +72,32 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
       node_type = kLiteRtDispatchNodeTypeNpu;
       break;
     default:
-      LITERT_LOG(LITERT_ERROR, "Unexpected executable type: %d", exec_type);
+      LITERT_LOG(LITERT_ERROR, "Invalid executable type %d", exec_type);
       return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Unexpected executable type");
+                   "Invalid executable type");
   }
 
-  if (auto status = graph->AddNode(node_id, node_type); !status) {
-    return status.Error();
-  }
-
-  LiteRtDispatchExecutableHandle exec_handle;
+  LITERT_RETURN_IF_ERROR(graph->AddNode(node_id, node_type));
   LITERT_RETURN_IF_ERROR(
-      device_context->LoadExecutable(exec_type, *exec_bytecode_buffer,
-                                     exec_handle));
-
-  if (auto status =
-          graph->AssignNodeFunction(node_id, exec_handle, function_name);
-      !status) {
-    return status.Error();
-  }
+      graph->AssignNodeFunction(node_id, exec_handle, function_name));
 
   LiteRtDispatchEdgeId next_edge_id = 0;
-
-  for (auto input_index = 0; input_index < num_inputs; ++input_index) {
+  for (int input_index = 0; input_index < num_inputs; ++input_index) {
     LiteRtDispatchEdgeId edge_id = next_edge_id++;
-    if (auto status = graph->AddEdge(edge_id); !status) {
-      return status.Error();
-    }
-    if (auto status = graph->ConnectGraphInput(input_index, edge_id);
-        !status) {
-      return status.Error();
-    }
-    if (auto status = graph->ConnectNodeInput(node_id, input_index, edge_id);
-        !status) {
-      return status.Error();
-    }
+
+    LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
+    LITERT_RETURN_IF_ERROR(
+        graph->ConnectNodeInput(node_id, input_index, edge_id));
+    LITERT_RETURN_IF_ERROR(graph->ConnectGraphInput(edge_id));
   }
 
-  for (auto output_index = 0; output_index < num_outputs; ++output_index) {
+  for (int output_index = 0; output_index < num_outputs; ++output_index) {
     LiteRtDispatchEdgeId edge_id = next_edge_id++;
-    if (auto status = graph->AddEdge(edge_id); !status) {
-      return status.Error();
-    }
-    if (auto status =
-            graph->ConnectNodeOutput(node_id, output_index, edge_id);
-        !status) {
-      return status.Error();
-    }
-    if (auto status = graph->ConnectGraphOutput(output_index, edge_id);
-        !status) {
-      return status.Error();
-    }
+
+    LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
+    LITERT_RETURN_IF_ERROR(
+        graph->ConnectNodeOutput(node_id, output_index, edge_id));
+    LITERT_RETURN_IF_ERROR(graph->ConnectGraphOutput(edge_id));
   }
 
   auto invocation_context = CreateFromGraph(device_context, graph);
@@ -211,10 +190,10 @@ litert::Expected<void> AttachBufferHelper(
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
   ThrContext* thr_context = invocation_context->device_context()->thr_context();
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
   ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thrInvocationContextAttachBuffer(
-          thr_icontext, thr_context, thr_edge_id.data(), thr_buffer_handle);
+  if (auto status = thrInvocationContextAttachBuffer(thr_icontext, thr_context,
+                                                     gt::ToThrEdgeId(edge_id),
+                                                     thr_buffer_handle);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_invocation_context_attach_buffer failed: %d",
                status);
@@ -256,10 +235,10 @@ litert::Expected<void> DetachTensorBufferHelper(
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
   ThrContext* thr_context = invocation_context->device_context()->thr_context();
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
   ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thrInvocationContextDetachBuffer(
-          thr_icontext, thr_context, thr_edge_id.data(), thr_buffer_handle);
+  if (auto status = thrInvocationContextDetachBuffer(thr_icontext, thr_context,
+                                                     gt::ToThrEdgeId(edge_id),
+                                                     thr_buffer_handle);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR, "thr_invocation_context_detach_buffer failed: %d",
                status);
@@ -372,9 +351,9 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInputEvent(
   }
   auto edge_id = *edge;
 
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
+  auto thr_edge_id = gt::ToThrEdgeId(edge_id);
   if (auto status = thrInvocationContextAttachInputBufferSyncFence(
-          thr_invocation_context_, thr_edge_id.data(), input_fence_fd);
+          thr_invocation_context_, thr_edge_id, input_fence_fd);
       status != kThrStatusSuccess) {
     LITERT_LOG(
         LITERT_ERROR,
@@ -385,7 +364,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInputEvent(
         "thr_invocation_context_attach_input_buffer_sync_fence failed");
   }
 
-  input_sync_fences_[thr_edge_id.data()] = input_fence_fd;
+  input_sync_fences_[thr_edge_id] = input_fence_fd;
   return {};
 }
 
@@ -404,10 +383,9 @@ litert::Expected<void> GetOutputEvent(
 
   ThrInvocationContext* thr_icontext =
       invocation_context->thr_invocation_context();
-  auto thr_edge_id = ThrEdgeIdStr(edge_id);
   int output_fence_fd;
   if (auto status = thrInvocationContextGetOutputBufferSyncFence(
-          thr_icontext, thr_edge_id.data(), &output_fence_fd);
+          thr_icontext, gt::ToThrEdgeId(edge_id), &output_fence_fd);
       status != kThrStatusSuccess) {
     LITERT_LOG(LITERT_ERROR,
                "thr_invocation_context_get_output_buffer_sync_fence failed: %d",
