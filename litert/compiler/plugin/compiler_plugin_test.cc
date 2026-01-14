@@ -198,6 +198,16 @@ TEST(CompilerPluginTest, Compile) {
   ASSERT_TRUE(call_info);
 }
 
+TEST(CompilerPluginTest, CompileNonPartitionedModel) {
+  LiteRtModelT model;
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
+  auto result = plugins->front().Compile(&model, kTestModels);
+  ASSERT_TRUE(result);
+}
+
 TEST(CompilerPluginTest, Dump) {
   auto plugins =
       CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});

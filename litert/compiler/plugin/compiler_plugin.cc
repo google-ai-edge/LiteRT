@@ -446,6 +446,12 @@ Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
 Expected<CompiledResult> CompilerPlugin::Compile(LiteRtModel partitions,
                                                  absl::string_view soc_model) {
   CompiledResult result = MakeResult();
+  // Skip compilation if the model is empty.
+  if (partitions->Subgraphs().empty()) {
+    LITERT_LOG(LITERT_INFO,
+               "CompilerPlugin::Compile: Skipped for non partitioned model.");
+    return result;
+  }
   // If the user has passed an soc_model, then we use it; otherwise we let the
   // backend pick the appropriate one by passing nullptr as soc_model. This is
   // important for on-device compilation, where the backend must determine the
