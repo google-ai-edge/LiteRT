@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <utility>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_builder.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_matchers.h"
 
 using litert::Builder;
 using litert::Op;
@@ -29,7 +32,7 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
   // Convert to C++ objects.
   Builder builder = Builder(builder_ptr);
   Op root_op = Op(op);
-  if (root_op.Code() != kLiteRtOpCodeTflAdd) {
+  if (!litert::Match(root_op, litert::m_OpCode(kLiteRtOpCodeTflAdd))) {
     return kLiteRtStatusPatternNoMatch;
   }
   OpInputs inputs = root_op.Inputs();
@@ -41,34 +44,40 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
 
 LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
                                           LiteRtOp op) {
-  Builder builder = Builder(builder_ptr);
-  Op root_op = Op(op);
+  Builder builder(builder_ptr);
+  Op root_op(op);
+  Op mean_op(nullptr);
+  Op square_op(nullptr);
 
-  // Pattern Match
-  if (root_op.Code() != kLiteRtOpCodeTflSqrt) {
+  // Match: Sqrt(Mean(Mul(Any, Any)))
+  // Capture Mean and Mul ops.
+  if (!litert::Match(
+          root_op,
+          litert::m_Op(
+              kLiteRtOpCodeTflSqrt,
+              litert::m_Capture(
+                  &mean_op,
+                  litert::m_Op(
+                      kLiteRtOpCodeTflMean,
+                      litert::m_Capture(
+                          &square_op,
+                          litert::m_Op(kLiteRtOpCodeTflMul, litert::m_Any(),
+                                       litert::m_Any())),
+                      litert::m_Any()))))) {
+    LITERT_LOG(LITERT_INFO, "Failed to match Sqrt(Mean(Mul(Any, Any)))")
     return kLiteRtStatusPatternNoMatch;
   }
-  Op mean_op = Op(root_op.Inputs().front().DefiningOp().value().op);
-  if (mean_op.Code() != kLiteRtOpCodeTflMean) {
+
+  auto sq_inputs = square_op.Inputs();
+  if (sq_inputs.size() != 2 || sq_inputs[0] != sq_inputs[1]) {
+    LITERT_LOG(LITERT_INFO, "Square inputs are not equal")
     return kLiteRtStatusPatternNoMatch;
   }
-  Op square_op = Op(mean_op.Inputs().front().DefiningOp().value().op);
-  if (square_op.Code() != kLiteRtOpCodeTflMul) {
-    return kLiteRtStatusPatternNoMatch;
-  }
-  if (square_op.Inputs().size() != 2) {
-    return kLiteRtStatusPatternNoMatch;
-  }
-  if (square_op.Inputs().at(0).Get() != square_op.Inputs().at(1).Get()) {
-    return kLiteRtStatusPatternNoMatch;
-  }
-  // Reuse the inputs of the mul(square op).
-  OpInputs inputs = square_op.Inputs();
-  // Reuse the outputs of the mean op.
+
   OpOutputs outputs = mean_op.Outputs();
-  // Build the abs op.
-  builder.BuildOp(kLiteRtOpCodeTflAbs, inputs, outputs);
-  // Erase the original ops.
+  OpInputs abs_inputs;
+  abs_inputs.push_back(litert::Tensor(sq_inputs[0].Get()));
+  builder.BuildOp(kLiteRtOpCodeTflAbs, abs_inputs, outputs);
   builder.EraseOp(square_op);
   builder.EraseOp(mean_op);
   return kLiteRtStatusOk;

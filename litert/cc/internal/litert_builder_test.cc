@@ -92,6 +92,43 @@ TEST(CcBuilderTest, TestBuildRankedTensor) {
               ::testing::ElementsAreArray({1, 2, 3}));
 }
 
+TEST(CcBuilderTest, TestCloneTensor) {
+  LiteRtBuilderT builder;
+  Builder cc_builder(&builder);
+  RankedTensorType tensor_type(kTensorType);
+  auto ranked_tensor_spec = RankedTensorSpecBuilder(tensor_type)
+                                .WithTensorName(std::string(kTensorName))
+                                .Build();
+  auto tensor = cc_builder.BuildTensor(ranked_tensor_spec);
+  ASSERT_TRUE(tensor.HasValue());
+
+  auto cloned_tensor = cc_builder.CloneTensor(*tensor);
+  ASSERT_TRUE(cloned_tensor.HasValue());
+  EXPECT_EQ(cloned_tensor->ElementType(), ElementType::Float32);
+  auto cloned_tensor_type = cloned_tensor->RankedTensorType();
+  ASSERT_TRUE(cloned_tensor_type.HasValue());
+  EXPECT_EQ(cloned_tensor_type->Layout().Rank(), 3);
+}
+
+TEST(CcBuilderTest, TestCloneTensorWithQuantization) {
+  LiteRtBuilderT builder;
+  Builder cc_builder(&builder);
+  RankedTensorType tensor_type(kTensorType);
+  auto per_tensor_quantization = MakePerTensorQuantization(1.0, 1);
+  auto ranked_tensor_spec =
+      RankedTensorSpecBuilder(tensor_type)
+          .WithPerTensorQuantization(per_tensor_quantization.second.per_tensor)
+          .Build();
+  auto tensor = cc_builder.BuildTensor(ranked_tensor_spec);
+  ASSERT_TRUE(tensor.HasValue());
+
+  auto cloned_tensor = cc_builder.CloneTensor(*tensor);
+  ASSERT_TRUE(cloned_tensor.HasValue());
+  EXPECT_EQ(cloned_tensor->ElementType(), ElementType::Float32);
+  EXPECT_EQ(cloned_tensor->PerTensorQuantization().scale, 1.0);
+  EXPECT_EQ(cloned_tensor->PerTensorQuantization().zero_point, 1);
+}
+
 TEST(CcBuilderTest, TestBuildRankedTensorWithWeights) {
   LiteRtBuilderT builder;
   Builder cc_builder(&builder);

@@ -34,7 +34,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 
 /// @file
-/// @brief Defines the C++ equivalent of `LiteRtRewriter` for model
+/// @brief Defines the C++ equivalent of `LiteRtBuilder` for model
 /// modification.
 
 namespace litert {
@@ -102,6 +102,9 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
       : internal::NonOwnedHandle<LiteRtBuilder>(builder) {}
   /// @brief Builds a tensor from a `RankedTensorSpec`.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
+
+  /// @brief Builds a tensor similar to the given tensor.
+  Expected<Tensor> CloneTensor(const Tensor& src) const;
 
   /// @brief Builds weights for a tensor.
   template <typename T>
