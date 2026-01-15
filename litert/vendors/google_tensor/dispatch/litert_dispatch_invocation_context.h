@@ -15,57 +15,55 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
-#include <map>
-#include <memory>
 #include <optional>
-#include <string>
 
+#include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model_types.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 class LiteRtDispatchInvocationContextT {
  public:
-  using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
-
-  static litert::Expected<Ptr> CreateFromBytecode(
+  static LiteRtStatus CreateFromBytecode(
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
-      const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-      int num_inputs, int num_outputs);
+      const LiteRtMemBuffer& exec_bytecode_buffer,
+      const char* absl_nullable function_name, int num_inputs, int num_outputs,
+      LiteRtDispatchInvocationContext& invocation_context);
 
-  static litert::Expected<Ptr> CreateFromGraph(
-      LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph);
+  static LiteRtStatus CreateFromGraph(
+      LiteRtDispatchDeviceContext device_context,
+      std::optional<LiteRtDispatchExecutableHandle> exec_handle,
+      LiteRtDispatchGraph graph,
+      LiteRtDispatchInvocationContext& invocation_context);
 
-  ~LiteRtDispatchInvocationContextT();
+  LiteRtStatus Destroy();
 
-  litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
-      int input_index, const LiteRtRankedTensorType& tensor_type);
-  litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
-      int output_index, const LiteRtRankedTensorType& tensor_type);
+  LiteRtStatus AttachInput(int graph_input_index,
+                           LiteRtTensorBufferHandle tensor_buffer_handle);
 
-  litert::Expected<void> AttachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> AttachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
+  LiteRtStatus AttachOutput(int graph_output_index,
+                            LiteRtTensorBufferHandle tensor_buffer_handle);
 
-  litert::Expected<void> DetachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> DetachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
+  LiteRtStatus DetachInput(int graph_input_index,
+                           LiteRtTensorBufferHandle tensor_buffer_handle);
 
-  litert::Expected<void> Invoke();
-  litert::Expected<void> InvokeAsync(int num_output_events,
-                                     LiteRtEvent* output_events);
-  litert::Expected<void> StartMetricsCollection(int detail_level);
-  litert::Expected<void> StopMetricsCollection(LiteRtDispatchMetrics* metrics);
+  LiteRtStatus DetachOutput(int graph_output_index,
+                            LiteRtTensorBufferHandle tensor_buffer_handle);
 
-  litert::Expected<void> AttachInputEvent(int graph_input_index,
-                                          LiteRtEvent input_event);
+  LiteRtStatus Invoke();
 
-  ThrInvocationContext* thr_invocation_context() {
+  LiteRtStatus AttachInputEvent(int graph_input_index, LiteRtEvent input_event);
+
+  LiteRtStatus InvokeAsync(absl::Span<LiteRtEvent> output_events);
+
+  LiteRtStatus StartMetricsCollection(int detail_level);
+
+  LiteRtStatus StopMetricsCollection(LiteRtDispatchMetrics& metrics);
+
+  ThrInvocationContext* absl_nonnull thr_invocation_context() {
     return thr_invocation_context_;
   }
 
@@ -75,24 +73,29 @@ class LiteRtDispatchInvocationContextT {
 
  private:
   LiteRtDispatchInvocationContextT(
-      ThrInvocationContext* thr_invocation_context,
-      LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph)
-      : thr_invocation_context_(thr_invocation_context),
-        device_context_(device_context),
-        graph_(graph) {}
+      LiteRtDispatchDeviceContext device_context,
+      std::optional<LiteRtDispatchExecutableHandle> exec_handle,
+      LiteRtDispatchGraph graph,
+      ThrInvocationContext* absl_nonnull thr_invocation_context)
+      : device_context_(device_context),
+        exec_handle_(exec_handle),
+        graph_(graph),
+        thr_invocation_context_(thr_invocation_context) {}
 
-  void AttachExecutable(LiteRtDispatchExecutableHandle exec_handle) {
-    exec_handle_ = exec_handle;
-  }
+  // Consumers of this class must use `Destroy` to delete the instance.
+  ~LiteRtDispatchInvocationContextT() = default;
 
-  litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
-      const LiteRtRankedTensorType& tensor_type);
+  LiteRtStatus DetachAndUnregisterInFences();
 
-  ThrInvocationContext* thr_invocation_context_;
   LiteRtDispatchDeviceContext device_context_;
-  LiteRtDispatchGraph graph_;
+  // When `exec_handle_` contains a valid value, this means the invocation
+  // context was created from bytecode, and therefore is responsible for
+  // managing the lifetime of `graph_`.
   std::optional<LiteRtDispatchExecutableHandle> exec_handle_;
-  std::map<std::string, int> input_sync_fences_;
+  LiteRtDispatchGraph graph_;
+  ThrInvocationContext* absl_nonnull thr_invocation_context_;
+  // Associates an input edge ID with its attached fence.
+  absl::flat_hash_map<LiteRtDispatchEdgeId, ThrFenceHandle> in_fences_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
