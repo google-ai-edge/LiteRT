@@ -798,6 +798,19 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "litert_gpu_util_test",
+    srcs = ["litert_gpu_util_test.cc"],
+    deps = [
+        ":litert_gpu_util",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/test:matchers",
+        "//tflite/delegates/gpu/common:data_type",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_darwinn_options",
     hdrs = ["litert_darwinn_options.h"],
