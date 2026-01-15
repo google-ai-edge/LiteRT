@@ -104,8 +104,6 @@ class TensorWrapper final {
                          const std::vector<std::uint32_t>& dimentions,
                          std::uint32_t bytes, const void* data, bool copy_data);
 
-  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
-
   TensorWrapper(const TensorWrapper&) = delete;
 
   TensorWrapper& operator=(const TensorWrapper&) = delete;
@@ -321,11 +319,6 @@ class TensorWrapper final {
       qnn_tensor_.v2.name = name_.c_str();
     }
     SetTensorType(QNN_TENSOR_TYPE_APP_READ);
-  }
-
-  bool IsMarkedDump() const {
-    return absl::EndsWith(name_, kDumpSuffix) &&
-           qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
   }
 
  private:

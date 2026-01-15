@@ -322,63 +322,6 @@ void TensorWrapper::ConvertQint16ToQuint16() {
       "compatibility.");
 }
 
-TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
-    : qnn_tensor_{qnn_tensor} {
-  if (qnn_tensor_.version == QNN_TENSOR_VERSION_1) {
-    name_ = qnn_tensor_.v1.name;
-    qnn_tensor_.v1.name = name_.data();
-    dimentions_.reserve(qnn_tensor_.v1.rank);
-    std::copy(
-        qnn_tensor_.v1.dimensions,
-        qnn_tensor_.v1.dimensions + qnn_tensor_.v1.rank,
-        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
-    qnn_tensor_.v1.dimensions = dimentions_.data();
-    if (const auto& quant_params = qnn_tensor_.v1.quantizeParams;
-        quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
-      if (quant_params.quantizationEncoding ==
-          QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
-        quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
-            quant_params.scaleOffsetEncoding);
-      } else if (quant_params.quantizationEncoding ==
-                 QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
-        quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
-            quant_params.axisScaleOffsetEncoding);
-      } else {
-        QNN_LOG_ERROR("Unsupported quantization encoding: %d",
-                      quant_params.quantizationEncoding);
-      }
-    }
-    UpdateQnnQuantParams();
-  } else if (qnn_tensor_.version == Qnn_TensorVersion_t::QNN_TENSOR_VERSION_2) {
-    name_ = qnn_tensor_.v2.name;
-    qnn_tensor_.v2.name = name_.data();
-    dimentions_.reserve(qnn_tensor_.v2.rank);
-    std::copy(
-        qnn_tensor_.v2.dimensions,
-        qnn_tensor_.v2.dimensions + qnn_tensor_.v2.rank,
-        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
-    qnn_tensor_.v2.dimensions = dimentions_.data();
-    if (const auto& quant_params = qnn_tensor_.v2.quantizeParams;
-        quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
-      if (quant_params.quantizationEncoding ==
-          QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
-        quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
-            quant_params.scaleOffsetEncoding);
-      } else if (quant_params.quantizationEncoding ==
-                 QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
-        quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
-            quant_params.axisScaleOffsetEncoding);
-      } else {
-        QNN_LOG_ERROR("Unsupported quantization encoding: %d",
-                      quant_params.quantizationEncoding);
-      }
-    }
-    UpdateQnnQuantParams();
-  } else {
-    QNN_LOG_ERROR("Unrecognized Qnn tensor version: %d", qnn_tensor_.version);
-  }
-}
-
 std::uint32_t GetTensorNumElements(Qnn_Tensor_t& qnn_tensor) {
   return std::accumulate(qnn_tensor.v1.dimensions,
                          qnn_tensor.v1.dimensions + qnn_tensor.v1.rank, 1,
