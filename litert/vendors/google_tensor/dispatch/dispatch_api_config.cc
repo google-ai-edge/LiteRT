@@ -85,8 +85,11 @@ LiteRtStatus InitializeDispatchApiConfig(
            LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
            LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
 
-  TheCapabilities =
-      kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
+  TheCapabilities = kLiteRtDispatchCapabilitiesBasic;
+  if (GoogleTensorSouthBoundFeatureSupported(
+          GoogleTensorSouthBoundFeature::kRobustFences)) {
+    TheCapabilities |= kLiteRtDispatchCapabilitiesAsync;
+  }
   if (GoogleTensorSouthBoundFeatureSupported(
           GoogleTensorSouthBoundFeature::kIndexedNodeBinding)) {
     TheCapabilities |= kLiteRtDispatchCapabilitiesGraph;

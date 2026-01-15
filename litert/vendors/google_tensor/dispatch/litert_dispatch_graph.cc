@@ -84,7 +84,7 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectNodeInput(
                             " to input edge %" PRIu64 " at index %d",
                             node_id, edge_id, input_index);
 
-  AddInputEdge(input_index, edge_id);
+  input_edge_ids_.insert_or_assign(input_index, edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -98,7 +98,7 @@ LiteRtStatus LiteRtDispatchGraphT::ConnectNodeOutput(
                             " to output edge %" PRIu64 " at index %d",
                             node_id, edge_id, output_index);
 
-  AddOutputEdge(output_index, edge_id);
+  output_edge_ids_.insert_or_assign(output_index, edge_id);
   return kLiteRtStatusOk;
 }
 
