@@ -25,7 +25,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif
+#endif  // __cplusplus
 
 #if LITERT_HAS_OPENGL_SUPPORT
 typedef GLenum LiteRtGLenum;
