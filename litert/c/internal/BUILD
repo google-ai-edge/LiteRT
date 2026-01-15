@@ -266,6 +266,54 @@ cc_test(
     ],
 )
 
+# TODO(b/475253455): ensure that all types used in the API are opaque types.
+cc_library(
+    name = "litert_runtime_c_api",
+    hdrs = ["litert_runtime_c_api.h"],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_profiler_event",
+        "//litert/c:litert_tensor_buffer_types",
+        "@opencl_headers",
+    ],
+)
+
+cc_library(
+    name = "litert_runtime_builtin",
+    hdrs = ["litert_runtime_builtin.h"],
+    deps = [
+        ":litert_runtime_c_api",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
+        "//litert/c:litert_profiler",
+        "//litert/c:litert_tensor_buffer",
+    ],
+)
+
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",
