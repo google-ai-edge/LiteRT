@@ -1,3 +1,54 @@
+# Changes since release 2.1.0
+
+<!---
+INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
+-->
+
+### Breaking Changes
+
+<!---
+* <DOCUMENT BREAKING CHANGES HERE>
+* <THIS SECTION SHOULD CONTAIN API, ABI AND BEHAVIORAL BREAKING CHANGES>
+-->
+
+### Known Caveats
+
+<!---
+* <CAVEATS REGARDING THE RELEASE (BUT NOT BREAKING CHANGES).>
+* <ADDING/BUMPING DEPENDENCIES SHOULD GO HERE>
+* <KNOWN LACK OF SUPPORT ON SOME PLATFORM, SHOULD GO HERE>
+-->
+
+### Major Features and Improvements
+
+<!---
+* <IF RELEASE CONTAINS MULTIPLE FEATURES FROM SAME AREA, GROUP THEM TOGETHER>
+-->
+
+### Bug Fixes and Other Changes
+
+<!---
+* <SIMILAR TO ABOVE SECTION, BUT FOR OTHER IMPORTANT CHANGES / BUG FIXES>
+* <IF A CHANGE CLOSES A GITHUB ISSUE, IT SHOULD BE DOCUMENTED HERE>
+* <NOTES SHOULD BE GROUPED PER AREA>
+-->
+
+* The LiteRT headers no longer define the following OpenCL type names in the
+  global namespace when OpenCL is _not_ supported: `cl_mem`, `cl_event`.
+  These have been replaced with the type aliases `LiteRtClMem` and
+  `LiteRtClEvent`, defined in a new header `litert/c/litert_opencl_types.h`.
+  All of these symbols that didn't include the `LiteRt` prefix in their name
+  were never intended to be part of the LiteRT API, and their presence
+  in the global namespace risked conflicts with header files from other
+  packages.
+
+* Likewise, and for the same reason, the LiteRT headers no longer define the
+  following WebGPU type names in the global namespace when WebGPU _is_
+  supported: `struct WGPUBufferImpl`, `WGPUBuffer`. These have been
+  replaced with the type alias `LiteRtWGPUBuffer` which is defined in a
+  new header file `litert/c/litert_webgpu_types.h`. Alternatively, apps
+  using these symbols can get them from WebGPU's `webgpu.h` header file.
+
 # Release 2.1.0
 
 **Release 2.1.0 is the LiteRT** beta release.
@@ -8,7 +59,7 @@ LiteRT APIs are stable and have achieved feature parity. This milestone marks a 
 
 ### LiteRT Runtime
 
-* Custom op is supported through [custom op dispatcher](https://github.com/google-ai-edge/LiteRT/blob/main/g3doc/apis/Custom_Op_Dispatcher.md).
+* Custom ops are supported through [custom op dispatcher](https://github.com/google-ai-edge/LiteRT/blob/main/g3doc/apis/Custom_Op_Dispatcher.md).
 * CMake Build is supported in addition to Bazel
 * Released LiteRT C++ SDK using prebuilt libLiteRt.so file
 * Added Profiler API in CompiledModel
@@ -50,7 +101,7 @@ LiteRT APIs are stable and have achieved feature parity. This milestone marks a 
 ### LiteRT on Android
 
 * Added Interpreter API (CPU only) in the Maven v2.1.0+ packages
-* Added [Instruction](https://ai.google.dev/edge/litert/next/android_cpp_sdk) to use pre-built CompiledModell C++ API from the Maven package.
+* Added [Instruction](https://ai.google.dev/edge/litert/next/android_cpp_sdk) to use pre-built CompiledModel C++ API from the Maven package.
 
 ## Bug Fixes and Other Changes
 
@@ -79,16 +130,7 @@ LiteRT NPU: Fixes partition algorithm when the full model cannot be offloaded to
 
 ## LiteRT
 
-<!---
-INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
--->
-
 ### Breaking Changes
-
-<!---
-* <DOCUMENT BREAKING CHANGES HERE>
-* <THIS SECTION SHOULD CONTAIN API, ABI AND BEHAVIORAL BREAKING CHANGES>
--->
 
 * `com.google.ai.edge.litert.TensorBufferRequirements`
   * It becomes a data class, so all fields could be accessed directly without getter methods.
@@ -99,17 +141,7 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 
 ### Known Caveats
 
-<!---
-* <CAVEATS REGARDING THE RELEASE (BUT NOT BREAKING CHANGES).>
-* <ADDING/BUMPING DEPENDENCIES SHOULD GO HERE>
-* <KNOWN LACK OF SUPPORT ON SOME PLATFORM, SHOULD GO HERE>
--->
-
 ### Major Features and Improvements
-
-<!---
-* <IF RELEASE CONTAINS MULTIPLE FEATURES FROM SAME AREA, GROUP THEM TOGETHER>
--->
 
 * Added Profiler API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_profiler.h).
 * Added Error reporter API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/d65ffb98ce708a7fb40640546af0c3a6f0f8a763/litert/cc/options/litert_runtime_options.h#L44).
@@ -146,8 +178,3 @@ return an error.
 * The Android `minSdkVersion` has increased to 23.
 * Update tests to provide `kLiteRtHwAcceleratorNpu` for fully AOT compiled
 models.
-<!---
-* <SIMILAR TO ABOVE SECTION, BUT FOR OTHER IMPORTANT CHANGES / BUG FIXES>
-* <IF A CHANGE CLOSES A GITHUB ISSUE, IT SHOULD BE DOCUMENTED HERE>
-* <NOTES SHOULD BE GROUPED PER AREA>
--->

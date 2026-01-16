@@ -20,16 +20,11 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_model_types.h"
-#if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-
-#if LITERT_HAS_WEBGPU_SUPPORT
-typedef struct WGPUBufferImpl* WGPUBuffer;
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#include "litert/c/litert_webgpu_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -159,13 +154,13 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 // buffer and therefore must be released separately by the caller.
 LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferType buffer_type, cl_mem cl_mem_addr,
+    LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
     size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
     LiteRtTensorBuffer* buffer);
 
 // Return an error if the backing buffer is not a OpenCL memory.
 LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
-                                               cl_mem* cl_mem_addr);
+                                               LiteRtClMem* cl_mem_addr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 // Return an error if the backing buffer is not a custom tensor buffer.
@@ -214,7 +209,7 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
 // caller.
 LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferType buffer_type, WGPUBuffer wgpu_buffer,
+    LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
     size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer);
 

@@ -164,11 +164,13 @@ cc_library(
         "//litert/c:litert_op_code.h",
         "//litert/c:litert_op_options.h",
         "//litert/c:litert_opaque_options.h",
+        "//litert/c:litert_opencl_types.h",
         "//litert/c:litert_options.h",
         "//litert/c:litert_platform_support.h",
         "//litert/c:litert_tensor_buffer.h",
         "//litert/c:litert_tensor_buffer_requirements.h",
         "//litert/c:litert_tensor_buffer_types.h",
+        "//litert/c:litert_webgpu_types.h",
         # Needed for litert/c/litert_op_code.h
         "//tflite:builtin_ops.h",
         # Needed for litert/c/litert_model.h
@@ -282,8 +284,10 @@ cc_library(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options",
+        "//litert/c:litert_opencl_types",
         "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c:litert_webgpu_types",
         "@opencl_headers",
     ],
 )

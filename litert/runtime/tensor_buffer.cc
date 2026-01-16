@@ -35,6 +35,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -518,7 +519,8 @@ LiteRtTensorBufferT::CreateManagedOpenVINOTensorBuffer(
 #if LITERT_HAS_WEBGPU_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-    LiteRtTensorBufferType buffer_type, WGPUBuffer buffer, size_t buffer_size) {
+    LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer buffer,
+    size_t buffer_size) {
   LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   LITERT_ASSIGN_OR_RETURN(
