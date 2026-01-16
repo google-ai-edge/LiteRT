@@ -168,7 +168,8 @@ TensorWrapper* TensorPool::ConvertStaticTensorFrom(
   auto& back = tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_STATIC,
       GetQnnDataType<T>(src_tensor.IsQuant()), src_tensor.GetQuantParams(),
-      src_tensor.GetDims(), sizeof(T) * dst_data.size(), dst_data.data(), true);
+      src_tensor.GetDimensions(), sizeof(T) * dst_data.size(), dst_data.data(),
+      true);
   return &back;
 }
 

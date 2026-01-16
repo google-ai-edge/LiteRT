@@ -128,9 +128,11 @@ class TensorWrapper final {
 
   std::uint32_t GetRank() const;
 
-  std::uint32_t GetDim(size_t index) const;
+  std::uint32_t GetDimension(size_t index) const;
 
-  const std::vector<std::uint32_t>& GetDims() const { return dimentions_; };
+  const std::vector<std::uint32_t>& GetDimensions() const {
+    return dimentions_;
+  };
 
   std::uint32_t GetTensorNumElements() const;
 

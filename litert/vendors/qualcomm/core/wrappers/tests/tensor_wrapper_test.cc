@@ -26,7 +26,7 @@ TEST(TensorWrapperTest, SanityTest) {
   TensorWrapper tensor_wrapper{};
 
   EXPECT_EQ(tensor_wrapper.GetRank(), 0);
-  EXPECT_TRUE(tensor_wrapper.GetDims().empty());
+  EXPECT_TRUE(tensor_wrapper.GetDimensions().empty());
   EXPECT_TRUE(std::holds_alternative<UndefinedQuantizeParamsWrapper>(
       tensor_wrapper.GetQuantParams()));
   EXPECT_FALSE(tensor_wrapper.IsPerTensorQuantWithOffsetDiff(tensor_wrapper));
@@ -53,7 +53,7 @@ TEST(TensorWrapperTest, CopyTensorTest) {
   TensorWrapper copied{tensor_wrapper};
 
   EXPECT_EQ(copied.GetRank(), 3);
-  EXPECT_EQ(copied.GetDims(), dummy_dims);
+  EXPECT_EQ(copied.GetDimensions(), dummy_dims);
   EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
       copied.GetQuantParams()));
   EXPECT_FALSE(copied.IsPerTensorQuantWithOffsetDiff(copied));
@@ -90,7 +90,7 @@ TEST(TensorWrapperTest, MoveTensorTest) {
   TensorWrapper moved{tensor_wrapper};
 
   EXPECT_EQ(moved.GetRank(), 3);
-  EXPECT_EQ(moved.GetDims(), dummy_dims);
+  EXPECT_EQ(moved.GetDimensions(), dummy_dims);
   EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
       moved.GetQuantParams()));
   EXPECT_FALSE(moved.IsPerTensorQuantWithOffsetDiff(moved));
