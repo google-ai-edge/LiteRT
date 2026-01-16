@@ -17,6 +17,7 @@
 #include <Python.h>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
@@ -34,11 +35,30 @@ void DestroyTensorBufferFromCapsule(PyObject* capsule) {
       PyCapsule_SetName(capsule, "");
     }
   }
+  // Release the model reference stored in context (if any).
+  // This ensures the model is not garbage collected before its buffers,
+  // fixing the use-after-free crash during Python cleanup.
+  if (Py_IsInitialized()) {
+    PyObject* model = static_cast<PyObject*>(PyCapsule_GetContext(capsule));
+    if (model) {
+      Py_DECREF(model);
+      PyCapsule_SetContext(capsule, nullptr);
+    }
+  }
 }
 
-PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer) {
-  return PyCapsule_New(buffer.Release(), kLiteRtTensorBufferName.data(),
-                       &DestroyTensorBufferFromCapsule);
+PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer,
+                                  PyObject* model_wrapper) {
+  PyObject* capsule =
+      PyCapsule_New(buffer.Release(), kLiteRtTensorBufferName.data(),
+                    &DestroyTensorBufferFromCapsule);
+  // Store a reference to the model wrapper in the capsule context.
+  // This keeps the model alive as long as any buffer exists.
+  if (capsule && model_wrapper) {
+    Py_INCREF(model_wrapper);
+    PyCapsule_SetContext(capsule, model_wrapper);
+  }
+  return capsule;
 }
 
 }  // namespace litert::litert_wrapper_utils

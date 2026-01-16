@@ -41,11 +41,13 @@ class CompiledModelWrapper {
    * @param model_path Path to the model file
    * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
    * @param dispatch_library_path Path to the dispatch library (can be nullptr)
-   * @param hardware_accel Hardware acceleration option:
-   *        0 - No acceleration (CPU only)
-   *        1 - GPU acceleration
-   *        2 - TPU/NPU acceleration (if available)
-   *        3 - DSP acceleration (if available)
+   * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
+   *        These are bit flags that can be combined with bitwise OR:
+   *        1 (kCpu)  - CPU acceleration (always works)
+   *        2 (kGpu)  - GPU acceleration (WebGPU/OpenCL/Metal)
+   *        4 (kNpu)  - NPU/TPU acceleration (if available)
+   *        Use kCpu | kGpu (3) for GPU with CPU fallback.
+   *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param out_error String to store error message if creation fails
    * @return A new CompiledModelWrapper instance with environment_ created and
    *         maintained within the wrapper, or nullptr on failure
@@ -63,11 +65,13 @@ class CompiledModelWrapper {
    * data)
    * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
    * @param dispatch_library_path Path to the dispatch library (can be nullptr)
-   * @param hardware_accel Hardware acceleration option:
-   *        0 - No acceleration (CPU only)
-   *        1 - GPU acceleration
-   *        2 - TPU/NPU acceleration (if available)
-   *        3 - DSP acceleration (if available)
+   * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
+   *        These are bit flags that can be combined with bitwise OR:
+   *        1 (kCpu)  - CPU acceleration (always works)
+   *        2 (kGpu)  - GPU acceleration (WebGPU/OpenCL/Metal)
+   *        4 (kNpu)  - NPU/TPU acceleration (if available)
+   *        Use kCpu | kGpu (3) for GPU with CPU fallback.
+   *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param out_error String to store error message if creation fails
    * @return A new CompiledModelWrapper instance with environment_ created and
    *         maintained within the wrapper, or nullptr on failure
@@ -111,20 +115,22 @@ class CompiledModelWrapper {
   // Creates an input buffer for a tensor identified by signature key and input
   // name.
   PyObject* CreateInputBufferByName(const char* signature_key,
-                                    const char* input_name);
+                                    const char* input_name,
+                                    PyObject* self_wrapper);
 
   // Creates an output buffer for a tensor identified by signature key and
   // output name.
   PyObject* CreateOutputBufferByName(const char* signature_key,
-                                     const char* output_name);
+                                     const char* output_name,
+                                     PyObject* self_wrapper);
 
   // Creates all input buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateInputBuffers(int signature_index);
+  PyObject* CreateInputBuffers(int signature_index, PyObject* self_wrapper);
 
   // Creates all output buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateOutputBuffers(int signature_index);
+  PyObject* CreateOutputBuffers(int signature_index, PyObject* self_wrapper);
 
   // Executes the model using a signature key and name-to-buffer mappings.
   PyObject* RunByName(const char* signature_key, PyObject* input_map,
