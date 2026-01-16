@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_DISPATCH_API_CONFIG_H_
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -47,12 +48,10 @@ LiteRtStatus InitializeDispatchApiConfig(
 // when initializing the LiteRT Dispatch API.
 //
 // If no DarwiNN-specific options were provided, nullptr is returned.
-DarwinnRuntimeOptions* GetTheDarwinnOptions();
+DarwinnRuntimeOptions* absl_nullable GetTheDarwinnOptions();
 
 // Returns the Google Tensor Dispatch API build ID.
-//
-// NOTE: the returned pointer is never null.
-const char* GetTheBuildId();
+const char* absl_nonnull GetTheBuildId();
 
 // Returns the capabilities of the available SouthBound implementation.
 //
