@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -14,6 +15,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/param_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
@@ -32,6 +34,28 @@ OpWrapper& OpWrapper::operator=(const OpWrapper& other) {
     new (this) OpWrapper(other);
   }
   return *this;
+}
+
+bool OpWrapper::operator==(const OpWrapper& other) const {
+  if (op_code_ != other.op_code_) return false;
+  if (!miscs::IsStrEq(type_name_, other.type_name_)) return false;
+
+  if (!std::equal(
+          input_tensors_.begin(), input_tensors_.end(),
+          other.input_tensors_.begin(), other.input_tensors_.end(),
+          [](const auto& a, const auto& b) { return a.get() == b.get(); })) {
+    return false;
+  }
+
+  if (!std::equal(
+          output_tensors_.begin(), output_tensors_.end(),
+          other.output_tensors_.begin(), other.output_tensors_.end(),
+          [](const auto& a, const auto& b) { return a.get() == b.get(); })) {
+    return false;
+  }
+
+  return scalar_params_ == other.scalar_params_ &&
+         tensor_params_ == other.tensor_params_;
 }
 
 OpWrapper::OpWrapper(OpWrapper&& other)
