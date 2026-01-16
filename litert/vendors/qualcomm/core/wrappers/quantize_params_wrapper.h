@@ -15,12 +15,6 @@ namespace qnn {
 
 class UndefinedQuantizeParamsWrapper final {
  public:
-  UndefinedQuantizeParamsWrapper();
-
-  UndefinedQuantizeParamsWrapper(const UndefinedQuantizeParamsWrapper&);
-
-  UndefinedQuantizeParamsWrapper(UndefinedQuantizeParamsWrapper&&);
-
   bool operator==(const UndefinedQuantizeParamsWrapper& other) const;
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
@@ -35,10 +29,6 @@ class ScaleOffsetQuantizeParamsWrapper final {
                                             const std::int32_t zero_point);
   explicit ScaleOffsetQuantizeParamsWrapper(
       const Qnn_ScaleOffset_t& scale_offset);
-
-  ScaleOffsetQuantizeParamsWrapper(const ScaleOffsetQuantizeParamsWrapper&);
-
-  ScaleOffsetQuantizeParamsWrapper(ScaleOffsetQuantizeParamsWrapper&&);
 
   bool operator==(const ScaleOffsetQuantizeParamsWrapper& other) const;
 
@@ -72,8 +62,16 @@ class AxisScaleOffsetQuantizeParamsWrapper final {
   AxisScaleOffsetQuantizeParamsWrapper(
       const AxisScaleOffsetQuantizeParamsWrapper& rhs);
 
+  AxisScaleOffsetQuantizeParamsWrapper& operator=(
+      const AxisScaleOffsetQuantizeParamsWrapper& rhs);
+
   AxisScaleOffsetQuantizeParamsWrapper(
-      AxisScaleOffsetQuantizeParamsWrapper&& rhs);
+      AxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept;
+
+  AxisScaleOffsetQuantizeParamsWrapper& operator=(
+      AxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept;
+
+  ~AxisScaleOffsetQuantizeParamsWrapper() = default;
 
   bool operator==(const AxisScaleOffsetQuantizeParamsWrapper& other) const;
 
@@ -88,8 +86,8 @@ class AxisScaleOffsetQuantizeParamsWrapper final {
   void GetZeroPoints(std::vector<std::int32_t>& zero_points) const;
 
  private:
-  Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
   std::vector<Qnn_ScaleOffset_t> scale_offsets_;
+  Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
 };
 
 class BwScaleOffsetQuantizeParamsWrapper final {
@@ -97,11 +95,6 @@ class BwScaleOffsetQuantizeParamsWrapper final {
   explicit BwScaleOffsetQuantizeParamsWrapper(const std::uint32_t bitwidth,
                                               const float scale,
                                               const std::int32_t zero_point);
-
-  BwScaleOffsetQuantizeParamsWrapper(
-      const BwScaleOffsetQuantizeParamsWrapper& rhs);
-
-  BwScaleOffsetQuantizeParamsWrapper(BwScaleOffsetQuantizeParamsWrapper&& rhs);
 
   bool operator==(const BwScaleOffsetQuantizeParamsWrapper& other) const;
 
@@ -125,8 +118,16 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
   BwAxisScaleOffsetQuantizeParamsWrapper(
       const BwAxisScaleOffsetQuantizeParamsWrapper& rhs);
 
+  BwAxisScaleOffsetQuantizeParamsWrapper& operator=(
+      const BwAxisScaleOffsetQuantizeParamsWrapper& rhs);
+
   BwAxisScaleOffsetQuantizeParamsWrapper(
-      BwAxisScaleOffsetQuantizeParamsWrapper&& rhs);
+      BwAxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept;
+
+  BwAxisScaleOffsetQuantizeParamsWrapper& operator=(
+      BwAxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept;
+
+  ~BwAxisScaleOffsetQuantizeParamsWrapper() = default;
 
   bool operator==(const BwAxisScaleOffsetQuantizeParamsWrapper& other) const;
 
@@ -139,9 +140,9 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
   }
 
  private:
-  Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
   std::vector<float> scales_;
   std::vector<int32_t> offsets_;
+  Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
 };
 
 using QuantizeParamsWrapperVariant = std::variant<
