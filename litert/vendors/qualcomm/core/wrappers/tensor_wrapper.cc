@@ -85,6 +85,16 @@ std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
 
 TensorWrapper::TensorWrapper() = default;
 
+// Updates quant params from the active variant. Requires v1 layout or
+// backward compatibility with v1.
+void TensorWrapper::UpdateQnnQuantParams() {
+  std::visit(
+      [this](auto&& quantize_params) -> void {
+        quantize_params.CloneTo(qnn_tensor_.v1.quantizeParams);
+      },
+      quantize_params_);
+}
+
 TensorWrapper::TensorWrapper(
     std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
@@ -135,36 +145,6 @@ TensorWrapper::TensorWrapper(
     SetDataBy(bytes, data, copy_data);
   }
 }
-
-TensorWrapper::TensorWrapper(const TensorWrapper& other)
-    : qnn_tensor_{other.qnn_tensor_},
-      name_{other.name_},
-      dimentions_{other.dimentions_},
-      quantize_params_{other.quantize_params_},
-      owned_data_{other.owned_data_} {
-  qnn_tensor_.v2.name = name_.c_str();
-  qnn_tensor_.v2.dimensions = dimentions_.data();
-  if (!owned_data_.empty()) {
-    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
-  }
-  UpdateQnnQuantParams();
-}
-
-TensorWrapper::TensorWrapper(TensorWrapper&& other)
-    : qnn_tensor_{other.qnn_tensor_},
-      name_{std::move(other.name_)},
-      dimentions_{std::move(other.dimentions_)},
-      quantize_params_{std::move(other.quantize_params_)},
-      owned_data_{std::move(other.owned_data_)} {
-  qnn_tensor_.v2.name = name_.c_str();
-  qnn_tensor_.v2.dimensions = dimentions_.data();
-  if (!owned_data_.empty()) {
-    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
-  }
-  UpdateQnnQuantParams();
-}
-
-TensorWrapper::~TensorWrapper() = default;
 
 std::uint32_t TensorWrapper::GetDim(size_t index) const {
   return dimentions_[index];
@@ -247,7 +227,7 @@ void TensorWrapper::SetDataBy(std::uint32_t bytes, const void* data,
   }
   if (copy_data) {
     owned_data_.resize(bytes);
-    std::memcpy(owned_data_.data(), reinterpret_cast<const char*>(data), bytes);
+    std::memcpy(owned_data_.data(), data, bytes);
     qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
     qnn_tensor_.v2.clientBuf.data = owned_data_.data();
   } else {
@@ -273,9 +253,7 @@ void TensorWrapper::ConvertQint16ToQuint16() {
     QNN_LOG_DEBUG("Converting static tensor data from QInt16 to QUint16...");
     std::vector<std::uint16_t> uint16_data;
     ConvertDataFromInt16toUInt16((*int16_data), uint16_data);
-    std::memcpy(owned_data_.data(),
-                reinterpret_cast<const char*>(uint16_data.data()),
-                GetTensorBytes());
+    std::memcpy(owned_data_.data(), uint16_data.data(), GetTensorBytes());
     qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
     qnn_tensor_.v2.clientBuf.data = owned_data_.data();
   }
@@ -310,66 +288,15 @@ void TensorWrapper::ConvertQint16ToQuint16() {
       "compatibility.");
 }
 
-TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
-    : qnn_tensor_{qnn_tensor} {
-  if (qnn_tensor_.version == QNN_TENSOR_VERSION_1) {
-    name_ = qnn_tensor_.v1.name;
-    qnn_tensor_.v1.name = name_.data();
-    dimentions_.reserve(qnn_tensor_.v1.rank);
-    std::copy(
-        qnn_tensor_.v1.dimensions,
-        qnn_tensor_.v1.dimensions + qnn_tensor_.v1.rank,
-        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
-    qnn_tensor_.v1.dimensions = dimentions_.data();
-    if (const auto& quant_params = qnn_tensor_.v1.quantizeParams;
-        quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
-      if (quant_params.quantizationEncoding ==
-          QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
-        quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
-            quant_params.scaleOffsetEncoding);
-      } else if (quant_params.quantizationEncoding ==
-                 QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
-        quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
-            quant_params.axisScaleOffsetEncoding);
-      } else {
-        QNN_LOG_ERROR("Unsupported quantization encoding: %d",
-                      quant_params.quantizationEncoding);
-      }
-    }
-    UpdateQnnQuantParams();
-  } else if (qnn_tensor_.version == Qnn_TensorVersion_t::QNN_TENSOR_VERSION_2) {
-    // TODO: support v2 only
-    name_ = qnn_tensor_.v2.name;
-    qnn_tensor_.v2.name = name_.data();
-    dimentions_.reserve(qnn_tensor_.v2.rank);
-    std::copy(
-        qnn_tensor_.v2.dimensions,
-        qnn_tensor_.v2.dimensions + qnn_tensor_.v2.rank,
-        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
-    qnn_tensor_.v2.dimensions = dimentions_.data();
-    if (const auto& quant_params = qnn_tensor_.v2.quantizeParams;
-        quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
-      if (quant_params.quantizationEncoding ==
-          QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
-        quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
-            quant_params.scaleOffsetEncoding);
-      } else if (quant_params.quantizationEncoding ==
-                 QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
-        quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
-            quant_params.axisScaleOffsetEncoding);
-      } else {
-        QNN_LOG_ERROR("Unsupported quantization encoding: %d",
-                      quant_params.quantizationEncoding);
-      }
-    }
-    std::visit(
-        [this](auto&& quantize_params) -> void {
-          quantize_params.CloneTo(qnn_tensor_.v2.quantizeParams);
-        },
-        quantize_params_);
-  } else {
-    // TODO: tensor.v3
-  }
+std::uint32_t GetTensorNumElements(Qnn_Tensor_t& qnn_tensor) {
+  return std::accumulate(qnn_tensor.v1.dimensions,
+                         qnn_tensor.v1.dimensions + qnn_tensor.v1.rank, 1,
+                         std::multiplies<>());
+}
+
+size_t GetTensorBytes(Qnn_Tensor_t& qnn_tensor) {
+  return GetDataTypeSize(qnn_tensor.v2.dataType) *
+         GetTensorNumElements(qnn_tensor);
 }
 
 }  // namespace qnn
