@@ -220,6 +220,7 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
       litert_runtime_c_api_static
       absl::algorithm
       absl::base
+      absl::cleanup
       absl::flat_hash_map
       absl::flat_hash_set
       absl::str_format
