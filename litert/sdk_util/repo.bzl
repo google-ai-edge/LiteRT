@@ -33,7 +33,9 @@ def _prepare_repo_files(ctx):
         sdk_path_from_env = ctx.getenv(ctx.attr.local_path_env, None)
 
         if sdk_path_from_env:
-            if not sdk_path_from_env.startswith("/"):
+            # Only enforce Unix-style absolute path check on non-Windows platforms
+            host_os = ctx.os.name.lower()
+            if "windows" not in host_os and not sdk_path_from_env.startswith("/"):
                 fail("Local path must be absolute.")
 
             if ctx.path(sdk_path_from_env).is_dir:
