@@ -93,6 +93,7 @@ enum class QnnOpCode {
   kGridSample,
   kGroupNorm,
   kGru,
+  kHadamardTransform,
   kHardSwish,
   kHeatMapMaxKeyPoint,
   kIm2Col,
