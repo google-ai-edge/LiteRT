@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_APPLY_PLUGIN_FLAGS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_APPLY_PLUGIN_FLAGS_H_
 
+#include <cstdint>
 #include <string>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
@@ -26,10 +27,14 @@
 
 ABSL_DECLARE_FLAG(std::string, cmd);
 
-ABSL_DECLARE_FLAG(::litert::tools::IntList, subgraphs);
+ABSL_DECLARE_FLAG(::litert::tools::IntList<int>, subgraphs);
 
 // Compiler plugin partition strategy flag.
 ABSL_DECLARE_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy);
+
+ABSL_DECLARE_FLAG(::litert::tools::IntList<std::uint32_t>,
+                  skip_delegation_op_ids);
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtCompilerOptionsPartitionStrategy* partition_strategy,
                    std::string* error);
