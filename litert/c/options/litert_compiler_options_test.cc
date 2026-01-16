@@ -89,7 +89,7 @@ TEST(LiteRtCompilerOptionsTest, SetAndGetWCPartitionStrategy) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtCompilerOptionsTest, SetAndGetSkipDelegationOpIds) {
+TEST(LiteRtCompilerOptionsTest, AddAndGetSkipDelegationOps) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
 
@@ -97,14 +97,14 @@ TEST(LiteRtCompilerOptionsTest, SetAndGetSkipDelegationOpIds) {
   LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
 
   const std::vector<std::uint32_t> kSkipDelegationOpIds{1, 2, 3};
-  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsSkipDelegationOpIds(
-      compiler_options, kSkipDelegationOpIds.data(),
+  LITERT_ASSERT_OK(LiteRtAddCompilerOptionsSkipDelegationOps(
+      compiler_options, 0, kSkipDelegationOpIds.data(),
       kSkipDelegationOpIds.size()));
 
   const std::uint32_t* ids;
   size_t number_of_ids;
-  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsSkipDelegationOpIds(
-      compiler_options, &ids, &number_of_ids));
+  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsSkipDelegationOps(
+      compiler_options, 0, &ids, &number_of_ids));
   EXPECT_EQ(number_of_ids, kSkipDelegationOpIds.size());
   for (size_t i = 0; i < kSkipDelegationOpIds.size(); i++) {
     EXPECT_EQ(kSkipDelegationOpIds[i], ids[i]);
@@ -131,8 +131,8 @@ TEST(LiteRtCompilerOptionsTest, Hash) {
   LITERT_ASSERT_OK(LiteRtSetCompilerOptionsPartitionStrategy(
       compiler_options,
       kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
-  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsSkipDelegationOpIds(
-      compiler_options, kSkipDelegationOpIds.data(),
+  LITERT_ASSERT_OK(LiteRtAddCompilerOptionsSkipDelegationOps(
+      compiler_options, 0, kSkipDelegationOpIds.data(),
       kSkipDelegationOpIds.size()));
   LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
   LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));

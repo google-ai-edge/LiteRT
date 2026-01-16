@@ -46,13 +46,13 @@ TEST(CompilerOptionsTest, SetAndGetPartitionStrategyReturnsSetValue) {
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 }
 
-TEST(CompilerOptionsTest, SetAndGetSkipDelegationOpId) {
+TEST(CompilerOptionsTest, AddAndGetSkipDelegationOps) {
   LITERT_ASSERT_OK_AND_ASSIGN(::litert::CompilerOptions options,
                               ::litert::CompilerOptions::Create());
   const std::vector<std::uint32_t> kSkipDelegationOpIds{1, 2, 3};
-  LITERT_EXPECT_OK(options.SetSkipDelegationOpId(kSkipDelegationOpIds));
+  LITERT_EXPECT_OK(options.AddSkipDelegationOps(0, kSkipDelegationOpIds));
   LITERT_ASSERT_OK_AND_ASSIGN(auto skip_delegation_op_id,
-                              options.GetSkipDelegationOpId());
+                              options.GetSkipDelegationOps(0));
   EXPECT_THAT(skip_delegation_op_id, ElementsAreArray(kSkipDelegationOpIds));
 }
 

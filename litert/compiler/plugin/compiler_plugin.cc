@@ -623,8 +623,8 @@ Expected<PartitionResult> PartitionModel(
     const std::uint32_t* skip_ids;
     size_t number_of_ids;
     if (compiler_options.HasValue()) {
-      auto status = LiteRtGetCompilerOptionsSkipDelegationOpIds(
-          *compiler_options, &skip_ids, &number_of_ids);
+      auto status = LiteRtGetCompilerOptionsSkipDelegationOps(
+          *compiler_options, i, &skip_ids, &number_of_ids);
       if (status != kLiteRtStatusOk) {
         return Unexpected(
             status,

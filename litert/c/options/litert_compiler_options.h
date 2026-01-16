@@ -52,13 +52,15 @@ LiteRtStatus LiteRtFindCompilerOptions(LiteRtOpaqueOptions opaque_options,
 // Gets the identifier for Compiler options stored in opaque options.
 const char* LiteRtGetCompilerOptionsIdentifier();
 
-// Sets the operator ids that will not be delegated to any vendor.
-LiteRtStatus LiteRtSetCompilerOptionsSkipDelegationOpIds(
-    LiteRtCompilerOptions options, const uint32_t* ids, size_t number_of_ids);
+// Adds the operator ids that will not be delegated to any vendor for a specific
+// subgraph.
+LiteRtStatus LiteRtAddCompilerOptionsSkipDelegationOps(
+    LiteRtCompilerOptions options, int subgraph_index, const uint32_t* ids,
+    size_t number_of_ids);
 
-LiteRtStatus LiteRtGetCompilerOptionsSkipDelegationOpIds(
-    LiteRtCompilerOptionsConst options, const uint32_t** ids,
-    size_t* number_of_ids);
+LiteRtStatus LiteRtGetCompilerOptionsSkipDelegationOps(
+    LiteRtCompilerOptionsConst options, int subgraph_index,
+    const uint32_t** ids, size_t* number_of_ids);
 
 // Sets the partition strategy for the compiler.
 LiteRtStatus LiteRtSetCompilerOptionsPartitionStrategy(
