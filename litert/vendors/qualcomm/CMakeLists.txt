@@ -64,6 +64,7 @@ target_link_libraries(qnn_manager
         absl::statusor
         absl::strings
         absl::str_format
+        qnn_saver_utils
 )
 
 # Context Binary Info library
@@ -81,6 +82,25 @@ target_link_libraries(qnn_context_binary_info
     PUBLIC
         absl::status
         absl::statusor
+)
+
+# Qnn Saver Utils
+add_library(qnn_saver_utils STATIC
+    qnn_saver_utils.cc
+)
+
+target_include_directories(qnn_saver_utils
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<$<BOOL:${QAIRT_HEADERS_DIR}>:${QAIRT_HEADERS_DIR}>
+)
+
+target_link_libraries(qnn_saver_utils
+    PUBLIC
+        absl::strings
+        absl::span
+        litert_runtime_c_api_shared_lib
+        litert_cc_api
 )
 
 # Add subdirectories for modular build

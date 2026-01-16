@@ -48,6 +48,7 @@ struct LiteRtQualcommOptionsT {
       kHtpOptimizeForInferenceO3;
   LiteRtQualcommOptionsGraphPriority graph_priority =
       kLiteRTQualcommGraphPriorityDefault;
+  std::string saver_output_dir;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -152,6 +153,29 @@ LiteRtStatus LiteRtQualcommOptionsGetProfiling(
   }
 
   *profiling = options->profiling;
+
+  return kLiteRtStatusOk;
+}
+
+// Saver -------------------------------------------------------------------
+LiteRtStatus LiteRtQualcommOptionsSetSaverOutputDir(LiteRtQualcommOptions options,
+                                               const char* saver_output_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->saver_output_dir = saver_output_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetSaverOutputDir(LiteRtQualcommOptions options,
+                                               const char** saver_output_dir) {
+  if (options == nullptr || saver_output_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *saver_output_dir = options->saver_output_dir.c_str();
 
   return kLiteRtStatusOk;
 }

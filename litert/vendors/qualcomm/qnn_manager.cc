@@ -43,6 +43,7 @@
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/qnn_saver_utils.h"
 #include "HTP/QnnHtpContext.h"  // from @qairt
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -114,9 +115,18 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 QnnManager::~QnnManager() = default;
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
-  LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
-             path.data());
-  LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(path, GetRtldFlags()));
+  auto saver_output_dir = options_.GetSaverOutputDir();
+  if (saver_output_dir.empty()) {
+    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+               path.data());
+    LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(path, GetRtldFlags()));
+  } else {
+    path = kSaverLibraryName;
+    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+               path.data());
+    LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(path, GetRtldFlags()));
+    LITERT_RETURN_IF_ERROR(InitSaver(lib_, saver_output_dir));
+  }
   LITERT_LOG(LITERT_INFO, "Loaded qnn shared library", "");
   return kLiteRtStatusOk;
 }
@@ -190,6 +200,9 @@ LiteRtStatus QnnManager::ResolveApi(Qnn_Version_t expected_qnn_version) {
                QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
   }
 
+  if (!options_.GetSaverOutputDir().empty()) {
+    expected_qnn_version = GetExpectedSaverVersion();
+  }
   // Check backend version
   if (qnn_version.backendApiVersion.major != expected_qnn_version.major) {
     LITERT_LOG(LITERT_ERROR,

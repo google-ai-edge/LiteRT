@@ -69,6 +69,7 @@ litert_cc_lib_with_qnn(
     ungrte = True,
     deps = [
         ":common",
+        ":qnn_saver_utils",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -147,5 +148,19 @@ build_test(
     targets = [
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
+    ],
+)
+
+cc_library(
+    name = "qnn_saver_utils",
+    srcs = ["qnn_saver_utils.cc"],
+    hdrs = ["qnn_saver_utils.h"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_shared_library",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )

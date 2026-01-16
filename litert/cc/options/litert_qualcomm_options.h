@@ -164,6 +164,9 @@ class QualcommOptions : public OpaqueOptions {
   void SetBackend(Backend qnn_backend);
   Backend GetBackend();
 
+  void SetSaverOutputDir(const std::string& saver_output_dir);
+  absl::string_view GetSaverOutputDir();
+
  private:
   LiteRtQualcommOptions Data() const;
 };

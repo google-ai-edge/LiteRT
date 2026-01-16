@@ -243,6 +243,18 @@ QualcommOptions::Backend QualcommOptions::GetBackend() {
   return static_cast<QualcommOptions::Backend>(qnn_backend);
 }
 
+void QualcommOptions::SetSaverOutputDir(const std::string& saver_output_dir) {
+  internal::AssertOk(LiteRtQualcommOptionsSetSaverOutputDir, Data(),
+                     saver_output_dir.c_str());
+}
+
+absl::string_view QualcommOptions::GetSaverOutputDir() {
+  const char* saver_output_dir;
+  internal::AssertOk(LiteRtQualcommOptionsGetSaverOutputDir, Data(),
+                     &saver_output_dir);
+  return absl::string_view(saver_output_dir);
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
