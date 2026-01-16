@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -38,6 +39,13 @@ TEST(UndefinedQuantizeParamsWrapperTest, MoveConstructorTest) {
   wrapper2.CloneTo(dst);
   EXPECT_EQ(dst.encodingDefinition, QNN_DEFINITION_UNDEFINED);
   EXPECT_EQ(dst.quantizationEncoding, QNN_QUANTIZATION_ENCODING_UNDEFINED);
+}
+
+TEST(UndefinedQuantizeParamsWrapperTest, EqualityOperatorTest) {
+  UndefinedQuantizeParamsWrapper wrapper1;
+  UndefinedQuantizeParamsWrapper wrapper2;
+
+  EXPECT_TRUE(wrapper1 == wrapper2);
 }
 
 TEST(ScaleOffsetQuantizeParamsWrapperTest, ConstructorTest) {
@@ -86,6 +94,29 @@ TEST(ScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   EXPECT_EQ(wrapper.GetZeroPoint(), zero_point);
   EXPECT_EQ(wrapper.GetOffset(), -zero_point);
 }
+
+using ScaleOffsetParamsWithType = std::tuple<float, int32_t, float, int32_t>;
+class ScaleOffsetEqualTestWithType
+    : public ::testing::TestWithParam<ScaleOffsetParamsWithType> {};
+TEST_P(ScaleOffsetEqualTestWithType, EqualityOperator) {
+  auto [scale1, offset1, scale2, offset2] = GetParam();
+
+  qnn::ScaleOffsetQuantizeParamsWrapper wrapper1(scale1, offset1);
+  qnn::ScaleOffsetQuantizeParamsWrapper wrapper2(scale2, offset2);
+  qnn::ScaleOffsetQuantizeParamsWrapper wrapper3(scale2, offset2);
+
+  const bool expected_equal = (scale1 == scale2) && (offset1 == offset2);
+  EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+  EXPECT_EQ(wrapper1 == wrapper3, expected_equal);
+  EXPECT_TRUE(wrapper2 == wrapper3);
+}
+// Data type, scale and offset
+INSTANTIATE_TEST_SUITE_P(ScaleOffsetQuantizeParamsWrapperTest_Combine,
+                         ScaleOffsetEqualTestWithType,
+                         ::testing::Combine(::testing::Values(1.5f),
+                                            ::testing::Values(10),
+                                            ::testing::Values(1.5f, 1.6f),
+                                            ::testing::Values(10, 12)));
 
 TEST(AxisScaleOffsetQuantizeParamsWrapperTest, ConstructorTest) {
   std::int32_t axis = 1;
@@ -148,6 +179,7 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, MoveConstructorTest) {
               -zero_points[i]);
   }
 }
+
 TEST(AxisScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   std::int32_t axis = 1;
   std::vector<float> scales = {1.5f, 2.5f};
@@ -288,5 +320,96 @@ TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, GetBitwidthTest) {
   BwAxisScaleOffsetQuantizeParamsWrapper wrapper(bw, axis, scales, zero_points);
   ASSERT_EQ(wrapper.GetBitwidth(), 4);
 }
+using AxisScaleOffsetParamsWithType =
+    std::tuple<int32_t, std::vector<float>, std::vector<int32_t>, int32_t,
+               std::vector<float>, std::vector<int32_t>>;
+class AxisScaleOffsetEqualTestWithType
+    : public ::testing::TestWithParam<AxisScaleOffsetParamsWithType> {};
+TEST_P(AxisScaleOffsetEqualTestWithType, EqualityOperator) {
+  const auto& [axis1, scale1, offsets1, axis2, scales2, offsets2] = GetParam();
+
+  qnn::AxisScaleOffsetQuantizeParamsWrapper wrapper1(axis1, scale1, offsets1);
+  qnn::AxisScaleOffsetQuantizeParamsWrapper wrapper2(axis2, scales2, offsets2);
+  qnn::AxisScaleOffsetQuantizeParamsWrapper wrapper3(wrapper2);
+
+  const bool expected_equal =
+      (axis1 == axis2) && (scale1 == scales2) && (offsets1 == offsets2);
+  EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+  EXPECT_EQ(wrapper1 == wrapper3, expected_equal);
+  EXPECT_TRUE(wrapper2 == wrapper3);
+}
+// Data type, axis, scales and zero_points
+INSTANTIATE_TEST_SUITE_P(
+    AxisScaleOffsetQuantizeParamsWrapperTest_Combine,
+    AxisScaleOffsetEqualTestWithType,
+    ::testing::Combine(::testing::Values(1),
+                       ::testing::Values(std::vector<float>{1.5f, 2.5f}),
+                       ::testing::Values(std::vector<int32_t>{10, 20}),
+                       ::testing::Values(1, 0),
+                       ::testing::Values(std::vector<float>{1.5f, 2.5f},
+                                         std::vector<float>{1.5f, 2.6f}),
+                       ::testing::Values(std::vector<int32_t>{10, 20},
+                                         std::vector<int32_t>{10, 30})));
+
+using BwScaleOffsetParams =
+    std::tuple<uint32_t, float, int32_t, uint32_t, float, int32_t>;
+class BwScaleOffsetEqualTest
+    : public ::testing::TestWithParam<BwScaleOffsetParams> {};
+TEST_P(BwScaleOffsetEqualTest, EqualityOperator) {
+  const auto& [bitwidth1, scale1, offset1, bitwidth2, scale2, offset2] =
+      GetParam();
+
+  qnn::BwScaleOffsetQuantizeParamsWrapper wrapper1(bitwidth1, scale1, offset1);
+  qnn::BwScaleOffsetQuantizeParamsWrapper wrapper2(bitwidth2, scale2, offset2);
+  qnn::BwScaleOffsetQuantizeParamsWrapper wrapper3(wrapper2);
+
+  const bool expected_equal =
+      (bitwidth1 == bitwidth2) && (scale1 == scale2) && (offset1 == offset2);
+  EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+  EXPECT_EQ(wrapper1 == wrapper3, expected_equal);
+  EXPECT_TRUE(wrapper2 == wrapper3);
+}
+// Bit width, scale and offset
+INSTANTIATE_TEST_SUITE_P(
+    BwScaleOffsetQuantizeParamsWrapperTest_Combine, BwScaleOffsetEqualTest,
+    ::testing::Combine(::testing::Values(2u, 4u), ::testing::Values(1.5f),
+                       ::testing::Values(10), ::testing::Values(2u, 4u),
+                       ::testing::Values(1.5f, 1.6f),
+                       ::testing::Values(10, 12)));
+
+using BwAxisScaleOffsetParams =
+    std::tuple<uint32_t, int32_t, std::vector<float>, std::vector<int32_t>,
+               uint32_t, int32_t, std::vector<float>, std::vector<int32_t>>;
+class BwAxisScaleOffsetEqualTest
+    : public ::testing::TestWithParam<BwAxisScaleOffsetParams> {};
+TEST_P(BwAxisScaleOffsetEqualTest, EqualityOperator) {
+  const auto& [bitwidth1, axis1, scales1, offsets1, bitwidth2, axis2, scales2,
+               offsets2] = GetParam();
+
+  qnn::BwAxisScaleOffsetQuantizeParamsWrapper wrapper1(bitwidth1, axis1,
+                                                       scales1, offsets1);
+  qnn::BwAxisScaleOffsetQuantizeParamsWrapper wrapper2(bitwidth2, axis2,
+                                                       scales2, offsets2);
+  qnn::BwAxisScaleOffsetQuantizeParamsWrapper wrapper3(wrapper2);
+
+  const bool expected_equal = (bitwidth1 == bitwidth2) && (axis1 == axis2) &&
+                              (scales1 == scales2) && (offsets1 == offsets2);
+  EXPECT_EQ(wrapper1 == wrapper2, expected_equal);
+  EXPECT_EQ(wrapper1 == wrapper3, expected_equal);
+  EXPECT_TRUE(wrapper2 == wrapper3);
+}
+// Bit width, axis, scales and offsets
+INSTANTIATE_TEST_SUITE_P(
+    BwAxisScaleOffsetQuantizeParamsWrapperTest_Combine,
+    BwAxisScaleOffsetEqualTest,
+    ::testing::Combine(::testing::Values(4u), ::testing::Values(1),
+                       ::testing::Values(std::vector<float>{1.5f, 2.5f}),
+                       ::testing::Values(std::vector<int32_t>{10, 20}),
+                       ::testing::Values(4u, 2u), ::testing::Values(1, 0),
+                       ::testing::Values(std::vector<float>{1.5f, 2.5f},
+                                         std::vector<float>{1.5f, 2.6f}),
+                       ::testing::Values(std::vector<int32_t>{10, 20},
+                                         std::vector<int32_t>{10, 30})));
+
 }  // namespace
 }  // namespace qnn
