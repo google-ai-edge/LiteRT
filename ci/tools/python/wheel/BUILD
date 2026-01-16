@@ -67,19 +67,20 @@ ALL_PY_SRC_MODULES = select({
         "//litert/python/aot/vendors/mediatek:target",
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
         "//litert/python/aot/vendors/qualcomm:target",
-        # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
-        # "//litert/python/mlir",
-        # "//litert/python/tools/model_utils",
-        # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
-        "//litert/python/internal:litertlm_core",
-        "//litert/python/internal:litertlm_header_schema_py",
-        "//litert/python/internal:llm_metadata_py_pb2",
-        "//litert/python/internal:sampler_params_py_pb2",
-        "//litert/python/internal:litertlm_builder",
-        "//litert/python/tools:flatbuffer_utils",
     ],
     "//conditions:default": [],
-})
+}) + [
+    # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
+    # "//litert/python/mlir",
+    # "//litert/python/tools/model_utils",
+    # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
+    "//litert/python/internal:litertlm_core",
+    "//litert/python/internal:litertlm_header_schema_py",
+    "//litert/python/internal:llm_metadata_py_pb2",
+    "//litert/python/internal:sampler_params_py_pb2",
+    "//litert/python/internal:litertlm_builder",
+    "//litert/python/tools:flatbuffer_utils",
+]
 
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
 PACKAGE_DATA = select({
