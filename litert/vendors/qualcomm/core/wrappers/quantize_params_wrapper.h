@@ -21,6 +21,8 @@ class UndefinedQuantizeParamsWrapper final {
 
   UndefinedQuantizeParamsWrapper(UndefinedQuantizeParamsWrapper&&);
 
+  bool operator==(const UndefinedQuantizeParamsWrapper& other) const;
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
  private:
@@ -37,6 +39,8 @@ class ScaleOffsetQuantizeParamsWrapper final {
   ScaleOffsetQuantizeParamsWrapper(const ScaleOffsetQuantizeParamsWrapper&);
 
   ScaleOffsetQuantizeParamsWrapper(ScaleOffsetQuantizeParamsWrapper&&);
+
+  bool operator==(const ScaleOffsetQuantizeParamsWrapper& other) const;
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
@@ -71,6 +75,8 @@ class AxisScaleOffsetQuantizeParamsWrapper final {
   AxisScaleOffsetQuantizeParamsWrapper(
       AxisScaleOffsetQuantizeParamsWrapper&& rhs);
 
+  bool operator==(const AxisScaleOffsetQuantizeParamsWrapper& other) const;
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
   std::int32_t GetAxis() const;
@@ -97,6 +103,8 @@ class BwScaleOffsetQuantizeParamsWrapper final {
 
   BwScaleOffsetQuantizeParamsWrapper(BwScaleOffsetQuantizeParamsWrapper&& rhs);
 
+  bool operator==(const BwScaleOffsetQuantizeParamsWrapper& other) const;
+
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
   std::uint32_t GetBitwidth() const {
@@ -119,6 +127,8 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   BwAxisScaleOffsetQuantizeParamsWrapper(
       BwAxisScaleOffsetQuantizeParamsWrapper&& rhs);
+
+  bool operator==(const BwAxisScaleOffsetQuantizeParamsWrapper& other) const;
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
