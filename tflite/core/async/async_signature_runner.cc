@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tflite/core/async/async_signature_runner.h"
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
