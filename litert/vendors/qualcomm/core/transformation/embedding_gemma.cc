@@ -212,7 +212,8 @@ size_t TransformEmbeddingGemma(
                   is_op_connected(softmax_op, matmul_op2) &&
                   is_op_connected(matmul_op2, reshape_op2) &&
                   is_op_connected(reshape_op2, transpose_op2) &&
-                  is_op_connected(transpose_op2, reshape_op3);
+                  is_op_connected(transpose_op2, reshape_op3) &&
+                  IsElementWiseMultiply(mul_op) && IsElementWiseAdd(add_op);
   if (!is_match) {
     return 1;
   }

@@ -227,16 +227,6 @@ OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
   return ops.emplace_back(std::move(name), op_type, code_type_map->at(op_type));
 }
 
-OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
-                                    const char* op_type,
-                                    const TensorWrapper& input_tensor,
-                                    const TensorWrapper& output_tensor) {
-  auto& ret = CreateOpWrapper(ops, op_type);
-  ret.AddInputTensor(input_tensor);
-  ret.AddOutputTensor(output_tensor);
-  return ret;
-}
-
 TensorWrapper& CreateFusedActivationInputTensor(
     TensorPool& tensor_pool, const uint32_t fused_activation_function,
     std::vector<TensorWrapperRef>& output_tensors) {
@@ -263,31 +253,47 @@ void AddFusedActivationNode(std::vector<OpWrapper>& res,
       break;
     }
     case FusedActivationRelu: {
-      CreateSimpleActivationOp(res, QNN_OP_RELU, input_tensor, output_tensor);
+      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      elementwise_op.AddInputTensor(input_tensor);
+      elementwise_op.AddOutputTensor(output_tensor);
+      elementwise_op.AddScalarParam<std::uint32_t>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+          QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU);
       break;
     }
     case FusedActivationReluN1To1: {
-      auto& activation_op = CreateOpWrapper(res, QNN_OP_RELU_MIN_MAX);
-      activation_op.AddInputTensor(input_tensor);
-      activation_op.AddOutputTensor(output_tensor);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
-                                          -1);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
-                                          1);
+      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      elementwise_op.AddInputTensor(input_tensor);
+      elementwise_op.AddOutputTensor(output_tensor);
+      elementwise_op.AddScalarParam<std::uint32_t>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+          QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX);
+      elementwise_op.AddScalarParam<float>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_MIN_VALUE, -1);
+      elementwise_op.AddScalarParam<float>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_MAX_VALUE, 1);
       break;
     }
     case FusedActivationRelu6: {
-      auto& activation_op = CreateOpWrapper(res, QNN_OP_RELU_MIN_MAX);
-      activation_op.AddInputTensor(input_tensor);
-      activation_op.AddOutputTensor(output_tensor);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
-                                          0);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
-                                          6);
+      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      elementwise_op.AddInputTensor(input_tensor);
+      elementwise_op.AddOutputTensor(output_tensor);
+      elementwise_op.AddScalarParam<std::uint32_t>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+          QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX);
+      elementwise_op.AddScalarParam<float>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_MIN_VALUE, 0);
+      elementwise_op.AddScalarParam<float>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_MAX_VALUE, 6);
       break;
     }
     case FusedActivationTanh: {
-      CreateSimpleActivationOp(res, QNN_OP_TANH, input_tensor, output_tensor);
+      auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+      elementwise_op.AddInputTensor(input_tensor);
+      elementwise_op.AddOutputTensor(output_tensor);
+      elementwise_op.AddScalarParam<std::uint32_t>(
+          QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+          QNN_OP_ELEMENT_WISE_NEURON_OPERATION_TANH);
       break;
     }
     default: {
