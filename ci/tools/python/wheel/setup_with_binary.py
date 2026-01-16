@@ -182,7 +182,7 @@ setuptools.setup(
         ]
     },
     install_requires=[
-        'backports.strenum',
+        'backports.strenum; python_version<"3.11"',
         'flatbuffers',
         'numpy >= 1.23.2',  # Better to keep sync with both TF ci_build
         # and OpenCV-Python requirement.
