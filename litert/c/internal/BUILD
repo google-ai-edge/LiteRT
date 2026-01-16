@@ -290,6 +290,7 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_builtin",
+    srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
     deps = [
         ":litert_runtime_c_api",
