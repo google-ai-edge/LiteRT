@@ -15,10 +15,13 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_FLAG_TYPES_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_FLAG_TYPES_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
 #include "absl/flags/marshalling.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -55,6 +58,15 @@ bool AbslParseFlag(absl::string_view text, IntList<T>* list,
   }
   return true;
 }
+
+struct IntListMap {
+  std::map<int, std::vector<int>> elements;
+};
+
+std::string AbslUnparseFlag(const IntListMap& list);
+
+bool AbslParseFlag(absl::string_view text, IntListMap* list, std::string* error);
+
 }  // namespace litert::tools
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_FLAG_TYPES_H_

@@ -41,8 +41,10 @@ class CompilerOptions : public OpaqueOptions {
       LiteRtCompilerOptionsPartitionStrategy partition_strategy);
   Expected<LiteRtCompilerOptionsPartitionStrategy> GetPartitionStrategy() const;
 
-  Expected<void> SetSkipDelegationOpId(const std::vector<std::uint32_t>& ids);
-  Expected<std::vector<std::uint32_t>> GetSkipDelegationOpId() const;
+  Expected<void> AddSkipDelegationOps(int subgraph_index,
+                                      const std::vector<std::uint32_t>& ids);
+  Expected<std::vector<std::uint32_t>> GetSkipDelegationOps(
+      int subgraph_index) const;
 
   Expected<void> SetDummyOption(bool dummy_option);
   Expected<bool> GetDummyOption() const;
