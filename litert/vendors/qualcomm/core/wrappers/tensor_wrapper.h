@@ -112,11 +112,9 @@ class TensorWrapper final {
 
   ~TensorWrapper();
 
-  bool operator==(const TensorWrapper& other) const;
+  bool operator==(const TensorWrapper& other) const { return this == &other; }
 
-  bool operator!=(const TensorWrapper& other) const {
-    return !(*this == other);
-  }
+  bool operator!=(const TensorWrapper& other) const { return this != &other; }
 
   void CloneTo(Qnn_Tensor_t& dst) const;
 

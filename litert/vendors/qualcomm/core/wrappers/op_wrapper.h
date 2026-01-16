@@ -28,8 +28,6 @@ class OpWrapper final {
 
   OpWrapper& operator=(const OpWrapper& other);
 
-  bool operator==(const OpWrapper& other) const;
-
   OpWrapper(OpWrapper&& other);
 
   ~OpWrapper();

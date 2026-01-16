@@ -10,7 +10,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -24,17 +23,6 @@
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 namespace qnn {
-namespace miscs {
-
-inline bool IsStrEq(const char* input, const char* golden) {
-  if (input == nullptr && golden == nullptr) return true;
-  if (input == nullptr || golden == nullptr) return false;
-
-  return std::strcmp(input, golden) == 0;
-}
-
-}  // namespace miscs
-
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
 constexpr uint32_t kQuantBitWidth2 = 2;
