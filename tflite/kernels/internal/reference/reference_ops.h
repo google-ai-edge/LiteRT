@@ -88,6 +88,7 @@ limitations under the License.
 #include "tflite/kernels/internal/reference/transpose_conv.h"
 #include "tflite/kernels/internal/strided_slice_logic.h"
 #include "tflite/kernels/internal/tensor.h"
+#include "tflite/types/half.h"
 namespace tflite {
 
 namespace reference_ops {
@@ -529,8 +530,7 @@ inline void LocalResponseNormalization(
   }
 }
 
-inline void Dequantize(const RuntimeShape& input_shape,
-                       const Eigen::half* input_data,
+inline void Dequantize(const RuntimeShape& input_shape, const half* input_data,
                        const RuntimeShape& output_shape, float* output_data) {
   const int flat_size = MatchingFlatSize(input_shape, output_shape);
   for (int i = 0; i < flat_size; i++) {
