@@ -295,38 +295,56 @@ void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
   };
 
   for (auto& op : subgraph_.Ops()) {
-    for (auto& input : op->Inputs()) {
+    for (size_t i = 0; i < op->Inputs().size(); ++i) {
+      auto& input = op->Inputs()[i];
       if (is_a_io_tensor(input, subgraph_.Inputs())) {
         input->Users().push_back(op);
-        input->UserArgInds().push_back(op->Inputs().size() - 1);
+        input->UserArgInds().push_back(i);
       }
     }
-    for (auto& output : op->Outputs()) {
+    for (size_t i = 0; i < op->Outputs().size(); ++i) {
+      auto& output = op->Outputs()[i];
       if (is_a_io_tensor(output, subgraph_.Outputs())) {
-        output->SetDefiningOp(*op, op->Outputs().size() - 1);
+        output->SetDefiningOp(*op, i);
       }
     }
   }
 
   // Transfer ownership of tensors and ops to the root subgraph.
   // Note: Maintain the original topological order of the ops.
-  size_t splice_index = 0;
-  if (!subgraph_to_apply->Ops().empty()) {
-    splice_index = subgraph_to_apply->Ops().size() - 1;
+
+  // 1. Index original ops to track them across DCE.
+  for (size_t i = 0; i < subgraph_to_apply->Ops().size(); ++i) {
+    subgraph_to_apply->Ops()[i]->SetOpIndex(i);
   }
-  LITERT_LOG(LITERT_DEBUG, "splice_index starting: %zu", splice_index);
-  for (size_t original_op_index = 0;
-       original_op_index < subgraph_to_apply->Ops().size();
-       ++original_op_index) {
-    for (LiteRtOp op_to_erase : erases_) {
-      if (subgraph_to_apply->Ops().at(original_op_index) == op_to_erase) {
-        splice_index = std::min(splice_index, original_op_index);
+
+  // 2. Find the start of the erased block (original index).
+  size_t min_erased_index = subgraph_to_apply->Ops().size();
+  for (size_t i = 0; i < subgraph_to_apply->Ops().size(); ++i) {
+    if (erases_.contains(subgraph_to_apply->Ops()[i])) {
+      min_erased_index = std::min(min_erased_index, i);
+    }
+  }
+
+  // 3. Run DCE.
+  DCE(*subgraph_to_apply);
+
+  // 4. Find the insertion point in the new graph.
+  // We want the first op that was originally at or after min_erased_index.
+  size_t new_splice_index = subgraph_to_apply->Ops().size();
+  // Optimization: If min_erased_index is end, we append (default).
+  if (min_erased_index < subgraph_to_apply->Ops().size() + erases_.size()) {
+    for (size_t i = 0; i < subgraph_to_apply->Ops().size(); ++i) {
+      if (subgraph_to_apply->Ops()[i]->OpIndex() >= min_erased_index) {
+        new_splice_index = i;
+        break;
       }
     }
   }
-  DCE(*subgraph_to_apply);
+
   // Transfer ops from the subgraph to the root subgraph.
-  subgraph_to_apply->TransferOpsFrom(subgraph_.OpsAllocation(), splice_index);
+  subgraph_to_apply->TransferOpsFrom(subgraph_.OpsAllocation(),
+                                     new_splice_index);
 
   // Transfer ownership of Weights buffers to the root subgraph.
   auto src_buffer_manager = subgraph_.GetBufferManager();
