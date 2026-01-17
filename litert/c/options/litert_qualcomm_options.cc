@@ -228,7 +228,7 @@ LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
 
 LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
     LiteRtQualcommOptions options, const std::int32_t* ids,
-    std::uint32_t number_of_ids) {
+    size_t number_of_ids) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -239,8 +239,8 @@ LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
 }
 
 LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
-    LiteRtQualcommOptions options, std::int32_t** ids,
-    std::uint32_t* number_of_ids) {
+    LiteRtQualcommOptions options, const std::int32_t** ids,
+    size_t* number_of_ids) {
   if (ids == nullptr || number_of_ids == nullptr || options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }

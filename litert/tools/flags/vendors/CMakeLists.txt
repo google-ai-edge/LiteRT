@@ -66,6 +66,7 @@ target_include_directories(litert_tool_flags_qualcomm
 target_link_libraries(litert_tool_flags_qualcomm
     PUBLIC
         absl::flags
+        litert_tool_flags_types
 )
 
 # Intel OpenVINO flags

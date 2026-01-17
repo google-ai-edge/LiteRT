@@ -125,8 +125,8 @@ void QualcommOptions::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
 
 std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
   std::vector<std::int32_t> dump_ids;
-  std::int32_t* ids = nullptr;
-  std::uint32_t number_of_ids = 0;
+  const std::int32_t* ids = nullptr;
+  std::size_t number_of_ids = 0;
   internal::AssertOk(LiteRtQualcommOptionsGetDumpTensorIds, Data(), &ids,
                      &number_of_ids);
   if (ids == nullptr) {
