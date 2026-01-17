@@ -37,7 +37,10 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_qualcomm_options.h"  // IWYU pragma: keep
+#include "litert/cc/internal/litert_builder.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_matchers.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
@@ -102,6 +105,25 @@ bool SkipValidationOfQuantizeOp(const litert::Op& op) {
     return true;
   }
   return false;
+}
+
+LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
+                                              LiteRtOp op) {
+  litert::Builder builder(builder_ptr);
+  litert::Op root_op(op);
+  if (!litert::Match(root_op, litert::m_OpCode(kLiteRtOpCodeTflAdd))) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  auto inputs = root_op.Inputs();
+  std::vector<litert::Tensor> inputs_vec(inputs.begin(), inputs.end());
+  auto add_op = builder.ReplaceOp(root_op, kLiteRtOpCodeTflMul, inputs_vec);
+  litert::MulOptions options;
+  options.fused_activation_function = litert::kActivationFunctionTypeNone;
+  auto res = builder.SetOpOptions(add_op, std::move(options));
+  if (!res) {
+    return res.Error().Status();
+  }
+  return kLiteRtStatusOk;
 }
 
 }  // namespace
@@ -237,6 +259,8 @@ class LiteRtCompilerPluginT {
   }
 
   QnnManager* QNN() { return qnn_manager_.get(); }
+
+  std::vector<LiteRtTransformation> transformations;
 
  private:
   litert::Expected<litert::EnvironmentOptions> env_options_ = litert::Error(
@@ -507,7 +531,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
-  *num_patterns = 0;
+  compiler_plugin->transformations.push_back(
+      {SimpleAddOpToMulOpTransformation, "SimpleAddOpToMulOpTransformation",
+       0});
+  *num_patterns = compiler_plugin->transformations.size();
+  *transformations = compiler_plugin->transformations.data();
   return kLiteRtStatusOk;
 }
 
