@@ -246,7 +246,9 @@ cc_library(
     deps = [
         ":litert_extended_model",
         ":litert_op_options",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
