@@ -34,7 +34,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 
 /// @file
-/// @brief Defines the C++ equivalent of `LiteRtRewriter` for model
+/// @brief Defines the C++ equivalent of `LiteRtBuilder` for model
 /// modification.
 
 namespace litert {

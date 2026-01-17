@@ -270,10 +270,39 @@ struct ReduceMaxOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+/// @brief Struct to hold options for the LiteRT ReduceMin op.
+struct ReduceMinOptions : public OpOptions {
+  LiteRtOp op;
+  bool keep_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+/// @brief Struct to hold options for the LiteRT ReduceAny op.
+struct ReduceAnyOptions : public OpOptions {
+  LiteRtOp op;
+  bool keep_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+/// @brief Struct to hold options for the LiteRT ReduceAll op.
+struct ReduceAllOptions : public OpOptions {
+  LiteRtOp op;
+  bool keep_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 /// @brief Struct to hold options for the LiteRT Pack op.
 struct PackOptions : public OpOptions {
   LiteRtOp op;
   int32_t axis;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+/// @brief Struct to hold options for the LiteRT Unpack op.
+struct UnpackOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t axis;
+  int32_t num;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
@@ -325,6 +354,29 @@ struct Conv3dOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+/// @brief Struct to hold options for the LiteRT DepthwiseConv2d op.
+struct DepthwiseConv2dOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t depth_multiplier;
+  ActivationFunction fused_activation_function;
+  int32_t dilation_w_factor;
+  int32_t dilation_h_factor;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+/// @brief Struct to hold options for the LiteRT TransposeConv op.
+struct TransposeConvOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 /// @brief Struct to hold options for the LiteRT AveragePool2d op.
 struct AveragePool2dOptions : public OpOptions {
   LiteRtOp op;
@@ -339,6 +391,18 @@ struct AveragePool2dOptions : public OpOptions {
 
 /// @brief Struct to hold options for the LiteRT MaxPool2d op.
 struct MaxPool2dOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t filter_width;
+  int32_t filter_height;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+/// @brief Struct to hold options for the LiteRT L2Pool2d op.
+struct L2Pool2dOptions : public OpOptions {
   LiteRtOp op;
   Padding padding;
   int32_t stride_w;
@@ -407,6 +471,13 @@ struct MirrorPadOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+/// @brief Struct to hold options for the LiteRT Squeeze op.
+struct SqueezeOptions : public OpOptions {
+  LiteRtOp op;
+  std::vector<int32_t> squeeze_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 /// @brief Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -466,8 +537,24 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     ReduceMaxOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
+  } else if constexpr (std::is_same_v<OptionsT, ReduceMinOptions>) {
+    ReduceMinOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, ReduceAnyOptions>) {
+    ReduceAnyOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, ReduceAllOptions>) {
+    ReduceAllOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
   } else if constexpr (std::is_same_v<OptionsT, PackOptions>) {
     PackOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, UnpackOptions>) {
+    UnpackOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else if constexpr (std::is_same_v<OptionsT, GatherOptions>) {
@@ -490,12 +577,24 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     Conv3dOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
+  } else if constexpr (std::is_same_v<OptionsT, DepthwiseConv2dOptions>) {
+    DepthwiseConv2dOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, TransposeConvOptions>) {
+    TransposeConvOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
   } else if constexpr (std::is_same_v<OptionsT, AveragePool2dOptions>) {
     AveragePool2dOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else if constexpr (std::is_same_v<OptionsT, MaxPool2dOptions>) {
     MaxPool2dOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, L2Pool2dOptions>) {
+    L2Pool2dOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else if constexpr (std::is_same_v<OptionsT, ResizeBilinearOptions>) {
@@ -528,6 +627,10 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, MirrorPadOptions>) {
     MirrorPadOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, SqueezeOptions>) {
+    SqueezeOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {
