@@ -25,9 +25,6 @@ OpenVINOSharedCore::~OpenVINOSharedCore() = default;
 
 // static
 OpenVINOSharedCore* OpenVINOSharedCore::GetInstance() {
-  static OpenVINOSharedCore* instance;
-  if (!instance) {
-    instance = new OpenVINOSharedCore();
-  }
+  static OpenVINOSharedCore* instance = new OpenVINOSharedCore();
   return instance;
 }
