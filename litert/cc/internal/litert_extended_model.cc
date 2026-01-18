@@ -20,6 +20,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -136,6 +137,39 @@ SubgraphOutputs Subgraph::Outputs() const {
     outputs.emplace_back(Tensor(output));
   }
   return outputs;
+}
+
+Expected<Tensor> Op::Input(size_t index) const {
+  LiteRtParamIndex num_inputs;
+  LITERT_RETURN_IF_ERROR(LiteRtGetNumOpInputs(Get(), &num_inputs));
+  if (index >= num_inputs) {
+    return Unexpected(kLiteRtStatusErrorIndexOOB);
+  }
+  LiteRtTensor input;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpInput(Get(), index, &input));
+  return Tensor(input);
+}
+
+Expected<Tensor> Op::Output(size_t index) const {
+  LiteRtParamIndex num_outputs;
+  LITERT_RETURN_IF_ERROR(LiteRtGetNumOpOutputs(Get(), &num_outputs));
+  if (index >= num_outputs) {
+    return Unexpected(kLiteRtStatusErrorIndexOOB);
+  }
+  LiteRtTensor output;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpOutput(Get(), index, &output));
+  return Tensor(output);
+}
+
+Expected<Op> Tensor::GetDefiningOp() const {
+  bool has_defining_op;
+  LiteRtTensorDefiningOp defining_op;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTensorDefiningOp(Get(), &has_defining_op, &defining_op));
+  if (!has_defining_op) {
+    return Unexpected(kLiteRtStatusErrorNotFound);
+  }
+  return Op(defining_op.op);
 }
 
 std::vector<Op> Subgraph::Ops() const {
