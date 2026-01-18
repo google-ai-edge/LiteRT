@@ -55,6 +55,23 @@ TEST(CcOpTest, SimpleSupportedOp) {
   EXPECT_EQ(op.Inputs().size(), 2);
   EXPECT_EQ(op.Outputs().size(), 1);
   EXPECT_FALSE(op.CustomCode().HasValue());
+
+  EXPECT_TRUE(op.Is(kLiteRtOpCodeTflMul));
+  EXPECT_FALSE(op.Is(kLiteRtOpCodeTflAdd));
+
+  auto input0 = op.Input(0);
+  ASSERT_TRUE(input0.HasValue());
+  auto input1 = op.Input(1);
+  ASSERT_TRUE(input1.HasValue());
+  auto input2 = op.Input(2);
+  ASSERT_FALSE(input2.HasValue());
+  EXPECT_EQ(input2.Error().Status(), kLiteRtStatusErrorIndexOOB);
+
+  auto output0 = op.Output(0);
+  ASSERT_TRUE(output0.HasValue());
+  auto output1 = op.Output(1);
+  ASSERT_FALSE(output1.HasValue());
+  EXPECT_EQ(output1.Error().Status(), kLiteRtStatusErrorIndexOOB);
 }
 
 TEST(CcOpTest, CustomCode) {
@@ -107,6 +124,10 @@ TEST(CcTensorTest, SimpleModel) {
 
     auto output_defining_op = output_tensor.DefiningOp();
     EXPECT_TRUE(output_defining_op.has_value());
+
+    auto op = output_tensor.GetDefiningOp();
+    ASSERT_TRUE(op.HasValue());
+    EXPECT_EQ(op->Code(), kLiteRtOpCodeTflMul);
 
     ASSERT_TRUE(output_tensor.Uses().empty());
   }
@@ -196,6 +217,25 @@ TEST(CcTensorTest, ZeroSizeTensorTest) {
   const auto ops = subgraph->Ops();
   const auto& op = ops.front();
   EXPECT_FALSE(op.Inputs().at(1).IsSubgraphInput());
+}
+
+TEST(CcTensorTest, Equality) {
+  auto litert_model = testing::LoadTestFileModel("one_mul.tflite");
+  auto subgraph = litert_model.MainSubgraph();
+  auto inputs = subgraph->Inputs();
+  ASSERT_EQ(inputs.size(), 2);
+  const Tensor& input_tensor_0 = inputs[0];
+  const Tensor& input_tensor_1 = inputs[1];
+
+  EXPECT_TRUE(input_tensor_0 == input_tensor_0);
+  EXPECT_FALSE(input_tensor_0 != input_tensor_0);
+
+  EXPECT_FALSE(input_tensor_0 == input_tensor_1);
+  EXPECT_TRUE(input_tensor_0 != input_tensor_1);
+
+  // Check copy
+  Tensor copy_of_input_0(input_tensor_0.Get());
+  EXPECT_TRUE(input_tensor_0 == copy_of_input_0);
 }
 
 //===----------------------------------------------------------------------===//

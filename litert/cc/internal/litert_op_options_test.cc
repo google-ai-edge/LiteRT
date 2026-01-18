@@ -17,9 +17,11 @@
 #include <cstdint>
 #include <utility>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -28,6 +30,8 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "tflite/schema/schema_generated.h"
+
+using ::testing::ElementsAre;
 
 namespace litert {
 namespace {
@@ -339,6 +343,54 @@ TEST(OpOptionsTest, GetReduceMaxOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetReduceMinOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflReduceMin);
+  tflite::ReducerOptionsT options;
+  options.keep_dims = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ReducerOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<ReduceMinOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->keep_dims, true);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetReduceAnyOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflReduceAny);
+  tflite::ReducerOptionsT options;
+  options.keep_dims = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ReducerOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<ReduceAnyOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->keep_dims, true);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetReduceAllOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflReduceAll);
+  tflite::ReducerOptionsT options;
+  options.keep_dims = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ReducerOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<ReduceAllOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->keep_dims, true);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, GetPackOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeTflPack);
@@ -461,6 +513,56 @@ TEST(OpOptionsTest, GetConv3dOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetDepthwiseConv2dOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflDepthwiseConv2d);
+  tflite::DepthwiseConv2DOptionsT options;
+  options.padding = tflite::Padding_SAME;
+  options.stride_w = 1;
+  options.stride_h = 2;
+  options.depth_multiplier = 3;
+  options.fused_activation_function = tflite::ActivationFunctionType_NONE;
+  options.dilation_w_factor = 4;
+  options.dilation_h_factor = 5;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_DepthwiseConv2DOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<DepthwiseConv2dOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->padding, kPaddingSame);
+  EXPECT_EQ(res->stride_w, 1);
+  EXPECT_EQ(res->stride_h, 2);
+  EXPECT_EQ(res->depth_multiplier, 3);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeNone);
+  EXPECT_EQ(res->dilation_w_factor, 4);
+  EXPECT_EQ(res->dilation_h_factor, 5);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetTransposeConvOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflTransposeConv);
+  tflite::TransposeConvOptionsT options;
+  options.padding = tflite::Padding_SAME;
+  options.stride_w = 1;
+  options.stride_h = 2;
+  options.fused_activation_function = tflite::ActivationFunctionType_NONE;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_TransposeConvOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<TransposeConvOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->padding, kPaddingSame);
+  EXPECT_EQ(res->stride_w, 1);
+  EXPECT_EQ(res->stride_h, 2);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeNone);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, GetAveragePool2dOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeTflAveragePool2d);
@@ -503,6 +605,32 @@ TEST(OpOptionsTest, GetMaxPool2dOptions) {
   litert::internal::SetTflOptions(op, std::move(tfl_options));
 
   auto res = GetOptionsAs<MaxPool2dOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->padding, kPaddingValid);
+  EXPECT_EQ(res->stride_w, 1);
+  EXPECT_EQ(res->stride_h, 2);
+  EXPECT_EQ(res->filter_width, 3);
+  EXPECT_EQ(res->filter_height, 4);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeRelu);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetL2Pool2dOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflL2Pool2d);
+  tflite::Pool2DOptionsT options;
+  options.padding = tflite::Padding_VALID;
+  options.stride_w = 1;
+  options.stride_h = 2;
+  options.filter_width = 3;
+  options.filter_height = 4;
+  options.fused_activation_function = tflite::ActivationFunctionType_RELU;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_Pool2DOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<L2Pool2dOptions>(&op);
   ASSERT_TRUE(res);
   EXPECT_EQ(res->padding, kPaddingValid);
   EXPECT_EQ(res->stride_w, 1);
@@ -647,6 +775,27 @@ TEST(OpOptionsTest, GetMirrorPadOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(GetOpOptionTest, TestGetSqueezeOptions) {
+  LiteRtModelT model_t;
+  auto& subgraph = model_t.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflSqueeze);
+
+  tflite::SqueezeOptionsT options;
+  options.squeeze_dims = {0, 2};
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_SqueezeOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<SqueezeOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->squeeze_dims.size(), 2);
+  EXPECT_EQ(res->squeeze_dims[0], 0);
+  EXPECT_EQ(res->squeeze_dims[1], 2);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -662,14 +811,21 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<ReshapeOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<SumOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<ReduceMaxOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ReduceMinOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ReduceAnyOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ReduceAllOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<PackOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<UnpackOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<GatherOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<MeanOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<SplitOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<Conv2dOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<Conv3dOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<DepthwiseConv2dOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<TransposeConvOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<AveragePool2dOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<MaxPool2dOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<L2Pool2dOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<ResizeBilinearOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<LeakyReluOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<SpaceToDepthOptions>(&op));
@@ -678,6 +834,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<CumSumOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<GeluOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<MirrorPadOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<SqueezeOptions>(&op));
 }
 
 TEST(OpOptionsTest, TestSetAddOpOptionsSuccess) {
@@ -692,6 +849,608 @@ TEST(OpOptionsTest, TestSetAddOpOptionsSuccess) {
   auto res = GetOptionsAs<AddOptions>(&op);
   ASSERT_TRUE(res);
   EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetMulOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflMul, {}, {});
+  MulOptions options = {};
+  options.op = &op;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<MulOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetBatchMatmulOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflBatchMatmul, {}, {});
+  BatchMatmulOptions options = {};
+  options.op = &op;
+  options.adj_x = true;
+  options.adj_y = false;
+  options.asymmetric_quantize_input = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<BatchMatmulOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->adj_x, true);
+  EXPECT_EQ(res_get->adj_y, false);
+  EXPECT_EQ(res_get->asymmetric_quantize_input, true);
+}
+
+TEST(OpOptionsTest, TestSetConcatenationOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflConcatenation, {}, {});
+  ConcatenationOptions options = {};
+  options.op = &op;
+  options.axis = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<ConcatenationOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->axis, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetDivOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflDiv, {}, {});
+  DivOptions options = {};
+  options.op = &op;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<DivOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetFullyConnectedOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflFullyConnected, {}, {});
+  FullyConnectedOptions options = {};
+  options.op = &op;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  options.weights_format = kFullyConnectedOptionsWeightsFormatDefault;
+  options.keep_num_dims = true;
+  options.quantized_bias_type = kLiteRtElementTypeFloat32;
+  options.asymmetric_quantize_input = false;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<FullyConnectedOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+  EXPECT_EQ(res_get->weights_format,
+            kFullyConnectedOptionsWeightsFormatDefault);
+  EXPECT_EQ(res_get->keep_num_dims, true);
+  EXPECT_EQ(res_get->quantized_bias_type, kLiteRtElementTypeFloat32);
+  EXPECT_EQ(res_get->asymmetric_quantize_input, false);
+}
+
+TEST(OpOptionsTest, TestSetSoftmaxOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSoftmax, {}, {});
+  SoftmaxOptions options = {};
+  options.op = &op;
+  options.beta = 1.5f;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<SoftmaxOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_FLOAT_EQ(res_get->beta, 1.5f);
+}
+
+TEST(OpOptionsTest, TestSetStridedSliceOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflStridedSlice, {}, {});
+  StridedSliceOptions options = {};
+  options.op = &op;
+  options.begin_mask = 1;
+  options.end_mask = 2;
+  options.ellipsis_mask = 3;
+  options.new_axis_mask = 4;
+  options.shrink_axis_mask = 5;
+  options.offset = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<StridedSliceOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->begin_mask, 1);
+  EXPECT_EQ(res_get->end_mask, 2);
+  EXPECT_EQ(res_get->ellipsis_mask, 3);
+  EXPECT_EQ(res_get->new_axis_mask, 4);
+  EXPECT_EQ(res_get->shrink_axis_mask, 5);
+  EXPECT_EQ(res_get->offset, true);
+}
+
+TEST(OpOptionsTest, TestSetSubOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSub, {}, {});
+  SubOptions options = {};
+  options.op = &op;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<SubOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetReshapeOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflReshape, {}, {});
+  ReshapeOptions options = {};
+  options.op = &op;
+  options.new_shape = {1, 2};
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+  // Note: GetOptionsAs for Reshape reads from input tensor, so we don't verify
+  // it here without setting up inputs.
+}
+
+TEST(OpOptionsTest, TestSetSumOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSum, {}, {});
+  SumOptions options = {};
+  options.op = &op;
+  options.keep_dims = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<SumOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->keep_dims, true);
+}
+
+TEST(OpOptionsTest, TestSetReduceMaxOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflReduceMax, {}, {});
+  ReduceMaxOptions options = {};
+  options.op = &op;
+  options.keep_dims = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<ReduceMaxOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->keep_dims, true);
+}
+
+TEST(OpOptionsTest, TestSetReduceMinOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflReduceMin, {}, {});
+  ReduceMinOptions options = {};
+  options.op = &op;
+  options.keep_dims = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<ReduceMinOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->keep_dims, true);
+}
+
+TEST(OpOptionsTest, TestSetReduceAnyOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflReduceAny, {}, {});
+  ReduceAnyOptions options = {};
+  options.op = &op;
+  options.keep_dims = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<ReduceAnyOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->keep_dims, true);
+}
+
+TEST(OpOptionsTest, TestSetReduceAllOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflReduceAll, {}, {});
+  ReduceAllOptions options = {};
+  options.op = &op;
+  options.keep_dims = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<ReduceAllOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->keep_dims, true);
+}
+
+TEST(OpOptionsTest, TestSetPackOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflPack, {}, {});
+  // Pack options derived from input size, so we need to add inputs.
+  LiteRtTensorT input_tensor_0;
+  LiteRtTensorT input_tensor_1;
+  op.Inputs().push_back(&input_tensor_0);
+  op.Inputs().push_back(&input_tensor_1);
+
+  PackOptions options = {};
+  options.op = &op;
+  options.axis = 1;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<PackOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->axis, 1);
+  // GetOptionsAs currently only returns axis, not values_count.
+}
+
+TEST(OpOptionsTest, TestSetUnpackOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflUnpack, {}, {});
+  UnpackOptions options = {};
+  options.op = &op;
+  options.axis = 1;
+  options.num = 2;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<UnpackOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->axis, 1);
+  EXPECT_EQ(res_get->num, 2);
+}
+
+TEST(OpOptionsTest, TestSetGatherOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflGather, {}, {});
+  GatherOptions options = {};
+  options.op = &op;
+  options.axis = 1;
+  options.batch_dims = 2;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<GatherOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->axis, 1);
+  EXPECT_EQ(res_get->batch_dims, 2);
+}
+
+TEST(OpOptionsTest, TestSetMeanOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflMean, {}, {});
+  MeanOptions options = {};
+  options.op = &op;
+  options.keep_dims = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<MeanOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->keep_dims, true);
+}
+
+TEST(OpOptionsTest, TestSetSplitOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSplit, {}, {});
+  SplitOptions options = {};
+  options.op = &op;
+  options.num_splits = 2;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<SplitOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->num_splits, 2);
+}
+
+TEST(OpOptionsTest, TestSetConv2dOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflConv2d, {}, {});
+  Conv2dOptions options = {};
+  options.op = &op;
+  options.padding = kPaddingValid;
+  options.stride_w = 1;
+  options.stride_h = 1;
+  options.dilation_w_factor = 1;
+  options.dilation_h_factor = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<Conv2dOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->padding, kPaddingValid);
+  EXPECT_EQ(res_get->stride_w, 1);
+  EXPECT_EQ(res_get->stride_h, 1);
+  EXPECT_EQ(res_get->dilation_w_factor, 1);
+  EXPECT_EQ(res_get->dilation_h_factor, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetConv3dOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflConv3d, {}, {});
+  Conv3dOptions options = {};
+  options.op = &op;
+  options.padding = kPaddingValid;
+  options.stride_w = 1;
+  options.stride_h = 1;
+  options.stride_d = 1;
+  options.dilation_w_factor = 1;
+  options.dilation_h_factor = 1;
+  options.dilation_d_factor = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<Conv3dOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->padding, kPaddingValid);
+  EXPECT_EQ(res_get->stride_w, 1);
+  EXPECT_EQ(res_get->stride_h, 1);
+  EXPECT_EQ(res_get->stride_d, 1);
+  EXPECT_EQ(res_get->dilation_w_factor, 1);
+  EXPECT_EQ(res_get->dilation_h_factor, 1);
+  EXPECT_EQ(res_get->dilation_d_factor, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetDepthwiseConv2dOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflDepthwiseConv2d, {}, {});
+  DepthwiseConv2dOptions options = {};
+  options.op = &op;
+  options.padding = kPaddingValid;
+  options.stride_w = 1;
+  options.stride_h = 1;
+  options.depth_multiplier = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  options.dilation_w_factor = 1;
+  options.dilation_h_factor = 1;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<DepthwiseConv2dOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->padding, kPaddingValid);
+  EXPECT_EQ(res_get->stride_w, 1);
+  EXPECT_EQ(res_get->stride_h, 1);
+  EXPECT_EQ(res_get->depth_multiplier, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+  EXPECT_EQ(res_get->dilation_w_factor, 1);
+  EXPECT_EQ(res_get->dilation_h_factor, 1);
+}
+
+TEST(OpOptionsTest, TestSetTransposeConvOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflTransposeConv, {}, {});
+  TransposeConvOptions options = {};
+  options.op = &op;
+  options.padding = kPaddingValid;
+  options.stride_w = 1;
+  options.stride_h = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<TransposeConvOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->padding, kPaddingValid);
+  EXPECT_EQ(res_get->stride_w, 1);
+  EXPECT_EQ(res_get->stride_h, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetAveragePool2dOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflAveragePool2d, {}, {});
+  AveragePool2dOptions options = {};
+  options.op = &op;
+  options.padding = kPaddingValid;
+  options.stride_w = 1;
+  options.stride_h = 1;
+  options.filter_width = 1;
+  options.filter_height = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<AveragePool2dOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->padding, kPaddingValid);
+  EXPECT_EQ(res_get->stride_w, 1);
+  EXPECT_EQ(res_get->stride_h, 1);
+  EXPECT_EQ(res_get->filter_width, 1);
+  EXPECT_EQ(res_get->filter_height, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetMaxPool2dOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflMaxPool2d, {}, {});
+  MaxPool2dOptions options = {};
+  options.op = &op;
+  options.padding = kPaddingValid;
+  options.stride_w = 1;
+  options.stride_h = 1;
+  options.filter_width = 1;
+  options.filter_height = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<MaxPool2dOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->padding, kPaddingValid);
+  EXPECT_EQ(res_get->stride_w, 1);
+  EXPECT_EQ(res_get->stride_h, 1);
+  EXPECT_EQ(res_get->filter_width, 1);
+  EXPECT_EQ(res_get->filter_height, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetL2Pool2dOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflL2Pool2d, {}, {});
+  L2Pool2dOptions options = {};
+  options.op = &op;
+  options.padding = kPaddingValid;
+  options.stride_w = 1;
+  options.stride_h = 1;
+  options.filter_width = 1;
+  options.filter_height = 1;
+  options.fused_activation_function = kActivationFunctionTypeRelu;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<L2Pool2dOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->padding, kPaddingValid);
+  EXPECT_EQ(res_get->stride_w, 1);
+  EXPECT_EQ(res_get->stride_h, 1);
+  EXPECT_EQ(res_get->filter_width, 1);
+  EXPECT_EQ(res_get->filter_height, 1);
+  EXPECT_EQ(res_get->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(OpOptionsTest, TestSetResizeBilinearOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflResizeBilinear, {}, {});
+  ResizeBilinearOptions options = {};
+  options.op = &op;
+  options.align_corners = true;
+  options.half_pixel_centers = false;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<ResizeBilinearOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->align_corners, true);
+  EXPECT_EQ(res_get->half_pixel_centers, false);
+}
+
+TEST(OpOptionsTest, TestSetLeakyReluOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflLeakyRelu, {}, {});
+  LeakyReluOptions options = {};
+  options.op = &op;
+  options.alpha = 0.5f;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<LeakyReluOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_FLOAT_EQ(res_get->alpha, 0.5f);
+}
+
+TEST(OpOptionsTest, TestSetSpaceToDepthOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSpaceToDepth, {}, {});
+  SpaceToDepthOptions options = {};
+  options.op = &op;
+  options.block_size = 2;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<SpaceToDepthOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->block_size, 2);
+}
+
+TEST(OpOptionsTest, TestSetDepthToSpaceOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflDepthToSpace, {}, {});
+  DepthToSpaceOptions options = {};
+  options.op = &op;
+  options.block_size = 2;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<DepthToSpaceOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->block_size, 2);
+}
+
+TEST(OpOptionsTest, TestSetResizeNearestNeighborOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflResizeNearestNeighbor, {}, {});
+  ResizeNearestNeighborOptions options = {};
+  options.op = &op;
+  options.align_corners = true;
+  options.half_pixel_centers = false;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<ResizeNearestNeighborOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->align_corners, true);
+  EXPECT_EQ(res_get->half_pixel_centers, false);
+}
+
+TEST(OpOptionsTest, TestSetCumSumOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflCumsum, {}, {});
+  CumSumOptions options = {};
+  options.op = &op;
+  options.exclusive = true;
+  options.reverse = false;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<CumSumOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->exclusive, true);
+  EXPECT_EQ(res_get->reverse, false);
+}
+
+TEST(OpOptionsTest, TestSetGeluOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflGelu, {}, {});
+  GeluOptions options = {};
+  options.op = &op;
+  options.approximate = true;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<GeluOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->approximate, true);
+}
+
+TEST(OpOptionsTest, TestSetMirrorPadOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflMirrorPad, {}, {});
+  MirrorPadOptions options = {};
+  options.op = &op;
+  options.mode = kMirrorPadModeReflect;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<MirrorPadOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->mode, kMirrorPadModeReflect);
+}
+
+TEST(OpOptionsTest, TestSetSqueezeOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSqueeze, {}, {});
+  SqueezeOptions options = {};
+  options.op = &op;
+  options.squeeze_dims = {0, 2};
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<SqueezeOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_THAT(res_get->squeeze_dims, ElementsAre(0, 2));
 }
 
 }  // namespace
