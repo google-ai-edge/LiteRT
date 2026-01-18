@@ -30,8 +30,8 @@ namespace tensorflow {
 // string according to the given model flags, converter flags and tags. Returns
 // error status if it fails to convert the input.
 absl::Status ConvertJaxToTFLiteFlatBuffer(
-    const std::string& input, const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags, std::string* result);
+    const std::string& input, const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags, std::string* result);
 
 }  // namespace tensorflow
 

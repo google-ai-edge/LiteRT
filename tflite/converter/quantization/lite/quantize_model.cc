@@ -66,7 +66,7 @@ absl::Status QuantizeModel(
     const absl::flat_hash_set<std::string> &denylisted_nodes,
     const bool enable_variable_quantization,
     bool disable_per_channel_for_dense_layers,
-    const std::optional<const tensorflow::converter::DebugOptions>
+    const std::optional<const litert::converter::DebugOptions>
         &debug_options) {
   // Translate TFLite names to mlir op names.
   absl::flat_hash_set<std::string> denylisted_mlir_op_names;

@@ -27,7 +27,7 @@ namespace TFL {
 
 // A singleton to store errors collected by the instrumentation.
 class ErrorCollector {
-  using ConverterErrorData = tflite::metrics::ConverterErrorData;
+  using ConverterErrorData = litert::metrics::ConverterErrorData;
   using ConverterErrorDataSet =
       std::unordered_set<ConverterErrorData, ConverterErrorDataHash,
                          ConverterErrorDataComparison>;
