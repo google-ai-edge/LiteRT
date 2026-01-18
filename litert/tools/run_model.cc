@@ -41,7 +41,6 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
@@ -75,6 +74,10 @@ ABSL_FLAG(size_t, iterations, 1,
 ABSL_FLAG(bool, language_model, false,
           "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
+
+ABSL_FLAG(std::string, input_dir, "",
+          "An input folder containing .raw files with model input signatures "
+          "as their file names.");
 
 namespace litert {
 namespace {
@@ -314,30 +317,29 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto input_buffers,
                           compiled_model.CreateInputBuffers(signature_index));
 
-  if (!absl::GetFlag(FLAGS_language_model)) {  // non-language model
-    // Fill input buffers with sample data
+  std::string input_dir = absl::GetFlag(FLAGS_input_dir);
+  if (!input_dir.empty()) {
+    // Use the inputs given by the user.
+    LITERT_RETURN_IF_ERROR(tensor_utils::FillInputBuffersWithCustomData(
+        compiled_model, signature_index, input_buffers, input_dir));
+  } else if (absl::GetFlag(FLAGS_language_model)) {
+    // Language model, hard assumption on tensor order here TODO: generalize
+    // when we find other examples.
+    LITERT_RETURN_IF_ERROR(
+        FillLanguageModelInputBuffers(absl::MakeSpan(input_buffers)));
+  } else {
+    // Non-language model, Fill input buffers with sample data.
     for (size_t i = 0; i < input_buffers.size(); ++i) {
       auto& buffer = input_buffers[i];
       LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
-
-      // Print tensor info and data if requested
-      if (absl::GetFlag(FLAGS_print_tensors)) {
-        LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Input", i));
-      }
-    }
-  } else {
-    // language model, hard assumption on tensor order here TODO: generalize
-    // when we find other examples
-    LITERT_RETURN_IF_ERROR(
-        FillLanguageModelInputBuffers(absl::MakeSpan(input_buffers)));
-    // Also print the tensor info and data if requested
-    if (absl::GetFlag(FLAGS_print_tensors)) {
-      for (size_t i = 0; i < input_buffers.size(); ++i) {
-        LITERT_RETURN_IF_ERROR(PrintTensorBuffer(input_buffers[i], "Input", i));
-      }
     }
   }
 
+  if (absl::GetFlag(FLAGS_print_tensors)) {
+    for (size_t i = 0; i < input_buffers.size(); ++i) {
+      LITERT_RETURN_IF_ERROR(PrintTensorBuffer(input_buffers[i], "Input", i));
+    }
+  }
   ABSL_LOG(INFO) << "Prepare output buffers";
 
   LITERT_ASSIGN_OR_RETURN(auto output_buffers,
