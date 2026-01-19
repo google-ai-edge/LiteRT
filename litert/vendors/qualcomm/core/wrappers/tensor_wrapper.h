@@ -385,28 +385,32 @@ std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {
   return absl::MakeConstSpan(
       static_cast<const T*>(qnn_tensor_.v2.clientBuf.data), num_elements);
 }
-size_t GetTensorBytes(Qnn_Tensor_t& qnn_tensor);
-inline std::string_view GetTensorName(Qnn_Tensor_t& qnn_tensor) {
+
+size_t GetTensorBytes(const Qnn_Tensor_t& qnn_tensor);
+
+inline std::string_view GetTensorName(const Qnn_Tensor_t& qnn_tensor) {
   return qnn_tensor.v1.name;
 }
-inline bool IsMarkedDump(Qnn_Tensor_t& qnn_tensor) {
+
+inline bool IsMarkedDump(const Qnn_Tensor_t& qnn_tensor) {
   return absl::EndsWith(GetTensorName(qnn_tensor), kDumpSuffix) &&
          qnn_tensor.v2.type == QNN_TENSOR_TYPE_APP_READ;
 }
-inline std::pair<float, int32_t> GetScaleOffset(Qnn_Tensor_t& qnn_tensor) {
+
+inline Qnn_ScaleOffset_t GetScaleOffset(const Qnn_Tensor_t& qnn_tensor) {
   if (qnn_tensor.v1.quantizeParams.encodingDefinition ==
           QNN_DEFINITION_DEFINED &&
       qnn_tensor.v1.quantizeParams.quantizationEncoding ==
           QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
-    return std::make_pair(
-        qnn_tensor.v1.quantizeParams.scaleOffsetEncoding.scale,
-        qnn_tensor.v1.quantizeParams.scaleOffsetEncoding.offset);
+    return qnn_tensor.v1.quantizeParams.scaleOffsetEncoding;
   }
-  return {1.0f, 0};
+  return QNN_SCALE_OFFSET_INIT;
 }
-inline bool IsQUInt16(Qnn_Tensor_t& qnn_tensor) {
+
+inline bool IsQUInt16(const Qnn_Tensor_t& qnn_tensor) {
   return qnn_tensor.v1.dataType == QNN_DATATYPE_UFIXED_POINT_16;
 }
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_WRAPPERS_TENSOR_WRAPPER_H_
