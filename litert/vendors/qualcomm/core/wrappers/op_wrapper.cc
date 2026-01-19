@@ -115,15 +115,15 @@ bool OpWrapper::IsOpCode(QnnOpCode op_code) const {
   return op_code_ == op_code;
 }
 
-const qnn::TensorWrapper& OpWrapper::GetInputTensor(size_t i) const {
+const TensorWrapper& OpWrapper::GetInputTensor(size_t i) const {
   return input_tensors_[i].get();
 }
 
-const qnn::TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
+const TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
   return output_tensors_[i].get();
 }
 
-const qnn::TensorParamWrapper& OpWrapper::GetTensorPararm(size_t i) const {
+const TensorParamWrapper& OpWrapper::GetTensorPararm(size_t i) const {
   return tensor_params_[i];
 }
 

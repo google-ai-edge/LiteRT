@@ -51,11 +51,13 @@ class OpWrapper final {
 
   bool IsOpCode(QnnOpCode op_code) const;
 
-  const qnn::TensorWrapper& GetInputTensor(size_t i) const;
+  const TensorWrapper& GetInputTensor(size_t i) const;
 
-  const qnn::TensorWrapper& GetOutputTensor(size_t i) const;
+  const TensorWrapper& GetOutputTensor(size_t i) const;
 
-  const qnn::TensorParamWrapper& GetTensorPararm(size_t i) const;
+  const TensorParamWrapper& GetTensorPararm(size_t i) const;
+
+  const ScalarParamWrapper& GetScalarPararm(size_t i) const;
 
   std::optional<ScalarParamWrapper> GetScalarParam(size_t i) const;
 

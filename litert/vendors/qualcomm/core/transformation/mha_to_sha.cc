@@ -17,6 +17,7 @@
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
@@ -563,68 +564,80 @@ size_t OptimizeMHAFastVlmPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  constexpr size_t add_1_index = -2;
-  constexpr size_t mul_index = 0;
-  constexpr size_t reshape_1_index = 1;
-  constexpr size_t matmul_q_index = 2;
-  constexpr size_t matmul_qk_index = 3;
-  constexpr size_t concat_index = 4;
-  constexpr size_t reshape_2_index = 5;
-  constexpr size_t add_2_index = 6;
-  constexpr size_t reshape_3_index = 7;
-  constexpr size_t softmax_index = 8;
-  constexpr size_t slice_1_index = 9;
-  constexpr size_t slice_2_index = 10;
-  constexpr size_t matmul_v1_index = 11;
-  constexpr size_t matmul_v2_index = 12;
-  constexpr size_t add_3_index = 13;
-  constexpr size_t reshape_4_index = 14;
-  constexpr size_t transpose_2_index = 15;
-  constexpr size_t reshape_5_index = 16;
+  constexpr size_t kMulIndex = 0;
+  constexpr size_t kReshape1Index = 1;
+  constexpr size_t kMatmulQIndex = 2;
+  constexpr size_t kMatmulQkIndex = 3;
+  constexpr size_t kConcatIndex = 4;
+  constexpr size_t kReshape2Index = 5;
+  constexpr size_t kAdd2Index = 6;
+  constexpr size_t kReshape3Index = 7;
+  constexpr size_t kSoftmaxIndex = 8;
+  constexpr size_t kSlice1Index = 9;
+  constexpr size_t kSlice2Index = 10;
+  constexpr size_t kMatmulV1Index = 11;
+  constexpr size_t kMatmulV2Index = 12;
+  constexpr size_t kAdd3Index = 13;
+  constexpr size_t kReshape4Index = 14;
+  constexpr size_t kTransposeIndex = 15;
+  constexpr size_t kReshape5Index = 16;
 
   const auto is_connected =
-      [&ops, &start_index](size_t output_op_index, size_t output_tensor_index,
-                           size_t input_op_index,
+      [&ops, &start_index](int32_t output_op_index, size_t output_tensor_index,
+                           int32_t input_op_index,
                            size_t input_tensor_index) -> bool {
-    return ops[start_index + output_op_index].GetOutputTensor(
-               output_tensor_index) ==
-           ops[start_index + input_op_index].GetInputTensor(input_tensor_index);
+    // Input/output op index might be negative.
+    int32_t out_op_idx = static_cast<int32_t>(start_index) + output_op_index;
+    int32_t in_op_idx = static_cast<int32_t>(start_index) + input_op_index;
+    return out_op_idx >= 0 && in_op_idx >= 0 &&
+           ops[out_op_idx].GetOutputTensor(output_tensor_index) ==
+               ops[in_op_idx].GetInputTensor(input_tensor_index);
   };
-  if (!(is_connected(add_1_index, 0, matmul_qk_index, 1) &&
-        is_connected(mul_index, 0, reshape_1_index, 0) &&
-        is_connected(reshape_1_index, 0, matmul_q_index, 0) &&
-        is_connected(reshape_1_index, 0, matmul_qk_index, 0) &&
-        is_connected(matmul_q_index, 0, concat_index, 0) &&
-        is_connected(matmul_qk_index, 0, concat_index, 1) &&
-        is_connected(concat_index, 0, reshape_2_index, 0) &&
-        is_connected(reshape_2_index, 0, add_2_index, 0) &&
-        is_connected(add_2_index, 0, reshape_3_index, 0) &&
-        is_connected(reshape_3_index, 0, softmax_index, 0) &&
-        is_connected(softmax_index, 0, slice_1_index, 0) &&
-        is_connected(softmax_index, 0, slice_2_index, 0) &&
-        is_connected(slice_1_index, 0, matmul_v1_index, 0) &&
-        is_connected(slice_2_index, 0, matmul_v2_index, 0) &&
-        is_connected(matmul_v1_index, 0, add_3_index, 0) &&
-        is_connected(matmul_v2_index, 0, add_3_index, 1) &&
-        is_connected(add_3_index, 0, reshape_4_index, 0) &&
-        is_connected(reshape_4_index, 0, transpose_2_index, 0) &&
-        is_connected(transpose_2_index, 0, reshape_5_index, 0) &&
-        IsElementWiseMultiply(ops[start_index + mul_index]) &&
-        IsElementWiseAdd(ops[start_index + add_2_index]) &&
-        IsElementWiseAdd(ops[start_index + add_3_index]))) {
+
+  const auto is_add_op_match_in_pattern =
+      [&is_connected](int32_t first_add_index) {
+        return is_connected(first_add_index, 0, kMatmulQkIndex, 1) &&
+               is_connected(kMulIndex, 0, kReshape1Index, 0) &&
+               is_connected(kReshape1Index, 0, kMatmulQIndex, 0) &&
+               is_connected(kReshape1Index, 0, kMatmulQkIndex, 0) &&
+               is_connected(kMatmulQIndex, 0, kConcatIndex, 0) &&
+               is_connected(kMatmulQkIndex, 0, kConcatIndex, 1) &&
+               is_connected(kConcatIndex, 0, kReshape2Index, 0) &&
+               is_connected(kReshape2Index, 0, kAdd2Index, 0) &&
+               is_connected(kAdd2Index, 0, kReshape3Index, 0) &&
+               is_connected(kReshape3Index, 0, kSoftmaxIndex, 0) &&
+               is_connected(kSoftmaxIndex, 0, kSlice1Index, 0) &&
+               is_connected(kSoftmaxIndex, 0, kSlice2Index, 0) &&
+               is_connected(kSlice1Index, 0, kMatmulV1Index, 0) &&
+               is_connected(kSlice2Index, 0, kMatmulV2Index, 0) &&
+               is_connected(kMatmulV1Index, 0, kAdd3Index, 0) &&
+               is_connected(kMatmulV2Index, 0, kAdd3Index, 1) &&
+               is_connected(kAdd3Index, 0, kReshape4Index, 0) &&
+               is_connected(kReshape4Index, 0, kTransposeIndex, 0) &&
+               is_connected(kTransposeIndex, 0, kReshape5Index, 0);
+      };
+
+  int32_t add_1_index = -2;
+  if (is_add_op_match_in_pattern(add_1_index)) {
+    // Origin pattern, add_1_index is matched, do nothing.
+  } else if (is_add_op_match_in_pattern(add_1_index + 1)) {
+    // For new Fast VLM pattern. Tranpose Ops are fused into MatMul Ops first by
+    // OptimizeTransposeMatMul, the add_1_index becomes -1.
+    add_1_index += 1;
+  } else {
     return 1;
   }
   QNN_LOG_INFO("[G2G] MHA optimization (fast vlm Prefill)");
 
   // QKV Unpack
   const auto& matmul_v1_in =
-      ops[start_index + matmul_v1_index].GetInputTensor(1);
+      ops[start_index + kMatmulV1Index].GetInputTensor(1);
   auto unpack_1_dims =
-      ops[start_index + matmul_v1_index].GetInputTensor(1).GetDims();
+      ops[start_index + kMatmulV1Index].GetInputTensor(1).GetDims();
   uint32_t num_kv_heads = unpack_1_dims[1];
-  const auto& matmul_q_in = ops[start_index + matmul_q_index].GetInputTensor(1);
+  const auto& matmul_q_in = ops[start_index + kMatmulQIndex].GetInputTensor(1);
   auto unpack_2_dims = matmul_q_in.GetDims();
-  const auto& mul_in = ops[start_index + mul_index].GetInputTensor(0);
+  const auto& mul_in = ops[start_index + kMulIndex].GetInputTensor(0);
   auto unpack_3_dims = mul_in.GetDims();
   uint32_t num_attn_heads = unpack_3_dims[1];
   uint32_t num_attn_per_kv_heads = num_attn_heads / num_kv_heads;
@@ -633,25 +646,21 @@ size_t OptimizeMHAFastVlmPrefill(
   const auto& add_1_in_2 = ops[start_index + add_1_index].GetInputTensor(1);
   auto unpack_5_dims = add_1_in_2.GetDims();
   const auto& matmul_v2_in =
-      ops[start_index + matmul_v2_index].GetInputTensor(1);
+      ops[start_index + kMatmulV2Index].GetInputTensor(1);
   auto unpack_6_dims = matmul_v2_in.GetDims();
   const auto& pattern_output =
       ops[start_index + pattern_size - 1].GetOutputTensor(0);
   auto mha_output_dims = pattern_output.GetDims();
-  if (!(num_kv_heads == unpack_2_dims[1] &&
-        num_kv_heads == (unpack_3_dims[1] / 7) &&
-        num_kv_heads == unpack_4_dims[1] && num_kv_heads == unpack_5_dims[1] &&
-        num_kv_heads == unpack_6_dims[1] &&
-        num_kv_heads == (mha_output_dims[1] / 64))) {
+
+  if (!(num_kv_heads == unpack_2_dims[1] && num_kv_heads == unpack_4_dims[1] &&
+        num_kv_heads == unpack_5_dims[1] && num_kv_heads == unpack_6_dims[1])) {
     QNN_LOG_WARNING(
-        "[G2G] num_kv heads: %d not match heads in [unpack_2: %d, unpack_3: "
-        "%d, unpack_4: %d, unpack_5: %d, unpack_6: %d, "
-        "mha_output: %d]",
-        num_kv_heads, unpack_2_dims[1], unpack_3_dims[1] / 7, unpack_4_dims[1],
-        unpack_5_dims[1], unpack_6_dims[1], mha_output_dims[1] / 64);
+        "[G2G] num_kv heads: %d does not match heads in [unpack_2: %d, "
+        "unpack_4: %d, unpack_5: %d, unpack_6: %d]",
+        num_kv_heads, unpack_2_dims[1], unpack_4_dims[1], unpack_5_dims[1],
+        unpack_6_dims[1]);
     return 1;
   }
-  QNN_LOG_INFO("[G2G] num_kv_heads match...");
 
   std::vector<OpWrapper> new_ops;
   std::vector<TensorWrapperRef> unpack_1_sha_inputs;
@@ -739,13 +748,13 @@ size_t OptimizeMHAFastVlmPrefill(
           unpack_3_sha_inputs[i * num_attn_per_kv_heads + j],
           unpack_4_sha_inputs[i], unpack_5_sha_inputs[i],
           unpack_6_sha_inputs[i], num_attn_per_kv_heads,
-          ops[start_index + mul_index], ops[start_index + matmul_q_index],
-          ops[start_index + add_1_index], ops[start_index + matmul_qk_index],
-          ops[start_index + concat_index], ops[start_index + add_2_index],
-          ops[start_index + reshape_3_index], ops[start_index + softmax_index],
-          ops[start_index + slice_1_index], ops[start_index + slice_2_index],
-          ops[start_index + matmul_v1_index],
-          ops[start_index + matmul_v2_index], ops[start_index + add_3_index]);
+          ops[start_index + kMulIndex], ops[start_index + kMatmulQIndex],
+          ops[start_index + add_1_index], ops[start_index + kMatmulQkIndex],
+          ops[start_index + kConcatIndex], ops[start_index + kAdd2Index],
+          ops[start_index + kReshape3Index], ops[start_index + kSoftmaxIndex],
+          ops[start_index + kSlice1Index], ops[start_index + kSlice2Index],
+          ops[start_index + kMatmulV1Index], ops[start_index + kMatmulV2Index],
+          ops[start_index + kAdd3Index]);
       sha_outputs.emplace_back(sha_output);
     }
   }
@@ -774,6 +783,7 @@ size_t OptimizeMHAFastVlmPrefill(
                std::make_move_iterator(new_ops.end()));
     ops.erase(ops.begin() + start_index,
               ops.begin() + start_index + pattern_size);
+    QNN_LOG_INFO("[G2G] FastVLM optimization done.");
     return step_size;
   }
   QNN_LOG_WARNING(
@@ -1335,6 +1345,97 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
       return 1;
     }
     new_ops.clear();
+  }
+  return 1;
+}
+
+size_t OptimizeTransposeMatMul(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size) {
+  constexpr size_t kAddIndex = 0;
+  constexpr size_t kTransposeIndex = 1;
+  constexpr size_t kMulIndex = 2;
+  constexpr size_t kReshapeIndex = 3;
+  constexpr size_t kMatmul0Index = 4;
+  constexpr size_t kMatmul1Index = 5;
+  if (!(IS_CONNECTED(kAddIndex, 0, kTransposeIndex, 0)) &&
+      (IS_CONNECTED(kMulIndex, 0, kReshapeIndex, 0)) &&
+      (IS_CONNECTED(kReshapeIndex, 0, kMatmul0Index, 0)) &&
+      (IS_CONNECTED(kReshapeIndex, 0, kMatmul1Index, 0)) &&
+      (IS_CONNECTED(kTransposeIndex, 0, kMatmul1Index, 1))) {
+    return 1;
+  }
+
+  std::vector<OpWrapper> new_ops;
+  auto& transpose = ops[start_index + kTransposeIndex];
+
+  // Check if Transpose Op permute data is [0, 1, 3, 2].
+  auto transpose_perm_data =
+      transpose.GetTensorPararm(0).GetTensor().GetTensorData<uint32_t>();
+  const auto& transpose_perm_dims = transpose.GetTensorPararm(0).GetTensor().GetDims();
+  if (!transpose_perm_data) {
+    QNN_LOG_ERROR(
+        "Failed to get permute date of Transpose Op. Rolling back to the "
+        "original graph.")
+    return 1;
+  }
+  if (transpose_perm_dims.size() != 1 && transpose_perm_dims[0] != 4) {
+    QNN_LOG_ERROR(
+        "The permute tensor dimension of Transpose Op does not match the "
+        "pattern. Rolling back to the original graph.")
+    return 1;
+  }
+  if (transpose_perm_data.value()[2] != 3 ||
+      transpose_perm_data.value()[3] != 2) {
+    QNN_LOG_ERROR(
+        "The permute date of Transpose Op does not match the pattern. Rolling "
+        "back to the original graph.")
+    return 1;
+  }
+
+  auto& matmul_1 = ops[start_index + kMatmul1Index];
+  // Get adj_y in MatMul Op.
+  auto& adj_y_param = matmul_1.GetScalarPararm(1);
+  if (adj_y_param.GetName() != QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1) {
+    return 1;
+  }
+  bool origin_adj_y = adj_y_param.GetValue<bool>();
+
+  auto& transpose_in_0 = transpose.GetInputTensor(0);
+  auto& matmul_in_0 = matmul_1.GetInputTensor(0);
+  auto& matmul_out_0 = matmul_1.GetOutputTensor(0);
+
+  auto new_matmul_1 =
+      BuildMatmulOp(tensor_pool,
+                    {const_cast<::qnn::TensorWrapper&>(matmul_in_0),
+                     const_cast<::qnn::TensorWrapper&>(transpose_in_0)},
+                    {const_cast<::qnn::TensorWrapper&>(matmul_out_0)},
+                    /*adj_x*/ false, /*adj_y*/ !origin_adj_y);
+  std::move(new_matmul_1.begin(), new_matmul_1.end(),
+            std::back_inserter(new_ops));
+
+  const bool is_valid =
+      std::all_of(new_ops.begin(), new_ops.end(),
+                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                    return validate_op_config(op_wrapper);
+                  });
+  if (is_valid) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+    }
+    // Insert the new op at the end.
+    ops.insert(ops.begin() + start_index + pattern_size,
+               std::make_move_iterator(new_ops.begin()),
+               std::make_move_iterator(new_ops.end()));
+    // Erase Transpose and MatMul 1.
+    ops.erase(ops.begin() + start_index + kMatmul1Index);
+    ops.erase(ops.begin() + start_index + kTransposeIndex);
+    QNN_LOG_INFO("[G2G] Fused Transpose - MatMul.");
+  } else {
+    QNN_LOG_ERROR(
+        "[G2G] Validation failed. Rolling back to the original graph.");
   }
   return 1;
 }
