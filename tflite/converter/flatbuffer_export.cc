@@ -571,7 +571,7 @@ class Translator {
   // the serialized output. Returns std::nullopt on unsupported, invalid inputs
   // or internal error.
   static std::optional<std::string> Translate(
-      ModuleOp module, const tflite::ConverterFlags& converter_flags,
+      ModuleOp module, const litert::ConverterFlags& converter_flags,
       const std::unordered_set<std::string>& tags,
       OpOrArgNameMapper* op_or_arg_name_mapper,
       const std::map<std::string, std::string>& metadata,
@@ -582,7 +582,7 @@ class Translator {
  private:
   enum class OpType : char { kTfliteBuiltin, kSelectTf, kCustomOp };
   explicit Translator(ModuleOp module,
-                      const tflite::ConverterFlags& converter_flags,
+                      const litert::ConverterFlags& converter_flags,
                       const std::unordered_set<std::string>& saved_model_tags,
                       OpOrArgNameMapper* op_or_arg_name_mapper,
                       const std::map<std::string, std::string>& metadata,
@@ -3215,12 +3215,12 @@ std::optional<BufferOffset<tflite::Operator>> Translator::BuildOperator(
         failed_flex_ops_[op_name].insert(op_desc);
         tfl::AttachErrorCode(
             inst->emitOpError("is neither a custom op nor a flex op"),
-            tflite::metrics::ConverterErrorData::ERROR_NEEDS_FLEX_OPS);
+            litert::metrics::ConverterErrorData::ERROR_NEEDS_FLEX_OPS);
       } else {
         failed_custom_ops_[op_name].insert(op_desc);
         tfl::AttachErrorCode(
             inst->emitOpError("is neither a custom op nor a flex op"),
-            tflite::metrics::ConverterErrorData::ERROR_NEEDS_CUSTOM_OPS);
+            litert::metrics::ConverterErrorData::ERROR_NEEDS_CUSTOM_OPS);
       }
       return std::nullopt;
     }
@@ -4028,7 +4028,7 @@ bool UpdateEntryFunction(ModuleOp module) {
 }
 
 std::optional<std::string> Translator::Translate(
-    ModuleOp module, const tflite::ConverterFlags& converter_flags,
+    ModuleOp module, const litert::ConverterFlags& converter_flags,
     const std::unordered_set<std::string>& tags,
     OpOrArgNameMapper* op_or_arg_name_mapper,
     const std::map<std::string, std::string>& metadata,

@@ -127,7 +127,7 @@ mlir::LogicalResult IsValidGraph(mlir::ModuleOp module) {
             "support Control Flow V1 ops. Consider using Control Flow V2 ops "
             "instead. See https://www.tensorflow.org/api_docs/python/tf/compat/"
             "v1/enable_control_flow_v2."),
-        tflite::metrics::ConverterErrorData::ERROR_UNSUPPORTED_CONTROL_FLOW_V1);
+        litert::metrics::ConverterErrorData::ERROR_UNSUPPORTED_CONTROL_FLOW_V1);
     return mlir::failure();
   }
   return mlir::success();
@@ -145,7 +145,7 @@ mlir::LogicalResult GraphContainsStatefulPartitionedOp(mlir::ModuleOp module) {
         module.emitError(
             "The Graph contains unsupported `StatefulPartionedCallOp`(s), will "
             "retry with `guarantee_all_funcs_used_once`"),
-        tflite::metrics::ConverterErrorData::
+        litert::metrics::ConverterErrorData::
             ERROR_STATEFUL_PARTITIONED_CALL_IN_FINAL_IR);
     return mlir::failure();
   }
@@ -306,7 +306,7 @@ absl::Status ApplyDynamicRangeQuantizationFromOldQuantizer(
 absl::Status ConvertTFExecutorToStablehloFlatbuffer(
     mlir::PassManager& pass_manager, mlir::ModuleOp module, bool export_to_mlir,
     mlir::StatusScopedDiagnosticHandler& status_handler,
-    const tflite::ConverterFlags& converter_flags,
+    const litert::ConverterFlags& converter_flags,
     const mlir::TFL::PassConfig& pass_config, std::string* result,
     const std::unordered_set<std::string>& saved_model_tags) {
   // Currently, TF quantization only support dynamic range quant, as such
@@ -383,7 +383,7 @@ absl::Status ConvertTFExecutorToStablehloFlatbuffer(
 absl::Status ConvertTFExecutorToTFLOrFlatbuffer(
     std::unique_ptr<mlir::MLIRContext>&& context,
     mlir::OwningOpRef<mlir::ModuleOp> module,
-    tflite::ConverterFlags& converter_flags,
+    litert::ConverterFlags& converter_flags,
     const mlir::TFL::PassConfig& pass_config,
     const std::unordered_set<std::string>& saved_model_tags,
     llvm::StringRef saved_model_dir, std::string* result, bool export_to_mlir,
