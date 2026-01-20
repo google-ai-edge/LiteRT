@@ -36,7 +36,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
-#include "third_party/odml/litert/weight_loader/external_weight_loader_litert.h"
+#include "weight_loader/external_weight_loader_litert.h"
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/cache/compilation_cache.h"
