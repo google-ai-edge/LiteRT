@@ -34,6 +34,7 @@ py_library(
             "model_explorer_integration/**/*",
         ],
     ),
+    strict_deps = False,
     deps = [
         # Dependency placeholder: gfile,
         "//litert/python/mlir/_mlir_libs:model_utils_ext",
