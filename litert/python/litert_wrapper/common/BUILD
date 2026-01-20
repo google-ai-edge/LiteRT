@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+# copybara:uncomment load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -30,3 +32,26 @@ cc_library(
         "@local_xla//third_party/python_runtime:headers",
     ],
 )
+
+# copybara:uncomment_begin(internal test)
+# pybind_extension(
+#     name = "_litert_wrapper_utils_test_helper",
+#     testonly = True,
+#     srcs = ["litert_wrapper_utils_test_helper.cc"],
+#     deps = [
+#         ":litert_wrapper_utils",
+#         "//litert/cc:litert_api_with_dynamic_runtime",
+#         "@pybind11",
+#         "@local_xla//third_party/python_runtime:headers",
+#     ],
+# )
+#
+# py_strict_test(
+#     name = "litert_wrapper_utils_test",
+#     srcs = ["litert_wrapper_utils_test.py"],
+#     deps = [
+#         ":_litert_wrapper_utils_test_helper",
+#         "@com_google_protobuf//:protobuf_python:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
+#     ],
+# )
+# copybara:uncomment_end(internal test)
