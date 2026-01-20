@@ -1,6 +1,7 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library", "py_strict_test")
+load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_library.bzl", "py_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:special_rules.bzl", "tflite_portable_test_suite", "tflite_schema_utils_friends")
 
@@ -39,7 +40,7 @@ py_strict_binary(
     deps = [":upgrade_schema_main_lib"],
 )
 
-py_strict_library(
+py_library(
     name = "upgrade_schema_main_lib",
     srcs = [
         "upgrade_schema.py",
@@ -51,6 +52,7 @@ py_strict_library(
         "//tflite/converter/schema:schema_v3.fbs",
         "@flatbuffers//:flatc",
     ],
+    strict_deps = True,
     deps = [
         "@org_tensorflow//tensorflow:tensorflow_py",
         "@org_tensorflow//tensorflow/python/platform:resource_loader",
