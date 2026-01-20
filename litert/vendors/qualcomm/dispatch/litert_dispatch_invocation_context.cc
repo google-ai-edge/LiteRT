@@ -97,35 +97,36 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
   // Partition outputs_: real first, dumped after.
   auto mid =
       std::stable_partition(outputs_.begin(), outputs_.end(),
-                            [](auto& t) { return !::qnn::IsMarkedDump(*t); });
+                            [](auto& t) { return !t.IsMarkedDump(); });
   // Keep output_buffer_handles_ sized to the real outputs.
   output_buffer_handles_.resize(
       static_cast<size_t>(std::distance(outputs_.begin(), mid)));
   // Allocate buffer on the heap for tensor dump features.
   const size_t total_bytes = std::accumulate(
-      mid, outputs_.end(), size_t{0},
-      [](size_t cnt, auto ptr) { return cnt + ::qnn::GetTensorBytes(*ptr); });
+      mid, outputs_.end(), size_t{0}, [](size_t cnt, const auto& tensor) {
+        return cnt + tensor.GetTensorBytes();
+      });
   dump_buffer_.resize(total_bytes);
   size_t byte_offset = 0;
   for (auto it = mid; it != outputs_.end(); ++it) {
-    (*it)->v1.clientBuf.dataSize = ::qnn::GetTensorBytes(**it);
-    (*it)->v1.clientBuf.data = dump_buffer_.data() + byte_offset;
-    byte_offset += (*it)->v1.clientBuf.dataSize;
+    uint32_t num_bytes = it->GetTensorBytes();
+    it->SetDataSize(num_bytes);
+    it->SetData(dump_buffer_.data() + byte_offset);
+    byte_offset += num_bytes;
   }
   if (byte_offset != total_bytes) {
     LITERT_LOG(LITERT_ERROR,
                "Dump buffer size may be too large or memory is insufficient.")
-    std::terminate();  // Just for debug purpose (will be removed :))
   }
   // Check if we need online uint16 conversion.
   for (const auto& tensor : inputs_) {
-    if (::qnn::IsQUInt16(*tensor)) {
+    if (tensor.IsQUInt16()) {
       is_uint16_ = true;
       return;
     }
   }
   for (const auto& tensor : outputs_) {
-    if (::qnn::IsQUInt16(*tensor)) {
+    if (tensor.IsQUInt16()) {
       is_uint16_ = true;
       return;
     }
@@ -262,7 +263,7 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
   auto& tensor = inputs_[graph_input_index];
   input_buffer_handles_[graph_input_index] = tensor_buffer_handle;
-  return AttachBuffer(*tensor, tensor_buffer_handle);
+  return AttachBuffer(*tensor.Get(), tensor_buffer_handle);
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
@@ -274,14 +275,13 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 
   auto& tensor = outputs_[graph_output_index];
   output_buffer_handles_[graph_output_index] = tensor_buffer_handle;
-  return AttachBuffer(*tensor, tensor_buffer_handle);
+  return AttachBuffer(*tensor.Get(), tensor_buffer_handle);
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto& tensor = inputs_[graph_input_index];
-  LITERT_RETURN_IF_ERROR(
-      DetachBuffer(*tensor, tensor_buffer_handle));
+  LITERT_RETURN_IF_ERROR(DetachBuffer(*tensor.Get(), tensor_buffer_handle));
   input_buffer_handles_[graph_input_index] = -1;
   return {};
 }
@@ -289,7 +289,7 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
 Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto& tensor = outputs_[graph_output_index];
-  LITERT_RETURN_IF_ERROR(DetachBuffer(*tensor, tensor_buffer_handle));
+  LITERT_RETURN_IF_ERROR(DetachBuffer(*tensor.Get(), tensor_buffer_handle));
   output_buffer_handles_[graph_output_index] = -1;
   return {};
 }
@@ -334,10 +334,9 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   if (is_uint16_) {
-    for (int i = 0; i < inputs_.size() && is_uint16_; ++i) {
-      if (inputs_[i]->v1.dataType == QNN_DATATYPE_UFIXED_POINT_16) {
-        ConvertToUint16(input_buffer_handles_[i],
-                        ::qnn::GetTensorBytes(*inputs_[i]));
+    for (int i = 0; i < inputs_.size(); ++i) {
+      if (inputs_[i].IsQUInt16()) {
+        ConvertToUint16(input_buffer_handles_[i], inputs_[i].GetTensorBytes());
       }
     }
   }
@@ -345,12 +344,12 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   const size_t num_ins = inputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, inputs, num_ins, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_ins; ++i) {
-    *(inputs + i) = *inputs_[i];
+    *(inputs + i) = *inputs_[i].Get();
   }
   const size_t num_outs = outputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, outputs, num_outs, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_outs; ++i) {
-    *(outputs + i) = *outputs_[i];
+    *(outputs + i) = *outputs_[i].Get();
   }
 
   if (auto status = qnn_manager_.Api()->graphExecute(
@@ -367,9 +366,8 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
 
   if (is_uint16_) {
     for (int i = 0; i < outputs_.size(); ++i) {
-      if (outputs_[i]->v1.dataType == QNN_DATATYPE_UFIXED_POINT_16) {
-        ConvertToInt16(output_buffer_handles_[i],
-                       ::qnn::GetTensorBytes(*outputs_[i]));
+      if (outputs_[i].IsQUInt16()) {
+        ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetTensorBytes());
       }
     }
   }
@@ -378,10 +376,10 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   const char* kDumpFolder = "/data/local/tmp/dumped_tensors/";
   for (auto it = outputs_.begin() + output_buffer_handles_.size();
        it != outputs_.end(); ++it) {
-    auto status = WriteTensorTo(kDumpFolder, **it);
+    auto status = WriteTensorTo(kDumpFolder, *it);
     if (!status) {
       LITERT_LOG(LITERT_ERROR, "Failed to dump tensor: %s",
-                 ::qnn::GetTensorName(**it));
+                 it->GetTensorName().data());
     }
   }
   return {};
@@ -499,22 +497,23 @@ Expected<void> LiteRtDispatchInvocationContextT::Profile() {
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
-    const std::filesystem::path& output_folder, Qnn_Tensor_t& tensor) {
+    const std::filesystem::path& output_folder,
+    const ::qnn::TensorSpan& tensor) {
   qnn::CreateDirectoryRecursive(output_folder);
   // TODO (jiunkaiy): Change to absl strcat.
   std::filesystem::path output_path =
-      output_folder / (std::string(::qnn::GetTensorName(tensor)) + ".raw");
+      output_folder / (std::string(tensor.GetTensorName()) + ".raw");
   std::ofstream fout(output_path, std::ios::binary);
   if (fout.fail()) {
     LITERT_LOG(LITERT_ERROR, "Failed to write dumped tensor");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure);
   }
-  fout.write(static_cast<const char*>(tensor.v2.clientBuf.data),
-             tensor.v2.clientBuf.dataSize);
+  fout.write(static_cast<const char*>(tensor.Get()->v1.clientBuf.data),
+             tensor.Get()->v1.clientBuf.dataSize);
   std::filesystem::path quant_param_path =
-      output_folder / (std::string(::qnn::GetTensorName(tensor)) + ".csv");
+      output_folder / (std::string(tensor.GetTensorName()) + ".csv");
   std::ofstream quant_file(quant_param_path);
-  auto [scale, offset] = ::qnn::GetScaleOffset(tensor);
+  auto [scale, offset] = tensor.GetScaleOffset();
   std::stringstream quant_ss;
   quant_ss << scale << "," << -offset << "\n";
   quant_file << quant_ss.str();
