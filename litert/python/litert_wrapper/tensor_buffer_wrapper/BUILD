@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load(
-    "@org_tensorflow//tensorflow:strict.default.bzl",
-    "py_strict_library",
-    # copybara:uncomment "py_strict_test",
-)
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+
+# copybara:uncomment load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -65,11 +63,12 @@ pybind_extension(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "tensor_buffer",
     srcs = [
         "tensor_buffer.py",
     ],
+    strict_deps = True,
     visibility = ["//visibility:public"],
     deps = [
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
