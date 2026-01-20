@@ -315,6 +315,16 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_runtime_builtin_runtimecapi",
+    srcs = ["litert_runtime_builtin.cc"],
+    hdrs = ["litert_runtime_builtin.h"],
+    deps = [
+        ":litert_runtime_c_api",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+    ],
+)
+
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",
