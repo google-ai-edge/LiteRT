@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+#include "litert/vendors/qualcomm/core/wrappers/tensor_span.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -179,9 +180,10 @@ TEST(TensorWrapperTest, DumpTensorTest) {
                                QNN_DATATYPE_UNDEFINED,
                                QuantizeParamsWrapperVariant(),
                                {}};
-  EXPECT_FALSE(::qnn::IsMarkedDump(tensor_wrapper.GetQnnTensor()));
+  TensorSpan tensor(&tensor_wrapper.GetQnnTensor());
+  EXPECT_FALSE(tensor.IsMarkedDump());
   tensor_wrapper.MarkDump();
-  EXPECT_TRUE(::qnn::IsMarkedDump(tensor_wrapper.GetQnnTensor()));
+  EXPECT_TRUE(tensor.IsMarkedDump());
 }
 
 TEST(TensorWrapperTest, GetTensorDataNonStaticTest) {

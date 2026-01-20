@@ -137,7 +137,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_span",
         "@qairt//:qnn_lib_headers",
     ],
 )

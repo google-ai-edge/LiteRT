@@ -35,6 +35,7 @@ inline bool IsStrEq(const char* input, const char* golden) {
 
 }  // namespace miscs
 
+constexpr const char* kDumpSuffix = "_dump";
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
 constexpr uint32_t kQuantBitWidth2 = 2;
@@ -104,5 +105,45 @@ inline const QNN_INTERFACE_VER_TYPE* ResolveQnnApi(
 #endif  // !defined(_WIN32)
 
 std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name);
+
+inline std::size_t GetDataTypeSize(Qnn_DataType_t data_type) {
+  std::size_t bytes = 0;
+  switch (data_type) {
+    case QNN_DATATYPE_INT_8:
+    case QNN_DATATYPE_UINT_8:
+    case QNN_DATATYPE_SFIXED_POINT_8:
+    case QNN_DATATYPE_UFIXED_POINT_8:
+    case QNN_DATATYPE_BOOL_8:
+      bytes = 1;
+      break;
+    case QNN_DATATYPE_INT_16:
+    case QNN_DATATYPE_UINT_16:
+    case QNN_DATATYPE_FLOAT_16:
+    case QNN_DATATYPE_SFIXED_POINT_16:
+    case QNN_DATATYPE_UFIXED_POINT_16:
+      bytes = 2;
+      break;
+    case QNN_DATATYPE_INT_32:
+    case QNN_DATATYPE_UINT_32:
+    case QNN_DATATYPE_FLOAT_32:
+    case QNN_DATATYPE_SFIXED_POINT_32:
+    case QNN_DATATYPE_UFIXED_POINT_32:
+      bytes = 4;
+      break;
+    case QNN_DATATYPE_INT_64:
+    case QNN_DATATYPE_UINT_64:
+    case QNN_DATATYPE_FLOAT_64:
+      bytes = 8;
+      break;
+    case QNN_DATATYPE_UNDEFINED:
+    case QNN_DATATYPE_SFIXED_POINT_4:
+    case QNN_DATATYPE_UFIXED_POINT_4:
+    default:
+      bytes = 0;
+      break;
+  }
+  return bytes;
+}
+
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_

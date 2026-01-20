@@ -33,6 +33,17 @@ cc_library(
 )
 
 cc_library(
+    name = "tensor_span",
+    srcs = ["tensor_span.cc"],
+    hdrs = ["tensor_span.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_absl//absl/strings",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "param_wrapper",
     srcs = ["param_wrapper.cc"],
     hdrs = ["param_wrapper.h"],

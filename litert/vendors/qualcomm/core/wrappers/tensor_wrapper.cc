@@ -44,45 +44,6 @@ bool IsNBitQuant(const QuantizeParamsWrapperVariant& quantize_params,
 }
 }  // namespace
 
-std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
-  std::size_t bytes = 0;
-  switch (data_type) {
-    case QNN_DATATYPE_INT_8:
-    case QNN_DATATYPE_UINT_8:
-    case QNN_DATATYPE_SFIXED_POINT_8:
-    case QNN_DATATYPE_UFIXED_POINT_8:
-    case QNN_DATATYPE_BOOL_8:
-      bytes = 1;
-      break;
-    case QNN_DATATYPE_INT_16:
-    case QNN_DATATYPE_UINT_16:
-    case QNN_DATATYPE_FLOAT_16:
-    case QNN_DATATYPE_SFIXED_POINT_16:
-    case QNN_DATATYPE_UFIXED_POINT_16:
-      bytes = 2;
-      break;
-    case QNN_DATATYPE_INT_32:
-    case QNN_DATATYPE_UINT_32:
-    case QNN_DATATYPE_FLOAT_32:
-    case QNN_DATATYPE_SFIXED_POINT_32:
-    case QNN_DATATYPE_UFIXED_POINT_32:
-      bytes = 4;
-      break;
-    case QNN_DATATYPE_INT_64:
-    case QNN_DATATYPE_UINT_64:
-    case QNN_DATATYPE_FLOAT_64:
-      bytes = 8;
-      break;
-    case QNN_DATATYPE_UNDEFINED:
-    case QNN_DATATYPE_SFIXED_POINT_4:
-    case QNN_DATATYPE_UFIXED_POINT_4:
-    default:
-      bytes = 0;
-      break;
-  }
-  return bytes;
-}
-
 TensorWrapper::TensorWrapper() = default;
 
 // Updates quant params from the active variant. Requires v1 layout or
@@ -320,17 +281,6 @@ void TensorWrapper::ConvertQint16ToQuint16() {
   QNN_LOG_DEBUG(
       "QNN does not fully support QInt16 now, converting to QUint16 for better "
       "compatibility.");
-}
-
-std::uint32_t GetTensorNumElements(const Qnn_Tensor_t& qnn_tensor) {
-  return std::accumulate(qnn_tensor.v1.dimensions,
-                         qnn_tensor.v1.dimensions + qnn_tensor.v1.rank, 1,
-                         std::multiplies<>());
-}
-
-size_t GetTensorBytes(const Qnn_Tensor_t& qnn_tensor) {
-  return GetDataTypeSize(qnn_tensor.v2.dataType) *
-         GetTensorNumElements(qnn_tensor);
 }
 
 }  // namespace qnn

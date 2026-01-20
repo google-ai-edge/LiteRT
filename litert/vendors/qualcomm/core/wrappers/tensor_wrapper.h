@@ -21,7 +21,6 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
-static const char* kDumpSuffix = "_dump";
 
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>
@@ -53,8 +52,6 @@ inline constexpr Qnn_DataType_t GetQnnDataType(const bool is_quant) {
   }
   return QNN_DATATYPE_UNDEFINED;
 }
-
-std::size_t GetDataTypeSize(const Qnn_DataType_t data_type);
 
 template <typename T>
 void TransposeFromOHWIToHWIO(absl::Span<const T> weight_data,
@@ -384,31 +381,6 @@ std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {
 
   return absl::MakeConstSpan(
       static_cast<const T*>(qnn_tensor_.v2.clientBuf.data), num_elements);
-}
-
-size_t GetTensorBytes(const Qnn_Tensor_t& qnn_tensor);
-
-inline std::string_view GetTensorName(const Qnn_Tensor_t& qnn_tensor) {
-  return qnn_tensor.v1.name;
-}
-
-inline bool IsMarkedDump(const Qnn_Tensor_t& qnn_tensor) {
-  return absl::EndsWith(GetTensorName(qnn_tensor), kDumpSuffix) &&
-         qnn_tensor.v2.type == QNN_TENSOR_TYPE_APP_READ;
-}
-
-inline Qnn_ScaleOffset_t GetScaleOffset(const Qnn_Tensor_t& qnn_tensor) {
-  if (qnn_tensor.v1.quantizeParams.encodingDefinition ==
-          QNN_DEFINITION_DEFINED &&
-      qnn_tensor.v1.quantizeParams.quantizationEncoding ==
-          QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
-    return qnn_tensor.v1.quantizeParams.scaleOffsetEncoding;
-  }
-  return QNN_SCALE_OFFSET_INIT;
-}
-
-inline bool IsQUInt16(const Qnn_Tensor_t& qnn_tensor) {
-  return qnn_tensor.v1.dataType == QNN_DATATYPE_UFIXED_POINT_16;
 }
 
 }  // namespace qnn
