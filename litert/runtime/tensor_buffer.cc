@@ -1095,6 +1095,12 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
   }
 }
 
+void* LiteRtTensorBufferT::GetTensorBufferRegistry() {
+  void* registry = nullptr;
+  LiteRtGetTensorBufferRegistry(env_, &registry);
+  return registry;
+}
+
 Expected<void> LiteRtTensorBufferT::Unlock() {
   LITERT_RETURN_IF_ERROR(is_locked_ == true,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,

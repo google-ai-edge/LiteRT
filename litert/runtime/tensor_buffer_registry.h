@@ -32,6 +32,7 @@ struct CustomTensorBufferHandlers {
   // Optional function to import an existing buffer.
   // TODO(b/446717438): Merge this with the create function.
   ::ImportCustomTensorBuffer import_func;
+  ::GetCustomTensorBufferHandle get_handle_func;
 };
 
 class TensorBufferRegistry {

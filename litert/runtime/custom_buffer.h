@@ -46,6 +46,7 @@ class CustomBuffer {
   ~CustomBuffer();
 
   HwMemoryHandle hw_buffer_handle() { return hw_memory_info_->memory_handle; }
+  HwMemoryInfoPtr hw_memory_info() { return hw_memory_info_; }
   // Allocates a CPU memory and conducts a copy from the Custom buffer to the
   // CPU memory.
   Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
