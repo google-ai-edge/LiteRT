@@ -86,7 +86,7 @@
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
-#include "third_party/odml/litert/weight_loader/external_weight_loader_litert.h"
+#include "weight_loader/external_weight_loader_litert.h"
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"

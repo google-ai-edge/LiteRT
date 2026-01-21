@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -49,7 +50,7 @@ bool TheDispatchApiConfigIsInitialized = false;
   } while (0)
 
 // Optional DarwiNN-specific options provided by the application.
-std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
+absl_nullable std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
 
 // Google Tensor Dispatch API build ID.
 char TheBuildId[256];
@@ -85,8 +86,11 @@ LiteRtStatus InitializeDispatchApiConfig(
            LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
            LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
 
-  TheCapabilities =
-      kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
+  TheCapabilities = kLiteRtDispatchCapabilitiesBasic;
+  if (GoogleTensorSouthBoundFeatureSupported(
+          GoogleTensorSouthBoundFeature::kRobustFences)) {
+    TheCapabilities |= kLiteRtDispatchCapabilitiesAsync;
+  }
   if (GoogleTensorSouthBoundFeatureSupported(
           GoogleTensorSouthBoundFeature::kIndexedNodeBinding)) {
     TheCapabilities |= kLiteRtDispatchCapabilitiesGraph;
@@ -111,12 +115,12 @@ LiteRtStatus InitializeDispatchApiConfig(
   return kLiteRtStatusOk;
 }
 
-DarwinnRuntimeOptions* GetTheDarwinnOptions() {
+DarwinnRuntimeOptions* absl_nullable GetTheDarwinnOptions() {
   CHECK_DISPATCH_API_CONFIG_INIT();
   return TheDarwinnOptions.get();
 }
 
-const char* GetTheBuildId() {
+const char* absl_nonnull GetTheBuildId() {
   CHECK_DISPATCH_API_CONFIG_INIT();
   return TheBuildId;
 }
