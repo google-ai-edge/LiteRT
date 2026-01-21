@@ -54,11 +54,15 @@ class CompiledModel:
   def from_file(
       cls,
       model_path: str,
+      hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
   ) -> "CompiledModel":
     """Creates a CompiledModel from a model file.
 
     Args:
       model_path: Path to the model file.
+      hardware_accel: Hardware acceleration option. Use constants from
+        HardwareAccelerator class (e.g., HardwareAccelerator.CPU,
+        HardwareAccelerator.GPU). Defaults to CPU.
 
     Returns:
       A new CompiledModel instance.
@@ -67,7 +71,7 @@ class CompiledModel:
         model_path,
         compiler_plugin_path="",
         dispatch_library_path="",
-        hardware_accel=HardwareAccelerator.CPU,
+        hardware_accel=hardware_accel,
     )
     return cls(ptr)
 
@@ -75,11 +79,15 @@ class CompiledModel:
   def from_buffer(
       cls,
       model_data: bytes,
+      hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
   ) -> "CompiledModel":
     """Creates a CompiledModel from an in-memory buffer.
 
     Args:
       model_data: Model data as bytes.
+      hardware_accel: Hardware acceleration option. Use constants from
+        HardwareAccelerator class (e.g., HardwareAccelerator.CPU,
+        HardwareAccelerator.GPU). Defaults to CPU.
 
     Returns:
       A new CompiledModel instance.
@@ -88,7 +96,7 @@ class CompiledModel:
         model_data,
         compiler_plugin_path="",
         dispatch_library_path="",
-        hardware_accel=HardwareAccelerator.CPU,
+        hardware_accel=hardware_accel,
     )
     return cls(ptr)
 
