@@ -9,6 +9,7 @@ package(
     # copybara:uncomment_begin(google-only)
     # default_visibility = [
     # "//platforms/darwinn/compiler:__subpackages__",
+    # "//third_party/odml/litert:__subpackages__",
     # "@org_tensorflow//tensorflow:__subpackages__",
     # ],
     # copybara:uncomment_end_and_comment_begin
