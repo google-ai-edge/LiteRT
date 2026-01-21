@@ -19,35 +19,35 @@
 #include <string>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 class LiteRtDispatchMetricsT {
  public:
-  // Construct a LiteRtDispatchMetricsT object using C-style arrays and strings.
-  // `metric_names` is an array of C-style strings representing metric names.
-  // `metric_values` is an array of int64_t values representing metric values.
-  // Both `metric_names` and `metric_values` have `num_metrics` elements.
-  //
-  // NOTE: The values in the arrays are copied into the LiteRtDispatchMetricsT.
-  LiteRtDispatchMetricsT(int num_metrics, const char** metric_names,
-                         const int64_t* metric_values)
-      : metric_names_(metric_names, metric_names + num_metrics),
-        metric_values_(metric_values, metric_values + num_metrics) {}
+  explicit LiteRtDispatchMetricsT(const ThrInvocationMetrics& thr_metrics)
+      : metric_names_(thr_metrics.metric_keys,
+                      thr_metrics.metric_keys + thr_metrics.num_metrics),
+        metric_values_(thr_metrics.metric_values,
+                       thr_metrics.metric_values + thr_metrics.num_metrics) {}
+
   int GetNumMetrics() const { return metric_names_.size(); }
-  LiteRtMetric GetMetric(int metric_index) const {
+
+  LiteRtStatus GetMetric(int metric_index, LiteRtMetric& metric) const {
     if (metric_index < 0 || metric_index >= GetNumMetrics()) {
-      return LiteRtMetric{.name = "invalid_metric",
-                          .value = LiteRtAny{.type = kLiteRtAnyTypeNone}};
+      LITERT_LOG(LITERT_ERROR, "Metric index %d is out of bounds [0, %d)",
+                 metric_index, GetNumMetrics());
+      return kLiteRtStatusErrorInvalidArgument;
     }
-    return LiteRtMetric{
-        .name = metric_names_[metric_index].c_str(),
-        .value =
-            LiteRtAny{
-                .type = kLiteRtAnyTypeInt,
-                .int_value = metric_values_[metric_index],
-            },
-    };
+
+    metric.name = metric_names_[metric_index].c_str();
+    metric.value.type = kLiteRtAnyTypeInt;
+    metric.value.int_value = metric_values_[metric_index];
+
+    return kLiteRtStatusOk;
   }
 
  private:
