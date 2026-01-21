@@ -677,11 +677,11 @@ litert_bin(
 )
 
 cc_binary(
-    name = "benchmark_model_cl_gl",
+    name = "benchmark_model_allgpu",
     deps = [
         ":benchmark_model_main",
         # copybara:uncomment_begin(google-only)
-        # "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_allgpu_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
     ],
 )
@@ -731,7 +731,7 @@ cc_library(
         "//tflite/tools/benchmark:benchmark_params",
         "//tflite/tools/strip_buffers:stripping_lib",
         # copybara:uncomment_begin(google-only)
-        # "//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_allgpu_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
     ],
 )

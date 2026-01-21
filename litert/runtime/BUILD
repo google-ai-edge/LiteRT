@@ -29,7 +29,11 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
-    default_visibility = ["//litert:litert_internal_users"],
+    # copybara:uncomment_begin(oss litert)
+    # default_visibility = ["//litert:litert_internal_users"],
+    # copybara:uncomment_end_and_comment_begin
+    default_visibility = ["//visibility:public"],
+    # copybara:comment_end
 )
 
 cc_library(
