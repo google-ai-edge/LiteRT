@@ -116,7 +116,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     gpu_options.EnableBenchmarkMode(/*enabled=*/true);
     if (gpu_backend == "webgpu") {
       gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
-    } else if (gpu_backend == "opengl") {
+    } else if (gpu_backend == "opengl" || gpu_backend == "gl") {
       gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
     }
     if (allow_fp16 == false) {
