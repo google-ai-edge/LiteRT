@@ -26,8 +26,10 @@
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
@@ -36,15 +38,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
-
-#if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#else
-typedef struct _cl_mem* cl_mem;
-#endif
-#if LITERT_HAS_WEBGPU_SUPPORT
-typedef struct WGPUBufferImpl* WGPUBuffer;
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 /// @file
 /// @brief Defines C++ wrappers for LiteRT tensor buffers and related utilities.
@@ -102,7 +95,7 @@ class TensorBuffer
 
   static Expected<TensorBuffer> CreateFromClBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
-      TensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
+      TensorBufferType buffer_type, LiteRtClMem cl_memory, size_t size_bytes);
 
   static Expected<TensorBuffer> CreateFromGlBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
@@ -116,7 +109,7 @@ class TensorBuffer
 #if LITERT_HAS_WEBGPU_SUPPORT
   static Expected<TensorBuffer> CreateFromWebGpuBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
-      TensorBufferType buffer_type, WGPUBuffer buffer, size_t size_bytes);
+      TensorBufferType buffer_type, LiteRtWGPUBuffer buffer, size_t size_bytes);
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
@@ -161,9 +154,9 @@ class TensorBuffer
 #endif
   }
 
-  Expected<cl_mem> GetOpenClMemory() const {
+  Expected<LiteRtClMem> GetOpenClMemory() const {
 #if LITERT_HAS_OPENCL_SUPPORT
-    cl_mem cl_mem;
+    LiteRtClMem cl_mem;
     LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferOpenClMemory(Get(), &cl_mem));
     return cl_mem;
 #else

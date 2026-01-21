@@ -934,8 +934,10 @@ cc_library(
         "//litert/c:litert_event",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",

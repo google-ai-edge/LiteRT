@@ -19,8 +19,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -108,7 +110,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
 
 Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
     const Environment& env, const RankedTensorType& tensor_type,
-    TensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes) {
+    TensorBufferType buffer_type, LiteRtClMem cl_memory, size_t size_bytes) {
 #if LITERT_HAS_OPENCL_SUPPORT
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
@@ -149,7 +151,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
 #if LITERT_HAS_WEBGPU_SUPPORT
 Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuBuffer(
     const Environment& env, const RankedTensorType& tensor_type,
-    TensorBufferType buffer_type, WGPUBuffer buffer, size_t size_bytes) {
+    TensorBufferType buffer_type, LiteRtWGPUBuffer buffer, size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromWebGpuBuffer(

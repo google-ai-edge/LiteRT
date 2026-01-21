@@ -32,7 +32,9 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
@@ -46,10 +48,6 @@
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gl_texture.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-
-#if LITERT_HAS_WEBGPU_SUPPORT
-typedef struct WGPUBufferImpl* WGPUBuffer;
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 namespace litert::internal {
 class GpuEnvironment;
@@ -118,14 +116,14 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
   static litert::Expected<Ptr> CreateFromOpenClMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, cl_mem buffer,
+      LiteRtTensorBufferType buffer_type, LiteRtClMem buffer,
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
   static litert::Expected<Ptr> CreateFromWebGpuBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, WGPUBuffer buffer,
+      LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer buffer,
       size_t wgpu_buffer_size);
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 

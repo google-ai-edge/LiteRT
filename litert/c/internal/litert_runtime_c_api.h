@@ -29,19 +29,10 @@
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-
-#if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#else
-typedef struct _cl_mem* cl_mem;
-typedef struct _cl_event* cl_event;
-#endif
-
-#if LITERT_HAS_WEBGPU_SUPPORT
-typedef struct WGPUBufferImpl* WGPUBuffer;
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#include "litert/c/litert_webgpu_types.h"
 
 extern "C" {
 
@@ -461,12 +452,12 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtStatus (*litert_create_tensor_buffer_from_opencl_memory)(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-      LiteRtTensorBufferType buffer_type, cl_mem cl_mem_addr,
+      LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
       LiteRtTensorBuffer* buffer);
   // litert_tensor_buffer.h: LiteRtGetTensorBufferOpenClMemory
   LiteRtStatus (*litert_get_tensor_buffer_opencl_memory)(
-      LiteRtTensorBuffer tensor_buffer, cl_mem* cl_mem_addr);
+      LiteRtTensorBuffer tensor_buffer, LiteRtClMem* cl_mem_addr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   // litert_tensor_buffer.h: LiteRtGetTensorBufferCustomTensorBufferHandle
   LiteRtStatus (*litert_get_tensor_buffer_custom_tensor_buffer_handle)(
@@ -494,7 +485,7 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtStatus (*litert_create_tensor_buffer_from_web_gpu_buffer)(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-      LiteRtTensorBufferType buffer_type, WGPUBuffer wgpu_buffer,
+      LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
       size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
       LiteRtTensorBuffer* tensor_buffer);
   // litert_tensor_buffer.h: LiteRtGetTensorBufferWebGpuBuffer
@@ -575,7 +566,7 @@ typedef struct LiteRtRuntimeCApiStruct {
                                                          LiteRtEvent* event);
   // litert_event.h: LiteRtCreateEventFromOpenClEvent
   LiteRtStatus (*litert_create_event_from_opencl_event)(LiteRtEnvironment env,
-                                                        cl_event cl_event,
+                                                        LiteRtClEvent cl_event,
                                                         LiteRtEvent* event);
   // litert_event.h: LiteRtCreateEventFromEglSyncFence
   LiteRtStatus (*litert_create_event_from_egl_sync_fence)(LiteRtEnvironment env,
@@ -596,7 +587,7 @@ typedef struct LiteRtRuntimeCApiStruct {
                                                  int* sync_fence_fd);
   // litert_event.h: LiteRtGetEventOpenClEvent
   LiteRtStatus (*litert_get_event_opencl_event)(LiteRtEvent event,
-                                                cl_event* cl_event);
+                                                LiteRtClEvent* cl_event);
   // litert_event.h: LiteRtGetEventEglSync
   LiteRtStatus (*litert_get_event_egl_sync)(LiteRtEvent event,
                                             EGLSyncKHR* egl_sync);

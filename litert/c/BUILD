@@ -337,6 +337,17 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_opencl_types",
+    hdrs = ["litert_opencl_types.h"],
+    deps = ["@opencl_headers"],
+)
+
+cc_library(
+    name = "litert_webgpu_types",
+    hdrs = ["litert_webgpu_types.h"],
+)
+
+cc_library(
     name = "litert_tensor_buffer",
     srcs = [
         "litert_tensor_buffer.cc",
@@ -354,7 +365,9 @@ cc_library(
         ":litert_event",
         ":litert_gl_types",
         ":litert_model_types",
+        ":litert_opencl_types",
         ":litert_tensor_buffer_types",
+        ":litert_webgpu_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -836,6 +849,8 @@ cc_library(
     }),
     linkstatic = 1,
     deps = [
+        ":litert_opencl_types",
+        ":litert_webgpu_types",
         # only depend on headers
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
