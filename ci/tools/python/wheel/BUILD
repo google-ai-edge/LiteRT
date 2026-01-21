@@ -70,9 +70,8 @@ ALL_PY_SRC_MODULES = select({
     ],
     "//conditions:default": [],
 }) + [
-    # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
-    # "//litert/python/mlir",
-    # "//litert/python/tools/model_utils",
+    "//litert/python/mlir",
+    "//litert/python/tools/model_utils",
     # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
     "//litert/python/internal:litertlm_core",
     "//litert/python/internal:litertlm_header_schema_py",
@@ -102,8 +101,7 @@ py_wheel(
         "//litert/python:pywrap_litert_binaries",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
-        # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
-        # "//litert/python/mlir/_mlir_libs:libLiteRTCompilerMLIR.so",
+        "//litert/python/mlir/_mlir_libs:libLiteRTCompilerMLIR.so",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
         "//tflite/python/metrics:metrics_interface",
