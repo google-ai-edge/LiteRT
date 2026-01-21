@@ -147,6 +147,7 @@ package_group(
         "//litert/python/...",
         "//ci/tools/...",
         # copybara:uncomment "//third_party/py/ai_edge_torch/aot/...",
+        # copybara:uncomment "//third_party/py/litert_torch/aot/...",
     ],
 )
 
