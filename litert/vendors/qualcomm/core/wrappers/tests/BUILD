@@ -38,6 +38,7 @@ cc_test(
     deps = [
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_span",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
