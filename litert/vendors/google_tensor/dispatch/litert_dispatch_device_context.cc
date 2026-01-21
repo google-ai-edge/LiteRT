@@ -17,15 +17,15 @@
 #include <inttypes.h>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
-#include <string>
 #include <utility>
 
 #if __ANDROID__
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
 
+#include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -37,36 +37,30 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
-#include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/sb_dispatch_annotations.h"
 
 namespace gt = litert::google_tensor;
 
-void LiteRtDispatchDeviceContextT::ThrContextDeleter(ThrContext* thr_context) {
-  GT_LOG_IF_SB_ERROR(thrContextDelete(thr_context),
-                     "Failed to delete SB context");
-}
-
 LiteRtStatus LiteRtDispatchDeviceContextT::Create(
     LiteRtDispatchDeviceContext& device_context) {
-  ThrContext* thr_context_raw = thrContextCreate();
-  if (thr_context_raw == nullptr) {
+  ThrContext* thr_context = thrContextCreate();
+  if (thr_context == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to create SB context");
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  ThrContextPtr thr_context(thr_context_raw, ThrContextDeleter);
+  absl::Cleanup thr_context_cleanup = [thr_context] {
+    thrContextDelete(thr_context);
+  };
 
-  GT_LOG_RETURN_IF_SB_ERROR(
-      thrVendorSetSystemAttributeStr(
-          thr_context.get(), "edgetpu_use_tpu_tachyon", "1"),
-      "Failed to enable Tachyon SB");
+  GT_LOG_RETURN_IF_SB_ERROR(thrVendorSetSystemAttributeStr(
+                                thr_context, "edgetpu_use_tpu_tachyon", "1"),
+                            "Failed to enable Tachyon SB");
 
   // If provided, store DarwiNN options to be applied to graphs.
   std::optional<DarwinnOptionsData> options_data;
-
-  if (litert::DarwinnRuntimeOptions* darwinn_options =
-          gt::GetTheDarwinnOptions(); darwinn_options != nullptr) {
+  if (litert::DarwinnRuntimeOptions* absl_nullable darwinn_options =
+          gt::GetTheDarwinnOptions();
+      darwinn_options != nullptr) {
     options_data.emplace();
 
     if (litert::Expected<uint32_t> inference_power_state =
@@ -100,16 +94,28 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
                "DarwiNN runtime options will be applied to graphs");
   }
 
+  // The returned instance must be allocated with `new`, as it will be
+  // deallocated via `delete` in `Destroy`.
   device_context =
-      new LiteRtDispatchDeviceContextT(std::move(thr_context),
-                                       std::move(options_data));
+      new LiteRtDispatchDeviceContextT(thr_context, std::move(options_data));
+
+  std::move(thr_context_cleanup).Cancel();
   return kLiteRtStatusOk;
 }
 
-LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
-  for (ThrGraph* graph : thr_graphs_) {
-    GT_LOG_IF_SB_ERROR(thrGraphDelete(graph), "Failed to delete SB graph");
+LiteRtStatus LiteRtDispatchDeviceContextT::Destroy() {
+  if (!registered_graphs_.empty()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Cannot destroy device context with %zu graphs registered",
+               registered_graphs_.size());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
+
+  GT_LOG_RETURN_IF_SB_ERROR(thrContextDelete(thr_context_),
+                            "Failed to delete SB context");
+
+  delete this;
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
@@ -148,7 +154,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferWithOffset(
-              thr_context_.get(), kThrBufferTypeAHardwareBuffer, ahwb,
+              thr_context_, kThrBufferTypeAHardwareBuffer, ahwb,
               tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
           "Failed to register AHardwareBuffer with SB");
       break;
@@ -163,7 +169,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferDmaBufWithOffset(
-              thr_context_.get(), dmabuf_buffer_fd, tensor_buffer_offset,
+              thr_context_, dmabuf_buffer_fd, tensor_buffer_offset,
               tensor_buffer_size, &tensor_buffer_handle),
           "Failed to register dma-buf with SB");
       break;
@@ -176,7 +182,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferWithOffset(
-              thr_context_.get(), kThrBufferTypeHostMemory, host_memory_addr,
+              thr_context_, kThrBufferTypeHostMemory, host_memory_addr,
               tensor_buffer_offset, tensor_buffer_size, &tensor_buffer_handle),
           "Failed to register host memory with SB");
       break;
@@ -191,71 +197,9 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 LiteRtStatus LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
     LiteRtTensorBufferHandle tensor_buffer_handle) {
   GT_LOG_RETURN_IF_SB_ERROR(
-      thrUnregisterBuffer(thr_context_.get(), tensor_buffer_handle),
+      thrUnregisterBuffer(thr_context_, tensor_buffer_handle),
       "Failed to unregister buffer %" PRIu64 " from SB", tensor_buffer_handle);
 
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtDispatchDeviceContextT::CreateGraph(
-    LiteRtDispatchGraph& graph) {
-  std::unique_ptr<LiteRtDispatchGraphT> raii_graph;
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchGraphT::Create(this, raii_graph));
-
-  if (darwinn_options_.has_value()) {
-    if (std::optional<uint32_t> device_power_state =
-            darwinn_options_->inference_power_state;
-        device_power_state.has_value()) {
-      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuDevicePowerState.data(),
-          std::to_string(*device_power_state).c_str()));
-    }
-
-    if (std::optional<uint32_t> memory_power_state =
-            darwinn_options_->inference_memory_power_state;
-        memory_power_state.has_value()) {
-      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuMemoryPowerState.data(),
-          std::to_string(*memory_power_state).c_str()));
-    }
-
-    if (std::optional<int8_t> inference_priority =
-            darwinn_options_->inference_priority;
-        inference_priority.has_value()) {
-      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kPriority.data(),
-          std::to_string(*inference_priority).c_str()));
-    }
-
-    if (darwinn_options_->atomic_inference) {
-      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuAtomicInference.data(),
-          "1"));
-    }
-
-    if (darwinn_options_->prefer_coherent) {
-      LITERT_RETURN_IF_ERROR(raii_graph->AnnotateGraph(
-          gt::GraphDirectiveAnnotations::kPreferCoherent.data(), "1"));
-    }
-
-    LITERT_LOG(LITERT_INFO,
-               "Successfully applied Darwinn options as graph annotations");
-  }
-
-  graph = raii_graph.release();
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtDispatchDeviceContextT::DestroyGraph(
-  LiteRtDispatchGraph graph) {
-  GT_LOG_RETURN_IF_NULL(graph);
-
-  thr_graphs_.erase(graph->thr_graph());
-
-  GT_LOG_RETURN_IF_SB_ERROR(thrGraphDelete(graph->thr_graph()),
-                            "Failed to delete SB graph");
-
-  delete graph;
   return kLiteRtStatusOk;
 }
 
@@ -277,10 +221,10 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
 
   if (bytecode_buffer.fd >= 0) {
     GT_LOG_RETURN_IF_SB_ERROR(
-        thrLoadSqContainerFdWithOffset(
-            thr_context_.get(), thr_type, bytecode_buffer.fd,
-            bytecode_buffer.size, bytecode_buffer.offset,
-            /*lazy_loading=*/false, &exec_handle),
+        thrLoadSqContainerFdWithOffset(thr_context_, thr_type,
+                                       bytecode_buffer.fd, bytecode_buffer.size,
+                                       bytecode_buffer.offset,
+                                       /*lazy_loading=*/false, &exec_handle),
         "Failed to load SQ container from fd %d with size %zu and offset %zu",
         bytecode_buffer.fd, bytecode_buffer.size, bytecode_buffer.offset);
   } else {
@@ -289,9 +233,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
         bytecode_buffer.offset;
 
     GT_LOG_RETURN_IF_SB_ERROR(
-        thrLoadSqContainer(
-            thr_context_.get(), thr_type, sq_bytecode, bytecode_buffer.size,
-            &exec_handle),
+        thrLoadSqContainer(thr_context_, thr_type, sq_bytecode,
+                           bytecode_buffer.size, &exec_handle),
         "Failed to load SQ container from buffer with base 0x%p and size %zu",
         sq_bytecode, bytecode_buffer.size);
   }
@@ -301,9 +244,29 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
 
 LiteRtStatus LiteRtDispatchDeviceContextT::UnloadExecutable(
     LiteRtDispatchExecutableHandle exec_handle) {
-  GT_LOG_RETURN_IF_SB_ERROR(
-      thrUnloadSqContainer(thr_context_.get(), exec_handle),
-      "Failed to unload SQ container %" PRIu64, exec_handle);
+  GT_LOG_RETURN_IF_SB_ERROR(thrUnloadSqContainer(thr_context_, exec_handle),
+                            "Failed to unload SQ container %" PRIu64,
+                            exec_handle);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchDeviceContextT::RegisterGraph(
+    LiteRtDispatchGraph graph) {
+  if (auto [_, inserted] = registered_graphs_.insert(graph); !inserted) {
+    LITERT_LOG(LITERT_ERROR, "Graph 0x%p is already registered", graph);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchDeviceContextT::UnregisterGraph(
+    LiteRtDispatchGraph graph) {
+  if (registered_graphs_.erase(graph) == 0) {
+    LITERT_LOG(LITERT_ERROR, "Graph 0x%p was not previously registered", graph);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   return kLiteRtStatusOk;
 }

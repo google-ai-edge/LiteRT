@@ -55,6 +55,8 @@ class ScalarParamWrapper {
     }
   }
 
+  bool operator==(const ScalarParamWrapper& other) const;
+
   void CloneTo(Qnn_Param_t& dst) const;
 
  private:
@@ -65,6 +67,8 @@ class ScalarParamWrapper {
 class TensorParamWrapper {
  public:
   explicit TensorParamWrapper(const char* name, const TensorWrapper& tensor);
+
+  bool operator==(const TensorParamWrapper& other) const;
 
   void CloneTo(Qnn_Param_t& dst) const;
 

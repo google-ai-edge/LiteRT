@@ -2,6 +2,7 @@
 // All Rights Reserved.
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -20,6 +21,14 @@ UndefinedQuantizeParamsWrapper::UndefinedQuantizeParamsWrapper(
 
 UndefinedQuantizeParamsWrapper::UndefinedQuantizeParamsWrapper(
     UndefinedQuantizeParamsWrapper&&) = default;
+
+bool UndefinedQuantizeParamsWrapper::operator==(
+    const UndefinedQuantizeParamsWrapper& other) const {
+  return qnn_quantize_param_.encodingDefinition ==
+             other.qnn_quantize_param_.encodingDefinition &&
+         qnn_quantize_param_.quantizationEncoding ==
+             other.qnn_quantize_param_.quantizationEncoding;
+}
 
 void UndefinedQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
   dst = qnn_quantize_param_;
@@ -48,6 +57,17 @@ ScaleOffsetQuantizeParamsWrapper::ScaleOffsetQuantizeParamsWrapper(
 ScaleOffsetQuantizeParamsWrapper::ScaleOffsetQuantizeParamsWrapper(
     ScaleOffsetQuantizeParamsWrapper&&) = default;
 
+bool ScaleOffsetQuantizeParamsWrapper::operator==(
+    const ScaleOffsetQuantizeParamsWrapper& other) const {
+  return qnn_quantize_param_.encodingDefinition ==
+             other.qnn_quantize_param_.encodingDefinition &&
+         qnn_quantize_param_.quantizationEncoding ==
+             other.qnn_quantize_param_.quantizationEncoding &&
+         qnn_quantize_param_.scaleOffsetEncoding.scale ==
+             other.qnn_quantize_param_.scaleOffsetEncoding.scale &&
+         qnn_quantize_param_.scaleOffsetEncoding.offset ==
+             other.qnn_quantize_param_.scaleOffsetEncoding.offset;
+}
 void ScaleOffsetQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
   dst = qnn_quantize_param_;
 }
@@ -105,6 +125,30 @@ AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
       scale_offsets_.data();
 }
 
+bool AxisScaleOffsetQuantizeParamsWrapper::operator==(
+    const AxisScaleOffsetQuantizeParamsWrapper& other) const {
+  if (qnn_quantize_param_.encodingDefinition !=
+      other.qnn_quantize_param_.encodingDefinition)
+    return false;
+  if (qnn_quantize_param_.quantizationEncoding !=
+      other.qnn_quantize_param_.quantizationEncoding)
+    return false;
+  if (qnn_quantize_param_.axisScaleOffsetEncoding.axis !=
+      other.qnn_quantize_param_.axisScaleOffsetEncoding.axis)
+    return false;
+  if (qnn_quantize_param_.axisScaleOffsetEncoding.numScaleOffsets !=
+      other.qnn_quantize_param_.axisScaleOffsetEncoding.numScaleOffsets)
+    return false;
+
+  return std::equal(
+      qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset,
+      qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset +
+          qnn_quantize_param_.axisScaleOffsetEncoding.numScaleOffsets,
+      other.qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset,
+      [](const Qnn_ScaleOffset_t& a, const Qnn_ScaleOffset_t& b) {
+        return a.scale == b.scale && a.offset == b.offset;
+      });
+}
 void AxisScaleOffsetQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
   dst = qnn_quantize_param_;
 }
@@ -152,6 +196,20 @@ BwScaleOffsetQuantizeParamsWrapper::BwScaleOffsetQuantizeParamsWrapper(
 BwScaleOffsetQuantizeParamsWrapper::BwScaleOffsetQuantizeParamsWrapper(
     BwScaleOffsetQuantizeParamsWrapper&& rhs) = default;
 
+bool BwScaleOffsetQuantizeParamsWrapper::operator==(
+    const BwScaleOffsetQuantizeParamsWrapper& other) const {
+  return qnn_quantize_param_.encodingDefinition ==
+             other.qnn_quantize_param_.encodingDefinition &&
+         qnn_quantize_param_.quantizationEncoding ==
+             other.qnn_quantize_param_.quantizationEncoding &&
+         qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth ==
+             other.qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth &&
+         qnn_quantize_param_.bwScaleOffsetEncoding.scale ==
+             other.qnn_quantize_param_.bwScaleOffsetEncoding.scale &&
+         qnn_quantize_param_.bwScaleOffsetEncoding.offset ==
+             other.qnn_quantize_param_.bwScaleOffsetEncoding.offset;
+}
+
 void BwScaleOffsetQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
   dst = qnn_quantize_param_;
 }
@@ -192,6 +250,36 @@ BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
       offsets_{std::move(rhs.offsets_)} {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+}
+
+bool BwAxisScaleOffsetQuantizeParamsWrapper::operator==(
+    const BwAxisScaleOffsetQuantizeParamsWrapper& other) const {
+  if (qnn_quantize_param_.encodingDefinition !=
+      other.qnn_quantize_param_.encodingDefinition)
+    return false;
+  if (qnn_quantize_param_.quantizationEncoding !=
+      other.qnn_quantize_param_.quantizationEncoding)
+    return false;
+  if (qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth !=
+      other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth)
+    return false;
+  if (qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis !=
+      other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis)
+    return false;
+  if (qnn_quantize_param_.bwAxisScaleOffsetEncoding.numElements !=
+      other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.numElements)
+    return false;
+
+  return std::equal(
+             qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales,
+             qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales +
+                 qnn_quantize_param_.bwAxisScaleOffsetEncoding.numElements,
+             other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales) &&
+         std::equal(
+             qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets,
+             qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets +
+                 qnn_quantize_param_.bwAxisScaleOffsetEncoding.numElements,
+             other.qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets);
 }
 
 void BwAxisScaleOffsetQuantizeParamsWrapper::CloneTo(
