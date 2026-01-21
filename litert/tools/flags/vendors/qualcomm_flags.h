@@ -22,6 +22,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/tools/flags/flag_types.h"
 
 // GENERAL SDK SETTINGS ////////////////////////////////////////////////////////
 
@@ -63,7 +64,7 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_htp_preference);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_qint16_as_quint16);
 
-ABSL_DECLARE_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids);
+ABSL_DECLARE_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_ir_json_dir);
 
