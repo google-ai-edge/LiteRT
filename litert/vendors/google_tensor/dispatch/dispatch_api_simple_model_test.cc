@@ -256,9 +256,7 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
   LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(invocation_context));
 
   if (graph_interface_state.has_value()) {
-    // TODO: b/473845694 - uncomment when graph ownership semantics are fixed.
-    // LITERT_ASSERT_OK(LiteRtDispatchGraphDestroy(
-    //     graph_interface_state->graph));
+    LITERT_ASSERT_OK(LiteRtDispatchGraphDestroy(graph_interface_state->graph));
 
     LITERT_ASSERT_OK(LiteRtDispatchUnloadExecutable(
         device_context(), graph_interface_state->exec_handle));
