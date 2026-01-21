@@ -123,7 +123,7 @@ jobs:
             "-//litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test"
           )
 
-          bazel test --disk_cache=~/.cache/bazel-linux "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
+          bazel test --disk_cache=~/.cache/bazel-linux "${BUILD_FLAGS[@]}" -- //litert/... //weight_loader/... "${LITERT_EXCLUDED_TARGETS[@]}"
 
       - name: Build Intel OpenVINO plugin for Linux
         run: |
