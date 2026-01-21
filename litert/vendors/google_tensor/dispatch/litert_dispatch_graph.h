@@ -16,49 +16,27 @@
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_GRAPH_H_
 
 #include <cstddef>
-#include <map>
-#include <memory>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
+// This class is thread-compatible.
 class LiteRtDispatchGraphT {
  public:
   static LiteRtStatus Create(LiteRtDispatchDeviceContext device_context,
                              LiteRtDispatchGraph& graph);
 
-  static LiteRtStatus Create(
-      LiteRtDispatchDeviceContext device_context,
-      absl_nullable std::unique_ptr<LiteRtDispatchGraphT>& graph) {
-    LiteRtDispatchGraph raw_graph;
-    LITERT_RETURN_IF_ERROR(Create(device_context, raw_graph));
-
-    graph = std::unique_ptr<LiteRtDispatchGraphT>(raw_graph);
-    return kLiteRtStatusOk;
-  }
-
-  ThrGraph* absl_nonnull thr_graph() { return thr_graph_; }
-
-  LiteRtDispatchDeviceContext device_context() { return device_context_; }
+  LiteRtStatus Destroy();
 
   LiteRtStatus AddNode(LiteRtDispatchNodeId node_id,
                        LiteRtDispatchNodeType node_type);
 
   LiteRtStatus AddEdge(LiteRtDispatchEdgeId edge_id);
-
-  litert::Expected<LiteRtDispatchEdgeId> InputEdge(int input_index) const {
-    return IoEdge(input_index, input_edges_);
-  }
-
-  litert::Expected<LiteRtDispatchEdgeId> OutputEdge(int output_index) const {
-    return IoEdge(output_index, output_edges_);
-  }
-
-  size_t NumOutputs() const { return output_edges_.size(); }
 
   LiteRtStatus ConnectNodeInput(LiteRtDispatchNodeId node_id, int input_index,
                                 LiteRtDispatchEdgeId edge_id);
@@ -85,35 +63,70 @@ class LiteRtDispatchGraphT {
                             const char* absl_nonnull key,
                             const char* absl_nonnull value);
 
- private:
-  using IoIndexToEdgeIdMap = std::map<int, LiteRtDispatchEdgeId>;
+  // Registers an invocation context with the graph.
+  //
+  // This has the effect of guaranteeing that the graph remains alive until the
+  // invocation context is unregistered, meaning that a subsequent call to
+  // `UnregisterInvocationContext` is required to permit the graph to be
+  // destroyed.
+  //
+  // NOTE: an invocation context may only be registered once.
+  LiteRtStatus RegisterInvocationContext(
+      LiteRtDispatchInvocationContext icontext);
 
+  LiteRtStatus UnregisterInvocationContext(
+      LiteRtDispatchInvocationContext icontext);
+
+  LiteRtStatus GetInputEdgeId(int input_index,
+                              LiteRtDispatchEdgeId& edge_id) const {
+    auto iter = input_edge_ids_.find(input_index);
+    if (iter == input_edge_ids_.end()) {
+      LITERT_LOG(LITERT_ERROR, "Edge ID not found for input index %d",
+                 input_index);
+      return kLiteRtStatusErrorNotFound;
+    }
+
+    edge_id = iter->second;
+    return kLiteRtStatusOk;
+  }
+
+  LiteRtStatus GetOutputEdgeId(int output_index,
+                               LiteRtDispatchEdgeId& edge_id) const {
+    auto iter = output_edge_ids_.find(output_index);
+    if (iter == output_edge_ids_.end()) {
+      LITERT_LOG(LITERT_ERROR, "Edge ID not found for output index %d",
+                 output_index);
+      return kLiteRtStatusErrorNotFound;
+    }
+
+    edge_id = iter->second;
+    return kLiteRtStatusOk;
+  }
+
+  ThrGraph* absl_nonnull thr_graph() { return thr_graph_; }
+
+  size_t NumOutputEdges() const { return output_edge_ids_.size(); }
+
+ private:
   LiteRtDispatchGraphT(LiteRtDispatchDeviceContext device_context,
                        ThrGraph* absl_nonnull thr_graph)
       : device_context_(device_context), thr_graph_(thr_graph) {}
 
-  litert::Expected<LiteRtDispatchEdgeId> IoEdge(
-      int io_index, const IoIndexToEdgeIdMap& map) const {
-    auto iter = map.find(io_index);
-    if (iter == map.end()) {
-      return litert::Unexpected(kLiteRtStatusErrorNotFound,
-                                "Unexpected graph input/output index");
-    }
-    return iter->second;
-  }
-
-  void AddInputEdge(int input_index, LiteRtDispatchEdgeId edge_id) {
-    input_edges_[input_index] = edge_id;
-  }
-
-  void AddOutputEdge(int output_index, LiteRtDispatchEdgeId edge_id) {
-    output_edges_[output_index] = edge_id;
-  }
+  // Consumers of this class must use `Destroy` to delete the instance.
+  ~LiteRtDispatchGraphT() = default;
 
   LiteRtDispatchDeviceContext device_context_;
   ThrGraph* absl_nonnull thr_graph_;
-  IoIndexToEdgeIdMap input_edges_;
-  IoIndexToEdgeIdMap output_edges_;
+  // Set to `true` after the graph is successfully registered with its device
+  // context. This prevents 'Destroy' from attempting to unregister the graph
+  // from its device context when the graph has not previously been registered.
+  bool registered_with_device_context_ = false;
+  // Associates an input index with its edge ID.
+  absl::flat_hash_map<int, LiteRtDispatchEdgeId> input_edge_ids_;
+  // Associates an output index with its edge ID.
+  absl::flat_hash_map<int, LiteRtDispatchEdgeId> output_edge_ids_;
+  // A graph cannot be destroyed with any registered invocation contexts.
+  absl::flat_hash_set<LiteRtDispatchInvocationContext> registered_icontexts_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_GRAPH_H_
