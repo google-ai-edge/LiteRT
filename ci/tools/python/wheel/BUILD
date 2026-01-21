@@ -112,6 +112,10 @@ py_wheel(
     project_name = "ai_edge_litert",
     py_srcs = ALL_PY_SRC_MODULES,
     setup_py = ":setup_py",
+    structured_deps = [
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter:model_flags_proto_py",
+    ],
     # NOTE: There is no plan to release more 1.x versions. But if that's needed in the future,
     # LITERT_FULL_VERSION should be used here instead.
     version = LITERT_EXPERIMENTAL_VERSION,
