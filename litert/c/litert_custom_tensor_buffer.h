@@ -75,6 +75,10 @@ typedef LiteRtStatus (*LockCustomTensorBuffer)(LiteRtEnvironment env,
 typedef LiteRtStatus (*UnlockCustomTensorBuffer)(
     LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
 
+// Get the custom H/W memory buffer handle from HwMemoryInfoPtr.
+typedef LiteRtStatus (*GetCustomTensorBufferHandle)(
+    HwMemoryInfoPtr hw_memory_info, HwMemoryHandle* hw_memory_handle);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

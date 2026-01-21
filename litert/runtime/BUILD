@@ -361,6 +361,24 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "tensor_buffer_test",
+    srcs = ["tensor_buffer_test.cc"],
+    deps = [
+        ":tensor_buffer",
+        ":tensor_buffer_registry",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_tensor_buffer_registry",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 GPU_ENVIRONMENT_DEPS = [
     "//litert/c:litert_any",
     "//litert/c:litert_common",
