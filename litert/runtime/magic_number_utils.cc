@@ -205,12 +205,21 @@ Expected<int> UpdateMagicNumberInParam(int64_t magic_number,
   auto buffer_index = param_tensor->buffer();
   const auto* buffer = fb_model->buffers()->Get(buffer_index);
   LITERT_RETURN_IF_ERROR(buffer != nullptr);
-  if (buffer->data() == nullptr) {
+
+  unsigned char* data = nullptr;
+  const unsigned char* data_end = nullptr;
+  if (buffer->data() != nullptr) {
+    data = const_cast<unsigned char*>(buffer->data()->data());
+    data_end = data + buffer->data()->size();
+  } else if (buffer->offset() > 1 && fb_model.allocation() != nullptr) {
+    data = static_cast<unsigned char*>(
+               const_cast<void*>(fb_model.allocation()->base())) +
+           buffer->offset();
+    data_end = data + buffer->size();
+  } else {
     return 0;
   }
 
-  unsigned char* data = const_cast<unsigned char*>(buffer->data()->data());
-  const unsigned char* data_end = data + buffer->data()->size();
   if (param_tensor->type() == tflite::TensorType_INT32) {
     return UpdateMagicNumber<int32_t>(magic_number, target_number, op_code,
                                       data, data_end);
