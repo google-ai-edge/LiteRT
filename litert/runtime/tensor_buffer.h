@@ -196,6 +196,8 @@ class LiteRtTensorBufferT {
   // Gets the current reference count.
   int RefCount() const { return ref_.load(std::memory_order_relaxed); }
 
+  void* GetTensorBufferRegistry();
+
  private:
   struct HostBuffer {
     void* addr;

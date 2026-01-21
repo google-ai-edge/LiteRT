@@ -372,6 +372,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",
+        "//litert/runtime:tensor_buffer_registry",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ] + gles_deps(),
