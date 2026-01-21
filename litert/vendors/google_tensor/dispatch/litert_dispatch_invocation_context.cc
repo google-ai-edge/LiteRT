@@ -14,18 +14,20 @@
 
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 
-#include <cstddef>
+#include <cinttypes>
+#include <optional>
+#include <utility>
 
+#include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
-#include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_expected.h"
+#include "litert/c/litert_event_type.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
@@ -34,30 +36,17 @@
 
 namespace gt = litert::google_tensor;
 
-using litert::Error;
-using litert::Expected;
-using litert::Unexpected;
-
-namespace {
-
-constexpr const size_t kEdgeTpuPadding = 64;
-
-template <class X, class Align>
-inline constexpr auto Pad(X x, Align align) {
-  return ((x + align - 1) / align) * align;
-}
-
-}  // namespace
-
-litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
-LiteRtDispatchInvocationContextT::CreateFromBytecode(
+LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
-    const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-    int num_inputs, int num_outputs) {
+    const LiteRtMemBuffer& exec_bytecode_buffer,
+    const char* absl_nullable function_name, int num_inputs, int num_outputs,
+    LiteRtDispatchInvocationContext& invocation_context) {
+  GT_LOG_RETURN_IF_NULL(device_context);
+
   LiteRtDispatchExecutableHandle exec_handle;
   LITERT_RETURN_IF_ERROR(device_context->LoadExecutable(
-      exec_type, *exec_bytecode_buffer, exec_handle));
+      exec_type, exec_bytecode_buffer, exec_handle));
 
   LiteRtDispatchGraph graph;
   LITERT_RETURN_IF_ERROR(device_context->CreateGraph(graph));
@@ -73,8 +62,7 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
       break;
     default:
       LITERT_LOG(LITERT_ERROR, "Invalid executable type %d", exec_type);
-      return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Invalid executable type");
+      return kLiteRtStatusErrorInvalidArgument;
   }
 
   LITERT_RETURN_IF_ERROR(graph->AddNode(node_id, node_type));
@@ -100,389 +88,273 @@ LiteRtDispatchInvocationContextT::CreateFromBytecode(
     LITERT_RETURN_IF_ERROR(graph->ConnectGraphOutput(edge_id));
   }
 
-  auto invocation_context = CreateFromGraph(device_context, graph);
-  if (!invocation_context) {
-    return invocation_context.Error();
-  }
-
-  (*invocation_context)->AttachExecutable(exec_handle);
-
-  return invocation_context;
+  LITERT_RETURN_IF_ERROR(
+      CreateFromGraph(device_context, exec_handle, graph, invocation_context));
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
-LiteRtDispatchInvocationContextT::CreateFromGraph(
-    LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph) {
-  ThrGraph* thr_graph = graph->thr_graph();
-  auto thr_icontext =
-      thrInvocationContextGet(thr_graph, device_context->thr_context());
-  if (!thr_icontext) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_get failed");
+LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromGraph(
+    LiteRtDispatchDeviceContext device_context,
+    std::optional<LiteRtDispatchExecutableHandle> exec_handle,
+    LiteRtDispatchGraph graph,
+    LiteRtDispatchInvocationContext& invocation_context) {
+  GT_LOG_RETURN_IF_NULL(device_context);
+  GT_LOG_RETURN_IF_NULL(graph);
+
+  ThrInvocationContext* thr_invocation_context = thrInvocationContextGet(
+      graph->thr_graph(), device_context->thr_context());
+  if (thr_invocation_context == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get SB invocation context");
+    return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  device_context->add_graph(thr_graph);
-  return Ptr(new LiteRtDispatchInvocationContextT(
-      thr_icontext, device_context, graph));
+  device_context->add_graph(graph->thr_graph());
+
+  // The returned instance must be allocated with `new`, as it will be
+  // deallocated via `delete` in `Destroy`.
+  invocation_context = new LiteRtDispatchInvocationContextT(
+      device_context, exec_handle, graph, thr_invocation_context);
+  return kLiteRtStatusOk;
 }
 
-LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
-  ThrGraph* thr_graph = graph_->thr_graph();
-  if (auto status =
-          thrInvocationContextDelete(thr_graph, thr_invocation_context_);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_invocation_context_delete failed: %d",
-               status);
+LiteRtStatus LiteRtDispatchInvocationContextT::Destroy() {
+  LITERT_RETURN_IF_ERROR(DetachAndUnregisterInFences());
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextDelete(graph_->thr_graph(), thr_invocation_context_),
+      "Failed to delete SB invocation context");
+
+  if (exec_handle_.has_value()) {
+    LITERT_RETURN_IF_ERROR(device_context_->DestroyGraph(graph_));
+    LITERT_RETURN_IF_ERROR(device_context_->UnloadExecutable(*exec_handle_));
   }
 
-  device_context_->DestroyGraph(graph_);
-
-  if (exec_handle_) {
-    device_context_->UnloadExecutable(*exec_handle_);
-  }
+  delete this;
+  return kLiteRtStatusOk;
 }
 
-Expected<LiteRtTensorBufferRequirements>
-LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
-    const LiteRtRankedTensorType& tensor_type) {
-  if (tensor_type.layout.has_strides) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Tensor strides are not supported on GoogleTensor");
-  }
-
-  auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
-  if (!buffer_size) {
-    return Unexpected(buffer_size.Error());
-  }
-
-  LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
-          litert::google_tensor::GetTheSupportedTensorBufferTypes().size(),
-          litert::google_tensor::GetTheSupportedTensorBufferTypes().data(),
-          Pad(*buffer_size, kEdgeTpuPadding), /*num_strides=*/0,
-          /*strides=*/nullptr, &requirements);
-      status != kLiteRtStatusOk) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to create tensor buffer requirements");
-  }
-
-  return requirements;
-}
-
-Expected<LiteRtTensorBufferRequirements>
-LiteRtDispatchInvocationContextT::GetInputRequirements(
-    int input_index, const LiteRtRankedTensorType& tensor_type) {
-  return GetTensorBufferRequirements(tensor_type);
-}
-
-Expected<LiteRtTensorBufferRequirements>
-LiteRtDispatchInvocationContextT::GetOutputRequirements(
-    int output_index, const LiteRtRankedTensorType& tensor_type) {
-  return GetTensorBufferRequirements(tensor_type);
-}
-
-namespace {
-
-litert::Expected<void> AttachBufferHelper(
-    LiteRtDispatchInvocationContext invocation_context,
-    LiteRtDispatchEdgeId edge_id,
-    LiteRtTensorBufferHandle tensor_buffer_handle) {
-  ThrInvocationContext* thr_icontext =
-      invocation_context->thr_invocation_context();
-  ThrContext* thr_context = invocation_context->device_context()->thr_context();
-  ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thrInvocationContextAttachBuffer(thr_icontext, thr_context,
-                                                     gt::ToThrEdgeId(edge_id),
-                                                     thr_buffer_handle);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_invocation_context_attach_buffer failed: %d",
-               status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_attach_buffer failed");
-  }
-
-  return {};
-}
-
-}  // namespace
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->InputEdge(graph_input_index); result) {
-    auto edge_id = *result;
-    return AttachBufferHelper(this, edge_id, tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
+  LiteRtDispatchEdgeId edge_id;
+  LITERT_RETURN_IF_ERROR(graph_->GetInputEdgeId(graph_input_index, edge_id));
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextAttachBuffer(
+          thr_invocation_context_, device_context_->thr_context(),
+          gt::ToThrEdgeId(edge_id), tensor_buffer_handle),
+      "Failed to attach tensor buffer %" PRIu64 " to input edge %" PRIu64,
+      tensor_buffer_handle, edge_id);
+
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->OutputEdge(graph_output_index); result) {
-    auto edge_id = *result;
-    return AttachBufferHelper(this, edge_id, tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
+  LiteRtDispatchEdgeId edge_id;
+  LITERT_RETURN_IF_ERROR(graph_->GetOutputEdgeId(graph_output_index, edge_id));
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextAttachBuffer(
+          thr_invocation_context_, device_context_->thr_context(),
+          gt::ToThrEdgeId(edge_id), tensor_buffer_handle),
+      "Failed to attach tensor buffer %" PRIu64 " to output edge %" PRIu64,
+      tensor_buffer_handle, edge_id);
+
+  return kLiteRtStatusOk;
 }
 
-namespace {
-
-litert::Expected<void> DetachTensorBufferHelper(
-    LiteRtDispatchInvocationContext invocation_context,
-    LiteRtDispatchEdgeId edge_id,
-    LiteRtTensorBufferHandle tensor_buffer_handle) {
-  ThrInvocationContext* thr_icontext =
-      invocation_context->thr_invocation_context();
-  ThrContext* thr_context = invocation_context->device_context()->thr_context();
-  ThrBufferHandle thr_buffer_handle = tensor_buffer_handle;
-  if (auto status = thrInvocationContextDetachBuffer(thr_icontext, thr_context,
-                                                     gt::ToThrEdgeId(edge_id),
-                                                     thr_buffer_handle);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_invocation_context_detach_buffer failed: %d",
-               status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_detach_buffer failed");
-  }
-
-  return {};
-}
-
-}  // namespace
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->InputEdge(graph_input_index); result) {
-    auto edge_id = *result;
-    return DetachTensorBufferHelper(this, edge_id,
-                                    tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
+  LiteRtDispatchEdgeId edge_id;
+  LITERT_RETURN_IF_ERROR(graph_->GetInputEdgeId(graph_input_index, edge_id));
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextDetachBuffer(
+          thr_invocation_context_, device_context_->thr_context(),
+          gt::ToThrEdgeId(edge_id), tensor_buffer_handle),
+      "Failed to detach tensor buffer %" PRIu64 " from input edge %" PRIu64,
+      tensor_buffer_handle, edge_id);
+
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->OutputEdge(graph_output_index); result) {
-    auto edge_id = *result;
-    return DetachTensorBufferHelper(this, edge_id,
-                                    tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
+  LiteRtDispatchEdgeId edge_id;
+  LITERT_RETURN_IF_ERROR(graph_->GetOutputEdgeId(graph_output_index, edge_id));
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextDetachBuffer(
+          thr_invocation_context_, device_context_->thr_context(),
+          gt::ToThrEdgeId(edge_id), tensor_buffer_handle),
+      "Failed to detach tensor buffer %" PRIu64 " from output edge %" PRIu64,
+      tensor_buffer_handle, edge_id);
+
+  return kLiteRtStatusOk;
 }
 
-namespace {
+LiteRtStatus LiteRtDispatchInvocationContextT::Invoke() {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextPrepareForInvoke(thr_invocation_context_,
+                                           /*create_output_sync_fence=*/false),
+      "Failed to prepare SB invocation context for invoke");
 
-litert::Expected<void> PrepareForInvoke(
-    LiteRtDispatchInvocationContext invocation_context,
-    bool create_output_sync_fence) {
-  ThrInvocationContext* thr_icontext =
-      invocation_context->thr_invocation_context();
-  if (auto status = thrInvocationContextPrepareForInvoke(
-          thr_icontext, create_output_sync_fence);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR,
-               "thr_invocation_context_prepare_for_invoke failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_prepare_for_invoke failed");
-  }
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextInvokeOnce(thr_invocation_context_),
+      "Failed to invoke SB invocation context");
 
-  return {};
+  LITERT_RETURN_IF_ERROR(DetachAndUnregisterInFences());
+
+  GT_LOG_RETURN_IF_SB_ERROR(thrInvocationContextWait(thr_invocation_context_),
+                            "Failed to wait for SB invocation context");
+
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> InvokeOnce(
-    LiteRtDispatchInvocationContext invocation_context) {
-  ThrInvocationContext* thr_icontext =
-      invocation_context->thr_invocation_context();
-  if (auto status = thrInvocationContextInvokeOnce(thr_icontext);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_invocation_context_invoke_once failed: %d",
-               status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_invoke_once failed");
-  }
-
-  return {};
-}
-
-litert::Expected<void> Wait(
-    LiteRtDispatchInvocationContext invocation_context) {
-  ThrInvocationContext* thr_icontext =
-      invocation_context->thr_invocation_context();
-  if (auto status = thrInvocationContextWait(thr_icontext);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR, "thr_invocation_context_wait failed: %d", status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_wait failed");
-  }
-
-  return {};
-}
-
-}  // namespace
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  if (auto result = PrepareForInvoke(this,
-                                     /*create_output_sync_fence=*/false);
-      !result) {
-    return result.Error();
-  }
-  if (auto result = InvokeOnce(this); !result) {
-    return result.Error();
-  }
-  return Wait(this);
-}
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInputEvent(
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachInputEvent(
     int graph_input_index, LiteRtEvent input_event) {
-  int input_fence_fd;
-  if (auto status = LiteRtGetEventSyncFenceFd(input_event, &input_fence_fd);
-      status != kLiteRtStatusOk) {
-    return Error(status, "Failed to get sync fence fd from event");
-  }
-
-  auto edge = graph_->InputEdge(graph_input_index);
-  if (!edge) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected graph input index: %d",
-               graph_input_index);
-    return edge.Error();
-  }
-  auto edge_id = *edge;
-
-  auto thr_edge_id = gt::ToThrEdgeId(edge_id);
-  if (auto status = thrInvocationContextAttachInputBufferSyncFence(
-          thr_invocation_context_, thr_edge_id, input_fence_fd);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(
-        LITERT_ERROR,
-        "thr_invocation_context_attach_input_buffer_sync_fence failed: %d",
-        status);
-    return Error(
-        kLiteRtStatusErrorRuntimeFailure,
-        "thr_invocation_context_attach_input_buffer_sync_fence failed");
-  }
-
-  input_sync_fences_[thr_edge_id] = input_fence_fd;
-  return {};
-}
-
-namespace {
-
-litert::Expected<void> GetOutputEvent(
-    LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
-    LiteRtEvent* output_event) {
-  auto edge = invocation_context->graph()->OutputEdge(graph_output_index);
-  if (!edge) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected graph output index: %d",
-               graph_output_index);
-    return edge.Error();
-  }
-  auto edge_id = *edge;
-
-  ThrInvocationContext* thr_icontext =
-      invocation_context->thr_invocation_context();
-  int output_fence_fd;
-  if (auto status = thrInvocationContextGetOutputBufferSyncFence(
-          thr_icontext, gt::ToThrEdgeId(edge_id), &output_fence_fd);
-      status != kThrStatusSuccess) {
+  LiteRtEventType type;
+  LITERT_RETURN_IF_ERROR(LiteRtGetEventEventType(input_event, &type));
+  if (type != LiteRtEventTypeSyncFenceFd) {
     LITERT_LOG(LITERT_ERROR,
-               "thr_invocation_context_get_output_buffer_sync_fence failed: %d",
-               status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_get_output_buffer_sync_fence failed");
+               "Attaching input event with type %d is not supported", type);
+    return kLiteRtStatusErrorUnsupported;
   }
 
-  if (auto status = LiteRtCreateEventFromSyncFenceFd(
-          /*env=*/nullptr, output_fence_fd, /*owns_fd=*/false, output_event);
-      status != kLiteRtStatusOk) {
-    return Error(status, "Failed to create event from sync fence fd");
-  }
+  LiteRtDispatchEdgeId edge_id;
+  LITERT_RETURN_IF_ERROR(graph_->GetInputEdgeId(graph_input_index, edge_id));
 
-  return {};
+  int sync_fence_fd;
+  // This API does not return a duped fd, so `sync_fence_fd` must not be
+  // closed.
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetEventSyncFenceFd(input_event, &sync_fence_fd));
+
+  ThrFenceHandle thr_fence_handle;
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrRegisterFence(device_context_->thr_context(), kThrFenceTypeDma,
+                       sync_fence_fd, &thr_fence_handle),
+      "Failed to register DMA fence fd %d with SB", sync_fence_fd);
+  absl::Cleanup thr_fence_handle_cleanup = [this, thr_fence_handle]() {
+    thrUnregisterFence(device_context_->thr_context(), thr_fence_handle);
+  };
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextAttachInputBufferFence(
+          thr_invocation_context_, gt::ToThrEdgeId(edge_id), thr_fence_handle),
+      "Failed to attach SB fence %" PRIu64 " to input edge %" PRIu64,
+      thr_fence_handle, edge_id);
+
+  in_fences_.insert_or_assign(edge_id, thr_fence_handle);
+
+  std::move(thr_fence_handle_cleanup).Cancel();
+  return kLiteRtStatusOk;
 }
 
-}  // namespace
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::InvokeAsync(
-    int num_output_events, LiteRtEvent* output_events) {
-  if (num_output_events != graph_->NumOutputs()) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected number of output events: %d",
-               num_output_events);
-    return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Unexpected number of output events");
+LiteRtStatus LiteRtDispatchInvocationContextT::InvokeAsync(
+    absl::Span<LiteRtEvent> output_events) {
+  if (output_events.size() != graph_->NumOutputEdges()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Graph has %zu outputs but %zu output events were provided",
+               graph_->NumOutputEdges(), output_events.size());
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
-  if (auto status = PrepareForInvoke(this,
-                                     /*create_output_sync_fence=*/true);
-      !status) {
-    return status.Error();
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextPrepareForInvoke2(thr_invocation_context_,
+                                            kThrFenceTypeDma),
+      "Failed to prepare SB invocation context with dma-fence out-fence type");
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrInvocationContextInvokeOnce(thr_invocation_context_),
+      "Failed to invoke SB invocation context");
+
+  LITERT_RETURN_IF_ERROR(DetachAndUnregisterInFences());
+
+  for (int graph_output_index = 0; graph_output_index < output_events.size();
+       graph_output_index++) {
+    LiteRtDispatchEdgeId edge_id;
+    LITERT_RETURN_IF_ERROR(
+        graph_->GetOutputEdgeId(graph_output_index, edge_id));
+
+    ThrFenceHandle thr_fence_handle;
+    GT_LOG_RETURN_IF_SB_ERROR(thrInvocationContextGetOutputBufferFence(
+                                  thr_invocation_context_,
+                                  gt::ToThrEdgeId(edge_id), &thr_fence_handle),
+                              "Failed to get output fence for edge %" PRIu64,
+                              edge_id);
+    absl::Cleanup thr_fence_handle_cleanup = [this, thr_fence_handle]() {
+      thrUnregisterFence(device_context_->thr_context(), thr_fence_handle);
+    };
+
+    int sync_fence_fd;
+    // This API returns a duped fd, so `sync_fence_fd` must be closed.
+    GT_LOG_RETURN_IF_SB_ERROR(
+        thrFenceGetDupFd(device_context_->thr_context(), thr_fence_handle,
+                         &sync_fence_fd),
+        "Failed to dup fd of SB fence %" PRIu64, thr_fence_handle);
+    absl::Cleanup sync_fence_fd_cleanup = [sync_fence_fd]() {
+      close(sync_fence_fd);
+    };
+
+    // `owns_fd=true` so that `sync_fence_fd` is closed when the event is
+    // destroyed.
+    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromSyncFenceFd(
+        /*env=*/nullptr, sync_fence_fd, /*owns_fd=*/true,
+        &output_events[graph_output_index]));
+
+    std::move(sync_fence_fd_cleanup).Cancel();
+    std::move(thr_fence_handle_cleanup).Cancel();
+    GT_LOG_RETURN_IF_SB_ERROR(
+        thrUnregisterFence(device_context_->thr_context(), thr_fence_handle),
+        "Failed to unregister output SB fence %" PRIu64, thr_fence_handle);
   }
 
-  if (auto status = InvokeOnce(this); !status) {
-    return status.Error();
-  }
-
-  for (const auto& p : input_sync_fences_) {
-    const auto& thr_edge_id = p.first;
-    auto input_fence_fd = p.second;
-    if (auto status = thrInvocationContextDetachInputBufferSyncFence(
-            thr_invocation_context_, thr_edge_id.data(), input_fence_fd);
-        status != kThrStatusSuccess) {
-      return Error(
-          kLiteRtStatusErrorRuntimeFailure,
-          "thr_invocation_context_detach_input_buffer_sync_fence failed");
-    }
-  }
-  input_sync_fences_.clear();
-
-  // Extract output events.
-  for (auto graph_output_index = 0; graph_output_index < num_output_events;
-       ++graph_output_index) {
-    if (auto status = GetOutputEvent(this, graph_output_index,
-                                     &output_events[graph_output_index]);
-        !status) {
-      LITERT_LOG(LITERT_ERROR, "Failed to get event for output %d",
-                 graph_output_index);
-      return status.Error();
-    }
-  }
-
-  return {};
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::StartMetricsCollection(
+LiteRtStatus LiteRtDispatchInvocationContextT::StartMetricsCollection(
     int detail_level) {
-  if (auto status = thrInvocationContextStartMetricsCollection(
-          thr_invocation_context_, detail_level);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR,
-               "thr_invocation_context_start_metrics_collection failed: %d",
-               status);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_start_metrics_collection failed");
-  }
-  return {};
+  GT_LOG_RETURN_IF_SB_ERROR(thrInvocationContextStartMetricsCollection(
+                                thr_invocation_context_, detail_level),
+                            "Failed to start SB metrics collection");
+
+  return kLiteRtStatusOk;
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::StopMetricsCollection(
-    LiteRtDispatchMetrics* metrics) {
-  ThrInvocationMetrics thr_metrics{.version = 0};
-  if (auto status = thrInvocationContextStopMetricsCollection(
-          thr_invocation_context_, &thr_metrics);
-      status != kThrStatusSuccess) {
-    LITERT_LOG(LITERT_ERROR,
-               "thr_invocation_context_stop_metrics_collection failed: %d",
-               status);
-    *metrics = new LiteRtDispatchMetricsT(/*num_metrics=*/0,
-                                          /*metric_names=*/nullptr,
-                                          /*metric_values=*/nullptr);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "thr_invocation_context_stop_metrics_collection failed");
+LiteRtStatus LiteRtDispatchInvocationContextT::StopMetricsCollection(
+    LiteRtDispatchMetrics& metrics) {
+  ThrInvocationMetrics thr_metrics{
+      .version = kThrInvocationMetricsStructVersion,
+  };
+
+  GT_LOG_RETURN_IF_SB_ERROR(thrInvocationContextStopMetricsCollection(
+                                thr_invocation_context_, &thr_metrics),
+                            "Failed to stop SB metrics collection");
+
+  metrics = new LiteRtDispatchMetricsT(thr_metrics);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachAndUnregisterInFences() {
+  while (!in_fences_.empty()) {
+    auto iter = in_fences_.begin();
+    LiteRtDispatchEdgeId edge_id = iter->first;
+    ThrFenceHandle thr_fence_handle = iter->second;
+
+    GT_LOG_RETURN_IF_SB_ERROR(
+        thrInvocationContextDetachInputBufferFence(thr_invocation_context_,
+                                                   gt::ToThrEdgeId(edge_id),
+                                                   thr_fence_handle),
+        "Failed to detach input SB fence %" PRIu64 " from edge %" PRIu64,
+        thr_fence_handle, edge_id);
+
+    GT_LOG_RETURN_IF_SB_ERROR(
+        thrUnregisterFence(device_context_->thr_context(), thr_fence_handle),
+        "Failed to unregister input SB fence %" PRIu64, thr_fence_handle);
+
+    in_fences_.erase(iter);
   }
-  *metrics = new LiteRtDispatchMetricsT(thr_metrics.num_metrics,
-                                        thr_metrics.metric_keys,
-                                        thr_metrics.metric_values);
-  return {};
+
+  return kLiteRtStatusOk;
 }

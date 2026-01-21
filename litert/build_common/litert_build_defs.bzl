@@ -118,7 +118,7 @@ def _make_target_ref(name):
 
 def commandline_flag_copts():
     return select({
-        "@org_tensorflow//tensorflow:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
+        "@platforms//os:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
         "//conditions:default": [],
     })
 
@@ -146,8 +146,8 @@ def symbol_opts():
     """Defines linker flags whether to include symbols or not."""
     return select({
         "@org_tensorflow//tensorflow:debug": [],
-        "@org_tensorflow//tensorflow:macos": [],
-        "@org_tensorflow//tensorflow:ios": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
         "//conditions:default": [
             # Omit symbol table, for all non debug builds
             "-Wl,-s",
@@ -156,24 +156,24 @@ def symbol_opts():
 
 def export_lrt_only_script():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
-        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
+        "@platforms//os:linux": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "@platforms//os:android": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "@platforms//os:chromiumos": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "@platforms//os:macos": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
+        "@platforms//os:ios": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
         "//conditions:default": [],
     })
 
 def export_lrt_only_linkopt():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
-        "@org_tensorflow//tensorflow:android": [
+        "@platforms//os:linux": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "@platforms//os:android": [
             "-Wl,-z,max-page-size=16384",
             _EXPORT_LRT_ONLY_LINKOPT_LINUX,
         ],
-        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
-        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
-        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
+        "@platforms//os:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "@platforms//os:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
+        "@platforms//os:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
         "//conditions:default": [],
     }) + symbol_opts()
 
@@ -191,24 +191,24 @@ _EXPORT_LRT_COMMON_LINKOPTS_LINUX = [
 
 def export_lrt_runtime_only_script():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
-        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
+        "@platforms//os:linux": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
+        "@platforms//os:android": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
+        "@platforms//os:chromiumos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
+        "@platforms//os:macos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
+        "@platforms//os:ios": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
         "//conditions:default": [],
     })
 
 def export_lrt_runtime_only_linkopt():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
-        "@org_tensorflow//tensorflow:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
+        "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
+        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
             "-Wl,-z,max-page-size=16384",
             _EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX,
         ],
-        "@org_tensorflow//tensorflow:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
-        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
-        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
+        "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
+        "@platforms//os:macos": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
+        "@platforms//os:ios": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
         "//conditions:default": [],
     }) + symbol_opts()
 
@@ -219,24 +219,24 @@ _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list
 
 def export_lrt_tflite_runtime_script():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
-        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
-        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "@platforms//os:linux": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@platforms//os:android": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@platforms//os:chromiumos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@platforms//os:macos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "@platforms//os:ios": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
         "//conditions:default": [],
     })
 
 def export_lrt_tflite_runtime_linkopt():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
-        "@org_tensorflow//tensorflow:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
+        "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
             "-Wl,-z,max-page-size=16384",
             _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX,
         ],
-        "@org_tensorflow//tensorflow:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
-        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
-        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "@platforms//os:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "@platforms//os:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
         "//conditions:default": [],
     }) + symbol_opts()
 
@@ -271,7 +271,7 @@ def _litert_base(
             cc_rule_kwargs,
             linkopts = selects.with_or({
                 ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
-                "@org_tensorflow//tensorflow:macos": [],
+                "@platforms//os:macos": [],
                 "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
             }),
         )
