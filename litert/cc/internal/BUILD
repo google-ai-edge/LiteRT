@@ -619,11 +619,12 @@ cc_library(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options",
+        "//litert/c:litert_opencl_types",
         "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_runtime_c_api",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:die_if_null",
-        "@opencl_headers",
     ],
 )

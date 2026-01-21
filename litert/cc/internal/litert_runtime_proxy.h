@@ -32,19 +32,10 @@
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-
-#if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#else
-typedef struct _cl_mem* cl_mem;
-typedef struct _cl_event* cl_event;
-#endif
-
-#if LITERT_HAS_WEBGPU_SUPPORT
-typedef struct WGPUBufferImpl* WGPUBuffer;
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#include "litert/c/litert_webgpu_types.h"
 
 namespace litert {
 namespace internal {
@@ -773,7 +764,7 @@ class RuntimeProxy {
 #if LITERT_HAS_OPENCL_SUPPORT
   LiteRtStatus CreateTensorBufferFromOpenClMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-      LiteRtTensorBufferType buffer_type, cl_mem cl_mem_addr,
+      LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
       LiteRtTensorBuffer* buffer) {
     LITERT_PROXY_METHOD_STATUS(litert_create_tensor_buffer_from_opencl_memory,
@@ -782,7 +773,7 @@ class RuntimeProxy {
   }
 
   LiteRtStatus GetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
-                                           cl_mem* cl_mem_addr) {
+                                           LiteRtClMem* cl_mem_addr) {
     LITERT_PROXY_METHOD_STATUS(litert_get_tensor_buffer_opencl_memory,
                                tensor_buffer, cl_mem_addr);
   }
@@ -834,7 +825,7 @@ class RuntimeProxy {
 #if LITERT_HAS_WEBGPU_SUPPORT
   LiteRtStatus CreateTensorBufferFromWebGpuBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-      LiteRtTensorBufferType buffer_type, WGPUBuffer wgpu_buffer,
+      LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
       size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
       LiteRtTensorBuffer* tensor_buffer) {
     LITERT_PROXY_METHOD_STATUS(litert_create_tensor_buffer_from_web_gpu_buffer,
@@ -957,7 +948,7 @@ class RuntimeProxy {
   }
 
   LiteRtStatus CreateEventFromOpenClEvent(LiteRtEnvironment env,
-                                          cl_event cl_event,
+                                          LiteRtClEvent cl_event,
                                           LiteRtEvent* event) {
     LITERT_PROXY_METHOD_STATUS(litert_create_event_from_opencl_event, env,
                                cl_event, event);
@@ -989,7 +980,7 @@ class RuntimeProxy {
                                sync_fence_fd);
   }
 
-  LiteRtStatus GetEventOpenClEvent(LiteRtEvent event, cl_event* cl_event) {
+  LiteRtStatus GetEventOpenClEvent(LiteRtEvent event, LiteRtClEvent* cl_event) {
     LITERT_PROXY_METHOD_STATUS(litert_get_event_opencl_event, event, cl_event);
   }
 
