@@ -201,4 +201,18 @@ TEST_F(LiteRtEnvironmentOptionsTest, OverwriteTrue) {
   LiteRtDestroyEnvironment(environment);
 }
 
+TEST_F(LiteRtEnvironmentOptionsTest, RetrieveEnvironmentFromOptions) {
+  LiteRtEnvironment environment;
+  LITERT_EXPECT_OK(LiteRtCreateEnvironment(0, nullptr, &environment));
+
+  LiteRtEnvironmentOptions options;
+  LITERT_EXPECT_OK(LiteRtGetEnvironmentOptions(environment, &options));
+  LiteRtAny option_value;
+  LITERT_EXPECT_OK(LiteRtGetEnvironmentOptionsValue(
+      options, kLiteRtEnvOptionTagEnvironment, &option_value));
+  EXPECT_EQ(option_value.ptr_value, reinterpret_cast<void*>(environment));
+
+  LiteRtDestroyEnvironment(environment);
+}
+
 }  // namespace
