@@ -238,7 +238,7 @@ inline Expected<uint32_t> AddDepthwiseConv2dDilationHOption(
   // NEURON_CONV2D.
   int32_t dilation_h = 0;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetDepthwiseConv2dDilationHOptions(op.Get(), &dilation_h))
+      LiteRtGetDepthwiseConv2dDilationHOption(op.Get(), &dilation_h))
       << "Fails to get DepthwiseConv2dDilationH";
   return operand_map.AddScalarInt32(dilation_h);
 }
