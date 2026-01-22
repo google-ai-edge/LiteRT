@@ -14,13 +14,12 @@
 
 #include "litert/core/environment.h"
 
-#include <any>
 #include <array>
 #include <utility>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_any.h"
-#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
 #include "litert/test/matchers.h"
 
@@ -67,6 +66,16 @@ TEST(LiteRtEnvironmentT, CheckStringCopy) {
   ASSERT_TRUE(option.has_value());
   ASSERT_EQ(option->type, kLiteRtAnyTypeString);
   ASSERT_STREQ(option->str_value, "sample path");
+}
+
+TEST(LiteRtEnvironmentT, CheckEnvironmentInOptions) {
+  auto env = LiteRtEnvironmentT::CreateWithOptions({});
+  ASSERT_TRUE(env);
+
+  auto option = (*env)->GetOption(kLiteRtEnvOptionTagEnvironment);
+  ASSERT_TRUE(option.has_value());
+  ASSERT_EQ(option->type, kLiteRtAnyTypeVoidPtr);
+  ASSERT_EQ(option->ptr_value, reinterpret_cast<void*>((*env).get()));
 }
 
 }  // namespace
