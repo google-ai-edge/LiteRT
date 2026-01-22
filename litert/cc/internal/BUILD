@@ -605,6 +605,36 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_matchers",
+    hdrs = ["litert_matchers.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":litert_extended_model",
+        ":litert_op_options",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_matchers_test",
+    srcs = ["litert_matchers_test.cc"],
+    deps = [
+        ":litert_extended_model",
+        ":litert_matchers",
+        ":litert_op_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_runtime_proxy",
     hdrs = ["litert_runtime_proxy.h"],
     deps = [

@@ -167,5 +167,122 @@ TEST(IrAllocatorTest, TransferAtStart) {
   EXPECT_EQ(root_ops.Elements().at(1), &op1);
 }
 
+TEST(IrAllocatorTest, TransferWithUnsortedIndices) {
+  IrAllocator<LiteRtOpT> ops;
+  auto& op1 = ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  auto& other_op1 = other_ops.EmplaceBack();
+  auto& other_op2 = other_ops.EmplaceBack();
+  auto& other_op3 = other_ops.EmplaceBack();
+
+  std::vector<size_t> indices = {2, 0};
+  ops.TransferFrom(other_ops, std::move(indices));
+
+  EXPECT_THAT(other_ops.Elements(), ElementsAreArray({&other_op2}));
+  EXPECT_THAT(ops.Elements(), ElementsAreArray({&op1, &other_op1, &other_op3}));
+}
+
+TEST(IrAllocatorTest, TransferWithEmptyIndices) {
+  IrAllocator<LiteRtOpT> ops;
+  ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  other_ops.EmplaceBack();
+
+  std::vector<size_t> indices = {};
+  ops.TransferFrom(other_ops, std::move(indices));
+
+  EXPECT_EQ(other_ops.Size(), 1);
+  EXPECT_EQ(ops.Size(), 1);
+}
+
+TEST(IrAllocatorTest, TransferWithDuplicateIndices) {
+  IrAllocator<LiteRtOpT> ops;
+  auto& op1 = ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  auto& other_op1 = other_ops.EmplaceBack();
+  auto& other_op2 = other_ops.EmplaceBack();
+
+  std::vector<size_t> indices = {0, 0, 1, 1};
+  ops.TransferFrom(other_ops, std::move(indices));
+
+  EXPECT_EQ(other_ops.Size(), 0);
+  EXPECT_THAT(ops.Elements(), ElementsAreArray({&op1, &other_op1, &other_op2}));
+}
+
+TEST(IrAllocatorTest, TransferFromEmpty) {
+  IrAllocator<LiteRtOpT> ops;
+  ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  ops.TransferFrom(other_ops);
+
+  EXPECT_EQ(ops.Size(), 1);
+}
+
+TEST(IrAllocatorTest, TransferAtIndexEnd) {
+  IrAllocator<LiteRtOpT> root_ops;
+  auto& op1 = root_ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  auto& op2 = other_ops.EmplaceBack();
+
+  root_ops.TransferFrom(other_ops, 1);
+  EXPECT_EQ(root_ops.Elements().at(0), &op1);
+  EXPECT_EQ(root_ops.Elements().at(1), &op2);
+}
+
+TEST(IrAllocatorTest, TransferAtIndexOutOfRange) {
+  IrAllocator<LiteRtOpT> root_ops;
+  auto& op1 = root_ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  auto& op2 = other_ops.EmplaceBack();
+
+  // Should clamp to end.
+  root_ops.TransferFrom(other_ops, 10);
+  EXPECT_EQ(root_ops.Elements().at(0), &op1);
+  EXPECT_EQ(root_ops.Elements().at(1), &op2);
+}
+
+TEST(IrAllocatorTest, TransferFromEmptyAtIndex) {
+  IrAllocator<LiteRtOpT> root_ops;
+  root_ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  root_ops.TransferFrom(other_ops, 0);
+  EXPECT_EQ(root_ops.Size(), 1);
+}
+
+TEST(IrAllocatorTest, TransferFromSelf) {
+  IrAllocator<LiteRtOpT> ops;
+  auto* op1 = &ops.EmplaceBack();
+  auto* op2 = &ops.EmplaceBack();
+
+  ops.TransferFrom(ops);
+
+  EXPECT_EQ(ops.Size(), 2);
+  EXPECT_EQ(ops.Elements().at(0), op1);
+  EXPECT_EQ(ops.Elements().at(1), op2);
+}
+
+TEST(IrAllocatorTest, TransferFromSelfWithIndices) {
+  IrAllocator<LiteRtOpT> ops;
+  auto* op1 = &ops.EmplaceBack();
+  auto* op2 = &ops.EmplaceBack();
+  auto* op3 = &ops.EmplaceBack();
+
+  std::vector<size_t> indices = {0, 2};
+  ops.TransferFrom(ops, std::move(indices));
+
+  // Self-transfer is a no-op.
+  EXPECT_EQ(ops.Size(), 3);
+  EXPECT_EQ(ops.Elements().at(0), op1);
+  EXPECT_EQ(ops.Elements().at(1), op2);
+  EXPECT_EQ(ops.Elements().at(2), op3);
+}
+
 }  // namespace
 }  // namespace litert::internal
