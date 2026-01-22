@@ -20,14 +20,12 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_opencl_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
-
-// Forward declaration of OpenCL event to avoid including OpenCL headers.
-typedef struct _cl_event* cl_event;
-typedef void* EGLSyncKHR;
 
 // Creates a LiteRtEvent from a sync fence fd.
 // If owns_fd is true, the LiteRtEvent will own the fd and close it when
@@ -45,7 +43,7 @@ LiteRtStatus LiteRtCreateEventFromSyncFenceFd(LiteRtEnvironment env,
 // responsible for calling LiteRtDestroyEvent() to release the object (but not
 // the underlying cl_event).
 LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
-                                              cl_event cl_event,
+                                              LiteRtClEvent cl_event,
                                               LiteRtEvent* event);
 
 // Another LiteRtEvent creation API for OpenCL event.
@@ -53,7 +51,7 @@ LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
 // Caller owns the returned LiteRtEvent. The owner is responsible for
 // calling LiteRtDestroyEvent() to release the object.
 LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
-                                               EGLSyncKHR egl_sync,
+                                               LiteRtEglSyncKhr egl_sync,
                                                LiteRtEvent* event);
 
 // Creates a LiteRtEvent with the given type.
@@ -72,9 +70,11 @@ LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type);
 
 LiteRtStatus LiteRtGetEventSyncFenceFd(LiteRtEvent event, int* sync_fence_fd);
 
-LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event, cl_event* cl_event);
+LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event,
+                                       LiteRtClEvent* cl_event);
 
-LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync);
+LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event,
+                                   LiteRtEglSyncKhr* egl_sync);
 
 // Returns the native event of the custom event if supported.
 LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native);

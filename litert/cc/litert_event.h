@@ -20,16 +20,15 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
+#ifdef __cplusplus
 extern "C" {
-/// @brief Forward declaration of OpenCL event to avoid including OpenCL
-/// headers.
-typedef struct _cl_event* cl_event;
-typedef void* EGLSyncKHR;
-}
+#endif  // __cplusplus
 
 namespace litert {
 
@@ -59,7 +58,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
 
   /// @brief Creates an `Event` object from an OpenCL event.
   static Expected<Event> CreateFromOpenClEvent(LiteRtEnvironment env,
-                                               cl_event cl_event) {
+                                               LiteRtClEvent cl_event) {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(
         LiteRtCreateEventFromOpenClEvent(env, cl_event, &event));
@@ -70,7 +69,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   /// @note This function assumes that all GL operations have already been
   /// added to the GPU command queue.
   static Expected<Event> CreateFromEglSyncFence(LiteRtEnvironment env,
-                                                EGLSyncKHR egl_sync) {
+                                                LiteRtEglSyncKhr egl_sync) {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(
         LiteRtCreateEventFromEglSyncFence(env, egl_sync, &event));
@@ -94,14 +93,14 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   }
 
   /// @brief Returns the underlying OpenCL event if the event type is OpenCL.
-  Expected<cl_event> GetOpenClEvent() {
-    cl_event cl_event;
+  Expected<LiteRtClEvent> GetOpenClEvent() {
+    LiteRtClEvent cl_event;
     LITERT_RETURN_IF_ERROR(LiteRtGetEventOpenClEvent(Get(), &cl_event));
     return cl_event;
   }
 
-  Expected<EGLSyncKHR> GetEglSync() {
-    EGLSyncKHR egl_sync;
+  Expected<LiteRtEglSyncKhr> GetEglSync() {
+    LiteRtEglSyncKhr egl_sync;
     LITERT_RETURN_IF_ERROR(LiteRtGetEventEglSync(Get(), &egl_sync));
     return egl_sync;
   }
@@ -165,5 +164,9 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
 };
 
 }  // namespace litert
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_CC_LITERT_EVENT_H_

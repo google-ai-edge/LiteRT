@@ -20,13 +20,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/cc/litert_expected.h"
-
-#if LITERT_HAS_OPENCL_SUPPORT
-extern "C" {
-typedef struct _cl_event* cl_event;
-}
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 #define LITERT_HAS_CUSTOM_EVENT_SUPPORT 1
@@ -42,10 +37,10 @@ struct LiteRtEventT {
   bool owns_fd = false;
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
-  cl_event opencl_event;
+  LiteRtClEvent opencl_event;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_OPENGL_SUPPORT
-  EGLSyncKHR egl_sync;
+  LiteRtEglSyncKhr egl_sync;
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
   // Custom event set by the client after CreateManaged.
@@ -61,7 +56,7 @@ struct LiteRtEventT {
                                                        LiteRtEventType type);
 };
 
-litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
-                                                          EGLSyncKHR egl_sync);
+litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(
+    LiteRtEnvironment env, LiteRtEglSyncKhr egl_sync);
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_EVENT_H_

@@ -15,8 +15,11 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_LITERT_OPENCL_TYPES_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_LITERT_OPENCL_TYPES_H_
 
+#include <stdint.h>
+
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
+#include <CL/cl_platform.h>
 #endif
 
 #ifdef __cplusplus
@@ -30,9 +33,15 @@ extern "C" {
 #if LITERT_HAS_OPENCL_SUPPORT
 typedef cl_mem LiteRtClMem;
 typedef cl_event LiteRtClEvent;
+typedef cl_int LiteRtClInt;
+#define LITE_RT_CL_SUCCESS CL_SUCCESS
+#define LITE_RT_CL_COMPLETE CL_COMPLETE
 #else
 typedef struct LiteRtClMemStruct* LiteRtClMem;
 typedef struct LiteRtClEventStruct* LiteRtClEvent;
+typedef int32_t LiteRtClInt;
+#define LITE_RT_CL_SUCCESS 0
+#define LITE_RT_CL_COMPLETE 0x0
 #endif
 
 #ifdef __cplusplus

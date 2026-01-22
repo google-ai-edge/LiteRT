@@ -569,9 +569,8 @@ typedef struct LiteRtRuntimeCApiStruct {
                                                         LiteRtClEvent cl_event,
                                                         LiteRtEvent* event);
   // litert_event.h: LiteRtCreateEventFromEglSyncFence
-  LiteRtStatus (*litert_create_event_from_egl_sync_fence)(LiteRtEnvironment env,
-                                                          EGLSyncKHR egl_sync,
-                                                          LiteRtEvent* event);
+  LiteRtStatus (*litert_create_event_from_egl_sync_fence)(
+      LiteRtEnvironment env, LiteRtEglSyncKhr egl_sync, LiteRtEvent* event);
   // litert_event.h: LiteRtCreateManagedEvent
   LiteRtStatus (*litert_create_managed_event)(LiteRtEnvironment env,
                                               LiteRtEventType type,
@@ -590,7 +589,7 @@ typedef struct LiteRtRuntimeCApiStruct {
                                                 LiteRtClEvent* cl_event);
   // litert_event.h: LiteRtGetEventEglSync
   LiteRtStatus (*litert_get_event_egl_sync)(LiteRtEvent event,
-                                            EGLSyncKHR* egl_sync);
+                                            LiteRtEglSyncKhr* egl_sync);
   // litert_event.h: LiteRtGetEventCustomNativeEvent
   LiteRtStatus (*litert_get_event_custom_native_event)(LiteRtEvent event,
                                                        void** native);

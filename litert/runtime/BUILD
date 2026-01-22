@@ -47,12 +47,12 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
+        "//litert/c:litert_opencl_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@com_google_absl//absl/strings:str_format",
-        "@opencl_headers",
     ],
 )
 

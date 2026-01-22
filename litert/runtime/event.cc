@@ -23,6 +23,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
@@ -32,9 +33,8 @@
 #include <poll.h>
 #include <unistd.h>
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
+
 #if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#include <CL/cl_platform.h>
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
@@ -73,9 +73,10 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
   }
   if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    cl_int res = tflite::gpu::cl::clWaitForEvents(/*num_events=*/1,
-                                                  /*event_list=*/&opencl_event);
-    if (res != CL_SUCCESS) {
+    LiteRtClInt res =
+        tflite::gpu::cl::clWaitForEvents(/*num_events=*/1,
+                                         /*event_list=*/&opencl_event);
+    if (res != LITE_RT_CL_SUCCESS) {
       return Error(
           kLiteRtStatusErrorRuntimeFailure,
           absl::StrFormat("clWaitForEvents fails with error code %d", res));
@@ -178,9 +179,9 @@ Expected<int> LiteRtEventT::GetSyncFenceFd() {
 Expected<void> LiteRtEventT::Signal() {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (type == LiteRtEventTypeOpenCl) {
-    cl_int res =
-        tflite::gpu::cl::clSetUserEventStatus(opencl_event, CL_COMPLETE);
-    if (res != CL_SUCCESS) {
+    LiteRtClInt res = tflite::gpu::cl::clSetUserEventStatus(
+        opencl_event, LITE_RT_CL_COMPLETE);
+    if (res != LITE_RT_CL_SUCCESS) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    absl::StrFormat(
                        "clSetUserEventStatus fails with error code %d", res));
@@ -197,10 +198,10 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
   if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
     LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
-    cl_int res;
-    cl_event user_event = tflite::gpu::cl::clCreateUserEvent(
+    LiteRtClInt res;
+    LiteRtClEvent user_event = tflite::gpu::cl::clCreateUserEvent(
         gpu_env->GetContext()->context(), &res);
-    if (res != CL_SUCCESS) {
+    if (res != LITE_RT_CL_SUCCESS) {
       return Error(
           kLiteRtStatusErrorRuntimeFailure,
           absl::StrFormat("clCreateUserEvent fails with error code %d", res));
@@ -345,8 +346,8 @@ Expected<int> LiteRtEventT::DupFd() const {
     LITERT_RETURN_IF_ERROR(dup_fd >= 0) << "Failed to dup fd " << fd;
     return dup_fd;
 #else
-  return Error(kLiteRtStatusErrorUnsupported,
-               "LiteRT does not have sync fence support enabled.");
+    return Error(kLiteRtStatusErrorUnsupported,
+                 "LiteRT does not have sync fence support enabled.");
 
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
   }
@@ -379,7 +380,7 @@ Expected<int> LiteRtEventT::DupFd() const {
 }
 
 Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
-                                                  EGLSyncKHR egl_sync) {
+                                                  LiteRtEglSyncKhr egl_sync) {
 #if LITERT_HAS_OPENGL_SUPPORT
   LITERT_RETURN_IF_ERROR(egl_sync != EGL_NO_SYNC_KHR);
   LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());

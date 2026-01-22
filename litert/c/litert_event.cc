@@ -21,12 +21,12 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/event.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#include <CL/cl_platform.h>
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
@@ -49,7 +49,7 @@ LiteRtStatus LiteRtCreateEventFromSyncFenceFd(LiteRtEnvironment env,
 }
 
 LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
-                                              cl_event cl_event,
+                                              LiteRtClEvent cl_event,
                                               LiteRtEvent* event) {
 #if LITERT_HAS_OPENCL_SUPPORT
   *event = new LiteRtEventT{
@@ -57,8 +57,8 @@ LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
       .type = LiteRtEventTypeOpenCl,
       .opencl_event = cl_event,
   };
-  cl_int res = tflite::gpu::cl::clRetainEvent(cl_event);
-  if (res != CL_SUCCESS) {
+  LiteRtClInt res = tflite::gpu::cl::clRetainEvent(cl_event);
+  if (res != LITE_RT_CL_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to retain OpenCL event: %d", res);
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -83,7 +83,8 @@ LiteRtStatus LiteRtGetEventSyncFenceFd(LiteRtEvent event, int* sync_fence_fd) {
   return kLiteRtStatusErrorUnsupported;
 }
 
-LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event, cl_event* cl_event) {
+LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event,
+                                       LiteRtClEvent* cl_event) {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (event->type == LiteRtEventTypeOpenCl) {
     *cl_event = event->opencl_event;
@@ -93,7 +94,8 @@ LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event, cl_event* cl_event) {
   return kLiteRtStatusErrorUnsupported;
 }
 
-LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync) {
+LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event,
+                                   LiteRtEglSyncKhr* egl_sync) {
 #if LITERT_HAS_OPENGL_SUPPORT
   if (event->type == LiteRtEventTypeEglSyncFence ||
       event->type == LiteRtEventTypeEglNativeSyncFence) {
@@ -105,7 +107,7 @@ LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync) {
 }
 
 LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
-                                               EGLSyncKHR egl_sync,
+                                               LiteRtEglSyncKhr egl_sync,
                                                LiteRtEvent* event) {
 #if LITERT_HAS_OPENGL_SUPPORT
   LITERT_ASSIGN_OR_RETURN(LiteRtEventType type,

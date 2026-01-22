@@ -31,16 +31,21 @@ extern "C" {
 typedef GLenum LiteRtGLenum;
 typedef GLuint LiteRtGLuint;
 typedef GLint LiteRtGLint;
+typedef EGLContext LiteRtEglContext;
+typedef EGLDisplay LiteRtEglDisplay;
+typedef EGLSyncKHR LiteRtEglSyncKhr;
+#define LITE_RT_EGL_NO_CONTEXT EGL_NO_CONTEXT
+#define LITE_RT_EGL_NO_DISPLAY EGL_NO_DISPLAY
 #else
 // Allows for compilation of GL types when OpenGl support is not available.
 typedef uint32_t LiteRtGLenum;
 typedef uint32_t LiteRtGLuint;
 typedef int32_t LiteRtGLint;
-typedef void *EGLContext;
-typedef void *EGLDisplay;
-typedef void *EGLSyncKHR;
-#define EGL_NO_CONTEXT static_cast<EGLContext>(0)
-#define EGL_NO_DISPLAY static_cast<EGLDisplay>(0)
+typedef struct LiteRtEglContextStruct* LiteRtEglContext;
+typedef struct LiteRtEglDisplayStruct* LiteRtEglDisplay;
+typedef struct LiteRtEglSyncKhrStruct* LiteRtEglSyncKhr;
+#define LITE_RT_EGL_NO_CONTEXT static_cast<LiteRtEglContext>(0)
+#define LITE_RT_EGL_NO_DISPLAY static_cast<LiteRtEglDisplay>(0)
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #ifdef __cplusplus

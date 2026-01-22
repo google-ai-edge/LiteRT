@@ -90,11 +90,12 @@ struct GpuEnvironmentOptions {
   // It is the error to set egl_display, egl_context AND context at the same
   // time. If egl_display and egl_context are set, they will be used to create
   // GL-aware CL context.
-  EGLDisplay egl_display = EGL_NO_DISPLAY;
-  EGLContext egl_context = EGL_NO_CONTEXT;
+  LiteRtEglDisplay egl_display = LITE_RT_EGL_NO_DISPLAY;
+  LiteRtEglContext egl_context = LITE_RT_EGL_NO_CONTEXT;
 
   bool IsGlAware() const {
-    return egl_context != EGL_NO_CONTEXT && egl_display != EGL_NO_DISPLAY;
+    return egl_context != LITE_RT_EGL_NO_CONTEXT &&
+           egl_display != LITE_RT_EGL_NO_DISPLAY;
   }
 
 #if LITERT_HAS_WEBGPU_SUPPORT
@@ -125,8 +126,8 @@ class GpuEnvironment {
   tflite::gpu::cl::CLContext* GetContext() { return &context_; }
   tflite::gpu::cl::CLCommandQueue* GetCommandQueue() { return &command_queue_; }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-  EGLDisplay GetEglDisplay() { return options_.egl_display; }
-  EGLContext GetEglContext() { return options_.egl_context; }
+  LiteRtEglDisplay GetEglDisplay() { return options_.egl_display; }
+  LiteRtEglContext GetEglContext() { return options_.egl_context; }
 
 #if LITERT_HAS_WEBGPU_SUPPORT
   WGPUDevice GetWebGpuDevice() { return options_.webgpu_device; }

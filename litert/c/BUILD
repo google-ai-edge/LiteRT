@@ -317,11 +317,12 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_event_type",
+        ":litert_gl_types",
+        ":litert_opencl_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:event",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
-        "@opencl_headers",
     ],
     alwayslink = 1,
 )

@@ -955,7 +955,7 @@ class RuntimeProxy {
   }
 
   LiteRtStatus CreateEventFromEglSyncFence(LiteRtEnvironment env,
-                                           EGLSyncKHR egl_sync,
+                                           LiteRtEglSyncKhr egl_sync,
                                            LiteRtEvent* event) {
     LITERT_PROXY_METHOD_STATUS(litert_create_event_from_egl_sync_fence, env,
                                egl_sync, event);
@@ -984,7 +984,7 @@ class RuntimeProxy {
     LITERT_PROXY_METHOD_STATUS(litert_get_event_opencl_event, event, cl_event);
   }
 
-  LiteRtStatus GetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync) {
+  LiteRtStatus GetEventEglSync(LiteRtEvent event, LiteRtEglSyncKhr* egl_sync) {
     LITERT_PROXY_METHOD_STATUS(litert_get_event_egl_sync, event, egl_sync);
   }
 
