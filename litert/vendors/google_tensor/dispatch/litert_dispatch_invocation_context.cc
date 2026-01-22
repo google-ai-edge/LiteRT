@@ -69,7 +69,11 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
       return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_RETURN_IF_ERROR(graph->AddNode(node_id, node_type));
+  // The positional node connection API is used here so that this path remains
+  // compatible with older SouthBound versions. As a result, support for the
+  // basic Dispatch API can still be advertised in the presence of an old
+  // SouthBound version.
+  LITERT_RETURN_IF_ERROR(graph->AddPositionalNode(node_id, node_type));
   LITERT_RETURN_IF_ERROR(
       graph->AssignNodeFunction(node_id, exec_handle, function_name));
 
@@ -78,8 +82,7 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
     LiteRtDispatchEdgeId edge_id = next_edge_id++;
 
     LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
-    LITERT_RETURN_IF_ERROR(
-        graph->ConnectNodeInput(node_id, input_index, edge_id));
+    LITERT_RETURN_IF_ERROR(graph->ConnectPositionalNodeInput(node_id, edge_id));
     LITERT_RETURN_IF_ERROR(graph->ConnectGraphInput(edge_id));
   }
 
@@ -88,7 +91,7 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
 
     LITERT_RETURN_IF_ERROR(graph->AddEdge(edge_id));
     LITERT_RETURN_IF_ERROR(
-        graph->ConnectNodeOutput(node_id, output_index, edge_id));
+        graph->ConnectPositionalNodeOutput(node_id, edge_id));
     LITERT_RETURN_IF_ERROR(graph->ConnectGraphOutput(edge_id));
   }
 

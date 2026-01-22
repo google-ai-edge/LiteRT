@@ -34,6 +34,27 @@
 
 namespace gt = litert::google_tensor;
 
+namespace {
+
+LiteRtStatus ToThrNodeType(LiteRtDispatchNodeType node_type,
+                           ThrNodeType& thr_node_type) {
+  switch (node_type) {
+    case kLiteRtDispatchNodeTypeDsp:
+      thr_node_type = kThrNodeTypeDsp;
+      break;
+    case kLiteRtDispatchNodeTypeNpu:
+      thr_node_type = kThrNodeTypeNpu;
+      break;
+    default:
+      LITERT_LOG(LITERT_ERROR, "Invalid node type %d", node_type);
+      return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
+
 LiteRtStatus LiteRtDispatchGraphT::Create(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph& graph) {
   GT_LOG_RETURN_IF_NULL(device_context);
@@ -119,28 +140,83 @@ LiteRtStatus LiteRtDispatchGraphT::Destroy() {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtDispatchGraphT::AddNode(LiteRtDispatchNodeId node_id,
-                                           LiteRtDispatchNodeType node_type) {
+LiteRtStatus LiteRtDispatchGraphT::AddPositionalNode(
+    LiteRtDispatchNodeId node_id, LiteRtDispatchNodeType node_type) {
   ThrNodeType thr_node_type;
-  switch (node_type) {
-    case kLiteRtDispatchNodeTypeDsp:
-      thr_node_type = kThrNodeTypeDsp;
-      break;
-    case kLiteRtDispatchNodeTypeNpu:
-      thr_node_type = kThrNodeTypeNpu;
-      break;
-    default:
-      LITERT_LOG(LITERT_ERROR, "Invalid node type %d", node_type);
-      return kLiteRtStatusErrorInvalidArgument;
-  }
+  LITERT_RETURN_IF_ERROR(ToThrNodeType(node_type, thr_node_type));
+
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphAddSqNode(thr_graph_, gt::ToThrNodeId(node_id), thr_node_type),
+      "Failed to add positional node %" PRIu64 " with type %d to SB graph",
+      node_id, node_type);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchGraphT::ConnectPositionalNodeInput(
+    LiteRtDispatchNodeId node_id, LiteRtDispatchEdgeId edge_id) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphConnectNodeInput(thr_graph_, gt::ToThrNodeId(node_id),
+                               gt::ToThrEdgeId(edge_id)),
+      "Failed to connect positional node %" PRIu64 " to input edge %" PRIu64,
+      node_id, edge_id);
+
+  input_edge_ids_.insert_or_assign(input_edge_ids_.size(), edge_id);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchGraphT::ConnectPositionalNodeOutput(
+    LiteRtDispatchNodeId node_id, LiteRtDispatchEdgeId edge_id) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrGraphConnectNodeOutput(thr_graph_, gt::ToThrNodeId(node_id),
+                                gt::ToThrEdgeId(edge_id)),
+      "Failed to connect positional node %" PRIu64 " to output edge %" PRIu64,
+      node_id, edge_id);
+
+  output_edge_ids_.insert_or_assign(output_edge_ids_.size(), edge_id);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchGraphT::AddIndexedNode(
+    LiteRtDispatchNodeId node_id, LiteRtDispatchNodeType node_type) {
+  ThrNodeType thr_node_type;
+  LITERT_RETURN_IF_ERROR(ToThrNodeType(node_type, thr_node_type));
 
   GT_LOG_RETURN_IF_SB_ERROR(
       thrGraphAddSqNodeWithInterfaceBindingMode(
           thr_graph_, gt::ToThrNodeId(node_id), thr_node_type,
           kThrNodeInterfaceBindingModeIndexed),
-      "Failed to add node %" PRIu64 " with type %d to SB graph", node_id,
-      node_type);
+      "Failed to add indexed node %" PRIu64 " with type %d to SB graph",
+      node_id, node_type);
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchGraphT::ConnectIndexedNodeInput(
+    LiteRtDispatchNodeId node_id, int input_index,
+    LiteRtDispatchEdgeId edge_id) {
+  GT_LOG_RETURN_IF_SB_ERROR(thrGraphConnectNodeInputWithPortIndex(
+                                thr_graph_, gt::ToThrNodeId(node_id),
+                                gt::ToThrEdgeId(edge_id), input_index),
+                            "Failed to connect indexed node %" PRIu64
+                            " to input edge %" PRIu64 " at index %d",
+                            node_id, edge_id, input_index);
+
+  input_edge_ids_.insert_or_assign(input_index, edge_id);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchGraphT::ConnectIndexedNodeOutput(
+    LiteRtDispatchNodeId node_id, int output_index,
+    LiteRtDispatchEdgeId edge_id) {
+  GT_LOG_RETURN_IF_SB_ERROR(thrGraphConnectNodeOutputWithPortIndex(
+                                thr_graph_, gt::ToThrNodeId(node_id),
+                                gt::ToThrEdgeId(edge_id), output_index),
+                            "Failed to connect indexed node %" PRIu64
+                            " to output edge %" PRIu64 " at index %d",
+                            node_id, edge_id, output_index);
+
+  output_edge_ids_.insert_or_assign(output_index, edge_id);
   return kLiteRtStatusOk;
 }
 
@@ -149,34 +225,6 @@ LiteRtStatus LiteRtDispatchGraphT::AddEdge(LiteRtDispatchEdgeId edge_id) {
       thrGraphAddEdge(thr_graph_, gt::ToThrEdgeId(edge_id), kThrEdgeTypeTensor),
       "Failed to add edge %" PRIu64 " to SB graph", edge_id);
 
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtDispatchGraphT::ConnectNodeInput(
-    LiteRtDispatchNodeId node_id, int input_index,
-    LiteRtDispatchEdgeId edge_id) {
-  GT_LOG_RETURN_IF_SB_ERROR(thrGraphConnectNodeInputWithPortIndex(
-                                thr_graph_, gt::ToThrNodeId(node_id),
-                                gt::ToThrEdgeId(edge_id), input_index),
-                            "Failed to connect node %" PRIu64
-                            " to input edge %" PRIu64 " at index %d",
-                            node_id, edge_id, input_index);
-
-  input_edge_ids_.insert_or_assign(input_index, edge_id);
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtDispatchGraphT::ConnectNodeOutput(
-    LiteRtDispatchNodeId node_id, int output_index,
-    LiteRtDispatchEdgeId edge_id) {
-  GT_LOG_RETURN_IF_SB_ERROR(thrGraphConnectNodeOutputWithPortIndex(
-                                thr_graph_, gt::ToThrNodeId(node_id),
-                                gt::ToThrEdgeId(edge_id), output_index),
-                            "Failed to connect node %" PRIu64
-                            " to output edge %" PRIu64 " at index %d",
-                            node_id, edge_id, output_index);
-
-  output_edge_ids_.insert_or_assign(output_index, edge_id);
   return kLiteRtStatusOk;
 }
 

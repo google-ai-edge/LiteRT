@@ -33,16 +33,41 @@ class LiteRtDispatchGraphT {
 
   LiteRtStatus Destroy();
 
-  LiteRtStatus AddNode(LiteRtDispatchNodeId node_id,
-                       LiteRtDispatchNodeType node_type);
+  // To remain compatible with older SouthBound versions, this class exposes
+  // both positional and indexed node connection APIs.
+  //
+  // The APIs cannot be "mixed and matched", and therefore a call sequence such
+  // as the following will produce an error:
+  //
+  // ```
+  // LiteRtDispatchNodeId node_id = 0;
+  // graph->AddPositionalNode(node_id, ...);
+  // graph->ConnectIndexedNodeInput(node_id, ...);
+  // ```
+
+  // The positional node connection API.
+  LiteRtStatus AddPositionalNode(LiteRtDispatchNodeId node_id,
+                                 LiteRtDispatchNodeType node_type);
+
+  LiteRtStatus ConnectPositionalNodeInput(LiteRtDispatchNodeId node_id,
+                                          LiteRtDispatchEdgeId edge_id);
+
+  LiteRtStatus ConnectPositionalNodeOutput(LiteRtDispatchNodeId node_id,
+                                           LiteRtDispatchEdgeId edge_id);
+
+  // The indexed node connection API.
+  LiteRtStatus AddIndexedNode(LiteRtDispatchNodeId node_id,
+                              LiteRtDispatchNodeType node_type);
+
+  LiteRtStatus ConnectIndexedNodeInput(LiteRtDispatchNodeId node_id,
+                                       int input_index,
+                                       LiteRtDispatchEdgeId edge_id);
+
+  LiteRtStatus ConnectIndexedNodeOutput(LiteRtDispatchNodeId node_id,
+                                        int output_index,
+                                        LiteRtDispatchEdgeId edge_id);
 
   LiteRtStatus AddEdge(LiteRtDispatchEdgeId edge_id);
-
-  LiteRtStatus ConnectNodeInput(LiteRtDispatchNodeId node_id, int input_index,
-                                LiteRtDispatchEdgeId edge_id);
-
-  LiteRtStatus ConnectNodeOutput(LiteRtDispatchNodeId node_id, int output_index,
-                                 LiteRtDispatchEdgeId edge_id);
 
   LiteRtStatus ConnectGraphInput(LiteRtDispatchEdgeId edge_id);
 

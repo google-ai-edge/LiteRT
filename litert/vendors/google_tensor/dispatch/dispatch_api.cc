@@ -305,7 +305,7 @@ LiteRtStatus AddNode(LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
                      LiteRtDispatchNodeType node_type) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return graph->AddNode(node_id, node_type);
+  return graph->AddIndexedNode(node_id, node_type);
 }
 
 LiteRtStatus AddEdge(LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id) {
@@ -319,7 +319,7 @@ LiteRtStatus ConnectNodeInput(LiteRtDispatchGraph graph,
                               LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return graph->ConnectNodeInput(node_id, input_index, edge_id);
+  return graph->ConnectIndexedNodeInput(node_id, input_index, edge_id);
 }
 
 LiteRtStatus ConnectNodeOutput(LiteRtDispatchGraph graph,
@@ -327,14 +327,14 @@ LiteRtStatus ConnectNodeOutput(LiteRtDispatchGraph graph,
                                LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return graph->ConnectNodeOutput(node_id, output_index, edge_id);
+  return graph->ConnectIndexedNodeOutput(node_id, output_index, edge_id);
 }
 
 LiteRtStatus ConnectGraphInput(LiteRtDispatchGraph graph, int input_index,
                                LiteRtDispatchEdgeId edge_id) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  return graph->ConnectGraphInput(input_index);
+  return graph->ConnectGraphInput(edge_id);
 }
 
 LiteRtStatus ConnectGraphOutput(LiteRtDispatchGraph graph, int output_index,
