@@ -30,9 +30,9 @@ namespace litert {
 Converter::~Converter() = default;
 
 void Converter::AddSignature(const std::string& signature_name,
-                    const std::vector<std::string>& input_names,
-                    const std::vector<std::string>& output_names,
-                    const std::vector<std::byte>& data){
+                             const std::vector<std::string>& input_names,
+                             const std::vector<std::string>& output_names,
+                             const std::vector<std::byte>& data) {
   ConverterSignature signature;
   signature.signature_name = signature_name;
   signature.input_names = input_names;
