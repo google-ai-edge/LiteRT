@@ -23,8 +23,8 @@ enum class G2GConfig {
   kMHAOpt,
 };
 
-void GraphToGraphTransform(const G2GConfig g2g_option,
-                           std::vector<OpWrapper>& ops, TensorPool& tensor_pool,
+void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
+                           TensorPool& tensor_pool,
                            std::function<bool(OpWrapper&)> validate_op_config);
 }  // namespace qnn
 

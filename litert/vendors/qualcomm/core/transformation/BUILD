@@ -40,6 +40,34 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "fastvlm_test",
+    srcs = [
+        "fastvlm_test.cc",
+    ],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        ":graph_to_graph",
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
+        "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
+        "//litert/vendors/qualcomm/core/builders:matmul_op_builder",
+        "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//litert/vendors/qualcomm/core/builders:slice_op_builder",
+        "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
+        "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
 cc_library(
     name = "graph_to_graph",
     srcs = ["graph_to_graph.cc"],
@@ -88,6 +116,7 @@ cc_library(
         "//litert/vendors/qualcomm/core/builders:cast_op_builder",
         "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
+        "//litert/vendors/qualcomm/core/builders:matmul_op_builder",
         "//litert/vendors/qualcomm/core/builders:pack_op_builder",
         "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
         "//litert/vendors/qualcomm/core/builders:slice_op_builder",

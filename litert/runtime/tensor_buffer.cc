@@ -543,9 +543,9 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuTexture(
                           litert::internal::GetNumPackedBytes(tensor_type));
   LITERT_ASSIGN_OR_RETURN(
       litert::internal::CustomBuffer custom_buffer,
-      litert::internal::CustomBuffer::Wrap(
-          env, tensor_type, kLiteRtTensorBufferTypeWebGpuTexture, texture,
-          buffer_size, packed_size));
+      litert::internal::CustomBuffer::Wrap(env, tensor_type,
+                                           kLiteRtTensorBufferTypeWebGpuTexture,
+                                           texture, buffer_size, packed_size));
 
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       env, tensor_type, kLiteRtTensorBufferTypeWebGpuTexture, buffer_size));
