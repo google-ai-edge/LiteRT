@@ -189,7 +189,7 @@ pybind_extension(
         ":test_registerer",
         "//tflite:framework",
         "//tflite/kernels:builtin_ops",
-        "@local_xla//third_party/python_runtime:headers",
         "@pybind11",
+        "@xla//third_party/python_runtime:headers",
     ],
 )

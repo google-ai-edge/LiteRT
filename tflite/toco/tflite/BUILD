@@ -146,10 +146,10 @@ tf_cc_test(
         "@com_google_absl//absl/log",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
-        "@local_xla//xla/tsl/protobuf:error_codes_proto_impl_cc",
         "@org_tensorflow//tensorflow/core:lib_proto_parsing",
         "@org_tensorflow//tensorflow/core:ops",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@xla//xla/tsl/protobuf:error_codes_proto_impl_cc",
     ],
 )
 

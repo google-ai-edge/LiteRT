@@ -54,8 +54,8 @@ cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
         "@libjpeg_turbo//:jpeg",
-        "@local_xla//xla/tsl/util:stats_calculator_portable",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
+        "@xla//xla/tsl/util:stats_calculator_portable",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/core:portable_jpeg_internal",
@@ -130,8 +130,8 @@ cc_library(
         "//tflite/tools/evaluation/proto:evaluation_stages_cc_proto",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/log",
-        "@local_xla//xla/tsl/util:stats_calculator_portable",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
+        "@xla//xla/tsl/util:stats_calculator_portable",
     ],
 )
 
@@ -187,8 +187,8 @@ cc_library(
         "//tflite/tools/evaluation/proto:evaluation_stages_cc_proto",
         "@FP16",
         "@com_google_absl//absl/log",
-        "@local_xla//xla/tsl/util:stats_calculator_portable",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
+        "@xla//xla/tsl/util:stats_calculator_portable",
     ],
 )
 
