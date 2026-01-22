@@ -160,6 +160,17 @@ Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuBuffer(
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
+
+Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuTexture(
+    LiteRtEnvironment env, const RankedTensorType& tensor_type,
+    void* texture, size_t size_bytes) {
+  LiteRtTensorBuffer tensor_buffer;
+  auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromWebGpuTexture(
+      env, &litert_tensor_type, texture, size_bytes,
+      /*deallocator=*/nullptr, &tensor_buffer));
+  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+}
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT

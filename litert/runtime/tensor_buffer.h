@@ -125,6 +125,10 @@ class LiteRtTensorBufferT {
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer buffer,
       size_t wgpu_buffer_size);
+
+  static litert::Expected<Ptr> CreateFromWebGpuTexture(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      void* texture, size_t buffer_size);
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT

@@ -213,6 +213,19 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
     size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer);
 
+// Create a tensor buffer from an existing WebGPU texture of a given size, with
+// optional webgpu texture deallocator (it can be NULL).
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// releasing the object. NULL deallocator means that the WebGPU texture is not
+// managed by the tensor buffer and therefore must be released separately by the
+// caller.
+LiteRtStatus LiteRtCreateTensorBufferFromWebGpuTexture(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    void* webgpu_texture, size_t webgpu_texture_size,
+    LiteRtWebGpuTextureDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer);
+
 // Return an error if the backing buffer is not a WebGpu buffer.
 LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
