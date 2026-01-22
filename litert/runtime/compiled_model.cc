@@ -572,17 +572,6 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
   for (auto& accelerator : env->GetAcceleratorRegistry()) {
-    LITERT_DEBUG_CODE({
-      const char* accelerator_name = nullptr;
-      if (accelerator->GetName(accelerator.get(), &accelerator_name) !=
-              kLiteRtStatusOk ||
-          !accelerator_name) {
-        LITERT_LOG(LITERT_WARNING, "Failed to get name for accelerator");
-      } else {
-        LITERT_LOG(LITERT_DEBUG, "Apply accelerator %s", accelerator_name);
-      }
-    });
-
     bool delegate_responsible_for_jit = false;
     LITERT_RETURN_IF_ERROR(
         LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
@@ -599,6 +588,17 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
         !(hardware_accelerators & accelerator_supported_hardware)) {
       continue;
     }
+
+    LITERT_DEBUG_CODE({
+      const char* accelerator_name = nullptr;
+      if (accelerator->GetName(accelerator.get(), &accelerator_name) !=
+              kLiteRtStatusOk ||
+          !accelerator_name) {
+        LITERT_LOG(LITERT_WARNING, "Failed to get name for accelerator");
+      } else {
+        LITERT_LOG(LITERT_DEBUG, "Apply accelerator %s", accelerator_name);
+      }
+    });
 
     LiteRtDelegateWrapper delegate_wrapper = nullptr;
     LITERT_RETURN_IF_ERROR(accelerator->CreateDelegate(
