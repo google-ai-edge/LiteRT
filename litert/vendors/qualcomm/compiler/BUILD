@@ -64,6 +64,7 @@ litert_dynamic_lib(
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/vendors/cc:options_helper",
+        "//litert/vendors/examples:example_transformations",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",

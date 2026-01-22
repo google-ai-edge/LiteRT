@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXMAPLE_TRANSFORMAIONS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXMAPLE_TRANSFORMAIONS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_TRANSFORMATIONS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_TRANSFORMATIONS_H_
 
 #include "litert/c/litert_common.h"
 
@@ -27,10 +27,13 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
 LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
                                           LiteRtOp op);
 
+LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
+                                             LiteRtOp op);
+
 LiteRtStatus DummyTransformation(LiteRtBuilder builder_ptr, LiteRtOp op);
 
 #ifdef __cplusplus
 }  // extern "C"
 #endif
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXMAPLE_TRANSFORMAIONS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_TRANSFORMATIONS_H_

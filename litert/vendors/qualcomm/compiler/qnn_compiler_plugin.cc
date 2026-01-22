@@ -47,6 +47,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
+#include "litert/vendors/examples/example_transformations.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -237,6 +238,7 @@ class LiteRtCompilerPluginT {
   }
 
   QnnManager* QNN() { return qnn_manager_.get(); }
+  std::vector<LiteRtTransformation> transformations_;
 
  private:
   litert::Expected<litert::EnvironmentOptions> env_options_ = litert::Error(
@@ -508,6 +510,10 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
   *num_patterns = 0;
+  compiler_plugin->transformations_.push_back(
+      {&FuseMatMulRequantTransformation, "FuseMatMulRequantTransformation", 1});
+  *num_patterns = compiler_plugin->transformations_.size();
+  *transformations = compiler_plugin->transformations_.data();
   return kLiteRtStatusOk;
 }
 

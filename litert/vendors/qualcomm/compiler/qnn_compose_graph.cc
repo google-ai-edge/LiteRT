@@ -876,7 +876,7 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationWOption(
           litert_op.Get(), &dilation_w_factor));
       int32_t dilation_h_factor;
-      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationHOptions(
+      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationHOption(
           litert_op.Get(), &dilation_h_factor));
       uint32_t fused_activation;
       LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dFusedActivationOption(
@@ -1321,7 +1321,7 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
               std::back_inserter(graph_op_wrappers));
   }
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
-  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
+  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kOff;
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
                         [api = qnn.Api(), backend = qnn.BackendHandle()](
                             ::qnn::OpWrapper& op) -> bool {
