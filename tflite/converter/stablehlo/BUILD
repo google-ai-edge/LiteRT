@@ -67,7 +67,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@llvm-project//mlir:Transforms",
-        "@local_xla//xla/mlir_hlo",
+        "@xla//xla/mlir_hlo",
     ],
 )
 
@@ -144,7 +144,6 @@ cc_library(
         ":unfold_splat_constant_pass",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Transforms",
-        "@local_xla//xla/mlir_hlo:mhlo_passes",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:bridge_passes",
         "@org_tensorflow//tensorflow/compiler/mlir/stablehlo:fold_broadcast_pass",
         "@org_tensorflow//tensorflow/compiler/mlir/stablehlo:fuse_convolution_pass",
@@ -154,6 +153,7 @@ cc_library(
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:tensorflow_passes",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:tf_saved_model_passes",
         "@org_tensorflow//tensorflow/compiler/mlir/tf2xla/transforms:tf_xla_passes",
+        "@xla//xla/mlir_hlo:mhlo_passes",
     ],
 )
 
@@ -313,7 +313,7 @@ cc_library(
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:Transforms",
-        "@local_xla//xla/mlir_hlo",
+        "@xla//xla/mlir_hlo",
     ],
     alwayslink = 1,
 )
@@ -462,7 +462,7 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@local_xla//xla/mlir_hlo",
+        "@xla//xla/mlir_hlo",
     ],
     alwayslink = 1,
 )
@@ -509,8 +509,8 @@ gentbl_cc_library(
     deps = [
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncTdFiles",
-        "@local_xla//xla/mlir_hlo:hlo_ops_td_files",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_ops_td_files",
+        "@xla//xla/mlir_hlo:hlo_ops_td_files",
     ],
 )
 
@@ -524,7 +524,7 @@ gentbl_cc_library(
         "//tflite/converter:tensorflow_lite_ops_td_files",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncTdFiles",
-        "@local_xla//xla/mlir_hlo:hlo_ops_td_files",
+        "@xla//xla/mlir_hlo:hlo_ops_td_files",
     ],
 )
 
@@ -567,8 +567,8 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@local_xla//xla/mlir_hlo",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
+        "@xla//xla/mlir_hlo",
     ],
     alwayslink = True,
 )
@@ -582,7 +582,7 @@ gentbl_cc_library(
     deps = [
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncTdFiles",
-        "@local_xla//xla/mlir_hlo:hlo_ops_td_files",
+        "@xla//xla/mlir_hlo:hlo_ops_td_files",
     ],
 )
 
@@ -613,7 +613,7 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@local_xla//xla/mlir_hlo",
+        "@xla//xla/mlir_hlo",
     ],
     alwayslink = True,
 )
@@ -675,7 +675,6 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@llvm-project//mlir:Transforms",
-        "@local_xla//xla/mlir_hlo",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:lower_tf_lib",
@@ -684,6 +683,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core:lib",
         "@stablehlo//:broadcast_utils",
         "@stablehlo//:chlo_ops",
+        "@xla//xla/mlir_hlo",
     ],
 )
 
@@ -701,7 +701,7 @@ td_library(
     deps = [
         "//tflite/converter:tensorflow_lite_ops_td_files",
         "@llvm-project//mlir:FuncTdFiles",
-        "@local_xla//xla/mlir_hlo:hlo_ops_td_files",
+        "@xla//xla/mlir_hlo:hlo_ops_td_files",
     ],
 )
 
@@ -715,7 +715,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@local_xla//xla/mlir_hlo",
+        "@xla//xla/mlir_hlo",
     ],
 )
 
@@ -798,7 +798,7 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@local_xla//xla/mlir_hlo",
+        "@xla//xla/mlir_hlo",
     ],
     alwayslink = True,
 )
@@ -836,7 +836,7 @@ gentbl_cc_library(
         "//tflite/converter:tensorflow_lite_ops_td_files",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncTdFiles",
-        "@local_xla//xla/mlir_hlo:hlo_ops_td_files",
+        "@xla//xla/mlir_hlo:hlo_ops_td_files",
     ],
 )
 
@@ -872,9 +872,6 @@ tf_cc_binary(
         "@llvm-project//mlir:RegisterAllDialects",
         "@llvm-project//mlir:RegisterAllPasses",
         "@llvm-project//mlir:Support",
-        "@local_xla//xla/mlir/framework/transforms:passes",
-        "@local_xla//xla/mlir_hlo:all_passes",
-        "@local_xla//xla/mlir_hlo:hlo_dialect_registration",
         "@org_tensorflow//tensorflow/cc/saved_model:loader",
         "@org_tensorflow//tensorflow/compiler/mlir:init_mlir",
         "@org_tensorflow//tensorflow/compiler/mlir:passes",
@@ -891,6 +888,9 @@ tf_cc_binary(
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core/ir/types:Dialect",
         "@stablehlo//:register",
+        "@xla//xla/mlir/framework/transforms:passes",
+        "@xla//xla/mlir_hlo:all_passes",
+        "@xla//xla/mlir_hlo:hlo_dialect_registration",
     ],
 )
 
