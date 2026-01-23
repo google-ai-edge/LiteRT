@@ -39,6 +39,7 @@ typedef void* HwMemoryHandle;
 // `DestroyCustomTensorBuffer`.
 struct HwMemoryInfo {
   HwMemoryHandle memory_handle;
+  void* raw_handle;
 };
 
 typedef struct HwMemoryInfo* HwMemoryInfoPtr;
