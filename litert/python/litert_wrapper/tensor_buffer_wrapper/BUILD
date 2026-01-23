@@ -36,7 +36,7 @@ cc_library(
         "//tflite:framework",
         "//tflite/core:framework",
         "@com_google_absl//absl/types:span",
-        "@local_xla//third_party/python_runtime:headers",  # buildcleaner: keep
+        "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )
 
@@ -58,8 +58,8 @@ pybind_extension(
         "//tflite:framework",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-        "@local_xla//third_party/python_runtime:headers",
         "@pybind11",
+        "@xla//third_party/python_runtime:headers",
     ],
 )
 

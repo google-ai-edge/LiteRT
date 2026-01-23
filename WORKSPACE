@@ -44,11 +44,25 @@ http_archive(
 # Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
 load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
+http_archive(
+    name = "xla",
+    sha256 = "f50e426406d4c8ad2c4df19f9bd048501b500a847cead964998f04c75161de6f",
+    strip_prefix = "xla-a9cb3c90c30895103ffbb4fc231b9930d5c61b91",
+    urls = ["https://github.com/openxla/xla/archive/a9cb3c90c30895103ffbb4fc231b9930d5c61b91.tar.gz"],
+)
+
+http_archive(
+    name = "tsl",
+    sha256 = "a883524b0e5825b0515e30c9432fb2c456f48ecfc167bfdcf71a5ac32958809c",
+    strip_prefix = "tsl-08e65ea583724b0178f134cc6be9cf47d5fac3cd",
+    urls = ["https://github.com/google/tsl/archive/08e65ea583724b0178f134cc6be9cf47d5fac3cd.tar.gz"],
+)
+
 tensorflow_source_repo(
     name = "org_tensorflow",
-    sha256 = "543fad4b1319d5b059cf3fc852d2e5439622df4aa78cda4d10869860aa2d17ee",
-    strip_prefix = "tensorflow-556ca655fb69ca668c94d4aba6b0d848ec9857b8",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/556ca655fb69ca668c94d4aba6b0d848ec9857b8.tar.gz"],
+    sha256 = "337bc7d3a2f3ed861b707107dcaaba5ceb6c971fc545d897fcb79020c797ff62",
+    strip_prefix = "tensorflow-a5ce7d8b2713359b802ed4c04f9657be6700ca6f",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/a5ce7d8b2713359b802ed4c04f9657be6700ca6f.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -62,11 +76,11 @@ load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 tf_workspace3()
 
 # Initialize hermetic Python
-load("@local_xla//third_party/py:python_init_rules.bzl", "python_init_rules")
+load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
 
 python_init_rules()
 
-load("@local_xla//third_party/py:python_init_repositories.bzl", "python_init_repositories")
+load("@xla//third_party/py:python_init_repositories.bzl", "python_init_repositories")
 
 python_init_repositories(
     default_python_version = "system",
@@ -85,11 +99,11 @@ python_init_repositories(
     },
 )
 
-load("@local_xla//third_party/py:python_init_toolchains.bzl", "python_init_toolchains")
+load("@xla//third_party/py:python_init_toolchains.bzl", "python_init_toolchains")
 
 python_init_toolchains()
 
-load("@local_xla//third_party/py:python_init_pip.bzl", "python_init_pip")
+load("@xla//third_party/py:python_init_pip.bzl", "python_init_pip")
 
 python_init_pip()
 
@@ -111,7 +125,7 @@ load("@org_tensorflow//tensorflow:workspace0.bzl", "tf_workspace0")
 tf_workspace0()
 
 load(
-    "@local_xla//third_party/py:python_wheel.bzl",
+    "@xla//third_party/py:python_wheel.bzl",
     "python_wheel_version_suffix_repository",
 )
 

@@ -105,7 +105,7 @@ cc_library(
         "//litert:without_builtin_ops": [],
         "//conditions:default": ["//tflite/kernels:builtin_ops"],
     }) + [
-        "@local_tsl//tsl/platform",
+        "@tsl//tsl/platform",
     ],
 )
 
