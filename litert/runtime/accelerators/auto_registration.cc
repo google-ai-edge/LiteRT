@@ -94,6 +94,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 
 #ifdef __ANDROID__
 #if LITERT_HAS_OPENCL_SUPPORT
+      "libLiteRtClGlAccelerator" SO_EXT,
       "libLiteRtOpenClAccelerator" SO_EXT,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
