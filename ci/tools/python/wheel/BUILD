@@ -4,6 +4,7 @@ load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_m
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
 load("//litert:litert.bzl", "MANYLINUX_LEVEL")
 load("//litert:version.bzl", "LITERT_EXPERIMENTAL_VERSION")
+load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_prebuilts")
 
 package(
     default_visibility = ["//ci/tools/python:__subpackages__"],
@@ -107,7 +108,7 @@ py_wheel(
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
         "//tflite/python/metrics:metrics_interface",
-    ],
+    ] + litert_gpu_accelerator_prebuilts(),
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
     platform_name = get_wheel_platform_name(),
