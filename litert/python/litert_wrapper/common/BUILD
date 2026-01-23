@@ -27,6 +27,6 @@ cc_library(
     deps = [
         "//litert/cc:litert_api_with_dynamic_runtime",
         "@com_google_absl//absl/strings:string_view",
-        "@local_xla//third_party/python_runtime:headers",
+        "@xla//third_party/python_runtime:headers",
     ],
 )

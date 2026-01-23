@@ -137,8 +137,8 @@ pybind_extension(
     deps = [
         "@com_google_absl//absl/strings:string_view",
         "@llvm-project//mlir:MLIRBindingsPythonHeaders",
-        "@local_xla//third_party/python_runtime:headers",
         "@nanobind",
+        "@xla//third_party/python_runtime:headers",
     ] + if_google(
         [
             # google only: link everything statically here.
