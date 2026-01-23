@@ -580,7 +580,14 @@ LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   LITERT_RETURN_IF_ERROR(tensor_buffer->Unlock());
+  return kLiteRtStatusOk;
+}
 
+LiteRtStatus LiteRtClearTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
+  if (!tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(tensor_buffer->Clear());
   return kLiteRtStatusOk;
 }
 

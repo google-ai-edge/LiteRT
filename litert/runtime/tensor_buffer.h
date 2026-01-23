@@ -179,6 +179,7 @@ class LiteRtTensorBufferT {
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
   litert::Expected<void> Unlock();
+  litert::Expected<void> Clear();
 
   // Used to duplicate the current tensor buffer. Internally it increases
   // reference count to the underlying buffer.

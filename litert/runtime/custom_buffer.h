@@ -55,6 +55,9 @@ class CustomBuffer {
   // Writes the data from the CPU memory to the Custom buffer.
   Expected<void> Unlock();
 
+  // Clears the Custom buffer.
+  Expected<void> Clear();
+
   // Creates a custom buffer.
   static Expected<CustomBuffer> Alloc(LiteRtEnvironment env,
                                       const LiteRtRankedTensorType& tensor_type,

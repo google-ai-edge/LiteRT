@@ -407,6 +407,23 @@ class TensorBuffer
     return {};
   }
 
+  /// @brief Clears the tensor buffer possibly asynchronously.
+  ///
+  /// It may return immediately after scheduling a clear operation though it
+  /// guarantees that Read() will return data cleared, i.e. all zeros.
+  Expected<void> Clear() {
+    if (LiteRtClearTensorBuffer(Get()) == kLiteRtStatusOk) {
+      return {};
+    }
+
+    // Fall back to synchronous write.
+    LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kWrite));
+    absl::Cleanup unlock = [this] { Unlock(); };
+    LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
+    std::memset(host_mem_addr, 0, size);
+    return {};
+  }
+
   /// @internal
   /// @brief Wraps a `LiteRtTensorBuffer` C object in a `TensorBuffer` C++
   /// object.

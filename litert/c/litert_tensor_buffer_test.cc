@@ -14,10 +14,10 @@
 
 #include "litert/c/litert_tensor_buffer.h"
 
-#include <any>
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "litert/c/litert_any.h"
@@ -34,6 +34,22 @@
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_CUSTOM_TENSOR_BUFFER_TEST
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+#include "ml_drift/webgpu/environment.h"  // from @ml_drift
+#include "litert/runtime/ml_drift_delegate/buffer_handler_webgpu.h"
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_VULKAN_SUPPORT
+#include "ml_drift/syrtis/environment.h"  // from @ml_drift
+#include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
+#include "litert/runtime/ml_drift_delegate/buffer_handler_vulkan.h"
+#include "litert/runtime/ml_drift_delegate/shared_vulkan_env.h"
+#endif  // LITERT_HAS_VULKAN_SUPPORT
+#endif  // LITERT_CUSTOM_TENSOR_BUFFER_TEST
 
 namespace {
 constexpr const float kTensorData[] = {10, 20, 30, 40};
@@ -403,7 +419,9 @@ TEST(TensorBuffer, OpenCL) {
   LITERT_ASSERT_OK(LiteRtCreateEnvironment(environment_options.size(),
                                            environment_options.data(), &env));
 
-  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBuffer;
+  // Use packed buffer to test Clear() easily. Otherwise, downloaded data may
+  // have some garbage values due to strides.
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBufferPacked;
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
       LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
@@ -443,6 +461,14 @@ TEST(TensorBuffer, OpenCL) {
                                    kLiteRtTensorBufferLockModeRead),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+
+  ASSERT_EQ(LiteRtClearTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+  ASSERT_EQ(std::memcmp(host_mem_addr, zero_data.data(), zero_data.size()), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
@@ -521,3 +547,186 @@ TEST(TensorBuffer, GlBuffer) {
   LiteRtDestroyEnvironment(env);
 }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_CUSTOM_TENSOR_BUFFER_TEST
+#if LITERT_HAS_WEBGPU_SUPPORT
+TEST(TensorBuffer, WebGpu) {
+// MSAN does not support GPU tests.
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported In msan or tsan";
+#endif
+
+  ml_drift::webgpu::Environment wgpu_env;
+  LITERT_ASSERT_OK(wgpu_env.Initialize());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny device_id,
+      litert::ToLiteRtAny(reinterpret_cast<int64_t>(wgpu_env.device().Get())));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny command_queue,
+      litert::ToLiteRtAny(reinterpret_cast<int64_t>(wgpu_env.queue().Get())));
+  const std::array<LiteRtEnvOption, 2> environment_options = {
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagWebGpuDevice,
+                      .value = device_id},
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagWebGpuQueue,
+                      .value = command_queue},
+  };
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(environment_options.size(),
+                                           environment_options.data(), &env));
+
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeWebGpuBuffer;
+  LiteRtRegisterTensorBufferHandlers(
+      env, kTensorBufferType, LiteRtCreateWebGpuMemory,
+      LiteRtDestroyWebGpuMemory, LiteRtLockWebGpuMemory,
+      LiteRtUnlockWebGpuMemory, LiteRtClearWebGpuMemory,
+      LiteRtImportWebGpuMemory);
+
+  LiteRtTensorBuffer tensor_buffer;
+  ASSERT_EQ(
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
+                                      sizeof(kTensorData), &tensor_buffer),
+      kLiteRtStatusOk);
+
+  LiteRtTensorBufferType buffer_type;
+  ASSERT_EQ(LiteRtGetTensorBufferType(tensor_buffer, &buffer_type),
+            kLiteRtStatusOk);
+  ASSERT_EQ(buffer_type, kTensorBufferType);
+
+  LiteRtRankedTensorType tensor_type;
+  ASSERT_EQ(LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type),
+            kLiteRtStatusOk);
+  ASSERT_EQ(tensor_type.element_type, kLiteRtElementTypeFloat32);
+  ASSERT_EQ(tensor_type.layout.rank, 1);
+  ASSERT_EQ(tensor_type.layout.dimensions[0], kTensorType.layout.dimensions[0]);
+  ASSERT_EQ(tensor_type.layout.has_strides, false);
+
+  size_t size;
+  ASSERT_EQ(LiteRtGetTensorBufferSize(tensor_buffer, &size), kLiteRtStatusOk);
+  ASSERT_EQ(size, sizeof(kTensorData));
+
+  size_t offset;
+  ASSERT_EQ(LiteRtGetTensorBufferOffset(tensor_buffer, &offset),
+            kLiteRtStatusOk);
+  ASSERT_EQ(offset, 0);
+
+  void* host_mem_addr;
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeWrite),
+            kLiteRtStatusOk);
+  std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+
+  ASSERT_EQ(LiteRtClearTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+  ASSERT_EQ(std::memcmp(host_mem_addr, zero_data.data(), zero_data.size()), 0);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+
+  LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
+}
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_VULKAN_SUPPORT
+TEST(TensorBuffer, Vulkan) {
+// MSAN does not support GPU tests.
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported In msan or tsan";
+#endif
+
+  ASSERT_EQ(ml_drift::syrtis::InitVulkan(), 1);
+  litert::ml_drift::SharedVulkanEnv vk_env;
+  LITERT_ASSERT_OK(ml_drift::syrtis::CreateEnvironment(&vk_env.vulkan_env()));
+  const VkCommandPoolCreateInfo command_pool_create_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = vk_env.vulkan_env().GetQueue().QueueFamilyIndex()};
+  ASSERT_EQ(ml_drift::syrtis::vkCreateCommandPool(
+      vk_env.vulkan_env().GetDevice(), &command_pool_create_info, nullptr,
+      &vk_env.command_pool()), VK_SUCCESS);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny vulkan_env,
+      litert::ToLiteRtAny(reinterpret_cast<int64_t>(&vk_env)));
+  const std::array<LiteRtEnvOption, 1> environment_options = {
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagVulkanEnvironment,
+                      .value = vulkan_env},
+  };
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(environment_options.size(),
+                                           environment_options.data(), &env));
+
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeVulkanBuffer;
+  LiteRtRegisterTensorBufferHandlers(
+      env, kTensorBufferType, LiteRtCreateVulkanMemory,
+      LiteRtDestroyVulkanMemory, LiteRtLockVulkanMemory,
+      LiteRtUnlockVulkanMemory, LiteRtClearVulkanMemory,
+      /*import_handler=*/nullptr);
+
+  LiteRtTensorBuffer tensor_buffer;
+  ASSERT_EQ(
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
+                                      sizeof(kTensorData), &tensor_buffer),
+      kLiteRtStatusOk);
+
+  LiteRtTensorBufferType buffer_type;
+  ASSERT_EQ(LiteRtGetTensorBufferType(tensor_buffer, &buffer_type),
+            kLiteRtStatusOk);
+  ASSERT_EQ(buffer_type, kTensorBufferType);
+
+  LiteRtRankedTensorType tensor_type;
+  ASSERT_EQ(LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type),
+            kLiteRtStatusOk);
+  ASSERT_EQ(tensor_type.element_type, kLiteRtElementTypeFloat32);
+  ASSERT_EQ(tensor_type.layout.rank, 1);
+  ASSERT_EQ(tensor_type.layout.dimensions[0], kTensorType.layout.dimensions[0]);
+  ASSERT_EQ(tensor_type.layout.has_strides, false);
+
+  size_t size;
+  ASSERT_EQ(LiteRtGetTensorBufferSize(tensor_buffer, &size), kLiteRtStatusOk);
+  ASSERT_EQ(size, sizeof(kTensorData));
+
+  size_t offset;
+  ASSERT_EQ(LiteRtGetTensorBufferOffset(tensor_buffer, &offset),
+            kLiteRtStatusOk);
+  ASSERT_EQ(offset, 0);
+
+  void* host_mem_addr;
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeWrite),
+            kLiteRtStatusOk);
+  std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
+
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
+
+  ASSERT_EQ(LiteRtClearTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
+
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+  ASSERT_EQ(std::memcmp(host_mem_addr, zero_data.data(), zero_data.size()), 0);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
+  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
+
+  LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
+}
+#endif  // LITERT_HAS_VULKAN_SUPPORT
+#endif  // LITERT_CUSTOM_TENSOR_BUFFER_TEST

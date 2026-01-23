@@ -135,6 +135,23 @@ Expected<void> OpenClMemory::Unlock() {
   return Expected<void>();
 }
 
+Expected<void> OpenClMemory::Clear() {
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
+  const cl_int zero = 0;
+  auto error_code = tflite::gpu::cl::clEnqueueFillBuffer(
+      gpu_env_->GetCommandQueue()->queue(), GetMemoryPtr(), &zero, sizeof(zero),
+      0, size_, 0, /*event_wait_list=*/nullptr, /*event=*/nullptr);
+  if (error_code != CL_SUCCESS) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to clear OpenCL buffer: ",
+                     tflite::gpu::cl::CLErrorCodeToString(error_code)));
+  }
+  return Expected<void>();
+}
+
 bool OpenClMemory::IsSupported() {
   static bool is_supported = ::tflite::gpu::cl::LoadOpenCL().ok();
   return is_supported;

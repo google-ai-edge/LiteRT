@@ -72,6 +72,21 @@ Expected<void> CustomBuffer::Unlock() {
   return {};
 }
 
+Expected<void> CustomBuffer::Clear() {
+  LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env_));
+  LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
+                          registry->GetCustomHandlers(buffer_type_));
+  if (custom_buffer_handlers.clear_func == nullptr) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "This buffer type does not support clearing.");
+  }
+  auto status = custom_buffer_handlers.clear_func(env_, hw_memory_info_);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to clear custom tensor buffer.");
+  }
+  return {};
+}
+
 Expected<CustomBuffer> CustomBuffer::Alloc(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size,

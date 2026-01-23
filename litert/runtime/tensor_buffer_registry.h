@@ -29,6 +29,8 @@ struct CustomTensorBufferHandlers {
   ::DestroyCustomTensorBuffer destroy_func;
   ::LockCustomTensorBuffer lock_func;
   ::UnlockCustomTensorBuffer unlock_func;
+  // Optional function to clear the buffer.
+  ::ClearCustomTensorBuffer clear_func;
   // Optional function to import an existing buffer.
   // TODO(b/446717438): Merge this with the create function.
   ::ImportCustomTensorBuffer import_func;

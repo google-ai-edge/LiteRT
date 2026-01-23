@@ -118,6 +118,8 @@ typedef struct {
   DestroyCustomTensorBuffer destroy_func;
   LockCustomTensorBuffer lock_func;
   UnlockCustomTensorBuffer unlock_func;
+  ClearCustomTensorBuffer clear_func;
+  ImportCustomTensorBuffer import_func;
 } LiteRtCustomTensorBufferHandlers;
 
 // Retrieves the value corresponding to the given tag.

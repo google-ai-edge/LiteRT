@@ -97,6 +97,9 @@ class OpenClMemory {
   template <typename T>
   Expected<void> Unlock();
 
+  // Clears the OpenCL buffer.
+  Expected<void> Clear();
+
   // Returns true if OpenCL is supported.
   // Warning: This is only for TEST.
   static bool IsSupported();

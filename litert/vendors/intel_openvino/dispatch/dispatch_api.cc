@@ -110,6 +110,8 @@ LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
   custom_tensor_buffer_handlers->destroy_func = DestroyRemoteTensorBuffer;
   custom_tensor_buffer_handlers->lock_func = LockRemoteTensorBuffer;
   custom_tensor_buffer_handlers->unlock_func = UnlockRemoteTensorBuffer;
+  custom_tensor_buffer_handlers->clear_func = nullptr;
+  custom_tensor_buffer_handlers->import_func = nullptr;
   env_option.value.ptr_value = custom_tensor_buffer_handlers;
   LiteRtSetEnvironmentOptionsValue(environment_options, env_option);
 #endif  // LITERT_WINDOWS_OS

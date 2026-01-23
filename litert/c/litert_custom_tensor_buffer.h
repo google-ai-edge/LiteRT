@@ -76,6 +76,10 @@ typedef LiteRtStatus (*LockCustomTensorBuffer)(LiteRtEnvironment env,
 typedef LiteRtStatus (*UnlockCustomTensorBuffer)(
     LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
 
+// Custom TensorBuffer handler function to clear a custom TensorBuffer.
+typedef LiteRtStatus (*ClearCustomTensorBuffer)(
+    LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

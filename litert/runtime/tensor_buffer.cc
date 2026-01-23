@@ -115,6 +115,8 @@ Expected<void> RegisterOpenVINOCustomBufferIfNeeded(LiteRtEnvironment env) {
         .destroy_func = custom_buffer_handlers->destroy_func,
         .lock_func = custom_buffer_handlers->lock_func,
         .unlock_func = custom_buffer_handlers->unlock_func,
+        .clear_func = custom_buffer_handlers->clear_func,
+        .import_func = custom_buffer_handlers->import_func,
     };
     registry->RegisterHandlers(kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
                                handlers);
@@ -1182,6 +1184,60 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown: {
       return {};
+    }
+  }
+}
+
+Expected<void> LiteRtTensorBufferT::Clear() {
+  switch (buffer_type()) {
+    case kLiteRtTensorBufferTypeOpenClBuffer:
+    case kLiteRtTensorBufferTypeOpenClBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClTexture:
+    case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClBufferPacked: {
+#if LITERT_HAS_OPENCL_SUPPORT
+      LITERT_ASSIGN_OR_RETURN(auto opencl_buffer, GetOpenClMemory());
+      return opencl_buffer->Clear();
+#else
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "OpenCL buffers are not supported");
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+    }
+    case kLiteRtTensorBufferTypeWebGpuBuffer:
+    case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanBuffer:
+    case kLiteRtTensorBufferTypeVulkanBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanTexture:
+    case kLiteRtTensorBufferTypeVulkanTextureFp16:
+    case kLiteRtTensorBufferTypeVulkanImageBuffer:
+    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+    case kLiteRtTensorBufferTypeVulkanBufferPacked:
+    case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
+      LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+      return custom_buffer->Clear();
+    }
+    case kLiteRtTensorBufferTypeHostMemory:
+    case kLiteRtTensorBufferTypeAhwb:
+    case kLiteRtTensorBufferTypeIon:
+    case kLiteRtTensorBufferTypeDmaBuf:
+    case kLiteRtTensorBufferTypeFastRpc:
+    case kLiteRtTensorBufferTypeGlBuffer:
+    case kLiteRtTensorBufferTypeGlTexture:
+    case kLiteRtTensorBufferTypeUnknown: {
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "Buffer type does not support clearing");
     }
   }
 }

@@ -333,6 +333,16 @@ LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
 // TODO b/413449050 - Update behavior to upload contents without conversion.
 LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer buffer);
 
+// Clear a tensor buffer possibly asynchronously.
+//
+// It may return immediately after scheduling a clear operation though it
+// guarantees that Read() will return data cleared, i.e. all zeros.
+// It may return kLiteRtStatusErrorUnsupported if the underlying buffer type
+// does not support efficient clearing. In that case, the client should be able
+// to clear the buffer by writing all zeros with Write() which clears the buffer
+// synchronously.
+LiteRtStatus LiteRtClearTensorBuffer(LiteRtTensorBuffer buffer);
+
 // Destroy an owned tensor buffer. If the tensor buffer is managed, the number
 // of references to it is decreased and released the underlying TensorBufferT
 // when the last reference is removed.

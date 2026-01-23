@@ -382,7 +382,6 @@ cc_library(
 cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["litert_tensor_buffer_test.cc"],
-    # require GPU to run OpenCL tests.
     tags = ["requires-gpu-nvidia"],
     deps = [
         ":litert_any",
@@ -400,6 +399,38 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "litert_tensor_buffer_test_custom",
+#     srcs = ["litert_tensor_buffer_test.cc"],
+#     defines = ["LITERT_CUSTOM_TENSOR_BUFFER_TEST=1"],
+#     tags = ["requires-gpu-nvidia"],
+#     deps = [
+#         ":litert_any",
+#         ":litert_common",
+#         ":litert_environment",
+#         ":litert_environment_options",
+#         ":litert_platform_support",
+#         ":litert_tensor_buffer",
+#         ":litert_tensor_buffer_types",
+#         "@com_google_googletest//:gtest_main",
+#         "@ml_drift//ml_drift/syrtis:environment",
+#         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+#         "@ml_drift//ml_drift/webgpu:environment",
+#         "//litert/c/internal:litert_tensor_buffer_registry",
+#         "//litert/cc:litert_any",
+#         "//litert/cc:litert_layout",
+#         "//litert/runtime:event",
+#         "//litert/runtime/ml_drift_delegate:buffer_handler_vulkan",
+#         "//litert/runtime/ml_drift_delegate:buffer_handler_webgpu",
+#         "//litert/runtime/ml_drift_delegate:shared_vulkan_env",
+#         "//litert/test:matchers",
+#         "//tflite/delegates/gpu/cl:opencl_wrapper",
+#         "//third_party/vulkan_loader",
+#     ],
+# )
+# copybara:uncomment_end
 
 cc_test(
     name = "litert_tensor_buffer_requirements_test",

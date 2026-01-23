@@ -47,7 +47,8 @@ registry.RegisterHandlers(kLiteRtTensorBufferTypeWebGpuBuffer, {
     .create_func = CreateMyCustomTensorBuffer,
     .destroy_func = DestroyMyCustomTensorBuffer,
     .lock_func = LockMyCustomTensorBuffer,
-    .unlock_func = UnlockMyCustomTensorBuffer
+    .unlock_func = UnlockMyCustomTensorBuffer,
+    .clear_func = ClearMyCustomTensorBuffer
 });
 ```
 
