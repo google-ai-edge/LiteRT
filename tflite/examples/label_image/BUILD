@@ -66,8 +66,8 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
-        "@local_tsl//tsl/platform:tstring",
         "@org_tensorflow//tensorflow/core/platform:tstring",
+        "@tsl//tsl/platform:tstring",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu:delegate",

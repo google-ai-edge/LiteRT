@@ -35,6 +35,6 @@ cc_library(
         "//tflite/tools/benchmark:benchmark_model_lib",
         "//tflite/tools/benchmark:benchmark_params",
         "//tflite/tools/benchmark:benchmark_tflite_model_lib",
-        "@local_xla//xla/tsl/util:stats_calculator_portable",
+        "@xla//xla/tsl/util:stats_calculator_portable",
     ],
 )

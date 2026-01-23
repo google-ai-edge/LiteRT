@@ -300,7 +300,7 @@ cc_library(
         ":types",
         "//tflite/core/c:common",
         "@eigen_archive//:eigen3",
-        "@local_xla//xla/tsl/framework/convolution:eigen_spatial_convolutions-inl",
+        "@xla//xla/tsl/framework/convolution:eigen_spatial_convolutions-inl",
     ],
 )
 

@@ -92,8 +92,8 @@ pybind_extension(
         "//tflite:framework_stable",
         "//tflite:mutable_op_resolver",
         "//tflite/c:common",
-        "@local_xla//third_party/python_runtime:headers",
         "@pybind11",
+        "@xla//third_party/python_runtime:headers",
     ],
 )
 

@@ -276,7 +276,7 @@ cc_library(
         "//tflite/core:subgraph",
         "//tflite/core/api",
         "//tflite/core/c:common",
-        "@local_tsl//tsl/platform:path",
+        "@tsl//tsl/platform:path",
     ],
 )
 

@@ -45,12 +45,12 @@ tf_cc_test(
     deps = [
         ":simple_tf_op",
         "@com_google_googletest//:gtest_main",
-        "@local_xla//xla/tsl/lib/core:status_test_util",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:testlib",
         "@org_tensorflow//tensorflow/core/kernels:ops_testutil",
         "@org_tensorflow//tensorflow/core/platform:tstring",
+        "@xla//xla/tsl/lib/core:status_test_util",
     ],
 )
 
@@ -129,12 +129,12 @@ tf_cc_test(
     deps = [
         ":tmpl_tf_op",
         "@com_google_googletest//:gtest_main",
-        "@local_xla//xla/tsl/lib/core:status_test_util",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/framework:fake_input",
         "@org_tensorflow//tensorflow/core/framework:tensor_testutil",
         "@org_tensorflow//tensorflow/core/kernels:ops_testutil",
+        "@xla//xla/tsl/lib/core:status_test_util",
     ],
 )
 
