@@ -62,7 +62,8 @@ py_strict_library(
         ":_pywrap_litert_converter",
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
-        "//litert/python/mlir",
+        # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
+        # "//litert/python/mlir",
         "//tflite/converter:converter_flags_proto_py",
         "//tflite/converter:model_flags_proto_py",
     ],
@@ -87,7 +88,7 @@ pywrap_library(
             "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 13,
+    pywrap_count = 11,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
