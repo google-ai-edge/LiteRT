@@ -256,11 +256,22 @@ LiteRtStatus LiteRtDispatchInvocationContextT::AttachInputEvent(
   LITERT_RETURN_IF_ERROR(
       LiteRtGetEventSyncFenceFd(input_event, &sync_fence_fd));
 
+  // On Android platforms, it is expected that `sync_fence_fd` is a dma-fence
+  // fd. On other Linux platforms, it is expected that `sync_fence_fd` is an
+  // eventfd.
+  ThrFenceType thr_fence_type =
+#if defined(__ANDROID__)
+      kThrFenceTypeDma;
+#else
+      kThrFenceTypeEventFd;
+#endif
+
   ThrFenceHandle thr_fence_handle;
   GT_LOG_RETURN_IF_SB_ERROR(
-      thrRegisterFence(device_context_->thr_context(), kThrFenceTypeDma,
+      thrRegisterFence(device_context_->thr_context(), thr_fence_type,
                        sync_fence_fd, &thr_fence_handle),
-      "Failed to register DMA fence fd %d with SB", sync_fence_fd);
+      "Failed to register fence fd %d of type %d with SB", sync_fence_fd,
+      thr_fence_type);
   absl::Cleanup thr_fence_handle_cleanup = [this, thr_fence_handle]() {
     thrUnregisterFence(device_context_->thr_context(), thr_fence_handle);
   };

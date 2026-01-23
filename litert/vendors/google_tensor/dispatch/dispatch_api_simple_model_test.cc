@@ -14,14 +14,23 @@
 
 #include <cstddef>
 #include <cstring>
+#include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <utility>
 
+#include "platforms/darwinn/tachyon/core/fence/fence.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "third_party/darwinn/driver_shared/fence/fence_test_util.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_event.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -29,8 +38,13 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_test_fixtures.h"
+#include "thread/thread_manager.h"
+
+namespace fence_util = ::platforms::darwinn::fence_util;
+namespace tachyon = ::platforms::darwinn::tachyon;
 
 using ::litert::google_tensor::testing::SimpleModelTest;
+using ::testing::Combine;
 using ::testing::Pointwise;
 using ::testing::Values;
 
@@ -40,36 +54,85 @@ enum class IContextCreateMode {
   kGraphInterface,  // Use the graph interface.
 };
 
+template <typename Sink>
+void AbslStringify(Sink& sink, IContextCreateMode mode) {
+  switch (mode) {
+    case IContextCreateMode::kInterface:
+      sink.Append("kInterface");
+      break;
+    case IContextCreateMode::kGraphInterface:
+      sink.Append("kGraphInterface");
+      break;
+  }
+}
+
+// Specifies how to invoke an invocation context.
+enum class IContextInvokeMode {
+  kSync,   // Invoke synchronously.
+  kAsync,  // Invoke asynchronously.
+};
+
+template <typename Sink>
+void AbslStringify(Sink& sink, IContextInvokeMode mode) {
+  switch (mode) {
+    case IContextInvokeMode::kSync:
+      sink.Append("kSync");
+      break;
+    case IContextInvokeMode::kAsync:
+      sink.Append("kAsync");
+      break;
+  }
+}
+
+// A helper type alias that comprises the parameters for testing the
+// "simple model" end-to-end:
+//
+//  0. How to create the invocation context.
+//  1. Whether to attach input events or not.
+//  2. How to invoke the invocation context.
+using SimpleModelEndToEndTestParams =
+    std::tuple<IContextCreateMode, bool, IContextInvokeMode>;
+
+std::string SimpleModelEndToEndTestParamsToStr(
+    const ::testing::TestParamInfo<SimpleModelEndToEndTestParams>& info) {
+  return absl::StrFormat(
+      "iContextCreateMode_%v__withInputEvents_%d__iContextInvokeMode_%v",
+      std::get<0>(info.param), std::get<1>(info.param),
+      std::get<2>(info.param));
+}
+
 // A helper test fixture that parameterizes the `SimpleModelTest` fixture
 // for end-to-end testing.
 class SimpleModelEndToEndTest
     : public SimpleModelTest,
-      public ::testing::WithParamInterface<IContextCreateMode> {};
-
-std::string SimpleModelEndToEndTestParamsToStr(
-    const ::testing::TestParamInfo<IContextCreateMode>& info) {
-  switch (info.param) {
-    case IContextCreateMode::kInterface:
-      return "Interface";
-    case IContextCreateMode::kGraphInterface:
-      return "GraphInterface";
-  }
-}
+      public ::testing::WithParamInterface<SimpleModelEndToEndTestParams> {};
 
 TEST_P(SimpleModelEndToEndTest, Succeeds) {
+  IContextCreateMode icontext_create_mode = std::get<0>(GetParam());
+  bool attach_input_events = std::get<1>(GetParam());
+  IContextInvokeMode icontext_invoke_mode = std::get<2>(GetParam());
+
   // A helper struct to hold state that is exclusive to the Graph interface.
   struct GraphInterfaceExclusiveState {
     LiteRtDispatchExecutableHandle exec_handle;
     LiteRtDispatchGraph graph;
   };
 
-  std::optional<GraphInterfaceExclusiveState> graph_interface_state;
-  LiteRtDispatchInvocationContext invocation_context;
+  // A helper struct to hold state that is exclusive to attaching input events.
+  struct AttachInputEventsExclusiveState {
+    std::shared_ptr<tachyon::Fence> input_fence_0;
+    LiteRtEvent input_event_0;
+    std::shared_ptr<tachyon::Fence> input_fence_1;
+    LiteRtEvent input_event_1;
+  };
 
   int capabilities;
   LITERT_ASSERT_OK(LiteRtDispatchGetCapabilities(&capabilities));
 
-  switch (GetParam()) {
+  std::optional<GraphInterfaceExclusiveState> graph_interface_state;
+  LiteRtDispatchInvocationContext invocation_context;
+
+  switch (icontext_create_mode) {
     case IContextCreateMode::kInterface:
       LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
           device_context(), kLiteRtDispatchExecutableTypeMlModel,
@@ -218,7 +281,60 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
     LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_1_tensor_buffer));
   }
 
-  LITERT_ASSERT_OK(LiteRtDispatchInvoke(invocation_context));
+  std::optional<AttachInputEventsExclusiveState> attach_input_events_state;
+  if (attach_input_events) {
+    if ((capabilities & kLiteRtDispatchCapabilitiesAsync) == 0) {
+      GTEST_SKIP() << "Async API is not supported";
+    }
+
+    std::shared_ptr<tachyon::Fence> input_fence_0 = fence_util::CreateFence();
+    LiteRtEvent input_event_0;
+    LITERT_ASSERT_OK(
+        LiteRtCreateEventFromSyncFenceFd(env(), input_fence_0->GetFd(),
+                                         /*owns_fd=*/false, &input_event_0));
+
+    std::shared_ptr<tachyon::Fence> input_fence_1 = fence_util::CreateFence();
+    LiteRtEvent input_event_1;
+    LITERT_ASSERT_OK(
+        LiteRtCreateEventFromSyncFenceFd(env(), input_fence_1->GetFd(),
+                                         /*owns_fd=*/false, &input_event_1));
+
+    LITERT_ASSERT_OK(LiteRtDispatchAttachInputEvent(
+        invocation_context, /*graph_input_index=*/0, input_event_0));
+    LITERT_ASSERT_OK(LiteRtDispatchAttachInputEvent(
+        invocation_context, /*graph_input_index=*/1, input_event_1));
+
+    thread::DefaultQueue()->Schedule([=] {
+      absl::SleepFor(absl::Milliseconds(100));
+      ASSERT_OK(input_fence_1->Signal(/*success=*/true));
+    });
+    thread::DefaultQueue()->Schedule([=] {
+      absl::SleepFor(absl::Milliseconds(200));
+      ASSERT_OK(input_fence_0->Signal(/*success=*/true));
+    });
+
+    attach_input_events_state.emplace(std::move(input_fence_0), input_event_0,
+                                      std::move(input_fence_1), input_event_1);
+  }
+
+  switch (icontext_invoke_mode) {
+    case IContextInvokeMode::kSync:
+      LITERT_ASSERT_OK(LiteRtDispatchInvoke(invocation_context));
+      break;
+    case IContextInvokeMode::kAsync:
+      if ((capabilities & kLiteRtDispatchCapabilitiesAsync) == 0) {
+        GTEST_SKIP() << "Async API is not supported";
+      }
+
+      LiteRtEvent output_event;
+      LITERT_ASSERT_OK(LiteRtDispatchInvokeAsync(invocation_context,
+                                                 /*num_output_events=*/1,
+                                                 &output_event));
+
+      LITERT_ASSERT_OK(
+          LiteRtSetTensorBufferEvent(output_tensor_buffer, output_event));
+      break;
+  }
 
   {
     void* host_mem_addr;
@@ -233,6 +349,11 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
     EXPECT_THAT(output, Pointwise(testing::FloatNear(1e-3), kTestOutputTensor));
 
     LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(output_tensor_buffer));
+  }
+
+  if (attach_input_events_state.has_value()) {
+    LiteRtDestroyEvent(attach_input_events_state->input_event_0);
+    LiteRtDestroyEvent(attach_input_events_state->input_event_1);
   }
 
   LITERT_ASSERT_OK(LiteRtDispatchDetachInput(
@@ -264,6 +385,9 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInterfaces, SimpleModelEndToEndTest,
-                         Values(IContextCreateMode::kInterface,
-                                IContextCreateMode::kGraphInterface),
+                         Combine(Values(IContextCreateMode::kInterface,
+                                        IContextCreateMode::kGraphInterface),
+                                 /*attach_input_events=*/testing::Bool(),
+                                 Values(IContextInvokeMode::kSync,
+                                        IContextInvokeMode::kAsync)),
                          SimpleModelEndToEndTestParamsToStr);

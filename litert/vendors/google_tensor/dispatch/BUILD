@@ -154,12 +154,17 @@ cc_library(
 #     ],
 #     deps = [
 #         ":dispatch_api_test_fixtures",
+#         "//platforms/darwinn/tachyon/core/fence",
 #         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/strings:str_format",
+#         "@com_google_absl//absl/time",
 #         "@com_google_absl//absl/types:span",
+#         "//third_party/darwinn/driver_shared/fence:fence_test_util",
 #         "//litert/c:litert_runtime_c_api_shared_lib",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model_npu",
 #         "//litert/vendors/c:litert_dispatch_c_api",
+#         "INTERNAL_THREAD_PKG",
 #     ],
 # )
 # copybara:uncomment_end
@@ -171,54 +176,23 @@ litert_device_test(
     data = [
         "//litert/test:testdata/simple_model_google_tensor.bin",
     ],
-    # TODO: google_tensor team fix visibility for fence deps.
     tags = [
         "nobuilder",
         "notap",
     ],
     deps = [
+        "INTERNAL_THREAD_PKG",
         ":dispatch_api_test_fixtures",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//platforms/darwinn/tachyon/core/fence",
+        "//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-    ],
-)
-
-litert_device_test(
-    name = "dispatch_api_async_google_tensor_test",
-    srcs = ["dispatch_api_async_google_tensor_test.cc"],
-    backend_id = "google_tensor",
-    data = [
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-        "//litert/test:testdata/simple_model_npu.tflite",
-    ],
-    features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
-        "//conditions:default": [],
-    }),
-    # TODO: google_tensor team fix visibility for fence deps.
-    tags = [
-        "nobuilder",
-        "notap",
-    ],
-    deps = [
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/types:span",
-        # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_any",
-        "//litert/cc/dynamic_runtime:litert_environment",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/core:filesystem_testonly",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_model_npu",
-        "//litert/vendors/c:litert_dispatch_c_api",
     ],
 )
 
