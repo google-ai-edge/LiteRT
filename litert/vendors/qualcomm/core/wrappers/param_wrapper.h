@@ -5,6 +5,7 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_WRAPPERS_PARAM_WRAPPER_H_
 
 #include <cstdint>
+#include <string_view>
 #include <type_traits>
 
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -58,6 +59,37 @@ class ScalarParamWrapper {
   bool operator==(const ScalarParamWrapper& other) const;
 
   void CloneTo(Qnn_Param_t& dst) const;
+
+  std::string_view GetName() const {
+    if (!name_) {
+      return std::string_view{};
+    }
+    return name_;
+  }
+
+  template <typename T>
+  T GetValue() const {
+    if constexpr (std::is_same_v<T, bool>) {
+      return qnn_scalar_.bool8Value;
+    } else if constexpr (std::is_same_v<T, std::uint8_t>) {
+      return qnn_scalar_.uint8Value;
+    } else if constexpr (std::is_same_v<T, std::int8_t>) {
+      return qnn_scalar_.int8Value;
+    } else if constexpr (std::is_same_v<T, std::uint16_t>) {
+      return qnn_scalar_.uint16Value;
+    } else if constexpr (std::is_same_v<T, std::int16_t>) {
+      return qnn_scalar_.int16Value;
+    } else if constexpr (std::is_same_v<T, std::uint32_t>) {
+      return qnn_scalar_.uint32Value;
+    } else if constexpr (std::is_same_v<T, std::int32_t>) {
+      return qnn_scalar_.int32Value;
+    } else if constexpr (std::is_same_v<T, float>) {
+      return qnn_scalar_.floatValue;
+    } else {
+      static_assert(::qnn::always_false<T>,
+                    "Unsupported data type for scalar param.");
+    }
+  }
 
  private:
   const char* name_ = nullptr;

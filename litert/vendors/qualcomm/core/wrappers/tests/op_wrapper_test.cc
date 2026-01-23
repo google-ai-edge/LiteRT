@@ -198,6 +198,56 @@ TEST(OpWrapperTest, GetInputOutputTensorTest) {
   EXPECT_EQ(op_wrapper.GetOutputTensor(0), tensor_wrapper_output);
 }
 
+TEST(OpWrapperTest, GetScalarParamNameTest) {
+  std::uint8_t value = 255;
+
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper.AddScalarParam("uint8_param", value, false);
+  const auto& param_wrapper = op_wrapper.GetScalarPararm(0);
+  EXPECT_STREQ(param_wrapper.GetName().data(), "uint8_param");
+}
+
+TEST(OpWrapperTest, GetScalarParamTypesTest) {
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
+
+  // Bool
+  bool bool_val = true;
+  op_wrapper.AddScalarParam("bool_param", bool_val, false);
+
+  // Int8
+  int8_t int8_val = -10;
+  op_wrapper.AddScalarParam("int8_param", int8_val, false);
+
+  // UInt16
+  uint16_t uint16_val = 60000;
+  op_wrapper.AddScalarParam("uint16_param", uint16_val, false);
+
+  // Int16
+  int16_t int16_val = -30000;
+  op_wrapper.AddScalarParam("int16_param", int16_val, false);
+
+  // UInt32
+  uint32_t uint32_val = 123456789;
+  op_wrapper.AddScalarParam("uint32_param", uint32_val, false);
+
+  // Int32
+  int32_t int32_val = -123456789;
+  op_wrapper.AddScalarParam("int32_param", int32_val, false);
+
+  // Float
+  float float_val = 3.14f;
+  op_wrapper.AddScalarParam("float_param", float_val, false);
+
+  // Verify
+  EXPECT_EQ(op_wrapper.GetScalarPararm(0).GetValue<bool>(), bool_val);
+  EXPECT_EQ(op_wrapper.GetScalarPararm(1).GetValue<int8_t>(), int8_val);
+  EXPECT_EQ(op_wrapper.GetScalarPararm(2).GetValue<uint16_t>(), uint16_val);
+  EXPECT_EQ(op_wrapper.GetScalarPararm(3).GetValue<int16_t>(), int16_val);
+  EXPECT_EQ(op_wrapper.GetScalarPararm(4).GetValue<uint32_t>(), uint32_val);
+  EXPECT_EQ(op_wrapper.GetScalarPararm(5).GetValue<int32_t>(), int32_val);
+  EXPECT_FLOAT_EQ(op_wrapper.GetScalarPararm(6).GetValue<float>(), float_val);
+}
+
 TEST(OpWrapperTest, SwapOutputsTest) {
   TensorWrapper input_1{};
   TensorWrapper output_1{};
