@@ -23,7 +23,9 @@ EXPORTS
   LiteRtAddEnvironmentOptions
   LiteRtAddExternalTensorBinding
   LiteRtAddGpuOptionsExternalTensorPattern
+  LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
+  LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
   LiteRtCompiledModelGetDispatchAnnotation
@@ -42,10 +44,16 @@ EXPORTS
   LiteRtCreateCompilerOptions
   LiteRtCreateCpuOptions
   LiteRtCreateEnvironment
+  LiteRtCreateEventFromEglSyncFence
+  LiteRtCreateEventFromOpenClEvent
+  LiteRtCreateEventFromSyncFenceFd
   LiteRtCreateGpuOptions
+  LiteRtCreateManagedEvent
   LiteRtCreateManagedTensorBuffer
+  LiteRtCreateManagedTensorBufferFromRequirements
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
+  LiteRtCreateModelFromFile
   LiteRtCreateOptions
   LiteRtCreateProfiler
   LiteRtCreateRuntimeOptions
@@ -53,8 +61,12 @@ EXPORTS
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
   LiteRtCreateTensorBufferFromWebGpuBuffer
+  LiteRtCreateTensorBufferFromWebGpuTexture
+  LiteRtCreateTensorBufferRequirements
+  LiteRtCreateTensorBufferRequirementsWithAlignment
   LiteRtDestroyCompiledModel
   LiteRtDestroyEnvironment
+  LiteRtDestroyEvent
   LiteRtDestroyMetrics
   LiteRtDestroyModel
   LiteRtDestroyOpaqueOptions
@@ -62,6 +74,7 @@ EXPORTS
   LiteRtDestroyProfiler
   LiteRtDestroyTensorBuffer
   LiteRtDestroyTensorBufferRequirements
+  LiteRtDupFdEvent
   LiteRtDuplicateTensorBuffer
   LiteRtEnvironmentHasGpuEnvironment
   LiteRtEnvironmentSupportsAhwbClInterop
@@ -89,8 +102,14 @@ EXPORTS
   LiteRtGetCpuOptionsXNNPackFlags
   LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor
   LiteRtGetCpuOptionsXnnPackWeightCachePath
+  LiteRtGetDefaultSignatureKey
   LiteRtGetDummyCompilerOptions
   LiteRtGetEnvironmentOptions
+  LiteRtGetEventCustomNativeEvent
+  LiteRtGetEventEglSync
+  LiteRtGetEventEventType
+  LiteRtGetEventOpenClEvent
+  LiteRtGetEventSyncFenceFd
   LiteRtGetExternalLiteRtBufferContextTensorBuffer
   LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType
@@ -117,13 +136,16 @@ EXPORTS
   LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate
   LiteRtGetGpuOptionsInfiniteFloatCapping
   LiteRtGetGpuOptionsPayloadIdentifier
+  LiteRtGetMainModelSubgraphIndex
   LiteRtGetMetric
+  LiteRtGetModelMetadata
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
   LiteRtGetNextOpaqueOptions
   LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
+  LiteRtGetNumModelSubgraphs
   LiteRtGetNumOpInputs
   LiteRtGetNumOpOutputs
   LiteRtGetNumProfilerEvents
@@ -134,15 +156,18 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
-  LiteRtGetOpaqueOptions
-  LiteRtGetOpaqueOptionsHash
-  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetOpCode
   LiteRtGetOpInput
   LiteRtGetOpOutput
+  LiteRtGetOpaqueOptions
+  LiteRtGetOpaqueOptionsHash
+  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetOptionsHardwareAccelerators
-  LiteRtGetProfilerEvents
+  LiteRtGetPerChannelQuantization
+  LiteRtGetPerTensorQuantization
   LiteRtGetProfileSummary
+  LiteRtGetProfilerEvents
+  LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
   LiteRtGetRuntimeOptionsEnableProfiling
   LiteRtGetRuntimeOptionsErrorReporterMode
@@ -158,19 +183,30 @@ EXPORTS
   LiteRtGetSubgraphInput
   LiteRtGetSubgraphOp
   LiteRtGetSubgraphOutput
+  LiteRtGetTensorBufferCustomTensorBufferHandle
+  LiteRtGetTensorBufferEvent
+  LiteRtGetTensorBufferGlBuffer
+  LiteRtGetTensorBufferGlTexture
+  LiteRtGetTensorBufferHostMemory
+  LiteRtGetTensorBufferOffset
   LiteRtGetTensorBufferPackedSize
   LiteRtGetTensorBufferRegistry
+  LiteRtGetTensorBufferRequirementsAlignment
   LiteRtGetTensorBufferRequirementsBufferSize
+  LiteRtGetTensorBufferRequirementsStrides
   LiteRtGetTensorBufferRequirementsSupportedTensorBufferType
   LiteRtGetTensorBufferSize
   LiteRtGetTensorBufferTensorType
   LiteRtGetTensorBufferType
+  LiteRtGetTensorBufferVulkanMemory
   LiteRtGetTensorBufferWebGpuBuffer
   LiteRtGetTensorDefiningOp
+  LiteRtGetTensorIndex
   LiteRtGetTensorName
   LiteRtGetTensorTypeId
   LiteRtGetTensorUse
   LiteRtGetTensorWeights
+  LiteRtGetUnrankedTensorType
   LiteRtGetWeightsBytes
   LiteRtGoogleTensorOptionsCreate
   LiteRtGoogleTensorOptionsGet
@@ -192,6 +228,7 @@ EXPORTS
   LiteRtGoogleTensorOptionsSetShardingIntensity
   LiteRtGoogleTensorOptionsSetTestingFlags
   LiteRtGpuEnvironmentCreate
+  LiteRtHasTensorBufferEvent
   LiteRtIntelOpenVinoOptionsCreate
   LiteRtIntelOpenVinoOptionsGet
   LiteRtIntelOpenVinoOptionsGetConfigsMapOption
@@ -202,6 +239,8 @@ EXPORTS
   LiteRtIntelOpenVinoOptionsSetConfigsMapOption
   LiteRtIntelOpenVinoOptionsSetDeviceType
   LiteRtIntelOpenVinoOptionsSetPerformanceMode
+  LiteRtIsEventSignaled
+  LiteRtJoinTensorBufferRequirements
   LiteRtLockTensorBuffer
   LiteRtMediatekOptionsCreate
   LiteRtMediatekOptionsGet
@@ -222,6 +261,7 @@ EXPORTS
   LiteRtMediatekOptionsSetNeronSDKVersionType
   LiteRtMediatekOptionsSetOptimizationHint
   LiteRtMediatekOptionsSetPerformanceMode
+  LiteRtPushOp
   LiteRtQualcommOptionsCreate
   LiteRtQualcommOptionsGet
   LiteRtQualcommOptionsGetBackend
@@ -262,6 +302,8 @@ EXPORTS
   LiteRtResetProfiler
   LiteRtRunCompiledModel
   LiteRtRunCompiledModelAsync
+  LiteRtSerializeModel
+  LiteRtSerializeModelWithSignatures
   LiteRtSetAcceleratorGetHardwareSupport
   LiteRtSetAcceleratorGetName
   LiteRtSetAcceleratorGetVersion
@@ -304,8 +346,11 @@ EXPORTS
   LiteRtSetProfilerCurrentEventSource
   LiteRtSetRuntimeOptionsEnableProfiling
   LiteRtSetRuntimeOptionsErrorReporterMode
+  LiteRtSetTensorBufferEvent
+  LiteRtSignalEvent
   LiteRtStartProfiler
   LiteRtStopProfiler
   LiteRtUnlockTensorBuffer
   LiteRtUnwrapDelegate
+  LiteRtWaitEvent
   LiteRtWrapDelegate
