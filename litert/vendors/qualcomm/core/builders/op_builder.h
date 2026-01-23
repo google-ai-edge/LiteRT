@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <utility>
 #include <vector>
+#include <type_traits>
 
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -57,6 +58,16 @@ void AddFusedActivationNode(std::vector<OpWrapper>& res,
                             const uint32_t fused_activation_function,
                             const TensorWrapper& input_tensor,
                             const TensorWrapper& output_tensor);
+
+template <typename... Args>
+auto MakeVector(Args&&... args) {
+  using T = std::decay_t<std::common_type_t<Args...>>;
+  std::vector<T> v;
+  v.reserve(sizeof...(args));
+  (v.emplace_back(std::forward<Args>(args)), ...);
+  return v;
+}
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_OP_BUILDER_H_
