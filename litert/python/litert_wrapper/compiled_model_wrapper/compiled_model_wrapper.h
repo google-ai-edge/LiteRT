@@ -114,21 +114,23 @@ class CompiledModelWrapper {
 
   // Creates an input buffer for a tensor identified by signature key and input
   // name.
-  PyObject* CreateInputBufferByName(const char* signature_key,
+  PyObject* CreateInputBufferByName(PyObject* self_wrapper,
+                                    const char* signature_key,
                                     const char* input_name);
 
   // Creates an output buffer for a tensor identified by signature key and
   // output name.
-  PyObject* CreateOutputBufferByName(const char* signature_key,
+  PyObject* CreateOutputBufferByName(PyObject* self_wrapper,
+                                     const char* signature_key,
                                      const char* output_name);
 
   // Creates all input buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateInputBuffers(int signature_index);
+  PyObject* CreateInputBuffers(PyObject* self_wrapper, int signature_index);
 
   // Creates all output buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateOutputBuffers(int signature_index);
+  PyObject* CreateOutputBuffers(PyObject* self_wrapper, int signature_index);
 
   // Executes the model using a signature key and name-to-buffer mappings.
   PyObject* RunByName(const char* signature_key, PyObject* input_map,

@@ -118,28 +118,36 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       .def("CreateInputBufferByName",
            [](CompiledModelWrapper& self, const std::string& sig_key,
               const std::string& input_name) {
-             PyObject* r = self.CreateInputBufferByName(sig_key.c_str(),
-                                                        input_name.c_str());
+             // Pass Python wrapper reference so buffer keeps model alive
+             py::object self_obj = py::cast(&self);
+             PyObject* r = self.CreateInputBufferByName(
+                 self_obj.ptr(), sig_key.c_str(), input_name.c_str());
              if (!r) throw py::error_already_set();
              return py::reinterpret_steal<py::object>(r);
            })
       .def("CreateOutputBufferByName",
            [](CompiledModelWrapper& self, const std::string& sig_key,
               const std::string& out_name) {
-             PyObject* r = self.CreateOutputBufferByName(sig_key.c_str(),
-                                                         out_name.c_str());
+             // Pass Python wrapper reference so buffer keeps model alive
+             py::object self_obj = py::cast(&self);
+             PyObject* r = self.CreateOutputBufferByName(
+                 self_obj.ptr(), sig_key.c_str(), out_name.c_str());
              if (!r) throw py::error_already_set();
              return py::reinterpret_steal<py::object>(r);
            })
       .def("CreateInputBuffers",
            [](CompiledModelWrapper& self, int sig_index) {
-             PyObject* r = self.CreateInputBuffers(sig_index);
+             // Pass Python wrapper reference so buffers keep model alive
+             py::object self_obj = py::cast(&self);
+             PyObject* r = self.CreateInputBuffers(self_obj.ptr(), sig_index);
              if (!r) throw py::error_already_set();
              return py::reinterpret_steal<py::object>(r);
            })
       .def("CreateOutputBuffers",
            [](CompiledModelWrapper& self, int sig_index) {
-             PyObject* r = self.CreateOutputBuffers(sig_index);
+             // Pass Python wrapper reference so buffers keep model alive
+             py::object self_obj = py::cast(&self);
+             PyObject* r = self.CreateOutputBuffers(self_obj.ptr(), sig_index);
              if (!r) throw py::error_already_set();
              return py::reinterpret_steal<py::object>(r);
            })

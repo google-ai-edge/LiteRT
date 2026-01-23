@@ -386,19 +386,21 @@ PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
 }
 
 PyObject* CompiledModelWrapper::CreateInputBufferByName(
-    const char* signature_key, const char* input_name) {
+    PyObject* self_wrapper, const char* signature_key, const char* input_name) {
   auto buffer_or = compiled_model_.CreateInputBuffer(signature_key, input_name);
   if (!buffer_or) {
     return ConvertErrorToPyExc(buffer_or.Error());
   }
   auto buffer = std::move(*buffer_or);
 
-  PyObject* capsule = litert_wrapper_utils::MakeTensorBufferCapsule(buffer);
+  PyObject* capsule =
+      litert_wrapper_utils::MakeTensorBufferCapsule(buffer, self_wrapper);
   return capsule;
 }
 
 PyObject* CompiledModelWrapper::CreateOutputBufferByName(
-    const char* signature_key, const char* output_name) {
+    PyObject* self_wrapper, const char* signature_key,
+    const char* output_name) {
   auto buffer_or =
       compiled_model_.CreateOutputBuffer(signature_key, output_name);
   if (!buffer_or) {
@@ -406,11 +408,13 @@ PyObject* CompiledModelWrapper::CreateOutputBufferByName(
   }
   auto buffer = std::move(*buffer_or);
 
-  PyObject* capsule = litert_wrapper_utils::MakeTensorBufferCapsule(buffer);
+  PyObject* capsule =
+      litert_wrapper_utils::MakeTensorBufferCapsule(buffer, self_wrapper);
   return capsule;
 }
 
-PyObject* CompiledModelWrapper::CreateInputBuffers(int signature_index) {
+PyObject* CompiledModelWrapper::CreateInputBuffers(PyObject* self_wrapper,
+                                                   int signature_index) {
   auto buffers_or =
       compiled_model_.CreateInputBuffers(static_cast<size_t>(signature_index));
   if (!buffers_or) {
@@ -421,13 +425,14 @@ PyObject* CompiledModelWrapper::CreateInputBuffers(int signature_index) {
   for (size_t i = 0; i < buffers.size(); i++) {
     // Python owns them. Destroy on capsule destructor.
     PyObject* capsule =
-        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i]);
+        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i], self_wrapper);
     PyList_SetItem(py_list, i, capsule);  // steal ref
   }
   return py_list;
 }
 
-PyObject* CompiledModelWrapper::CreateOutputBuffers(int signature_index) {
+PyObject* CompiledModelWrapper::CreateOutputBuffers(PyObject* self_wrapper,
+                                                    int signature_index) {
   auto buffers_or =
       compiled_model_.CreateOutputBuffers(static_cast<size_t>(signature_index));
   if (!buffers_or) {
@@ -437,7 +442,7 @@ PyObject* CompiledModelWrapper::CreateOutputBuffers(int signature_index) {
   PyObject* py_list = PyList_New(buffers.size());
   for (size_t i = 0; i < buffers.size(); i++) {
     PyObject* capsule =
-        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i]);
+        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i], self_wrapper);
     PyList_SetItem(py_list, i, capsule);
   }
   return py_list;
