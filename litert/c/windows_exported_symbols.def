@@ -19,12 +19,22 @@
 ; libLiteRtWebGpuAccelerator.dll when --define=resolve_symbols_from_exec=true.
 
 EXPORTS
+  LiteRtAddCustomOpKernelOption
+  LiteRtAddEnvironmentOptions
+  LiteRtAddExternalTensorBinding
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddOpaqueOptions
   LiteRtClearTensorBufferEvent
+  LiteRtCompiledModelClearErrors
+  LiteRtCompiledModelGetDispatchAnnotation
+  LiteRtCompiledModelGetErrorMessages
+  LiteRtCompiledModelGetProfiler
   LiteRtCompiledModelIsFullyAccelerated
+  LiteRtCompiledModelRemoveDispatchAnnotation
+  LiteRtCompiledModelReportError
   LiteRtCompiledModelResizeInputTensor
   LiteRtCompiledModelResizeInputTensorNonStrict
+  LiteRtCompiledModelSetDispatchAnnotation
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
   LiteRtCreateAccelerator
@@ -37,6 +47,7 @@ EXPORTS
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
   LiteRtCreateOptions
+  LiteRtCreateProfiler
   LiteRtCreateRuntimeOptions
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
@@ -48,10 +59,14 @@ EXPORTS
   LiteRtDestroyModel
   LiteRtDestroyOpaqueOptions
   LiteRtDestroyOptions
+  LiteRtDestroyProfiler
   LiteRtDestroyTensorBuffer
   LiteRtDestroyTensorBufferRequirements
   LiteRtDuplicateTensorBuffer
   LiteRtEnvironmentHasGpuEnvironment
+  LiteRtEnvironmentSupportsAhwbClInterop
+  LiteRtEnvironmentSupportsAhwbGlInterop
+  LiteRtEnvironmentSupportsClGlInterop
   LiteRtExternalLiteRtBufferContextCreateBufferForTensor
   LiteRtExternalLiteRtBufferContextGetEnvironment
   LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode
@@ -111,6 +126,7 @@ EXPORTS
   LiteRtGetNumModelSignatures
   LiteRtGetNumOpInputs
   LiteRtGetNumOpOutputs
+  LiteRtGetNumProfilerEvents
   LiteRtGetNumSignatureInputs
   LiteRtGetNumSignatureOutputs
   LiteRtGetNumSubgraphInputs
@@ -118,12 +134,15 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
-  LiteRtGetOpCode
-  LiteRtGetOpInput
-  LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsHash
   LiteRtGetOpaqueOptionsIdentifier
+  LiteRtGetOpCode
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
+  LiteRtGetOptionsHardwareAccelerators
+  LiteRtGetProfilerEvents
+  LiteRtGetProfileSummary
   LiteRtGetRankedTensorType
   LiteRtGetRuntimeOptionsEnableProfiling
   LiteRtGetRuntimeOptionsErrorReporterMode
@@ -240,6 +259,7 @@ EXPORTS
   LiteRtQualcommOptionsSetVtcmSize
   LiteRtRegisterAccelerator
   LiteRtRegisterTensorBufferHandlers
+  LiteRtResetProfiler
   LiteRtRunCompiledModel
   LiteRtRunCompiledModelAsync
   LiteRtSetAcceleratorGetHardwareSupport
@@ -281,8 +301,11 @@ EXPORTS
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators
+  LiteRtSetProfilerCurrentEventSource
   LiteRtSetRuntimeOptionsEnableProfiling
   LiteRtSetRuntimeOptionsErrorReporterMode
+  LiteRtStartProfiler
+  LiteRtStopProfiler
   LiteRtUnlockTensorBuffer
   LiteRtUnwrapDelegate
   LiteRtWrapDelegate
