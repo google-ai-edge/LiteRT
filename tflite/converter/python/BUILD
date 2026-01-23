@@ -1,7 +1,7 @@
-load("@local_xla//xla/tsl/platform:build_config_root.bzl", "if_pywrap")
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "tf_python_pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:rules_cc.bzl", "cc_library")
+load("@xla//xla/tsl/platform:build_config_root.bzl", "if_pywrap")
 
 licenses(["notice"])
 
@@ -124,11 +124,11 @@ cc_library(
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-        "@local_xla//xla/hlo/parser:hlo_parser",
-        "@local_xla//xla/hlo/translate:stablehlo",
-        "@local_xla//xla/service:hlo_proto_cc",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@xla//xla/hlo/parser:hlo_parser",
+        "@xla//xla/hlo/translate:stablehlo",
+        "@xla//xla/service:hlo_proto_cc",
     ],
 )
 
@@ -217,14 +217,14 @@ cc_library(
         "@com_google_protobuf//:protobuf",
         "@com_google_protobuf//:protobuf_headers",
         "@flatbuffers//:runtime_cc",
-        "@local_xla//third_party/python_runtime:headers",  # build_cleaner: keep; DNR: b/35864863
-        "@local_xla//xla/tsl/platform:status",
         "@org_tensorflow//tensorflow/c:kernels",
         "@org_tensorflow//tensorflow/c:tf_status_headers",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/python:py_function_lib",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@xla//third_party/python_runtime:headers",  # build_cleaner: keep; DNR: b/35864863
+        "@xla//xla/tsl/platform:status",
     ] + select({
         # This is required when running `tflite_convert` from `bazel`.
         # It requires to link with TensorFlow Ops to get the op definitions.
@@ -248,9 +248,9 @@ tf_python_pybind_extension(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@local_xla//third_party/python_runtime:headers",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/python:py_function_lib",
         "@org_tensorflow//tensorflow/python/lib/core:pybind11_lib",
         "@pybind11",
+        "@xla//third_party/python_runtime:headers",
     ] + if_pywrap([":converter_python_api"]),
 )

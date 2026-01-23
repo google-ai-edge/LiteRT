@@ -175,9 +175,9 @@ tf_cc_test(
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@local_xla//xla/tsl/lib/core:status_test_util",
         "@org_tensorflow//tensorflow/core:framework_internal",
         "@org_tensorflow//tensorflow/core:lib",
+        "@xla//xla/tsl/lib/core:status_test_util",
     ],
 )
 
@@ -212,9 +212,9 @@ tf_cc_test(
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
-        "@local_xla//xla/tsl/platform:logging",
         "@org_tensorflow//tensorflow/core:framework_internal",
         "@org_tensorflow//tensorflow/core:lib",
+        "@xla//xla/tsl/platform:logging",
     ],
 )
 
