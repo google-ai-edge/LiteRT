@@ -94,6 +94,11 @@ void LiteRtProfileSummarizer::ProcessProfiles(
                tflite::Profiler::EventType::DELEGATE_OPERATOR_INVOKE_EVENT) {
       std::string op_name = event->tag;
       UpdateStat(delegate_stats_[op_name], event->elapsed_time);
+    } else if (event->event_type ==
+               tflite::Profiler::EventType::
+                   DELEGATE_PROFILED_OPERATOR_INVOKE_EVENT) {
+      std::string op_name = "Delegate/" + event->tag;
+      UpdateStat(delegate_stats_[op_name], event->elapsed_time);
     }
   }
 }
@@ -201,12 +206,12 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
 
   if (!delegate_stats_.empty()) {
     ss << "\nDelegate Statistics:\n";
-    ss << absl::StrFormat("%-30s %10s %10s %10s %10s %10s\n", "Op Name",
+    ss << absl::StrFormat("%-70s %10s %10s %10s %10s %10s\n", "Op Name",
                           "Count", "Avg(us)", "Min(us)", "Max(us)",
                           "Total(us)");
     for (const auto& [name, stat] : delegate_stats_) {
       double avg = static_cast<double>(stat.total_time_us) / stat.count;
-      ss << absl::StrFormat("%-30s %10lld %10.2f %10lld %10lld %10lld\n", name,
+      ss << absl::StrFormat("%-70s %10lld %10.2f %10lld %10lld %10lld\n", name,
                             stat.count, avg, stat.min_time_us, stat.max_time_us,
                             stat.total_time_us);
     }
