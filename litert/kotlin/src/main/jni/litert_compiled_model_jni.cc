@@ -163,7 +163,8 @@ GpuOptions::BufferStorageType ToGpuOptionsBufferStorageType(
 enum Backend {
   kBackendAutomatic = 0,
   kBackendOpenCl = 1,
-  kBackendWebGpu = 2,
+  kBackendWebGpu = 2,  // No longer supported.
+  kBackendOpenGl = 3,
 };
 
 // Converts the backend string to GpuOptions::Backend.
@@ -172,8 +173,8 @@ GpuOptions::Backend ToGpuOptionsBackend(const char* backend_str) {
   switch (backend) {
     case kBackendOpenCl:
       return GpuOptions::Backend::kOpenCl;
-    case kBackendWebGpu:
-      return GpuOptions::Backend::kWebGpu;
+    case kBackendOpenGl:
+      return GpuOptions::Backend::kOpenGl;
     default:
       return GpuOptions::Backend::kAutomatic;
   }

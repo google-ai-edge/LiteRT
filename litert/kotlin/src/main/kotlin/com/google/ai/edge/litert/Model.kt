@@ -127,7 +127,8 @@ private constructor(
     enum class Backend constructor(val value: Int) {
       AUTOMATIC(0),
       OPENCL(1),
-      WEBGPU(2),
+      @Deprecated("Use AUTOMATIC instead.") WEBGPU(2),
+      OPENGL(3),
     }
 
     /** Priority for GPU options. */
