@@ -60,11 +60,11 @@ tf_cc_test(
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
-        "@local_xla//xla/tsl/platform:statusor",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
         "@org_tensorflow//tensorflow/core:test",
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
+        "@xla//xla/tsl/platform:statusor",
     ],
 )
 

@@ -735,11 +735,11 @@ cc_library(
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-        "@local_tsl//tsl/platform:statusor",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:mangling_util",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_attributes",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:status",
+        "@tsl//tsl/platform:statusor",
     ],
 )
 
@@ -848,10 +848,10 @@ tf_cc_test(
     deps = [
         ":tftext_utils",
         "@com_google_absl//absl/status",
-        "@local_tsl//tsl/platform:status",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:test",
         "@org_tensorflow//tensorflow/core:test_main",
+        "@tsl//tsl/platform:status",
     ],
 )
 
@@ -1165,9 +1165,6 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@llvm-project//mlir:Transforms",
-        "@local_xla//xla/mlir_hlo",
-        "@local_xla//xla/mlir_hlo:type_conversion",
-        "@local_xla//xla/mlir_hlo:unfuse_batch_norm",
         "@org_tensorflow//tensorflow/compiler/mlir:op_or_arg_name_mapper",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/ir:QuantOps",
         "@org_tensorflow//tensorflow/compiler/mlir/stablehlo:legalize_tf",
@@ -1190,6 +1187,9 @@ cc_library(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/kernels:tensor_list",
         "@stablehlo//:stablehlo_ops",
+        "@xla//xla/mlir_hlo",
+        "@xla//xla/mlir_hlo:type_conversion",
+        "@xla//xla/mlir_hlo:unfuse_batch_norm",
     ],
 )
 
@@ -1417,7 +1417,6 @@ cc_library(
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@local_xla//xla/mlir_hlo",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common:uniform_quantized_types",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/ir:QuantOps",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
@@ -1427,6 +1426,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:logging",
         "@stablehlo//:stablehlo_ops",
+        "@xla//xla/mlir_hlo",
     ],
 )
 
@@ -1567,7 +1567,6 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@local_tsl//tsl/platform:status",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_types",
         "@org_tensorflow//tensorflow/core/platform:errors",
@@ -1576,6 +1575,7 @@ cc_library(
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:vhlo_ops",
         "@stablehlo//:vhlo_types",
+        "@tsl//tsl/platform:status",
     ],
 )
 
@@ -1647,8 +1647,6 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
-        "@local_tsl//tsl/platform:fingerprint",
-        "@local_tsl//tsl/platform:tstring",
         "@org_tensorflow//tensorflow/compiler/mlir:op_or_arg_name_mapper",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:convert_tensor",
@@ -1660,6 +1658,8 @@ cc_library(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:vhlo_ops",
+        "@tsl//tsl/platform:fingerprint",
+        "@tsl//tsl/platform:tstring",
     ],
 )
 
@@ -1708,8 +1708,6 @@ cc_library(
         "@llvm-project//mlir:ReconcileUnrealizedCasts",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TranslateLib",
-        "@local_xla//xla/tsl/platform:errors",
-        "@local_xla//xla/tsl/platform:statusor",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:convert_tensor",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
@@ -1720,6 +1718,8 @@ cc_library(
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:vhlo_ops",
+        "@xla//xla/tsl/platform:errors",
+        "@xla//xla/tsl/platform:statusor",
     ],
 )
 
@@ -1910,8 +1910,6 @@ tf_cc_binary(
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
-        "@local_xla//xla/hlo/translate/hlo_to_mhlo:translate",
-        "@local_xla//xla/mlir_hlo",
         "@org_tensorflow//tensorflow/compiler/mlir:init_mlir",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:mlir_roundtrip_flags",
@@ -1921,6 +1919,8 @@ tf_cc_binary(
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@stablehlo//:chlo_ops",
         "@stablehlo//:stablehlo_ops",
+        "@xla//xla/hlo/translate/hlo_to_mhlo:translate",
+        "@xla//xla/mlir_hlo",
     ],
 )
 
@@ -1967,13 +1967,13 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:Transforms",
-        "@local_xla//xla/mlir_hlo:mhlo_passes",
-        "@local_xla//xla/mlir_hlo:stablehlo_extension_passes",
         "@org_tensorflow//tensorflow/compiler/mlir/stablehlo:rename_entrypoint_to_main",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:tensorflow_passes",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:tf_saved_model_passes",
         "@org_tensorflow//tensorflow/core:core_cpu_base",
         "@stablehlo//:stablehlo_passes",
+        "@xla//xla/mlir_hlo:mhlo_passes",
+        "@xla//xla/mlir_hlo:stablehlo_extension_passes",
     ],
 )
 
@@ -2020,7 +2020,6 @@ cc_library(
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:ReconcileUnrealizedCasts",
         "@llvm-project//mlir:Support",
-        "@local_tsl//tsl/platform:protobuf",
         "@org_tensorflow//tensorflow/cc/saved_model:loader",
         "@org_tensorflow//tensorflow/compiler/mlir:op_or_arg_name_mapper",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_config_proto_cc",
@@ -2044,6 +2043,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core/platform:status",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:vhlo_ops",
+        "@tsl//tsl/platform:protobuf",
     ],
 )
 
@@ -2072,10 +2072,10 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
-        "@local_tsl//tsl/platform:statusor",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_types",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@tsl//tsl/platform:statusor",
     ],
 )
 
