@@ -59,9 +59,12 @@ pytype_strict_library(
 pytype_strict_library(
     name = "apply_plugin",
     srcs = ["apply_plugin.py"],
-    data = [
-        "//litert/tools:apply_plugin_main",
-    ],
+    data = select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            "//litert/tools:apply_plugin_main",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":common",
         ":components",

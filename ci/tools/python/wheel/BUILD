@@ -47,31 +47,27 @@ genrule(
 # This includes the dependencies that lives in litert/python/
 # TODO(weiyiw): Walk the dependencies and pull in related files.
 # TODO(weiyiw): Support data files.
-ALL_PY_SRC_MODULES = select({
-    "@org_tensorflow//tensorflow:linux_x86_64": [
-        "//litert/python/aot:prepare_for_npu",
-        "//litert/python/aot:aot_compile",
-        "//litert/python/aot/ai_pack:export_lib",
-        "//litert/python/aot/core:common",
-        "//litert/python/aot/core:types",
-        "//litert/python/aot/core:apply_plugin",
-        "//litert/python/aot/core:mlir_transforms",
-        "//litert/python/aot/core:components",
-        "//litert/python/aot/core:tflxx_util",
-        "//litert/python/aot/vendors:import_vendor",
-        "//litert/python/aot/vendors",
-        "//litert/python/aot/vendors:fallback_backend",
-        "//litert/python/aot/vendors/example:example_backend",
-        "//litert/python/aot/vendors/google_tensor:google_tensor_backend",
-        "//litert/python/aot/vendors/google_tensor:target",
-        "//litert/python/aot/vendors/mediatek:mediatek_backend",
-        "//litert/python/aot/vendors/mediatek:target",
-        "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
-        "//litert/python/aot/vendors/qualcomm:target",
-    ],
-    "//conditions:default": [],
-}) + [
-    # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
+ALL_PY_SRC_MODULES = [
+    "//litert/python/aot:prepare_for_npu",
+    "//litert/python/aot:aot_compile",
+    "//litert/python/aot/ai_pack:export_lib",
+    "//litert/python/aot/core:common",
+    "//litert/python/aot/core:types",
+    "//litert/python/aot/core:apply_plugin",
+    "//litert/python/aot/core:mlir_transforms",
+    "//litert/python/aot/core:components",
+    "//litert/python/aot/core:tflxx_util",
+    "//litert/python/aot/vendors:import_vendor",
+    "//litert/python/aot/vendors",
+    "//litert/python/aot/vendors:fallback_backend",
+    "//litert/python/aot/vendors/example:example_backend",
+    "//litert/python/aot/vendors/google_tensor:google_tensor_backend",
+    "//litert/python/aot/vendors/google_tensor:target",
+    "//litert/python/aot/vendors/mediatek:mediatek_backend",
+    "//litert/python/aot/vendors/mediatek:target",
+    "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
+    "//litert/python/aot/vendors/qualcomm:target",
+    # TODO(b/460805332): stop building mlir until protobuf symbol conflict is resolved.
     # "//litert/python/mlir",
     # "//litert/python/tools/model_utils",
     # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.

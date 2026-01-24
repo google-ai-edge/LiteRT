@@ -15,7 +15,6 @@
 
 """Wrapper for calling the apply plugin tooling."""
 
-
 import os
 import pathlib
 import re
@@ -70,8 +69,8 @@ class ApplyPlugin(components.ApplyPluginT):
       output_model: The path to the output model.
       soc_manufacturer: The SOC manufacturer of the plugin.
       soc_model: The SOC model of the plugin.
-      sdk_libs_path: The path to the SDK libs. If not provided,
-        the default SDK path will be used.
+      sdk_libs_path: The path to the SDK libs. If not provided, the default SDK
+        path will be used.
       **kwargs: Additional arguments to pass to the underlying binary.
 
     Returns:
@@ -86,7 +85,13 @@ class ApplyPlugin(components.ApplyPluginT):
     else:
       tmp_file = None
 
-    binary = common.get_resource(_BINARY)
+    try:
+      binary = common.get_resource(_BINARY)
+    except FileNotFoundError as e:
+      raise FileNotFoundError(
+          "Failed to find apply plugin binary. AOT might not be available on"
+          " your platform."
+      ) from e
     args = [
         str(binary),
         "--cmd=apply",
