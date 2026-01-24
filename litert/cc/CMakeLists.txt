@@ -46,6 +46,7 @@ target_link_libraries(litert_cc_api
         absl::span
         absl::strings
         absl::log
+        absl::die_if_null
     PRIVATE
         litert_c_api
 )
