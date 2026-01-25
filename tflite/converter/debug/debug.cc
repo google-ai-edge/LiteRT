@@ -287,7 +287,7 @@ std::function<bool(mlir::Pass*, mlir::Operation*)> CreatePrintIRFun(
 }  // namespace
 
 void InitPassManager(mlir::PassManager& pm,
-                     const converter::DebugOptions& options,
+                     const litert::converter::DebugOptions& options,
                      llvm::raw_ostream& out) {
   std::string dump_dir = options.ir_dump_dir();
 

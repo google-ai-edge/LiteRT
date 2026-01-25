@@ -31,8 +31,8 @@ namespace tensorflow {
 // string according to the given model flags, converter flags and tags. Returns
 // error status if it fails to convert the input.
 absl::Status ConvertSavedModelToTFLiteFlatBuffer(
-    const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags, std::string* result,
+    const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags, std::string* result,
     const quantization::PyFunctionLibrary* quantization_py_function_lib);
 
 }  // namespace tensorflow

@@ -26,7 +26,7 @@ namespace tensorflow {
 // The `out` method parameter is exposed for testing purposes and not intended
 // to be specified by client code.
 void InitPassManager(mlir::PassManager& pm,
-                     const converter::DebugOptions& options,
+                     const litert::converter::DebugOptions& options,
                      llvm::raw_ostream& out = llvm::outs());
 
 }  // namespace tensorflow

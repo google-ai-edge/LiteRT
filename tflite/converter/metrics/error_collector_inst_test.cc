@@ -92,7 +92,7 @@ class MockFailurePass
             nestedOp->emitError()
                 << "Failed at " << nestedOp->getName().getStringRef().str()
                 << " op",
-            tflite::metrics::ConverterErrorData::ERROR_NEEDS_FLEX_OPS);
+            litert::metrics::ConverterErrorData::ERROR_NEEDS_FLEX_OPS);
       }
     });
     signalPassFailure();
@@ -138,7 +138,7 @@ TEST(ErrorCollectorTest, TessSuccessPass) {
 }
 
 TEST(ErrorCollectorTest, TessFailurePass) {
-  using tflite::metrics::ConverterErrorData;
+  using litert::metrics::ConverterErrorData;
   MLIRContext context;
   context.getOrLoadDialect<mlir::func::FuncDialect>();
   context.getOrLoadDialect<TF::TensorFlowDialect>();

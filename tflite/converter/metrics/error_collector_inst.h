@@ -34,7 +34,7 @@ namespace TFL {
 
 // Collects errors when running the pass manager.
 class ErrorCollectorInstrumentation : public PassInstrumentation {
-  using ConverterErrorData = tflite::metrics::ConverterErrorData;
+  using ConverterErrorData = litert::metrics::ConverterErrorData;
   using ErrorCode = ConverterErrorData::ErrorCode;
 
  public:
@@ -66,7 +66,7 @@ constexpr char kErrorCodePrefix[] = "Error code: ";
 // Adds error code to a newly created InFlightDiagnostic.
 inline InFlightDiagnostic AttachErrorCode(InFlightDiagnostic &&diag,
                                           int error_code) {
-  using tflite::metrics::ConverterErrorData;
+  using litert::metrics::ConverterErrorData;
   diag.attachNote() << kErrorCodePrefix
                     << ConverterErrorData::ErrorCode_Name(error_code);
   return std::move(diag);
