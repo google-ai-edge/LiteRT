@@ -717,10 +717,10 @@ ThrStatus thrInvocationContextDetachInputBufferFence(
 // Returns an output sync fence to the graph output edge. When graph execution
 // is finished, the sync fence will be fired.
 // This function can also be used to retrieve fences for any edge annotated
-// with "request_fence" set to 1. This requires that
-// `thrInvocationContextPrepareForInvoke2` is called with `kThrFenceTypeDma`;
-// otherwise, no fence will be available for retrieval, and this function will
-// return `kThrStatusFail`.
+// with "request_fence" set to `kThrFenceTypeDma`. If it's a graph output edge,
+// `thrInvocationContextPrepareForInvoke2` must be called with
+// `kThrFenceTypeDma`; otherwise, no fence will be available for retrieval, and
+// this function will return `kThrStatusFail`.
 //
 // Note: User needs to close the returned fd when no longer in use.
 ThrStatus thrInvocationContextGetOutputBufferSyncFence(
@@ -729,12 +729,14 @@ ThrStatus thrInvocationContextGetOutputBufferSyncFence(
 // Has identical semantics to `thrInvocationContextGetOutputBufferSyncFence`,
 // but returns a fence handle rather than a raw fd.
 //
-// This function can be used to retrieve fences for graph output edges, or for
-// any edge annotated with "request_fence" set to 1. This requires that
-// `thrInvocationContextPrepareForInvoke2` is called with a valid fence type
-// (e.g. `kThrFenceTypeDma` or `kThrFenceTypeVendorPreferred`); otherwise, no
-// fence will be available for retrieval, and this function will return
-// `kThrStatusFail`.
+// This function can be used to retrieve fences for graph output edges or for
+// any edge annotated with "request_fence" set to a valid ThrFenceType
+// other than kThrFenceNoType. If an edge is a graph output,
+// `thrInvocationContextPrepareForInvoke2` must be called with a valid fence
+// type (e.g. `kThrFenceTypeDma` or `kThrFenceTypeVendorPreferred`); if an edge
+// is intermediate and has `request_fence` set, a fence of the requested type
+// will be available. If no fence is requested via graph output or edge
+// annotation, this function will return `kThrStatusFail`.
 //
 // Note: the returned fence handle must be unregistered via
 // `thrUnregisterFence`.
