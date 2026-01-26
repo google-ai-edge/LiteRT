@@ -306,6 +306,26 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "simple_buffer_runtimecapi",
+    testonly = True,
+    hdrs = ["simple_buffer.h"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/internal:litert_rng",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_test(
     name = "simple_buffer_test",
     srcs = ["simple_buffer_test.cc"],
