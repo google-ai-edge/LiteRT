@@ -303,7 +303,7 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
             ERROR_LOG_STR("dilation_w_factor", op_name_.c_str()));
         int32_t dilation_h_factor;
         LITERT_RETURN_IF_ERROR(
-            LiteRtGetDepthwiseConv2dDilationHOptions(litert_op_,
+            LiteRtGetDepthwiseConv2dDilationHOption(litert_op_,
                                                      &dilation_h_factor),
             ERROR_LOG_STR("dilation_h_factor", op_name_.c_str()));
         return ov::Any(
