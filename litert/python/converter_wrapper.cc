@@ -34,8 +34,7 @@ PYBIND11_MODULE(_pywrap_litert_converter, m) {
       .value("Jax", ConversionConfig::ModelType::kJax)
       .value("PyTorch", ConversionConfig::ModelType::kPyTorch);
 
-  py_conversion_config
-      .def(py::init<>())
+  py_conversion_config.def(py::init<>())
       .def_readwrite("original_model_type",
                      &ConversionConfig::original_model_type)
       .def_readwrite("converter_flags", &ConversionConfig::converter_flags)
