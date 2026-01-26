@@ -82,6 +82,7 @@ class CompiledResult {
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
  public:
+  friend class CompilerPluginFriend;
   // Get the number of transformations registered by the plugin.
   size_t GetNumTransformations() const { return transformations_.size(); }
 

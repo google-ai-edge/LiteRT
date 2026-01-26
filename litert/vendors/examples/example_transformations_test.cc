@@ -15,6 +15,7 @@
 #include "litert/vendors/examples/example_transformations.h"
 
 #include <gtest/gtest.h>
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
 
@@ -41,6 +42,60 @@ TEST(ExampleTransformationTest, SimpleAddOpToMulOpTransformation) {
   // Verify the changes.
   EXPECT_EQ(subgraph.Ops().size(), 1);
   EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflMul);
+}
+
+TEST(ExampleTransformationTest, SqrtMeanSquareTransformation) {
+  // Create a subgraph with Sqrt(Mean(Square(x))).
+  LiteRtSubgraphT subgraph;
+  LiteRtBuilderT builder;
+
+  auto& x = subgraph.EmplaceTensor();
+  auto& axis = subgraph.EmplaceTensor();
+  auto& square_out = subgraph.EmplaceTensor();
+  auto& mean_out = subgraph.EmplaceTensor();
+  auto& sqrt_out = subgraph.EmplaceTensor();
+
+  auto& mul_op = subgraph.EmplaceOp();
+  mul_op.SetOpCode(kLiteRtOpCodeTflMul);
+  internal::AttachInput(&x, mul_op);
+  internal::AttachInput(&x, mul_op);
+  internal::AttachOutput(&square_out, mul_op);
+
+  auto& mean_op = subgraph.EmplaceOp();
+  mean_op.SetOpCode(kLiteRtOpCodeTflMean);
+  internal::AttachInput(&square_out, mean_op);
+  internal::AttachInput(&axis, mean_op);
+  internal::AttachOutput(&mean_out, mean_op);
+
+  auto& sqrt_op = subgraph.EmplaceOp();
+  sqrt_op.SetOpCode(kLiteRtOpCodeTflSqrt);
+  internal::AttachInput(&mean_out, sqrt_op);
+  internal::AttachOutput(&sqrt_out, sqrt_op);
+
+  // Call the transformation.
+  SqrtMeanSquareTransformation(&builder, &sqrt_op);
+
+  // Apply the changes.
+  builder.ApplyChanges(&subgraph);
+
+  // Verify the changes.
+  // Mul and Mean should be removed. Abs should be added. Sqrt remains.
+  // But Builder::ApplyChanges might just mark them as removed in its internal
+  // state? No, ApplyChanges applies to subgraph.
+
+  // Note: ApplyChanges might not remove ops from the vector immediately or
+  // might replace them? It effectively removes them.
+
+  int abs_count = 0;
+  int sqrt_count = 0;
+  for (const auto& op : subgraph.Ops()) {
+    if (op->OpCode() == kLiteRtOpCodeTflAbs) abs_count++;
+    if (op->OpCode() == kLiteRtOpCodeTflSqrt) sqrt_count++;
+  }
+
+  EXPECT_EQ(abs_count, 1);
+  EXPECT_EQ(sqrt_count, 1);
+  EXPECT_EQ(subgraph.Ops().size(), 2);
 }
 
 }  // namespace

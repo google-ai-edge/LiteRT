@@ -20,17 +20,21 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
 /// @file
@@ -96,12 +100,25 @@ class RankedTensorSpecBuilder {
   std::optional<std::string> tensor_name_;
 };
 
+/// @brief Helper to create a RankedTensorSpec with a specific element type.
+template <typename T>
+RankedTensorSpec TensorType(const std::vector<int32_t>& dims) {
+  return RankedTensorSpecBuilder(
+             RankedTensorType(
+                 GetElementType<T>(),
+                 Layout(BuildLayout(dims.data(), dims.data() + dims.size()))))
+      .Build();
+}
+
 class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
  public:
   explicit Builder(LiteRtBuilder builder)
       : internal::NonOwnedHandle<LiteRtBuilder>(builder) {}
   /// @brief Builds a tensor from a `RankedTensorSpec`.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
+
+  /// @brief Builds a tensor similar to the given tensor.
+  Expected<Tensor> CloneTensor(const Tensor& src) const;
 
   /// @brief Builds weights for a tensor.
   template <typename T>
@@ -120,9 +137,12 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
       LiteRtElementType element_type,
       std::optional<std::string> name = std::nullopt) const;
 
-  Op BuildOp(LiteRtOpCode op_code, OpInputs& inputs, OpOutputs& outputs) const;
+  Op BuildOp(LiteRtOpCode op_code, const std::vector<Tensor>& inputs,
+             const std::vector<Tensor>& outputs) const;
+
   /// @brief Clones the given op.
-  Op BuildOp(Op& src, OpInputs& inputs, OpOutputs& outputs) {
+  Op BuildOp(Op& src, const std::vector<Tensor>& inputs,
+             const std::vector<Tensor>& outputs) {
     return BuildOp(src.Code(), inputs, outputs);
   };
 
@@ -145,6 +165,25 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
   void EraseOp(Op& op) const {
     internal::AssertOk(LiteRtBuilderEraseOp, this->Get(), op.Get());
   }
+
+  // --- Extended API ---
+
+  /// @brief Create an Op with the given code, inputs, and output types.
+  /// Returns all output tensors.
+  Expected<std::vector<Tensor>> CreateOpWithOutputSpec(
+      LiteRtOpCode code, const std::vector<Tensor>& inputs,
+      const std::vector<RankedTensorSpec>& output_specs) const;
+
+  /// @brief Overload for single-output Ops.
+  Expected<Tensor> CreateOpWithOutputSpec(LiteRtOpCode code,
+                                          const std::vector<Tensor>& inputs,
+                                          RankedTensorSpec output_spec) const;
+
+  /// @brief Replaces the given op with a new op.
+  /// The outputs of the old op are reused for the new op.
+  /// The old op is erased.
+  Op ReplaceOp(Op& op, LiteRtOpCode new_code,
+               const std::vector<Tensor>& inputs) const;
 };
 
 }  // namespace litert

@@ -45,7 +45,6 @@
 #include "litert/cc/internal/litert_logging.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -368,6 +367,11 @@ class LiteRtTensorT {
   template <class Arg>
   void SetQarams(Arg&& arg) {
     quantization_ = std::forward<Arg>(arg);
+  }
+
+  // Helper to set quantization type id.
+  void SetQTypeId(LiteRtQuantizationTypeId type_id) {
+    quantization_.first = type_id;
   }
 
   // Get the tensor type of this tensor.
