@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -550,7 +551,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Resolve custom google tensor options.
   LiteRtOpaqueOptions opaque_options = {};
-  void (*deleter)(LiteRtOpaqueOptions) = nullptr;
+  std::function<void(LiteRtOpaqueOptions)> deleter = nullptr;
   absl::Cleanup opaque_options_cleanup = [&] {
     if (deleter) {
       deleter(opaque_options);

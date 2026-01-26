@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_HANDLE_H_
 #define ODML_LITERT_LITERT_CC_LITERT_HANDLE_H_
 
+#include <functional>
 #include <memory>
 #include <type_traits>
 
@@ -38,24 +39,30 @@ inline void DummyDeleter(H) {}
 /// management for C-style handles. It supports both owning and non-owning
 /// semantics.
 /// @tparam H The handle type.
-/// @tparam deleter A function pointer to the deleter for the handle.
-template <typename H, void (*deleter)(H)>
-class Handle {
+/// TODO(b/477360280): Rename this class to Handle once the migration is done.
+template <typename H>
+class BaseHandle {
  public:
-  using Deleter = void (*)(H);
+  using Deleter = std::function<void(H)>;
 
-  Handle() = default;
+  BaseHandle() = default;
 
-  Handle(H handle, OwnHandle own) noexcept
-      : ptr_(handle, own == OwnHandle::kYes ? deleter : DummyDeleter<H>) {}
+  /// @brief Creates a new `BaseHandle`.
+  /// @param handle The handle to manage.
+  /// @param deleter The deleter for the handle.
+  /// @param own Whether this object owns the handle.
+  BaseHandle(H handle, Deleter deleter, OwnHandle own) noexcept
+      : ptr_(handle,
+             own == OwnHandle::kYes ? std::move(deleter) : DummyDeleter<H>),
+        owns_(own) {}
 
   /// @brief Returns `true` if the underlying LiteRT handle is valid.
   explicit operator bool() const noexcept { return static_cast<bool>(ptr_); }
 
-  bool operator==(const Handle& other) const noexcept {
+  bool operator==(const BaseHandle& other) const noexcept {
     return Get() == other.Get();
   }
-  bool operator!=(const Handle& other) const noexcept {
+  bool operator!=(const BaseHandle& other) const noexcept {
     return Get() != other.Get();
   }
 
@@ -68,16 +75,33 @@ class Handle {
   /// @brief Releases ownership of the handle.
   ///
   /// After this call, `Get()` returns a null handle.
-  H Release() noexcept { return ptr_.release(); }
-
-  /// @brief Returns `true` if the underlying handle is managed by this object.
-  bool IsOwned() const noexcept {
-    return ptr_.get_deleter() != DummyDeleter<H>;
+  H Release() noexcept {
+    owns_ = OwnHandle::kNo;  // Releasing means we no longer own.
+    return ptr_.release();
   }
 
+  /// @brief Returns `true` if the underlying handle is managed by this object.
+  bool IsOwned() const noexcept { return owns_ == OwnHandle::kYes; }
+
  private:
-  std::unique_ptr<std::remove_pointer_t<H>, void (*)(H)> ptr_ = {nullptr,
-                                                                 DummyDeleter};
+  std::unique_ptr<std::remove_pointer_t<H>, std::function<void(H)>> ptr_ = {
+      nullptr, DummyDeleter<H>};
+  OwnHandle owns_ = OwnHandle::kNo;
+};
+
+/// @brief A specialization of `BaseHandle` for owned handles.
+///
+/// @tparam H The handle type.
+/// @tparam deleter A function pointer to the deleter for the handle.
+///
+/// @deprecated Use `BaseHandle` instead.
+template <typename H, void (*deleter)(H)>
+class [[deprecated("Use BaseHandle instead.")]] Handle : public BaseHandle<H> {
+ public:
+  Handle() = default;
+
+  explicit Handle(H handle, OwnHandle own) noexcept
+      : BaseHandle<H>(handle, deleter, own) {}
 };
 
 /// @brief A specialization of `Handle` for non-owned handles.

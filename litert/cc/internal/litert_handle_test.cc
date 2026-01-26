@@ -96,8 +96,77 @@ TEST(HandleTest, MoveAssignAnOwningHandle) {
 // This will double delete is Release or GetDeleter don't work.
 TEST(HandleTest, ReleaseAndGetDeleterWork) {
   TestHandle h(new LiteRtTestResourceT, OwnHandle::kYes);
-  void (*deleter)(LiteRtTestResource) = h.GetDeleter();
-  EXPECT_THAT(deleter, Eq(LiteRtDestroyTestResource));
+  auto deleter = h.GetDeleter();
+  LiteRtTestResource res = h.Release();
+  EXPECT_THAT(res, Not(IsNull()));
+  deleter(res);
+}
+
+using TestBaseHandle = BaseHandle<LiteRtTestResource>;
+
+TEST(BaseHandleTest, HandlesAreNotCopiable) {
+  static_assert(!std::is_copy_constructible_v<TestBaseHandle>,
+                "Handle must not be copy constructible.");
+  static_assert(!std::is_copy_assignable_v<TestBaseHandle>,
+                "Handle must not be copy assignable.");
+}
+
+TEST(BaseHandleTest, BuildAnOwningHandle) {
+  const LiteRtTestResource res = new LiteRtTestResourceT;
+  const TestBaseHandle h(res, LiteRtDestroyTestResource, OwnHandle::kYes);
+  EXPECT_TRUE(h.IsOwned());
+  EXPECT_THAT(h.Get(), Eq(res));
+}
+
+TEST(BaseHandleTest, BuildANonOwningHandle) {
+  const LiteRtTestResource res = new LiteRtTestResourceT;
+  const TestBaseHandle h(res, LiteRtDestroyTestResource, OwnHandle::kNo);
+  EXPECT_FALSE(h.IsOwned());
+  EXPECT_THAT(h.Get(), Eq(res));
+  LiteRtDestroyTestResource(res);
+}
+
+TEST(BaseHandleTest, BuildANullOwningHandle) {
+  const TestBaseHandle h(nullptr, LiteRtDestroyTestResource, OwnHandle::kYes);
+  EXPECT_TRUE(h.IsOwned());
+  EXPECT_THAT(h.Get(), IsNull());
+}
+
+TEST(BaseHandleTest, BuildANullNonOwningHandle) {
+  const TestBaseHandle h(nullptr, LiteRtDestroyTestResource, OwnHandle::kNo);
+  EXPECT_FALSE(h.IsOwned());
+  EXPECT_THAT(h.Get(), IsNull());
+}
+
+TEST(BaseHandleTest, DefaultConstructorBuildsANullNonOwningHandle) {
+  const TestBaseHandle h;
+  EXPECT_FALSE(h.IsOwned());
+  EXPECT_THAT(h.Get(), IsNull());
+}
+
+TEST(BaseHandleTest, MoveConstructAnOwningHandle) {
+  TestBaseHandle h1(new LiteRtTestResourceT, LiteRtDestroyTestResource,
+                    OwnHandle::kYes);
+  TestBaseHandle h2(std::move(h1));
+  EXPECT_TRUE(h2.IsOwned());
+  EXPECT_THAT(h2.Get(), Not(IsNull()));
+}
+
+TEST(BaseHandleTest, MoveAssignAnOwningHandle) {
+  TestBaseHandle h1(new LiteRtTestResourceT, LiteRtDestroyTestResource,
+                    OwnHandle::kYes);
+  // Default constructed handles are null and non owning.
+  TestBaseHandle h2;
+  h2 = std::move(h1);
+  EXPECT_TRUE(h2.IsOwned());
+  EXPECT_THAT(h2.Get(), Not(IsNull()));
+}
+
+// This will double delete is Release or GetDeleter don't work.
+TEST(BaseHandleTest, ReleaseAndGetDeleterWork) {
+  TestBaseHandle h(new LiteRtTestResourceT, LiteRtDestroyTestResource,
+                   OwnHandle::kYes);
+  auto deleter = h.GetDeleter();
   LiteRtTestResource res = h.Release();
   EXPECT_THAT(res, Not(IsNull()));
   deleter(res);
