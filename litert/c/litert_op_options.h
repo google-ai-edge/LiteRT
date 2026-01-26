@@ -53,6 +53,9 @@ LiteRtStatus LiteRtGetBatchMatmulAdjXOption(LiteRtOp op, bool* adj_x);
 LiteRtStatus LiteRtGetBatchMatmulAdjYOption(LiteRtOp op, bool* adj_y);
 LiteRtStatus LiteRtGetBatchMatmulAsymmetricQuantizeInputOption(
     LiteRtOp op, bool* asymmetric_quantize_input);
+LiteRtStatus LiteRtBuilderBuildBatchMatmulOpOption(
+    LiteRtBuilder builder, LiteRtOp op, bool* adj_x, bool* adj_y,
+    bool* asymmetric_quantize_input);
 
 //==============================================================================
 //
@@ -65,6 +68,10 @@ LiteRtStatus LiteRtGetBatchMatmulAsymmetricQuantizeInputOption(
 LiteRtStatus LiteRtGetConcatenationFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation);
 LiteRtStatus LiteRtGetConcatenationAxisOption(LiteRtOp op, int32_t* axis);
+LiteRtStatus LiteRtBuilderBuildConcatenationOpOption(LiteRtBuilder builder,
+                                                     LiteRtOp op,
+                                                     uint32_t* fused_activation,
+                                                     int32_t* axis);
 
 //==============================================================================
 //
@@ -75,6 +82,8 @@ LiteRtStatus LiteRtGetConcatenationAxisOption(LiteRtOp op, int32_t* axis);
 //==============================================================================
 LiteRtStatus LiteRtGetDivFusedActivationOption(LiteRtOp op,
                                                uint32_t* fused_activation);
+LiteRtStatus LiteRtBuilderBuildDivOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                           uint32_t* fused_activation);
 
 //==============================================================================
 //
@@ -97,6 +106,10 @@ LiteRtStatus LiteRtFullyConnectedGetQuantizedBiasTypeOption(
     LiteRtOp op, uint32_t* quantized_bias_type);
 LiteRtStatus LiteRtGetFullyConnectedAsymmetricQuantizeInputOption(
     LiteRtOp op, bool* asymmetric_quantize_input);
+LiteRtStatus LiteRtBuilderBuildFullyConnectedOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* fused_activation,
+    uint32_t* weights_format, bool* keep_num_dims,
+    uint32_t* quantized_bias_type, bool* asymmetric_quantize_input);
 
 //==============================================================================
 //
@@ -107,6 +120,8 @@ LiteRtStatus LiteRtGetFullyConnectedAsymmetricQuantizeInputOption(
 //==============================================================================
 LiteRtStatus LiteRtGetMulFusedActivationOption(LiteRtOp op,
                                                uint32_t* fused_activation);
+LiteRtStatus LiteRtBuilderBuildMulOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                           uint32_t* fused_activation);
 
 //==============================================================================
 //
@@ -116,6 +131,8 @@ LiteRtStatus LiteRtGetMulFusedActivationOption(LiteRtOp op,
 //
 //==============================================================================
 LiteRtStatus LiteRtGetSoftmaxBetaOption(LiteRtOp op, float* beta);
+LiteRtStatus LiteRtBuilderBuildSoftmaxOpOption(LiteRtBuilder builder,
+                                               LiteRtOp op, float* beta);
 
 //==============================================================================
 //
@@ -139,6 +156,10 @@ LiteRtStatus LiteRtGetStridedSliceNewAxisMaskOption(LiteRtOp op,
 LiteRtStatus LiteRtGetStridedSliceShrinkAxisMaskOption(
     LiteRtOp op, int32_t* shrink_axis_mask);
 LiteRtStatus LiteRtGetStridedSliceOffsetOption(LiteRtOp op, bool* offset);
+LiteRtStatus LiteRtBuilderBuildStridedSliceOpOption(
+    LiteRtBuilder builder, LiteRtOp op, int32_t* begin_mask, int32_t* end_mask,
+    int32_t* ellipsis_mask, int32_t* new_axis_mask, int32_t* shrink_axis_mask,
+    bool* offset);
 
 //==============================================================================
 //
@@ -150,6 +171,8 @@ LiteRtStatus LiteRtGetStridedSliceOffsetOption(LiteRtOp op, bool* offset);
 //==============================================================================
 LiteRtStatus LiteRtGetSubFusedActivationOption(LiteRtOp op,
                                                uint32_t* fused_activation);
+LiteRtStatus LiteRtBuilderBuildSubOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                           uint32_t* fused_activation);
 
 //==============================================================================
 //
@@ -161,6 +184,9 @@ LiteRtStatus LiteRtGetSubFusedActivationOption(LiteRtOp op,
 LiteRtStatus LiteRtGetReshapeNewShapeOption(LiteRtOp op,
                                             const int32_t** new_shape,
                                             int32_t* new_shape_size);
+LiteRtStatus LiteRtBuilderBuildReshapeOpOption(LiteRtBuilder builder,
+                                               LiteRtOp op, int32_t* new_shape,
+                                               int32_t new_shape_size);
 
 //==============================================================================
 //
@@ -170,6 +196,8 @@ LiteRtStatus LiteRtGetReshapeNewShapeOption(LiteRtOp op,
 //
 //==============================================================================
 LiteRtStatus LiteRtGetSumKeepDimsOption(LiteRtOp op, bool* keepdims);
+LiteRtStatus LiteRtBuilderBuildSumOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                           bool* keepdims);
 
 //==============================================================================
 //
@@ -179,6 +207,8 @@ LiteRtStatus LiteRtGetSumKeepDimsOption(LiteRtOp op, bool* keepdims);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims);
+LiteRtStatus LiteRtBuilderBuildReduceMaxOpOption(LiteRtBuilder builder,
+                                                 LiteRtOp op, bool* keepdims);
 
 //==============================================================================
 //
@@ -188,6 +218,8 @@ LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetReduceMinKeepDimsOption(LiteRtOp op, bool* keepdims);
+LiteRtStatus LiteRtBuilderBuildReduceMinOpOption(LiteRtBuilder builder,
+                                                 LiteRtOp op, bool* keepdims);
 
 //==============================================================================
 //
@@ -197,6 +229,8 @@ LiteRtStatus LiteRtGetReduceMinKeepDimsOption(LiteRtOp op, bool* keepdims);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetReduceAnyKeepDimsOption(LiteRtOp op, bool* keepdims);
+LiteRtStatus LiteRtBuilderBuildReduceAnyOpOption(LiteRtBuilder builder,
+                                                 LiteRtOp op, bool* keepdims);
 
 //==============================================================================
 //
@@ -206,6 +240,8 @@ LiteRtStatus LiteRtGetReduceAnyKeepDimsOption(LiteRtOp op, bool* keepdims);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims);
+LiteRtStatus LiteRtBuilderBuildReduceAllOpOption(LiteRtBuilder builder,
+                                                 LiteRtOp op, bool* keepdims);
 
 //==============================================================================
 //
@@ -217,6 +253,9 @@ LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims);
 //==============================================================================
 LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis);
 LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op, int32_t* values_count);
+LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                            int32_t* axis,
+                                            int32_t* values_count);
 
 //==============================================================================
 //
@@ -228,6 +267,9 @@ LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op, int32_t* values_count);
 //==============================================================================
 LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis);
 LiteRtStatus LiteRtGetUnpackNumOption(LiteRtOp op, int32_t* num);
+LiteRtStatus LiteRtBuilderBuildUnpackOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* axis,
+                                              int32_t* num);
 
 //==============================================================================
 //
@@ -239,6 +281,9 @@ LiteRtStatus LiteRtGetUnpackNumOption(LiteRtOp op, int32_t* num);
 //==============================================================================
 LiteRtStatus LiteRtGetGatherAxisOption(LiteRtOp op, int32_t* axis);
 LiteRtStatus LiteRtGetGatherBatchDimsOption(LiteRtOp op, int32_t* batch_dims);
+LiteRtStatus LiteRtBuilderBuildGatherOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* axis,
+                                              int32_t* batch_dims);
 
 //==============================================================================
 //
@@ -248,6 +293,8 @@ LiteRtStatus LiteRtGetGatherBatchDimsOption(LiteRtOp op, int32_t* batch_dims);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetMeanKeepDimsOption(LiteRtOp op, bool* keepdims);
+LiteRtStatus LiteRtBuilderBuildMeanOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                            bool* keepdims);
 
 //==============================================================================
 //
@@ -257,6 +304,8 @@ LiteRtStatus LiteRtGetMeanKeepDimsOption(LiteRtOp op, bool* keepdims);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetSplitNumSplitsOption(LiteRtOp op, int32_t* num_splits);
+LiteRtStatus LiteRtBuilderBuildSplitOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                             int32_t* num_splits);
 
 //==============================================================================
 //
@@ -301,6 +350,10 @@ LiteRtStatus LiteRtGetConv2dDilationWOption(LiteRtOp op,
                                             int32_t* dilation_w_factor);
 LiteRtStatus LiteRtGetConv2dDilationHOption(LiteRtOp op,
                                             int32_t* dilation_h_factor);
+LiteRtStatus LiteRtBuilderBuildConv2dOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* dilation_w_factor, int32_t* dilation_h_factor,
+    uint32_t* fused_activation_function);
 
 //==============================================================================
 //
@@ -328,6 +381,11 @@ LiteRtStatus LiteRtGetConv3dDilationWOption(LiteRtOp op,
                                             int32_t* dilation_w_factor);
 LiteRtStatus LiteRtGetConv3dDilationHOption(LiteRtOp op,
                                             int32_t* dilation_h_factor);
+LiteRtStatus LiteRtBuilderBuildConv3dOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
+    int32_t* dilation_h_factor, int32_t* dilation_d_factor,
+    uint32_t* fused_activation_function);
 
 //==============================================================================
 //
@@ -354,8 +412,13 @@ LiteRtStatus LiteRtGetDepthwiseConv2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
 LiteRtStatus LiteRtGetDepthwiseConv2dDilationWOption(
     LiteRtOp op, int32_t* dilation_w_factor);
-LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOptions(
+LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOption(
     LiteRtOp op, int32_t* dilation_h_factor);
+LiteRtStatus LiteRtBuilderBuildDepthwiseConv2dOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* depth_multiplier,
+    uint32_t* fused_activation_function, int32_t* dilation_w_factor,
+    int32_t* dilation_h_factor);
 
 //==============================================================================
 //
@@ -375,6 +438,9 @@ LiteRtStatus LiteRtGetTransposeConvStrideHOption(LiteRtOp op,
                                                  int32_t* stride_h);
 LiteRtStatus LiteRtGetTransposeConvFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
+LiteRtStatus LiteRtBuilderBuildTransposeConvOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, uint32_t* fused_activation_function);
 
 //==============================================================================
 //
@@ -400,6 +466,10 @@ LiteRtStatus LiteRtGetAveragePool2dFilterHeightOption(LiteRtOp op,
                                                       int32_t* filter_height);
 LiteRtStatus LiteRtGetAveragePool2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
+LiteRtStatus LiteRtBuilderBuildAveragePool2dOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
+    uint32_t* fused_activation_function);
 
 //==============================================================================
 //
@@ -422,6 +492,10 @@ LiteRtStatus LiteRtGetMaxPool2dFilterHeightOption(LiteRtOp op,
                                                   int32_t* filter_height);
 LiteRtStatus LiteRtGetMaxPool2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
+LiteRtStatus LiteRtBuilderBuildMaxPool2dOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
+    uint32_t* fused_activation_function);
 
 //==============================================================================
 //
@@ -444,6 +518,10 @@ LiteRtStatus LiteRtGetL2Pool2dFilterHeightOption(LiteRtOp op,
                                                  int32_t* filter_height);
 LiteRtStatus LiteRtGetL2Pool2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
+LiteRtStatus LiteRtBuilderBuildL2Pool2dOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
+    uint32_t* fused_activation_function);
 
 //==============================================================================
 //
@@ -457,6 +535,10 @@ LiteRtStatus LiteRtGetResizeBilinearAlignCornersOption(LiteRtOp op,
                                                        bool* align_corners);
 LiteRtStatus LiteRtGetResizeBilinearHalfPixelCenterOption(
     LiteRtOp op, bool* half_pixel_centers);
+LiteRtStatus LiteRtBuilderBuildResizeBilinearOpOption(LiteRtBuilder builder,
+                                                      LiteRtOp op,
+                                                      bool* align_corners,
+                                                      bool* half_pixel_centers);
 
 //==============================================================================
 //
@@ -466,6 +548,8 @@ LiteRtStatus LiteRtGetResizeBilinearHalfPixelCenterOption(
 //
 //==============================================================================
 LiteRtStatus LiteRtGetLeakyReluAlphaOption(LiteRtOp op, float* alpha);
+LiteRtStatus LiteRtBuilderBuildLeakyReluOpOption(LiteRtBuilder builder,
+                                                 LiteRtOp op, float* alpha);
 
 //==============================================================================
 //
@@ -476,6 +560,9 @@ LiteRtStatus LiteRtGetLeakyReluAlphaOption(LiteRtOp op, float* alpha);
 //==============================================================================
 LiteRtStatus LiteRtGetDepthToSpaceBlockSizeOption(LiteRtOp op,
                                                   int32_t* block_size);
+LiteRtStatus LiteRtBuilderBuildDepthToSpaceOpOption(LiteRtBuilder builder,
+                                                    LiteRtOp op,
+                                                    int32_t* block_size);
 
 //==============================================================================
 //
@@ -486,6 +573,9 @@ LiteRtStatus LiteRtGetDepthToSpaceBlockSizeOption(LiteRtOp op,
 //==============================================================================
 LiteRtStatus LiteRtGetSpaceToDepthBlockSizeOption(LiteRtOp op,
                                                   int32_t* block_size);
+LiteRtStatus LiteRtBuilderBuildSpaceToDepthOpOption(LiteRtBuilder builder,
+                                                    LiteRtOp op,
+                                                    int32_t* block_size);
 
 //==============================================================================
 //
@@ -499,6 +589,9 @@ LiteRtStatus LiteRtGetResizeNearestNeighborAlignCornersOption(
     LiteRtOp op, bool* align_corners);
 LiteRtStatus LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
     LiteRtOp op, bool* half_pixel_centers);
+LiteRtStatus LiteRtBuilderBuildResizeNearestNeighborOpOption(
+    LiteRtBuilder builder, LiteRtOp op, bool* align_corners,
+    bool* half_pixel_centers);
 
 //==============================================================================
 //
@@ -510,6 +603,9 @@ LiteRtStatus LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
 //==============================================================================
 LiteRtStatus LiteRtGetCumsumExclusiveOption(LiteRtOp op, bool* exclusive);
 LiteRtStatus LiteRtGetCumsumReverseOption(LiteRtOp op, bool* reverse);
+LiteRtStatus LiteRtBuilderBuildCumsumOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, bool* exclusive,
+                                              bool* reverse);
 
 //==============================================================================
 //
@@ -519,6 +615,8 @@ LiteRtStatus LiteRtGetCumsumReverseOption(LiteRtOp op, bool* reverse);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetGeluApproximateOption(LiteRtOp op, bool* approximate);
+LiteRtStatus LiteRtBuilderBuildGeluOpOption(LiteRtBuilder builder, LiteRtOp op,
+                                            bool* approximate);
 
 //==============================================================================
 //
@@ -528,6 +626,8 @@ LiteRtStatus LiteRtGetGeluApproximateOption(LiteRtOp op, bool* approximate);
 //
 //==============================================================================
 LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode);
+LiteRtStatus LiteRtBuilderBuildMirrorPadOpOption(LiteRtBuilder builder,
+                                                 LiteRtOp op, uint32_t* mode);
 
 //==============================================================================
 //
@@ -540,6 +640,10 @@ LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode);
 LiteRtStatus LiteRtGetSqueezeDimsOption(LiteRtOp op,
                                         const int32_t** squeeze_dims,
                                         int32_t* num_squeeze_dims);
+LiteRtStatus LiteRtBuilderBuildSqueezeOpOption(LiteRtBuilder builder,
+                                               LiteRtOp op,
+                                               const int32_t* squeeze_dims,
+                                               int32_t num_squeeze_dims);
 
 #ifdef __cplusplus
 }

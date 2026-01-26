@@ -23,6 +23,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -740,5 +741,244 @@ TEST(CheckCompilerCompatibilityTest, Simple) {
   ASSERT_FALSE(plugin.CheckCompilerCompatibility("UnsupportedSocModel"));
 }
 
+LiteRtStatus ReplaceAddWithMul(LiteRtBuilder builder, LiteRtOp op) {
+  if (op->OpCode() != kLiteRtOpCodeTflAdd) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+  auto& new_op = b->BuildOp(kLiteRtOpCodeTflMul, op->Inputs(), op->Outputs());
+  (void)new_op;
+  b->EraseOp(op);
+  return kLiteRtStatusOk;
+}
+
 }  // namespace
+
+class CompilerPluginFriend : public ::testing::Test {
+ protected:
+  CompilerPlugin CreatePlugin() { return CompilerPlugin(); }
+  void AddTransformation(CompilerPlugin& plugin, LiteRtTransformation t) {
+    plugin.transformations_.push_back(t);
+  }
+};
+
+TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewrite) {
+  CompilerPlugin plugin = CreatePlugin();
+  LiteRtTransformation transformation;
+  transformation.name = "ReplaceAddWithMul";
+  transformation.pattern = ReplaceAddWithMul;
+  AddTransformation(plugin, transformation);
+
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& tensor0 = subgraph.EmplaceTensor();
+  auto& tensor1 = subgraph.EmplaceTensor();
+  auto& tensor2 = subgraph.EmplaceTensor();
+
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&tensor0, op);
+  AttachInput(&tensor1, op);
+  AttachOutput(&tensor2, op);
+
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflAdd);
+
+  LITERT_ASSERT_OK(plugin.GreedyPatternMatchAndRewrite(model));
+
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflMul);
+}
+
+TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewriteIterative) {
+  CompilerPlugin plugin = CreatePlugin();
+  // Transformation 1: Add -> Mul
+  LiteRtTransformation transformation1;
+  transformation1.name = "ReplaceAddWithMul";
+  transformation1.pattern = ReplaceAddWithMul;
+  AddTransformation(plugin, transformation1);
+
+  // Transformation 2: Mul -> Sub
+  LiteRtTransformation transformation2;
+  transformation2.name = "ReplaceMulWithSub";
+  transformation2.pattern = [](LiteRtBuilder builder,
+                               LiteRtOp op) -> LiteRtStatus {
+    if (op->OpCode() != kLiteRtOpCodeTflMul) {
+      return kLiteRtStatusErrorNotFound;
+    }
+    LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+    auto& new_op = b->BuildOp(kLiteRtOpCodeTflSub, op->Inputs(), op->Outputs());
+    (void)new_op;
+    b->EraseOp(op);
+    return kLiteRtStatusOk;
+  };
+  AddTransformation(plugin, transformation2);
+
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& tensor0 = subgraph.EmplaceTensor();
+  auto& tensor1 = subgraph.EmplaceTensor();
+  auto& tensor2 = subgraph.EmplaceTensor();
+
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&tensor0, op);
+  AttachInput(&tensor1, op);
+  AttachOutput(&tensor2, op);
+
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflAdd);
+
+  LITERT_ASSERT_OK(plugin.GreedyPatternMatchAndRewrite(model));
+
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  // Should undergo Add -> Mul -> Sub
+  EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflSub);
+}
+
+TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
+  CompilerPlugin plugin = CreatePlugin();
+  plugin.SetMaxTransformationIterations(5);
+
+  // Define a helper template for transformation.
+  auto add_transform = [&](const char* name, LiteRtPatternFn pattern) {
+    LiteRtTransformation t;
+    t.name = name;
+    t.pattern = pattern;
+    AddTransformation(plugin, t);
+  };
+
+  // Chain of transformations:
+  // 1. Add -> Mul
+  add_transform(
+      "Add_to_Mul", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+        if (op->OpCode() != kLiteRtOpCodeTflAdd)
+          return kLiteRtStatusErrorNotFound;
+        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+        auto& new_op =
+            b->BuildOp(kLiteRtOpCodeTflMul, op->Inputs(), op->Outputs());
+        (void)new_op;
+        b->EraseOp(op);
+        return kLiteRtStatusOk;
+      });
+  // 2. Mul -> Sub
+  add_transform(
+      "Mul_to_Sub", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+        if (op->OpCode() != kLiteRtOpCodeTflMul)
+          return kLiteRtStatusErrorNotFound;
+        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+        auto& new_op =
+            b->BuildOp(kLiteRtOpCodeTflSub, op->Inputs(), op->Outputs());
+        (void)new_op;
+        b->EraseOp(op);
+        return kLiteRtStatusOk;
+      });
+  // 3. Sub -> Div
+  add_transform(
+      "Sub_to_Div", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+        if (op->OpCode() != kLiteRtOpCodeTflSub)
+          return kLiteRtStatusErrorNotFound;
+        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+        auto& new_op =
+            b->BuildOp(kLiteRtOpCodeTflDiv, op->Inputs(), op->Outputs());
+        (void)new_op;
+        b->EraseOp(op);
+        return kLiteRtStatusOk;
+      });
+  // 4. Div -> Cos
+  add_transform(
+      "Div_to_Cos", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+        if (op->OpCode() != kLiteRtOpCodeTflDiv)
+          return kLiteRtStatusErrorNotFound;
+        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+        auto& new_op =
+            b->BuildOp(kLiteRtOpCodeTflCos, op->Inputs(), op->Outputs());
+        (void)new_op;
+        b->EraseOp(op);
+        return kLiteRtStatusOk;
+      });
+  // 5. Cos -> Sin
+  add_transform(
+      "Cos_to_Sin", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+        if (op->OpCode() != kLiteRtOpCodeTflCos)
+          return kLiteRtStatusErrorNotFound;
+        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+        auto& new_op =
+            b->BuildOp(kLiteRtOpCodeTflSin, op->Inputs(), op->Outputs());
+        (void)new_op;
+        b->EraseOp(op);
+        return kLiteRtStatusOk;
+      });
+  // 6. Sin -> Log (Should not happen if max iterations = 5)
+  add_transform(
+      "Sin_to_Log", [](LiteRtBuilder builder, LiteRtOp op) -> LiteRtStatus {
+        if (op->OpCode() != kLiteRtOpCodeTflSin)
+          return kLiteRtStatusErrorNotFound;
+        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
+        auto& new_op =
+            b->BuildOp(kLiteRtOpCodeTflLog, op->Inputs(), op->Outputs());
+        (void)new_op;
+        b->EraseOp(op);
+        return kLiteRtStatusOk;
+      });
+
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& tensor0 = subgraph.EmplaceTensor();
+  auto& tensor1 = subgraph.EmplaceTensor();
+  auto& tensor2 = subgraph.EmplaceTensor();
+
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&tensor0, op);
+  AttachInput(&tensor1, op);
+  AttachOutput(&tensor2, op);
+
+  LITERT_ASSERT_OK(plugin.GreedyPatternMatchAndRewrite(model));
+  // Iteration 0: Add -> Mul
+  // Iteration 1: Mul -> Sub
+  // Iteration 2: Sub -> Div
+  // Iteration 3: Div -> Cos
+  // Iteration 4: Cos -> Sin
+  // Iteration 5: Stop (limit reached before checking Sin -> Log)
+
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflSin);
+}
+
+TEST_F(CompilerPluginFriend, MultipleIndependentMatches) {
+  CompilerPlugin plugin = CreatePlugin();
+  LiteRtTransformation t;
+  t.name = "Add_to_Mul";
+  t.pattern = ReplaceAddWithMul;
+  AddTransformation(plugin, t);
+
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& t0 = subgraph.EmplaceTensor();
+  auto& t1 = subgraph.EmplaceTensor();
+  auto& t2 = subgraph.EmplaceTensor();
+  auto& t3 = subgraph.EmplaceTensor();
+
+  // Op 1: Add
+  auto& op1 = subgraph.EmplaceOp();
+  op1.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&t0, op1);
+  AttachInput(&t0, op1);  // Dummy inputs
+  AttachOutput(&t1, op1);
+
+  // Op 2: Add
+  auto& op2 = subgraph.EmplaceOp();
+  op2.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&t2, op2);
+  AttachInput(&t2, op2);
+  AttachOutput(&t3, op2);
+
+  LITERT_ASSERT_OK(plugin.GreedyPatternMatchAndRewrite(model));
+
+  ASSERT_EQ(subgraph.Ops().size(), 2);
+  EXPECT_EQ(subgraph.Ops()[0]->OpCode(), kLiteRtOpCodeTflMul);
+  EXPECT_EQ(subgraph.Ops()[1]->OpCode(), kLiteRtOpCodeTflMul);
+}
+
 }  // namespace litert::internal
