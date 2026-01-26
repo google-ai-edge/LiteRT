@@ -58,6 +58,7 @@ cc_library(
 cc_test(
     name = "options_helper_test",
     srcs = ["options_helper_test.cc"],
+    tags = ["noasan"],  # TODO(b/478876933): Re-enable once the bug is fixed.
     deps = [
         ":options_helper",
         "//litert/c:litert_runtime_c_api_shared_lib",
