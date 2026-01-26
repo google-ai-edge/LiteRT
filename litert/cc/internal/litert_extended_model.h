@@ -44,6 +44,9 @@
 
 namespace litert {
 
+// Forward declaration of Op class.
+class Op;
+
 /// @brief A C++ wrapper for `LiteRtWeights`, representing tensor weights.
 class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
  public:
@@ -68,6 +71,11 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
 class Tensor : public litert::SimpleTensor {
  public:
   explicit Tensor(LiteRtTensor tensor) : litert::SimpleTensor(tensor) {}
+
+  // Allow copying Tensors (they are just handles).
+  Tensor(const Tensor& other) : litert::SimpleTensor(other.Get()) {}
+  Tensor(Tensor&&) = default;
+  Tensor& operator=(Tensor&&) = default;
 
   LiteRtQuantizationTypeId QTypeId() const {
     LiteRtQuantizationTypeId q_type_id;
@@ -157,8 +165,22 @@ class Tensor : public litert::SimpleTensor {
     return std::nullopt;
   }
 
+  /// @brief Gets the defining op of the tensor.
+  /// @return The defining op of the tensor if it exists, otherwise an error.
+  Expected<Op> GetDefiningOp() const;
+
   bool IsSubgraphInput() const;
   bool IsConstant() const;
+
+  /// @brief Compares two tensors for equality.
+  /// @param other The other tensor to compare with.
+  /// @return True if the tensors are the same, false otherwise.
+  bool operator==(const Tensor& other) const { return Get() == other.Get(); }
+
+  /// @brief Compares two tensors for inequality.
+  /// @param other The other tensor to compare with.
+  /// @return True if the tensors are different, false otherwise.
+  bool operator!=(const Tensor& other) const { return Get() != other.Get(); }
 };
 
 using OpInputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpInputs>;
@@ -168,6 +190,11 @@ using OpOutputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpOutputs>;
 class Op : public internal::NonOwnedHandle<LiteRtOp> {
  public:
   explicit Op(LiteRtOp op) : NonOwnedHandle<LiteRtOp>(op) {}
+
+  // Allow copying Ops (they are just handles).
+  Op(const Op& other) : NonOwnedHandle<LiteRtOp>(other.Get()) {}
+  Op(Op&&) = default;
+  Op& operator=(Op&&) = default;
 
   LiteRtOpCode Code() const {
     LiteRtOpCode opcode;
@@ -188,6 +215,29 @@ class Op : public internal::NonOwnedHandle<LiteRtOp> {
 
   OpInputs Inputs() const;
   OpOutputs Outputs() const;
+
+  /// @brief Checks if the op has the given opcode.
+  /// @param code The opcode to check.
+  /// @return True if the op has the given opcode, false otherwise.
+  bool Is(LiteRtOpCode code) const { return Code() == code; }
+
+  /// @brief Gets the input tensor at the given index.
+  /// @param index The index of the input tensor.
+  /// @return The input tensor at the given index if it exists, otherwise an
+  /// error.
+  Expected<Tensor> Input(size_t index) const;
+
+  /// @brief Gets the output tensor at the given index.
+  /// @param index The index of the output tensor.
+  /// @return The output tensor at the given index if it exists, otherwise an
+  /// error.
+  Expected<Tensor> Output(size_t index) const;
+
+  /// @brief Gets the defining op of the input tensor at the given index.
+  /// @param index The index of the input tensor.
+  /// @return The defining op of the input tensor if it exists, otherwise an
+  /// error.
+  Expected<Op> InputDefiningOp(size_t index) const;
 };
 
 struct Tensor::TensorUse {
