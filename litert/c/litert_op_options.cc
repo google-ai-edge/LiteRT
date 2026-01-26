@@ -893,7 +893,7 @@ LiteRtStatus LiteRtGetDepthwiseConv2dDilationWOption(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOptions(
+LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOption(
     LiteRtOp op, int32_t* dilation_h_factor) {
   if (op->OpCode() != kLiteRtOpCodeTflDepthwiseConv2d) {
     return kLiteRtStatusErrorInvalidArgument;

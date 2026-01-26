@@ -876,7 +876,7 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationWOption(
           litert_op.Get(), &dilation_w_factor));
       int32_t dilation_h_factor;
-      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationHOptions(
+      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationHOption(
           litert_op.Get(), &dilation_h_factor));
       uint32_t fused_activation;
       LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dFusedActivationOption(
