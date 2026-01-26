@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_UNARY_H_
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -44,8 +45,137 @@ namespace litert {
 namespace testing {
 
 template <typename T>
+struct FloorReference {
+  T operator()(T value) const { return std::floor(value); }
+};
+
+template <typename T>
+struct LogisticReference {
+  T operator()(T value) const {
+    return static_cast<T>(1) / (static_cast<T>(1) + std::exp(-value));
+  }
+};
+
+template <typename T>
 struct ReluReference {
   T operator()(T value) const { return std::max(value, static_cast<T>(0)); }
+};
+
+template <typename T>
+struct ReluN1To1Reference {
+  T operator()(T value) const {
+    return std::min(static_cast<T>(1), std::max(static_cast<T>(-1), value));
+  }
+};
+
+template <typename T>
+struct Relu6Reference {
+  T operator()(T value) const {
+    return std::min(static_cast<T>(6), std::max(static_cast<T>(0), value));
+  }
+};
+
+template <typename T>
+struct TanhReference {
+  T operator()(T value) const { return std::tanh(value); }
+};
+
+template <typename T>
+struct ExpReference {
+  T operator()(T value) const { return std::exp(value); }
+};
+
+template <typename T>
+struct NegReference {
+  T operator()(T value) const { return -value; }
+};
+
+template <typename T>
+struct SinReference {
+  T operator()(T value) const { return std::sin(value); }
+};
+
+template <typename T>
+struct LogReference {
+  T operator()(T value) const { return std::log(value); }
+};
+
+template <typename T>
+struct SqrtReference {
+  T operator()(T value) const { return std::sqrt(value); }
+};
+
+template <typename T>
+struct RsqrtReference {
+  T operator()(T value) const { return 1 / std::sqrt(value); }
+};
+
+template <typename T>
+struct SquareReference {
+  T operator()(T value) const { return value * value; }
+};
+
+template <typename T>
+struct ZerosLikeReference {
+  T operator()(T value) const { return static_cast<T>(0); }
+};
+
+template <typename T>
+struct AbsReference {
+  T operator()(T value) const { return std::abs(value); }
+};
+
+template <typename T>
+struct CeilReference {
+  T operator()(T value) const { return std::ceil(value); }
+};
+
+template <typename T>
+struct CosReference {
+  T operator()(T value) const { return std::cos(value); }
+};
+
+template <typename T>
+struct EluReference {
+  T operator()(T value) const {
+    return value > 0 ? value : (std::exp(value) - 1);
+  }
+};
+
+template <typename T>
+struct RoundReference {
+  T operator()(T value) const { return std::rint(value); }
+};
+
+template <typename T>
+struct HardSwishReference {
+  T operator()(T value) const {
+    return value * std::max(static_cast<T>(0),
+                            std::min(static_cast<T>(1), (value + 3) / 6));
+  }
+};
+
+template <typename T>
+struct GeluReference {
+  T operator()(T value) const {
+    return static_cast<T>(0.5) * value *
+           (static_cast<T>(1) + std::erf(value / std::sqrt(static_cast<T>(2))));
+  }
+};
+
+template <typename T>
+struct Relu0To1Reference {
+  T operator()(T value) const {
+    return std::min(static_cast<T>(1), std::max(static_cast<T>(0), value));
+  }
+};
+
+template <typename T>
+struct SignReference {
+  T operator()(T value) const {
+    if (value == 0) return value;
+    return std::signbit(value) ? static_cast<T>(-1) : static_cast<T>(1);
+  }
 };
 
 // clang-format off
@@ -68,7 +198,19 @@ class Unary : public TestGraph {
   static constexpr size_t kRank = Rank::value;
 
   // TODO finish support for other op codes and activation functions.
-  static_assert(kOpCode == kLiteRtOpCodeTflRelu);
+  static_assert(
+      kOpCode == kLiteRtOpCodeTflFloor || kOpCode == kLiteRtOpCodeTflLogistic ||
+      kOpCode == kLiteRtOpCodeTflRelu || kOpCode == kLiteRtOpCodeTflReluN1To1 ||
+      kOpCode == kLiteRtOpCodeTflRelu6 || kOpCode == kLiteRtOpCodeTflTanh ||
+      kOpCode == kLiteRtOpCodeTflExp || kOpCode == kLiteRtOpCodeTflNeg ||
+      kOpCode == kLiteRtOpCodeTflSin || kOpCode == kLiteRtOpCodeTflLog ||
+      kOpCode == kLiteRtOpCodeTflSqrt || kOpCode == kLiteRtOpCodeTflRsqrt ||
+      kOpCode == kLiteRtOpCodeTflSquare ||
+      kOpCode == kLiteRtOpCodeTflZerosLike || kOpCode == kLiteRtOpCodeTflAbs ||
+      kOpCode == kLiteRtOpCodeTflCeil || kOpCode == kLiteRtOpCodeTflCos ||
+      kOpCode == kLiteRtOpCodeTflElu || kOpCode == kLiteRtOpCodeTflRound ||
+      kOpCode == kLiteRtOpCodeTflHardSwish || kOpCode == kLiteRtOpCodeTflGelu ||
+      kOpCode == kLiteRtOpCodeTflRelu0To1 || kOpCode == kLiteRtOpCodeTflSign);
 
   static constexpr TensorNames<1> kInputNames = {"input"};
   static constexpr TensorNames<2> kOutputNames = {"output"};
@@ -77,8 +219,52 @@ class Unary : public TestGraph {
   // clang-format off
   using ReferenceOperator =
       SelectT<
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflFloor>,
+            FloorReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflLogistic>,
+            LogisticReference<T>,
           std::bool_constant<kOpCode == kLiteRtOpCodeTflRelu>,
-            ReluReference<T>
+            ReluReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflReluN1To1>,
+            ReluN1To1Reference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflRelu6>,
+            Relu6Reference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflTanh>,
+            TanhReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflExp>,
+            ExpReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflNeg>,
+            NegReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflSin>,
+            SinReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflLog>,
+            LogReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflSqrt>,
+            SqrtReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflRsqrt>,
+            RsqrtReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflSquare>,
+            SquareReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflZerosLike>,
+            ZerosLikeReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflAbs>,
+            AbsReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflCeil>,
+            CeilReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflCos>,
+            CosReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflElu>,
+            EluReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflRound>,
+            RoundReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflHardSwish>,
+            HardSwishReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflGelu>,
+            GeluReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflRelu0To1>,
+            Relu0To1Reference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflSign>,
+            SignReference<T>
             >;
   // clang-format on
 
