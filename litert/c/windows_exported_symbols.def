@@ -60,6 +60,7 @@ EXPORTS
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
+  LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtCreateTensorBufferFromWebGpuTexture
   LiteRtCreateTensorBufferRequirements
@@ -188,6 +189,7 @@ EXPORTS
   LiteRtGetTensorBufferGlBuffer
   LiteRtGetTensorBufferGlTexture
   LiteRtGetTensorBufferHostMemory
+  LiteRtGetTensorBufferOpenClMemory
   LiteRtGetTensorBufferOffset
   LiteRtGetTensorBufferPackedSize
   LiteRtGetTensorBufferRegistry
