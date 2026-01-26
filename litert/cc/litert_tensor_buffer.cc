@@ -162,8 +162,8 @@ Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuBuffer(
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuTexture(
-    LiteRtEnvironment env, const RankedTensorType& tensor_type,
-    void* texture, size_t size_bytes) {
+    LiteRtEnvironment env, const RankedTensorType& tensor_type, void* texture,
+    size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromWebGpuTexture(
