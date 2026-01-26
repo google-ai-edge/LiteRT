@@ -76,8 +76,8 @@ cc_library(
     srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
-        ":litert_environment",
         ":litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc/internal:litert_handle",
@@ -87,7 +87,6 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
-            "//litert/c/internal:litert_logging",
         ],
     }),
 )
