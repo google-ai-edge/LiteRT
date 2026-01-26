@@ -64,7 +64,9 @@ constexpr const LiteRtRankedTensorType kTensorType = {
   XCTAssertTrue(LiteRtCreateEnvironment(environment_options.size(), environment_options.data(),
                                         &env) == kLiteRtStatusOk);
 
-  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
+  // Use packed buffer to test Clear() easily. Otherwise, downloaded data may have some garbage
+  // values due to strides.
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBufferPacked;
   LiteRtTensorBuffer tensor_buffer;
   XCTAssertTrue(LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                                 sizeof(kTensorData),
@@ -72,7 +74,7 @@ constexpr const LiteRtRankedTensorType kTensorType = {
   LiteRtTensorBufferType buffer_type;
   XCTAssertTrue(LiteRtGetTensorBufferType(tensor_buffer, &buffer_type) == kLiteRtStatusOk);
   LITERT_LOG(LITERT_INFO, "buffer_type: %d", buffer_type);
-  XCTAssertTrue(buffer_type == kLiteRtTensorBufferTypeMetalBuffer);
+  XCTAssertEqual(buffer_type, kTensorBufferType);
 
   LiteRtRankedTensorType tensor_type;
   XCTAssertTrue(LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type) == kLiteRtStatusOk);
@@ -97,8 +99,14 @@ constexpr const LiteRtRankedTensorType kTensorType = {
 
   XCTAssertTrue(LiteRtLockTensorBuffer(tensor_buffer, &host_memory_ptr,
                                        kLiteRtTensorBufferLockModeRead) == kLiteRtStatusOk);
-
   XCTAssertEqual(std::memcmp(host_memory_ptr, kTensorData, sizeof(kTensorData)), 0);
+  XCTAssertTrue(LiteRtUnlockTensorBuffer(tensor_buffer) == kLiteRtStatusOk);
+
+  XCTAssertTrue(LiteRtClearTensorBuffer(tensor_buffer) == kLiteRtStatusOk);
+  XCTAssertTrue(LiteRtLockTensorBuffer(tensor_buffer, &host_memory_ptr,
+                                       kLiteRtTensorBufferLockModeRead) == kLiteRtStatusOk);
+  std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
+  XCTAssertEqual(std::memcmp(host_memory_ptr, zero_data.data(), zero_data.size()), 0);
   XCTAssertTrue(LiteRtUnlockTensorBuffer(tensor_buffer) == kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
