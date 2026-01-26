@@ -12,10 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/vendors/examples/example_transformations.h"
+
+#include <vector>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_builder.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_matchers.h"
 
 using litert::Builder;
 using litert::Op;
@@ -29,48 +34,56 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
   // Convert to C++ objects.
   Builder builder = Builder(builder_ptr);
   Op root_op = Op(op);
-  if (root_op.Code() != kLiteRtOpCodeTflAdd) {
+  if (!litert::Match(root_op, litert::m_OpCode(kLiteRtOpCodeTflAdd))) {
     return kLiteRtStatusPatternNoMatch;
   }
   OpInputs inputs = root_op.Inputs();
-  OpOutputs outputs = root_op.Outputs();
-  builder.BuildOp(kLiteRtOpCodeTflMul, inputs, outputs);
-  builder.EraseOp(root_op);
+  std::vector<litert::Tensor> inputs_vec(inputs.begin(), inputs.end());
+  builder.ReplaceOp(root_op, kLiteRtOpCodeTflMul, inputs_vec);
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
                                           LiteRtOp op) {
-  Builder builder = Builder(builder_ptr);
-  Op root_op = Op(op);
+  Builder builder(builder_ptr);
+  Op root_op(op);
+  Op mean_op(nullptr);
+  Op square_op(nullptr);
 
-  // Pattern Match
-  if (root_op.Code() != kLiteRtOpCodeTflSqrt) {
+  litert::Tensor sq_in(nullptr);
+
+  // Match: Sqrt(Mean(Mul(x, x)))
+  // Capture Mean and Mul ops, and the square input x.
+  // Verify that Mean and Mul are only used once (safe to fuse).
+  if (!litert::Match(
+          root_op,
+          litert::m_Op(
+              kLiteRtOpCodeTflSqrt,
+              litert::m_Capture(
+                  &mean_op,
+                  litert::m_AllOf(
+                      litert::m_HasOneUse(),
+                      litert::m_Op(
+                          kLiteRtOpCodeTflMean,
+                          litert::m_Capture(
+                              &square_op,
+                              litert::m_AllOf(
+                                  litert::m_HasOneUse(),
+                                  litert::m_Op(kLiteRtOpCodeTflMul,
+                                               litert::m_Capture(
+                                                   &sq_in, litert::m_Any()),
+                                               litert::m_SameAs(&sq_in)))),
+                          litert::m_Any())))))) {
     return kLiteRtStatusPatternNoMatch;
   }
-  Op mean_op = Op(root_op.Inputs().front().DefiningOp().value().op);
-  if (mean_op.Code() != kLiteRtOpCodeTflMean) {
-    return kLiteRtStatusPatternNoMatch;
-  }
-  Op square_op = Op(mean_op.Inputs().front().DefiningOp().value().op);
-  if (square_op.Code() != kLiteRtOpCodeTflMul) {
-    return kLiteRtStatusPatternNoMatch;
-  }
-  if (square_op.Inputs().size() != 2) {
-    return kLiteRtStatusPatternNoMatch;
-  }
-  if (square_op.Inputs().at(0).Get() != square_op.Inputs().at(1).Get()) {
-    return kLiteRtStatusPatternNoMatch;
-  }
-  // Reuse the inputs of the mul(square op).
-  OpInputs inputs = square_op.Inputs();
-  // Reuse the outputs of the mean op.
-  OpOutputs outputs = mean_op.Outputs();
-  // Build the abs op.
-  builder.BuildOp(kLiteRtOpCodeTflAbs, inputs, outputs);
-  // Erase the original ops.
+
+  // Replace Mean with Abs(sq_in).
+  // This implicitly reuses Mean's output tensor for Abs output.
+  builder.ReplaceOp(mean_op, kLiteRtOpCodeTflAbs, {sq_in});
+
+  // Clean up unused ops.
   builder.EraseOp(square_op);
-  builder.EraseOp(mean_op);
+
   return kLiteRtStatusOk;
 }
 
