@@ -53,6 +53,10 @@ typedef enum {
   // with the shared procedures instead of their own procedures.
   kLiteRtEnvOptionTagWebGpuProcs = 20,
   kLiteRtEnvOptionTagCustomTensorBufferHandlers = 21,
+
+  // Tag to indicate the environment thats owns LiteRtEnvironmentOptions.
+  // This tag is used to find the environment from a given options object.
+  kLiteRtEnvOptionTagEnvironment = 100,
 } LiteRtEnvOptionTag;
 
 typedef struct {
