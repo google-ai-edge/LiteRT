@@ -82,6 +82,42 @@ def parse_args() -> argparse.Namespace:
   return parser.parse_args()
 
 
+def _to_posix(path: str) -> str:
+  """Converts an OS-specific path to a posix path.
+
+  Args:
+    path: An OS-specific path.
+
+  Returns:
+    A posix path with "/" separators.
+  """
+  return path.replace("\\", "/")
+
+
+def _join_posix(root: str, posix_relpath: str) -> str:
+  """Joins root with a posix relative path, returns an OS-specific path.
+
+  Args:
+    root: An OS-specific path to join with.
+    posix_relpath: A relative path that uses posix style "/" separators.
+
+  Returns:
+    An OS-specific path by joining root and posix_relpath.
+  """
+  return os.path.join(root, *posix_relpath.split("/"))
+
+
+def _strip_bazel_out_prefix(path_posix: str) -> str:
+  bazel_out = "bazel-out/"
+  idx = path_posix.find(bazel_out)
+  if idx == -1:
+    return path_posix
+  bin_idx = path_posix.find("/bin/", idx + len(bazel_out))
+  if bin_idx == -1:
+    return path_posix
+  return path_posix[bin_idx + len("/bin/"):]
+
+
 def create_empty_init_files(dst_dir: str) -> None:
   """Create __init__.py files."""
   dir_list = [f for f in os.scandir(dst_dir) if f.is_dir()]
@@ -124,39 +160,43 @@ def prepare_build_tree(tree_path, args, project_name: str):
     shutil.copyfile(src, os.path.join(src_dir, os.path.basename(src)))
 
   for src in args.py_src or []:
-    if src.startswith("litert/python/"):
-      src_path = src.removeprefix("litert/python/")
-    elif src.startswith("bazel-out/"):
-      src_path = src.split("litert/python/")[-1]
+    src_posix = _to_posix(src)
+    if src_posix.startswith("litert/python/"):
+      src_path = src_posix.removeprefix("litert/python/")
+    elif src_posix.startswith("bazel-out/"):
+      if "litert/python/" not in src_posix:
+        raise ValueError(f"Unsupported source file: {src}")
+      src_path = src_posix.split("litert/python/", 1)[-1]
     else:
       raise ValueError(f"Unsupported source file: {src}")
-    dest = os.path.join(src_dir, src_path)
+    dest = _join_posix(src_dir, src_path)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    shutil.copyfile(src, os.path.join(src_dir, src_path))
+    shutil.copyfile(src, dest)
 
   structured_deps_pairs = []
   relpath_set = set()
   if args.structured_deps:
     for dep in args.structured_deps:
-      relative_path = dep.removeprefix("bazel-out/k8-opt/bin/")
+      dep_posix = _to_posix(dep)
+      relative_path = _strip_bazel_out_prefix(dep_posix)
       structured_deps_pairs.append((dep, relative_path))
-      relpath_set.add(relative_path.split(os.sep)[0])
+      relpath_set.add(relative_path.split("/")[0])
 
   # Create directory structure for structured deps
   dir_set = set()
   for _, relative_path in structured_deps_pairs:
     dir_set.add(os.path.dirname(relative_path))
   for dir_name in dir_set:
-    os.makedirs(os.path.join(tree_path, dir_name), exist_ok=True)
+    os.makedirs(_join_posix(tree_path, dir_name), exist_ok=True)
 
   # Copy structured deps
   for original_path, relative_path in structured_deps_pairs:
-    shutil.copyfile(original_path, os.path.join(tree_path, relative_path))
+    shutil.copyfile(original_path, _join_posix(tree_path, relative_path))
 
   # create empty init files for structured deps
   for relative_path in relpath_set:
     create_init_files(
-        os.path.join(tree_path, relative_path)
+        _join_posix(tree_path, relative_path)
     )
 
   meta_dict = construct_meta_dict(args)
@@ -166,14 +206,16 @@ def prepare_build_tree(tree_path, args, project_name: str):
   # Copy package data files to the build tree, after filling the __init__.
   if args.package_data is not None:
     for src in args.package_data:
-      def get_dest(file_path: str):
+      src_posix = _to_posix(src)
+      def get_dest(file_path_posix: str):
         delimiter = "litert/"
-        index = file_path.find(delimiter)
+        index = file_path_posix.find(delimiter)
         if index != -1:
-          return file_path[index + len(delimiter):]
+          return file_path_posix[index + len(delimiter):]
         else:
-          return file_path
-      dest = os.path.join(src_dir, get_dest(src))
+          return file_path_posix
+      dest_rel = get_dest(src_posix)
+      dest = _join_posix(src_dir, dest_rel)
       os.makedirs(os.path.dirname(dest), exist_ok=True)
       shutil.copyfile(src, dest)
 
