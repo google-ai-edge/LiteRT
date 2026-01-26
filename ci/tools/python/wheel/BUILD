@@ -90,12 +90,19 @@ PACKAGE_DATA = select({
     "//conditions:default": [],
 })
 
+LITERT_RUNTIME_SHARED_LIB = select({
+    "@bazel_tools//src/conditions:windows": [
+        "//litert/c:litert_runtime_c_api_dll",
+    ],
+    "//conditions:default": ["//litert/c:libLiteRt.so"],
+})
+
 py_wheel(
     name = "litert_wheel",
     srcs = [
         ":fixed_protos",
         ":fixed_pydeps",
-        "//litert/c:libLiteRt.so",
+    ] + LITERT_RUNTIME_SHARED_LIB + [
         "//litert/python:pywrap_litert_binaries",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
