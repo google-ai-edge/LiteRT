@@ -95,6 +95,7 @@
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -1323,10 +1324,8 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
-                        [api = qnn.Api(), backend = qnn.BackendHandle()](
-                            ::qnn::OpWrapper& op) -> bool {
-                          return QNN_SUCCESS == api->backendValidateOpConfig(
-                                                    backend, op.GetOpConfig());
+                        [&qnn](::qnn::OpWrapper& op) -> bool {
+                          return qnn.ValidateOp(op) == kLiteRtStatusOk;
                         });
 
   // Create ops and their corresponding tensors.

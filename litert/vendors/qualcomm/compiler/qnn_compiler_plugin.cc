@@ -83,27 +83,6 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #endif
 }
 
-bool SkipValidationOfQuantizeOp(const litert::Op& op) {
-  const auto op_input_0 = op.Inputs()[0].RankedTensorType();
-  if (!op_input_0) {
-    LITERT_LOG(LITERT_ERROR, "%s", op_input_0.Error().Message().data());
-    return false;
-  }
-  const auto op_output_0 = op.Outputs()[0].RankedTensorType();
-  if (!op_output_0) {
-    LITERT_LOG(LITERT_ERROR, "%s", op_output_0.Error().Message().data());
-    return false;
-  }
-
-  if (op_input_0->ElementType() == litert::ElementType::Float32 &&
-      op_output_0->ElementType() == litert::ElementType::Int16 &&
-      op.Code() == kLiteRtOpCodeTflQuantize) {
-    LITERT_LOG(LITERT_INFO, "[G2G] Skip validation of quant op in Gemma3 mask");
-    return true;
-  }
-  return false;
-}
-
 }  // namespace
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -321,11 +300,12 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     if (op_wrappers.empty()) {
       continue;
     }
-    if (SkipValidationOfQuantizeOp(op) ||
-        std::all_of(op_wrappers.begin(), op_wrappers.end(),
+
+    // Validate all OPs by QNN.
+    if (std::all_of(op_wrappers.begin(), op_wrappers.end(),
                     [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
                       return kLiteRtStatusOk ==
-                             qnn_manager->ValidateOp(op_wrapper.GetOpConfig());
+                             qnn_manager->ValidateOp(op_wrapper);
                     })) {
       LITERT_RETURN_IF_ERROR(
           // Use default partition index if vendor doesn't support multiple
@@ -515,5 +495,36 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  // TODO(jiunkaiy): Check if the QAIRT SDK version meets the minimum required
+  // version.
+
+  // Check LiteRt API version for backward compatibility.
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  if (LiteRtCompareApiVersion(api_version, kApiVersion) > 0) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "Incompatible compiler version. Found LiteRT API version %d.%d.%d, "
+        "but version <= %d.%d.%d is required.",
+        api_version.major, api_version.minor, api_version.patch,
+        kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  } else if (LiteRtCompareApiVersion(api_version, kApiVersion) < 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "LiteRT API version (%d.%d.%d) is older than the "
+               "compiler plugin version (%d.%d.%d). An update is recommended.",
+               api_version.major, api_version.minor, api_version.patch,
+               kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+  }
+
+  // Check if the SoC model is supported.
+  if (!soc_model_name) {
+    LITERT_LOG(LITERT_WARNING, "SoC model name is not specified.");
+  } else if (!::qnn::FindSocModel(soc_model_name).has_value()) {
+    LITERT_LOG(LITERT_ERROR, "Unsupported SoC model: %s", soc_model_name);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
+
   return kLiteRtStatusOk;
 }

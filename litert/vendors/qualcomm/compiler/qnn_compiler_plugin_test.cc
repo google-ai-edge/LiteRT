@@ -314,6 +314,43 @@ TEST(TestQnnPlugin, NotShareContextBinary) {
   LiteRtDestroyCompiledResult(compiled);
 }
 
+TEST(TestQnnPlugin, Compatibility) {
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  auto plugin = CreatePlugin();
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, nullptr));
+
+  // Check SoC model.
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "SM8750"));
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "unsupported_soc"));
+
+  // Check LiteRt API vserion backward compatibility.
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor, kApiVersion.patch - 1},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor - 1, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major - 1, kApiVersion.minor, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
+
+  // Compiler plugin doesn't support forward compatibility.
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor, kApiVersion.patch + 1},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor + 1, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major + 1, kApiVersion.minor, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
+}
+
 class QnnPlyginSupportedSocCompilationTest
     : public ::testing::TestWithParam<std::string> {};
 
