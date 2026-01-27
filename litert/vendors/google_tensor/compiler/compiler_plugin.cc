@@ -344,8 +344,8 @@ LiteRtStatus LiteRtGetCompiledResultByteCode(
                static_cast<int>(compiled_result->byte_codes.size()));
     return kLiteRtStatusErrorIndexOOB;
   }
-  *byte_code = compiled_result->byte_codes[byte_code_idx].data();
-  *byte_code_size = compiled_result->byte_codes[byte_code_idx].size();
+  *byte_code = compiled_result->byte_codes[0].data();
+  *byte_code_size = compiled_result->byte_codes[0].size();
   return kLiteRtStatusOk;
 }
 
@@ -375,7 +375,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
   *call_info = compiled_result->per_op_data.at(call_idx).data();
   *call_info_size = compiled_result->per_op_data.at(call_idx).size();
-  *byte_code_idx = call_idx;
+  *byte_code_idx = 0;
 
   return kLiteRtStatusOk;
 }
@@ -478,6 +478,15 @@ void MakeUniqueSignatureKeysPerSubgraph(LiteRtModelT* model,
   }
 }
 
+void FreeSignatureKeys(size_t num_subgraphs, char** signature_keys) {
+  if (signature_keys) {
+    for (size_t i = 0; i < num_subgraphs; ++i) {
+      ::free(signature_keys[i]);
+    }
+  }
+  ::free(signature_keys);
+}
+
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
@@ -529,19 +538,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   const auto opts = litert::SerializationOptions::Defaults();
   char** signatures =
       static_cast<char**>(calloc(num_partitions, sizeof(char*)));
+  if (signatures == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to allocate buffers for signatures.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  absl::Cleanup signatures_cleanup = [num_partitions, signatures]() {
+    FreeSignatureKeys(num_partitions, signatures);
+  };
 
   MakeUniqueSignatureKeysPerSubgraph(model.Get(), num_partitions, signatures);
   LITERT_RETURN_IF_ERROR(LiteRtSerializeModelWithSignatures(
       partitions, &data, &size, &offset, false, signatures, num_partitions,
       opts));
-
-  for (size_t i = 0; i < num_partitions; ++i) {
-    if (signatures[i] != nullptr) {
-      free(signatures[i]);  // Free each individual signature.
-    }
-  }
-  free(signatures);
-  // TODO(abhirs): add support for serializing subgraphs
 
   absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
                                buf.Size());
@@ -645,21 +653,25 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // Result
   auto result = std::make_unique<LiteRtCompiledResultT>();
 
-  if (num_bytecodes != num_partitions) {
+  if (num_bytecodes != 1) {
     LITERT_LOG(LITERT_ERROR,
                "Compiler returned unexpected number of bytecodes.Expected: "
-               "%d, Actual: %d",
-               num_partitions, num_bytecodes);
+               "1, Actual: %d",
+               num_bytecodes);
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  result->byte_codes.resize(num_partitions);
-  // Generate per_op_data
-  for (auto i = 0; i < num_partitions; ++i) {
+  // Append the CustomOp TFLite file as the bytecode.
+  result->byte_codes.resize(num_bytecodes);
+  for (auto i = 0; i < num_bytecodes; ++i) {
     result->byte_codes[i].assign(compiled_code_data[i], compiled_code_sizes[i]);
-    result->per_op_data.emplace_back(
-        absl::StrFormat("Partition_%d", static_cast<int>(i)));
   }
+
+  // Append signature names as per_op_data.
+  for (auto i = 0; i < num_partitions; ++i) {
+    result->per_op_data.push_back(signatures[i]);
+  }
+
   *compiled_result = result.release();
   return kLiteRtStatusOk;
 }

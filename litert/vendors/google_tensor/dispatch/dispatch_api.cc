@@ -166,7 +166,6 @@ LiteRtStatus InvocationContextCreate(
   GT_LOG_RETURN_IF_NULL(exec_bytecode_buffer);
   GT_LOG_RETURN_IF_NULL(invocation_context);
 
-  function_name = "";
   return LiteRtDispatchInvocationContextT::CreateFromBytecode(
       device_context, exec_type, *exec_bytecode_buffer, function_name,
       num_inputs, num_outputs, *invocation_context);
@@ -368,10 +367,6 @@ LiteRtStatus AssignNodeFunction(LiteRtDispatchGraph graph,
                                 const char* function_name) {
   GT_LOG_RETURN_IF_NULL(graph);
 
-  // TODO - b/397771624: Southbound currently doesn't support function names, so
-  // overriding function names to empty strings as a temporary fix. We need to
-  // investigate with the CoreML team to find a more robust solution.
-  function_name = "";
   return graph->AssignNodeFunction(node_id, exec_handle, function_name);
 }
 
