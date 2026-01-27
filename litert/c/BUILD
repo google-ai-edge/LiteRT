@@ -67,6 +67,7 @@ cc_library(
     deps = ["//litert/build_common:build_config"],
 )
 
+# THIS IS A TEST
 cc_test(
     name = "litert_common_test",
     srcs = ["litert_common_test.cc"],
