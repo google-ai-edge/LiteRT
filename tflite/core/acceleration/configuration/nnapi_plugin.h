@@ -96,7 +96,7 @@ class NnapiPlugin : public DelegatePluginInterface {
     support_library_handle_ = nnapi_settings->support_library_handle();
   }
   const tflite::StatefulNnApiDelegate::Options& Options() { return options_; }
-  const int64_t GetSupportLibraryHandle() { return support_library_handle_; }
+  int64_t GetSupportLibraryHandle() { return support_library_handle_; }
 
  private:
   void SetCompilationCacheDir(const TFLiteSettings& tflite_settings) {
