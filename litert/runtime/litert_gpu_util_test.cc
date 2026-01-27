@@ -76,6 +76,16 @@ TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Int32) {
   EXPECT_EQ(data_type, DataType::INT32);
 }
 
+TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Int8) {
+  LiteRtRankedTensorType tensor_type;
+  tensor_type.element_type = kLiteRtElementTypeInt8;
+  DataType data_type;
+
+  LITERT_ASSERT_OK(ConvertLiteRtDataTypeToGpuDataType(
+      &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb));
+  EXPECT_EQ(data_type, DataType::INT8);
+}
+
 TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Bool) {
   LiteRtRankedTensorType tensor_type;
   tensor_type.element_type = kLiteRtElementTypeBool;
