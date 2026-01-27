@@ -82,8 +82,8 @@ absl::StatusOr<xla::HloProto> LoadHloProto(const std::string& contents) {
 }  // namespace
 
 absl::Status ConvertJaxToTFLiteFlatBuffer(
-    const std::string& input, const tflite::ModelFlags& model_flags,
-    tflite::ConverterFlags& converter_flags, std::string* result) {
+    const std::string& input, const litert::ModelFlags& model_flags,
+    litert::ConverterFlags& converter_flags, std::string* result) {
   auto context = std::make_unique<mlir::MLIRContext>();
   mlir::TFL::QuantizationSpecs quant_specs;
 
@@ -113,7 +113,7 @@ absl::Status ConvertJaxToTFLiteFlatBuffer(
   pass_config.lower_tensor_list_ops = converter_flags.lower_tensor_list_ops();
   // Disable the unfolding of the 16x16 TF::BatchMatMulOp to avoid the
   // conversion to an unsupported 16x16 TFL::FullyConnectedOp.
-  if (converter_flags.inference_type() == tflite::IODataType::QUANTIZED_INT16) {
+  if (converter_flags.inference_type() == litert::IODataType::QUANTIZED_INT16) {
     pass_config.unfold_batch_matmul = false;
   }
   pass_config.unfold_large_splat_constant =
@@ -124,12 +124,12 @@ absl::Status ConvertJaxToTFLiteFlatBuffer(
 
   mlir::OwningOpRef<mlir::ModuleOp> module;
   std::string content(input.data(), input.size());
-  if (model_flags.hlo_file_type() == tflite::ModelFlags::HLO_TEXT) {
+  if (model_flags.hlo_file_type() == litert::ModelFlags::HLO_TEXT) {
     TF_ASSIGN_OR_RETURN(auto hlo_module,
                         xla::ParseAndReturnUnverifiedModule(content));
     TF_ASSIGN_OR_RETURN(auto module,
                         xla::ConvertHloToStablehlo(*context, hlo_module.get()));
-  } else if (model_flags.hlo_file_type() == tflite::ModelFlags::HLO_PROTO) {
+  } else if (model_flags.hlo_file_type() == litert::ModelFlags::HLO_PROTO) {
     TF_ASSIGN_OR_RETURN(xla::HloProto hlo_proto, LoadHloProto(content));
     TF_ASSIGN_OR_RETURN(module, xla::ConvertHloToStablehlo(
                                     *context, hlo_proto.mutable_hlo_module()));

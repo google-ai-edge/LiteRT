@@ -35,7 +35,7 @@ struct FlatbufferExportOptions {
   // bool emit_custom_ops          -> converter_flags.allow_custom_ops()
   // bool allow_all_select_tf_ops  -> converter_flags.allow_all_select_tf_ops()
   // std::set<> select_user_tf_ops -> converter_flags.select_user_tf_ops()
-  tflite::ConverterFlags converter_flags;
+  litert::ConverterFlags converter_flags;
   // When exporting from SavedModel, this will have the requested tags.
   std::unordered_set<std::string> saved_model_tags;
   // Metadata key/value pairs to write to the flatbuffer.

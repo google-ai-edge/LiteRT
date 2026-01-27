@@ -33,7 +33,7 @@ class OptimizeBroadcastLikePassOptions;
 class ConverterPassOptionsSetter : public PassOptionsSetter {
  public:
   explicit ConverterPassOptionsSetter(
-      const tflite::ConverterFlags& converter_flags,
+      const litert::ConverterFlags& converter_flags,
       const mlir::TFL::PassConfig& pass_config)
       : converter_flags_(converter_flags), pass_config_(pass_config) {};
   ~ConverterPassOptionsSetter() override = default;
@@ -44,7 +44,7 @@ class ConverterPassOptionsSetter : public PassOptionsSetter {
   void SetOptions(OptimizeBroadcastLikePassOptions& options) const override;
 
  private:
-  tflite::ConverterFlags converter_flags_;
+  litert::ConverterFlags converter_flags_;
   mlir::TFL::PassConfig pass_config_;
 };
 }  // namespace TFL
