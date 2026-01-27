@@ -731,24 +731,33 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     // the calls below.
     auto& tensor_buffer_info = tensor_buffer_infos_[tfl_tensor];
 
-    LiteRtTensorBufferT* litert_tensor_buffer = nullptr;
+    LiteRtTensorBufferPtr buffer_to_register;
     if (auto tensor_buffer = buffer_context_->GetTensorBuffer(tfl_tensor);
         tensor_buffer) {
-      litert_tensor_buffer = tensor_buffer->get();
+      buffer_to_register = std::move(*tensor_buffer);
     } else {
-      LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferPtr new_tensor_buffer,
+      LITERT_ASSIGN_OR_RETURN(auto new_tensor_buffer,
                               AllocateTensorBuffer(tfl_tensor));
-      // Transfer ownership of the tensor buffer to buffer_context_.
-      litert_tensor_buffer = new_tensor_buffer.get();
+      // The LiteRtTensorBuffer is shared between the buffer_context_ and the
+      // Dispatch API. To manage its lifetime correctly, we use manual reference
+      // counting. A new buffer is created with a ref count of 1. We then call
+      // Duplicate() to increment the ref count to 2. One reference is owned by
+      // the buffer_context_ (via context_buffer) and the other is passed to the
+      // Dispatch API (via buffer_to_register). The buffer will be deallocated
+      // only when both owners have released their references.
+      new_tensor_buffer->Duplicate();
+      LiteRtTensorBufferPtr context_buffer(new_tensor_buffer.get());
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterTensorBuffer(
-          tfl_tensor, std::move(new_tensor_buffer)));
+          tfl_tensor, std::move(context_buffer)));
       size_t tfl_tensor_size = TfLiteOpaqueTensorByteSize(tfl_tensor);
       tensor_buffer_info.MarkAsMaybeSyncWithCpu(tfl_tensor_size);
+
+      buffer_to_register = std::move(new_tensor_buffer);
     }
 
     // Register the tensor buffer with the dispatch API.
     LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
-        context, tfl_tensor, LiteRtTensorBufferPtr(litert_tensor_buffer)));
+        context, tfl_tensor, std::move(buffer_to_register)));
     return {};
   };
 

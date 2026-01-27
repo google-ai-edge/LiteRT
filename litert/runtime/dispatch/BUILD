@@ -133,6 +133,29 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "dispatch_delegate_test",
+    srcs = ["dispatch_delegate_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "dispatch_delegate",
     srcs = [
