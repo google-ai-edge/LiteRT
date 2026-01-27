@@ -158,6 +158,7 @@ cc_library(
     alwayslink = 1,
 )
 
+# This target has C API implementation. Shouldn't be used for runtime implementation.
 cc_library(
     name = "litert_environment_options",
     srcs = ["litert_environment_options.cc"],
@@ -172,6 +173,7 @@ cc_library(
     ],
 )
 
+# The header only taget. It's used for runtime implementation.
 cc_library(
     name = "litert_environment_options_header",
     hdrs = ["litert_environment_options.h"],

@@ -32,7 +32,7 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",

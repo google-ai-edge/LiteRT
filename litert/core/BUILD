@@ -136,7 +136,7 @@ cc_library(
         ":error_reporter",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

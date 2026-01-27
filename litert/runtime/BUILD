@@ -239,7 +239,7 @@ cc_library(
         ":tensor_buffer_registry",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_layout",
@@ -387,7 +387,7 @@ cc_library(
     copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
     deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps() + [
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -399,7 +399,7 @@ cc_library(
     copts = litert_metal_opts(),
     linkopts = gles_linkopts(),
     deps = GPU_ENVIRONMENT_DEPS + [
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_any",
         "//litert/core:environment",
         "@com_google_absl//absl/strings:str_format",
@@ -556,7 +556,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_layout",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_profiler_event",
