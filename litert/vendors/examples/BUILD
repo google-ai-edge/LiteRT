@@ -31,7 +31,7 @@ litert_dynamic_lib(
     linkstatic = 1,
     shared_lib_name = "example_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Example.so",
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":example_common",
         ":example_transformations",
@@ -56,7 +56,7 @@ litert_dynamic_lib(
     linkstatic = 1,
     shared_lib_name = "example_dispatch_so",
     so_name = "libLiteRtDispatch_Example.so",
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":example_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
