@@ -86,7 +86,7 @@ pywrap_library(
     common_lib_linkopts = {
         "litert/python/pywrap_litert_common": select({
             "@bazel_tools//src/conditions:windows": [],
-            "@bazel_tools//src/conditions:darwin": ["-Wl,-rpath,@loader_path/"],
+            "@bazel_tools//src/conditions:darwin": [],
             "//conditions:default": ["-Wl,-rpath,$$ORIGIN/"],
         }),
     },
