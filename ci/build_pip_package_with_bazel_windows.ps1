@@ -273,6 +273,7 @@ $BazelArgs = @(
   "-c",
   "opt",
   "--config=windows",
+  "--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1",
   "--repo_env=USE_PYWRAP_RULES=True",
   "--define=protobuf_allow_msvc=true"
 )
