@@ -354,7 +354,7 @@ LiteRtStatus LiteRtGetDepthwiseConv2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
 LiteRtStatus LiteRtGetDepthwiseConv2dDilationWOption(
     LiteRtOp op, int32_t* dilation_w_factor);
-LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOptions(
+LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOption(
     LiteRtOp op, int32_t* dilation_h_factor);
 
 //==============================================================================

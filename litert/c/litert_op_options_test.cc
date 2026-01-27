@@ -498,7 +498,7 @@ TEST(GetOpOptionTest, TestGetDepthwiseConv2dOptions) {
   ASSERT_EQ(dilation_w_factor, 4);
   int32_t dilation_h_factor;
   LITERT_ASSERT_OK(
-      LiteRtGetDepthwiseConv2dDilationHOptions(op, &dilation_h_factor));
+      LiteRtGetDepthwiseConv2dDilationHOption(op, &dilation_h_factor));
   ASSERT_EQ(dilation_h_factor, 4);
 }
 
