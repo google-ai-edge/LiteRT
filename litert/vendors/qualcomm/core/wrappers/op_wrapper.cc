@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <functional>
 #include <optional>
 #include <string>
@@ -152,6 +154,13 @@ const qnn::TensorParamWrapper& OpWrapper::GetTensorPararm(size_t i) const {
   return tensor_params_[i];
 }
 
+std::optional<ScalarParamWrapper> OpWrapper::GetScalarParam(size_t i) const {
+  if (i >= scalar_params_.size()) {
+    return std::nullopt;
+  }
+  return scalar_params_[i];
+}
+
 void OpWrapper::SwapOutputs(OpWrapper& other) {
   this->output_tensors_.swap(other.output_tensors_);
 }
@@ -197,6 +206,49 @@ void OpWrapper::AddPrefixToName(absl::string_view prefix) {
 
 void OpWrapper::AddSuffixToName(absl::string_view suffix) {
   name_ = absl::StrCat(name_, suffix);
+}
+
+namespace {
+bool IsElementWiseOpImpl(const OpWrapper& op, QnnOpCode op_code,
+                         const char* op_param_name, std::uint32_t op_param) {
+  if (op.GetOpCode() != op_code) {
+    return false;
+  }
+
+  auto scalar_param = op.GetScalarParam(0);
+  if (!scalar_param.has_value()) {
+    return false;
+  }
+
+  Qnn_Param_t param;
+  scalar_param->CloneTo(param);
+  if (std::strcmp(param.name, op_param_name) != 0 ||
+      param.paramType != QNN_PARAMTYPE_SCALAR ||
+      param.scalarParam.dataType != QNN_DATATYPE_UINT_32 ||
+      param.scalarParam.uint32Value != op_param) {
+    return false;
+  }
+
+  return true;
+}
+}  // namespace
+
+bool IsElementWiseMultiply(const OpWrapper& op) {
+  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
+                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
+}
+
+bool IsElementWiseAdd(const OpWrapper& op) {
+  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
+                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
+}
+
+bool IsElementWiseNot(const OpWrapper& op) {
+  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseUnary,
+                             QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+                             QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
 }
 
 }  // namespace qnn

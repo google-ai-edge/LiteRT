@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdint>
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
@@ -16,7 +17,12 @@ std::vector<OpWrapper> BuildLogisticOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  CreateSimpleActivationOp(res, QNN_OP_SIGMOID, inputs[0], outputs[0]);
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NEURON);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_NEURON_OPERATION_SIGMOID);
 
   return res;
 }
