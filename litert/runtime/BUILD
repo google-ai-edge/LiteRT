@@ -398,7 +398,7 @@ cc_library(
     hdrs = ["gpu_environment.h"],
     copts = litert_metal_opts(),
     linkopts = gles_linkopts(),
-    deps = GPU_ENVIRONMENT_DEPS + [
+    deps = GPU_ENVIRONMENT_DEPS + gles_deps() + [
         "//litert/c:litert_environment_options",
         "//litert/cc:litert_any",
         "//litert/core:environment",
