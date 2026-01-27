@@ -4,6 +4,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -115,15 +116,18 @@ bool OpWrapper::IsOpCode(QnnOpCode op_code) const {
   return op_code_ == op_code;
 }
 
-const qnn::TensorWrapper& OpWrapper::GetInputTensor(size_t i) const {
+const TensorWrapper& OpWrapper::GetInputTensor(size_t i) const {
+  assert(i < input_tensors_.size());
   return input_tensors_[i].get();
 }
 
-const qnn::TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
+const TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
+  assert(i < output_tensors_.size());
   return output_tensors_[i].get();
 }
 
-const qnn::TensorParamWrapper& OpWrapper::GetTensorPararm(size_t i) const {
+const TensorParamWrapper& OpWrapper::GetTensorPararm(size_t i) const {
+  assert(i < tensor_params_.size());
   return tensor_params_[i];
 }
 
@@ -139,8 +143,8 @@ void OpWrapper::SwapOutputs(OpWrapper& other) {
 }
 
 void OpWrapper::UpdateTensors(
-    const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
-    const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs) {
+    const std::vector<std::optional<TensorWrapperRef>>& inputs,
+    const std::vector<std::optional<TensorWrapperRef>>& outputs) {
   if (inputs.size() != input_tensors_.size() ||
       outputs.size() != output_tensors_.size()) {
     QNN_LOG_WARNING("UpdateTensors skipped due to incorrect tensor count.");
