@@ -16,7 +16,6 @@ load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynami
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
 )
 
 litert_dynamic_lib(
