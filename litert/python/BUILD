@@ -16,6 +16,14 @@ load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library", "py_
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "pywrap_binaries", "pywrap_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
+WINDOWS_PYBIND_UNDEFS = select({
+    "@platforms//os:windows": [
+        "/UPROTOBUF_USE_DLLS",
+        "/UABSL_CONSUME_DLL",
+    ],
+    "//conditions:default": [],
+})
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_python_users"],
@@ -42,6 +50,7 @@ pybind_extension(
     ],
     hdrs = ["converter.h"],
     common_lib_packages = ["litert/python/pywrap_litert_common"],
+    copts = WINDOWS_PYBIND_UNDEFS,
     wrap_py_init = True,
     deps = [
         ":converter_api",

@@ -18,6 +18,14 @@ load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//python:py_library.bzl", "py_library")
 
+WINDOWS_PYBIND_UNDEFS = select({
+    "@platforms//os:windows": [
+        "/UPROTOBUF_USE_DLLS",
+        "/UABSL_CONSUME_DLL",
+    ],
+    "//conditions:default": [],
+})
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:public"],
@@ -37,7 +45,12 @@ cc_library(
         "//tflite/core:framework",
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
-    ],
+    ] + select({
+        "@platforms//os:windows": [
+            "//litert/c:litert_runtime_c_api_import",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 pybind_extension(
@@ -47,6 +60,7 @@ pybind_extension(
     ],
     hdrs = ["tensor_buffer_wrapper.h"],
     common_lib_packages = ["litert/python"],
+    copts = WINDOWS_PYBIND_UNDEFS,
     link_in_framework = True,
     pytype_srcs = [
         "_pywrap_litert_tensor_buffer_wrapper.pyi",
