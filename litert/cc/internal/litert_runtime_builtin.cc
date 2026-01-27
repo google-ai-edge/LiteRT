@@ -196,6 +196,8 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
         LiteRtCreateTensorBufferFromWebGpuBuffer,
     .litert_get_tensor_buffer_web_gpu_buffer =
         LiteRtGetTensorBufferWebGpuBuffer,
+    .litert_create_tensor_buffer_from_web_gpu_texture =
+        LiteRtCreateTensorBufferFromWebGpuTexture,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
     .litert_create_tensor_buffer_from_metal_memory =
@@ -220,6 +222,7 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
     .litert_clear_tensor_buffer_event = LiteRtClearTensorBufferEvent,
     .litert_lock_tensor_buffer = LiteRtLockTensorBuffer,
     .litert_unlock_tensor_buffer = LiteRtUnlockTensorBuffer,
+    .litert_clear_tensor_buffer = LiteRtClearTensorBuffer,
     .litert_destroy_tensor_buffer = LiteRtDestroyTensorBuffer,
     // LiteRtEvent
     .litert_create_event_from_sync_fence_fd = LiteRtCreateEventFromSyncFenceFd,
