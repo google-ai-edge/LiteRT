@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
 #define INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
@@ -24,7 +25,6 @@
 #include <cstring>
 #include <numeric>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
@@ -41,7 +41,6 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
@@ -49,6 +48,7 @@
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/tensor_utils.h"
+#include "tflite/profiling/memory_info.h"
 #include "tflite/profiling/time.h"
 
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
@@ -75,6 +75,11 @@ ABSL_FLAG(size_t, iterations, 1,
 ABSL_FLAG(bool, language_model, false,
           "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
+ABSL_FLAG(bool, flatbuffer_only, false,
+          "Create compiled model directly from flatbuffer without LiteRtModel "
+          "IR (CPU/GPU and NPU AOT only).");
+ABSL_FLAG(bool, log_memory_usage, false,
+          "Log memory usage around compiled model creation.");
 
 namespace litert {
 namespace {
@@ -83,6 +88,52 @@ using ::litert::google_tensor::UpdateGoogleTensorOptionsFromFlags;
 using ::litert::intel_openvino::UpdateIntelOpenVinoOptionsFromFlags;
 using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
 using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
+
+struct MemoryUsageSnapshot {
+  bool supported = false;
+  tflite::profiling::memory::MemoryUsage usage;
+};
+
+MemoryUsageSnapshot TakeMemoryUsageSnapshot() {
+  MemoryUsageSnapshot snapshot;
+  snapshot.supported = tflite::profiling::memory::MemoryUsage::IsSupported();
+  if (snapshot.supported) {
+    snapshot.usage = tflite::profiling::memory::GetMemoryUsage();
+  }
+  return snapshot;
+}
+
+void LogMemoryUsageDelta(absl::string_view tag,
+                         const MemoryUsageSnapshot& before,
+                         const MemoryUsageSnapshot& after) {
+  if (!before.supported || !after.supported) {
+    return;
+  }
+  const auto rss_delta =
+      after.usage.mem_footprint_kb - before.usage.mem_footprint_kb;
+  const auto total_alloc_delta =
+      static_cast<int64_t>(after.usage.total_allocated_bytes) -
+      static_cast<int64_t>(before.usage.total_allocated_bytes);
+  const auto in_use_delta =
+      static_cast<int64_t>(after.usage.in_use_allocated_bytes) -
+      static_cast<int64_t>(before.usage.in_use_allocated_bytes);
+  const auto private_delta =
+      static_cast<int64_t>(after.usage.private_footprint_bytes) -
+      static_cast<int64_t>(before.usage.private_footprint_bytes);
+  ABSL_LOG(INFO) << absl::StrFormat(
+      "%s memory usage: rss_kb=%lld->%lld (delta=%lld), "
+      "heap_total_bytes=%zu->%zu (delta=%lld), "
+      "heap_in_use_bytes=%zu->%zu (delta=%lld), "
+      "private_bytes=%zu->%zu (delta=%lld)",
+      tag, static_cast<int64_t>(before.usage.mem_footprint_kb),
+      static_cast<int64_t>(after.usage.mem_footprint_kb),
+      static_cast<int64_t>(rss_delta), before.usage.total_allocated_bytes,
+      after.usage.total_allocated_bytes,
+      static_cast<int64_t>(total_alloc_delta),
+      before.usage.in_use_allocated_bytes, after.usage.in_use_allocated_bytes,
+      static_cast<int64_t>(in_use_delta), before.usage.private_footprint_bytes,
+      after.usage.private_footprint_bytes, static_cast<int64_t>(private_delta));
+}
 
 litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
@@ -302,9 +353,26 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
   ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
+  const bool flatbuffer_only = absl::GetFlag(FLAGS_flatbuffer_only);
+  const bool log_memory = absl::GetFlag(FLAGS_log_memory_usage);
+  MemoryUsageSnapshot mem_before;
+  if (log_memory) {
+    mem_before = TakeMemoryUsageSnapshot();
+  }
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model,
-      CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+      flatbuffer_only
+          ? CompiledModel::CreateFromFileFlatbufferOnly(
+                env, absl::GetFlag(FLAGS_graph), options)
+          : CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+
+  if (log_memory) {
+    const auto mem_after = TakeMemoryUsageSnapshot();
+    LogMemoryUsageDelta(flatbuffer_only
+                            ? "LiteRtCompiledModelCreateFlatbufferOnly"
+                            : "LiteRtCompiledModelCreate",
+                        mem_before, mem_after);
+  }
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
