@@ -69,4 +69,22 @@ Expected<LiteRtErrorReporterMode> RuntimeOptions::GetErrorReporterMode() const {
   return error_reporter_mode;
 }
 
+Expected<void> RuntimeOptions::SetCompressQuantizationZeroPoints(
+    bool compress_zero_points) {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, compress_zero_points));
+  return {};
+}
+
+Expected<bool> RuntimeOptions::GetCompressQuantizationZeroPoints() const {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  bool compress_zero_points;
+  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, &compress_zero_points));
+  return compress_zero_points;
+}
+
 }  // namespace litert

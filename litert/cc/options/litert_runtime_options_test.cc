@@ -33,5 +33,13 @@ TEST(RuntimeOptions, CreateAndOwnedHandle) {
   EXPECT_TRUE(options.IsOwned());
 }
 
+TEST(RuntimeOptions, CompressQuantizationZeroPointsRoundTrip) {
+  LITERT_ASSERT_OK_AND_ASSIGN(RuntimeOptions options, RuntimeOptions::Create());
+  LITERT_ASSERT_OK(options.SetCompressQuantizationZeroPoints(true));
+  LITERT_ASSERT_OK_AND_ASSIGN(bool enabled,
+                              options.GetCompressQuantizationZeroPoints());
+  EXPECT_TRUE(enabled);
+}
+
 }  // namespace
 }  // namespace litert
