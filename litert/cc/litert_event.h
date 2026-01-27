@@ -23,6 +23,7 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_opencl_types.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -49,6 +50,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   /// @brief Creates an `Event` object from a sync fence file descriptor.
   /// @warning This is a legacy API that does not take a `LiteRtEnvironment`.
   /// New code should use the overload that accepts an environment.
+  [[deprecated("Use the overload that accepts an environment.")]]
   static Expected<Event> CreateFromSyncFenceFd(int sync_fence_fd,
                                                bool owns_fd) {
     LiteRtEvent event;
@@ -58,6 +60,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   }
 
   /// @brief Creates an `Event` object from a sync fence file descriptor.
+  [[deprecated("Use the overload that accepts an environment.")]]
   static Expected<Event> CreateFromSyncFenceFd(LiteRtEnvironment env,
                                                int sync_fence_fd,
                                                bool owns_fd) {
@@ -67,7 +70,18 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     return Event(event, OwnHandle::kYes);
   }
 
+  /// @brief Creates an `Event` object from a sync fence file descriptor.
+  static Expected<Event> CreateFromSyncFenceFd(const Environment& env,
+                                               int sync_fence_fd,
+                                               bool owns_fd) {
+    LiteRtEvent event;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromSyncFenceFd(
+        env.Get(), sync_fence_fd, owns_fd, &event));
+    return Event(event, OwnHandle::kYes);
+  }
+
   /// @brief Creates an `Event` object from an OpenCL event.
+  [[deprecated("Use the overload that accepts an environment.")]]
   static Expected<Event> CreateFromOpenClEvent(LiteRtEnvironment env,
                                                LiteRtClEvent cl_event) {
     LiteRtEvent event;
@@ -76,9 +90,19 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     return Event(event, OwnHandle::kYes);
   }
 
+  /// @brief Creates an `Event` object from an OpenCL event.
+  static Expected<Event> CreateFromOpenClEvent(const Environment& env,
+                                               LiteRtClEvent cl_event) {
+    LiteRtEvent event;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCreateEventFromOpenClEvent(env.Get(), cl_event, &event));
+    return Event(event, OwnHandle::kYes);
+  }
+
   /// @brief Creates an `Event` object from an EGL sync fence.
   /// @note This function assumes that all GL operations have already been
   /// added to the GPU command queue.
+  [[deprecated("Use the overload that accepts an environment.")]]
   static Expected<Event> CreateFromEglSyncFence(LiteRtEnvironment env,
                                                 LiteRtEglSyncKhr egl_sync) {
     LiteRtEvent event;
@@ -87,18 +111,35 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     return Event(event, OwnHandle::kYes);
   }
 
-  /// @brief Creates a managed event of a given type.
-  ///
-  /// Currently, only `litert::Event::Type::kOpenCl` is supported.
-  static Expected<Event> CreateManaged(LiteRtEnvironment env, Type type) {
-    return CreateManaged(env, static_cast<LiteRtEventType>(type));
+  /// @brief Creates an `Event` object from an EGL sync fence.
+  /// @note This function assumes that all GL operations have already been
+  /// added to the GPU command queue.
+  static Expected<Event> CreateFromEglSyncFence(const Environment& env,
+                                                LiteRtEglSyncKhr egl_sync) {
+    LiteRtEvent event;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCreateEventFromEglSyncFence(env.Get(), egl_sync, &event));
+    return Event(event, OwnHandle::kYes);
   }
 
-  [[deprecated("Use the overload that accepts `Type` instead.")]]
+  /// @brief Creates a managed event of a given type.
+  ///
+  /// Currently, only `LiteRtEventTypeOpenCl` is supported.
+  [[deprecated("Use the overload that accepts an environment.")]]
   static Expected<Event> CreateManaged(LiteRtEnvironment env,
                                        LiteRtEventType type) {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(LiteRtCreateManagedEvent(env, type, &event));
+    return Event(event, OwnHandle::kYes);
+  }
+
+  /// @brief Creates a managed event of a given type.
+  ///
+  /// Currently, only `LiteRtEventTypeOpenCl` is supported.
+  static Expected<Event> CreateManaged(const Environment& env, Type type) {
+    LiteRtEvent event;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateManagedEvent(
+        env.Get(), static_cast<LiteRtEventType>(type), &event));
     return Event(event, OwnHandle::kYes);
   }
 

@@ -259,9 +259,8 @@ TEST_P(CompiledModelGpuTest, Async) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
                               compiled_model.CreateInputBuffers());
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_event,
-      Event::CreateManaged(env->Get(), LiteRtEventTypeOpenCl));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_event,
+                              Event::CreateManaged(*env, Event::Type::kOpenCl));
   // Copy of the event to trigger the signal since the ownership of the
   // input_event is transferred to the input_buffers[0].
   LiteRtEvent litert_input_event = input_event.Get();
@@ -534,8 +533,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
-  LITERT_ASSERT_OK(
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
+  LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
   LITERT_ASSERT_OK(
@@ -603,8 +601,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
-  LITERT_ASSERT_OK(
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
+  LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
 
@@ -808,8 +805,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   float kInputTensor[] = {1.0f, 1.0f};
   LITERT_ASSERT_OK_AND_ASSIGN(TensorBufferRequirements requirements,
                               compiled_model.GetInputBufferRequirements(0));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
-                              requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type, requirements.SupportedTypes());
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(
