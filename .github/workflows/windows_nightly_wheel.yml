@@ -1,0 +1,40 @@
+name: "windows_nightly_wheel"
+on:
+  schedule:
+    #- cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
+
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build-and-nightly:
+    name: "Build nightly Windows wheel"
+    runs-on: Windows_x64  # Latest high spec runner ((96 cores and 384GB RAM)).
+    env:
+      # Clear ANDROID_NDK_HOME as windows-latest has NDK where jobs don't have permission for
+      # androidndk rulesto create symlinks.
+      ANDROID_NDK_HOME:
+      LITERT_MODELS: ""
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure tensorflow & python path
+        run: |
+          $env:PYTHON_BIN_PATH = (Get-Command python).Source
+          $env:PYTHON_LIB_PATH = (python -c 'import site; print(site.getsitepackages()[0])')
+          $env:TF_NEED_ROCM = 0
+          $env:TF_NEED_CUDA = 0
+          $env:TF_SET_ANDROID_WORKSPACE = 0
+          $env:CC_OPT_FLAGS = '-Wno-sign-compare'
+          python configure.py
+
+      - name: Build LiteRT wheel for Windows
+        run: |
+          .\ci\build_pip_package_with_bazel_windows.ps1
