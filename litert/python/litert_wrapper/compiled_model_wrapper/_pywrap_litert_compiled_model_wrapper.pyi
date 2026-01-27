@@ -150,6 +150,7 @@ class CompiledModelWrapper:
 
 def CreateCompiledModelFromFile(
         model_path: str,
+        runtime_path: str = ...,
         compiler_plugin_path: str = ...,
         dispatch_library_path: str = ...,
         hardware_accel: int = ...
@@ -158,6 +159,7 @@ def CreateCompiledModelFromFile(
 
     Args:
       model_path: Path to the model file.
+      runtime_path: Optional path to the runtime library.
       compiler_plugin_path: Optional path to the compiler plugin.
       dispatch_library_path: Optional path to the dispatch library.
       hardware_accel: Optional hardware acceleration flag.
@@ -170,6 +172,7 @@ def CreateCompiledModelFromFile(
 
 def CreateCompiledModelFromBuffer(
         model_data: bytes,
+        runtime_path: str = ...,
         compiler_plugin_path: str = ...,
         dispatch_library_path: str = ...,
         hardware_accel: int = ...
@@ -178,6 +181,7 @@ def CreateCompiledModelFromBuffer(
 
     Args:
       model_data: The model data as bytes.
+      runtime_path: Optional path to the runtime library.
       compiler_plugin_path: Optional path to the compiler plugin.
       dispatch_library_path: Optional path to the dispatch library.
       hardware_accel: Optional hardware acceleration flag.

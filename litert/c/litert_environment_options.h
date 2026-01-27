@@ -53,6 +53,7 @@ typedef enum {
   // with the shared procedures instead of their own procedures.
   kLiteRtEnvOptionTagWebGpuProcs = 20,
   kLiteRtEnvOptionTagCustomTensorBufferHandlers = 21,
+  kLiteRtEnvOptionTagRuntimeLibraryDir = 22,
 } LiteRtEnvOptionTag;
 
 typedef struct {

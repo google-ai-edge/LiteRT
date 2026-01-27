@@ -69,6 +69,7 @@ class CompiledModel:
     """
     ptr = _cm.CreateCompiledModelFromFile(
         model_path,
+        runtime_path=os.path.dirname(os.path.abspath(__file__)),
         compiler_plugin_path="",
         dispatch_library_path="",
         hardware_accel=hardware_accel,
@@ -94,6 +95,7 @@ class CompiledModel:
     """
     ptr = _cm.CreateCompiledModelFromBuffer(
         model_data,
+        runtime_path=os.path.dirname(os.path.abspath(__file__)),
         compiler_plugin_path="",
         dispatch_library_path="",
         hardware_accel=hardware_accel,

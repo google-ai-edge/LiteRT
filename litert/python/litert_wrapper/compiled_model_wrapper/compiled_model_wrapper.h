@@ -39,6 +39,7 @@ class CompiledModelWrapper {
    * Creates a wrapper from a model file path.
    *
    * @param model_path Path to the model file
+   * @param runtime_path Path to the LiteRT runtime library
    * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
    * @param dispatch_library_path Path to the dispatch library (can be nullptr)
    * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
@@ -53,9 +54,9 @@ class CompiledModelWrapper {
    *         maintained within the wrapper, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromFile(
-      const char* model_path, const char* compiler_plugin_path,
-      const char* dispatch_library_path, int hardware_accel,
-      std::string* out_error);
+      const char* model_path, const char* runtime_path,
+      const char* compiler_plugin_path, const char* dispatch_library_path,
+      int hardware_accel, std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
@@ -63,6 +64,7 @@ class CompiledModelWrapper {
    * @param model_data Python bytes object containing the model data
    *        (created from reading a model file or receiving serialized model
    * data)
+   * @param runtime_path Path to the LiteRT runtime library
    * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
    * @param dispatch_library_path Path to the dispatch library (can be nullptr)
    * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
@@ -77,9 +79,9 @@ class CompiledModelWrapper {
    *         maintained within the wrapper, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromBuffer(
-      PyObject* model_data, const char* compiler_plugin_path,
-      const char* dispatch_library_path, int hardware_accel,
-      std::string* out_error);
+      PyObject* model_data, const char* runtime_path,
+      const char* compiler_plugin_path, const char* dispatch_library_path,
+      int hardware_accel, std::string* out_error);
 
   CompiledModelWrapper(litert::Environment env, litert::ExtendedModel model,
                        litert::CompiledModel compiled);

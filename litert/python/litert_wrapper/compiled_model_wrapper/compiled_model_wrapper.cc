@@ -112,11 +112,16 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
-    const char* model_path, const char* compiler_plugin_path,
-    const char* dispatch_library_path, int hardware_accel,
-    std::string* out_error) {
+    const char* model_path, const char* runtime_path,
+    const char* compiler_plugin_path, const char* dispatch_library_path,
+    int hardware_accel, std::string* out_error) {
   // Create an environment with options
   std::vector<Environment::Option> options;
+  std::string runtime_path_str = std::string(runtime_path);
+  if (!runtime_path_str.empty()) {
+    options.push_back(Environment::Option{
+        Environment::OptionTag::RuntimeLibraryDir, runtime_path_str});
+  }
   if (compiler_plugin_path && *compiler_plugin_path) {
     options.push_back(
         Environment::Option{Environment::OptionTag::CompilerPluginLibraryDir,
@@ -165,9 +170,9 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
-    PyObject* model_data, const char* compiler_plugin_path,
-    const char* dispatch_library_path, int hardware_accel,
-    std::string* out_error) {
+    PyObject* model_data, const char* runtime_path,
+    const char* compiler_plugin_path, const char* dispatch_library_path,
+    int hardware_accel, std::string* out_error) {
   // Extract buffer from Python object
   char* buf = nullptr;
   Py_ssize_t length = 0;
@@ -178,6 +183,11 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
 
   // Create environment with options
   std::vector<Environment::Option> options;
+  std::string runtime_path_str = std::string(runtime_path);
+  if (!runtime_path_str.empty()) {
+    options.push_back(Environment::Option{
+        Environment::OptionTag::RuntimeLibraryDir, runtime_path_str});
+  }
   if (compiler_plugin_path && *compiler_plugin_path) {
     options.push_back(
         Environment::Option{Environment::OptionTag::CompilerPluginLibraryDir,

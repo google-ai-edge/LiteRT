@@ -35,12 +35,14 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
   // Factory method to create a CompiledModelWrapper from a model file.
   m.def(
       "CreateCompiledModelFromFile",
-      [](const std::string& model_path, const std::string& compiler_plugin_path,
+      [](const std::string& model_path, const std::string& runtime_path,
+         const std::string& compiler_plugin_path,
          const std::string& dispatch_library_path, int hardware_accel) {
         std::string error;
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
                 model_path.c_str(),
+                runtime_path.empty() ? nullptr : runtime_path.c_str(),
                 compiler_plugin_path.empty() ? nullptr
                                              : compiler_plugin_path.c_str(),
                 dispatch_library_path.empty() ? nullptr
@@ -51,19 +53,21 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
         }
         return wrapper;  // Ownership transferred to pybind11
       },
-      py::arg("model_path"), py::arg("compiler_plugin_path") = "",
+      py::arg("model_path"), py::arg("runtime_path") = "",
+      py::arg("compiler_plugin_path") = "",
       py::arg("dispatch_library_path") = "", py::arg("hardware_accel") = 0);
 
   // Factory method to create a CompiledModelWrapper from a model buffer.
   m.def(
       "CreateCompiledModelFromBuffer",
-      [](py::bytes model_data, const std::string& compiler_plugin_path,
+      [](py::bytes model_data, const std::string& runtime_path,
+         const std::string& compiler_plugin_path,
          const std::string& dispatch_library_path, int hardware_accel) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromBuffer(
-                data_obj,
+                data_obj, runtime_path.empty() ? nullptr : runtime_path.c_str(),
                 compiler_plugin_path.empty() ? nullptr
                                              : compiler_plugin_path.c_str(),
                 dispatch_library_path.empty() ? nullptr
@@ -74,7 +78,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
         }
         return wrapper;
       },
-      py::arg("model_data"), py::arg("compiler_plugin_path") = "",
+      py::arg("model_data"), py::arg("runtime_path") = "",
+      py::arg("compiler_plugin_path") = "",
       py::arg("dispatch_library_path") = "", py::arg("hardware_accel") = 0);
 
   // Bindings for the CompiledModelWrapper class.

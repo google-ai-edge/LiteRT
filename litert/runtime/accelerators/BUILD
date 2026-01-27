@@ -24,7 +24,9 @@ cc_library(
     srcs = ["auto_registration.cc"],
     hdrs = ["auto_registration.h"],
     deps = [
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

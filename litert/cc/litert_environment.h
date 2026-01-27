@@ -65,6 +65,7 @@ class Environment {
     CompilerCacheDir = kLiteRtEnvOptionTagCompilerCacheDir,
     WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
     WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
+    RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
   };
 
   struct Option {

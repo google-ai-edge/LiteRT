@@ -14,12 +14,16 @@
 
 #include "litert/runtime/accelerators/auto_registration.h"
 
+#include <filesystem>  // NOLINT
+#include <string>
 #include <utility>
 
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -133,11 +137,20 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     gpu_accelerator_registered = true;
   }
   if (!gpu_accelerator_registered) {
+    std::filesystem::path runtime_lib_path;
+    auto option = environment.GetOption(kLiteRtEnvOptionTagRuntimeLibraryDir);
+    if (option.has_value() && option->type == kLiteRtAnyTypeString) {
+      runtime_lib_path = option->str_value;
+    }
+
     for (auto plugin_path : kGpuAcceleratorLibs) {
-      LITERT_LOG(LITERT_VERBOSE, "Loading GPU accelerator(%s).",
-                 plugin_path.data());
+      std::filesystem::path full_plugin_path =
+          std::filesystem::path(runtime_lib_path) / std::string(plugin_path);
+      LITERT_LOG(LITERT_INFO, "Loading GPU accelerator(%s).",
+                 full_plugin_path.c_str());
       auto registration = RegisterSharedObjectAccelerator(
-          environment, plugin_path, "LiteRtRegisterGpuAccelerator",
+          environment, full_plugin_path.string(),
+          "LiteRtRegisterGpuAccelerator",
           /*try_symbol_already_loaded=*/false);
       if (registration.HasValue()) {
         LITERT_LOG(LITERT_INFO,
