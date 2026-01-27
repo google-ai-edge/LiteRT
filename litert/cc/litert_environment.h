@@ -35,6 +35,26 @@
 namespace litert {
 using internal::RuntimeProxy;
 
+namespace internal {
+/// @internal
+/// @brief A holder for an environment and its associated runtime.
+/// TODO(b/478306820): Mark fields as const after the bug is fixed.
+struct EnvironmentHolder {
+  /// @brief The runtime that the environment is associated with.
+  RuntimeProxy* runtime;
+  /// @brief The environment handle.
+  LiteRtEnvironment handle;
+
+  bool operator==(const EnvironmentHolder& other) const noexcept {
+    return runtime == other.runtime && handle == other.handle;
+  }
+
+  bool operator!=(const EnvironmentHolder& other) const noexcept {
+    return !(*this == other);
+  }
+};
+}  // namespace internal
+
 /// @brief The environment works like a context that holds the runtime states.
 ///
 /// To create a `CompiledModel` or `TensorBuffer`, an Environment is required.
@@ -75,7 +95,8 @@ class Environment {
 
   Expected<EnvironmentOptions> GetOptions() const {
     LiteRtEnvironmentOptions options;
-    LITERT_RETURN_IF_ERROR(runtime_->GetEnvironmentOptions(Get(), &options));
+    LITERT_RETURN_IF_ERROR(
+        runtime_->GetEnvironmentOptions(handle_.get(), &options));
     return EnvironmentOptions(options);
   }
 
@@ -98,8 +119,8 @@ class Environment {
   /// @brief Returns whether the environment supports CL/GL interop.
   bool SupportsClGlInterop() const {
     bool is_supported = false;
-    if (auto status =
-            runtime_->EnvironmentSupportsClGlInterop(Get(), &is_supported);
+    if (auto status = runtime_->EnvironmentSupportsClGlInterop(handle_.get(),
+                                                               &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
@@ -109,8 +130,8 @@ class Environment {
   /// @brief Returns whether the environment supports AHWB/CL interop.
   bool SupportsAhwbClInterop() const {
     bool is_supported = false;
-    if (auto status =
-            runtime_->EnvironmentSupportsAhwbClInterop(Get(), &is_supported);
+    if (auto status = runtime_->EnvironmentSupportsAhwbClInterop(handle_.get(),
+                                                                 &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
@@ -120,61 +141,87 @@ class Environment {
   /// @brief Returns whether the environment supports AHWB/GL interop.
   bool SupportsAhwbGlInterop() const {
     bool is_supported = false;
-    if (auto status =
-            runtime_->EnvironmentSupportsAhwbGlInterop(Get(), &is_supported);
+    if (auto status = runtime_->EnvironmentSupportsAhwbGlInterop(handle_.get(),
+                                                                 &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
     return is_supported;
   }
 
+  /// @internal
   /// @brief Returns the underlying environment handle.
-  LiteRtEnvironment Get() const noexcept { return handle_.get(); }
+  [[deprecated("Use GetHolder() instead.")]]
+  LiteRtEnvironment Get() const noexcept {
+    return handle_.get();
+  }
 
+  /// @internal
+  /// @brief Returns the underlying environment handle and runtime.
+  internal::EnvironmentHolder GetHolder() const noexcept {
+    return {runtime_.get(), handle_.get()};
+  }
+
+  /// @internal
   /// @brief Releases ownership of the environment handle.
   ///
   /// After this call, `Get()` returns a null handle.
-  LiteRtEnvironment Release() noexcept { return handle_.release(); }
+  internal::EnvironmentHolder Release() noexcept {
+    return {runtime_.release(), handle_.release()};
+  }
 
   /// @brief Returns `true` if the underlying LiteRT handle is valid.
   explicit operator bool() const noexcept { return static_cast<bool>(handle_); }
 
   bool operator==(const Environment& other) const noexcept {
-    return Get() == other.Get();
+    return GetHolder() == other.GetHolder();
   }
 
   bool operator!=(const Environment& other) const noexcept {
-    return Get() != other.Get();
+    return GetHolder() != other.GetHolder();
   }
 
   /// @internal
   /// @brief Wraps a `LiteRtEnvironment` C object in an `Environment` C++
-  /// object.
+  /// object, with the builtin runtime.
   /// @warning This is for internal use only.
   static Environment WrapCObject(LiteRtEnvironment env, OwnHandle owned) {
     auto runtime = GetBuiltinRuntime();
     return Environment(env, std::move(runtime), owned);
   }
 
+  /// @internal
+  /// @brief Wraps a `EnvironmentHolder` in an `Environment` C++ object.
+  /// @warning This is for internal use only.
+  static Environment WrapCObject(const internal::EnvironmentHolder& env,
+                                 OwnHandle owned) {
+    auto runtime =
+        std::unique_ptr<RuntimeProxy, std::function<void(RuntimeProxy*)>>(
+            env.runtime, [](RuntimeProxy*) {});
+    return Environment(env.handle, std::move(runtime), owned);
+  }
+
  private:
-  explicit Environment(LiteRtEnvironment env,
-                       std::unique_ptr<RuntimeProxy> runtime,
-                       OwnHandle owned = OwnHandle::kYes)
+  explicit Environment(
+      LiteRtEnvironment env,
+      std::unique_ptr<RuntimeProxy, std::function<void(RuntimeProxy*)>> runtime,
+      OwnHandle owned = OwnHandle::kYes)
       : runtime_(std::move(runtime)) {
-    std::function<void(LiteRtEnvironment)> deleter;
-    if (owned == OwnHandle::kYes) {
-      deleter = [runtime_ptr = runtime_.get()](LiteRtEnvironment env_) {
+    std::function<void(LiteRtEnvironment)> handle_deleter;
+    auto runtime_ptr = runtime_.get();
+    if (owned == OwnHandle::kYes && runtime_ptr != nullptr) {
+      handle_deleter = [runtime_ptr](LiteRtEnvironment env_) {
         runtime_ptr->DestroyEnvironment(env_);
       };
     } else {
-      deleter = [](LiteRtEnvironment) {};
+      handle_deleter = [](LiteRtEnvironment) {};
     }
-    handle_ =
-        std::unique_ptr<std::remove_pointer_t<LiteRtEnvironment>,
-                        std::function<void(LiteRtEnvironment)>>(env, deleter);
+    handle_ = std::unique_ptr<std::remove_pointer_t<LiteRtEnvironment>,
+                              std::function<void(LiteRtEnvironment)>>(
+        env, handle_deleter);
   }
 
-  std::unique_ptr<RuntimeProxy> runtime_;
+  std::unique_ptr<RuntimeProxy, std::function<void(RuntimeProxy*)>> runtime_;
   // handle_ needs to be declared after runtime_ to ensure that they will be
   // destroyed in the reverse order when the Environment is destroyed. This is
   // because the deleter function may access the member runtime_.
