@@ -370,6 +370,7 @@ cc_library(
         ":litert_tensor_buffer_types",
         ":litert_webgpu_types",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",

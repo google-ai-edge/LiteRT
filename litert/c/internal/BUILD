@@ -137,6 +137,26 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "litert_tensor_buffer_registry_header",
+    hdrs = ["litert_tensor_buffer_registry.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert/c:__subpackages__",
+        # "//litert/cc:__subpackages__",
+        # "//litert/runtime:__subpackages__",
+        # "//litert/kotlin:__subpackages__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
 # Collection of headers for dispatch APIs.
 # Warning: Do not use this target to include common C API headers. Use individual targets instead.
 cc_library(

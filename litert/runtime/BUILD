@@ -247,7 +247,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_tensor_buffer_registry",
+        "//litert/c/internal:litert_tensor_buffer_registry_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_tensor_buffer_utils",
