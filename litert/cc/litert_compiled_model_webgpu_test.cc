@@ -199,10 +199,6 @@ INSTANTIATE_TEST_SUITE_P(
                           precision, "_", buffer_storage_type);
     });
 
-#ifdef ADDRESS_SANITIZER
-// Currently, it's working only when --config=asan is given. Without it, it
-// complains about leaks of 56 bytes in 1 object at the end of whole test.
-
 struct PipelineTestParams {
   using TupleType = std::tuple<bool, bool, bool>;
 
@@ -333,14 +329,13 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ConvertGenerator<PipelineTestParams::TupleType>(
         ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
                            ::testing::ValuesIn<bool>({false, true}),
-                           ::testing::ValuesIn<bool>({false, true})))
+                           ::testing::ValuesIn<bool>({false, true}))),
     [](const ::testing::TestParamInfo<PipelineTestParams>& info) {
       return absl::StrCat(
           info.param.async_1st_model ? "Async1st" : "Sync1st", "_",
           info.param.async_2nd_model ? "Async2nd" : "Sync2nd",
           info.param.external_tensors_mode ? "_External" : "");
     });
-#endif  // MEMORY_SANITIZER
 
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
