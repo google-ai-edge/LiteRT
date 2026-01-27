@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdint>
+#include <charconv>
 #include <memory>
 #include <optional>
 #include <string>
@@ -320,9 +321,20 @@ LiteRtStatus QnnManager::GenerateContextBinary(
 }
 
 LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
-  // TODO: Unblock QNN validation for RMSNorm
-  if (absl::StrContains(op_config.v1.name, "RmsNorm") ||
+  // TODO(jiunkaiy): Remove version check and break backward compatibility when
+  // acceptable.
+  if (CompareSDKVersion({2, 35, 0}) >= 0 && CompareSDKVersion({2, 37, 0}) < 0 &&
+      absl::StrContains(op_config.v1.name, "RmsNorm")) {
+    LITERT_LOG(LITERT_WARNING,
+               "SDK version is in [2.35.0, 2.37.0); RmsNorm OP validation is "
+               "bypassed.");
+    return kLiteRtStatusOk;
+  }
+  if (CompareSDKVersion({2, 39, 0}) >= 0 && CompareSDKVersion({2, 43, 0}) < 0 &&
       absl::StrContains(op_config.v1.name, "L2Norm")) {
+    LITERT_LOG(LITERT_WARNING,
+               "SDK version is in [2.39.0, 2.43.0); L2Norm OP validation is "
+               "bypassed.");
     return kLiteRtStatusOk;
   }
 
@@ -423,6 +435,11 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }
+
+  // Get QNN bcore api version.
+  const char* build_id;
+  Api()->backendGetBuildId(&build_id);
+  LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSDKVersion(build_id));
 
   return kLiteRtStatusOk;
 }
@@ -540,6 +557,45 @@ QnnManager::WeightSharingContextConfigs() {
   contextConfig.customConfig = &customConfig;
   static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
   return absl::MakeSpan(configs);
+}
+
+Expected<LiteRtApiVersion> QnnManager::ParseSDKVersion(const char* build_id) {
+  // A generic error to be returned on any parsing failure.
+  static const auto kParsingError =
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to parse build ID");
+
+  std::string_view version_str = build_id;
+  if (!build_id) return kParsingError;
+
+  // Check for and remove the 'v' prefix.
+  if (version_str.empty() || version_str.front() != 'v') {
+    return kParsingError;
+  }
+  version_str.remove_prefix(1);
+
+  LiteRtApiVersion version{};
+  const char* current = version_str.data();
+  const char* const end = version_str.data() + version_str.size();
+
+  auto parse_component = [&current, &end](int& component) {
+    auto [ptr, ec] = std::from_chars(current, end, component);
+    if (ec != std::errc()) {
+      return false;
+    }
+    current = ptr;
+    return true;
+  };
+
+  // Parse major, minor, and patch versions, checking for dots in between.
+  if (!parse_component(version.major)) return kParsingError;
+
+  if (current == end || *current++ != '.') return kParsingError;
+  if (!parse_component(version.minor)) return kParsingError;
+
+  if (current == end || *current++ != '.') return kParsingError;
+  if (!parse_component(version.patch)) return kParsingError;
+
+  return version;
 }
 
 };  // namespace litert::qnn

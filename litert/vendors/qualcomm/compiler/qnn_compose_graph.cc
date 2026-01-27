@@ -95,6 +95,7 @@
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -1323,8 +1324,20 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
-                        [api = qnn.Api(), backend = qnn.BackendHandle()](
-                            ::qnn::OpWrapper& op) -> bool {
+                        [api = qnn.Api(), backend = qnn.BackendHandle(),
+                         &qnn](::qnn::OpWrapper& op) -> bool {
+                          // TODO(jiunkaiy): Remove version check and break
+                          // backward compatibility when
+                          // acceptable.
+                          if (qnn.CompareSDKVersion({2, 35, 0}) >= 0 &&
+                              qnn.CompareSDKVersion({2, 37, 0}) < 0 &&
+                              op.IsOpCode(::qnn::QnnOpCode::kSplit)) {
+                            LITERT_LOG(LITERT_WARNING,
+                                       "SDK version is in [2.35.0, 2.37.0); "
+                                       "Split OP validation is "
+                                       "bypassed.");
+                            return true;
+                          }
                           return QNN_SUCCESS == api->backendValidateOpConfig(
                                                     backend, op.GetOpConfig());
                         });

@@ -136,6 +136,18 @@ class QnnManager {
 
   const ::qnn::Options& GetOptions() const { return options_; }
 
+  // Gets SDK version from build ID.
+  static Expected<LiteRtApiVersion> ParseSDKVersion(const char* build_id);
+
+  // Returns 0 if `version` and `sdk_version_` are the same, a negative number
+  // if `version` < `sdk_version_`, and a positive number if `version` >
+  // `sdk_version_`.
+  int CompareSDKVersion(LiteRtApiVersion version) {
+    return LiteRtCompareApiVersion(version, sdk_version_);
+  }
+
+  LiteRtApiVersion GetSDKVersion() const { return sdk_version_; }
+
  private:
   QnnManager() = default;
 
@@ -185,6 +197,7 @@ class QnnManager {
   std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
   ::qnn::Options options_;
+  LiteRtApiVersion sdk_version_{};
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because
