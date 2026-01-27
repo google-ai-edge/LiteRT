@@ -1,6 +1,6 @@
 name: "windows_nightly_wheel"
 on:
-  schedule:
+  #schedule:
     #- cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
 
   workflow_dispatch:  # Manual trigger
