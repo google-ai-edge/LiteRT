@@ -95,8 +95,8 @@ void LogLUTPrepare(TfLiteType type, OpData* op_data, float input_scale,
                    int32_t input_zero_point, float output_scale,
                    int32_t output_zero_point) {
   const float output_min =
-      (((type == kTfLiteInt8) ? std::numeric_limits<int8>::min()
-                              : std::numeric_limits<int16>::min()) -
+      (((type == kTfLiteInt8) ? std::numeric_limits<int8_t>::min()
+                              : std::numeric_limits<int16_t>::min()) -
        output_zero_point) *
       output_scale;
   const void* lut_func_params = static_cast<const void*>(&output_min);
@@ -182,7 +182,7 @@ TfLiteStatus GenericPrepare(TfLiteContext* context, TfLiteNode* node,
           if (value <= 0.0f) {
             const float output_scale =
                 *static_cast<const float*>(lut_func_params);
-            return std::numeric_limits<int16>::max() * output_scale;
+            return std::numeric_limits<int16_t>::max() * output_scale;
           }
           return 1.0f / std::sqrt(value);
         };
