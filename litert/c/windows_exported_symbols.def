@@ -25,6 +25,7 @@ EXPORTS
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
+  LiteRtAppendOpaqueOptions
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
@@ -54,12 +55,14 @@ EXPORTS
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
   LiteRtCreateModelFromFile
+  LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
   LiteRtCreateProfiler
   LiteRtCreateRuntimeOptions
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
+  LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtCreateTensorBufferFromWebGpuTexture
   LiteRtCreateTensorBufferRequirements
@@ -157,17 +160,18 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
+  LiteRtGetOpaqueOptions
+  LiteRtGetOpaqueOptionsData
+  LiteRtGetOpaqueOptionsHash
+  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetOpCode
   LiteRtGetOpInput
   LiteRtGetOpOutput
-  LiteRtGetOpaqueOptions
-  LiteRtGetOpaqueOptionsHash
-  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetOptionsHardwareAccelerators
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
-  LiteRtGetProfileSummary
   LiteRtGetProfilerEvents
+  LiteRtGetProfileSummary
   LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
   LiteRtGetRuntimeOptionsEnableProfiling
@@ -190,6 +194,7 @@ EXPORTS
   LiteRtGetTensorBufferGlTexture
   LiteRtGetTensorBufferHostMemory
   LiteRtGetTensorBufferOffset
+  LiteRtGetTensorBufferOpenClMemory
   LiteRtGetTensorBufferPackedSize
   LiteRtGetTensorBufferRegistry
   LiteRtGetTensorBufferRequirementsAlignment
@@ -262,6 +267,7 @@ EXPORTS
   LiteRtMediatekOptionsSetNeronSDKVersionType
   LiteRtMediatekOptionsSetOptimizationHint
   LiteRtMediatekOptionsSetPerformanceMode
+  LiteRtPopOpaqueOptions
   LiteRtPushOp
   LiteRtQualcommOptionsCreate
   LiteRtQualcommOptionsGet
