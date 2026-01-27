@@ -618,9 +618,12 @@ size_t OptimizeMHAFastVlmPrefill(
       };
 
   int32_t add_1_index = -2;
-  if (is_add_op_match_in_pattern(add_1_index)) {
+  if (ops[start_index + add_1_index].IsOpCode(QnnOpCode::kElementWiseAdd) &&
+      is_add_op_match_in_pattern(add_1_index)) {
     // Origin pattern, add_1_index is matched, do nothing.
-  } else if (is_add_op_match_in_pattern(add_1_index + 1)) {
+  } else if (ops[start_index + add_1_index + 1].IsOpCode(
+                 QnnOpCode::kElementWiseAdd) &&
+             is_add_op_match_in_pattern(add_1_index + 1)) {
     // For new Fast VLM pattern. Tranpose Ops are fused into MatMul Ops first by
     // OptimizeTransposeMatMul, the add_1_index becomes -1.
     add_1_index += 1;
