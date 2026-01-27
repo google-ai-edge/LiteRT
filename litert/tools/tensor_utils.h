@@ -33,6 +33,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -337,6 +338,9 @@ inline Expected<void> FillBufferWithRandomData(TensorBuffer& buffer) {
   return {};
 }
 
+Expected<void> FillInputBuffersWithCustomData(
+    const CompiledModel& compiled_model, size_t signature_index,
+    std::vector<TensorBuffer>& input_buffers, absl::string_view input_dir);
 }  // namespace tensor_utils
 }  // namespace litert
 
