@@ -75,15 +75,17 @@ function Ensure-Include {
   return $true
 }
 
-$OutputBase = (& $Bazel info output_base).Trim()
+$OutputBase = & $Bazel info output_base
 if (-not $OutputBase) {
   throw "Failed to get Bazel output_base"
 }
+$OutputBase = $OutputBase.Trim()
 
 & $Bazel fetch --config=windows --repo_env=USE_PYWRAP_RULES=True //ci/tools/python/wheel:litert_wheel | Out-Null
 
-$ExecRoot = (& $Bazel info execution_root).Trim()
+$ExecRoot = & $Bazel info execution_root
 if ($ExecRoot) {
+  $ExecRoot = $ExecRoot.Trim()
   $ExecBazelOut = Join-Path $ExecRoot "bazel-out"
   $WorkspaceBazelOut = Join-Path $RepoRoot "bazel-out"
   if (Test-Path $WorkspaceBazelOut) {
@@ -278,6 +280,7 @@ $BazelArgs = @(
   "-c",
   "opt",
   "--config=windows",
+  "--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1",
   "--repo_env=USE_PYWRAP_RULES=True",
   "--define=protobuf_allow_msvc=true"
 )
