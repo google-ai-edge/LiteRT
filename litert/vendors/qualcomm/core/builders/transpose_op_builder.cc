@@ -26,14 +26,34 @@ std::vector<OpWrapper> BuildTransposeOp(
     return res;
   }
 
-  auto& transpose_op = CreateOpWrapper(res, QNN_OP_TRANSPOSE);
-  transpose_op.AddInputTensor(inputs[0]);
-  transpose_op.AddOutputTensor(outputs[0]);
-  transpose_op.AddTensorParam(
-      QNN_OP_TRANSPOSE_PARAM_PERM,
-      tensor_pool.CloneStaticTensorFrom(perm_tensor, QNN_DATATYPE_UINT_32));
-
+  const auto& uint32_perm =
+      tensor_pool.CloneStaticTensorFrom(perm_tensor, QNN_DATATYPE_UINT_32);
+  res.emplace_back(CreateTransposeOp(inputs[0], outputs[0], uint32_perm));
   return res;
+}
+
+OpWrapper CreateTransposeOp(const TensorWrapper& input_0,
+                            const TensorWrapper& output_0,
+                            const TensorWrapper& perm) {
+  auto name = GetUniqueOpName(QNN_OP_TRANSPOSE);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_TRANSPOSE, QnnOpCode::kTranspose);
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
+  op.AddTensorParam(QNN_OP_TRANSPOSE_PARAM_PERM, perm);
+  return op;
+}
+
+OpWrapper CreateTransposeOpWithSameParam(const OpWrapper& src,
+                                         const TensorWrapper& input_0,
+                                         const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_TRANSPOSE);
+  OpWrapper op(src);
+  op.SetName(std::move(name));
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
+  return op;
 }
 
 }  // namespace qnn

@@ -61,11 +61,7 @@ class OpWrapper final {
 
   std::vector<std::reference_wrapper<TensorWrapper>> GetAllTensors();
 
-  void SwapOutputs(OpWrapper& other);
-
-  void UpdateTensors(
-      const std::vector<std::optional<TensorWrapperRef>>& inputs,
-      const std::vector<std::optional<TensorWrapperRef>>& outputs);
+  void ClearInputOutputTensors();
 
   void AddPrefixToName(absl::string_view prefix);
 

@@ -12,16 +12,15 @@
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildCastOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs) {
-  std::vector<OpWrapper> res;
-
-  auto& op = CreateOpWrapper(res, QNN_OP_CAST);
-  op.AddInputTensor(inputs[0]);
-  op.AddOutputTensor(outputs[0]);
-
-  return res;
+OpWrapper CreateCastOp(const TensorWrapper& input_0,
+                       const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_CAST);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_CAST, QnnOpCode::kCast);
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
+  return op;
 }
 
 }  // namespace qnn

@@ -198,26 +198,6 @@ TEST(OpWrapperTest, GetInputOutputTensorTest) {
   EXPECT_EQ(op_wrapper.GetOutputTensor(0), tensor_wrapper_output);
 }
 
-TEST(OpWrapperTest, SwapOutputsTest) {
-  TensorWrapper input_1{};
-  TensorWrapper output_1{};
-  OpWrapper op_wrapper_1{"name", "OP_TYPE", QnnOpCode::kUnknown};
-  op_wrapper_1.AddInputTensor(input_1);
-  op_wrapper_1.AddOutputTensor(output_1);
-
-  TensorWrapper input_2{};
-  TensorWrapper output_2{};
-  OpWrapper op_wrapper_2{"name", "OP_TYPE", QnnOpCode::kUnknown};
-  op_wrapper_2.AddInputTensor(input_2);
-  op_wrapper_2.AddOutputTensor(output_2);
-
-  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
-  op_wrapper_1.SwapOutputs(op_wrapper_2);
-  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_2);
-  op_wrapper_1.SwapOutputs(op_wrapper_2);
-  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
-}
-
 TEST(OpWrapperTest, GetName) {
   OpWrapper op{"name", "OP_TYPE", QnnOpCode::kUnknown};
   EXPECT_STREQ(op.GetName().data(), "name");

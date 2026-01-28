@@ -106,6 +106,7 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+
 namespace litert::qnn {
 namespace {
 static const char* kLiteRtStr = "litert";

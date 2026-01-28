@@ -105,78 +105,66 @@ TEST(MHASHATest, EmbeddingGemma) {
       mul_val.size() * sizeof(mul_val[0]), mul_val.data());
   auto& mul_output =
       tensor_pool.CloneNativeTensorFrom(input0, {1, 1024, 3, 256});
-  auto mul =
-      BuildElementwiseMulOp(tensor_pool, {input0, mul_const}, {mul_output});
-  std::move(mul.begin(), mul.end(), std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateElementWiseMulOp(input0, mul_const, mul_output));
   // Transpose0
-  std::array<int32_t, 4> transpose_val = {0, 2, 1, 3};
+  std::array<std::uint32_t, 4> transpose_val = {0, 2, 1, 3};
   auto& transpose_perm = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_INT_32, quant_param, {transpose_val.size()},
+      QNN_DATATYPE_UINT_32, quant_param, {transpose_val.size()},
       transpose_val.size() * sizeof(transpose_val[0]), transpose_val.data());
   auto& transpose0_output =
       tensor_pool.CloneNativeTensorFrom(mul_output, {1, 3, 1024, 256});
-  auto transpose0 = BuildTransposeOp(tensor_pool, {mul_output, transpose_perm},
-                                     {transpose0_output});
-  std::move(transpose0.begin(), transpose0.end(),
-            std::back_inserter(op_wrappers));
+  auto& transpose0 = op_wrappers.emplace_back(
+      CreateTransposeOp(mul_output, transpose0_output, transpose_perm));
 
   // Reshape0
   auto& reshape0_output =
       tensor_pool.CloneNativeTensorFrom(transpose0_output, {1, 1, 3072, 256});
-  auto reshape0 =
-      BuildReshapeOp(tensor_pool, {transpose0_output}, {reshape0_output});
-  std::move(reshape0.begin(), reshape0.end(), std::back_inserter(op_wrappers));
+  auto& reshape0 = op_wrappers.emplace_back(
+      CreateReshapeOp(transpose0_output, reshape0_output));
 
   // MatMul0
   auto& k_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
                                               quant_param, {1, 1, 1024, 256});
   auto& matmul0_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 1, 3072, 1024});
-  auto matmul0 = BuildMatmulOp(tensor_pool, {reshape0_output, k_in},
-                               {matmul0_output}, false, true);
-  std::move(matmul0.begin(), matmul0.end(), std::back_inserter(op_wrappers));
+  auto& matmul0 = op_wrappers.emplace_back(
+      CreateMatmulOp(reshape0_output, k_in, matmul0_output, false, true));
 
   // Add
   auto& add0_output = tensor_pool.CloneNativeTensorFrom(matmul0_output);
   auto& mask = tensor_pool.CloneNativeTensorFrom(matmul0_output);
-  auto add0 =
-      BuildElementwiseAddOp(tensor_pool, {matmul0_output, mask}, {add0_output});
-  std::move(add0.begin(), add0.end(), std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(
+      CreateElementWiseAddOp(matmul0_output, mask, add0_output));
   // Softmax
   auto& softmax_output = tensor_pool.CloneNativeTensorFrom(matmul0_output);
-  auto softmax =
-      BuildSoftmaxOp(tensor_pool, {add0_output}, {softmax_output}, 1.0f);
-  std::move(softmax.begin(), softmax.end(), std::back_inserter(op_wrappers));
+  auto& softmax = op_wrappers.emplace_back(
+      CreateSoftmaxOp(add0_output, softmax_output, 1.0f));
 
   // MatMul1
   auto& v_in = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
                                               quant_param, {1, 1, 1024, 256});
   auto& matmul1_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 1, 3072, 256});
-  auto matmul1 = BuildMatmulOp(tensor_pool, {softmax_output, v_in},
-                               {matmul1_output}, false, true);
-  std::move(matmul1.begin(), matmul1.end(), std::back_inserter(op_wrappers));
+  auto& matmul1 = op_wrappers.emplace_back(
+      CreateMatmulOp(softmax_output, v_in, matmul1_output, false, true));
 
   // Reshape1
   auto& reshape1_output =
       tensor_pool.CloneNativeTensorFrom(matmul1_output, {1, 3, 1024, 256});
-  auto reshape1 =
-      BuildReshapeOp(tensor_pool, {matmul1_output}, {reshape1_output});
-  std::move(reshape1.begin(), reshape1.end(), std::back_inserter(op_wrappers));
+  auto& reshape1 = op_wrappers.emplace_back(
+      CreateReshapeOp(matmul1_output, reshape1_output));
   // Transpose1
   auto& transpose1_output =
       tensor_pool.CloneNativeTensorFrom(reshape1_output, {1, 1024, 3, 256});
-  auto transpose1 = BuildTransposeOp(
-      tensor_pool, {reshape1_output, transpose_perm}, {transpose1_output});
-  std::move(transpose1.begin(), transpose1.end(),
-            std::back_inserter(op_wrappers));
+  auto& transpose1 = op_wrappers.emplace_back(
+      CreateTransposeOp(reshape1_output, transpose1_output, transpose_perm));
 
   // Reshape2
   auto& reshape2_output =
       tensor_pool.CloneNativeTensorFrom(transpose1_output, {1, 128, 1024});
-  auto reshape2 =
-      BuildReshapeOp(tensor_pool, {transpose1_output}, {reshape2_output});
-  std::move(reshape2.begin(), reshape2.end(), std::back_inserter(op_wrappers));
+  auto& reshape2 = op_wrappers.emplace_back(
+      CreateReshapeOp(transpose1_output, reshape2_output));
   ASSERT_EQ(op_wrappers.size(), 10);
 
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMatMulConvert;
