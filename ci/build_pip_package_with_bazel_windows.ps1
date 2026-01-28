@@ -44,10 +44,12 @@ if (-not $Bazel) {
 }
 
 if ($Bazel -notmatch '\.exe$') {
-  $BazelExe = "$Bazel.exe"
-  if (Test-Path $BazelExe) {
-    $Bazel = $BazelExe
-  }
+  $Bazel = "$Bazel.exe"
+}
+
+if (-not (Test-Path $Bazel)) {
+  Write-Warning "Bazel executable not found at $Bazel. Trying to use 'bazel' from PATH."
+  $Bazel = "bazel"
 }
 
 # Optional: Print it so you can see it in your GitHub Action logs
@@ -116,16 +118,23 @@ function Ensure-Include {
 
 # Verify Bazel version
 Write-Host "Checking Bazel version..."
+$LASTEXITCODE = $null
 & $Bazel --version
-if ($LASTEXITCODE -ne 0) {
+if ($null -eq $LASTEXITCODE) {
+  Write-Warning "Failed to execute Bazel version check. The command might not have run."
+} elseif ($LASTEXITCODE -ne 0) {
   Write-Warning "Failed to check Bazel version. Exit code: $LASTEXITCODE"
 }
 
 # Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
 Write-Host "Fetching dependencies..."
 $FetchArgs = @("fetch", "--config=windows", "--repo_env=USE_PYWRAP_RULES=True", "//ci/tools/python/wheel:litert_wheel")
+$LASTEXITCODE = $null
 & $Bazel $FetchArgs
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
+if ($null -eq $LASTEXITCODE) {
+  throw "Failed to execute Bazel fetch. The command might not have run."
+}
+if ($LASTEXITCODE -ne 0) {
   throw "Bazel fetch failed with exit code $LASTEXITCODE"
 }
 
@@ -361,7 +370,14 @@ if ($env:USE_LOCAL_TF -eq "true") { $BazelArgs += "--config=use_local_tf" }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(" ") }
 
 Write-Host "Starting bazel build..."
+$LASTEXITCODE = $null
 & $Bazel @BazelArgs //ci/tools/python/wheel:litert_wheel
+if ($null -eq $LASTEXITCODE) {
+  throw "Failed to execute Bazel build. The command might not have run."
+}
+if ($LASTEXITCODE -ne 0) {
+  throw "Bazel build failed with exit code $LASTEXITCODE"
+}
 
 $DistDir = Join-Path $RepoRoot "dist"
 if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
