@@ -117,9 +117,9 @@ if ($LASTEXITCODE -ne 0) {
 # Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
 Write-Host "Fetching dependencies..."
 $FetchArgs = @("fetch", "--config=windows", "--repo_env=USE_PYWRAP_RULES=True", "//ci/tools/python/wheel:litert_wheel")
-$FetchProc = Start-Process -FilePath $Bazel -ArgumentList $FetchArgs -Wait -NoNewWindow -PassThru
-if ($FetchProc.ExitCode -ne 0) {
-  throw "Bazel fetch failed with exit code $($FetchProc.ExitCode)"
+& $Bazel $FetchArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "Bazel fetch failed with exit code $LASTEXITCODE"
 }
 
 $OutputBase = Get-Bazel-Info "output_base"
