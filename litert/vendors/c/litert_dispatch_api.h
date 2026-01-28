@@ -28,7 +28,8 @@ extern "C" {
 // /////////////////////////////////////////////////////////////////////////////
 
 typedef LiteRtStatus (*LiteRtDispatchInitializeT)(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
+    LiteRtEnvironment environment, LiteRtEnvironmentOptions environment_options,
+    LiteRtOptions options);
 
 typedef LiteRtStatus (*LiteRtDispatchGetVendorIdT)(const char** vendor_id);
 

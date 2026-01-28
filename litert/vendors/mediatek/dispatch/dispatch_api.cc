@@ -65,7 +65,8 @@ std::optional<std::string> GetSharedLibraryDir(
   return std::string(std::get<const char*>(*dispatch_lib_dir_any));
 }
 
-LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
+LiteRtStatus LiteRtInitialize(LiteRtEnvironment env,
+                              LiteRtEnvironmentOptions environment_options,
                               LiteRtOptions options) {
   static_environment_options = environment_options;
   static_options = options;

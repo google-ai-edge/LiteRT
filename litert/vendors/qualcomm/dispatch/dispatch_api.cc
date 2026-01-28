@@ -58,7 +58,8 @@ char BuildId[256];
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
+LiteRtStatus Initialize(LiteRtEnvironment environment,
+                        LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
   TheEnvironmentOptions = environment_options;
   TheOptions = options;

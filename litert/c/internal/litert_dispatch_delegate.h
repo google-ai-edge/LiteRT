@@ -27,7 +27,8 @@ typedef struct LiteRtDispatchDelegateOptions LiteRtDispatchDelegateOptions;
 //
 // [TODO] DOCUMENT OWNERSHIP
 TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
+    LiteRtEnvironment env, LiteRtEnvironmentOptions environment_options,
+    LiteRtOptions options);
 
 // Do any needed cleanup and delete 'delegate'.
 void LiteRtDestroyDispatchDelegate(TfLiteOpaqueDelegate* delegate);

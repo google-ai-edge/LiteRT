@@ -193,7 +193,8 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
+LiteRtStatus Initialize(LiteRtEnvironment env,
+                        LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
   the_environment_options = environment_options;
   the_options = options;

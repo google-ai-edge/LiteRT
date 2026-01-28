@@ -59,7 +59,7 @@ void DispatchApiTest::SetUp() {
   LiteRtOptions options;
   LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
 
-  LITERT_ASSERT_OK(LiteRtDispatchInitialize(env_options, options));
+  LITERT_ASSERT_OK(LiteRtDispatchInitialize(env_, env_options, options));
   LiteRtDestroyOptions(options);
 
   const char* vendor_id;

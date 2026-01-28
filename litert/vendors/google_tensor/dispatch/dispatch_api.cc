@@ -73,7 +73,8 @@ LiteRtStatus CreateTensorBufferRequirements(
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
+LiteRtStatus Initialize(LiteRtEnvironment env,
+                        LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
   GT_LOG_RETURN_IF_SB_ERROR(thrInitialize(), "Failed to initialize SB");
 

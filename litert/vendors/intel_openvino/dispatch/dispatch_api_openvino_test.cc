@@ -52,8 +52,9 @@ TEST(OpenVino, DispatchApi) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
-            kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtDispatchInitialize(env.Get(), env_options.Get(), options.Get()),
+      kLiteRtStatusOk);
 
   const char* vendor_id;
   EXPECT_EQ(LiteRtDispatchGetVendorId(&vendor_id), kLiteRtStatusOk);
