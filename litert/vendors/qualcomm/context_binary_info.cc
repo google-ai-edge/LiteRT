@@ -200,13 +200,12 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   }
 
   // Compare the context binary's version against the current SDK version.
-  LiteRtApiVersion binary_version;
+  SdkVersion binary_version;
   LITERT_ASSIGN_OR_RETURN(
       binary_version,
-      QnnManager::ParseSDKVersion(binary_info->contextBinaryInfoV1.buildId));
-  const int version_check = qnn.CompareSDKVersion(binary_version);
-  const auto sdk_version = qnn.GetSDKVersion();
-  if (version_check > 0) {
+      QnnManager::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
+  const auto sdk_version = qnn.GetSdkVersion();
+  if (binary_version > sdk_version) {
     LITERT_LOG(LITERT_ERROR,
                "Context binary (%d.%d.%d) is newer than the current SDK "
                "(%d.%d.%d). Please update your SDK.",
@@ -214,7 +213,7 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
                sdk_version.major, sdk_version.minor, sdk_version.patch);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Context binary isn't compatible with the current SDK.");
-  } else if (version_check < 0) {
+  } else if (binary_version < sdk_version) {
     LITERT_LOG(
         LITERT_WARNING,
         "Context binary (%d.%d.%d) is older than the current SDK (%d.%d.%d). "
