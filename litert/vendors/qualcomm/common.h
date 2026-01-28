@@ -126,6 +126,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetGraphPriority(
       static_cast<::qnn::GraphPriority>(qualcomm_options.GetGraphPriority()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
+  qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
 
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
