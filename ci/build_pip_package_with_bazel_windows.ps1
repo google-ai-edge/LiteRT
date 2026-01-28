@@ -43,6 +43,13 @@ if (-not $Bazel) {
   throw "Bazel not found in system PATH"
 }
 
+if ($Bazel -notmatch '\.exe$') {
+  $BazelExe = "$Bazel.exe"
+  if (Test-Path $BazelExe) {
+    $Bazel = $BazelExe
+  }
+}
+
 # Optional: Print it so you can see it in your GitHub Action logs
 Write-Host "Using Bazel located at: $Bazel"
 
@@ -118,7 +125,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Fetching dependencies..."
 $FetchArgs = @("fetch", "--config=windows", "--repo_env=USE_PYWRAP_RULES=True", "//ci/tools/python/wheel:litert_wheel")
 & $Bazel $FetchArgs
-if ($LASTEXITCODE -ne 0) {
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
   throw "Bazel fetch failed with exit code $LASTEXITCODE"
 }
 
