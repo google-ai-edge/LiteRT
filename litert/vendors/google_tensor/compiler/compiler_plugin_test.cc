@@ -97,7 +97,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
       compiled, 0, &op_data, &op_data_size, &byte_code_idx));
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
-  ASSERT_EQ("Partition_0", op_data_string);
+  ASSERT_EQ("subgraph_0_fn", op_data_string);
 
   LiteRtDestroyCompiledResult(compiled);
 }
@@ -133,7 +133,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
       compiled, 0, &op_data, &op_data_size, &byte_code_idx));
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
-  ASSERT_EQ("Partition_0", op_data_string);
+  ASSERT_EQ("subgraph_0_fn", op_data_string);
 
   LiteRtDestroyCompiledResult(compiled);
 }
