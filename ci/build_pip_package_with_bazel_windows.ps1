@@ -62,9 +62,12 @@ function Get-Bazel-Info {
   $Proc = New-Object System.Diagnostics.Process
   $Proc.StartInfo = $ProcInfo
   $Proc.Start() | Out-Null
-  $Stdout = $Proc.StandardOutput.ReadToEnd()
+
+  # Read Stdout asynchronously to avoid deadlock if Stderr fills up
+  $StdoutTask = $Proc.StandardOutput.ReadToEndAsync()
   $Stderr = $Proc.StandardError.ReadToEnd()
   $Proc.WaitForExit()
+  $Stdout = $StdoutTask.Result
 
   if ($Proc.ExitCode -ne 0) {
     throw "Bazel info $Key failed. Exit Code: $($Proc.ExitCode). Stderr: $Stderr"
@@ -123,9 +126,11 @@ $OutputBase = Get-Bazel-Info "output_base"
 Write-Host "Bazel output_base: $OutputBase"
 
 $ExecRoot = Get-Bazel-Info "execution_root"
+Write-Host "Bazel execution_root: $ExecRoot"
 if ($ExecRoot) {
   $ExecBazelOut = Join-Path $ExecRoot "bazel-out"
   $WorkspaceBazelOut = Join-Path $RepoRoot "bazel-out"
+  Write-Host "Setting up bazel-out junction..."
   if (Test-Path $WorkspaceBazelOut) {
     if (Test-Path $ExecBazelOut) {
       & cmd.exe /c "rmdir /s /q `"$ExecBazelOut`"" | Out-Null
@@ -135,8 +140,10 @@ if ($ExecRoot) {
 }
 
 $LocalXlaTsl = Join-Path $OutputBase "external\local_xla\xla\tsl\tsl.bzl"
+Write-Host "Patching tsl.bzl..."
 Replace-InFile $LocalXlaTsl 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = False),' 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = True),' | Out-Null
 
+Write-Host "Patching Protobuf..."
 $ProtoContext = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\context.h"
 if (Test-Path $ProtoContext) {
   $ProtoLines = Get-Content $ProtoContext
@@ -146,11 +153,14 @@ if (Test-Path $ProtoContext) {
 Ensure-Include $ProtoContext '#include "google/protobuf/compiler/java/helpers.h"' ("`n" + '#include "google/protobuf/compiler/java/field_common.h"') | Out-Null
 
 $ProtoMessageSerialization = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\message_serialization.cc"
+Write-Host "Patching message_serialization.cc..."
 Replace-InFile $ProtoMessageSerialization '#include "google/protobuf/compiler/java/message_serialization.h"' '#include "message_serialization.h"' | Out-Null
 $ProtoFullMessage = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\full\message.cc"
+Write-Host "Patching full/message.cc..."
 Replace-InFile $ProtoFullMessage '#include "google/protobuf/compiler/java/message_serialization.h"' '#include "../message_serialization.h"' | Out-Null
 
 $ProtoJavaBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\BUILD.bazel"
+Write-Host "Patching compiler/java/BUILD.bazel..."
 if (Test-Path $ProtoJavaBuild) {
   $BuildText = Get-Content $ProtoJavaBuild -Raw
   $InsertLine = [Environment]::NewLine + '        "field_common.h",'
@@ -162,6 +172,7 @@ if (Test-Path $ProtoJavaBuild) {
 }
 
 $UntypedHeader = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.h"
+Write-Host "Patching untyped_message.h..."
 if (Test-Path $UntypedHeader) {
   $Text = Get-Content $UntypedHeader -Raw
   $Text = $Text.Replace(", UntypedMessage,", ", std::unique_ptr<UntypedMessage>,")
@@ -193,6 +204,7 @@ if (Test-Path $UntypedHeader) {
 }
 
 $UntypedCc = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.cc"
+Write-Host "Patching untyped_message.cc..."
 if (Test-Path $UntypedCc) {
   $CcText = Get-Content $UntypedCc -Raw
   $CcText = $CcText.Replace("InsertField(*field, std::move(group))", "InsertField(*field, std::make_unique<UntypedMessage>(std::move(group)))")
@@ -267,13 +279,16 @@ absl::Status UntypedMessage::InsertField(const ResolverPool::Field& field,
 }
 
 $UnparserTraits = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\unparser_traits.h"
+Write-Host "Patching unparser_traits.h..."
 Replace-InFile $UnparserTraits "return &msg.Get<Msg>(f->proto().number())[idx];" "return msg.GetMessage(f->proto().number(), idx);" | Out-Null
 
 $ProtoCompilerBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\BUILD.bazel"
+Write-Host "Patching compiler/BUILD.bazel..."
 Replace-InFile $ProtoCompilerBuild '        "//src/google/protobuf/compiler/objectivec",' '' | Out-Null
 Replace-InFile $ProtoCompilerBuild '        "//src/google/protobuf/compiler/rust",' '' | Out-Null
 
 $ProtoMain = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\main.cc"
+Write-Host "Patching compiler/main.cc..."
 Replace-InFile $ProtoMain '#include "google/protobuf/compiler/objectivec/generator.h"' '' | Out-Null
 Replace-InFile $ProtoMain '#include "google/protobuf/compiler/rust/generator.h"' '' | Out-Null
 Replace-InFile $ProtoMain '  objectivec::ObjectiveCGenerator objc_generator;' '' | Out-Null
@@ -283,6 +298,7 @@ Replace-InFile $ProtoMain '  rust::RustGenerator rust_generator;' '' | Out-Null
 Replace-InFile $ProtoMain '  cli.RegisterGenerator("--rust_out", "--rust_opt", &rust_generator,' '' | Out-Null
 Replace-InFile $ProtoMain '                        "Generate Rust sources.");' '' | Out-Null
 
+Write-Host "Patching HighwayHash..."
 $HighwayHash = Join-Path $OutputBase "external\highwayhash\highwayhash\compiler_specific.h"
 $OldAlign = "#if HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
 $NewAlign = "#if HH_MSC_VERSION`n#define HH_ALIGNAS(multiple) __declspec(align(multiple))`n#elif HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
@@ -290,6 +306,7 @@ Replace-InFile $HighwayHash $OldAlign $NewAlign | Out-Null
 
 $HighwayHashDir = Join-Path $OutputBase "external\highwayhash\highwayhash"
 $PostfixPattern = '^(\s*)([^;]*?)\s+HH_ALIGNAS\((\d+)\)\s*([^;]*;\s*)$'
+Write-Host "Patching HighwayHash sources in $HighwayHashDir..."
 Get-ChildItem -Path $HighwayHashDir -Recurse -Include *.h,*.cc | ForEach-Object {
   $Lines = Get-Content $_.FullName
   $Changed = $false
@@ -327,6 +344,7 @@ if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightl
 if ($env:USE_LOCAL_TF -eq "true") { $BazelArgs += "--config=use_local_tf" }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(" ") }
 
+Write-Host "Starting bazel build..."
 & $Bazel @BazelArgs //ci/tools/python/wheel:litert_wheel
 
 $DistDir = Join-Path $RepoRoot "dist"
