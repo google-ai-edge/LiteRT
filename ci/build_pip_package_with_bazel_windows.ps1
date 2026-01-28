@@ -269,13 +269,16 @@ Get-ChildItem -Path $HighwayHashDir -Recurse -Include *.h,*.cc | ForEach-Object 
 }
 
 $BazelArgs = @(
-  "build",
-  "-c",
-  "opt",
-  "--config=windows",
-  "--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1",
-  "--repo_env=USE_PYWRAP_RULES=True",
-  "--define=protobuf_allow_msvc=true"
+  'build',
+  '-c',
+  'opt',
+  '--config=windows',
+  '--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1',
+  '--copt=-mavx2',
+  '--copt=-mfma',
+  '--copt=-mf16c',
+  '--repo_env=USE_PYWRAP_RULES=True',
+  '--define=protobuf_allow_msvc=true'
 )
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(" ") }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
