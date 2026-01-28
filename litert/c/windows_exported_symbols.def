@@ -275,6 +275,7 @@ EXPORTS
   LiteRtQualcommOptionsGetIrJsonDir
   LiteRtQualcommOptionsGetLogLevel
   LiteRtQualcommOptionsGetNumHvxThreads
+  LiteRtQualcommOptionsGetSaverOutputDir
   LiteRtQualcommOptionsGetOptimizationLevel
   LiteRtQualcommOptionsGetProfiling
   LiteRtQualcommOptionsGetUseConvHMX
@@ -291,6 +292,7 @@ EXPORTS
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel
   LiteRtQualcommOptionsSetNumHvxThreads
+  LiteRtQualcommOptionsSetSaverOutputDir
   LiteRtQualcommOptionsSetOptimizationLevel
   LiteRtQualcommOptionsSetProfiling
   LiteRtQualcommOptionsSetUseConvHMX
