@@ -16,6 +16,9 @@ std::vector<OpWrapper> BuildQuantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+OpWrapper CreateQuantizeOp(const TensorWrapper& input_0,
+                           const TensorWrapper& output_0);
+
 std::vector<OpWrapper> BuildDequantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);

@@ -15,8 +15,9 @@ std::vector<OpWrapper> BuildSliceOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
-bool BuildSliceOp(OpWrapper& op, const TensorWrapper& input,
-                  const TensorWrapper& output, const TensorWrapper& ranges);
+OpWrapper CreateSliceOp(const TensorWrapper& input_0,
+                        const TensorWrapper& output_0,
+                        const TensorWrapper& ranges);
 
 }  // namespace qnn
 

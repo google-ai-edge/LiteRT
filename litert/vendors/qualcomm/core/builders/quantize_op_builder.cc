@@ -18,21 +18,31 @@ std::vector<OpWrapper> BuildQuantizeOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  const char* qnn_op = nullptr;
   if (inputs[0].get().IsPerTensorQuantWithOffsetDiff(outputs[0].get())) {
-    qnn_op = QNN_OP_CAST;
+    auto& op = CreateOpWrapper(res, QNN_OP_CAST);
+    op.AddInputTensor(inputs[0]);
+    op.AddOutputTensor(outputs[0]);
   } else if ((inputs[0].get().IsQuant8() || inputs[0].get().IsQuant16()) &&
              (outputs[0].get().IsQuant8() || outputs[0].get().IsQuant16())) {
-    qnn_op = QNN_OP_CONVERT;
+    auto& op = CreateOpWrapper(res, QNN_OP_CONVERT);
+    op.AddInputTensor(inputs[0]);
+    op.AddOutputTensor(outputs[0]);
   } else {
-    qnn_op = QNN_OP_QUANTIZE;
+    res.emplace_back(CreateQuantizeOp(inputs[0], outputs[0]));
   }
 
-  auto& quantize_op = CreateOpWrapper(res, qnn_op);
-  quantize_op.AddInputTensor(inputs[0]);
-  quantize_op.AddOutputTensor(outputs[0]);
-
   return res;
+}
+
+OpWrapper CreateQuantizeOp(const TensorWrapper& input_0,
+                           const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_QUANTIZE);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_QUANTIZE, QnnOpCode::kQuantize);
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
+  return op;
 }
 
 std::vector<OpWrapper> BuildDequantizeOp(

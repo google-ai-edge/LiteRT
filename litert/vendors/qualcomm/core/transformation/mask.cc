@@ -19,17 +19,15 @@ namespace qnn {
 std::vector<OpWrapper> TransformToSelectOp(
     const std::vector<OpWrapper>& original_ops, size_t start_index,
     TensorPool& tensor_pool, size_t pattern_size) {
-  // const_cast for BuildSelectOp, can be removed if builders are refined
-  auto& pattern_input =
-      const_cast<TensorWrapper&>(original_ops[start_index].GetInputTensor(0));
-  auto& pattern_output = const_cast<TensorWrapper&>(
-      original_ops[start_index + pattern_size - 1].GetOutputTensor(0));
+  const auto& pattern_input = original_ops[start_index].GetInputTensor(0);
+  const auto& pattern_output =
+      original_ops[start_index + pattern_size - 1].GetOutputTensor(0);
   const auto& quant_param = pattern_output.GetQuantParams();
   const auto& tensor_dims = pattern_input.GetDims();
   const std::uint32_t num_element = pattern_input.GetTensorNumElements();
 
   std::vector<std::int16_t> all_zero_data(num_element, 0);
-  auto& input_1 = tensor_pool.CreateStaticTensor(
+  const auto& input_1 = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, tensor_dims,
       all_zero_data.size() * sizeof(all_zero_data[0]), all_zero_data.data());
 
@@ -42,12 +40,11 @@ std::vector<OpWrapper> TransformToSelectOp(
   }
   std::vector<std::int16_t> mask_data(num_element,
                                       static_tensor_data.value()[0]);
-  auto& input_2 = tensor_pool.CreateStaticTensor(
+  const auto& input_2 = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, tensor_dims,
       mask_data.size() * sizeof(mask_data[0]), mask_data.data());
 
-  return BuildSelectOp(tensor_pool, {pattern_input, input_1, input_2},
-                       {pattern_output});
+  return {CreateSelectOp(pattern_input, input_1, input_2, pattern_output)};
 }
 
 size_t TransformQuantizeInMask(

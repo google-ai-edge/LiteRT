@@ -358,6 +358,7 @@ class TensorWrapper final {
 };
 
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
+using ConstTensorWrapperRef = std::reference_wrapper<const TensorWrapper>;
 
 template <typename T>
 std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {

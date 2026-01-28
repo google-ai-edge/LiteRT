@@ -6,28 +6,40 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildMatmulOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const bool adj_x,
-    const bool adj_y) {
-  std::vector<OpWrapper> res;
+OpWrapper CreateMatmulOp(const TensorWrapper& input_0,
+                         const TensorWrapper& input_1,
+                         const TensorWrapper& output_0, bool transpose_in0,
+                         bool transpose_in1) {
+  auto name = GetUniqueOpName(QNN_OP_MAT_MUL);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_MAT_MUL, QnnOpCode::kMatMul);
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddOutputTensor(output_0);
+  op.AddScalarParam<bool>(QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN0, transpose_in0);
+  op.AddScalarParam<bool>(QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1, transpose_in1);
+  return op;
+}
 
-  auto& matmul_op = CreateOpWrapper(res, QNN_OP_MAT_MUL);
-  for (const auto& input : inputs) {
-    matmul_op.AddInputTensor(input);
-  }
-  matmul_op.AddOutputTensor(outputs[0]);
-  matmul_op.AddScalarParam<bool>(QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN0, adj_x);
-  matmul_op.AddScalarParam<bool>(QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1, adj_y);
-
-  return res;
+OpWrapper CreateMatmulOpWithSameParam(const OpWrapper& src,
+                                      const TensorWrapper& input_0,
+                                      const TensorWrapper& input_1,
+                                      const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_MAT_MUL);
+  OpWrapper op(src);
+  op.SetName(std::move(name));
+  op.ClearInputOutputTensors();
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddOutputTensor(output_0);
+  return op;
 }
 
 }  // namespace qnn

@@ -8,14 +8,14 @@
 #include <utility>
 #include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnOpDef.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -66,19 +66,21 @@ std::vector<OpWrapper> BuildSliceOp(
       {input_rank, kRangeNumElements}, sizeof(std::int32_t) * range_data.size(),
       range_data.data());
 
-  BuildSliceOp(res.emplace_back(), input_tensor, outputs[0], range_tensor);
+  res.emplace_back(CreateSliceOp(input_tensor, outputs[0], range_tensor));
   return res;
 }
 
-bool BuildSliceOp(OpWrapper& op, const TensorWrapper& input,
-                  const TensorWrapper& output, const TensorWrapper& ranges) {
+OpWrapper CreateSliceOp(const TensorWrapper& input_0,
+                        const TensorWrapper& output_0,
+                        const TensorWrapper& ranges) {
   auto name = GetUniqueOpName(QNN_OP_STRIDED_SLICE);
+  OpWrapper op;
   op.SetName(std::move(name));
   op.SetType(QNN_OP_STRIDED_SLICE, QnnOpCode::kStridedSlice);
-  op.AddInputTensor(input);
-  op.AddOutputTensor(output);
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
   op.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES, ranges);
-  return true;
+  return op;
 }
 
 }  // namespace qnn
