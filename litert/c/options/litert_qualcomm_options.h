@@ -245,6 +245,11 @@ LiteRtStatus LiteRtQualcommOptionsSetBackend(
 LiteRtStatus LiteRtQualcommOptionsGetBackend(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend* qnn_backend);
 
+LiteRtStatus LiteRtQualcommOptionsSetSaverOutputDir(
+    LiteRtQualcommOptions options, const char* saver_output_dir);
+
+LiteRtStatus LiteRtQualcommOptionsGetSaverOutputDir(
+    LiteRtQualcommOptions options, const char** saver_output_dir);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
