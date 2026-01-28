@@ -138,6 +138,12 @@ class LiteRtTensorBufferT {
       size_t buffer_size);
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+#if LITERT_HAS_WEBGPU_SUPPORT
+  static litert::Expected<Ptr> CreateFromWebGpuTexture(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      void* texture, size_t buffer_size);
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
 

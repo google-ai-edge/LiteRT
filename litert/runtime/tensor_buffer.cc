@@ -682,6 +682,27 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromMetalMemory(
 }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+#if LITERT_HAS_WEBGPU_SUPPORT
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuTexture(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    void* texture, size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  LITERT_ASSIGN_OR_RETURN(
+      litert::internal::CustomBuffer custom_buffer,
+      litert::internal::CustomBuffer::Wrap(
+          env, tensor_type, kLiteRtTensorBufferTypeWebGpuTexture, texture,
+          buffer_size, packed_size));
+
+  Ptr tensor_buffer(new LiteRtTensorBufferT(
+      env, tensor_type, kLiteRtTensorBufferTypeWebGpuTexture, buffer_size));
+
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(custom_buffer));
+  return tensor_buffer;
+}
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
