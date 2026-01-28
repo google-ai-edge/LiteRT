@@ -16,6 +16,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -98,8 +100,13 @@ LiteRtStatus LiteRtBuilderBuildTensor(
     weights_t.SetBufferManager(nullptr);
   }
 
+  std::optional<std::string> tensor_name;
+  if (name != nullptr) {
+    tensor_name = name;
+  }
+
   *new_tensor =
-      &builder->BuildTensor(weights_t, quantization, tensor_type, name);
+      &builder->BuildTensor(weights_t, quantization, tensor_type, tensor_name);
   return kLiteRtStatusOk;
 }
 

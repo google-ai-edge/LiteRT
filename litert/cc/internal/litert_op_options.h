@@ -101,6 +101,51 @@ inline LiteRtElementType GetElementType(uint32_t tflite_element_type) {
   }
 };
 
+inline uint32_t GetTfliteTensorType(LiteRtElementType element_type) {
+  switch (element_type) {
+    case kLiteRtElementTypeFloat32:
+      return TensorType_FLOAT32;
+    case kLiteRtElementTypeFloat16:
+      return TensorType_FLOAT16;
+    case kLiteRtElementTypeInt32:
+      return TensorType_INT32;
+    case kLiteRtElementTypeUInt8:
+      return TensorType_UINT8;
+    case kLiteRtElementTypeInt64:
+      return TensorType_INT64;
+    case kLiteRtElementTypeTfString:
+      return TensorType_STRING;
+    case kLiteRtElementTypeBool:
+      return TensorType_BOOL;
+    case kLiteRtElementTypeInt16:
+      return TensorType_INT16;
+    case kLiteRtElementTypeComplex64:
+      return TensorType_COMPLEX64;
+    case kLiteRtElementTypeInt8:
+      return TensorType_INT8;
+    case kLiteRtElementTypeFloat64:
+      return TensorType_FLOAT64;
+    case kLiteRtElementTypeComplex128:
+      return TensorType_COMPLEX128;
+    case kLiteRtElementTypeUInt64:
+      return TensorType_UINT64;
+    case kLiteRtElementTypeTfResource:
+      return TensorType_RESOURCE;
+    case kLiteRtElementTypeTfVariant:
+      return TensorType_VARIANT;
+    case kLiteRtElementTypeUInt32:
+      return TensorType_UINT32;
+    case kLiteRtElementTypeUInt16:
+      return TensorType_UINT16;
+    case kLiteRtElementTypeInt4:
+      return TensorType_INT4;
+    case kLiteRtElementTypeBFloat16:
+      return TensorType_BFLOAT16;
+    default:
+      return TensorType_FLOAT32;
+  }
+};
+
 /// @brief Base struct for operator options.
 struct OpOptions {
   virtual LiteRtStatus InitFromOp(LiteRtOp op) = 0;
@@ -165,12 +210,14 @@ struct CompositeOptions : public OpOptions {
   std::optional<flexbuffers::Map> attributes_map;
 
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 struct RmsNormOpts : public CompositeOptions {
   /// The epsilon composite attribute of the RMS norm.
   float epsilon;
   LiteRtStatus InitFromOp(LiteRtOp litert_op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Add op.
@@ -188,6 +235,7 @@ struct BatchMatmulOptions : public OpOptions {
   bool adj_y;
   bool asymmetric_quantize_input;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Concatenation op.
@@ -196,6 +244,7 @@ struct ConcatenationOptions : public OpOptions {
   ActivationFunction fused_activation_function;
   int32_t axis;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Div op.
@@ -203,6 +252,7 @@ struct DivOptions : public OpOptions {
   LiteRtOp op;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT FullyConnected op.
@@ -214,6 +264,7 @@ struct FullyConnectedOptions : public OpOptions {
   LiteRtElementType quantized_bias_type;
   bool asymmetric_quantize_input;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Mul op.
@@ -221,6 +272,7 @@ struct MulOptions : public OpOptions {
   LiteRtOp op;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Softmax op.
@@ -228,6 +280,7 @@ struct SoftmaxOptions : public OpOptions {
   LiteRtOp op;
   float beta;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT StridedSlice op.
@@ -240,6 +293,7 @@ struct StridedSliceOptions : public OpOptions {
   int32_t shrink_axis_mask;
   bool offset;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Sub op.
@@ -247,6 +301,7 @@ struct SubOptions : public OpOptions {
   LiteRtOp op;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Reshape op.
@@ -254,6 +309,7 @@ struct ReshapeOptions : public OpOptions {
   LiteRtOp op;
   std::vector<int32_t> new_shape;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Sum op.
@@ -261,6 +317,7 @@ struct SumOptions : public OpOptions {
   LiteRtOp op;
   bool keep_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT ReduceMax op.
@@ -268,6 +325,7 @@ struct ReduceMaxOptions : public OpOptions {
   LiteRtOp op;
   bool keep_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT ReduceMin op.
@@ -275,6 +333,7 @@ struct ReduceMinOptions : public OpOptions {
   LiteRtOp op;
   bool keep_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT ReduceAny op.
@@ -282,6 +341,7 @@ struct ReduceAnyOptions : public OpOptions {
   LiteRtOp op;
   bool keep_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT ReduceAll op.
@@ -289,6 +349,7 @@ struct ReduceAllOptions : public OpOptions {
   LiteRtOp op;
   bool keep_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Pack op.
@@ -296,6 +357,7 @@ struct PackOptions : public OpOptions {
   LiteRtOp op;
   int32_t axis;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Unpack op.
@@ -304,6 +366,7 @@ struct UnpackOptions : public OpOptions {
   int32_t axis;
   int32_t num;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Gather op.
@@ -312,6 +375,7 @@ struct GatherOptions : public OpOptions {
   int32_t axis;
   int32_t batch_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Mean op.
@@ -319,6 +383,7 @@ struct MeanOptions : public OpOptions {
   LiteRtOp op;
   bool keep_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Split op.
@@ -326,6 +391,7 @@ struct SplitOptions : public OpOptions {
   LiteRtOp op;
   int32_t num_splits;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Conv2d op.
@@ -338,6 +404,7 @@ struct Conv2dOptions : public OpOptions {
   int32_t dilation_h_factor;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Conv3d op.
@@ -352,6 +419,7 @@ struct Conv3dOptions : public OpOptions {
   int32_t dilation_d_factor;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT DepthwiseConv2d op.
@@ -365,6 +433,7 @@ struct DepthwiseConv2dOptions : public OpOptions {
   int32_t dilation_w_factor;
   int32_t dilation_h_factor;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT TransposeConv op.
@@ -375,6 +444,7 @@ struct TransposeConvOptions : public OpOptions {
   int32_t stride_h;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT AveragePool2d op.
@@ -387,6 +457,7 @@ struct AveragePool2dOptions : public OpOptions {
   int32_t filter_height;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT MaxPool2d op.
@@ -399,6 +470,7 @@ struct MaxPool2dOptions : public OpOptions {
   int32_t filter_height;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT L2Pool2d op.
@@ -411,6 +483,7 @@ struct L2Pool2dOptions : public OpOptions {
   int32_t filter_height;
   ActivationFunction fused_activation_function;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT ResizeBilinear op.
@@ -419,6 +492,7 @@ struct ResizeBilinearOptions : public OpOptions {
   bool align_corners;
   bool half_pixel_centers;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT LeakyRelu op.
@@ -426,6 +500,7 @@ struct LeakyReluOptions : public OpOptions {
   LiteRtOp op;
   float alpha;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT SpaceToDepth op.
@@ -433,6 +508,7 @@ struct SpaceToDepthOptions : public OpOptions {
   LiteRtOp op;
   int32_t block_size;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT DepthToSpace op.
@@ -440,6 +516,7 @@ struct DepthToSpaceOptions : public OpOptions {
   LiteRtOp op;
   int32_t block_size;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 /// @brief Struct to hold options for the LiteRT ResizeNearestNeighbor op.
 struct ResizeNearestNeighborOptions : public OpOptions {
@@ -447,6 +524,7 @@ struct ResizeNearestNeighborOptions : public OpOptions {
   bool align_corners;
   bool half_pixel_centers;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT CumSum op.
@@ -455,6 +533,7 @@ struct CumSumOptions : public OpOptions {
   bool exclusive;
   bool reverse;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Gelu op.
@@ -462,6 +541,7 @@ struct GeluOptions : public OpOptions {
   LiteRtOp op;
   bool approximate;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT MirrorPad op.
@@ -469,6 +549,7 @@ struct MirrorPadOptions : public OpOptions {
   LiteRtOp op;
   MirrorPadMode mode;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Struct to hold options for the LiteRT Squeeze op.
@@ -476,6 +557,7 @@ struct SqueezeOptions : public OpOptions {
   LiteRtOp op;
   std::vector<int32_t> squeeze_dims;
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+  Expected<void> SetOpOptions(LiteRtBuilder builder);
 };
 
 /// @brief Returns the composite info for the given op if it is a composite op.
