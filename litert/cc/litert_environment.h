@@ -250,8 +250,10 @@ class Environment {
     return c_options;
   }
 
-  static std::unique_ptr<RuntimeProxy> GetBuiltinRuntime() {
-    return std::make_unique<RuntimeProxy>(&kLiteRtRuntimeBuiltin);
+  static std::unique_ptr<RuntimeProxy, std::function<void(RuntimeProxy*)>>
+  GetBuiltinRuntime() {
+    static RuntimeProxy builtin_runtime(&kLiteRtRuntimeBuiltin);
+    return {&builtin_runtime, [](RuntimeProxy*) {}};
   }
 };
 
