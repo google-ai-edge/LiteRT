@@ -55,8 +55,9 @@ TEST(MediaTek, DispatchApiWithAhwb) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
-            kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtDispatchInitialize(env.Get(), env_options.Get(), options.Get()),
+      kLiteRtStatusOk);
 
   const char* vendor_id;
   EXPECT_EQ(LiteRtDispatchGetVendorId(&vendor_id), kLiteRtStatusOk);
@@ -363,7 +364,8 @@ TEST(MediaTek, DispatchApiWithDmaBuf) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
-  EXPECT_EQ(LiteRtDispatchInitialize(/*options=*/nullptr, /*num_options=*/0),
+  EXPECT_EQ(LiteRtDispatchInitialize(env.Get(), /*options=*/nullptr,
+                                     /*num_options=*/0),
             kLiteRtStatusOk);
 
   const char* vendor_id;

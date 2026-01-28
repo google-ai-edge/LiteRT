@@ -90,7 +90,8 @@ LiteRtStatus LockRemoteTensorBuffer(LiteRtEnvironment env,
 // Initialize the Dispatch API runtime.
 // This function should be called before calling any other Dispatch API
 // functions.
-LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
+LiteRtStatus DispatchInitialize(LiteRtEnvironment env,
+                                LiteRtEnvironmentOptions environment_options,
                                 LiteRtOptions options) {
   ov::Core core;
   std::vector<std::string> availableDevices = core.get_available_devices();

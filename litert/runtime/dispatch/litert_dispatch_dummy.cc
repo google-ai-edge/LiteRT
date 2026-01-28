@@ -16,10 +16,10 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
 
 LiteRtStatus LiteRtDispatchInitialize(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
+    LiteRtEnvironment env, LiteRtEnvironmentOptions environment_options,
+    LiteRtOptions options) {
   return kLiteRtStatusErrorUnsupported;
 }
 

@@ -79,9 +79,10 @@ LiteRtDispatchApi TheApi = {
     /*.graph_interface=*/nullptr,
 };
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
+LiteRtStatus Initialize(LiteRtEnvironment env,
+                        LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
-  INVOKE_FUNC(initialize, environment_options, options);
+  INVOKE_FUNC(initialize, env, environment_options, options);
 }
 
 litert::Expected<std::string> GetSharedLibraryPath(
@@ -110,7 +111,8 @@ litert::Expected<std::string> GetSharedLibraryPath(
 // /////////////////////////////////////////////////////////////////////////////
 
 LiteRtStatus LiteRtDispatchInitialize(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
+    LiteRtEnvironment env, LiteRtEnvironmentOptions environment_options,
+    LiteRtOptions options) {
   if (IsTheApiInitialized) {
     return kLiteRtStatusOk;
   }
@@ -149,7 +151,7 @@ LiteRtStatus LiteRtDispatchInitialize(
     return kLiteRtStatusErrorWrongVersion;
   }
 
-  auto status = Initialize(environment_options, options);
+  auto status = Initialize(env, environment_options, options);
   if (status == kLiteRtStatusOk) {
     IsTheApiInitialized = true;
   }

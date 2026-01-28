@@ -52,9 +52,10 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
   }
 
   static TfLiteOpaqueDelegate* Create(
-      LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
+      LiteRtEnvironment env, LiteRtEnvironmentOptions environment_options,
+      LiteRtOptions options) {
     std::unique_ptr<DispatchDelegate> managed_dispatch_delegate(
-        new DispatchDelegate(environment_options, options));
+        new DispatchDelegate(env, environment_options, options));
     return tflite::TfLiteOpaqueDelegateFactory::CreateSimpleDelegate(
         std::move(managed_dispatch_delegate),
         kTfLiteDelegateFlagsAllowDynamicTensors);
@@ -78,12 +79,16 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
  private:
   static constexpr absl::string_view kDelegateName = "DispatchDelegate";
 
-  explicit DispatchDelegate(LiteRtEnvironmentOptions environment_options,
+  explicit DispatchDelegate(LiteRtEnvironment env,
+                            LiteRtEnvironmentOptions environment_options,
                             LiteRtOptions options)
-      : environment_options_(environment_options), options_(options) {}
+      : env_(env),
+        environment_options_(environment_options),
+        options_(options) {}
 
   litert::Expected<void> InitializeDispatchApi();
 
+  LiteRtEnvironment env_;
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;
   bool has_dispatch_runtime_ = false;
@@ -165,7 +170,7 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
 
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   LITERT_RETURN_IF_ERROR(
-      LiteRtDispatchInitialize(environment_options_, options_));
+      LiteRtDispatchInitialize(env_, environment_options_, options_));
   // Check if Library needed by dispatch api is compatible.
   LITERT_RETURN_IF_ERROR(LiteRtDispatchCheckRuntimeCompatibility(
       LiteRtApiVersion{LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
@@ -211,8 +216,9 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
 }  // namespace
 
 TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(
+    LiteRtEnvironment env,
     LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
-  return DispatchDelegate::Create(environment_options, options);
+  return DispatchDelegate::Create(env, environment_options, options);
 }
 
 void LiteRtDestroyDispatchDelegate(TfLiteOpaqueDelegate* delegate) {
@@ -243,9 +249,10 @@ LiteRtStatus LiteRtDispatchDelegateStopMetricsCollection(
 namespace litert {
 
 DispatchDelegatePtr CreateDispatchDelegatePtr(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
+    LiteRtEnvironment env, LiteRtEnvironmentOptions environment_options,
+    LiteRtOptions options) {
   return DispatchDelegatePtr(
-      LiteRtCreateDispatchDelegate(environment_options, options),
+      LiteRtCreateDispatchDelegate(env, environment_options, options),
       LiteRtDestroyDispatchDelegate);
 }
 
