@@ -47,7 +47,7 @@ LiteRT is designed for cross-platform deployment on a wide range of hardware.
 
 | Platform   | CPU Support | GPU Support           | NPU Support                                                       |
 | ---------- | ----------- | --------------------- | ----------------------------------------------------------------- |
-| 🤖 Android | ✅          | ✅OpenCL<br>OpenGL\* | Google Tensor\*<br>✅ Qualcomm<br>✅ MediaTek<br>S.LSI\*<br>Intel\* |
+| 🤖 Android | ✅          | ✅OpenCL<br>✅OpenGL | Google Tensor\*<br>✅ Qualcomm<br>✅ MediaTek<br>S.LSI\*<br>Intel\* |
 | 🍎 iOS     | ✅          | ✅ Metal                 | ANE\*                                                             |
 | 🐧 Linux   | ✅          | ✅ WebGPU                | N/A                                                               |
 | 🍎 macOS   | ✅          | ✅ WebGPU<br>✅ Metal                 | ANE\*                                                             |
@@ -90,12 +90,12 @@ get started based on your goals:
 
 - **Goal**: Convert a model from PyTorch to run on LiteRT.
 - **Path1 (classic models)**: Use the
-  [AI Edge Torch Converter](https://github.com/google-ai-edge/ai-edge-torch) to
+  [LiteRT Torch Converter](https://github.com/google-ai-edge/litert-torch) to
   transform your PyTorch model into the `.tflite` format, and use AI Edge
   Quantizer to optimize the model for optimal performance under resource
   constraints. From there, you can deploy it using the standard LiteRT runtime.
 - **Path2 (LLMs)**: Use
-  [Torch Generative API](https://github.com/google-ai-edge/ai-edge-torch) to
+  [LiteRT Generative Torch API](https://github.com/google-ai-edge/litert-torch/tree/main/litert_torch/generative) to
   reauthor and convert your PyTorch LLMs into Apache format, and deploy it using
   [LiteRT LM](https://github.com/google-ai-edge/litert-lm).
 
@@ -107,10 +107,10 @@ get started based on your goals:
   to create a
   [Real-time segmentation App](https://developers.google.com/codelabs/litert-image-segmentation-android#0)
   for CPU/GPU/NPU inference. Source code
-  [link](https://github.com/google-ai-edge/litert-samples/tree/main/v2/image_segmentation).
+  [link](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api/image_segmentation).
 - **Path2 (Experienced dev)**: Start with the
   [Get Started guide](https://ai.google.dev/edge/litert/next/get_started), find
-  a pre-trained .tflite model on [Kaggle Models](https://www.kaggle.com/models),
+  a pre-trained .tflite model on [Kaggle Models](https://www.kaggle.com/models?framework=tfLite&size=small),
   and use the standard LiteRT runtime to integrate it into your Android or iOS
   app.
 
@@ -169,12 +169,12 @@ We encourage you to reach out if you need help.
 LiteRT is part of a larger ecosystem of tools for on-device machine learning.
 Check out these other projects from Google:
 
-- **[LiteRT Samples](https://github.com/google-ai-edge/litert-samples)**: A
+- **[LiteRT Samples](https://github.com/google-ai-edge/litert-samples/tree/main)**: A
   collection of LiteRT sample apps.
-- **[AI Edge Torch Converter](https://github.com/google-ai-edge/ai-edge-torch)**:
+- **[LiteRT Torch Converter](https://github.com/google-ai-edge/litert-torch)**:
   A tool in LiteRT to convert PyTorch models into the LiteRT(.tflite) format for
   on-device deployment.
-- **[Torch Generative API](https://github.com/google-ai-edge/ai-edge-torch)**: A
+- **[LiteRT Generative Torch API](https://github.com/google-ai-edge/litert-torch/tree/main/litert_torch/generative)**: A
   library in LiteRT to reauthor LLMs for efficient conversion and on-device
   inference.
 - **[LiteRT-LM](https://github.com/google-ai-edge/litert-lm)**: A library to
