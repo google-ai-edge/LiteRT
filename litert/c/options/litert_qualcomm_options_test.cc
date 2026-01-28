@@ -314,6 +314,24 @@ TEST(LiteRtQualcommOptionsTest, UseFoldReLU) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, SaverOutputDir) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsSetSaverOutputDir(qualcomm_options, "tmp/"));
+
+  const char* saver_output_dir;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetSaverOutputDir(qualcomm_options,
+                                                          &saver_output_dir));
+  EXPECT_STREQ(saver_output_dir, "tmp/");
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(QualcommOptionsTest, CppApi) {
   auto options = QualcommOptions::Create();
   ASSERT_TRUE(options);
@@ -391,6 +409,10 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
   options->SetBackend(QualcommOptions::Backend::kDsp);
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kDsp);
+
+  EXPECT_EQ(options->GetSaverOutputDir(), "");
+  options->SetSaverOutputDir("tmp");
+  EXPECT_EQ(options->GetSaverOutputDir(), "tmp");
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {

@@ -39,16 +39,40 @@ MODULE_ROOT = ".".join([
 def get_resource(
     litert_relative_path: pathlib.Path, is_dir=False
 ) -> pathlib.Path:
-  """Returns the path to a resource in the Litert workspace."""
-  try:
-    resource_root = resources.files(_WORKSPACE_PREFIX)
-  except ModuleNotFoundError:
-    resource_root = resources.files(_AI_EDGE_LITERT_PREFIX)
-  litert_resource = resource_root.joinpath(
-      _LITERT_ROOT, str(litert_relative_path)
-  )
+  """Returns the path to a resource in the Litert workspace.
+
+  Args:
+    litert_relative_path: The path to the resource relative to the Litert root.
+    is_dir: Whether the resource is expected to be a directory.
+
+  Returns:
+    The absolute path to the resource.
+
+  Raises:
+    FileNotFoundError: If the resource could not be found.
+  """
+
+  for prefix in [_WORKSPACE_PREFIX, _AI_EDGE_LITERT_PREFIX]:
+    try:
+      litert_resource = resources.files(prefix)
+      break
+    except ModuleNotFoundError:
+      continue
+  else:
+    raise FileNotFoundError(
+        f"Could not find resource root for either {_WORKSPACE_PREFIX!r} or "
+        f"{_AI_EDGE_LITERT_PREFIX!r}"
+    ) from None
+
+  if _LITERT_ROOT:
+    for component in pathlib.Path(_LITERT_ROOT).parts:
+      litert_resource = litert_resource.joinpath(component)
+
+  for component in litert_relative_path.parts:
+    litert_resource = litert_resource.joinpath(component)
+
   if not is_dir and not litert_resource.is_file():
-    raise FileNotFoundError(f"Resource {litert_resource} does not exist.")
+    raise FileNotFoundError(f"Resource {litert_resource!r} does not exist.")
   return pathlib.Path(str(litert_resource))
 
 
