@@ -320,7 +320,8 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   // Create EGL sync and fence before AHWB read.
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event egl_sync_event,
-      Event::CreateManaged(env.Get(), LiteRtEventTypeEglNativeSyncFence));
+      Event::CreateManaged(env.GetHolder().handle,
+                           LiteRtEventTypeEglNativeSyncFence));
 
   // EGL does not support querying the sync fd from the EGL sync event. So we
   // dup the fd from the EGL sync event and use it to create a new event.
@@ -331,10 +332,12 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   // closed.
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event_1,
-      Event::CreateFromSyncFenceFd(env.Get(), egl_sync_fd, /*owns_fd=*/true));
+      Event::CreateFromSyncFenceFd(env.GetHolder().handle, egl_sync_fd,
+                                   /*owns_fd=*/true));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event_2,
-      Event::CreateFromSyncFenceFd(env.Get(), egl_sync_fd, /*owns_fd=*/false));
+      Event::CreateFromSyncFenceFd(env.GetHolder().handle, egl_sync_fd,
+                                   /*owns_fd=*/false));
 
   // Set event so that AHWB read is blocked by GPU write.
   input_buffers[0].SetEvent(std::move(event_1));

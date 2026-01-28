@@ -26,14 +26,16 @@ namespace {
 TEST(Event, DupFdOnNegativeFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
+      Event event,
+      Event::CreateFromSyncFenceFd(env.GetHolder().handle, -1, true));
   EXPECT_FALSE(event.DupFd());
 }
 
 TEST(Event, IsSignaledOnNegativeFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
+      Event event,
+      Event::CreateFromSyncFenceFd(env.GetHolder().handle, -1, true));
   EXPECT_FALSE(event.IsSignaled());
 }
 
@@ -44,8 +46,8 @@ TEST(Event, CreateManagedEglSyncFence) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      Event event,
-      Event::CreateManaged(env.Get(), LiteRtEventTypeEglSyncFence));
+      Event event, Event::CreateManaged(env.GetHolder().handle,
+                                        LiteRtEventTypeEglSyncFence));
   EXPECT_EQ(event.Type(), LiteRtEventTypeEglSyncFence);
 }
 
@@ -56,8 +58,8 @@ TEST(Event, CreateManagedEglNativeSyncFence) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      Event event,
-      Event::CreateManaged(env.Get(), LiteRtEventTypeEglNativeSyncFence));
+      Event event, Event::CreateManaged(env.GetHolder().handle,
+                                        LiteRtEventTypeEglNativeSyncFence));
   EXPECT_EQ(event.Type(), LiteRtEventTypeEglNativeSyncFence);
 }
 

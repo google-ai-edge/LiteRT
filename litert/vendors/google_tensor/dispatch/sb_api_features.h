@@ -57,6 +57,8 @@ enum class GoogleTensorSouthBoundFeature {
   kIndexedNodeBinding = 5,
   // thrRegisterBuffer* with `type == kThrBufferTypeDmaBuf`
   kDmaBufRegistration = 6,
+  // thrGraphAnnotateGraph with `key == kOriginalUid`
+  kOriginalUidDispatchDirective = 7,
 };
 
 // Returns `true` if `feature` is supported by the available Google Tensor
@@ -83,6 +85,9 @@ inline bool GoogleTensorSouthBoundFeatureSupported(
     case GoogleTensorSouthBoundFeature::kDmaBufRegistration:
       return GoogleTensorSouthBoundMajorVersion() > 0 ||
              GoogleTensorSouthBoundMinorVersion() >= 15;
+    case GoogleTensorSouthBoundFeature::kOriginalUidDispatchDirective:
+      return GoogleTensorSouthBoundMajorVersion() > 0 ||
+             GoogleTensorSouthBoundMinorVersion() >= 16;
   }
 }
 

@@ -151,10 +151,10 @@ class Environment {
 
   /// @internal
   /// @brief Returns the underlying environment handle.
-  [[deprecated("Use GetHolder() instead.")]]
-  LiteRtEnvironment Get() const noexcept {
-    return handle_.get();
-  }
+  // [[deprecated("Use GetHolder() instead.")]]
+  // LiteRtEnvironment Get() const noexcept {
+  //   return handle_.get();
+  // }
 
   /// @internal
   /// @brief Returns the underlying environment handle and runtime.
