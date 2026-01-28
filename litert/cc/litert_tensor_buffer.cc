@@ -51,7 +51,7 @@ Expected<TensorBuffer> TensorBuffer::CreateManaged(
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      env.Get(), static_cast<LiteRtTensorBufferType>(buffer_type),
+      env.GetHolder().handle, static_cast<LiteRtTensorBufferType>(buffer_type),
       &litert_tensor_type, buffer_size, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
@@ -98,7 +98,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
 
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromAhwb(
-      env.Get(), &litert_tensor_type, ahwb, ahwb_offset,
+      env.GetHolder().handle, &litert_tensor_type, ahwb, ahwb_offset,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 #else
@@ -115,7 +115,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromOpenClMemory(
-      env.Get(), &litert_tensor_type,
+      env.GetHolder().handle, &litert_tensor_type,
       static_cast<LiteRtTensorBufferType>(buffer_type), cl_memory, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
@@ -131,8 +131,8 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlBuffer(
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlBuffer(
-      env.Get(), &litert_tensor_type, target, id, size_bytes, offset,
-      /*deallocator=*/nullptr, &tensor_buffer));
+      env.GetHolder().handle, &litert_tensor_type, target, id, size_bytes,
+      offset, /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 
@@ -143,8 +143,8 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlTexture(
-      env.Get(), &litert_tensor_type, target, id, format, size_bytes, layer,
-      /*deallocator=*/nullptr, &tensor_buffer));
+      env.GetHolder().handle, &litert_tensor_type, target, id, format,
+      size_bytes, layer, /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 
@@ -155,15 +155,15 @@ Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuBuffer(
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromWebGpuBuffer(
-      env.Get(), &litert_tensor_type,
+      env.GetHolder().handle, &litert_tensor_type,
       static_cast<LiteRtTensorBufferType>(buffer_type), buffer, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuTexture(
-    LiteRtEnvironment env, const RankedTensorType& tensor_type,
-    void* texture, size_t size_bytes) {
+    LiteRtEnvironment env, const RankedTensorType& tensor_type, void* texture,
+    size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromWebGpuTexture(
@@ -180,7 +180,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromMetalBuffer(
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromMetalMemory(
-      env.Get(), &litert_tensor_type,
+      env.GetHolder().handle, &litert_tensor_type,
       static_cast<LiteRtTensorBufferType>(buffer_type), buffer, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
