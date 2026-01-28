@@ -75,11 +75,19 @@ function Ensure-Include {
   return $true
 }
 
+# Verify Bazel version
+Write-Host "Checking Bazel version..."
+& $Bazel --version
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning "Failed to check Bazel version. Exit code: $LASTEXITCODE"
+}
+
 # Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
 Write-Host "Fetching dependencies..."
-& $Bazel fetch --config=windows --repo_env=USE_PYWRAP_RULES=True //ci/tools/python/wheel:litert_wheel
-if ($LASTEXITCODE -ne 0) {
-  throw "Bazel fetch failed with exit code $LASTEXITCODE"
+$FetchArgs = @("fetch", "--config=windows", "--repo_env=USE_PYWRAP_RULES=True", "//ci/tools/python/wheel:litert_wheel")
+$FetchProc = Start-Process -FilePath $Bazel -ArgumentList $FetchArgs -Wait -NoNewWindow -PassThru
+if ($FetchProc.ExitCode -ne 0) {
+  throw "Bazel fetch failed with exit code $($FetchProc.ExitCode)"
 }
 
 Write-Host "Getting Bazel output_base..."
