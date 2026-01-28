@@ -306,35 +306,44 @@ Replace-InFile $ProtoMain '  cli.RegisterGenerator("--rust_out", "--rust_opt", &
 Replace-InFile $ProtoMain '                        "Generate Rust sources.");' '' | Out-Null
 
 Write-Host "Patching HighwayHash..."
-$HighwayHash = Join-Path $OutputBase "external\highwayhash\highwayhash\compiler_specific.h"
+$HighwayHashDir = Join-Path $OutputBase "external\highwayhash\highwayhash"
+if (-not (Test-Path $HighwayHashDir)) {
+  $HighwayHashDir = Join-Path $OutputBase "external\highwayhash"
+}
+
+$HighwayHash = Join-Path $HighwayHashDir "compiler_specific.h"
 $OldAlign = "#if HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
 $NewAlign = "#if HH_MSC_VERSION`n#define HH_ALIGNAS(multiple) __declspec(align(multiple))`n#elif HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
 Replace-InFile $HighwayHash $OldAlign $NewAlign | Out-Null
 
-$HighwayHashDir = Join-Path $OutputBase "external\highwayhash\highwayhash"
 $PostfixPattern = '^(\s*)([^;]*?)\s+HH_ALIGNAS\((\d+)\)\s*([^;]*;\s*)$'
 Write-Host "Patching HighwayHash sources in $HighwayHashDir..."
-Get-ChildItem -Path $HighwayHashDir -Recurse -Include *.h,*.cc | ForEach-Object {
-  $Lines = Get-Content $_.FullName
-  $Changed = $false
-  for ($i = 0; $i -lt $Lines.Count; $i++) {
-    $Line = $Lines[$i]
-    if ($Line -notmatch 'HH_ALIGNAS\(') { continue }
-    if ($Line -match '^\s*HH_ALIGNAS\(') { continue }
-    if ($Line -match '^\s*(//|#)') { continue }
-    if ($Line -match '^\s*(private|public|protected):') { continue }
-    $AlignIndex = $Line.IndexOf('HH_ALIGNAS(')
-    $BraceIndex = $Line.IndexOf('{')
-    if ($BraceIndex -ge 0 -and $BraceIndex -lt $AlignIndex) { continue }
-    $NewLine = $Line -replace $PostfixPattern, '$1HH_ALIGNAS($3) $2$4'
-    if ($NewLine -ne $Line) {
-      $Lines[$i] = $NewLine
-      $Changed = $true
+
+if (Test-Path $HighwayHashDir) {
+  Get-ChildItem -Path $HighwayHashDir -Recurse -Include *.h,*.cc | ForEach-Object {
+    $Lines = Get-Content $_.FullName
+    $Changed = $false
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+      $Line = $Lines[$i]
+      if ($Line -notmatch 'HH_ALIGNAS\(') { continue }
+      if ($Line -match '^\s*HH_ALIGNAS\(') { continue }
+      if ($Line -match '^\s*(//|#)') { continue }
+      if ($Line -match '^\s*(private|public|protected):') { continue }
+      $AlignIndex = $Line.IndexOf('HH_ALIGNAS(')
+      $BraceIndex = $Line.IndexOf('{')
+      if ($BraceIndex -ge 0 -and $BraceIndex -lt $AlignIndex) { continue }
+      $NewLine = $Line -replace $PostfixPattern, '$1HH_ALIGNAS($3) $2$4'
+      if ($NewLine -ne $Line) {
+        $Lines[$i] = $NewLine
+        $Changed = $true
+      }
+    }
+    if ($Changed) {
+      Set-Content -Path $_.FullName -Value $Lines
     }
   }
-  if ($Changed) {
-    Set-Content -Path $_.FullName -Value $Lines
-  }
+} else {
+  Write-Warning "HighwayHash directory not found: $HighwayHashDir"
 }
 
 $BazelArgs = @(
