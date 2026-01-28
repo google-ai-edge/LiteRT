@@ -1,17 +1,19 @@
-# manufacturer,model,android_api_level 15
-Mediatek,MT6897,v8
-Mediatek,MT6895Z_A/TCZA,v8
-Mediatek,MT6985,v8
-Mediatek,MT6989,v8
-Mediatek,MT6983,v8
-Mediatek,MT6895Z/TCZA,v8
-Mediatek,MT6895Z_B/TCZA,v8
-Mediatek,MT6991,v8
-Mediatek,MT6983Z/CZA,v8
-Mediatek,MT6983W/CZA,v8
-Mediatek,MT6895,v8
-Mediatek,MT6983Z/TCZA,v8
-Mediatek,MT6991(ENG),v8
-Mediatek,MT6895Z/CZA,v8
-Mediatek,MT6989(ENG),v8
-Mediatek,MT6985(ENG),v8
+# manufacturer,model,Recommend Version,Compatible Version
+Mediatek,MT6895Z_A/TCZA,v8,"v8, v9"
+Mediatek,MT6895Z/TCZA,v8,"v8, v9"
+Mediatek,MT6895Z_B/TCZA,v8,"v8, v9"
+Mediatek,MT6895,v8,"v8, v9"
+Mediatek,MT6895Z/CZA,v8,"v8, v9"
+Mediatek,MT6897,v8,"v8, v9"
+Mediatek,MT6983,v8,"v8, v9"
+Mediatek,MT6983Z/TCZA,v8,"v8, v9"
+Mediatek,MT6983Z/CZA,v8,"v8, v9"
+Mediatek,MT6983W/CZA,v8,"v8, v9"
+Mediatek,MT6985,v8,"v8, v9"
+Mediatek,MT6989,v8,"v8, v9"
+Mediatek,MT6991,v8,"v8, v9"
+Mediatek,MT6993,v9,v9
+Mediatek,MT8171,v8,v8
+Mediatek,MT8188,v8,v8
+Mediatek,MT8189,v8,v8
+Mediatek,MT8196,v8,"v8, v9"
