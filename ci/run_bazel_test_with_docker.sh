@@ -58,7 +58,7 @@ else
     'N'
     'N'
     'Y'
-    '/usr/lib/llvm-18/bin/clang'
+    '/usr/lib/llvm-19/bin/clang'
     '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
     'N'
   )
