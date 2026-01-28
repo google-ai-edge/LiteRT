@@ -20,6 +20,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Mount Bazel
+        uses: bazelbuild/setup-bazelisk@v3
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
