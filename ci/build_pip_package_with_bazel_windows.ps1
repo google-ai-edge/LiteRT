@@ -36,10 +36,15 @@ if (-not $env:TF_LOCAL_SOURCE_PATH) {
   $env:TF_LOCAL_SOURCE_PATH = Join-Path $RepoRoot "third_party\tensorflow"
 }
 
-$Bazel = if ($env:BAZEL) { $env:BAZEL } else { "C:\BuildTools\bazel.exe" }
-if (-not (Test-Path $Bazel)) {
-  throw "Bazel not found at: $Bazel"
+# Get the first instance found in PATH
+$Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+
+if (-not $Bazel) {
+  throw "Bazel not found in system PATH"
 }
+
+# Optional: Print it so you can see it in your GitHub Action logs
+Write-Host "Using Bazel located at: $Bazel"
 
 function Replace-InFile {
   param (
