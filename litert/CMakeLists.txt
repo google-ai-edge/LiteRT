@@ -209,6 +209,12 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
 
           list(APPEND _tflite_extra_args -DTFLITE_HOST_TOOLS_DIR=${TFLITE_HOST_TOOLS_DIR})
         endif()
+
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+          list(APPEND _tflite_extra_args -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
+          list(APPEND _tflite_extra_args -DTFLITE_HOST_TOOLS_DIR=${TFLITE_HOST_TOOLS_DIR})
+        endif()
+
         execute_process(
             COMMAND ${CMAKE_COMMAND} "${TFLITE_SOURCE_DIR}"
                 -DTFLITE_ENABLE_XNNPACK=ON
