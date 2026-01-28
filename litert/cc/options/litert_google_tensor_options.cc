@@ -92,18 +92,6 @@ absl::string_view GoogleTensorOptions::GetOutputDir() const {
   return absl::string_view(output_dir);
 }
 
-void GoogleTensorOptions::SetDumpOpTimings(bool dump_op_timings) {
-  internal::AssertOk(LiteRtGoogleTensorOptionsSetDumpOpTimings, Data(),
-                     dump_op_timings);
-}
-
-bool GoogleTensorOptions::GetDumpOpTimings() const {
-  LiteRtGoogleTensorOptions options_data = Data();
-  bool dump_op_timings;
-  LiteRtGoogleTensorOptionsGetDumpOpTimings(options_data, &dump_op_timings);
-  return dump_op_timings;
-}
-
 void GoogleTensorOptions::SetEnableLargeModelSupport(
     bool enable_large_model_support) {
   internal::AssertOk(LiteRtGoogleTensorOptionsSetEnableLargeModelSupport,
