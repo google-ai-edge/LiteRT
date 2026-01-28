@@ -22,10 +22,10 @@
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_runtime_builtin.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_runtime_builtin.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment_options.h"

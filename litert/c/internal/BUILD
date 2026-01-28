@@ -292,6 +292,9 @@ cc_test(
 cc_library(
     name = "litert_runtime_c_api",
     hdrs = ["litert_runtime_c_api.h"],
+    visibility = [
+        "//litert/cc/internal:__pkg__",
+    ],
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -308,43 +311,17 @@ cc_library(
         "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
-        "@opencl_headers",
     ],
 )
 
+# Do NOT use this target directly. This should only be used by RuntimeProxy.
 cc_library(
-    name = "litert_runtime_builtin",
-    srcs = ["litert_runtime_builtin.cc"],
-    hdrs = ["litert_runtime_builtin.h"],
-    deps = [
-        ":litert_runtime_c_api",
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
-        "//litert/c:litert_compiled_model",
-        "//litert/c:litert_custom_op_kernel",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_header",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_event",
-        "//litert/c:litert_event_type",
-        "//litert/c:litert_gl_types",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_metrics",
-        "//litert/c:litert_model",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_opaque_options",
-        "//litert/c:litert_options",
-        "//litert/c:litert_profiler",
-        "//litert/c:litert_tensor_buffer",
+    name = "litert_runtime_c_api_runtimecapi",
+    hdrs = ["litert_runtime_c_api.h"],
+    visibility = [
+        "//litert/cc/internal:__pkg__",
     ],
-)
-
-cc_library(
-    name = "litert_runtime_builtin_runtimecapi",
-    srcs = ["litert_runtime_builtin.cc"],
-    hdrs = ["litert_runtime_builtin.h"],
     deps = [
-        ":litert_runtime_c_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )

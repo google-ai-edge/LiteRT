@@ -604,6 +604,51 @@ cc_test(
     ],
 )
 
+# Do not use this target directly. It should only be used by Environment.
+cc_library(
+    name = "litert_runtime_builtin",
+    srcs = ["litert_runtime_builtin.cc"],
+    hdrs = ["litert_runtime_builtin.h"],
+    visibility = [
+        "//litert/cc:__pkg__",
+    ],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
+        "//litert/c:litert_profiler",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c/internal:litert_runtime_c_api",
+    ],
+)
+
+# Do not use this target directly. It should only be used by Environment.
+cc_library(
+    name = "litert_runtime_builtin_runtimecapi",
+    srcs = ["litert_runtime_builtin.cc"],
+    hdrs = ["litert_runtime_builtin.h"],
+    visibility = [
+        "//litert/cc:__subpackages__",
+    ],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_runtime_c_api_runtimecapi",
+    ],
+)
+
 cc_library(
     name = "litert_runtime_proxy",
     hdrs = ["litert_runtime_proxy.h"],
@@ -624,6 +669,17 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_runtime_c_api",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:die_if_null",
+    ],
+)
+
+cc_library(
+    name = "litert_runtime_proxy_runtimecapi",
+    hdrs = ["litert_runtime_proxy.h"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_runtime_c_api_runtimecapi",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:die_if_null",
     ],

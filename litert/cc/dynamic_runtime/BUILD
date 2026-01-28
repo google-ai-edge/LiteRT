@@ -560,13 +560,13 @@ cc_library(
     name = "litert_environment",
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
-        "//litert/c/internal:litert_runtime_builtin_runtimecapi",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
-        "//litert/cc/internal:litert_runtime_proxy",
+        "//litert/cc/internal:litert_runtime_builtin_runtimecapi",
+        "//litert/cc/internal:litert_runtime_proxy_runtimecapi",
         "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,

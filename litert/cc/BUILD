@@ -720,8 +720,8 @@ cc_library_with_testonly_vis(
         ":litert_macros",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
-        "//litert/c/internal:litert_runtime_builtin",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_runtime_builtin",
         "//litert/cc/internal:litert_runtime_proxy",
         "@com_google_absl//absl/types:span",
     ],
@@ -1223,7 +1223,6 @@ cc_library(
         # C++ API targets.
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/functional:any_invocable",
-        "//litert/c/internal:litert_runtime_builtin_runtimecapi",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_custom_op_kernel",
         "//litert/cc/dynamic_runtime:litert_environment",
@@ -1234,6 +1233,7 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_profiler",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc/internal:litert_runtime_builtin_runtimecapi",
         # C++ Common Options API targets.
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
