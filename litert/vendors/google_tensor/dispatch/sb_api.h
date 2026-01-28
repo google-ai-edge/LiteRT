@@ -823,19 +823,7 @@ ThrStatus thrVendorSetSystemAttributeStr(ThrContext* context, const char* key,
 ThrStatus thrVendorSetSystemAttributeInt64(ThrContext* context, const char* key,
                                            int64_t value);
 
-// --------------------------------------------------------------------------
-// Deprecated APIs.
 
-// Retrieves a read-only snapshot of the invocation metrics.
-// WARNING: Deprecated. Use `thrInvocationContextStartMetricsCollection` and
-// `thrInvocationContextStopMetricsCollection` instead.
-ThrStatus thrInvocationContextGetMetrics(ThrInvocationContext* icontext,
-                                         ThrInvocationMetrics* metrics);
-
-// Resets the invocation metrics for the given `ThrInvocationContext`.
-// WARNING: Deprecated. Use `thrInvocationContextStartMetricsCollection` and
-// `thrInvocationContextStopMetricsCollection` instead.
-ThrStatus thrInvocationContextResetMetrics(ThrInvocationContext* icontext);
 
 #ifdef __cplusplus
 }  // extern "C"
