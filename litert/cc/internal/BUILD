@@ -523,7 +523,6 @@ cc_library(
         ":litert_handle",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_compiled_model",
         "//litert/c:litert_metrics",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",

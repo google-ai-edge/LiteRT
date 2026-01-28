@@ -26,9 +26,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -66,9 +64,8 @@ Expected<size_t> CompiledModel::FindOutputIndex(
 Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
     const Environment& env, const TensorBufferRequirements& buffer_requirements,
     const RankedTensorType& tensor_type) {
-  LITERT_ASSIGN_OR_RETURN(
-      const std::vector<TensorBufferType>& supported_types,
-      buffer_requirements.SupportedTypes());
+  LITERT_ASSIGN_OR_RETURN(const std::vector<TensorBufferType>& supported_types,
+                          buffer_requirements.SupportedTypes());
   if (supported_types.empty()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Input doesn't support any tensor buffer types");
@@ -98,8 +95,8 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
     LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
                             FindInputIndex(signature_index, tensor_name));
     LiteRtLayout input_layout;
-    if (LiteRtGetCompiledModelInputTensorLayout(Get(), signature_index,
-                                                tensor_index, &input_layout) ==
+    if (env_.runtime->GetCompiledModelInputTensorLayout(
+            Get(), signature_index, tensor_index, &input_layout) ==
         kLiteRtStatusOk) {
       Layout runtime_layout(input_layout);
       tensor_type = RankedTensorType(tensor_type.ElementType(),
@@ -150,12 +147,12 @@ Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
                                             LiteRtTensorBuffer* output_buffers,
                                             bool& async) const {
   LiteRtStatus status =
-      async ? LiteRtRunCompiledModelAsync(
+      async ? env_.runtime->RunCompiledModelAsync(
                   Get(), signature_index, num_input_buffers, input_buffers,
                   num_output_buffers, output_buffers, &async)
-            : LiteRtRunCompiledModel(Get(), signature_index, num_input_buffers,
-                                     input_buffers, num_output_buffers,
-                                     output_buffers);
+            : env_.runtime->RunCompiledModel(
+                  Get(), signature_index, num_input_buffers, input_buffers,
+                  num_output_buffers, output_buffers);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to invoke the compiled model");
   }
@@ -232,7 +229,7 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
 Expected<bool> CompiledModel::IsFullyAccelerated() {
   bool fully_accelerated = false;
   LITERT_RETURN_IF_ERROR(
-      LiteRtCompiledModelIsFullyAccelerated(Get(), &fully_accelerated));
+      env_.runtime->CompiledModelIsFullyAccelerated(Get(), &fully_accelerated));
   return fully_accelerated;
 }
 
@@ -247,8 +244,8 @@ bool CompiledModel::CheckCancelledWrapper(void* data) {
 void CompiledModel::SetCancellationFunction(
     absl::AnyInvocable<bool()> check_cancelled_func) {
   check_cancelled_func_ = std::move(check_cancelled_func);
-  LiteRtSetCompiledModelCancellationFunction(Get(), this,
-                                             &CheckCancelledWrapper);
+  env_.runtime->SetCompiledModelCancellationFunction(Get(), this,
+                                                     &CheckCancelledWrapper);
 }
 
 }  // namespace litert
