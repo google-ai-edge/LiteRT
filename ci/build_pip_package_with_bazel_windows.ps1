@@ -46,6 +46,35 @@ if (-not $Bazel) {
 # Optional: Print it so you can see it in your GitHub Action logs
 Write-Host "Using Bazel located at: $Bazel"
 
+function Get-Bazel-Info {
+  param (
+    [string]$Key
+  )
+  Write-Host "Getting Bazel info: $Key..."
+  $ProcInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $ProcInfo.FileName = $Bazel
+  $ProcInfo.Arguments = "info $Key"
+  $ProcInfo.RedirectStandardOutput = $true
+  $ProcInfo.RedirectStandardError = $true
+  $ProcInfo.UseShellExecute = $false
+  $ProcInfo.CreateNoWindow = $true
+
+  $Proc = New-Object System.Diagnostics.Process
+  $Proc.StartInfo = $ProcInfo
+  $Proc.Start() | Out-Null
+  $Stdout = $Proc.StandardOutput.ReadToEnd()
+  $Stderr = $Proc.StandardError.ReadToEnd()
+  $Proc.WaitForExit()
+
+  if ($Proc.ExitCode -ne 0) {
+    throw "Bazel info $Key failed. Exit Code: $($Proc.ExitCode). Stderr: $Stderr"
+  }
+  if (-not $Stdout) {
+    throw "Bazel info $Key returned empty output."
+  }
+  return $Stdout.Trim()
+}
+
 function Replace-InFile {
   param (
     [string]$Path,
@@ -90,20 +119,11 @@ if ($FetchProc.ExitCode -ne 0) {
   throw "Bazel fetch failed with exit code $($FetchProc.ExitCode)"
 }
 
-Write-Host "Getting Bazel output_base..."
-$OutputBase = & $Bazel info output_base
-if ($LASTEXITCODE -ne 0) {
-  throw "Failed to get Bazel output_base. Exit code: $LASTEXITCODE"
-}
-if (-not $OutputBase) {
-  throw "Failed to get Bazel output_base (empty output)"
-}
-$OutputBase = $OutputBase.Trim()
+$OutputBase = Get-Bazel-Info "output_base"
 Write-Host "Bazel output_base: $OutputBase"
 
-$ExecRoot = & $Bazel info execution_root
+$ExecRoot = Get-Bazel-Info "execution_root"
 if ($ExecRoot) {
-  $ExecRoot = $ExecRoot.Trim()
   $ExecBazelOut = Join-Path $ExecRoot "bazel-out"
   $WorkspaceBazelOut = Join-Path $RepoRoot "bazel-out"
   if (Test-Path $WorkspaceBazelOut) {
