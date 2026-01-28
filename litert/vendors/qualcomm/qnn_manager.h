@@ -183,7 +183,7 @@ class QnnManager {
   const QnnSystemInterface_t* system_interface_ = nullptr;
 
   std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
+  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   ::qnn::Options options_;
 };
 
