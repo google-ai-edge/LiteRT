@@ -403,6 +403,7 @@ cc_library(
     deps = [
         "@org_tensorflow//tensorflow/core:portable_gif_internal",
         "@org_tensorflow//tensorflow/core:portable_jpeg_internal",
+        "@org_tensorflow//tensorflow/core/lib/jxl:jxl_io",
         "@org_tensorflow//tensorflow/core/lib/png:png_io",
         "@org_tensorflow//tensorflow/core/lib/webp:webp_io",
     ],
