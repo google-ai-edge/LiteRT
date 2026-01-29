@@ -21,8 +21,10 @@ std::vector<OpWrapper> BuildQuantizeOp(
   const char* qnn_op = nullptr;
   if (inputs[0].get().IsPerTensorQuantWithOffsetDiff(outputs[0].get())) {
     qnn_op = QNN_OP_CAST;
-  } else if ((inputs[0].get().IsQuant8() || inputs[0].get().IsQuant16()) &&
-             (outputs[0].get().IsQuant8() || outputs[0].get().IsQuant16())) {
+  } else if ((inputs[0].get().IsQuantI8() || inputs[0].get().IsQuantU8() ||
+              inputs[0].get().IsQuantI16() || inputs[0].get().IsQuantU16()) &&
+             (outputs[0].get().IsQuantI8() || outputs[0].get().IsQuantU8() ||
+              outputs[0].get().IsQuantI16() || outputs[0].get().IsQuantU16())) {
     qnn_op = QNN_OP_CONVERT;
   } else {
     qnn_op = QNN_OP_QUANTIZE;

@@ -57,8 +57,8 @@ std::vector<OpWrapper> BuildRmsNormOp(
     TensorWrapper& beta_tensor = tensor_pool.CreateStaticTensor(
         inputs[kGammaIndex].get().GetDataType(),
         inputs[kGammaIndex].get().GetQuantParams(),
-        inputs[kGammaIndex].get().GetDims(), sizeof(float) * beta_data.size(),
-        beta_data.data());
+        inputs[kGammaIndex].get().GetDimensions(),
+        sizeof(float) * beta_data.size(), beta_data.data());
     rms_norm_op.AddInputTensor(beta_tensor);
   } else {
     // Construct uint8_t beta static all 0 tensor.
@@ -70,8 +70,8 @@ std::vector<OpWrapper> BuildRmsNormOp(
 
     TensorWrapper& beta_tensor = tensor_pool.CreateStaticTensor(
         QNN_DATATYPE_UFIXED_POINT_8, q_param,
-        inputs[kGammaIndex].get().GetDims(), sizeof(uint8_t) * beta_data.size(),
-        beta_data.data());
+        inputs[kGammaIndex].get().GetDimensions(),
+        sizeof(uint8_t) * beta_data.size(), beta_data.data());
     rms_norm_op.AddInputTensor(beta_tensor);
   }
 

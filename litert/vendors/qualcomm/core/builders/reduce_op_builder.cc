@@ -42,7 +42,7 @@ std::vector<OpWrapper> BuildReduceOp(
     return {};
   }
   std::vector<std::uint32_t> adjusted_axis_data;
-  for (size_t i = 0; i < axis_tensor.GetDim(0); ++i) {
+  for (size_t i = 0; i < axis_tensor.GetDimension(0); ++i) {
     std::uint32_t adjusted_axis =
         (*axis_data)[i] >= 0 ? (*axis_data)[i]
                              : (*axis_data)[i] + input_tensor.GetRank();
@@ -105,10 +105,10 @@ std::vector<OpWrapper> BuildReduceAnyOp(
 
   auto& reduce_max_input = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_UFIXED_POINT_8, QuantizeParamsWrapperVariant{},
-      inputs[0].get().GetDims());
+      inputs[0].get().GetDimensions());
   auto& reduce_max_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_UFIXED_POINT_8, QuantizeParamsWrapperVariant{},
-      outputs[0].get().GetDims());
+      outputs[0].get().GetDimensions());
 
   auto& cast_to_uint8_op = CreateOpWrapper(res, QNN_OP_CAST);
   cast_to_uint8_op.AddInputTensor(inputs[0]);
@@ -134,10 +134,10 @@ std::vector<OpWrapper> BuildReduceAllOp(
 
   auto& reduce_min_input = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_UFIXED_POINT_8, QuantizeParamsWrapperVariant{},
-      inputs[0].get().GetDims());
+      inputs[0].get().GetDimensions());
   auto& reduce_min_output = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_UFIXED_POINT_8, QuantizeParamsWrapperVariant{},
-      outputs[0].get().GetDims());
+      outputs[0].get().GetDimensions());
 
   auto& cast_to_uint8_op = CreateOpWrapper(res, QNN_OP_CAST);
   cast_to_uint8_op.AddInputTensor(inputs[0]);
