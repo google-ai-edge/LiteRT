@@ -44,7 +44,7 @@ jobs:
           $env:TF_NEED_ROCM = 0
           $env:TF_NEED_CUDA = 0
           $env:TF_SET_ANDROID_WORKSPACE = 0
-          $env:CC_OPT_FLAGS = '-Wno-sign-compare'
+          $env:CC_OPT_FLAGS = ''
           python configure.py
 
       - name: Build LiteRT wheel for Windows
