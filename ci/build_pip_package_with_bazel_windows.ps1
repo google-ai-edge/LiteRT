@@ -167,7 +167,7 @@ if ($ExecRoot) {
 Write-Host "Deep patching external repositories for incompatible flags..."
 $ExternalDir = Join-Path $OutputBase "external"
 if (Test-Path $ExternalDir) {
-  Get-ChildItem -Path $ExternalDir -Include "*.bazel","*.bzl","*.rc","BUILD*" -Recurse | ForEach-Object {
+  Get-ChildItem -Path $ExternalDir -Include "*.bazel","*.bzl","*.rc","BUILD*" -Recurse | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
     Replace-InFile $_.FullName "-Wno-sign-compare" "" | Out-Null
   }
 }
