@@ -512,7 +512,7 @@ cc_test(
     deps = [
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
