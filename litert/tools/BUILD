@@ -37,6 +37,7 @@ cc_library(
         ":dump_runtimecapi",
         ":outstream",
         ":tool_display",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_serialize",
