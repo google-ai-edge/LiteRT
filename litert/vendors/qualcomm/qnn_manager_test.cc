@@ -74,7 +74,6 @@ TEST(QnnManagerTest, GetSdkVersion) {
   EXPECT_NE(sdk_version, kInitSdkVersion);
 }
 
-// Test fixture for SdkVersion tests
 class SdkVersionTest : public ::testing::Test {
  protected:
   const SdkVersion v1_0_0{1, 0, 0};
@@ -83,9 +82,8 @@ class SdkVersionTest : public ::testing::Test {
   const SdkVersion v2_0_0{2, 0, 0};
 };
 
-// Test case for equality (==) and inequality (!=) operators
 TEST_F(SdkVersionTest, HandlesEquality) {
-  const SdkVersion v1_0_0_copy = v1_0_0;
+  SdkVersion v1_0_0_copy = v1_0_0;
   EXPECT_EQ(v1_0_0, v1_0_0_copy);
   EXPECT_NE(v1_0_0, v1_0_1);
   EXPECT_NE(v1_0_0, v1_1_0);
@@ -98,7 +96,6 @@ TEST_F(SdkVersionTest, HandlesEquality) {
   EXPECT_FALSE(v1_0_0 != v1_0_0_copy);
 }
 
-// Test case for the less than (<) operator
 TEST_F(SdkVersionTest, HandlesLessThan) {
   EXPECT_LT(v1_0_0, v1_0_1);
   EXPECT_LT(v1_0_1, v1_1_0);
@@ -107,7 +104,6 @@ TEST_F(SdkVersionTest, HandlesLessThan) {
   EXPECT_FALSE(v1_0_1 < v1_0_0);
 }
 
-// Test case for the greater than (>) operator
 TEST_F(SdkVersionTest, HandlesGreaterThan) {
   EXPECT_GT(v1_0_1, v1_0_0);
   EXPECT_GT(v1_1_0, v1_0_1);
@@ -116,9 +112,8 @@ TEST_F(SdkVersionTest, HandlesGreaterThan) {
   EXPECT_FALSE(v1_0_0 > v1_0_1);
 }
 
-// Test case for the less than or equal to (<=) operator
 TEST_F(SdkVersionTest, HandlesLessThanOrEqual) {
-  const SdkVersion v1_0_0_copy = v1_0_0;
+  SdkVersion v1_0_0_copy = v1_0_0;
   EXPECT_LE(v1_0_0, v1_0_0_copy);
   EXPECT_LE(v1_0_0, v1_0_1);
   EXPECT_LE(v1_0_1, v1_1_0);
@@ -126,9 +121,8 @@ TEST_F(SdkVersionTest, HandlesLessThanOrEqual) {
   EXPECT_FALSE(v1_0_1 <= v1_0_0);
 }
 
-// Test case for the greater than or equal to (>=) operator
 TEST_F(SdkVersionTest, HandlesGreaterThanOrEqual) {
-  const SdkVersion v1_0_0_copy = v1_0_0;
+  SdkVersion v1_0_0_copy = v1_0_0;
   EXPECT_GE(v1_0_0, v1_0_0_copy);
   EXPECT_GE(v1_0_1, v1_0_0);
   EXPECT_GE(v1_1_0, v1_0_1);
