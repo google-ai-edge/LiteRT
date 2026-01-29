@@ -192,6 +192,10 @@ $ProtoFullMessage = Join-Path $OutputBase "external\com_google_protobuf\src\goog
 Write-Host "Patching full/message.cc..."
 Replace-InFile $ProtoFullMessage '#include "google/protobuf/compiler/java/message_serialization.h"' '#include "../message_serialization.h"' | Out-Null
 
+$ProtoJavaFeatures = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\java_features.pb.cc"
+Write-Host "Patching java_features.pb.cc..."
+Replace-InFile $ProtoJavaFeatures '#include "google/protobuf/compiler/java/java_features.pb.h"' '#include "java_features.pb.h"' | Out-Null
+
 $ProtoJavaBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\BUILD.bazel"
 Write-Host "Patching compiler/java/BUILD.bazel..."
 if (Test-Path $ProtoJavaBuild) {
