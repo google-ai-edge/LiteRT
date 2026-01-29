@@ -1425,8 +1425,6 @@ def main():
         'At most 1 GPU platform can be configured.'
     )
 
-  print('DEBUG: is_windows() =', is_windows())
-  print('DEBUG: CC_OPT_FLAGS =', environ_cp.get('CC_OPT_FLAGS'))
   set_cc_opt_flags(environ_cp)
   set_system_libs_flag(environ_cp)
   if is_windows():

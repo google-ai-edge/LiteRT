@@ -162,6 +162,15 @@ if ($ExecRoot) {
   }
 }
 
+# Deep patch external repositories to remove incompatible flags that might be hardcoded.
+Write-Host "Deep patching external repositories for incompatible flags..."
+$ExternalDir = Join-Path $OutputBase "external"
+if (Test-Path $ExternalDir) {
+  Get-ChildItem -Path $ExternalDir -Include "*.bazel","*.bzl","*.rc","BUILD*" -Recurse | ForEach-Object {
+    Replace-InFile $_.FullName "-Wno-sign-compare" "" | Out-Null
+  }
+}
+
 $LocalXlaTsl = Join-Path $OutputBase "external\local_xla\xla\tsl\tsl.bzl"
 Write-Host "Patching tsl.bzl..."
 Replace-InFile $LocalXlaTsl 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = False),' 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = True),' | Out-Null
@@ -367,16 +376,13 @@ if (Test-Path $HighwayHashDir) {
 }
 
 $BazelArgs = @(
-  'build',
-  '-c',
-  'opt',
-  '--config=windows',
-  '--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1',
-  '--copt=-mavx2',
-  '--copt=-mfma',
-  '--copt=-mf16c',
-  '--repo_env=USE_PYWRAP_RULES=True',
-  '--define=protobuf_allow_msvc=true'
+  "build",
+  "-c",
+  "opt",
+  "--config=windows",
+  "--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1",
+  "--repo_env=USE_PYWRAP_RULES=True",
+  "--define=protobuf_allow_msvc=true"
 )
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(" ") }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
