@@ -36,6 +36,11 @@ function setup_context() {
   for a in ${in_flags[@]}; do
     if [[ $a == "--dry_run"* ]]; then
       dry_run="true"
+    elif [[ $a == "--models="* ]]; then
+      local m_path="${a#*=}"
+      compile_args+=("--extra_models=${m_path}")
+      compile_args+=("--do_register='ExtraModel'")
+      has_user_models="true"
     else
       compile_args+=("${a}")
     fi
@@ -70,13 +75,15 @@ function setup_context() {
     fi
   done
 
-  local input_models=($(get_provided_models))
-  if [[ $? -ne 0 ]]; then
-    fatal "Failed to get provided models."
-  fi
+  if [[ -z "${has_user_models}" ]]; then
+    local input_models=($(get_provided_models))
+    if [[ $? -ne 0 ]]; then
+      fatal "Failed to get provided models."
+    fi
 
-  if [[ -n "${input_models[*]}" ]]; then
-    compile_args+=("--extra_models=$(str_join "," ${input_models[@]})")
+    if [[ -n "${input_models[*]}" ]]; then
+      compile_args+=("--extra_models=$(str_join "," ${input_models[@]})")
+    fi
   fi
 }
 
