@@ -36,8 +36,11 @@ if (-not $env:TF_LOCAL_SOURCE_PATH) {
   $env:TF_LOCAL_SOURCE_PATH = Join-Path $RepoRoot "third_party\tensorflow"
 }
 
-# Get the first instance found in PATH
-$Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+# Get the first instance found in PATH. Prefer bazel.exe (Windows executable).
+$Bazel = (Get-Command bazel.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+if (-not $Bazel) {
+  $Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+}
 
 if (-not $Bazel) {
   throw "Bazel not found in system PATH"
