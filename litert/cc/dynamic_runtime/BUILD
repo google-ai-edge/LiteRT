@@ -560,8 +560,8 @@ cc_library(
     name = "litert_environment",
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
+        ":litert_environment_options",
         "//litert/cc:litert_any",
-        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
