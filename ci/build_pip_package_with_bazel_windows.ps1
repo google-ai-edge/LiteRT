@@ -123,6 +123,13 @@ function Ensure-Include {
   return $true
 }
 
+# Remove incompatible flags from .litert_configure.bazelrc if present
+$ConfigureBazelrc = Join-Path $RepoRoot ".litert_configure.bazelrc"
+if (Test-Path $ConfigureBazelrc) {
+  Write-Host "Checking for incompatible flags in $ConfigureBazelrc..."
+  Replace-InFile $ConfigureBazelrc '-Wno-sign-compare' '' | Out-Null
+}
+
 # Verify Bazel version
 Write-Host "Checking Bazel version..."
 & $Bazel --version
