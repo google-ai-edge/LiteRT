@@ -1327,9 +1327,8 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
       g2g_option, graph_op_wrappers, tensor_pool,
       [api = qnn.Api(), backend = qnn.BackendHandle(),
        sdk_version = qnn.GetSdkVersion()](::qnn::OpWrapper& op) -> bool {
-        // TODO(jiunkaiy): Remove version check and break
-        // backward compatibility when
-        // acceptable.
+        // TODO(jiunkaiy): Remove version check and break backward compatibility
+        // when acceptable.
         if (SdkVersion{2, 35, 0} <= sdk_version &&
             sdk_version < SdkVersion{2, 37, 0} &&
             op.IsOpCode(::qnn::QnnOpCode::kSplit)) {
