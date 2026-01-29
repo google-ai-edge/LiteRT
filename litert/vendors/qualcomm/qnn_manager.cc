@@ -442,8 +442,6 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   // Get QNN bcore api version.
   const char* build_id;
   Api()->backendGetBuildId(&build_id);
-      LITERT_LOG(LITERT_ERROR, "Unsupported backend type: %s",
-                 build_id);
   LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
   return kLiteRtStatusOk;
 }
