@@ -87,22 +87,3 @@ LiteRtStatus LiteRtGetRuntimeOptionsErrorReporterMode(
   *error_reporter_mode = options->error_reporter_mode;
   return kLiteRtStatusOk;
 }
-
-LiteRtStatus LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
-    LiteRtRuntimeOptions options, bool compress_zero_points) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  options->compress_quantization_zero_points = compress_zero_points;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
-    LiteRtRuntimeOptions options, bool* compress_zero_points) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(compress_zero_points,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "compress_zero_points is null.";
-  *compress_zero_points = options->compress_quantization_zero_points;
-  return kLiteRtStatusOk;
-}

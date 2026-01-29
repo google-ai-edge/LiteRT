@@ -66,15 +66,6 @@ LiteRtStatus LiteRtSetRuntimeOptionsErrorReporterMode(
 LiteRtStatus LiteRtGetRuntimeOptionsErrorReporterMode(
     LiteRtRuntimeOptions options, LiteRtErrorReporterMode* error_reporter_mode);
 
-// Sets whether to compress per-channel quantization zero-points when all
-// zero-points are identical.
-LiteRtStatus LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
-    LiteRtRuntimeOptions options, bool compress_zero_points);
-
-// Gets whether per-channel quantization zero-points compression is enabled.
-LiteRtStatus LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
-    LiteRtRuntimeOptions options, bool* compress_zero_points);
-
 #ifdef __cplusplus
 }  // extern "C"
 #endif

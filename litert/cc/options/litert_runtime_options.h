@@ -37,8 +37,6 @@ class RuntimeOptions : public OpaqueOptions {
   Expected<void> SetErrorReporterMode(
       LiteRtErrorReporterMode error_reporter_mode);
   Expected<LiteRtErrorReporterMode> GetErrorReporterMode() const;
-  Expected<void> SetCompressQuantizationZeroPoints(bool compress_zero_points);
-  Expected<bool> GetCompressQuantizationZeroPoints() const;
 };
 
 }  // namespace litert

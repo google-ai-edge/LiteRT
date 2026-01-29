@@ -221,8 +221,6 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
             opaque_options, LiteRtRuntimeOptionsT::Identifier());
         runtime_options) {
       interpreter_options.SetShloCompositeInlining(true);
-      interpreter_options.SetCompressQuantizationZeroPoints(
-          (*runtime_options)->compress_quantization_zero_points);
       if ((*runtime_options)->enable_profiling) {
         profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
       }
