@@ -39,6 +39,30 @@ target_link_libraries(litert_tool_display
         absl::statusor
 )
 
+# LiteRT tensor_utils
+add_library(litert_tensor_utils STATIC
+    tensor_utils.cc
+)
+
+target_include_directories(litert_tensor_utils
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
+        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(litert_tensor_utils
+    PRIVATE
+        absl::log
+        absl::log_internal_message
+        absl::span
+        absl::string_view
+        litert_cc_api
+)
+
+
 # LiteRT Dump
 add_library(litert_dump STATIC
     dump.cc
@@ -107,6 +131,7 @@ target_link_libraries(litert_npu_numerics_check
         absl::strings
         absl::status
         absl::statusor
+        litert_tensor_utils
 )
 
 # Add flags
@@ -162,6 +187,7 @@ if(ANDROID OR APPLE)
             tensorflow-lite
             ${ABSEIL_TOOL_LIBS}
             Threads::Threads
+            litert_tensor_utils
     )
 else()
     target_link_libraries(run_model
@@ -178,6 +204,7 @@ else()
             ${LITERT_TOOL_COMMON_LIBS}
             "-Wl,--end-group"
             ${CMAKE_DL_LIBS}
+            litert_tensor_utils
     )
 endif()
 
