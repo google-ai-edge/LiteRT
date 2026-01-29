@@ -28,6 +28,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set USE_BAZEL_VERSION
+        shell: bash
+        run: |
+          if [ -f .bazelversion ]; then
+            echo "USE_BAZEL_VERSION=$(cat .bazelversion)" >> $GITHUB_ENV
+          elif [ -f bazelversion ]; then
+            echo "USE_BAZEL_VERSION=$(cat bazelversion)" >> $GITHUB_ENV
+          fi
+
       - name: Configure tensorflow & python path
         run: |
           $env:PYTHON_BIN_PATH = (Get-Command python).Source

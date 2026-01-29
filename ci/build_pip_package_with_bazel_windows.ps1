@@ -36,11 +36,8 @@ if (-not $env:TF_LOCAL_SOURCE_PATH) {
   $env:TF_LOCAL_SOURCE_PATH = Join-Path $RepoRoot "third_party\tensorflow"
 }
 
-# Get the first instance found in PATH. Prefer bazel.exe (Windows executable).
-$Bazel = (Get-Command bazel.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
-if (-not $Bazel) {
-  $Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
-}
+# Get the first instance found in PATH.
+$Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
 
 if (-not $Bazel) {
   throw "Bazel not found in system PATH"
@@ -48,6 +45,12 @@ if (-not $Bazel) {
 
 if ($Bazel -notmatch '\.exe$') {
   if (Test-Path "$Bazel.exe") {
+    $Bazel = "$Bazel.exe"
+  } elseif (Test-Path $Bazel) {
+    # GitHub Actions hosted toolcache might provide 'bazel' without extension on Windows.
+    # We copy it to .exe to ensure it's executable by PowerShell.
+    Write-Host "Bazel found at $Bazel but lacks extension. Creating .exe wrapper..."
+    Copy-Item -Path $Bazel -Destination "$Bazel.exe" -Force
     $Bazel = "$Bazel.exe"
   }
 }
