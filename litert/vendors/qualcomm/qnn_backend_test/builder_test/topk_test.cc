@@ -1,65 +1,53 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include <vector>
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/vendors/qualcomm/core/builders/topk_op_builder.h"
-#include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
+
+#include <array>
+#include <vector>
+
 #include "QnnTypes.h"  // from @qairt
+#include "litert/vendors/qualcomm/core/builders/topk_op_builder.h"
+#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
 
 using testing::ElementsAre;
 using testing::FloatNear;
 using testing::Pointwise;
 namespace litert::qnn {
 namespace {
-// TODO (chunhsue-qti): The following param tests will be exactly the same when
-// running on arm64 device since qnn manager will use online SoC info
-// automatically. Maybe we can find out a way to skip them.
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
 
-TEST_P(QnnModelTest, SingleTopK) {
-  const std::vector<std::uint32_t> inputDims{1, 5};
-  const uint32_t k_value = 3;
-  const std::vector<std::uint32_t> outputDims{1, 3};
+// QNN ScatterNd:
+//  in[0] input: [1, 64, 4, 64]
+//  in[1] indices: [1, 1, 2] -> data: [[[0, x]]]
+//  in[2] updates: [1, 1, 4, 64]
+TEST_P(QnnModelTest, ScatterNd) {
+  auto input_quant = ::qnn::ScaleOffsetQuantizeParamsWrapper(1e-4, 0);
 
   auto& input_tensor = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_FLOAT_32, {}, inputDims, "");
-  auto& values_tensor = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_FLOAT_32, {}, outputDims, "");
-  auto& indices_tensor = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_UINT_32, {}, outputDims, "");
+      QNN_DATATYPE_SFIXED_POINT_8, input_quant, {1, 64, 4, 64}, "");
+  auto& indices_tensor = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_INT_32, {}, {1, 1, 2}, "");
+  auto& updates_tensor = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_8, input_quant, {1, 1, 4, 64}, "");
 
-  auto ops = ::qnn::BuildTopKOp(tensor_pool_, {input_tensor},
-                                {values_tensor, indices_tensor}, k_value);
-  ASSERT_FALSE(ops.empty());
+  auto& output_tensor = tensor_pool_.CreateOutpuTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_8, input_quant, {1, 64, 4, 64}, "");
 
-  qnn_model_.MoveOpsToGraph(std::move(ops));
+  std::vector<::qnn::OpWrapper> res;
+  ::qnn::OpWrapper& scatter_nd_op = CreateOpWrapper(res, QNN_OP_SCATTER_ND);
+
+  scatter_nd_op.AddInputTensor(input_tensor);
+  scatter_nd_op.AddInputTensor(indices_tensor);
+  scatter_nd_op.AddInputTensor(updates_tensor);
+
+  scatter_nd_op.AddOutputTensor(output_tensor);
+
+  qnn_model_.MoveOpsToGraph(std::move(res));
   ASSERT_TRUE(qnn_model_.Finalize());
-
-#if !defined(__ANDROID__)
-  GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
-                  "Qualcomm HTP";
-#endif
-
-  auto input_idx = qnn_model_.AddInputTensor(input_tensor);
-  auto values_idx = qnn_model_.AddOutputTensor(values_tensor);
-  auto indices_idx = qnn_model_.AddOutputTensor(indices_tensor);
-
-  qnn_model_.SetInputData<float>(input_idx, {1.2f, 5.6f, 3.3f, 9.8f, 2.1f});
-  ASSERT_TRUE(qnn_model_.Execute());
-  auto values_data = qnn_model_.GetOutputData<float>(values_idx);
-  auto indices_data = qnn_model_.GetOutputData<std::uint32_t>(indices_idx);
-
-  ASSERT_TRUE(values_data);
-  ASSERT_TRUE(indices_data);
-  ASSERT_EQ(values_data->size(), 3);
-  ASSERT_EQ(indices_data->size(), 3);
-  ASSERT_THAT(values_data.value(),
-              Pointwise(FloatNear(1e-2), {9.8f, 5.6f, 3.3f}));
-  ASSERT_THAT(indices_data.value(), ElementsAre(3, 1, 2));
 }
 
 }  // namespace
