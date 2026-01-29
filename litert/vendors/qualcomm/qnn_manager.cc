@@ -324,16 +324,16 @@ LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
   // TODO(jiunkaiy): Remove version check and break backward compatibility when
   // acceptable.
   const auto sdk_version = GetSdkVersion();
-  if (SdkVersion{2, 35, 0} < sdk_version &&
-      sdk_version <= SdkVersion{2, 37, 0} &&
+  if (SdkVersion{2, 35, 0} <= sdk_version &&
+      sdk_version < SdkVersion{2, 37, 0} &&
       absl::StrContains(op_config.v1.name, "RmsNorm")) {
     LITERT_LOG(LITERT_WARNING,
                "SDK version is in [2.35.0, 2.37.0); RmsNorm OP validation is "
                "bypassed.");
     return kLiteRtStatusOk;
   }
-  if (SdkVersion{2, 39, 0} < sdk_version &&
-      sdk_version <= SdkVersion{2, 43, 0} &&
+  if (SdkVersion{2, 39, 0} <= sdk_version &&
+      sdk_version < SdkVersion{2, 43, 0} &&
       absl::StrContains(op_config.v1.name, "L2Norm")) {
     LITERT_LOG(LITERT_WARNING,
                "SDK version is in [2.39.0, 2.43.0); L2Norm OP validation is "

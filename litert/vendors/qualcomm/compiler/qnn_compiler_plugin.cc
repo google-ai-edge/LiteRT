@@ -327,8 +327,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     const auto sdk_version = qnn_manager->GetSdkVersion();
     using ::litert::qnn::SdkVersion;
     const bool is_skipped =
-        (SdkVersion{2, 35, 0} < sdk_version &&
-         sdk_version <= SdkVersion{2, 38, 0} && SkipValidationOfQuantizeOp(op));
+        (SdkVersion{2, 35, 0} <= sdk_version &&
+         sdk_version < SdkVersion{2, 38, 0} && SkipValidationOfQuantizeOp(op));
     if (is_skipped) {
       LITERT_LOG(
           LITERT_WARNING,
