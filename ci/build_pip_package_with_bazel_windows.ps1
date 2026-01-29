@@ -102,6 +102,7 @@ function Replace-InFile {
   )
   if (-not (Test-Path $Path)) { return $false }
   $Text = Get-Content $Path -Raw
+  if (-not $Text) { return $false }
   if (-not $Text.Contains($Old)) { return $false }
   $Text = $Text.Replace($Old, $New)
   Set-Content -Path $Path -Value $Text
