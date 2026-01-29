@@ -95,6 +95,7 @@
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -1322,12 +1323,24 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   }
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
-  GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
-                        [api = qnn.Api(), backend = qnn.BackendHandle()](
-                            ::qnn::OpWrapper& op) -> bool {
-                          return QNN_SUCCESS == api->backendValidateOpConfig(
-                                                    backend, op.GetOpConfig());
-                        });
+  GraphToGraphTransform(
+      g2g_option, graph_op_wrappers, tensor_pool,
+      [api = qnn.Api(), backend = qnn.BackendHandle(),
+       sdk_version = qnn.GetSdkVersion()](::qnn::OpWrapper& op) -> bool {
+        // TODO(jiunkaiy): Remove version check and break backward compatibility
+        // when acceptable.
+        if (SdkVersion{2, 35, 0} <= sdk_version &&
+            sdk_version < SdkVersion{2, 37, 0} &&
+            op.IsOpCode(::qnn::QnnOpCode::kSplit)) {
+          LITERT_LOG(LITERT_WARNING,
+                     "SDK version is in [2.35.0, 2.37.0); "
+                     "Split OP validation is "
+                     "bypassed.");
+          return true;
+        }
+        return QNN_SUCCESS ==
+               api->backendValidateOpConfig(backend, op.GetOpConfig());
+      });
 
   // Create ops and their corresponding tensors.
   for (auto& op_wrapper : graph_op_wrappers) {

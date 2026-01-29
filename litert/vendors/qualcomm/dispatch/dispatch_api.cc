@@ -298,6 +298,19 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
+  // Check LiteRt API version for backward compatibility.
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  if (LiteRtCompareApiVersion(api_version, kApiVersion) > 0) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "Incompatible dispatch version. Found LiteRT API version %d.%d.%d, "
+        "but version <= %d.%d.%d is required.",
+        api_version.major, api_version.minor, api_version.patch,
+        kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
   return kLiteRtStatusOk;
 }
 
