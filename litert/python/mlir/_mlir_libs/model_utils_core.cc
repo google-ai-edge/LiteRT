@@ -19,9 +19,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "llvm/ADT/StringRef.h"
 #include "llvm/FileCheck/FileCheck.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/Conversion/Passes.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -32,6 +34,7 @@
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/Passes.h"
 #include "stablehlo/dialect/Register.h"
@@ -39,19 +42,25 @@
 #include "stablehlo/dialect/VhloOps.h"
 #include "stablehlo/transforms/Passes.h"
 #include "stablehlo/transforms/optimization/Passes.h"
+#include "tflite/converter/common/tfl_pass_config.h"
+#include "tflite/converter/converter_flags.pb.h"
 #include "tflite/converter/flatbuffer_export.h"
 #include "tflite/converter/flatbuffer_import.h"
 #include "tflite/converter/ir/tfl_ops.h"
+#include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
 #include "tflite/converter/quantization/ir/QuantOps.h"
 #include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
+#include "tflite/converter/tf_tfl_passes.h"
 #include "tflite/converter/transforms/optimize_pass.h"
 #include "tflite/converter/transforms/passes.h"
+#include "xla/mlir_hlo/mhlo/IR/register.h"
 
 namespace litert::model_utils {
 
 void RegisterDialects(mlir::DialectRegistry& registry) {
   mlir::stablehlo::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
+  mlir::mhlo::registerAllMhloDialects(registry);
   registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
                   mlir::quant::QuantDialect,
                   mlir::quantfork::QuantizationForkDialect,
@@ -87,9 +96,26 @@ mlir::OwningOpRef<mlir::ModuleOp> FlatbufferToMlir(mlir::MLIRContext* context,
 }
 
 std::string MlirToFlatbuffer(mlir::ModuleOp module_op) {
+  mlir::PassManager pm(module_op.getContext());
+  mlir::TFL::QuantizationSpecs quant_specs;
+  mlir::TFL::PassConfig pass_config(quant_specs);
+  pass_config.model_origin_framework = tflite::ConverterFlags::PYTORCH;
+
+  tensorflow::AddPreQuantizationStableHloToTfPasses(
+      /*entry_function_name=*/"main", pass_config, pm);
+  tensorflow::AddPostQuantizationStableHloToTfPasses(pass_config, pm);
+  pm.addPass(mlir::createReconcileUnrealizedCastsPass());
+  if (failed(pm.run(module_op))) {
+    module_op.emitError() << "Failed to run mlir_to_flatbuffer pass pipeline.";
+  }
+
   tflite::FlatbufferExportOptions options;
   std::string bytes;
-  tflite::MlirToFlatBufferTranslateFunction(module_op, options, &bytes, true);
+  if (!tflite::MlirToFlatBufferTranslateFunction(module_op, options, &bytes,
+                                                  false)) {
+    module_op.emitError()
+        << "Failed to translate MLIR module to TFLite flatbuffer.";
+  }
   return bytes;
 }
 
