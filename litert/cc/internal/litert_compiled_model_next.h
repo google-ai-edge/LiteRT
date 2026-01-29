@@ -23,7 +23,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compiled_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -94,7 +93,7 @@ class CompiledModelNext : public CompiledModel {
   Expected<void> SetDispatchAnnotation(size_t signature_index,
                                        absl::string_view key,
                                        absl::string_view value) {
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelSetDispatchAnnotation(
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelSetDispatchAnnotation(
         Get(), signature_index, key.data(), value.data()));
     return {};
   }
@@ -108,7 +107,7 @@ class CompiledModelNext : public CompiledModel {
   Expected<std::optional<std::string>> GetDispatchAnnotation(
       size_t signature_index, absl::string_view key) {
     const char* value = nullptr;
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelGetDispatchAnnotation(
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelGetDispatchAnnotation(
         Get(), signature_index, key.data(), &value));
     if (value == nullptr) {
       return Expected<std::optional<std::string>>(std::nullopt);
@@ -123,7 +122,7 @@ class CompiledModelNext : public CompiledModel {
   /// @note This function succeeds even if the key does not exist.
   Expected<void> RemoveDispatchAnnotation(size_t signature_index,
                                           absl::string_view key) {
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelRemoveDispatchAnnotation(
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelRemoveDispatchAnnotation(
         Get(), signature_index, key.data()));
     return {};
   }
@@ -174,11 +173,12 @@ class CompiledModelNext : public CompiledModel {
   }
 
  private:
-  explicit CompiledModelNext(LiteRtModel litert_model,
+  explicit CompiledModelNext(internal::EnvironmentHolder& env,
+                             LiteRtModel litert_model,
                              LiteRtCompiledModel compiled_model,
                              OwnHandle owned)
-      : CompiledModel(litert_model, /*model_owned=*/OwnHandle::kNo,
-                      compiled_model, owned) {}
+      : CompiledModel(env, litert_model,
+                      /*model_owned=*/OwnHandle::kNo, compiled_model, owned) {}
 };
 
 }  // namespace litert

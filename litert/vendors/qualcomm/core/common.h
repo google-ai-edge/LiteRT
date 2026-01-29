@@ -121,6 +121,9 @@ class Options {
 
   std::string Dump() const;
 
+  absl::string_view GetSaverOutputDir() const;
+  void SetSaverOutputDir(absl::string_view saver_output_dir);
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -139,6 +142,7 @@ class Options {
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
+  std::string saver_output_dir_;
 };
 
 // Gets a default logger implementation to stdout.

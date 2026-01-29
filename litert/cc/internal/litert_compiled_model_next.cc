@@ -19,7 +19,6 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_common.h"
@@ -37,9 +36,12 @@ Expected<CompiledModelNext> CompiledModelNext::Create(
   LITERT_RETURN_IF_ERROR(compilation_options.Build());
   LiteRtModel litert_model = model.Get();
   LiteRtCompiledModel compiled_model;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
-      env.Get(), litert_model, compilation_options.Get(), &compiled_model));
-  return CompiledModelNext(litert_model, compiled_model, OwnHandle::kYes);
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+      env_holder.handle, litert_model, compilation_options.Get(),
+      &compiled_model));
+  return CompiledModelNext(env_holder, litert_model, compiled_model,
+                           OwnHandle::kYes);
 }
 
 Expected<CompiledModelNext> CompiledModelNext::Create(
@@ -47,9 +49,12 @@ Expected<CompiledModelNext> CompiledModelNext::Create(
     const Options& compilation_options) {
   LiteRtModel litert_model = model.Get();
   LiteRtCompiledModel compiled_model;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
-      env.Get(), litert_model, compilation_options.Get(), &compiled_model));
-  return CompiledModelNext(litert_model, compiled_model, OwnHandle::kYes);
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+      env_holder.handle, litert_model, compilation_options.Get(),
+      &compiled_model));
+  return CompiledModelNext(env_holder, litert_model, compiled_model,
+                           OwnHandle::kYes);
 }
 
 Expected<CompiledModelNext> CompiledModelNext::Create(
@@ -59,14 +64,17 @@ Expected<CompiledModelNext> CompiledModelNext::Create(
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
   LiteRtModel litert_model = model.Get();
   LiteRtCompiledModel compiled_model;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
-      env.Get(), litert_model, compilation_options.Get(), &compiled_model));
-  return CompiledModelNext(litert_model, compiled_model, OwnHandle::kYes);
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+      env_holder.handle, litert_model, compilation_options.Get(),
+      &compiled_model));
+  return CompiledModelNext(env_holder, litert_model, compiled_model,
+                           OwnHandle::kYes);
 }
 
 Expected<void> CompiledModelNext::StartMetricsCollection(int detail_level) {
-  if (auto status =
-          LiteRtCompiledModelStartMetricsCollection(Get(), detail_level);
+  if (auto status = env_.runtime->CompiledModelStartMetricsCollection(
+          Get(), detail_level);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to start metrics collection");
   }
@@ -76,18 +84,20 @@ Expected<void> CompiledModelNext::StartMetricsCollection(int detail_level) {
 Expected<CompiledModelNext::Metrics>
 CompiledModelNext::StopMetricsCollection() {
   LiteRtMetrics metrics = nullptr;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateMetrics(&metrics));
-  absl::Cleanup metrics_cleanup = [&metrics] { LiteRtDestroyMetrics(metrics); };
+  LITERT_RETURN_IF_ERROR(env_.runtime->CreateMetrics(&metrics));
+  absl::Cleanup metrics_cleanup = [&metrics, runtime = env_.runtime] {
+    runtime->DestroyMetrics(metrics);
+  };
   LITERT_RETURN_IF_ERROR(
-      LiteRtCompiledModelStopMetricsCollection(Get(), metrics));
+      env_.runtime->CompiledModelStopMetricsCollection(Get(), metrics));
   int num_metrics;
-  LITERT_RETURN_IF_ERROR(LiteRtGetNumMetrics(metrics, &num_metrics));
+  LITERT_RETURN_IF_ERROR(env_.runtime->GetNumMetrics(metrics, &num_metrics));
 
   std::vector<Metrics::Metric> compiled_model_metrics;
   compiled_model_metrics.reserve(num_metrics);
   for (int i = 0; i < num_metrics; ++i) {
     LiteRtMetric metric;
-    LITERT_RETURN_IF_ERROR(LiteRtGetMetric(metrics, i, &metric));
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetMetric(metrics, i, &metric));
     compiled_model_metrics.push_back({metric.name, metric.value});
   }
   return CompiledModelNext::Metrics{.metrics =

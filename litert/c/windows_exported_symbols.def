@@ -105,6 +105,7 @@ EXPORTS
   LiteRtGetDefaultSignatureKey
   LiteRtGetDummyCompilerOptions
   LiteRtGetEnvironmentOptions
+  LiteRtGetEnvironmentOptionsValue
   LiteRtGetEventCustomNativeEvent
   LiteRtGetEventEglSync
   LiteRtGetEventEventType
@@ -274,6 +275,7 @@ EXPORTS
   LiteRtQualcommOptionsGetIrJsonDir
   LiteRtQualcommOptionsGetLogLevel
   LiteRtQualcommOptionsGetNumHvxThreads
+  LiteRtQualcommOptionsGetSaverOutputDir
   LiteRtQualcommOptionsGetOptimizationLevel
   LiteRtQualcommOptionsGetProfiling
   LiteRtQualcommOptionsGetUseConvHMX
@@ -290,6 +292,7 @@ EXPORTS
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel
   LiteRtQualcommOptionsSetNumHvxThreads
+  LiteRtQualcommOptionsSetSaverOutputDir
   LiteRtQualcommOptionsSetOptimizationLevel
   LiteRtQualcommOptionsSetProfiling
   LiteRtQualcommOptionsSetUseConvHMX
@@ -316,6 +319,7 @@ EXPORTS
   LiteRtSetCustomEvent
   LiteRtSetDelegateFunction
   LiteRtSetDummyCompilerOptions
+  LiteRtSetEnvironmentOptionsValue
   LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization
   LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors

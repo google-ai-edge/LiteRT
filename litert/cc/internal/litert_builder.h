@@ -103,6 +103,9 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
   /// @brief Builds a tensor from a `RankedTensorSpec`.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
 
+  /// @brief Builds a tensor similar to the given tensor.
+  Expected<Tensor> CloneTensor(const Tensor& src) const;
+
   /// @brief Builds weights for a tensor.
   template <typename T>
   Expected<Weights> BuildWeights(absl::Span<const T> data,

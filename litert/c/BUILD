@@ -158,6 +158,7 @@ cc_library(
     alwayslink = 1,
 )
 
+# This target has C API implementation. Shouldn't be used for runtime implementation.
 cc_library(
     name = "litert_environment_options",
     srcs = ["litert_environment_options.cc"],
@@ -172,6 +173,7 @@ cc_library(
     ],
 )
 
+# The header only taget. It's used for runtime implementation.
 cc_library(
     name = "litert_environment_options_header",
     hdrs = ["litert_environment_options.h"],
@@ -618,6 +620,7 @@ cc_library(
         ":litert_common",
         ":litert_model",
         ":litert_op_code",
+        ":litert_op_options",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/core/util:flatbuffer_tools",
@@ -631,13 +634,13 @@ cc_test(
     deps = [
         ":litert_builder",
         ":litert_common",
-        ":litert_model",
         ":litert_op_code",
         ":litert_op_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/test:matchers",
+        "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

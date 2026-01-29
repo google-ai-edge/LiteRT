@@ -126,10 +126,7 @@ struct ThrFunctions {
       thr_invocation_context_query_node_scratch_pad = nullptr;
   decltype(&thrInvocationContextAttachScratchPadBuffer)
       thr_invocation_context_attach_scratch_pad_buffer = nullptr;
-  decltype(&thrInvocationContextGetMetrics) thr_invocation_context_get_metrics =
-      nullptr;
-  decltype(&thrInvocationContextResetMetrics)
-      thr_invocation_context_reset_metrics = nullptr;
+
   decltype(&thrInvocationContextStartMetricsCollection)
       thr_invocation_context_start_metrics_collection = nullptr;
   decltype(&thrInvocationContextStopMetricsCollection)
@@ -336,10 +333,7 @@ ThrStatus LoadSouthBoundSyms() {
   THR_RESOLVE_SYM(
       gSouthBoundFns->thr_invocation_context_attach_scratch_pad_buffer,
       thrInvocationContextAttachScratchPadBuffer);
-  THR_RESOLVE_SYM(gSouthBoundFns->thr_invocation_context_get_metrics,
-                  thrInvocationContextGetMetrics);
-  THR_RESOLVE_SYM(gSouthBoundFns->thr_invocation_context_reset_metrics,
-                  thrInvocationContextResetMetrics);
+
   THR_RESOLVE_SYM(
       gSouthBoundFns->thr_invocation_context_start_metrics_collection,
       thrInvocationContextStartMetricsCollection);
@@ -646,14 +640,7 @@ ThrStatus thrInvocationContextAttachScratchPadBuffer(
                          icontext, context, node_id, handle);
 }
 
-ThrStatus thrInvocationContextGetMetrics(ThrInvocationContext* icontext,
-                                         ThrInvocationMetrics* metrics) {
-  return THR_CALL_DYN_FN(thr_invocation_context_get_metrics, icontext, metrics);
-}
 
-ThrStatus thrInvocationContextResetMetrics(ThrInvocationContext* icontext) {
-  return THR_CALL_DYN_FN(thr_invocation_context_reset_metrics, icontext);
-}
 
 ThrStatus thrInvocationContextStartMetricsCollection(
     ThrInvocationContext* icontext, int detail_level) {

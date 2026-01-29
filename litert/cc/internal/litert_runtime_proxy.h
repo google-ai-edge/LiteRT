@@ -552,7 +552,7 @@ class RuntimeProxy {
                                compiled_model, signature_index, key);
   }
 
-  template <class... Args>
+  template <typename... Args>
   LiteRtStatus CompiledModelReportError(LiteRtCompiledModel compiled_model,
                                         const char* format, Args&&... args) {
     // We cannot forward variadic arguments, so this function cannot use the

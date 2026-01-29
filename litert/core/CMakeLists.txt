@@ -54,7 +54,6 @@ target_link_libraries(litert_core
         Threads::Threads
 )
 
-
 # Platform-specific source exclusions
 if(NOT WIN32)
     # Exclude Windows-specific source

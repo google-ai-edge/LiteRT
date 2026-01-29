@@ -88,12 +88,11 @@ class CompiledModelExecutor {
 
  protected:
   CompiledModelExecutor(CompiledModelNext&& api, Environment&& env)
-      : api_(std::move(api)), env_(std::move(env)) {}
+      : env_(std::move(env)), api_(std::move(api)) {}
 
-  CompiledModelNext api_;
-
- private:
+  // env_ must be destroyed after api_ to avoid use-after-free.
   Environment env_;
+  CompiledModelNext api_;
 };
 
 // Executor for the CPU backend.

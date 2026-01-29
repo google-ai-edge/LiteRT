@@ -27,9 +27,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
@@ -92,8 +90,7 @@ class LlmLiteRtCompiledModelExecutorBase;
 /// 4. Fill the input `TensorBuffer`s with input data.
 /// 5. Invoke the model with the input/output `TensorBuffer`s.
 /// 6. Evaluate the output `TensorBuffer`s.
-class CompiledModel
-    : public internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel> {
+class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
  public:
   friend class ::mediapipe::InferenceRunnerLiteRt;
   friend class benchmark::BenchmarkLiteRtModel;
@@ -129,21 +126,22 @@ class CompiledModel
                                         Options& compilation_options) {
     LITERT_RETURN_IF_ERROR(compilation_options.Build());
     LiteRtModel litert_model;
-    if (auto status =
-            LiteRtCreateModelFromFile(model_filename.c_str(), &litert_model);
+    auto env_holder = env.GetHolder();
+    if (auto status = env_holder.runtime->CreateModelFromFile(
+            model_filename.c_str(), &litert_model);
         status != kLiteRtStatusOk) {
       return Unexpected(status, "Failed to load model from file");
     }
     LiteRtCompiledModel compiled_model;
-    if (auto res = LiteRtCreateCompiledModel(env.Get(), litert_model,
-                                             compilation_options.Get(),
-                                             &compiled_model);
+    if (auto res = env_holder.runtime->CreateCompiledModel(
+            env_holder.handle, litert_model, compilation_options.Get(),
+            &compiled_model);
         res != kLiteRtStatusOk) {
-      LiteRtDestroyModel(litert_model);
+      env_holder.runtime->DestroyModel(litert_model);
       return Unexpected(res, "Failed to compile model");
     }
-    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kYes,
-                         compiled_model,
+    return CompiledModel(env_holder, litert_model,
+                         /*model_owned=*/OwnHandle::kYes, compiled_model,
                          /*owned=*/OwnHandle::kYes);
   }
 
@@ -154,21 +152,22 @@ class CompiledModel
                                         Options& compilation_options) {
     LITERT_RETURN_IF_ERROR(compilation_options.Build());
     LiteRtModel litert_model;
-    if (auto status = LiteRtCreateModelFromBuffer(
+    auto env_holder = env.GetHolder();
+    if (auto status = env_holder.runtime->CreateModelFromBuffer(
             model_buffer.Data(), model_buffer.Size(), &litert_model);
         status != kLiteRtStatusOk) {
       return Unexpected(status, "Failed to load model from buffer");
     }
     LiteRtCompiledModel compiled_model;
-    if (auto res = LiteRtCreateCompiledModel(env.Get(), litert_model,
-                                             compilation_options.Get(),
-                                             &compiled_model);
+    if (auto res = env_holder.runtime->CreateCompiledModel(
+            env_holder.handle, litert_model, compilation_options.Get(),
+            &compiled_model);
         res != kLiteRtStatusOk) {
-      LiteRtDestroyModel(litert_model);
+      env_holder.runtime->DestroyModel(litert_model);
       return Unexpected(res, "Failed to compile model");
     }
-    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kYes,
-                         compiled_model,
+    return CompiledModel(env_holder, litert_model,
+                         /*model_owned=*/OwnHandle::kYes, compiled_model,
                          /*owned=*/OwnHandle::kYes);
   }
 
@@ -213,8 +212,9 @@ class CompiledModel
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
       size_t signature_index, size_t input_index) const {
     LiteRtTensorBufferRequirements buffer_requirements;
-    LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelInputBufferRequirements(
-        Get(), signature_index, input_index, &buffer_requirements));
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetCompiledModelInputBufferRequirements(
+            Get(), signature_index, input_index, &buffer_requirements));
     return TensorBufferRequirements::WrapCObject(buffer_requirements,
                                                  OwnHandle::kNo);
   }
@@ -263,7 +263,7 @@ class CompiledModel
                             model_.GetSignatureOutputNames(signature_index));
     int num_tensors = output_names.size();
     std::vector<LiteRtLayout> litert_layout_vector(num_tensors);
-    LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputTensorLayouts(
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetCompiledModelOutputTensorLayouts(
         Get(), signature_index, num_tensors, litert_layout_vector.data(),
         update_allocation));
 
@@ -284,8 +284,9 @@ class CompiledModel
   Expected<TensorBufferRequirements> GetOutputBufferRequirements(
       size_t signature_index, size_t output_index) const {
     LiteRtTensorBufferRequirements buffer_requirements;
-    LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputBufferRequirements(
-        Get(), signature_index, output_index, &buffer_requirements));
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetCompiledModelOutputBufferRequirements(
+            Get(), signature_index, output_index, &buffer_requirements));
     return TensorBufferRequirements::WrapCObject(buffer_requirements,
                                                  OwnHandle::kNo);
   }
@@ -526,7 +527,8 @@ class CompiledModel
   /// The returned `Profiler` does not own the underlying `LiteRtProfiler`.
   Expected<Profiler> GetProfiler() {
     LiteRtProfiler profiler = nullptr;
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelGetProfiler(Get(), &profiler));
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelGetProfiler(Get(), &profiler));
     return Profiler(profiler, OwnHandle::kNo);
   };
 
@@ -540,8 +542,8 @@ class CompiledModel
   /// (see below) with `EnableCancellation`/`Cancel`, but not both.
   void SetCancellationFunction(void* data,
                                bool (*check_cancelled_func)(void*)) {
-    LiteRtSetCompiledModelCancellationFunction(Get(), data,
-                                               check_cancelled_func);
+    env_.runtime->SetCompiledModelCancellationFunction(Get(), data,
+                                                       check_cancelled_func);
   }
 
   /// @brief Sets a callback function for checking cancellation during
@@ -569,7 +571,7 @@ class CompiledModel
   /// error with an appropriate status code on failure.
   Expected<void> ResizeInputTensor(size_t signature_index, size_t input_index,
                                    absl::Span<const int> dims) {
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelResizeInputTensor(
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelResizeInputTensor(
         Get(), signature_index, input_index, dims.data(), dims.size()));
     return {};
   }
@@ -613,8 +615,9 @@ class CompiledModel
   Expected<void> ResizeInputTensorNonStrict(size_t signature_index,
                                             size_t input_index,
                                             absl::Span<const int> dims) {
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelResizeInputTensorNonStrict(
-        Get(), signature_index, input_index, dims.data(), dims.size()));
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelResizeInputTensorNonStrict(
+            Get(), signature_index, input_index, dims.data(), dims.size()));
     return {};
   }
 
@@ -656,9 +659,9 @@ class CompiledModel
   ///
   /// Supports printf-style formatting for error messages.
   template <typename... Args>
-  Expected<void> ReportError(const char* format, Args... args) const {
-    LITERT_RETURN_IF_ERROR(
-        LiteRtCompiledModelReportError(Get(), format, args...));
+  Expected<void> ReportError(const char* format, Args&&... args) const {
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelReportError(
+        Get(), format, std::forward<Args>(args)...));
     return {};
   }
 
@@ -666,7 +669,7 @@ class CompiledModel
   /// @note This only works if the compiled model uses `BufferErrorReporter`,
   /// not `StderrReporter`.
   Expected<void> ClearErrors() const {
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelClearErrors(Get()));
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelClearErrors(Get()));
     return {};
   }
 
@@ -679,7 +682,7 @@ class CompiledModel
   Expected<std::string> GetErrorMessages() const {
     char* error_messages = nullptr;
     LITERT_RETURN_IF_ERROR(
-        LiteRtCompiledModelGetErrorMessages(Get(), &error_messages));
+        env_.runtime->CompiledModelGetErrorMessages(Get(), &error_messages));
 
     // Use unique_ptr with custom deleter to ensure automatic cleanup
     std::unique_ptr<char, decltype(&std::free)> error_messages_ptr(
@@ -809,19 +812,6 @@ class CompiledModel
     return model_.GetOutputTensorType(output_name);
   }
 
-  /// @internal
-  /// @brief Wraps a `LiteRtCompiledModel` C object in a `CompiledModel` C++
-  /// object.
-  ///
-  /// The `compiled_model` does not own the provided `litert_model`.
-  /// @warning This is for internal use only.
-  static CompiledModel WrapCObject(LiteRtModel litert_model,
-                                   LiteRtCompiledModel compiled_model,
-                                   OwnHandle owned) {
-    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kNo,
-                         compiled_model, owned);
-  }
-
  protected:
   /// @internal
   /// @brief Creates a `CompiledModel` from a provided `litert::Model`.
@@ -843,10 +833,12 @@ class CompiledModel
     LITERT_RETURN_IF_ERROR(compilation_options.Build());
     LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
-        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
-    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kNo,
-                         compiled_model,
+    auto env_holder = env.GetHolder();
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+        env_holder.handle, litert_model, compilation_options.Get(),
+        &compiled_model));
+    return CompiledModel(env_holder, litert_model,
+                         /*model_owned=*/OwnHandle::kNo, compiled_model,
                          /*owned=*/OwnHandle::kYes);
   }
 
@@ -871,16 +863,21 @@ class CompiledModel
   /// owned by the `CompiledModel`.
   /// @param owned If `true`, the created object takes ownership of the
   /// `compiled_model` handle.
-  explicit CompiledModel(LiteRtModel litert_model, OwnHandle model_owned,
+  explicit CompiledModel(internal::EnvironmentHolder& env,
+                         LiteRtModel litert_model, OwnHandle model_owned,
                          LiteRtCompiledModel compiled_model, OwnHandle owned)
-      : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
-            compiled_model, owned) {
+      : internal::BaseHandle<LiteRtCompiledModel>(
+            compiled_model,
+            [runtime = env.runtime](LiteRtCompiledModel compiled_model) {
+              runtime->DestroyCompiledModel(compiled_model);
+            },
+            owned),
+        env_(env) {
     if (model_owned == OwnHandle::kYes) {
       model_ = Model::CreateFromOwnedHandle(litert_model);
     } else {
       model_ = Model::CreateFromNonOwnedHandle(litert_model);
     }
-    LiteRtGetCompiledModelEnvironment(compiled_model, &env_);
   }
 
   static bool CheckCancelledWrapper(void* data);
@@ -920,6 +917,7 @@ class CompiledModel
   Expected<std::vector<TensorBuffer>> CreateInputOutputBuffers(
       size_t signature_index, bool is_input) const;
 
+  /// @internal
   /// @brief Returns the environment used to create this compiled model.
   ///
   /// The returned `Environment` does not own the underlying
@@ -952,7 +950,7 @@ class CompiledModel
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;
 
-  LiteRtEnvironment env_;
+  internal::EnvironmentHolder env_;
   Model model_;
   absl::AnyInvocable<bool()> check_cancelled_func_;
 };

@@ -61,8 +61,9 @@ def parse_args() -> argparse.Namespace:
       "--py_src", help="single source file for the wheel", action="append"
   )
   parser.add_argument(
-      "--structured_deps", help="single structured dep for the wheel",
-      action="append"
+      "--structured_deps",
+      help="single structured dep for the wheel",
+      action="append",
   )
   parser.add_argument(
       "--package_data", help="single source data for the wheel", action="append"
@@ -115,7 +116,7 @@ def _strip_bazel_out_prefix(path_posix: str) -> str:
   bin_idx = path_posix.find("/bin/", idx + len(bazel_out))
   if bin_idx == -1:
     return path_posix
-  return path_posix[bin_idx + len("/bin/"):]
+  return path_posix[bin_idx + len("/bin/") :]
 
 
 def create_empty_init_files(dst_dir: str) -> None:
@@ -141,6 +142,52 @@ def construct_meta_dict(args) -> dict[str, str]:
   return {
       "__version__": args.version,
   }
+
+
+def _dedupe_macos_rpaths(file_path: str) -> None:
+  """Remove duplicate LC_RPATH entries from a Mach-O file on macOS."""
+  try:
+    output = subprocess.check_output(["otool", "-l", file_path], text=True)
+  except (subprocess.CalledProcessError, FileNotFoundError):
+    return
+
+  rpaths = []
+  saw_cmd = False
+  for line in output.splitlines():
+    stripped = line.strip()
+    if stripped == "cmd LC_RPATH":
+      saw_cmd = True
+      continue
+    if saw_cmd and stripped.startswith("path "):
+      # Example: "path @loader_path (offset 12)"
+      path = stripped.split(" ", 1)[1].split(" (offset", 1)[0].strip()
+      rpaths.append(path)
+      saw_cmd = False
+
+  seen = set()
+  for path in rpaths:
+    if path in seen:
+      subprocess.run(
+          ["install_name_tool", "-delete_rpath", path, file_path],
+          check=False,
+      )
+    else:
+      seen.add(path)
+
+
+# This is a temporary workaround to dedupe LC_RPATH entries in macos binaries.
+# Otherwise we get the following error
+# ImportError: dlopen(...):
+#   Library not loaded: @rpath/libpywrap_litert_common.dylib
+# ...
+# duplicate LC_RPATH '@loader_path'
+def _postprocess_macos_binaries(package_dir: str) -> None:
+  if sys.platform != "darwin":
+    return
+  for root, _, files in os.walk(package_dir):
+    for name in files:
+      if name.endswith((".dylib", ".so")):
+        _dedupe_macos_rpaths(os.path.join(root, name))
 
 
 def prepare_build_tree(tree_path, args, project_name: str):
@@ -195,9 +242,7 @@ def prepare_build_tree(tree_path, args, project_name: str):
 
   # create empty init files for structured deps
   for relative_path in relpath_set:
-    create_init_files(
-        _join_posix(tree_path, relative_path)
-    )
+    create_init_files(_join_posix(tree_path, relative_path))
 
   meta_dict = construct_meta_dict(args)
 
@@ -207,17 +252,20 @@ def prepare_build_tree(tree_path, args, project_name: str):
   if args.package_data is not None:
     for src in args.package_data:
       src_posix = _to_posix(src)
+
       def get_dest(file_path_posix: str):
         delimiter = "litert/"
         index = file_path_posix.find(delimiter)
         if index != -1:
-          return file_path_posix[index + len(delimiter):]
+          return file_path_posix[index + len(delimiter) :]
         else:
           return file_path_posix
+
       dest_rel = get_dest(src_posix)
       dest = _join_posix(src_dir, dest_rel)
       os.makedirs(os.path.dirname(dest), exist_ok=True)
       shutil.copyfile(src, dest)
+  _postprocess_macos_binaries(src_dir)
 
 
 def build_pyproject_wheel(

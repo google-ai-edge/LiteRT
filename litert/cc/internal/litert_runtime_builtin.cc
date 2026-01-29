@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/internal/litert_runtime_builtin.h"
+#include "litert/cc/internal/litert_runtime_builtin.h"
 
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/litert_common.h"

@@ -82,6 +82,9 @@ inline absl::Status ConvertLiteRtDataTypeToGpuDataType(
     case kLiteRtElementTypeFloat16:
       *data_type = DataType::FLOAT16;
       break;
+    case kLiteRtElementTypeInt8:
+      *data_type = DataType::INT8;
+      break;
     default:
       return absl::InvalidArgumentError(absl::StrFormat(
           "Unsupported element type: %d", tensor_type->element_type));
