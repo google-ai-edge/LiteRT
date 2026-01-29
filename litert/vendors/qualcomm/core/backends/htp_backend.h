@@ -66,11 +66,9 @@ class HtpBackend : public QnnBackend {
 
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
 
-  // TODO: Remove this after user can pass graph options to QNN
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
+  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   std::list<QnnHtpDevice_CustomConfig_t> htp_device_configs_;
   std::list<QnnHtpDevice_DeviceInfoExtension_t> htp_device_info_extensions_;
-  QnnDevicePlatformInfo qnn_device_platform_info_;
   std::unique_ptr<PerfControl> perf_control_{nullptr};
 };
 

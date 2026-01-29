@@ -76,10 +76,10 @@ constexpr LiteRtParamIndex kDefaultPartitionNum = 1;
 static constexpr absl::string_view kEntryPointNameFmt = "qnn_partition_%d";
 
 bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
-#ifdef __ANDROID__
-  return false;
-#else
+#if defined(__x86_64__) || defined(_M_X64)
   return dsp_arch >= ::qnn::DspArch::V73;
+#else
+  return false;
 #endif
 }
 

@@ -28,13 +28,9 @@ class ConverterWrapperTest(googletest.TestCase):
         converter_wrapper.ConversionConfig.ModelType.Unknown,
     )
     self.assertEqual(
-        config.converter_flags,
-        converter_flags_pb2.ConverterFlags()
+        config.converter_flags, converter_flags_pb2.ConverterFlags()
     )
-    self.assertEqual(
-        config.model_flags,
-        model_flags_pb2.ModelFlags()
-    )
+    self.assertEqual(config.model_flags, model_flags_pb2.ModelFlags())
 
   def test_model_type_values(self):
     self.assertEqual(
