@@ -39,40 +39,7 @@ symlink_inputs(
 )
 
 cc_library(
-    name = "model_utils_core",
-    srcs = ["model_utils_core.cc"],
-    hdrs = ["model_utils_core.h"],
-    deps = [
-        "//tflite/converter:flatbuffer_export",
-        "//tflite/converter:flatbuffer_import",
-        "//tflite/converter:tensorflow_lite",
-        "//tflite/converter:tensorflow_lite_ops",
-        "//tflite/converter:tensorflow_lite_optimize",
-        "//tflite/converter:tensorflow_lite_quantize",
-        "//tflite/converter/quantization/ir:QuantOps",
-        "//tflite/converter/stablehlo:prepare_hlo",
-        "@com_google_absl//absl/strings:string_view",
-        "@llvm-project//llvm:FileCheckLib",
-        "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:ArithDialect",
-        "@llvm-project//mlir:ConversionPasses",
-        "@llvm-project//mlir:FuncDialect",
-        "@llvm-project//mlir:FuncExtensions",
-        "@llvm-project//mlir:FuncTransforms",
-        "@llvm-project//mlir:IR",
-        "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:QuantOps",
-        "@llvm-project//mlir:Transforms",
-        "@stablehlo//:register",
-        "@stablehlo//:stablehlo_ops",
-        "@stablehlo//:stablehlo_passes",
-        "@stablehlo//:stablehlo_passes_optimization",
-        "@stablehlo//:vhlo_ops",
-    ],
-)
-
-cc_library(
-    name = "lib_litert_mlir",
+    name = "lib_litert_compiler_mlir",
     srcs = select({
         "@platforms//os:macos": [],
         "@platforms//os:windows": [],
@@ -88,7 +55,7 @@ cc_binary(
         "notap",
     ],
     deps = [
-        ":model_utils_core",
+        "//litert/compiler/mlir:model_utils_core",
         "@llvm-project//mlir:CAPIArithObjects",
         "@llvm-project//mlir:CAPIIRObjects",
         "@llvm-project//mlir:CAPITransformsObjects",
@@ -113,7 +80,7 @@ pybind_extension(
     ],
     wrap_py_init = False,
     deps = [
-        ":lib_litert_mlir",
+        ":lib_litert_compiler_mlir",
         "@llvm-project//mlir:MLIRBindingsPythonCoreNoCAPI",
         "@llvm-project//mlir:MLIRBindingsPythonHeaders",
     ],
@@ -125,7 +92,7 @@ pybind_extension(
         "model_utils_ext.cc",
     ],
     hdrs = [
-        "model_utils_core.h",
+        "//litert/compiler/mlir:pybind_ext_headers",
         "@llvm-project//mlir:MLIRBindingsPythonCoreHeaders",
     ],
     common_lib_packages = ["litert/python"],
@@ -142,7 +109,7 @@ pybind_extension(
     ] + if_google(
         [
             # google only: link everything statically here.
-            ":model_utils_core",
+            "//litert/compiler/mlir:model_utils_core",
             "@llvm-project//llvm:Support",
             "@llvm-project//mlir:IR",
             "@llvm-project//mlir:CAPIIRHeaders",
@@ -150,7 +117,7 @@ pybind_extension(
         ],
         [
             # oss only: link to the shared library.
-            ":lib_litert_mlir",
+            ":lib_litert_compiler_mlir",
             "@llvm-project//mlir:MLIRBindingsPythonCoreNoCAPI",
         ],
     ),

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_PYTHON_MLIR__MLIR_LIBS_MODEL_UTILS_CORE_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_PYTHON_MLIR__MLIR_LIBS_MODEL_UTILS_CORE_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_MLIR_MODEL_UTILS_CORE_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_MLIR_MODEL_UTILS_CORE_H_
 
 #include <string>
 #include <vector>

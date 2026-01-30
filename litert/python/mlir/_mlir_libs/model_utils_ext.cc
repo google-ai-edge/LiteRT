@@ -14,10 +14,9 @@
 
 #include <Python.h>
 
-#include <cstddef>
-#include <memory>
+#include <algorithm>
+#include <cstdint>
 #include <string>
-#include <vector>
 
 #include "llvm/Support/Casting.h"
 #include "mlir-c/IR.h"
@@ -28,7 +27,7 @@
 #include "nanobind/stl/string.h"
 #include "nanobind/stl/string_view.h"
 #include "nanobind/stl/vector.h"
-#include "litert/python/mlir/_mlir_libs/model_utils_core.h"
+#include "litert/compiler/mlir/model_utils_core.h"
 
 namespace {
 
