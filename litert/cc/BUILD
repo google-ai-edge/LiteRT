@@ -388,19 +388,21 @@ litert_device_test(
 #         "//litert/cc/internal:litert_platform_support",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/cc/options:litert_runtime_options",
-#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
 #         "@opencl_headers",
 #     ] + select({
 #         "@org_tensorflow//tensorflow:android": [
+#             "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
 #             "//tflite/delegates/gpu/cl:cl_device",
 #             "//tflite/delegates/gpu/cl:gl_interop",
 #             "//tflite/delegates/gpu/cl:opencl_wrapper",
 #             "//tflite/delegates/gpu/gl:egl_environment",
 #         ],
-#         "//conditions:default": [],
+#         "//conditions:default": [
+#             "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+#         ],
 #     }),
 # )
 #
