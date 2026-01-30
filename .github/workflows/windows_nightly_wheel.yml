@@ -7,8 +7,12 @@ on:
 
 jobs:
   build-and-nightly:
-    name: "Build nightly Windows wheel"
+    name: "Build nightly Windows wheel - Python ${{ matrix.python-version }}"
     runs-on: Windows_x64  # Latest high spec runner ((96 cores and 384GB RAM)).
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     env:
       # Clear ANDROID_NDK_HOME as windows-latest has NDK where jobs don't have permission for
       # androidndk rulesto create symlinks.
@@ -26,7 +30,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set USE_BAZEL_VERSION
         shell: bash
@@ -36,6 +40,11 @@ jobs:
           elif [ -f bazelversion ]; then
             echo "USE_BAZEL_VERSION=$(cat bazelversion)" >> $GITHUB_ENV
           fi
+
+      - name: Set NIGHTLY_RELEASE_DATE
+        run: |
+          $date = Get-Date -Format "yyyyMMdd"
+          echo "NIGHTLY_RELEASE_DATE=$date" >> $env:GITHUB_ENV
 
       - name: Configure tensorflow & python path
         run: |
@@ -50,3 +59,9 @@ jobs:
       - name: Build LiteRT wheel for Windows
         run: |
           .\ci\build_pip_package_with_bazel_windows.ps1
+
+      - name: Upload Wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: litert-windows-wheels-py${{ matrix.python-version }}
+          path: dist/*.whl
