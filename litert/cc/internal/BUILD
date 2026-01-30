@@ -30,6 +30,7 @@ package(
 internal_static_library_visibility = [
     # copybara:uncomment_begin(oss)
     # "//litert:litert_cc_users_static_link",
+    # "//litert/vendors/examples:__subpackages__",
     # copybara:uncomment_end_and_comment_begin
     "//visibility:public",
     # copybara:comment_end
@@ -424,10 +425,12 @@ cc_library(
         ":litert_op_options",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
         "@com_google_absl//absl/types:span",
     ],

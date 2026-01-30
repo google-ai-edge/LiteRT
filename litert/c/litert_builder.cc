@@ -158,6 +158,7 @@ LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  litert::internal::Drop(*op_to_erase);
   builder->EraseOp(op_to_erase);
 
   return kLiteRtStatusOk;

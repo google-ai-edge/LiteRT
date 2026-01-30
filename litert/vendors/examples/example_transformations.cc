@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <utility>
+#include "litert/vendors/examples/example_transformations.h"
+
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -36,9 +38,8 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
     return kLiteRtStatusPatternNoMatch;
   }
   OpInputs inputs = root_op.Inputs();
-  OpOutputs outputs = root_op.Outputs();
-  builder.BuildOp(kLiteRtOpCodeTflMul, inputs, outputs);
-  builder.EraseOp(root_op);
+  std::vector<litert::Tensor> inputs_vec(inputs.begin(), inputs.end());
+  builder.ReplaceOp(root_op, kLiteRtOpCodeTflMul, inputs_vec);
   return kLiteRtStatusOk;
 }
 
@@ -73,12 +74,13 @@ LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
     return kLiteRtStatusPatternNoMatch;
   }
 
-  OpOutputs outputs = mean_op.Outputs();
-  OpInputs abs_inputs;
-  abs_inputs.push_back(std::move(sq_in));
-  builder.BuildOp(kLiteRtOpCodeTflAbs, abs_inputs, outputs);
+  // Replace Mean with Abs(sq_in).
+  // This implicitly reuses Mean's output tensor for Abs output.
+  builder.ReplaceOp(mean_op, kLiteRtOpCodeTflAbs, {sq_in});
+
+  // Clean up unused ops.
   builder.EraseOp(square_op);
-  builder.EraseOp(mean_op);
+
   return kLiteRtStatusOk;
 }
 
