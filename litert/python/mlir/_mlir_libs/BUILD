@@ -13,8 +13,8 @@
 # limitations under the License.
 
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("//litert/build_common:litert_build_defs.bzl", "if_google")
 load("//litert/build_common:symlink_files.bzl", "symlink_inputs")
@@ -43,12 +43,15 @@ cc_library(
     srcs = ["model_utils_core.cc"],
     hdrs = ["model_utils_core.h"],
     deps = [
+        "//tflite/converter:common",
+        "//tflite/converter:converter_flags_proto_cc",
         "//tflite/converter:flatbuffer_export",
         "//tflite/converter:flatbuffer_import",
         "//tflite/converter:tensorflow_lite",
         "//tflite/converter:tensorflow_lite_ops",
         "//tflite/converter:tensorflow_lite_optimize",
-        "//tflite/converter:tensorflow_lite_quantize",
+        "//tflite/converter:tf_tfl_passes",
+        "//tflite/converter/quantization/common/quantization_lib:quantization_config",
         "//tflite/converter/quantization/ir:QuantOps",
         "//tflite/converter/stablehlo:prepare_hlo",
         "@com_google_absl//absl/strings:string_view",
@@ -62,12 +65,14 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:ReconcileUnrealizedCasts",
         "@llvm-project//mlir:Transforms",
         "@stablehlo//:register",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:stablehlo_passes",
         "@stablehlo//:stablehlo_passes_optimization",
         "@stablehlo//:vhlo_ops",
+        "@xla//xla/mlir_hlo:hlo_dialect_registration",
     ],
 )
 
@@ -80,13 +85,13 @@ cc_library(
     }),
 )
 
-cc_binary(
-    name = "libLiteRTCompilerMLIR.so",
-    linkshared = 1,
-    tags = [
-        "nobuilder",
-        "notap",
-    ],
+cc_shared_library(
+    name = "LiteRTCompilerMLIR",
+    user_link_flags = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-Wl,-Bsymbolic"],
+    }),
     deps = [
         ":model_utils_core",
         "@llvm-project//mlir:CAPIArithObjects",
@@ -95,6 +100,15 @@ cc_binary(
         "@llvm-project//mlir:MLIRBindingsPythonCAPIObjects",
         "@nanobind",
     ],
+)
+
+filegroup(
+    name = "libLiteRTCompilerMLIR.so",
+    srcs = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:windows": [],
+        "//conditions:default": [":LiteRTCompilerMLIR"],
+    }),
 )
 
 pybind_extension(
