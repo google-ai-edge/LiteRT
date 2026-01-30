@@ -321,7 +321,23 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     if (op_wrappers.empty()) {
       continue;
     }
-    if (SkipValidationOfQuantizeOp(op) ||
+
+    // TODO(jiunkaiy): Remove version check and break backward compatibility
+    // when acceptable.
+    const auto sdk_version = qnn_manager->GetSdkVersion();
+    using ::litert::qnn::SdkVersion;
+    const bool is_skipped =
+        (SdkVersion{2, 35, 0} <= sdk_version &&
+         sdk_version < SdkVersion{2, 38, 0} && SkipValidationOfQuantizeOp(op));
+    if (is_skipped) {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "SDK version is in [2.35.0, 2.38.0); Quantize OP validation is "
+          "bypassed.");
+    }
+
+    // Validate all OPs by QNN.
+    if (is_skipped ||
         std::all_of(op_wrappers.begin(), op_wrappers.end(),
                     [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
                       return kLiteRtStatusOk ==
@@ -515,5 +531,28 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  // Check LiteRt API version for backward compatibility.
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  if (LiteRtCompareApiVersion(api_version, kApiVersion) > 0) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "Incompatible compiler version. Found LiteRT API version %d.%d.%d, "
+        "but version <= %d.%d.%d is required.",
+        api_version.major, api_version.minor, api_version.patch,
+        kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
+
+  // Check if the SoC model is supported.
+  if (!soc_model_name) {
+    LITERT_LOG(LITERT_WARNING, "SoC model name is not specified.");
+  }
+  if (soc_model_name && !::qnn::FindSocModel(soc_model_name).has_value()) {
+    LITERT_LOG(LITERT_ERROR, "Unsupported SoC model: %s", soc_model_name);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
+
   return kLiteRtStatusOk;
 }

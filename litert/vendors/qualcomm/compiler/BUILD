@@ -158,6 +158,7 @@ litert_lib(
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:arg_min_max_op_builder",
         "//litert/vendors/qualcomm/core/builders:broadcast_to_op_builder",

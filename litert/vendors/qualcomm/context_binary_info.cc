@@ -199,6 +199,33 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Null binary info");
   }
 
+  // Compare the context binary's version against the current SDK version.
+  SdkVersion binary_version;
+  LITERT_ASSIGN_OR_RETURN(
+      binary_version,
+      QnnManager::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
+  const auto sdk_version = qnn.GetSdkVersion();
+  if (binary_version > sdk_version) {
+    LITERT_LOG(LITERT_ERROR,
+               "Context binary (%d.%d.%d) is newer than the current SDK "
+               "(%d.%d.%d). Please update your SDK.",
+               binary_version.major, binary_version.minor, binary_version.patch,
+               sdk_version.major, sdk_version.minor, sdk_version.patch);
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Context binary isn't compatible with the current SDK.");
+  } else if (binary_version < sdk_version) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Context binary (%d.%d.%d) is older than the current SDK (%d.%d.%d). "
+        "Consider regenerating it for optimal performance and compatibility.",
+        binary_version.major, binary_version.minor, binary_version.patch,
+        sdk_version.major, sdk_version.minor, sdk_version.patch);
+  } else {
+    LITERT_LOG(
+        LITERT_INFO, "Context binary SDK version matches current SDK: %d.%d.%d",
+        binary_version.major, binary_version.minor, binary_version.patch);
+  }
+
   ContextBinaryInfo info;
   auto status = info.Init(*binary_info);
 
