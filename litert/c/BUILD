@@ -375,7 +375,9 @@ cc_library(
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/runtime:gl_texture",
         "//litert/runtime:tensor_buffer",
+        "//tflite/delegates/gpu/gl:gl_texture",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ] + gles_deps(),

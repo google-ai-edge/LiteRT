@@ -235,6 +235,7 @@ cc_library(
     linkopts = litert_metal_linkopts(),
     deps = [
         ":event",
+        ":gl_texture",
         ":gpu_environment",
         ":tensor_buffer_registry",
         "//litert/c:litert_any",
@@ -254,6 +255,7 @@ cc_library(
         "//litert/core:environment",
         "//litert/core/util:tensor_type_util",
         "//litert/core/util:to_string",
+        "//tflite/delegates/gpu/gl:gl_texture",
         "@XNNPACK",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
@@ -270,10 +272,8 @@ cc_library(
     ] + select({
         "//litert/build_common:android_gpu_enabled": [
             ":gl_buffer",
-            ":gl_texture",
             "//tflite/delegates/gpu/gl:egl_environment",
             "//tflite/delegates/gpu/gl:gl_buffer",
-            "//tflite/delegates/gpu/gl:gl_texture",
         ],
         "//conditions:default": [],
     }) + select({
