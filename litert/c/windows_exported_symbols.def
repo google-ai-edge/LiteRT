@@ -62,8 +62,6 @@ EXPORTS
   LiteRtCreateTensorBufferFromHostMemory
   LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtCreateTensorBufferFromWebGpuTexture
-  LiteRtCreateTensorBufferRequirements
-  LiteRtCreateTensorBufferRequirementsWithAlignment
   LiteRtDestroyCompiledModel
   LiteRtDestroyEnvironment
   LiteRtDestroyEvent
@@ -73,7 +71,6 @@ EXPORTS
   LiteRtDestroyOptions
   LiteRtDestroyProfiler
   LiteRtDestroyTensorBuffer
-  LiteRtDestroyTensorBufferRequirements
   LiteRtDupFdEvent
   LiteRtDuplicateTensorBuffer
   LiteRtEnvironmentHasGpuEnvironment
@@ -155,7 +152,6 @@ EXPORTS
   LiteRtGetNumSubgraphInputs
   LiteRtGetNumSubgraphOps
   LiteRtGetNumSubgraphOutputs
-  LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
   LiteRtGetOpCode
   LiteRtGetOpInput
@@ -192,10 +188,6 @@ EXPORTS
   LiteRtGetTensorBufferOffset
   LiteRtGetTensorBufferPackedSize
   LiteRtGetTensorBufferRegistry
-  LiteRtGetTensorBufferRequirementsAlignment
-  LiteRtGetTensorBufferRequirementsBufferSize
-  LiteRtGetTensorBufferRequirementsStrides
-  LiteRtGetTensorBufferRequirementsSupportedTensorBufferType
   LiteRtGetTensorBufferSize
   LiteRtGetTensorBufferTensorType
   LiteRtGetTensorBufferType
@@ -241,7 +233,6 @@ EXPORTS
   LiteRtIntelOpenVinoOptionsSetDeviceType
   LiteRtIntelOpenVinoOptionsSetPerformanceMode
   LiteRtIsEventSignaled
-  LiteRtJoinTensorBufferRequirements
   LiteRtLockTensorBuffer
   LiteRtMediatekOptionsCreate
   LiteRtMediatekOptionsGet

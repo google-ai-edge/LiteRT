@@ -33,7 +33,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/compiled_model.h"
 
@@ -58,33 +57,48 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
 LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index,
-    LiteRtTensorBufferRequirements* buffer_requirements) {
+    LiteRtTensorBufferRequirements* buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (!compiled_model || !buffer_requirements) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
   LITERT_ASSIGN_OR_RETURN(
-      LiteRtTensorBufferRequirementsConst buffer_requirements_ptr,
+      const auto requirements,
       compiled_model->GetInputBufferRequirements(signature_index, input_index));
-  *buffer_requirements =
-      const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
+  auto buffer = requirements.ToDetachedBuffer();
+  if (buffer.size() > max_buffer_size) {
+    LITERT_LOG(LITERT_ERROR,
+               "Buffer size %zu is larger than the max buffer size %zu",
+               buffer.size(), max_buffer_size);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  std::memcpy(*buffer_requirements, buffer.data(), buffer.size());
+  *actual_buffer_size = buffer.size();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex output_index,
-    LiteRtTensorBufferRequirements* buffer_requirements) {
+    LiteRtTensorBufferRequirements* buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (!compiled_model || !buffer_requirements) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtTensorBufferRequirementsConst buffer_requirements_ptr,
-      compiled_model->GetOutputBufferRequirementsCApi(signature_index,
-                                                      output_index));
-  *buffer_requirements =
-      const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
+  LITERT_ASSIGN_OR_RETURN(const auto requirements,
+                          compiled_model->GetOutputBufferRequirementsCApi(
+                              signature_index, output_index));
+  auto buffer = requirements.ToDetachedBuffer();
+  if (buffer.size() > max_buffer_size) {
+    LITERT_LOG(LITERT_ERROR,
+               "Buffer size %zu is larger than the max buffer size %zu",
+               buffer.size(), max_buffer_size);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  memcpy(*buffer_requirements, buffer.data(), buffer.size());
+  *actual_buffer_size = buffer.size();
   return kLiteRtStatusOk;
 }
 

@@ -24,7 +24,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -65,7 +64,7 @@ LiteRtDispatchInvocationContextT::Create(
                                                   num_inputs, num_outputs));
 }
 
-litert::Expected<LiteRtTensorBufferRequirements>
+litert::Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   LiteRtTensorBufferType supported_tensor_buffer_types[] = {
@@ -87,24 +86,22 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     return litert::Unexpected(buffer_size.Error());
   }
 
-  LiteRtTensorBufferRequirements requirements;
-  auto status = LiteRtCreateTensorBufferRequirements(
-      num_supported_tensor_buffer_types, supported_tensor_buffer_types,
-      *buffer_size, 0, /*strides=*/nullptr, &requirements);
-  if (status != kLiteRtStatusOk)
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "Failed to get buffer requirements");
+  std::vector<litert::TensorBufferType> types;
+  for (int i = 0; i < num_supported_tensor_buffer_types; ++i) {
+    types.push_back(static_cast<litert::TensorBufferType>(
+        supported_tensor_buffer_types[i]));
+  }
 
-  return requirements;
+  return litert::TensorBufferRequirements::Create(types, *buffer_size);
 }
 
-litert::Expected<LiteRtTensorBufferRequirements>
+litert::Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
     int input_index, const LiteRtRankedTensorType& tensor_type) {
   return GetTensorBufferRequirements(tensor_type);
 }
 
-litert::Expected<LiteRtTensorBufferRequirements>
+litert::Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
   return GetTensorBufferRequirements(tensor_type);

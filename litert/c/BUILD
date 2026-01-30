@@ -101,6 +101,7 @@ cc_test(
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/test:common",
         "//litert/test:simple_model_custom_op",
         "@com_google_absl//absl/log:absl_log",
@@ -354,11 +355,9 @@ cc_library(
     name = "litert_tensor_buffer",
     srcs = [
         "litert_tensor_buffer.cc",
-        "litert_tensor_buffer_requirements.cc",
     ],
     hdrs = [
         "litert_tensor_buffer.h",
-        "litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
@@ -375,6 +374,8 @@ cc_library(
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
+        "//litert/cc:litert_tensor_buffer_types",
         "//litert/runtime:tensor_buffer",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
@@ -434,18 +435,6 @@ cc_test(
 #     ],
 # )
 # copybara:uncomment_end
-
-cc_test(
-    name = "litert_tensor_buffer_requirements_test",
-    srcs = ["litert_tensor_buffer_requirements_test.cc"],
-    linkopts = litert_android_linkopts(),
-    deps = [
-        ":litert_common",
-        ":litert_tensor_buffer",
-        ":litert_tensor_buffer_types",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
 
 cc_library(
     name = "litert_options",
@@ -512,7 +501,10 @@ cc_test(
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -535,6 +527,8 @@ cc_test(
         ":litert_environment_options",
         ":litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",

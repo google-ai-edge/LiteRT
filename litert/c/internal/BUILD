@@ -188,7 +188,6 @@ cc_library(
         "//litert/c:litert_options.h",
         "//litert/c:litert_platform_support.h",
         "//litert/c:litert_tensor_buffer.h",
-        "//litert/c:litert_tensor_buffer_requirements.h",
         "//litert/c:litert_tensor_buffer_types.h",
         "//litert/c:litert_webgpu_types.h",
         # Needed for litert/c/litert_op_code.h
@@ -225,6 +224,7 @@ cc_library(
         ":litert_dispatch_headers",
         "//litert/c:litert_common",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/runtime:external_litert_buffer_context",
         "//tflite/c:common",
     ],

@@ -45,12 +45,14 @@ typedef LiteRtStatus (*LiteRtDispatchDeviceContextDestroyT)(
 typedef LiteRtStatus (*LiteRtDispatchGetInputRequirementsT)(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements);
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size);
 
 typedef LiteRtStatus (*LiteRtDispatchGetOutputRequirementsT)(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements);
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size);
 
 typedef LiteRtStatus (*LiteRtDispatchRegisterTensorBufferT)(
     LiteRtDispatchDeviceContext device_context,

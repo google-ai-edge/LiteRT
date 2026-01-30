@@ -431,7 +431,6 @@ cc_library(
     srcs = ["//litert/cc:litert_tensor_buffer.cc"],
     hdrs = [
         "//litert/cc:litert_tensor_buffer.h",
-        "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
         ":litert_environment",
@@ -504,39 +503,6 @@ litert_device_exec(
     backend_id = "cpu",
     data = [],
     target = ":litert_tensor_buffer_test",
-)
-
-cc_library(
-    name = "litert_tensor_buffer_requirements",
-    hdrs = ["//litert/cc:litert_tensor_buffer_requirements.h"],
-    deps = [
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
-
-cc_test(
-    name = "litert_tensor_buffer_requirements_test",
-    srcs = ["//litert/cc:litert_tensor_buffer_requirements_test.cc"],
-    deps = [
-        ":litert_tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
 )
 
 cc_library(
@@ -635,6 +601,7 @@ cc_library(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
@@ -675,6 +642,7 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         "//litert/test:common",
@@ -710,6 +678,7 @@ cc_test(
 #         "@com_google_absl//absl/types:span",
 #         "//litert/cc:litert_api_with_dynamic_runtime",
 #         "//litert/cc:litert_ranked_tensor_type",
+#         "//litert/cc:litert_tensor_buffer_requirements",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",

@@ -14,6 +14,8 @@
 
 #include "litert/vendors/c/litert_dispatch.h"
 
+#include <cstddef>
+
 #if !defined(LITERT_WINDOWS_OS)
 #include <dlfcn.h>
 #endif  // !defined(LITERT_WINDOWS_OS)
@@ -211,25 +213,29 @@ LiteRtStatus LiteRtDispatchDeviceContextDestroy(
 LiteRtStatus LiteRtDispatchGetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (!invocation_context || !tensor_type || !tensor_buffer_requirements) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
   INVOKE_FUNC(get_input_requirements, invocation_context, input_index,
-              tensor_type, tensor_buffer_requirements);
+              tensor_type, tensor_buffer_requirements, max_buffer_size,
+              actual_buffer_size);
 }
 
 LiteRtStatus LiteRtDispatchGetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (!invocation_context || !tensor_type || !tensor_buffer_requirements) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
   INVOKE_FUNC(get_output_requirements, invocation_context, output_index,
-              tensor_type, tensor_buffer_requirements);
+              tensor_type, tensor_buffer_requirements, max_buffer_size,
+              actual_buffer_size);
 }
 
 LiteRtStatus LiteRtDispatchRegisterTensorBuffer(

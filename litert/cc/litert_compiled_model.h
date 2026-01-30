@@ -211,12 +211,20 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// tensor buffer.
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
       size_t signature_index, size_t input_index) const {
-    LiteRtTensorBufferRequirements buffer_requirements;
+    uint8_t buffer_requirements_data
+        [litert::TensorBufferRequirements::kDefaultBufferSize];
+    LiteRtTensorBufferRequirements buffer_requirements =
+        buffer_requirements_data;
+    size_t actual_buffer_size = 0;
     LITERT_RETURN_IF_ERROR(
         env_.runtime->GetCompiledModelInputBufferRequirements(
-            Get(), signature_index, input_index, &buffer_requirements));
-    return TensorBufferRequirements::WrapCObject(buffer_requirements,
-                                                 OwnHandle::kNo);
+            Get(), signature_index, input_index, &buffer_requirements,
+            litert::TensorBufferRequirements::kDefaultBufferSize,
+            &actual_buffer_size));
+    LITERT_ASSIGN_OR_RETURN(
+        auto requirements,
+        TensorBufferRequirements::FromFlatBuffer(buffer_requirements_data));
+    return requirements;
   }
 
   /// @brief An overload of `GetInputBufferRequirements` that takes an input
@@ -283,12 +291,20 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// tensor buffer.
   Expected<TensorBufferRequirements> GetOutputBufferRequirements(
       size_t signature_index, size_t output_index) const {
-    LiteRtTensorBufferRequirements buffer_requirements;
+    uint8_t buffer_requirements_data
+        [litert::TensorBufferRequirements::kDefaultBufferSize];
+    LiteRtTensorBufferRequirements buffer_requirements =
+        buffer_requirements_data;
+    size_t actual_buffer_size = 0;
     LITERT_RETURN_IF_ERROR(
         env_.runtime->GetCompiledModelOutputBufferRequirements(
-            Get(), signature_index, output_index, &buffer_requirements));
-    return TensorBufferRequirements::WrapCObject(buffer_requirements,
-                                                 OwnHandle::kNo);
+            Get(), signature_index, output_index, &buffer_requirements,
+            litert::TensorBufferRequirements::kDefaultBufferSize,
+            &actual_buffer_size));
+    LITERT_ASSIGN_OR_RETURN(
+        auto requirements,
+        TensorBufferRequirements::FromFlatBuffer(buffer_requirements_data));
+    return requirements;
   }
 
   /// @brief An overload of `GetOutputBufferRequirements` that takes an output

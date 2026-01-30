@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -190,24 +192,34 @@ ops:mul(0,1)(2))";
 
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
   const auto t = MakeRankedTensorType<float>({2, 2});
-  LiteRtTensorBufferRequirements requirements = nullptr;
+  uint8_t
+      requirements_data[litert::TensorBufferRequirements::kDefaultBufferSize];
+  LiteRtTensorBufferRequirements requirements = requirements_data;
+  size_t actual_buffer_size = 0;
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
-  LITERT_ASSERT_OK(
-      Api().get_input_requirements(nullptr, 0, &litert_t, &requirements));
-  auto req =
-      TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
+  LITERT_ASSERT_OK(Api().get_input_requirements(
+      nullptr, 0, &litert_t, &requirements,
+      litert::TensorBufferRequirements::kDefaultBufferSize,
+      &actual_buffer_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto req, TensorBufferRequirements::FromFlatBuffer(requirements_data));
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
   EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::kHostMemory));
 }
 
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
   const auto t = MakeRankedTensorType<float>({2, 2});
-  LiteRtTensorBufferRequirements requirements = nullptr;
+  uint8_t
+      requirements_data[litert::TensorBufferRequirements::kDefaultBufferSize];
+  LiteRtTensorBufferRequirements requirements = requirements_data;
+  size_t actual_buffer_size = 0;
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
-  LITERT_ASSERT_OK(
-      Api().get_output_requirements(nullptr, 0, &litert_t, &requirements));
-  auto req =
-      TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
+  LITERT_ASSERT_OK(Api().get_output_requirements(
+      nullptr, 0, &litert_t, &requirements,
+      litert::TensorBufferRequirements::kDefaultBufferSize,
+      &actual_buffer_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto req, TensorBufferRequirements::FromFlatBuffer(requirements_data));
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
   EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::kHostMemory));
 }

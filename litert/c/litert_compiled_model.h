@@ -68,7 +68,8 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
 LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index,
-    LiteRtTensorBufferRequirements* buffer_requirements);
+    LiteRtTensorBufferRequirements* buffer_requirements, size_t max_buffer_size,
+    size_t* actual_buffer_size);
 
 // Returns the buffer requirements for the given n-th output tensor. The
 // returned LiteRtTensorBufferRequirements is used to create the output tensor
@@ -86,7 +87,8 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex output_index,
-    LiteRtTensorBufferRequirements* buffer_requirements);
+    LiteRtTensorBufferRequirements* buffer_requirements, size_t max_buffer_size,
+    size_t* actual_buffer_size);
 
 // Returns the tensor layout for the given input tensor. This reflects the most
 // recent shape requested via LiteRtCompiledModelResizeInputTensor or automatic

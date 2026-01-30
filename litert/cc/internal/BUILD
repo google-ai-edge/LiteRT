@@ -74,7 +74,6 @@ cc_library(
     srcs = ["//litert/cc:litert_tensor_buffer.cc"],
     hdrs = [
         "//litert/cc:litert_tensor_buffer.h",
-        "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
         ":litert_detail",
@@ -112,6 +111,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//tflite/c:common",
     ],
 )
@@ -553,8 +553,8 @@ cc_test(
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/test:common",
         "//litert/test:matchers",

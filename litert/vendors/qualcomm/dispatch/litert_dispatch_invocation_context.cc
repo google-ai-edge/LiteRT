@@ -39,10 +39,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
@@ -190,45 +190,40 @@ LiteRtDispatchInvocationContextT::Create(
 
 namespace {
 
-Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+Expected<litert::TensorBufferRequirements> GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   if (tensor_type.layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported by QNN");
   }
 
-  static constexpr std::array<const LiteRtTensorBufferType, 2>
-      kSupportedTensorBufferTypes = {
-          kLiteRtTensorBufferTypeFastRpc,
-          kLiteRtTensorBufferTypeDmaBuf,
-      };
+  static constexpr std::array kSupportedTensorBufferTypes = {
+      litert::TensorBufferType::kFastRpc,
+      litert::TensorBufferType::kDmaBuf,
+  };
 
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
     return Unexpected(buffer_size.Error());
   }
 
-  LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
-          kSupportedTensorBufferTypes.size(),
-          kSupportedTensorBufferTypes.data(), *buffer_size, /*num_strides=*/0,
-          /*strides=*/nullptr, &requirements);
-      status != kLiteRtStatusOk) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Not implemented");
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto requirements,
+      litert::TensorBufferRequirements::Create(
+          absl::MakeConstSpan(kSupportedTensorBufferTypes), *buffer_size));
 
-  return requirements;
+  return std::move(requirements);
 }
 
 }  // namespace
 
-Expected<LiteRtTensorBufferRequirements>
+Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
     int input_index, const LiteRtRankedTensorType& tensor_type) {
   return GetTensorBufferRequirements(tensor_type);
 }
 
-Expected<LiteRtTensorBufferRequirements>
+Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
   return GetTensorBufferRequirements(tensor_type);
