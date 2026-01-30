@@ -323,6 +323,10 @@ $ZeroCopyStream = Join-Path $OutputBase "external\com_google_protobuf\src\google
 Write-Host "Patching zero_copy_buffered_stream.cc..."
 Replace-InFile $ZeroCopyStream '#include "google/protobuf/json/internal/zero_copy_buffered_stream.h"' '#include "zero_copy_buffered_stream.h"' | Out-Null
 
+$LexerHeader = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\lexer.h"
+Write-Host "Patching lexer.h..."
+Replace-InFile $LexerHeader '#include "google/protobuf/json/internal/zero_copy_buffered_stream.h"' '#include "zero_copy_buffered_stream.h"' | Out-Null
+
 $ProtoCompilerBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\BUILD.bazel"
 Write-Host "Patching compiler/BUILD.bazel..."
 Replace-InFile $ProtoCompilerBuild '        "//src/google/protobuf/compiler/objectivec",' '' | Out-Null
