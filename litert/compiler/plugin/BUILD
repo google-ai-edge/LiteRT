@@ -89,13 +89,13 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         # copybara:comment_end
         "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc/options:litert_compiler_options",
         "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_op_options",
-        "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_options_testonly",
         "//litert/core:build_stamp",
         "//litert/core:filesystem",
@@ -103,6 +103,7 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/tools:dump",
+        "//litert/vendors/c:litert_compiler_plugin",
     ],
 )
 
