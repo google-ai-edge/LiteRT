@@ -25,8 +25,10 @@ if not os.path.splitext(__file__)[0].endswith(
   from litert.python.litert_wrapper.compiled_model_wrapper import (
       _pywrap_litert_compiled_model_wrapper as _cm,
   )
-  from litert.python.litert_wrapper.compiled_model_wrapper.hardware_accelerator import HardwareAccelerator
-  from litert.python.litert_wrapper.tensor_buffer_wrapper.tensor_buffer import TensorBuffer
+  from litert.python.litert_wrapper.compiled_model_wrapper import hardware_accelerator
+  from litert.python.litert_wrapper.tensor_buffer_wrapper import tensor_buffer
+  HardwareAccelerator = hardware_accelerator.HardwareAccelerator
+  TensorBuffer = tensor_buffer.TensorBuffer
 else:
   # This file is part of ai_edge_litert package.
   from ai_edge_litert import _pywrap_litert_compiled_model_wrapper as _cm
