@@ -161,7 +161,7 @@ android_library(
     name = "litert_kotlin_api_native_deps",
     exports = [
         ":litert_jni_lib",
-        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
+        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",
     ],
 )
 
@@ -240,3 +240,18 @@ aar_with_jni(
     name = "litert",
     android_library = ":litert_kotlin_api",
 )
+
+# copybara:uncomment_begin(google-only)
+# android_library(
+#     name = "litert_kotlin_api_native_gpu_deps",
+#     exports = [
+#         "//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator_shared_lib",
+#     ],
+# )
+#
+# # Marvel target for GPU Accelerator which supports both WebGPU and OpenCL.
+# aar_with_jni(
+#     name = "litert_gpu_accelerator",
+#     android_library = ":litert_kotlin_api_native_gpu_deps",
+# )
+# copybara:uncomment_end
