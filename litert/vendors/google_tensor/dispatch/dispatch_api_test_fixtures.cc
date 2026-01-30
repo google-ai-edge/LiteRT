@@ -54,12 +54,10 @@ void DispatchApiTest::SetUp() {
   LITERT_ASSERT_OK(LiteRtCreateEnvironment(
       env_options_for_create.size(), env_options_for_create.data(), &env_));
 
-  LiteRtEnvironmentOptions env_options;
-  LITERT_ASSERT_OK(LiteRtGetEnvironmentOptions(env_, &env_options));
   LiteRtOptions options;
   LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
 
-  LITERT_ASSERT_OK(LiteRtDispatchInitialize(env_options, options));
+  LITERT_ASSERT_OK(LiteRtDispatchInitialize(env_, options));
   LiteRtDestroyOptions(options);
 
   const char* vendor_id;

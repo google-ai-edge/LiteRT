@@ -175,7 +175,7 @@ class LiteRtDispatchInvocationContextT {
 namespace litert::example {
 namespace {
 
-LiteRtEnvironmentOptions the_environment_options = nullptr;
+LiteRtEnvironment the_environment = nullptr;
 LiteRtOptions the_options = nullptr;
 
 LiteRtStatus GetVendorId(const char** vendor_id) {
@@ -193,9 +193,8 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
-  the_environment_options = environment_options;
+LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
+  the_environment = env;
   the_options = options;
   return kLiteRtStatusOk;
 }

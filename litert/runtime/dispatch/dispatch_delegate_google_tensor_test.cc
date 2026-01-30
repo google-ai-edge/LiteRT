@@ -139,12 +139,10 @@ TEST(DispatchDelegate, CpuBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));
 
-  dispatch_delegate =
-      CreateDispatchDelegatePtr(env_options.Get(), options.Get());
+  dispatch_delegate = CreateDispatchDelegatePtr(env.Get(), options.Get());
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -211,12 +209,10 @@ TEST(DispatchDelegate, HwBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));
 
-  dispatch_delegate =
-      CreateDispatchDelegatePtr(env_options.Get(), options.Get());
+  dispatch_delegate = CreateDispatchDelegatePtr(env.Get(), options.Get());
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "

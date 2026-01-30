@@ -23,6 +23,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -73,10 +74,10 @@ LiteRtStatus CreateTensorBufferRequirements(
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
+LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
   GT_LOG_RETURN_IF_SB_ERROR(thrInitialize(), "Failed to initialize SB");
-
+  LiteRtEnvironmentOptions environment_options;
+  LiteRtGetEnvironmentOptions(env, &environment_options);
   return InitializeDispatchApiConfig(environment_options, options);
 }
 

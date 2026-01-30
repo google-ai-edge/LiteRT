@@ -49,10 +49,9 @@ litert::Expected<litert::Environment> CreateDefaultEnvironment() {
 
 TEST(OpenVino, DispatchApi) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;

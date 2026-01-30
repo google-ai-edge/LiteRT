@@ -26,8 +26,8 @@ typedef struct LiteRtDispatchDelegateOptions LiteRtDispatchDelegateOptions;
 // Create a delegate that uses the Dispatch API for execution.
 //
 // [TODO] DOCUMENT OWNERSHIP
-TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
+TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(LiteRtEnvironment env,
+                                                   LiteRtOptions options);
 
 // Do any needed cleanup and delete 'delegate'.
 void LiteRtDestroyDispatchDelegate(TfLiteOpaqueDelegate* delegate);
