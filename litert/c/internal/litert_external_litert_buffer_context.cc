@@ -16,6 +16,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "tflite/c/common.h"
 
@@ -50,8 +51,11 @@ LiteRtStatus LiteRtExternalLiteRtBufferContextRegisterTensorBuffer(
 LiteRtStatus LiteRtExternalLiteRtBufferContextRegisterBufferRequirements(
     LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor,
     LiteRtTensorBufferRequirements buffer_requirements) {
-  LITERT_RETURN_IF_ERROR(context->RegisterBufferRequirements(
-      tensor, LiteRtTensorBufferRequirementsPtr(buffer_requirements)));
+  LITERT_ASSIGN_OR_RETURN(
+      auto requirements,
+      litert::TensorBufferRequirements::FromFlatBuffer(buffer_requirements));
+  LITERT_RETURN_IF_ERROR(
+      context->RegisterBufferRequirements(tensor, requirements));
   return kLiteRtStatusOk;
 }
 

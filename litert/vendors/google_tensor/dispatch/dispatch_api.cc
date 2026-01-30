@@ -14,6 +14,13 @@
 
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
+#include <cstring>
+#include <vector>
+
+#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
+
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
@@ -26,7 +33,6 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -52,7 +58,8 @@ constexpr auto Pad(X x, Align align) {
 
 LiteRtStatus CreateTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type,
-    LiteRtTensorBufferRequirements& requirements) {
+    LiteRtTensorBufferRequirements& requirements, const size_t max_buffer_size,
+    size_t* actual_buffer_size) {
   if (tensor_type.layout.has_strides) {
     LITERT_LOG(LITERT_ERROR, "Tensor strides are not supported");
     return kLiteRtStatusErrorUnsupported;
@@ -61,11 +68,27 @@ LiteRtStatus CreateTensorBufferRequirements(
   LITERT_ASSIGN_OR_RETURN(size_t size_bytes,
                           litert::internal::GetNumPackedBytes(tensor_type));
 
-  return LiteRtCreateTensorBufferRequirements(
-      GetTheSupportedTensorBufferTypes().size(),
-      GetTheSupportedTensorBufferTypes().data(),
-      Pad(size_bytes, kEdgeTpuPadding), /*num_strides=*/0,
-      /*strides=*/nullptr, &requirements);
+  // Get the LiteRtTensorBufferType values.
+  auto lite_rt_types = GetTheSupportedTensorBufferTypes();
+  // Convert to litert::TensorBufferType.
+  std::vector<litert::TensorBufferType> supported_types;
+  supported_types.reserve(lite_rt_types.size());
+  for (LiteRtTensorBufferType type : lite_rt_types) {
+    supported_types.push_back(static_cast<litert::TensorBufferType>(type));
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto requirements_cc,
+                          litert::TensorBufferRequirements::Create(
+                              absl::MakeConstSpan(supported_types),
+                              Pad(size_bytes, kEdgeTpuPadding)));
+  auto buffer = requirements_cc.ToDetachedBuffer();
+  *actual_buffer_size = buffer.size();
+  if (*actual_buffer_size > max_buffer_size) {
+    LITERT_LOG(LITERT_ERROR, "Tensor buffer size is too large");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  std::memcpy(requirements, buffer.data(), buffer.size());
+  return kLiteRtStatusOk;
 }
 
 }  // namespace
@@ -123,23 +146,27 @@ LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
 LiteRtStatus GetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   GT_LOG_RETURN_IF_NULL(tensor_type);
   GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
 
   return CreateTensorBufferRequirements(*tensor_type,
-                                        *tensor_buffer_requirements);
+                                        *tensor_buffer_requirements,
+                                        max_buffer_size, actual_buffer_size);
 }
 
 LiteRtStatus GetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   GT_LOG_RETURN_IF_NULL(tensor_type);
   GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
 
   return CreateTensorBufferRequirements(*tensor_type,
-                                        *tensor_buffer_requirements);
+                                        *tensor_buffer_requirements,
+                                        max_buffer_size, actual_buffer_size);
 }
 
 LiteRtStatus RegisterTensorBuffer(

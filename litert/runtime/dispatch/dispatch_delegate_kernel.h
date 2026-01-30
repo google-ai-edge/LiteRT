@@ -26,6 +26,7 @@
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -94,7 +95,7 @@ class DispatchDelegateKernel
   Expected<LiteRtDispatchInvocationContext> CreateNodeInvocationContext(
       TfLiteOpaqueContext* context, TfLiteOpaqueNode* node);
 
-  Expected<LiteRtTensorBufferRequirementsPtr> GetBufferRequirements(
+  Expected<litert::TensorBufferRequirements> GetBufferRequirements(
       int node_idx, TfLiteOpaqueTensor* io_tfl_tensor, int io_tensor_index,
       bool is_input) const;
 
@@ -133,7 +134,8 @@ class DispatchDelegateKernel
   std::vector<int> output_tensor_ids_;
   std::vector<int> internal_tensor_ids_;
 
-  std::unordered_map<int, LiteRtTensorBufferHandle> tensor_idx_to_handle_;  // NOLINT
+  std::unordered_map<int, LiteRtTensorBufferHandle>
+      tensor_idx_to_handle_;  // NOLINT
 
   struct TensorInfo {
     LiteRtTensorBufferPtr tensor_buffer;

@@ -19,8 +19,8 @@
 
 #include "neuron/api/NeuronAdapter.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -37,10 +37,10 @@ class LiteRtDispatchInvocationContextT {
 
   ~LiteRtDispatchInvocationContextT();
 
-  litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
+  litert::Expected<litert::TensorBufferRequirements> GetInputRequirements(
       int input_index, const LiteRtRankedTensorType& tensor_type);
 
-  litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
+  litert::Expected<litert::TensorBufferRequirements> GetOutputRequirements(
       int output_index, const LiteRtRankedTensorType& tensor_type);
 
   litert::Expected<void> AttachInput(
@@ -60,7 +60,7 @@ class LiteRtDispatchInvocationContextT {
    public:
     IoRequirementsBuilder(size_t buffer_size,
                           const std::vector<uint32_t>& padded_dimensions);
-    litert::Expected<LiteRtTensorBufferRequirements> Create();
+    litert::Expected<litert::TensorBufferRequirements> Create();
 
    private:
     size_t buffer_size_;

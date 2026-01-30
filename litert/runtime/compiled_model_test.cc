@@ -43,13 +43,13 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -131,10 +131,12 @@ Expected<std::vector<LiteRtTensorBufferT*>> CreateOutputBuffersOfType(
 // Creates a tensor buffer of the given tensor and buffer requirements.
 Expected<LiteRtTensorBufferT*> CreateBufferFromRequirements(
     LiteRtEnvironment env, const LiteRtTensorT& tensor,
-    const LiteRtTensorBufferRequirementsT& requirements) {
-  return CreateBufferOfType(env, tensor,
-                            requirements.SupportedBufferTypes().at(0),
-                            requirements.BufferSize());
+    const TensorBufferRequirements& requirements) {
+  LITERT_ASSIGN_OR_RETURN(auto buffer_types, requirements.SupportedTypes());
+  LITERT_ASSIGN_OR_RETURN(auto buffer_size, requirements.BufferSize());
+  return CreateBufferOfType(
+      env, tensor, static_cast<LiteRtTensorBufferType>(buffer_types.at(0)),
+      buffer_size);
 }
 
 // Creates input or output tensor buffers of the given model and requirements.
@@ -155,15 +157,15 @@ CreateInputOutputBuffersFromRequirements(LiteRtEnvironment env,
   tensor_buffers.reserve(tensors.size());
 
   for (int i = 0; i < tensors.size(); ++i) {
-    Expected<const LiteRtTensorBufferRequirementsT*> requirements_expected =
-        is_input ? compiled_model.GetInputBufferRequirements(signature_key, i)
-                 : compiled_model.GetOutputBufferRequirements(signature_key, i);
-    LITERT_ASSIGN_OR_RETURN(const LiteRtTensorBufferRequirementsT* requirements,
-                            requirements_expected);
+    LITERT_ASSIGN_OR_RETURN(
+        const TensorBufferRequirements requirements,
+        is_input
+            ? compiled_model.GetInputBufferRequirements(signature_key, i)
+            : compiled_model.GetOutputBufferRequirements(signature_key, i));
 
     LITERT_ASSIGN_OR_RETURN(
         LiteRtTensorBufferT * tensor_buffer,
-        CreateBufferFromRequirements(env, *tensors[i], *requirements));
+        CreateBufferFromRequirements(env, *tensors[i], requirements));
     tensor_buffers.push_back(tensor_buffer);
   }
   return tensor_buffers;
@@ -223,34 +225,35 @@ TEST(CompiledModelTest, Basic) {
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
+      const TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
-      input_buffer_requirements_arg0->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
+      const TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
-      input_buffer_requirements_arg1->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
+      const TensorBufferRequirements output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& output_buffer_types =
-      output_buffer_requirements->SupportedBufferTypes();
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kHostMemory));
 
   // Create and fill input and output LiteRtTensorBuffers. Buffers are
   // created to match CompiledModel's TensorBufferRequirements.
@@ -374,34 +377,35 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
 
   // Check input and output buffer requirements expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
+      const TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
-      input_buffer_requirements_arg0->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
+      const TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
-      input_buffer_requirements_arg1->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
+      const TensorBufferRequirements output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& output_buffer_types =
-      output_buffer_requirements->SupportedBufferTypes();
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kHostMemory));
 
   // Create and fill input and output buffers. CompiledModel's
   // TensorBufferRequirements expect host memory,but we create AHWB buffers.
@@ -510,34 +514,35 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   // Check ComiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
+      const TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
-      input_buffer_requirements_arg0->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
+      const TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
-      input_buffer_requirements_arg1->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
+      const TensorBufferRequirements output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& output_buffer_types =
-      output_buffer_requirements->SupportedBufferTypes();
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kHostMemory));
 
   // Create and fill input and output buffers. CompiledModel's
   // TensorBufferRequirements expect host memory,but we create OpenCL buffers.
@@ -649,34 +654,35 @@ TEST(CompiledModelTest, WithProfiler) {
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
+      const TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
-      input_buffer_requirements_arg0->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
+      const TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*input_index=*/1));
-  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
-      input_buffer_requirements_arg1->SupportedBufferTypes();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::kHostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
+      const TensorBufferRequirements output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
           /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
           /*output_index=*/0));
-  const std::vector<LiteRtTensorBufferType>& output_buffer_types =
-      output_buffer_requirements->SupportedBufferTypes();
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kHostMemory));
 
   // Create and fill input and output LiteRtTensorBuffers. Buffers are
   // created to match CompiledModel's TensorBufferRequirements.

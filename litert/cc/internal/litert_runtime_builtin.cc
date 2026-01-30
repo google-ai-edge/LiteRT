@@ -27,7 +27,6 @@
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 
 // The implementation of the LiteRtRuntimeCApiStruct with the builtin runtime.
 const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
@@ -134,25 +133,6 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
     .litert_compiled_model_clear_errors = LiteRtCompiledModelClearErrors,
     .litert_compiled_model_get_error_messages =
         LiteRtCompiledModelGetErrorMessages,
-    // LiteRtTensorBufferRequirements
-    .litert_create_tensor_buffer_requirements =
-        LiteRtCreateTensorBufferRequirements,
-    .litert_create_tensor_buffer_requirements_with_alignment =
-        LiteRtCreateTensorBufferRequirementsWithAlignment,
-    .litert_get_num_tensor_buffer_requirements_supported_buffer_types =
-        LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes,
-    .litert_get_tensor_buffer_requirements_supported_tensor_buffer_type =
-        LiteRtGetTensorBufferRequirementsSupportedTensorBufferType,
-    .litert_get_tensor_buffer_requirements_buffer_size =
-        LiteRtGetTensorBufferRequirementsBufferSize,
-    .litert_get_tensor_buffer_requirements_strides =
-        LiteRtGetTensorBufferRequirementsStrides,
-    .litert_get_tensor_buffer_requirements_alignment =
-        LiteRtGetTensorBufferRequirementsAlignment,
-    .litert_join_tensor_buffer_requirements =
-        LiteRtJoinTensorBufferRequirements,
-    .litert_destroy_tensor_buffer_requirements =
-        LiteRtDestroyTensorBufferRequirements,
     // LiteRtTensorBuffer
     .litert_create_tensor_buffer_from_host_memory =
         LiteRtCreateTensorBufferFromHostMemory,

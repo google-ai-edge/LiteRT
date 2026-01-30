@@ -13,13 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstring>
 #include <exception>
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -170,11 +170,18 @@ LiteRtStatus DispatchDeviceContextDestroy(
 LiteRtStatus DispatchGetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (auto result =
           invocation_context->GetInputRequirements(input_index, *tensor_type);
       result) {
-    *tensor_buffer_requirements = *result;
+    auto buffer = result->ToDetachedBuffer();
+    *actual_buffer_size = buffer.size();
+    if (*actual_buffer_size > max_buffer_size) {
+      LITERT_LOG(LITERT_ERROR, "Tensor buffer size is too large");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    std::memcpy(*tensor_buffer_requirements, buffer.data(), buffer.size());
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to get input requirements: %s",
@@ -189,11 +196,18 @@ LiteRtStatus DispatchGetInputRequirements(
 LiteRtStatus DispatchGetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (auto result =
           invocation_context->GetOutputRequirements(output_index, *tensor_type);
       result) {
-    *tensor_buffer_requirements = *result;
+    auto buffer = result->ToDetachedBuffer();
+    *actual_buffer_size = buffer.size();
+    if (*actual_buffer_size > max_buffer_size) {
+      LITERT_LOG(LITERT_ERROR, "Tensor buffer size is too large");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    std::memcpy(*tensor_buffer_requirements, buffer.data(), buffer.size());
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to get output requirements: %s",

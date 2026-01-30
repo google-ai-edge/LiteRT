@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <list>
 #include <memory>
 #include <utility>
@@ -22,9 +24,9 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -97,7 +99,7 @@ class LiteRtDispatchInvocationContextT {
 
     if (example_graph.version() != "1") {
       return litert::Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
-                             "Bytecode version is not compatible");
+                           "Bytecode version is not compatible");
     }
 
     return Ptr(new LiteRtDispatchInvocationContextT(
@@ -219,26 +221,40 @@ Expected<TensorBufferRequirements> GetTensorBufferRequirements(
   static constexpr std::array<const TensorBufferType, 1> types = {
       TensorBufferType::kHostMemory};
   LITERT_ASSIGN_OR_RETURN(const auto size, t.Bytes());
-  return TensorBufferRequirements::Create(types, size, {}, OwnHandle::kNo);
+  return TensorBufferRequirements::Create(types, size, {});
 }
 
 LiteRtStatus GetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   LITERT_ASSIGN_OR_RETURN(auto requirements,
                           GetTensorBufferRequirements(*tensor_type));
-  *tensor_buffer_requirements = requirements.Get();
+  auto buffer = requirements.ToDetachedBuffer();
+  *actual_buffer_size = buffer.size();
+  if (*actual_buffer_size > max_buffer_size) {
+    LITERT_LOG(LITERT_ERROR, "Tensor buffer size is too large");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  std::memcpy(*tensor_buffer_requirements, buffer.data(), buffer.size());
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus GetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   LITERT_ASSIGN_OR_RETURN(auto requirements,
                           GetTensorBufferRequirements(*tensor_type));
-  *tensor_buffer_requirements = requirements.Get();
+  auto buffer = requirements.ToDetachedBuffer();
+  *actual_buffer_size = buffer.size();
+  if (*actual_buffer_size > max_buffer_size) {
+    LITERT_LOG(LITERT_ERROR, "Tensor buffer size is too large");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  std::memcpy(*tensor_buffer_requirements, buffer.data(), buffer.size());
   return kLiteRtStatusOk;
 }
 

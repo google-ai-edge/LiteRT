@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
@@ -166,11 +167,18 @@ LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
 LiteRtStatus GetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (auto requirements =
           invocation_context->GetInputRequirements(input_index, *tensor_type);
       requirements) {
-    *tensor_buffer_requirements = *requirements;
+    auto buffer = requirements->ToDetachedBuffer();
+    *actual_buffer_size = buffer.size();
+    if (*actual_buffer_size > max_buffer_size) {
+      LITERT_LOG(LITERT_ERROR, "Tensor buffer size is too large");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    std::memcpy(*tensor_buffer_requirements, buffer.data(), buffer.size());
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to get tensor buffer requirements: %s",
@@ -182,11 +190,18 @@ LiteRtStatus GetInputRequirements(
 LiteRtStatus GetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    const size_t max_buffer_size, size_t* actual_buffer_size) {
   if (auto requirements =
           invocation_context->GetOutputRequirements(output_index, *tensor_type);
       requirements) {
-    *tensor_buffer_requirements = *requirements;
+    auto buffer = requirements->ToDetachedBuffer();
+    *actual_buffer_size = buffer.size();
+    if (*actual_buffer_size > max_buffer_size) {
+      LITERT_LOG(LITERT_ERROR, "Tensor buffer size is too large");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    std::memcpy(*tensor_buffer_requirements, buffer.data(), buffer.size());
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to get tensor buffer requirements: %s",
