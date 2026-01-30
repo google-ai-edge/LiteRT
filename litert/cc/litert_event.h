@@ -35,6 +35,17 @@ namespace litert {
 /// @brief Defines the C++ wrapper for LiteRT events, used for synchronization.
 class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
  public:
+  // LINT.IfChange(event_type)
+  enum class Type {
+    kUnknown = LiteRtEventTypeUnknown,
+    kSyncFenceFd = LiteRtEventTypeSyncFenceFd,
+    kOpenCl = LiteRtEventTypeOpenCl,
+    kEglSyncFence = LiteRtEventTypeEglSyncFence,
+    kEglNativeSyncFence = LiteRtEventTypeEglNativeSyncFence,
+    kCustom = LiteRtEventTypeCustom,
+  };
+  // LINT.ThenChange(../c/litert_event_type.h:event_type)
+
   /// @brief Creates an `Event` object from a sync fence file descriptor.
   /// @warning This is a legacy API that does not take a `LiteRtEnvironment`.
   /// New code should use the overload that accepts an environment.
@@ -78,7 +89,12 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
 
   /// @brief Creates a managed event of a given type.
   ///
-  /// Currently, only `LiteRtEventTypeOpenCl` is supported.
+  /// Currently, only `litert::Event::Type::kOpenCl` is supported.
+  static Expected<Event> CreateManaged(LiteRtEnvironment env, Type type) {
+    return CreateManaged(env, static_cast<LiteRtEventType>(type));
+  }
+
+  [[deprecated("Use the overload that accepts `Type` instead.")]]
   static Expected<Event> CreateManaged(LiteRtEnvironment env,
                                        LiteRtEventType type) {
     LiteRtEvent event;
@@ -143,6 +159,14 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   }
 
   /// @brief Returns the underlying event type.
+  // TODO(b/454666070): Remove CC after Type() is removed.
+  Type TypeCC() const {
+    LiteRtEventType type;
+    LiteRtGetEventEventType(Get(), &type);
+    return static_cast<enum Type>(type);
+  }
+
+  [[deprecated("Use the overload that returns `Type` instead.")]]
   LiteRtEventType Type() const {
     LiteRtEventType type;
     LiteRtGetEventEventType(Get(), &type);
