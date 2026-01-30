@@ -262,6 +262,21 @@ cc_library(
     }),
 )
 
+cc_library(
+    name = "litert_matchers",
+    hdrs = ["//litert/cc/internal:litert_matchers.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
+    deps = [
+        ":litert_extended_model",
+        ":litert_op_options",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 cc_test(
     name = "litert_model_test",
     srcs = ["//litert/cc:litert_model_test.cc"],
