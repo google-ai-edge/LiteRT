@@ -4,6 +4,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_DSP_BACKEND_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_DSP_BACKEND_H_
 
+#include <memory>
 #include <optional>
 
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
@@ -31,8 +32,16 @@ class DspBackend : public QnnBackend {
 
   ~DspBackend();
 
-  bool Init(const Options& options,
-            std::optional<::qnn::SocInfo> soc_info) override;
+  DspBackend(const DspBackend&) = delete;
+  DspBackend& operator=(const DspBackend&) = delete;
+  DspBackend(DspBackend&&) = delete;
+  DspBackend& operator=(DspBackend&&) = delete;
+
+  bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
+
+ private:
+  class DspPerfControl;
+  std::unique_ptr<DspPerfControl> dsp_perf_control_{nullptr};
 };
 
 }  // namespace qnn

@@ -350,16 +350,6 @@ LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
   return kLiteRtStatusOk;
 }
 
-std::optional<::qnn::SocInfo> FindSocInfo(
-    const ::qnn::SnapdragonModel& soc_model) {
-  for (auto i = 0; i < ::qnn::kNumSocInfos; ++i) {
-    if (soc_model == ::qnn::kSocInfos[i].soc_model) {
-      return ::qnn::kSocInfos[i];
-    }
-  }
-  LITERT_LOG(LITERT_ERROR, "Failed to find available SoC!");
-  return std::nullopt;
-}
 
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
