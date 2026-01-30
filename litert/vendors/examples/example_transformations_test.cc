@@ -15,6 +15,7 @@
 #include "litert/vendors/examples/example_transformations.h"
 
 #include <gtest/gtest.h>
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
 

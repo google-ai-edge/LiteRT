@@ -27,6 +27,9 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtBuilder builder_ptr,
 LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
                                           LiteRtOp op);
 
+LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
+                                             LiteRtOp op);
+
 LiteRtStatus DummyTransformation(LiteRtBuilder builder_ptr, LiteRtOp op);
 
 #ifdef __cplusplus

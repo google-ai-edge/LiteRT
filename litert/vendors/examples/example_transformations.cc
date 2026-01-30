@@ -14,6 +14,7 @@
 
 #include "litert/vendors/examples/example_transformations.h"
 
+#include <utility>
 #include <vector>
 
 #include "litert/c/litert_common.h"
@@ -21,6 +22,8 @@
 #include "litert/cc/internal/litert_builder.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_matchers.h"
+#include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/litert_macros.h"
 
 using litert::Builder;
 using litert::Op;
@@ -80,6 +83,51 @@ LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
 
   // Clean up unused ops.
   builder.EraseOp(square_op);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus FuseMatMulRequantTransformation(LiteRtBuilder builder_ptr,
+                                             LiteRtOp op) {
+  Builder builder(builder_ptr);
+  Op root_op(op);
+  Op matmul_op(nullptr);
+
+  // Match: Quantize(MatMul(...))
+  if (!litert::Match(
+          root_op,
+          litert::m_Op<kLiteRtOpCodeTflQuantize>(litert::m_CaptureOrSameAs(
+              &matmul_op,
+              litert::m_AllOf(
+                  litert::m_HasOneUse(),
+                  litert::m_OpCode<kLiteRtOpCodeTflBatchMatmul>()))))) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+
+  // Check if it's a requantization: input/output element type must be the same.
+  if (root_op.Inputs()[0].ElementType() != root_op.Outputs()[0].ElementType()) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+
+  OpInputs inputs = matmul_op.Inputs();
+  std::vector<litert::Tensor> inputs_vec(inputs.begin(), inputs.end());
+
+  // Replace the Quant op with a new MatMul op that uses the same outputs as the
+  // Quant op but takes inputs from the original MatMul op.
+  Op new_matmul =
+      builder.ReplaceOp(root_op, kLiteRtOpCodeTflBatchMatmul, inputs_vec);
+
+  // The original Quant op is now replaced and will be erased by ApplyChanges.
+  // We also need to explicitly erase the original MatMul op.
+  builder.EraseOp(matmul_op);
+
+  // Copy options from the original MatMul op to the new one.
+  litert::BatchMatmulOptions options;
+  LITERT_RETURN_IF_ERROR(options.InitFromOp(matmul_op.Get()));
+  auto res = builder.SetOpOptions(new_matmul, std::move(options));
+  if (!res) {
+    return res.Error().Status();
+  }
 
   return kLiteRtStatusOk;
 }
