@@ -295,25 +295,24 @@ void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
   };
 
   for (auto& op : subgraph_.Ops()) {
-    for (auto& input : op->Inputs()) {
+    for (size_t i = 0; i < op->Inputs().size(); ++i) {
+      auto& input = op->Inputs()[i];
       if (is_a_io_tensor(input, subgraph_.Inputs())) {
         input->Users().push_back(op);
-        input->UserArgInds().push_back(op->Inputs().size() - 1);
+        input->UserArgInds().push_back(i);
       }
     }
-    for (auto& output : op->Outputs()) {
+    for (size_t i = 0; i < op->Outputs().size(); ++i) {
+      auto& output = op->Outputs()[i];
       if (is_a_io_tensor(output, subgraph_.Outputs())) {
-        output->SetDefiningOp(*op, op->Outputs().size() - 1);
+        output->SetDefiningOp(*op, i);
       }
     }
   }
 
   // Transfer ownership of tensors and ops to the root subgraph.
   // Note: Maintain the original topological order of the ops.
-  size_t splice_index = 0;
-  if (!subgraph_to_apply->Ops().empty()) {
-    splice_index = subgraph_to_apply->Ops().size() - 1;
-  }
+  size_t splice_index = subgraph_to_apply->Ops().size();
   LITERT_LOG(LITERT_DEBUG, "splice_index starting: %zu", splice_index);
   for (size_t original_op_index = 0;
        original_op_index < subgraph_to_apply->Ops().size();
@@ -324,9 +323,9 @@ void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
       }
     }
   }
-  DCE(*subgraph_to_apply);
   // Transfer ops from the subgraph to the root subgraph.
   subgraph_to_apply->TransferOpsFrom(subgraph_.OpsAllocation(), splice_index);
+  DCE(*subgraph_to_apply);
 
   // Transfer ownership of Weights buffers to the root subgraph.
   auto src_buffer_manager = subgraph_.GetBufferManager();
