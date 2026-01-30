@@ -23,6 +23,190 @@
 namespace qnn {
 static const char* kDumpSuffix = "_dump";
 
+class TensorWrapper final {
+  friend class TensorPool;
+
+ public:
+  explicit TensorWrapper();
+
+  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
+                         Qnn_DataType_t data_type,
+                         const QuantizeParamsWrapperVariant& quantize_params,
+                         const std::vector<std::uint32_t>& dimensions);
+
+  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
+                         Qnn_DataType_t data_type,
+                         const QuantizeParamsWrapperVariant& quantize_params,
+                         const std::vector<std::uint32_t>& dimensions,
+                         std::uint32_t bytes, const void* data, bool copy_data);
+
+  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
+
+  TensorWrapper(const TensorWrapper& other);
+
+  TensorWrapper(TensorWrapper&& other);
+
+  ~TensorWrapper();
+
+  bool operator==(const TensorWrapper& other) const;
+
+  bool operator!=(const TensorWrapper& other) const {
+    return !(*this == other);
+  }
+
+  void CloneTo(Qnn_Tensor_t& dst) const;
+
+  // Accessors /////////////////////////////////////////////////////////
+
+  template <typename T>
+  bool SetTensorData(absl::Span<const T> data);
+
+  template <typename T>
+  std::optional<absl::Span<const T>> GetTensorData() const;
+
+  Qnn_DataType_t GetDataType() const;
+
+  std::uint32_t GetDimension(size_t index) const;
+
+  const std::vector<std::uint32_t>& GetDimensions() const {
+    return dimensions_;
+  };
+
+  uint32_t GetId() const { return qnn_tensor_.v1.id; }
+
+  std::string GetName() const { return qnn_tensor_.v1.name; }
+
+  Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }
+
+  const Qnn_Tensor_t& GetQnnTensor() const { return qnn_tensor_; }
+
+  const QuantizeParamsWrapperVariant& GetQuantParams() const {
+    return quantize_params_;
+  };
+
+  QuantizeParamsWrapperVariant& GetQuantParams() { return quantize_params_; };
+
+  std::uint32_t GetRank() const;
+
+  size_t GetTensorBytes() const;
+
+  std::uint32_t GetTensorNumElements() const;
+
+  // State Checks /////////////////////////////////////////////////////////
+
+  bool IsQuant() const {
+    return !std::holds_alternative<UndefinedQuantizeParamsWrapper>(
+        quantize_params_);
+  };
+
+  bool IsPerTensorQuant() const {
+    return std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
+        quantize_params_);
+  }
+
+  bool IsPerChannelQuant() const {
+    return std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
+        quantize_params_);
+  }
+
+  bool IsPerTensorQuantWithOffsetDiff(const TensorWrapper& rhs) const;
+
+  bool IsQuantU8() const {
+    return GetDataType() == QNN_DATATYPE_UFIXED_POINT_8;
+  }
+
+  bool IsQuantI8() const {
+    return GetDataType() == QNN_DATATYPE_SFIXED_POINT_8;
+  }
+
+  bool IsQuantU16() const {
+    return GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
+  }
+
+  bool IsQuantI16() const {
+    return GetDataType() == QNN_DATATYPE_SFIXED_POINT_16;
+  }
+
+  bool IsF16() const { return GetDataType() == QNN_DATATYPE_FLOAT_16; }
+
+  bool IsF32() const { return GetDataType() == QNN_DATATYPE_FLOAT_32; }
+
+  bool IsSubgraphInput() const {
+    return GetTensorType() == QNN_TENSOR_TYPE_APP_WRITE;
+  }
+
+  bool IsSubgraphOutput() const {
+    return GetTensorType() == QNN_TENSOR_TYPE_APP_READ;
+  }
+
+  bool IsTensorStatic() const {
+    return GetTensorType() == QNN_TENSOR_TYPE_STATIC;
+  }
+
+  bool IsMarkedDump() const {
+    return absl::EndsWith(name_, kDumpSuffix) &&
+           qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
+  }
+
+  // Utilities /////////////////////////////////////////////////////////
+
+  // Allocate memory on owned_data_ for output tensors
+  void AllocateOutputTensorBuffer() {
+    owned_data_.resize(GetTensorBytes());
+    qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
+    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  }
+
+  void ConvertAxisScaleOffsetToScaleOffset();
+
+  void ConvertQint16ToQuint16();
+
+  void MarkDump() {
+    if (!absl::EndsWith(name_, kDumpSuffix)) {
+      name_ += kDumpSuffix;
+      qnn_tensor_.v2.name = name_.c_str();
+    }
+    SetTensorType(QNN_TENSOR_TYPE_APP_READ);
+  }
+
+ private:
+  void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
+
+  void SetDataType(Qnn_DataType_t data_type) {
+    qnn_tensor_.v2.dataType = data_type;
+  }
+
+  void SetTensorType(Qnn_TensorType_t tensor_type) {
+    qnn_tensor_.v2.type = tensor_type;
+  }
+
+  Qnn_TensorType_t GetTensorType() const;
+
+  bool HasStaticData() const {
+    return qnn_tensor_.v2.clientBuf.dataSize != 0 &&
+           qnn_tensor_.v2.clientBuf.data != nullptr;
+  }
+
+  void UpdateQnnQuantParams() {
+    std::visit(
+        [this](auto&& quantize_params) -> void {
+          quantize_params.CloneTo(qnn_tensor_.v2.quantizeParams);
+        },
+        quantize_params_);
+  }
+
+  // Data Members /////////////////////////////////////////////////////////
+
+  Qnn_Tensor_t qnn_tensor_{.version = QNN_TENSOR_VERSION_2,
+                           .v2 = QNN_TENSOR_V2_INIT};
+  std::string name_{};
+  std::vector<std::uint32_t> dimensions_{};
+  QuantizeParamsWrapperVariant quantize_params_{};
+  std::vector<std::byte> owned_data_{};
+};
+
+using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
+
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>
 inline constexpr Qnn_DataType_t GetQnnDataType(const bool is_quant) {
@@ -87,277 +271,107 @@ void TransposeFromOHWIToHWIO(absl::Span<const T> weight_data,
   }
 }
 
-class TensorWrapper final {
-  friend class TensorPool;
-
- public:
-  explicit TensorWrapper();
-
-  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
-                         Qnn_DataType_t data_type,
-                         const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimentions);
-
-  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
-                         Qnn_DataType_t data_type,
-                         const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimentions,
-                         std::uint32_t bytes, const void* data, bool copy_data);
-
-  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
-
-  TensorWrapper(const TensorWrapper& other);
-
-  TensorWrapper(TensorWrapper&& other);
-
-  ~TensorWrapper();
-
-  bool operator==(const TensorWrapper& other) const;
-
-  bool operator!=(const TensorWrapper& other) const {
-    return !(*this == other);
+template <typename T>
+bool TensorWrapper::SetTensorData(absl::Span<const T> data) {
+  if (!IsSubgraphInput() && !IsTensorStatic()) {
+    QNN_LOG_ERROR(
+        "Cannot set tensor data of tensor type other than "
+        "QNN_TENSOR_TYPE_APP_WRITE or QNN_TENSOR_TYPE_STATIC.");
+    return false;
   }
 
-  void CloneTo(Qnn_Tensor_t& dst) const;
-
-  Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }
-
-  uint32_t GetId() const { return qnn_tensor_.v1.id; }
-
-  const Qnn_Tensor_t& GetQnnTensor() const { return qnn_tensor_; }
-
-  std::string GetName() const { return qnn_tensor_.v1.name; }
-
-  std::uint32_t GetRank() const;
-
-  std::uint32_t GetDim(size_t index) const;
-
-  const std::vector<std::uint32_t>& GetDims() const { return dimentions_; };
-
-  std::uint32_t GetTensorNumElements() const;
-
-  const QuantizeParamsWrapperVariant& GetQuantParams() const {
-    return quantize_params_;
-  };
-
-  QuantizeParamsWrapperVariant& GetQuantParams() { return quantize_params_; };
-
-  bool IsQuant() const {
-    return !std::holds_alternative<UndefinedQuantizeParamsWrapper>(
-        quantize_params_);
-  };
-
-  bool IsPerTensorQuant() const {
-    return std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
-        quantize_params_);
+  size_t num_elements = GetTensorNumElements();
+  if (!num_elements) {
+    QNN_LOG_ERROR("Cannot set tensor data, number of elements = 0");
+    return false;
   }
 
-  bool IsPerChannelQuant() const {
-    return std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
-        quantize_params_);
+  size_t data_bytes = sizeof(T) * data.size();
+  size_t tensor_bytes = GetTensorBytes();
+  if (tensor_bytes > data_bytes) {
+    QNN_LOG_ERROR(
+        "Tensor bytes: %d > given data bytes: %d, SetTensorData failed.",
+        tensor_bytes, data_bytes);
+    return false;
+  }
+  if (tensor_bytes < data_bytes) {
+    QNN_LOG_WARNING("Tensor bytes : %d < given data bytes: %d, using only %d.",
+                    tensor_bytes, data_bytes, tensor_bytes);
   }
 
-  bool IsPerTensorQuantWithOffsetDiff(const TensorWrapper& rhs) const;
-
-  bool IsQuant8() const {
-    return GetDataType() == QNN_DATATYPE_SFIXED_POINT_8 ||
-           GetDataType() == QNN_DATATYPE_UFIXED_POINT_8;
-  }
-
-  // TODO: rename IsQuant16 or IsQuantU16
-  bool IsQuant16() const {
-    return GetDataType() == QNN_DATATYPE_SFIXED_POINT_16 ||
-           GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
-  }
-
-  bool IsQuantU16() const {
-    return GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
-  }
-
-  bool IsF32() const { return GetDataType() == QNN_DATATYPE_FLOAT_32; }
-  bool IsF16() const { return GetDataType() == QNN_DATATYPE_FLOAT_16; }
-
-  Qnn_DataType_t GetDataType() const;
-
-  bool IsSubgraphInput() const {
-    return GetTensorType() == QNN_TENSOR_TYPE_APP_WRITE;
-  }
-
-  bool IsSubgraphOutput() const {
-    return GetTensorType() == QNN_TENSOR_TYPE_APP_READ;
-  }
-
-  bool IsTensorStatic() const {
-    return GetTensorType() == QNN_TENSOR_TYPE_STATIC;
-  }
-
-  template <typename T>
-  bool SetTensorData(absl::Span<const T> data) {
-    if (!IsSubgraphInput() && !IsTensorStatic()) {
+  if constexpr (std::is_same_v<T, float>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_FLOAT_32) {
       QNN_LOG_ERROR(
-          "Cannot set tensor data of tensor type other than "
-          "QNN_TENSOR_TYPE_APP_WRITE or QNN_TENSOR_TYPE_STATIC.");
+          "Cannot set tensor data, setting float data on QNN data type %d.",
+          qnn_tensor_.v2.dataType);
       return false;
     }
-
-    size_t num_elements = GetTensorNumElements();
-    if (!num_elements) {
-      QNN_LOG_ERROR("Cannot set tensor data, number of elements = 0");
-      return false;
-    }
-
-    size_t data_bytes = sizeof(T) * data.size();
-    size_t tensor_bytes = GetTensorBytes();
-    if (tensor_bytes > data_bytes) {
+  } else if constexpr (std::is_same_v<T, std::int8_t>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_INT_8 &&
+        qnn_tensor_.v2.dataType != QNN_DATATYPE_SFIXED_POINT_8) {
       QNN_LOG_ERROR(
-          "Tensor bytes: %d > given data bytes: %d, SetTensorData failed.",
-          tensor_bytes, data_bytes);
+          "Cannot set tensor data, setting std::int8_t data on QNN data type "
+          "%d.",
+          qnn_tensor_.v2.dataType);
       return false;
     }
-    if (tensor_bytes < data_bytes) {
-      QNN_LOG_WARNING(
-          "Tensor bytes : %d < given data bytes: %d, using only %d.",
-          tensor_bytes, data_bytes, tensor_bytes);
+  } else if constexpr (std::is_same_v<T, std::uint8_t>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_UINT_8 &&
+        qnn_tensor_.v2.dataType != QNN_DATATYPE_UFIXED_POINT_8) {
+      QNN_LOG_ERROR(
+          "Cannot set tensor data, setting std::uint8_t data on QNN data "
+          "type %d.",
+          qnn_tensor_.v2.dataType);
+      return false;
     }
-
-    if constexpr (std::is_same_v<T, float>) {
-      if (qnn_tensor_.v2.dataType != QNN_DATATYPE_FLOAT_32) {
-        QNN_LOG_ERROR(
-            "Cannot set tensor data, setting float data on QNN data type %d.",
-            qnn_tensor_.v2.dataType);
-        return false;
-      }
-    } else if constexpr (std::is_same_v<T, std::int8_t>) {
-      if (qnn_tensor_.v2.dataType != QNN_DATATYPE_INT_8 &&
-          qnn_tensor_.v2.dataType != QNN_DATATYPE_SFIXED_POINT_8) {
-        QNN_LOG_ERROR(
-            "Cannot set tensor data, setting std::int8_t data on QNN data type "
-            "%d.",
-            qnn_tensor_.v2.dataType);
-        return false;
-      }
-    } else if constexpr (std::is_same_v<T, std::uint8_t>) {
-      if (qnn_tensor_.v2.dataType != QNN_DATATYPE_UINT_8 &&
-          qnn_tensor_.v2.dataType != QNN_DATATYPE_UFIXED_POINT_8) {
-        QNN_LOG_ERROR(
-            "Cannot set tensor data, setting std::uint8_t data on QNN data "
-            "type %d.",
-            qnn_tensor_.v2.dataType);
-        return false;
-      }
-    } else if constexpr (std::is_same_v<T, std::int16_t>) {
-      if (qnn_tensor_.v2.dataType != QNN_DATATYPE_INT_16 &&
-          qnn_tensor_.v2.dataType != QNN_DATATYPE_SFIXED_POINT_16) {
-        QNN_LOG_ERROR(
-            "Cannot set tensor data, setting std::int16_t data on QNN data "
-            "type %d.",
-            qnn_tensor_.v2.dataType);
-        return false;
-      }
-    } else if constexpr (std::is_same_v<T, std::uint16_t>) {
-      if (qnn_tensor_.v2.dataType != QNN_DATATYPE_UINT_16 &&
-          qnn_tensor_.v2.dataType != QNN_DATATYPE_UFIXED_POINT_16) {
-        QNN_LOG_ERROR(
-            "Cannot set tensor data, setting std::uint16_t data on QNN data "
-            "type %d.",
-            qnn_tensor_.v2.dataType);
-        return false;
-      }
-
-    } else if constexpr (std::is_same_v<T, std::int32_t>) {
-      if (qnn_tensor_.v2.dataType != QNN_DATATYPE_INT_32 &&
-          qnn_tensor_.v2.dataType != QNN_DATATYPE_SFIXED_POINT_32) {
-        QNN_LOG_ERROR(
-            "Cannot set tensor data, setting std::int32_t data on QNN data "
-            "type %d.",
-            qnn_tensor_.v2.dataType);
-        return false;
-      }
-    } else if constexpr (std::is_same_v<T, std::uint32_t>) {
-      if (qnn_tensor_.v2.dataType != QNN_DATATYPE_UINT_32 &&
-          qnn_tensor_.v2.dataType != QNN_DATATYPE_UFIXED_POINT_32) {
-        QNN_LOG_ERROR(
-            "Cannot set tensor data, setting std::uint32_t data on QNN data "
-            "type %d.",
-            qnn_tensor_.v2.dataType);
-        return false;
-      }
-    } else {
-      QNN_LOG_ERROR("Cannot set tensor data, unknown data type.");
+  } else if constexpr (std::is_same_v<T, std::int16_t>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_INT_16 &&
+        qnn_tensor_.v2.dataType != QNN_DATATYPE_SFIXED_POINT_16) {
+      QNN_LOG_ERROR(
+          "Cannot set tensor data, setting std::int16_t data on QNN data "
+          "type %d.",
+          qnn_tensor_.v2.dataType);
+      return false;
+    }
+  } else if constexpr (std::is_same_v<T, std::uint16_t>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_UINT_16 &&
+        qnn_tensor_.v2.dataType != QNN_DATATYPE_UFIXED_POINT_16) {
+      QNN_LOG_ERROR(
+          "Cannot set tensor data, setting std::uint16_t data on QNN data "
+          "type %d.",
+          qnn_tensor_.v2.dataType);
       return false;
     }
 
-    owned_data_.resize(tensor_bytes);
-    std::memcpy(owned_data_.data(), reinterpret_cast<const char*>(data.data()),
-                tensor_bytes);
-    qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
-    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
-    return true;
-  }
-
-  // Allocate memory on owned_data_ for output tensors
-  void AllocateOutputTensorBuffer() {
-    owned_data_.resize(GetTensorBytes());
-    qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
-    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
-  }
-
-  template <typename T>
-  std::optional<absl::Span<const T>> GetTensorData() const;
-
-  void ConvertAxisScaleOffsetToScaleOffset();
-
-  size_t GetTensorBytes() const;
-
-  void ConvertQint16ToQuint16();
-
-  void MarkDump() {
-    if (!absl::EndsWith(name_, kDumpSuffix)) {
-      name_ += kDumpSuffix;
-      qnn_tensor_.v2.name = name_.c_str();
+  } else if constexpr (std::is_same_v<T, std::int32_t>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_INT_32 &&
+        qnn_tensor_.v2.dataType != QNN_DATATYPE_SFIXED_POINT_32) {
+      QNN_LOG_ERROR(
+          "Cannot set tensor data, setting std::int32_t data on QNN data "
+          "type %d.",
+          qnn_tensor_.v2.dataType);
+      return false;
     }
-    SetTensorType(QNN_TENSOR_TYPE_APP_READ);
+  } else if constexpr (std::is_same_v<T, std::uint32_t>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_UINT_32 &&
+        qnn_tensor_.v2.dataType != QNN_DATATYPE_UFIXED_POINT_32) {
+      QNN_LOG_ERROR(
+          "Cannot set tensor data, setting std::uint32_t data on QNN data "
+          "type %d.",
+          qnn_tensor_.v2.dataType);
+      return false;
+    }
+  } else {
+    QNN_LOG_ERROR("Cannot set tensor data, unknown data type.");
+    return false;
   }
 
-  bool IsMarkedDump() const {
-    return absl::EndsWith(name_, kDumpSuffix) &&
-           qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
-  }
-
- private:
-  void UpdateQnnQuantParams() {
-    std::visit(
-        [this](auto&& quantize_params) -> void {
-          quantize_params.CloneTo(qnn_tensor_.v2.quantizeParams);
-        },
-        quantize_params_);
-  }
-  Qnn_TensorType_t GetTensorType() const;
-
-  void SetTensorType(Qnn_TensorType_t tensor_type) {
-    qnn_tensor_.v2.type = tensor_type;
-  }
-
-  void SetDataType(Qnn_DataType_t data_type) {
-    qnn_tensor_.v2.dataType = data_type;
-  }
-
-  void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
-
-  bool HasStaticData() const {
-    return qnn_tensor_.v2.clientBuf.dataSize != 0 &&
-           qnn_tensor_.v2.clientBuf.data != nullptr;
-  }
-
-  Qnn_Tensor_t qnn_tensor_{.version = QNN_TENSOR_VERSION_2,
-                           .v2 = QNN_TENSOR_V2_INIT};
-  std::string name_{};
-  std::vector<std::uint32_t> dimentions_{};
-  QuantizeParamsWrapperVariant quantize_params_{};
-  std::vector<std::byte> owned_data_{};
-};
-
-using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
+  owned_data_.resize(tensor_bytes);
+  std::memcpy(owned_data_.data(), data.data(), tensor_bytes);
+  qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
+  qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  return true;
+}
 
 template <typename T>
 std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {

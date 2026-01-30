@@ -53,7 +53,8 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
   pad_op.AddScalarParam<std::uint32_t>(QNN_OP_PAD_PARAM_SCHEME, scheme_value);
   pad_op.AddTensorParam(QNN_OP_PAD_PARAM_PAD_AMOUNT, *converted_pad_tensor);
 
-  if (input_tensor.IsQuant8() || input_tensor.IsQuant16()) {
+  if (input_tensor.IsQuantI8() || input_tensor.IsQuantU8() ||
+      input_tensor.IsQuantI16() || input_tensor.IsQuantU16()) {
     std::int32_t pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =

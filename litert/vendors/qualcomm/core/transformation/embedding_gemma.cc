@@ -55,13 +55,14 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& new_ops,
                               const OpWrapper& matmul_op2, size_t num_heads) {
   // Mul
   auto& mul_output = tensor_pool.CloneNativeTensorFrom(
-      mul_op.GetOutputTensor(0), sha_input.GetDims());
+      mul_op.GetOutputTensor(0), sha_input.GetDimensions());
 
   EmplaceOpWithIO(new_ops, mul_op, {sha_input, std::nullopt}, {mul_output});
 
   // MatMul 1
   const auto& matmul_op1_output = matmul_op1.GetOutputTensor(0);
-  std::vector<uint32_t> new_matmul1_output_dim = matmul_op1_output.GetDims();
+  std::vector<uint32_t> new_matmul1_output_dim =
+      matmul_op1_output.GetDimensions();
   new_matmul1_output_dim[2] /= num_heads;
   auto& new_matmul1_output = tensor_pool.CloneNativeTensorFrom(
       matmul_op1_output, new_matmul1_output_dim);
@@ -76,11 +77,11 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& new_ops,
 
   // Softmax
   auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
-      softmax_op.GetOutputTensor(0), new_add_output.GetDims());
+      softmax_op.GetOutputTensor(0), new_add_output.GetDimensions());
   EmplaceOpWithIO(new_ops, softmax_op, {new_add_output}, {softmax_output});
 
   // MatMul 2
-  auto matmul_op2_out_dim = matmul_op2.GetOutputTensor(0).GetDims();
+  auto matmul_op2_out_dim = matmul_op2.GetOutputTensor(0).GetDimensions();
   matmul_op2_out_dim[2] /= num_heads;
   auto& new_matmul2_output = tensor_pool.CloneNativeTensorFrom(
       matmul_op2.GetOutputTensor(0), matmul_op2_out_dim);
@@ -101,20 +102,20 @@ std::vector<OpWrapper> MHA2SHA(TensorPool& tensor_pool, const OpWrapper& mul_op,
   std::vector<OpWrapper> new_ops;
 
   // Transpose
-  auto transpose_out_dims = tranpose_op1.GetOutputTensor(0).GetDims();
+  auto transpose_out_dims = tranpose_op1.GetOutputTensor(0).GetDimensions();
   auto& transpose_output =
       tensor_pool.CloneNativeTensorFrom(pattern_input, transpose_out_dims);
   auto& new_transpose1 = EmplaceOpWithIO(
       new_ops, tranpose_op1, {const_cast<::qnn::TensorWrapper&>(pattern_input)},
       {transpose_output});
 
-  const uint32_t num_heads = pattern_input.GetDim(2);
+  const uint32_t num_heads = pattern_input.GetDimension(2);
   const auto& mha_input = new_transpose1.GetOutputTensor(0);  // split_in
 
   std::vector<::qnn::TensorWrapperRef> sha_inputs;
   sha_inputs.reserve(num_heads);
   for (size_t i = 0; i < num_heads; i++) {
-    auto sha_input_dims = mha_input.GetDims();  // split_out_dims
+    auto sha_input_dims = mha_input.GetDimensions();  // split_out_dims
     sha_input_dims[1] /= num_heads;
     auto& split_output =
         tensor_pool.CloneNativeTensorFrom(mha_input, sha_input_dims);
@@ -138,7 +139,7 @@ std::vector<OpWrapper> MHA2SHA(TensorPool& tensor_pool, const OpWrapper& mul_op,
   std::vector<::qnn::TensorWrapperRef> new_mask_inputs;
   new_mask_inputs.reserve(num_heads);
   for (size_t i = 0; i < num_heads; i++) {
-    auto new_mask_input_dims = mask_input.GetDims();
+    auto new_mask_input_dims = mask_input.GetDimensions();
     new_mask_input_dims[2] /= num_heads;
     auto& mask_split_output =
         tensor_pool.CloneNativeTensorFrom(mask_input, new_mask_input_dims);
@@ -167,7 +168,7 @@ std::vector<OpWrapper> MHA2SHA(TensorPool& tensor_pool, const OpWrapper& mul_op,
   }
 
   // Concat
-  auto concat_dims = pattern_output.GetDims();
+  auto concat_dims = pattern_output.GetDimensions();
   concat_dims.insert(concat_dims.begin(), 1);
   auto& concat_output =
       tensor_pool.CloneNativeTensorFrom(pattern_output, concat_dims);

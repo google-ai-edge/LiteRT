@@ -32,7 +32,7 @@ std::vector<OpWrapper> BuildEmbeddingLookupOp(
 
   auto& gather_op = CreateOpWrapper(res, QNN_OP_GATHER);
   // Case: QInt8 table with QInt16 output
-  if (table_tensor.IsQuant8() && output_tensor.IsQuant16()) {
+  if (table_tensor.IsQuantI8() && output_tensor.IsQuantI16()) {
     QNN_LOG_WARNING(
         "The data type of embedding lookup table is int8, but output data type "
         "is int16. Int8 table will be cast to int16.");
@@ -50,7 +50,7 @@ std::vector<OpWrapper> BuildEmbeddingLookupOp(
 
     TensorWrapper& int16_table_tensor = tensor_pool.CreateStaticTensor(
         output_tensor.GetDataType(), table_tensor.GetQuantParams(),
-        table_tensor.GetDims(),
+        table_tensor.GetDimensions(),
         sizeof(decltype(int16_data)::value_type) * int16_data.size(),
         reinterpret_cast<void*>(int16_data.data()));
 

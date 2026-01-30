@@ -55,7 +55,7 @@ std::vector<OpWrapper> BuildSliceOp(
   for (size_t i = 0; i < input_rank; ++i) {
     range_data.emplace_back((*begin_data)[i]);
     if ((*size_data)[i] == kSizeNegative) {
-      range_data.emplace_back(input_tensor.GetDim(i));
+      range_data.emplace_back(input_tensor.GetDimension(i));
     } else {
       range_data.emplace_back((*begin_data)[i] + (*size_data)[i]);
     }

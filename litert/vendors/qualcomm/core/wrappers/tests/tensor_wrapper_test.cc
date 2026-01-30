@@ -27,12 +27,14 @@ TEST(TensorWrapperTest, SanityTest) {
   TensorWrapper tensor_wrapper{};
 
   EXPECT_EQ(tensor_wrapper.GetRank(), 0);
-  EXPECT_TRUE(tensor_wrapper.GetDims().empty());
+  EXPECT_TRUE(tensor_wrapper.GetDimensions().empty());
   EXPECT_TRUE(std::holds_alternative<UndefinedQuantizeParamsWrapper>(
       tensor_wrapper.GetQuantParams()));
   EXPECT_FALSE(tensor_wrapper.IsPerTensorQuantWithOffsetDiff(tensor_wrapper));
-  EXPECT_FALSE(tensor_wrapper.IsQuant8());
-  EXPECT_FALSE(tensor_wrapper.IsQuant16());
+  EXPECT_FALSE(tensor_wrapper.IsQuantU8());
+  EXPECT_FALSE(tensor_wrapper.IsQuantI8());
+  EXPECT_FALSE(tensor_wrapper.IsQuantU16());
+  EXPECT_FALSE(tensor_wrapper.IsQuantI16());
   EXPECT_EQ(tensor_wrapper.GetDataType(), QNN_DATATYPE_UNDEFINED);
   EXPECT_FALSE(tensor_wrapper.IsSubgraphInput());
   EXPECT_FALSE(tensor_wrapper.IsSubgraphOutput());
@@ -54,12 +56,14 @@ TEST(TensorWrapperTest, CopyTensorTest) {
   TensorWrapper copied{tensor_wrapper};
 
   EXPECT_EQ(copied.GetRank(), 3);
-  EXPECT_EQ(copied.GetDims(), dummy_dims);
+  EXPECT_EQ(copied.GetDimensions(), dummy_dims);
   EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
       copied.GetQuantParams()));
   EXPECT_FALSE(copied.IsPerTensorQuantWithOffsetDiff(copied));
-  EXPECT_TRUE(copied.IsQuant8());
-  EXPECT_FALSE(copied.IsQuant16());
+  EXPECT_TRUE(copied.IsQuantU8());
+  EXPECT_FALSE(copied.IsQuantI8());
+  EXPECT_FALSE(copied.IsQuantU16());
+  EXPECT_FALSE(copied.IsQuantI16());
   EXPECT_EQ(copied.GetDataType(), QNN_DATATYPE_UFIXED_POINT_8);
   EXPECT_FALSE(copied.IsSubgraphInput());
   EXPECT_FALSE(copied.IsSubgraphOutput());
@@ -91,12 +95,14 @@ TEST(TensorWrapperTest, MoveTensorTest) {
   TensorWrapper moved{tensor_wrapper};
 
   EXPECT_EQ(moved.GetRank(), 3);
-  EXPECT_EQ(moved.GetDims(), dummy_dims);
+  EXPECT_EQ(moved.GetDimensions(), dummy_dims);
   EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
       moved.GetQuantParams()));
   EXPECT_FALSE(moved.IsPerTensorQuantWithOffsetDiff(moved));
-  EXPECT_TRUE(moved.IsQuant8());
-  EXPECT_FALSE(moved.IsQuant16());
+  EXPECT_TRUE(moved.IsQuantU8());
+  EXPECT_FALSE(moved.IsQuantI8());
+  EXPECT_FALSE(moved.IsQuantU16());
+  EXPECT_FALSE(moved.IsQuantI16());
   EXPECT_EQ(moved.GetDataType(), QNN_DATATYPE_UFIXED_POINT_8);
   EXPECT_FALSE(moved.IsSubgraphInput());
   EXPECT_FALSE(moved.IsSubgraphOutput());
