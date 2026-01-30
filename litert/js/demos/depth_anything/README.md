@@ -31,7 +31,7 @@ This demo uses LiteRT.js and the [Depth Anything V2 Small model](https://hugging
 
 ## Converting the Model
 
-The Depth Anything model needs to be converted from its original format to TFLite to run with LiteRT.js. This can be done using [ai-edge-torch](https://github.com/google-ai-edge/ai-edge-torch) and optionally quantized using [ai-edge-quantizer](https://github.com/google-ai-edge/ai-edge-quantizer).
+The Depth Anything model needs to be converted from its original format to TFLite to run with LiteRT.js. This can be done using [litert-torch](https://github.com/google-ai-edge/litert-torch) and optionally quantized using [ai-edge-quantizer](https://github.com/google-ai-edge/ai-edge-quantizer).
 
 1.  **Set up a Python Virtual Environment:**
 
@@ -45,7 +45,7 @@ The Depth Anything model needs to be converted from its original format to TFLit
 2.  **Install Dependencies:**
 
     ```bash
-    pip install ai-edge-torch ai-edge-quantizer transformers huggingface-hub torch pillow requests
+    pip install litert-torch ai-edge-quantizer transformers huggingface-hub torch pillow requests
     ```
 
 3.  **Run the Conversion Script:**

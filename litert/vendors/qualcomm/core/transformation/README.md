@@ -32,7 +32,8 @@ graph TB
 | K          | Number KV heads | 1                             |
 | H          | Head size       | 256                           |
 | KV_LEN     | KV Cache Length | 1280                          |
-* Notation reference: [AI Edge Torch](https://github.com/google-ai-edge/ai-edge-torch)
+
+* Notation reference: [LiteRT Torch](https://github.com/google-ai-edge/litert-torch)
 
 ### Gemma3 (Prefill)
 Original MHA (Multi-head Attention) in Gemma3 prefill graph

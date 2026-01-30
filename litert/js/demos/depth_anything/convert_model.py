@@ -14,7 +14,7 @@
 
 """Converts and quantizes a Depth Anything V2 Small model to TFLite.
 
-This script uses ai-edge-torch to convert a Hugging Face Depth Anything V2 Small
+This script uses litert-torch to convert a Hugging Face Depth Anything V2 Small
 model to a float TFLite model, and then uses ai-edge-quantizer to quantize
 the float model to a weight-only quantized TFLite model.
 """
@@ -22,7 +22,7 @@ the float model to a weight-only quantized TFLite model.
 from pathlib import Path
 from ai_edge_quantizer import quantizer
 from ai_edge_quantizer import recipe
-import ai_edge_torch
+import litert_torch
 import PIL
 import requests
 import torch
@@ -51,12 +51,13 @@ class ModelWrapper(torch.nn.Module):
     results = self.model(pixel_values=pixel_values)
     return (results["predicted_depth"],)
 
+
 model_wrapped = ModelWrapper().eval()
 args_litert = (inputs["pixel_values"],)
 
-# Convert the model to TFLite using ai-edge-torch
+# Convert the model to TFLite using litert-torch
 print("Converting model to TFLite...")
-model_litert = ai_edge_torch.convert(model_wrapped, args_litert)
+model_litert = litert_torch.convert(model_wrapped, args_litert)
 
 # Export the float TFLite model
 script_dir = Path(__file__).parent.resolve()
