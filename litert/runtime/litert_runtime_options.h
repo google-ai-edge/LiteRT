@@ -28,6 +28,10 @@ struct LiteRtRuntimeOptionsT {
   LiteRtErrorReporterMode error_reporter_mode =
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone;
 
+  // If true, per-channel quantization zero-points that are all identical will
+  // be stored as a single value to reduce memory usage.
+  bool compress_quantization_zero_points = false;
+
   static const char* Identifier() { return "runtime"; }
 };
 
