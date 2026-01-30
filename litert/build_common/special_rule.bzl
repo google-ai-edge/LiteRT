@@ -103,7 +103,7 @@ def litert_gpu_accelerator_prebuilts():
             "@litert_prebuilts//:windows_x86_64/libLiteRtWebGpuAccelerator.dll",  # copybara:comment
         ],
         "@org_tensorflow//tensorflow:android_arm64": [
-            "@litert_prebuilts//:android_arm64/libLiteRtGpuAccelerator.so",  # copybara:comment
+            "@litert_prebuilts//:android_arm64/libLiteRtClGlAccelerator.so",  # copybara:comment
         ],
         "//conditions:default": [],
     })
