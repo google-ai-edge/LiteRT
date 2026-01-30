@@ -54,7 +54,7 @@ jobs:
           $env:TF_NEED_CUDA = 0
           $env:TF_SET_ANDROID_WORKSPACE = 0
           $env:CC_OPT_FLAGS = '/arch:AVX'
-          $env:HERMETIC_PYTHON_VERSION = "${{ matrix.python-version }}"
+          echo "HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}" >> $env:GITHUB_ENV
           python configure.py
 
       - name: Build LiteRT wheel for Windows
