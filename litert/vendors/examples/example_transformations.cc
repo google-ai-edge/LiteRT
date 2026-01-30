@@ -55,15 +55,16 @@ LiteRtStatus SqrtMeanSquareTransformation(LiteRtBuilder builder_ptr,
   // Capture Mean and Mul ops, and the square input x.
   // Verify that Mean and Mul are only used once (safe to fuse).
   auto mul_op_matcher = litert::m_Op<kLiteRtOpCodeTflMul>(
-      litert::m_Capture(&sq_in, litert::m_Any()), litert::m_SameAs(&sq_in));
+      litert::m_CaptureOrSameAs(&sq_in, litert::m_Any()),
+      litert::m_CaptureOrSameAs(&sq_in, litert::m_Any()));
 
-  auto mean_input_matcher = litert::m_Capture(
+  auto mean_input_matcher = litert::m_CaptureOrSameAs(
       &square_op, litert::m_AllOf(litert::m_HasOneUse(), mul_op_matcher));
 
   auto mean_op_matcher =
       litert::m_Op<kLiteRtOpCodeTflMean>(mean_input_matcher, litert::m_Any());
 
-  auto sqrt_input_matcher = litert::m_Capture(
+  auto sqrt_input_matcher = litert::m_CaptureOrSameAs(
       &mean_op, litert::m_AllOf(litert::m_HasOneUse(), mean_op_matcher));
 
   auto root_matcher = litert::m_Op<kLiteRtOpCodeTflSqrt>(sqrt_input_matcher);

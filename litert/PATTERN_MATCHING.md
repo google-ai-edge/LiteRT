@@ -31,13 +31,13 @@ Match(op, m_Op<kLiteRtOpCodeTflAdd>(m_Any(), m_Any()));
     `(m1, m2)` or `(m2, m1)`.
  *   `m_OutputIndex(index, m_Op)`: Matches a tensor that is the N-th output of
  an op matching `m_Op`.
- *   `m_SameAs(&captured)`: Matches if the current value is the same as a
-    previously captured element.
+ *   `m_CaptureOrSameAs(&captured, m)`: Captures value into `captured` if it is
+    null, otherwise checks if the current value is the same as `captured`.
 
 ```cpp
 // Matches Mul(x, x).
 Tensor x(nullptr);
-Match(op, m_Op<kLiteRtOpCodeTflMul>(m_Capture(&x, m_Any()), m_SameAs(&x)));
+Match(op, m_Op<kLiteRtOpCodeTflMul>(m_CaptureOrSameAs(&x, m_Any()), m_CaptureOrSameAs(&x, m_Any())));
 
 // Matches the 1st output of a Split op.
 Match(tensor, m_OutputIndex(1, m_OpCode<kLiteRtOpCodeTflSplit>()));
@@ -96,32 +96,31 @@ Match patterns can be combined using boolean logic:
 | Matcher | Description | Target |
 | :--- | :--- | :--- |
 | **Op Basics** | | |
-| `m_OpCode<code>()` | Matches opcode of an operation. | Op / Tensor |
-| `m_Op<code>(...)` | Matches opcode and exact input count. | Op / Tensor |
-| `m_OpVariadic<code>(...)` | Matches opcode and prefix inputs. | Op |
-| `m_CommutativeOp<code>(...)` | Binary op with inputs in any order. | Op / Tensor |
-| `m_CustomOpCode(n)` | Matches custom op by its string code. | Op / Tensor |
+| `m_OpCode<code>(label?)` | Matches opcode of an operation. | Op / Tensor |
+| `m_Op<code>(..., label?)` | Matches opcode and exact input count. | Op / Tensor |
+| `m_OpVariadic<code>(..., label?)` | Matches opcode and prefix inputs. | Op |
+| `m_CommutativeOp<code>(m1, m2, label?)` | Binary op with inputs in any order. | Op / Tensor |
+| `m_CustomOpCode(n, label?)` | Matches custom op by its string code. | Op / Tensor |
 | **Topology** | | |
-| `m_OutputIndex(i, m)` | Matches tensor at index `i` of op `m`. | Tensor |
-| `m_Capture(&ptr, m)` | Saves matched object into `ptr`. | Op / Tensor |
-| `m_SameAs(&ptr)` | Matches if identical to handle in `ptr`. | Op / Tensor |
-| `m_HasUsers(n)` | Matches if tensor has exactly `n` users. | Tensor |
-| `m_HasOneUse()` | Matches if tensor has exactly 1 user. | Tensor |
+| `m_OutputIndex(i, m, label?)` | Matches tensor at index `i` of op `m`. | Tensor |
+| `m_CaptureOrSameAs(&ptr, m, label?)` | Captures or matches equality with `ptr`. | Op / Tensor |
+| `m_HasUsers(n, label?)` | Matches if tensor has exactly `n` users. | Tensor |
+| `m_HasOneUse(label?)` | Matches if tensor has exactly 1 user. | Tensor |
 | **Properties** | | |
-| `m_Shape(dims)` | Matches dimensions (use -1 for wildcard). | Tensor |
-| `m_Rank(n)` | Matches tensor rank. | Tensor |
-| `m_ElementType(t)` | Matches tensor data type. | Tensor |
-| `m_IsConstant()` | Matches if the tensor is a constant. | Tensor |
-| `m_ConstantValue(v)` | Matches constant scalar with value `v`. | Tensor |
-| `m_Options<T>(p)` | Matches op options via predicate `p`. | Op / Tensor |
+| `m_Shape(dims, label?)` | Matches dimensions (use -1 for wildcard). | Tensor |
+| `m_Rank(n, label?)` | Matches tensor rank. | Tensor |
+| `m_ElementType(t, label?)` | Matches tensor data type. | Tensor |
+| `m_IsConstant(label?)` | Matches if the tensor is a constant. | Tensor |
+| `m_ConstantValue(v, label?)` | Matches constant scalar with value `v`. | Tensor |
+| `m_Options<T>(p, label?)` | Matches op options via predicate `p`. | Op / Tensor |
 | **Logic** | | |
-| `m_AllOf(...)` | Matches if all sub-matchers match. | Any |
-| `m_AnyOf(...)` | Matches if any sub-matcher matches. | Any |
-| `m_Not(m)` | Matches if `m` does NOT match. | Any |
+| `m_AllOf(..., label?)` | Matches if all sub-matchers match. | Any |
+| `m_AnyOf(..., label?)` | Matches if any sub-matcher matches. | Any |
+| `m_Not(m, label?)` | Matches if `m` does NOT match. | Any |
 | `m_Any()` / `m_AnyOp()` | Always matches. | Tensor / Op |
-| `m_Predicate<T>(p)` | Matches if predicate `p` returns true. | T |
+| `m_Predicate<T>(p, label?)` | Matches if predicate `p` returns true. | T |
 | **Extension** | | |
-| `m_Custom(p)` | Fully customizable matcher.  | Any |
+| `m_Custom(p, label?)` | Fully customizable matcher.  | Any |
 
 ---
 
@@ -140,12 +139,12 @@ Tensor input_x(nullptr);
 auto pattern = m_Op<kLiteRtOpCodeTflSqrt>(
     m_AllOf(
         m_HasOneUse(),
-        m_Capture(&mean_op, m_Op<kLiteRtOpCodeTflMean>(
+        m_CaptureOrSameAs(&mean_op, m_Op<kLiteRtOpCodeTflMean>(
             m_AllOf(
                 m_HasOneUse(),
                 m_Op<kLiteRtOpCodeTflMul>(
-                    m_Capture(&input_x, m_Any()),
-                    m_SameAs(&input_x)
+                    m_CaptureOrSameAs(&input_x, m_Any()),
+                    m_CaptureOrSameAs(&input_x, m_Any())
                 )
             ),
             m_Any() // Match axis input of Mean
@@ -157,4 +156,55 @@ if (Match(root_op, pattern)) {
     // We captured the root of the expression and the shared input 'x'.
     // We also verified it is safe to erase intermediate results.
 }
+```
+
+---
+
+## 6. Debugging with Labels and DebugMatch
+
+When a complex pattern fails to match, it can be difficult to identify which
+specific part of the subgraph caused the failure. LiteRT provides a labeling
+system and a `DebugMatch` entry point to help.
+
+### Adding Labels
+Most matchers accept an optional trailing string argument as a `label`. These
+labels are used in debug logs to identify matchers. If no label is provided,
+a default name (like "OpMatcher" or "ShapeMatcher") is used.
+
+```cpp
+auto pattern = m_Op<kLiteRtOpCodeTflAdd>(
+    m_IsConstant("MyWeight"),
+    m_Any("MyInput"),
+    "MyAddOp"
+);
+```
+
+### Using DebugMatch
+`DebugMatch` works like `Match` but prints a hierarchical trace of the matching
+process to `LITERT_LOG` (INFO level) if the match is considered "significant"
+(see Filtering Noise below).
+
+```cpp
+// Simply swap Match for DebugMatch to see why a pattern isn't working.
+if (!DebugMatch(root_op, pattern)) {
+  // Check LITERT_LOG for a trace like:
+  // [Start] MyAddOp
+  //   [Start] Input[0]
+  //     [Fail] MyWeight: Tensor is not constant
+  // [Fail] MyAddOp: Input count mismatch
+}
+```
+
+### Filtering Noise
+When matching a pattern against every op in a large graph, you usually only care
+about cases where the pattern *almost* matched. You can use the
+`log_depth_greater_than` parameter (default is 0) to filter the output.
+
+This parameter specifies the minimum number of log entries (starts and fails)
+that must be generated for the trace to be printed.
+
+```cpp
+// Only print the match trace if it generated more than 5 log entries.
+// This helps skip trivial mismatches (e.g., wrong opcode at the root).
+DebugMatch(root_op, pattern, /*log_depth_greater_than=*/5);
 ```

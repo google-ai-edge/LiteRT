@@ -273,6 +273,7 @@ cc_library(
         ":litert_op_options",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
