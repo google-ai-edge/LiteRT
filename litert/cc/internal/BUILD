@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC.
+# Copyright 2026 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -645,6 +645,30 @@ cc_library(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_c_api_runtimecapi",
+    ],
+)
+
+cc_library(
+    name = "litert_matchers",
+    hdrs = ["litert_matchers.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":litert_extended_model",
+        "//litert/c:litert_op_code",
+    ],
+)
+
+cc_test(
+    name = "litert_matchers_test",
+    srcs = ["litert_matchers_test.cc"],
+    deps = [
+        ":litert_extended_model",
+        ":litert_matchers",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
