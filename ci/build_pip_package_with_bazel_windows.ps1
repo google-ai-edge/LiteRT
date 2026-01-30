@@ -185,6 +185,10 @@ if (Test-Path $ProtoContext) {
 }
 Ensure-Include $ProtoContext '#include "google/protobuf/compiler/java/helpers.h"' ("`n" + '#include "google/protobuf/compiler/java/field_common.h"') | Out-Null
 
+$ProtoCommandLineInterface = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\command_line_interface.cc"
+Write-Host "Patching command_line_interface.cc..."
+Replace-InFile $ProtoCommandLineInterface '#include "google/protobuf/compiler/command_line_interface.h"' '#include "command_line_interface.h"' | Out-Null
+
 $ProtoMessageSerialization = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\message_serialization.cc"
 Write-Host "Patching message_serialization.cc..."
 Replace-InFile $ProtoMessageSerialization '#include "google/protobuf/compiler/java/message_serialization.h"' '#include "message_serialization.h"' | Out-Null
