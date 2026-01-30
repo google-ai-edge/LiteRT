@@ -185,20 +185,7 @@ if (Test-Path $ProtoContext) {
 }
 Ensure-Include $ProtoContext '#include "google/protobuf/compiler/java/helpers.h"' ("`n" + '#include "google/protobuf/compiler/java/field_common.h"') | Out-Null
 
-$ProtoCommandLineInterface = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\command_line_interface.cc"
-Write-Host "Patching command_line_interface.cc..."
-Replace-InFile $ProtoCommandLineInterface '#include "google/protobuf/compiler/command_line_interface.h"' '#include "command_line_interface.h"' | Out-Null
 
-$ProtoMessageSerialization = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\message_serialization.cc"
-Write-Host "Patching message_serialization.cc..."
-Replace-InFile $ProtoMessageSerialization '#include "google/protobuf/compiler/java/message_serialization.h"' '#include "message_serialization.h"' | Out-Null
-$ProtoFullMessage = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\full\message.cc"
-Write-Host "Patching full/message.cc..."
-Replace-InFile $ProtoFullMessage '#include "google/protobuf/compiler/java/message_serialization.h"' '#include "../message_serialization.h"' | Out-Null
-
-$ProtoJavaFeatures = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\java_features.pb.cc"
-Write-Host "Patching java_features.pb.cc..."
-Replace-InFile $ProtoJavaFeatures '#include "google/protobuf/compiler/java/java_features.pb.h"' '#include "java_features.pb.h"' | Out-Null
 
 $ProtoJavaBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\BUILD.bazel"
 Write-Host "Patching compiler/java/BUILD.bazel..."
@@ -323,13 +310,7 @@ $UnparserTraits = Join-Path $OutputBase "external\com_google_protobuf\src\google
 Write-Host "Patching unparser_traits.h..."
 Replace-InFile $UnparserTraits "return &msg.Get<Msg>(f->proto().number())[idx];" "return msg.GetMessage(f->proto().number(), idx);" | Out-Null
 
-$ZeroCopyStream = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\zero_copy_buffered_stream.cc"
-Write-Host "Patching zero_copy_buffered_stream.cc..."
-Replace-InFile $ZeroCopyStream '#include "google/protobuf/json/internal/zero_copy_buffered_stream.h"' '#include "zero_copy_buffered_stream.h"' | Out-Null
 
-$LexerHeader = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\lexer.h"
-Write-Host "Patching lexer.h..."
-Replace-InFile $LexerHeader '#include "google/protobuf/json/internal/zero_copy_buffered_stream.h"' '#include "zero_copy_buffered_stream.h"' | Out-Null
 
 $ProtoCompilerBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\BUILD.bazel"
 Write-Host "Patching compiler/BUILD.bazel..."
@@ -395,7 +376,8 @@ $BazelArgs = @(
   "--config=windows",
   "--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1",
   "--repo_env=USE_PYWRAP_RULES=True",
-  "--define=protobuf_allow_msvc=true"
+  "--define=protobuf_allow_msvc=true",
+  "--copt=/Iexternal/com_google_protobuf/src"
 )
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(" ") }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
