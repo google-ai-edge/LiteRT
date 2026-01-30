@@ -348,6 +348,76 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   return {};
 }
 
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
+  if (!weight_loader_) {
+    return {};
+  }
+
+  // Iterate through all subgraphs and restore external weights to tensors.
+  for (int subgraph_idx = 0; subgraph_idx < interp_->subgraphs_size();
+       ++subgraph_idx) {
+    auto* subgraph = interp_->subgraph(subgraph_idx);
+    const auto& external_buffer_ids =
+        subgraph->GetExternalTensorBufferIdentifiers();
+
+    for (const auto& [tensor_index, external_buffer_id] : external_buffer_ids) {
+      const weight_loader::WeightAccess* weight_access =
+          weight_loader_->GetExternalWeightByBuffer(external_buffer_id);
+      if (!weight_access) {
+        return litert::Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            absl::StrFormat(
+                "Failed to get external weight for buffer id %u (tensor %zu)",
+                external_buffer_id, tensor_index));
+      }
+
+      LiteRtTensorBuffer host_buffer = weight_access->GetHostBuffer();
+      if (!host_buffer) {
+        return litert::Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            absl::StrFormat(
+                "Host tensor buffer is null for buffer id %u (tensor %zu)",
+                external_buffer_id, tensor_index));
+      }
+
+      void* host_memory_addr = nullptr;
+      if (LiteRtGetTensorBufferHostMemory(host_buffer, &host_memory_addr) !=
+          kLiteRtStatusOk) {
+        return litert::Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            absl::StrFormat(
+                "Failed to get host memory for buffer id %u (tensor %zu)",
+                external_buffer_id, tensor_index));
+      }
+
+      TfLiteTensor* tensor = subgraph->tensor(tensor_index);
+      if (!tensor) {
+        return litert::Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            absl::StrFormat("Tensor %zu not found in subgraph %d", tensor_index,
+                            subgraph_idx));
+      }
+
+      // Set the tensor data to point to the external weight buffer.
+      // We use kTfLiteCustom allocation type so TFLite doesn't try to manage
+      // this memory. The memory is owned by weight_loader_ and stays valid
+      // until weight_loader_ is destroyed.
+      tensor->data.raw = static_cast<char*>(host_memory_addr);
+      tensor->allocation_type = kTfLiteCustom;
+
+      LITERT_LOG(LITERT_DEBUG,
+                 "Restored external weight: subgraph=%d, tensor=%zu, "
+                 "external_buffer_id=%u, addr=%p",
+                 subgraph_idx, tensor_index, external_buffer_id,
+                 host_memory_addr);
+    }
+  }
+  return {};
+}
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+
+
 namespace {
 
 int GetAllocationFd(const tflite::Allocation* allocation) {
@@ -568,6 +638,15 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
+
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+  // Load and restore external weights for CPU execution before delegates are
+  // applied. This ensures that XNNPack and other CPU delegates can see the
+  // weight data.
+  if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
+    LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
+  }
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
