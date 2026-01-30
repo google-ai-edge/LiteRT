@@ -377,7 +377,8 @@ $BazelArgs = @(
   "--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1",
   "--repo_env=USE_PYWRAP_RULES=True",
   "--define=protobuf_allow_msvc=true",
-  "--copt=/Iexternal/com_google_protobuf/src"
+  "--copt=/Iexternal\\com_google_protobuf\\src",
+  "--host_copt=/Iexternal\\com_google_protobuf\\src"
 )
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(" ") }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
