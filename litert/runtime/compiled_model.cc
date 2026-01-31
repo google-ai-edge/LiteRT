@@ -1141,8 +1141,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory ||
-        buffer->buffer_type() == kLiteRtTensorBufferTypeOpenVINOTensorBuffer ||
-        buffer->is_opencl_memory();
+        IsUserCustomBuffer(buffer->buffer_type()) || buffer->is_opencl_memory();
 #if defined(__ANDROID__)
     if (buffer->buffer_type() == kLiteRtTensorBufferTypeAhwb) {
       if (__builtin_available(android 26, *)) {
