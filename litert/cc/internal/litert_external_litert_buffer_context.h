@@ -95,9 +95,10 @@ class ExternalLiteRtBufferContext
   Expected<void> RegisterBufferRequirements(
       const TfLiteTensor* tensor,
       TensorBufferRequirements&& buffer_requirements) {
+    auto buffer = buffer_requirements.ToDetachedBuffer();
     LITERT_RETURN_IF_ERROR(
         LiteRtExternalLiteRtBufferContextRegisterBufferRequirements(
-            Get(), tensor, buffer_requirements.Release()));
+            Get(), tensor, buffer.data()));
     return {};
   }
 

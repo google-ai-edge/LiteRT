@@ -16,10 +16,9 @@
 #define ODML_LITERT_LITERT_C_LITERT_COMMON_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/build_common/build_config.h"  // IWYU pragma: keep
-
-
 
 // Define LITERT_WINDOWS_OS if the current OS is Windows.
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || \
@@ -102,13 +101,14 @@ LITERT_DEFINE_HANDLE(LiteRtOpaqueOptions);
 LITERT_DEFINE_HANDLE_STRUCT(LiteRtOptions);
 // LiteRT TensorBuffer object. (litert_tensor_buffer.h)
 LITERT_DEFINE_HANDLE(LiteRtTensorBuffer);
-// LiteRT TensorBufferRequirements object. (litert_tensor_buffer_requirements.h)
-LITERT_DEFINE_HANDLE(LiteRtTensorBufferRequirements);
 // LiteRT Profiler object. (litert_profiler.h)
 LITERT_DEFINE_HANDLE(LiteRtProfiler);
 // LiteRT ExternalLiteRtBufferContext object.
 // (litert_external_litert_buffer_context.h)
 LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
+
+// Types backed by flatbuffers.
+typedef uint8_t* LiteRtTensorBufferRequirements;
 
 #if defined(__linux__) || defined(__ANDROID__)
 #define LITERT_HAS_SYNC_FENCE_SUPPORT 1

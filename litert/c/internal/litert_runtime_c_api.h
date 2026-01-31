@@ -265,12 +265,14 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_compiled_model_input_buffer_requirements)(
       LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex input_index,
-      LiteRtTensorBufferRequirements* buffer_requirements);
+      LiteRtTensorBufferRequirements* buffer_requirements,
+      const size_t max_buffer_size, size_t* actual_buffer_size);
   // litert_compiled_model.h: LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtStatus (*litert_get_compiled_model_output_buffer_requirements)(
       LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex output_index,
-      LiteRtTensorBufferRequirements* buffer_requirements);
+      LiteRtTensorBufferRequirements* buffer_requirements,
+      const size_t max_buffer_size, size_t* actual_buffer_size);
   // litert_compiled_model.h: LiteRtGetCompiledModelInputTensorLayout
   LiteRtStatus (*litert_get_compiled_model_input_tensor_layout)(
       LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,

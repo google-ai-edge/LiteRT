@@ -23,11 +23,14 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -307,29 +310,21 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::IoRequirementsBuilder(
   }
 }
 
-Expected<LiteRtTensorBufferRequirements>
+Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create() {
   static constexpr std::array kSupportedTensorBufferTypes = {
 #if defined(__ANDROID__)
-      kLiteRtTensorBufferTypeAhwb,
+      litert::TensorBufferType::kAhwb,
 #endif  // __ANDROID__
-      kLiteRtTensorBufferTypeDmaBuf,
+      litert::TensorBufferType::kDmaBuf,
   };
 
-  LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
-          kSupportedTensorBufferTypes.size(),
-          kSupportedTensorBufferTypes.data(), buffer_size_, strides_.size(),
-          strides_.data(), &requirements);
-      status != kLiteRtStatusOk) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Failed to create tensor buffer requirements");
-  }
-
-  return requirements;
+  return litert::TensorBufferRequirements::Create(
+      absl::MakeConstSpan(kSupportedTensorBufferTypes), buffer_size_,
+      absl::MakeConstSpan(strides_));
 }
 
-Expected<LiteRtTensorBufferRequirements>
+Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
     int input_index, const LiteRtRankedTensorType& tensor_type) {
   // Log that MediaTek receives Float32 tensor type information
@@ -389,7 +384,7 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
   return input_requirements_builders_[input_index]->Create();
 }
 
-Expected<LiteRtTensorBufferRequirements>
+Expected<litert::TensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
   // Log that MediaTek receives Float32 tensor type information

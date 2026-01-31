@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 
 #include <array>
 #include <cstddef>
@@ -21,10 +21,6 @@
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace {
@@ -61,39 +57,6 @@ TEST(TensorBufferRequirements, Owned) {
   auto size = requirements->BufferSize();
   ASSERT_TRUE(size);
   ASSERT_EQ(*size, kBufferSize);
-}
-
-TEST(TensorBufferRequirements, NotOwned) {
-  LiteRtTensorBufferRequirements litert_requirements;
-  std::vector<LiteRtTensorBufferType> litert_buffer_types;
-  litert_buffer_types.reserve(kNumSupportedTensorBufferTypes);
-  for (const auto& buffer_type : kSupportedTensorBufferTypes) {
-    litert_buffer_types.push_back(
-        static_cast<LiteRtTensorBufferType>(buffer_type));
-  }
-  ASSERT_EQ(
-      LiteRtCreateTensorBufferRequirements(
-          litert_buffer_types.size(), litert_buffer_types.data(), kBufferSize,
-          /*num_strides=*/0, /*strides=*/nullptr, &litert_requirements),
-      kLiteRtStatusOk);
-
-  auto requirements = litert::TensorBufferRequirements::WrapCObject(
-      litert_requirements, litert::OwnHandle::kNo);
-
-  auto supported_types = requirements.SupportedTypes();
-  ASSERT_TRUE(supported_types);
-  ASSERT_EQ(supported_types->size(), kNumSupportedTensorBufferTypes);
-  for (auto i = 0; i < supported_types->size(); ++i) {
-    ASSERT_EQ((*supported_types)[i], kSupportedTensorBufferTypes[i]);
-  }
-
-  auto size = requirements.BufferSize();
-  ASSERT_TRUE(size);
-  ASSERT_EQ(*size, kBufferSize);
-
-  ASSERT_EQ(requirements.Get(), litert_requirements);
-
-  LiteRtDestroyTensorBufferRequirements(litert_requirements);
 }
 
 TEST(TensorBufferRequirements, WithStrides) {
@@ -265,25 +228,22 @@ TEST(TensorBufferRequirements, InvalidAlignment) {
   constexpr std::array<uint32_t, 2> kStrides = {100, 4};
 
   // Try to create with non-power-of-2 alignment via C API directly
-  LiteRtTensorBufferRequirements litert_requirements;
   std::vector<LiteRtTensorBufferType> litert_buffer_types;
   litert_buffer_types.reserve(kNumSupportedTensorBufferTypes);
   for (const auto& buffer_type : kSupportedTensorBufferTypes) {
     litert_buffer_types.push_back(
         static_cast<LiteRtTensorBufferType>(buffer_type));
   }
-  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
-                kNumSupportedTensorBufferTypes, litert_buffer_types.data(),
-                kBufferSize, kStrides.size(), kStrides.data(),
-                100,  // Not a power of 2
-                &litert_requirements),
-            kLiteRtStatusErrorInvalidArgument);
+  auto requirements = litert::TensorBufferRequirements::CreateWithAlignment(
+      absl::MakeSpan(kSupportedTensorBufferTypes,
+                     kNumSupportedTensorBufferTypes),
+      kBufferSize, 100, absl::MakeSpan(kStrides.data(), kStrides.size()));
+  ASSERT_FALSE(requirements);
 
   // Try with zero alignment
-  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
-                kNumSupportedTensorBufferTypes, litert_buffer_types.data(),
-                kBufferSize, kStrides.size(), kStrides.data(),
-                0,  // Zero
-                &litert_requirements),
-            kLiteRtStatusErrorInvalidArgument);
+  requirements = litert::TensorBufferRequirements::CreateWithAlignment(
+      absl::MakeSpan(kSupportedTensorBufferTypes,
+                     kNumSupportedTensorBufferTypes),
+      kBufferSize, 0, absl::MakeSpan(kStrides.data(), kStrides.size()));
+  ASSERT_FALSE(requirements);
 }

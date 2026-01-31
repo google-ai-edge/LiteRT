@@ -54,7 +54,6 @@
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
 #include "litert/test/common.h"
@@ -226,11 +225,11 @@ TEST(DispatchDelegate, HwBuffer) {
   std::vector<LiteRtTensorBufferPtr> input_buffers;
   for (int i = 0; i < interpreter.inputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto* input_buffer_requirements,
+        const auto& input_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.input_tensor(i)));
-    const auto& supported_types =
-        input_buffer_requirements->SupportedBufferTypes();
-    ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
+    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
+                                input_buffer_requirements.SupportedTypes());
+    ASSERT_EQ(supported_types.at(0), TensorBufferType::kAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
         LiteRtTensorBufferPtr input_buffer,
         buffer_context.CreateBufferForTensor(interpreter.input_tensor(i)));
@@ -246,12 +245,11 @@ TEST(DispatchDelegate, HwBuffer) {
   std::vector<LiteRtTensorBufferPtr> output_buffers;
   for (int i = 0; i < interpreter.outputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto* output_buffer_requirements,
+        const auto& output_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.output_tensor(i)));
-    ASSERT_NE(output_buffer_requirements, nullptr);
-    const auto& supported_types =
-        output_buffer_requirements->SupportedBufferTypes();
-    ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
+    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
+                                output_buffer_requirements.SupportedTypes());
+    ASSERT_EQ(supported_types.at(0), TensorBufferType::kAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
         LiteRtTensorBufferPtr output_buffer,
         buffer_context.CreateBufferForTensor(interpreter.output_tensor(i)));
@@ -342,8 +340,7 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg0, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
@@ -352,16 +349,14 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg1, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
   EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kAhwb));
 
   // Create I/O tensor buffers.
@@ -671,7 +666,6 @@ TEST(DispatchDelegate, CompiledModelAsync) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
                               compiled_model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
-
 
   // Create and fill input and output tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,

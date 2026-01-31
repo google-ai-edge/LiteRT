@@ -35,6 +35,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "weight_loader/external_weight_loader_litert.h"
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
@@ -84,14 +85,14 @@ class LiteRtCompiledModelT {
   // Returns the buffer requirements for the n-th input tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the input tensor
   // buffer.
-  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  litert::Expected<const litert::TensorBufferRequirements>
   GetInputBufferRequirements(absl::string_view signature_key,
                              size_t input_index);
 
   // Returns the buffer requirements for the n-th input tensor using sigature
   // index. The returned LiteRtTensorBufferRequirements is used to create the
   // input tensor buffer.
-  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  litert::Expected<const litert::TensorBufferRequirements>
   GetInputBufferRequirements(size_t signature_index, size_t input_index) {
     if (signature_index >= signature_keys_.size()) {
       return litert::Unexpected(
@@ -105,12 +106,12 @@ class LiteRtCompiledModelT {
   // Returns the buffer requirements for the n-th output tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the output tensor
   // buffer.
-  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  litert::Expected<const litert::TensorBufferRequirements>
   GetOutputBufferRequirements(absl::string_view signature_key,
                               size_t output_index);
 
   // The same as GetOutputBufferRequirements() for C API.
-  litert::Expected<LiteRtTensorBufferRequirements>
+  litert::Expected<litert::TensorBufferRequirements>
   GetOutputBufferRequirementsCApi(size_t signature_index, size_t output_index) {
     if (signature_index >= signature_keys_.size()) {
       return litert::Unexpected(
@@ -118,10 +119,10 @@ class LiteRtCompiledModelT {
           "Signature index is out of range of signature keys");
     }
     LITERT_ASSIGN_OR_RETURN(
-        const LiteRtTensorBufferRequirementsT* requirements,
+        const litert::TensorBufferRequirements requirements,
         GetOutputBufferRequirements(*signature_keys_[signature_index],
                                     output_index));
-    return const_cast<LiteRtTensorBufferRequirements>(requirements);
+    return std::move(requirements);
   }
 
   // Returns the shapes of all output tensors for the given signature key.
@@ -323,7 +324,7 @@ class LiteRtCompiledModelT {
   }
 
   // Returns the buffer requirements for the given tensor.
-  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  litert::Expected<const litert::TensorBufferRequirements>
   GetTensorBufferRequirements(const TfLiteTensor* tensor);
 
   // Returns the SignatureRunner for the given signature key.
@@ -434,7 +435,7 @@ class LiteRtCompiledModelT {
   // buffers, they don't register TensorBufferRequirements. Instead, the
   // CompiledModel creates the TensorBufferRequirements and stores them
   // in this map.
-  absl::flat_hash_map<TfLiteTensorIdentifier, LiteRtTensorBufferRequirementsPtr,
+  absl::flat_hash_map<TfLiteTensorIdentifier, litert::TensorBufferRequirements,
                       TensorIdentifierHash, TensorIdentifierEqual>
       cpu_buffer_requirements_;
 

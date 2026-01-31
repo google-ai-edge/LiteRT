@@ -19,8 +19,8 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 
@@ -38,11 +38,11 @@ class LiteRtDispatchInvocationContextT {
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
       int num_inputs, int num_outputs);
 
-  litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
-      const LiteRtRankedTensorType& tensor_type);
-  litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
+  litert::Expected<litert::TensorBufferRequirements>
+  GetTensorBufferRequirements(const LiteRtRankedTensorType& tensor_type);
+  litert::Expected<litert::TensorBufferRequirements> GetInputRequirements(
       int input_index, const LiteRtRankedTensorType& tensor_type);
-  litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
+  litert::Expected<litert::TensorBufferRequirements> GetOutputRequirements(
       int output_index, const LiteRtRankedTensorType& tensor_type);
 
   litert::Expected<void> AttachInput(

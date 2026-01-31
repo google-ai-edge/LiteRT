@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -32,8 +33,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -182,51 +183,74 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
       break;
   }
 
-  LiteRtTensorBufferRequirements input_0_requirements;
+  uint8_t input_0_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t input_0_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements input_0_requirements_ptr =
+      input_0_requirements_data;
   LITERT_ASSERT_OK(LiteRtDispatchGetInputRequirements(
       invocation_context, /*input_index=*/0, &kInput0TensorType,
-      &input_0_requirements));
+      &input_0_requirements_ptr,
+      litert::TensorBufferRequirements::kDefaultBufferSize,
+      &input_0_actual_buffer_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_0_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  input_0_requirements_ptr));
 
-  LiteRtTensorBufferType input_0_type;
-  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-      input_0_requirements, /*type_index=*/0, &input_0_type));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_0_supported_types,
+                              input_0_requirements.SupportedTypes());
+  LiteRtTensorBufferType input_0_type =
+      static_cast<LiteRtTensorBufferType>(input_0_supported_types[0]);
 
-  size_t input_0_size;
-  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
-      input_0_requirements, &input_0_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_0_size,
+                              input_0_requirements.BufferSize());
   ASSERT_GE(input_0_size, sizeof(kTestInput0Tensor));
 
-  LiteRtTensorBufferRequirements input_1_requirements;
+  uint8_t input_1_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t input_1_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements input_1_requirements_ptr =
+      input_1_requirements_data;
   LITERT_ASSERT_OK(LiteRtDispatchGetInputRequirements(
       invocation_context, /*input_index=*/1, &kInput1TensorType,
-      &input_1_requirements));
+      &input_1_requirements_ptr,
+      litert::TensorBufferRequirements::kDefaultBufferSize,
+      &input_1_actual_buffer_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_1_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  input_1_requirements_ptr));
 
-  LiteRtTensorBufferType input_1_type;
-  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-      input_1_requirements, /*type_index=*/0, &input_1_type));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_1_supported_types,
+                              input_1_requirements.SupportedTypes());
+  LiteRtTensorBufferType input_1_type =
+      static_cast<LiteRtTensorBufferType>(input_1_supported_types[0]);
 
-  size_t input_1_size;
-  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
-      input_1_requirements, &input_1_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_1_size,
+                              input_1_requirements.BufferSize());
   ASSERT_GE(input_1_size, sizeof(kTestInput1Tensor));
 
-  LiteRtTensorBufferRequirements output_requirements;
+  uint8_t output_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t output_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements output_requirements_ptr =
+      output_requirements_data;
   LITERT_ASSERT_OK(LiteRtDispatchGetOutputRequirements(
       invocation_context, /*output_index=*/0, &kOutputTensorType,
-      &output_requirements));
+      &output_requirements_ptr,
+      litert::TensorBufferRequirements::kDefaultBufferSize,
+      &output_actual_buffer_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  output_requirements_ptr));
 
-  LiteRtTensorBufferType output_type;
-  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-      output_requirements, /*type_index=*/0, &output_type));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_supported_types,
+                              output_requirements.SupportedTypes());
+  LiteRtTensorBufferType output_type =
+      static_cast<LiteRtTensorBufferType>(output_supported_types[0]);
 
-  size_t output_size;
-  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
-      output_requirements, &output_size));
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t output_size,
+                              output_requirements.BufferSize());
   ASSERT_GE(output_size, sizeof(kTestOutputTensor));
-
-  LiteRtDestroyTensorBufferRequirements(input_0_requirements);
-  LiteRtDestroyTensorBufferRequirements(input_1_requirements);
-  LiteRtDestroyTensorBufferRequirements(output_requirements);
 
   LiteRtTensorBuffer input_0_tensor_buffer;
   LITERT_ASSERT_OK(
