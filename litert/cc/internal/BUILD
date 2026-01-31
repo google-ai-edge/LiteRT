@@ -77,7 +77,6 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
-        ":litert_detail",
         ":litert_handle",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
@@ -95,6 +94,7 @@ cc_library(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_types",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",

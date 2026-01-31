@@ -258,8 +258,7 @@ class SimpleBuffer {
   // Create a new native tensor buffer from this buffer which points to the
   // underlying host memory.
   Expected<TensorBuffer> SpawnTensorBuffer() const {
-    LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
-    return TensorBuffer::CreateFromHostMemory(env, tensor_type_, buffer_.get(),
+    return TensorBuffer::CreateFromHostMemory(env_, tensor_type_, buffer_.get(),
                                               size_in_bytes_);
   }
 
