@@ -93,7 +93,9 @@ struct LiteRtGpuOptionsPayloadT {
   // Number of threads for WebGPU kernel shader compilation.
   int num_threads_to_compile = 0;
   // Added in version 2.0.2a1.
-  // Whether to convert weights on GPU. It's an experimental feature.
+  // Whether to convert weights on GPU.
+  // It is not supported by the all backends so this flag is ignored when using
+  // non-OpenCL and non-WebGPU backends.
   bool convert_weights_on_gpu = false;
   // Added in version 2.1.0.
   // Whether to disable Vulkan kernel shader optimization to reduce init time.
@@ -281,8 +283,7 @@ LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
     LiteRtOpaqueOptions gpu_accelerator_options,
     bool disable_shader_optimization) {
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
@@ -558,8 +559,7 @@ LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
     bool* disable_shader_optimization, LiteRtGpuOptionsPayload payload) {
   LITERT_RETURN_IF_ERROR(disable_shader_optimization,
                          ErrorStatusBuilder::InvalidArgument())
