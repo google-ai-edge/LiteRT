@@ -298,6 +298,7 @@ cc_library(
         "//tflite:util",
         "//tflite/core:framework",
         "//tflite/schema:schema_utils",
+        "@com_google_absl//absl/log",
         "@flatbuffers",
         "@jsoncpp_git//:jsoncpp",
         "@org_tensorflow//tensorflow/core:framework",
@@ -376,6 +377,7 @@ tf_cc_test(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:protobuf",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
+        "@org_tensorflow//third_party/protobuf",
     ],
 )
 
