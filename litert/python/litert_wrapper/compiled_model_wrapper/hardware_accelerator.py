@@ -34,7 +34,6 @@ class HardwareAccelerator(enum.IntFlag):
     GPU: Use GPU for inference with WebGPU/OpenCL/Metal backend (value: 2, bit
       1). May fail if model has ops unsupported by GPU; combine with CPU for
       fallback.
-    NPU: Use NPU/TPU for inference if available (value: 4, bit 2).
 
   Example usage:
     # CPU only (safe default)
@@ -48,13 +47,7 @@ class HardwareAccelerator(enum.IntFlag):
     # GPU with CPU fallback (recommended for GPU acceleration)
     model = CompiledModel.from_file("model.tflite",
         hardware_accel=HardwareAccelerator.GPU | HardwareAccelerator.CPU)
-
-    # NPU with GPU and CPU fallback
-    model = CompiledModel.from_file("model.tflite",
-        hardware_accel=HardwareAccelerator.NPU | HardwareAccelerator.GPU |
-                       HardwareAccelerator.CPU)
   """
 
   CPU = enum.auto()
   GPU = enum.auto()
-  NPU = enum.auto()
