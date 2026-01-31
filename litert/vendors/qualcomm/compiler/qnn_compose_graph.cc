@@ -56,6 +56,7 @@
 #include "litert/vendors/qualcomm/core/builders/embedding_lookup_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder_htp.h"
+#include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gather_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
@@ -511,9 +512,22 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
 
       auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
+      // TODO(jiunkaiy): Remove or improve BuildFullyConnectedOpHtp.
       if (use_htp_preferences) {
         op_wrappers = ::qnn::BuildFullyConnectedOpHtp(
             tensor_pool, input_tensors, {activation_input}, keep_num_dims);
+      }
+      // TODO(jiunkaiy): We currently convert FC to HadamardTransform
+      // aggressively, ignoring backend support. This behavior may need
+      // refinement
+      // Attempt to replace FC with HadamardTransform.
+      const auto scale_from_weight =
+          ::qnn::GetSylvesterHadamardScale(input_tensors[1].get());
+      if (op_wrappers.empty() && scale_from_weight.has_value() &&
+          !keep_num_dims) {
+        op_wrappers = ::qnn::BuildHadamardTransformOp(
+            tensor_pool, input_tensors, {activation_input},
+            scale_from_weight.value());
       }
       if (op_wrappers.empty()) {
         op_wrappers = ::qnn::BuildFullyConnectedOp(
