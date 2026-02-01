@@ -36,7 +36,7 @@ TEST(LiteRtGoogleTensorOptionsTest, CreateAndGet) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, FloatTruncationType) {
+TEST(LiteRtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
 
@@ -57,7 +57,7 @@ TEST(LiteRtGoogleTensorOptionsTest, FloatTruncationType) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
+TEST(LiteRtGoogleTensorOptionsTest, OutputDir) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
 
@@ -78,28 +78,8 @@ TEST(LiteRtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, OutputDir) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
 
-  LiteRtGoogleTensorOptions options_data;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data));
-
-  bool dump_op_timings;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetDumpOpTimings(options_data,
-                                                             &dump_op_timings));
-  ASSERT_FALSE(dump_op_timings);
-
-  LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetDumpOpTimings(options_data, true));
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetDumpOpTimings(options_data,
-                                                             &dump_op_timings));
-  ASSERT_TRUE(dump_op_timings);
-
-  LiteRtDestroyOpaqueOptions(options);
-}
-
-TEST(LiteRtGoogleTensorOptionsTest, DumpOpTimings) {
+TEST(LiteRtGoogleTensorOptionsTest, FloatTruncationType) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
 
@@ -138,10 +118,6 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_EQ(options->GetOutputDir(), "");
   options->SetOutputDir("/tmp/test_dir");
   EXPECT_EQ(options->GetOutputDir(), "/tmp/test_dir");
-
-  EXPECT_FALSE(options->GetDumpOpTimings());
-  options->SetDumpOpTimings(true);
-  EXPECT_TRUE(options->GetDumpOpTimings());
 }
 
 TEST(LiteRtGoogleTensorOptionsTest, Hash) {

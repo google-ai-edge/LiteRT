@@ -197,14 +197,6 @@ LiteRtStatus LiteRtOpaqueOptionsToGoogleTensorOptions(
   google_tensor_options->set_int64_to_int32_truncation(
       int64_to_int32_truncation);
 
-  // DUMP OP TIMINGS
-  bool dump_op_timings;
-  if (LiteRtGoogleTensorOptionsGetDumpOpTimings(
-          google_tensor_options_data, &dump_op_timings) != kLiteRtStatusOk) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  google_tensor_options->set_dump_op_timings(dump_op_timings);
-
   // ENABLE LARGE MODEL SUPPORT
   bool enable_large_model_support;
   if (LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
