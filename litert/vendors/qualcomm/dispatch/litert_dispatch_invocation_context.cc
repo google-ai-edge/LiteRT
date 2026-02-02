@@ -92,7 +92,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       graph_handle_(graph_handle),
       inputs_(context_binary_info.Graphs()[graph_index].Inputs()),
       outputs_(context_binary_info.Graphs()[graph_index].Outputs()),
-      is_uint16_(false) {
+      need_to_convert_uint16_(false) {
   input_buffer_handles_.resize(inputs_.size());
   // Partition outputs_: real first, dumped after.
   auto mid =
@@ -120,13 +120,13 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
   // Check if we need online uint16 conversion.
   for (const auto& tensor : inputs_) {
     if (tensor.IsQUInt16()) {
-      is_uint16_ = true;
+      need_to_convert_uint16_ = true;
       return;
     }
   }
   for (const auto& tensor : outputs_) {
     if (tensor.IsQUInt16()) {
-      is_uint16_ = true;
+      need_to_convert_uint16_ = true;
       return;
     }
   }
@@ -332,7 +332,7 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
-  if (is_uint16_) {
+  if (need_to_convert_uint16_) {
     for (int i = 0; i < inputs_.size(); ++i) {
       if (inputs_[i].IsQUInt16()) {
         ConvertToUint16(input_buffer_handles_[i], inputs_[i].GetBytes());
@@ -363,7 +363,7 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     LITERT_RETURN_IF_ERROR(Profile());
   }
 
-  if (is_uint16_) {
+  if (need_to_convert_uint16_) {
     for (int i = 0; i < outputs_.size(); ++i) {
       if (outputs_[i].IsQUInt16()) {
         ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetBytes());

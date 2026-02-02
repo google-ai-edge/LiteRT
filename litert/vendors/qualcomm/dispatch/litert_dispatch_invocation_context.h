@@ -104,7 +104,7 @@ class LiteRtDispatchInvocationContextT {
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
   std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
   std::vector<std::byte> dump_buffer_;
-  bool is_uint16_{false};
+  bool need_to_convert_uint16_{false};
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
