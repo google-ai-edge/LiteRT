@@ -79,6 +79,14 @@ class TensorBufferRequirements
     return TensorBufferRequirements(tensor_buffer_requirements, owned);
   }
 
+  Expected<TensorBufferType> SupportedType(int index) const {
+    LiteRtTensorBufferType type;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+            Get(), index, &type));
+    return static_cast<TensorBufferType>(type);
+  }
+
   Expected<std::vector<TensorBufferType>> SupportedTypes() const {
   int num_types;
     LITERT_RETURN_IF_ERROR(
