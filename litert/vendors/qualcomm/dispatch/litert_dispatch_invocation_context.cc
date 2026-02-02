@@ -110,8 +110,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
   size_t byte_offset = 0;
   for (auto it = mid; it != outputs_.end(); ++it) {
     uint32_t num_bytes = it->GetBytes();
-    it->SetDataSize(num_bytes);
-    it->SetData(dump_buffer_.data() + byte_offset);
+    it->SetClientBuf(dump_buffer_.data() + byte_offset, num_bytes);
     byte_offset += num_bytes;
   }
   if (byte_offset != total_bytes) {

@@ -30,11 +30,10 @@ class TensorSpan {
 
   std::uint32_t GetBytes() const;
 
-  void SetDataSize(std::uint32_t data_size) {
+  void SetClientBuf(void* data, std::uint32_t data_size) {
+    src_->v1.clientBuf.data = data;
     src_->v1.clientBuf.dataSize = data_size;
   }
-
-  void SetData(void* data) { src_->v1.clientBuf.data = data; }
 
   Qnn_Tensor_t* Get() { return src_; }
 
