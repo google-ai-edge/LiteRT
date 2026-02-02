@@ -203,7 +203,7 @@ TEST(OpWrapperTest, GetScalarParamNameTest) {
 
   OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   op_wrapper.AddScalarParam("uint8_param", value, false);
-  const auto& param_wrapper = op_wrapper.GetScalarPararm(0);
+  const auto& param_wrapper = op_wrapper.GetScalarParam(0);
   EXPECT_STREQ(param_wrapper.GetName().data(), "uint8_param");
 }
 
@@ -239,13 +239,13 @@ TEST(OpWrapperTest, GetScalarParamTypesTest) {
   op_wrapper.AddScalarParam("float_param", float_val, false);
 
   // Verify
-  EXPECT_EQ(op_wrapper.GetScalarPararm(0).GetValue<bool>(), bool_val);
-  EXPECT_EQ(op_wrapper.GetScalarPararm(1).GetValue<int8_t>(), int8_val);
-  EXPECT_EQ(op_wrapper.GetScalarPararm(2).GetValue<uint16_t>(), uint16_val);
-  EXPECT_EQ(op_wrapper.GetScalarPararm(3).GetValue<int16_t>(), int16_val);
-  EXPECT_EQ(op_wrapper.GetScalarPararm(4).GetValue<uint32_t>(), uint32_val);
-  EXPECT_EQ(op_wrapper.GetScalarPararm(5).GetValue<int32_t>(), int32_val);
-  EXPECT_FLOAT_EQ(op_wrapper.GetScalarPararm(6).GetValue<float>(), float_val);
+  EXPECT_EQ(op_wrapper.GetScalarParam(0).GetValue<bool>(), bool_val);
+  EXPECT_EQ(op_wrapper.GetScalarParam(1).GetValue<int8_t>(), int8_val);
+  EXPECT_EQ(op_wrapper.GetScalarParam(2).GetValue<uint16_t>(), uint16_val);
+  EXPECT_EQ(op_wrapper.GetScalarParam(3).GetValue<int16_t>(), int16_val);
+  EXPECT_EQ(op_wrapper.GetScalarParam(4).GetValue<uint32_t>(), uint32_val);
+  EXPECT_EQ(op_wrapper.GetScalarParam(5).GetValue<int32_t>(), int32_val);
+  EXPECT_FLOAT_EQ(op_wrapper.GetScalarParam(6).GetValue<float>(), float_val);
 }
 
 TEST(OpWrapperTest, SwapOutputsTest) {

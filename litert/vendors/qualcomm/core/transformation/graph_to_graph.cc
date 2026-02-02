@@ -85,8 +85,8 @@ void Transform(std::function<bool(OpWrapper&)> validate_op_config,
 }  // namespace
 
 // TODO (jiunkaiy): Add more G2G transformation.
-void GraphToGraphTransform(G2GConfig g2g_option,
-                           std::vector<OpWrapper>& ops, TensorPool& tensor_pool,
+void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
+                           TensorPool& tensor_pool,
                            std::function<bool(OpWrapper&)> validate_op_config) {
   if (g2g_option == G2GConfig::kOff) {
     return;
@@ -230,17 +230,17 @@ void GraphToGraphTransform(G2GConfig g2g_option,
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
 
-  // FastVLM Tranpose MatMul
-  const std::vector<QnnOpCode> transpose_matmul = {
-      QnnOpCode::kElementWiseAdd,
-      QnnOpCode::kTranspose,
-      QnnOpCode::kElementWiseMultiply,
-      QnnOpCode::kReshape,
-      QnnOpCode::kMatMul,
-      QnnOpCode::kMatMul,
-  };
-  Transform(validate_op_config, ops, tensor_pool, transpose_matmul,
-            OptimizeTransposeMatMul);
+  // // FastVLM Tranpose MatMul
+  // const std::vector<QnnOpCode> transpose_matmul = {
+  //     QnnOpCode::kElementWiseBinary,
+  //     QnnOpCode::kTranspose,
+  //     QnnOpCode::kElementWiseBinary,
+  //     QnnOpCode::kReshape,
+  //     QnnOpCode::kMatMul,
+  //     QnnOpCode::kMatMul,
+  // };
+  // Transform(validate_op_config, ops, tensor_pool, transpose_matmul,
+  //           OptimizeTransposeMatMul);
 
   // Fast Vlm Optimization
   const std::vector<QnnOpCode> fast_vlm_mha_prefill = {

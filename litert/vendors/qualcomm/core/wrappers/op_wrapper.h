@@ -57,8 +57,6 @@ class OpWrapper final {
 
   const TensorParamWrapper& GetTensorPararm(size_t i) const;
 
-  const ScalarParamWrapper& GetScalarPararm(size_t i) const;
-
   std::optional<ScalarParamWrapper> GetScalarParam(size_t i) const;
 
   std::vector<std::reference_wrapper<TensorWrapper>> GetAllTensors();
