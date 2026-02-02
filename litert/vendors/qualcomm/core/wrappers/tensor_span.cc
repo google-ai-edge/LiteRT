@@ -11,7 +11,7 @@
 
 namespace qnn {
 bool TensorSpan::IsMarkedDump() const {
-  return absl::EndsWith(GetName(), kDumpSuffix) &&
+  return absl::EndsWith(GetName(), kTensorDumpNameSuffix) &&
          src_->v1.type == QNN_TENSOR_TYPE_APP_READ;
 }
 

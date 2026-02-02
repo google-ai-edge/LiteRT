@@ -35,7 +35,7 @@ inline bool IsStrEq(const char* input, const char* golden) {
 
 }  // namespace miscs
 
-constexpr const char* kDumpSuffix = "_dump";
+constexpr std::string_view kTensorDumpNameSuffix = "_dump";
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
 constexpr uint32_t kQuantBitWidth2 = 2;

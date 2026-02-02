@@ -311,8 +311,8 @@ class TensorWrapper final {
   void ConvertQint16ToQuint16();
 
   void MarkDump() {
-    if (!absl::EndsWith(name_, kDumpSuffix)) {
-      name_ += kDumpSuffix;
+    if (!absl::EndsWith(name_, kTensorDumpNameSuffix)) {
+      name_ += kTensorDumpNameSuffix;
       qnn_tensor_.v2.name = name_.c_str();
     }
     SetTensorType(QNN_TENSOR_TYPE_APP_READ);
