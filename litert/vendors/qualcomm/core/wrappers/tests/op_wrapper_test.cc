@@ -263,7 +263,7 @@ TensorWrapper CreateTensor(const std::vector<uint32_t>& dims,
 TEST(OpWrapperEqualityOperatorTest, TypeName) {
   std::vector<uint32_t> dims = {1, 1, 3};
   auto input = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
-  auto output = input;
+  auto output = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
   auto param_tensor = CreateTensor(dims, QNN_TENSOR_TYPE_STATIC, 1);
 
   qnn::OpWrapper op1{"op", "TYPE_A", QnnOpCode::kUnknown};
@@ -291,7 +291,7 @@ TEST(OpWrapperEqualityOperatorTest, TypeName) {
 TEST(OpWrapperEqualityOperatorTest, OpCode) {
   std::vector<uint32_t> dims = {1, 1, 3};
   auto input = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
-  auto output = input;
+  auto output = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
   auto param_tensor = CreateTensor(dims, QNN_TENSOR_TYPE_STATIC, 1);
 
   qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kElementWiseAdd};
@@ -321,7 +321,7 @@ TEST(OpWrapperEqualityOperatorTest, InputDims) {
   std::vector<uint32_t> dims2 = {1, 1, 4};
   auto input1 = CreateTensor(dims1, QNN_TENSOR_TYPE_NATIVE);
   auto input2 = CreateTensor(dims2, QNN_TENSOR_TYPE_NATIVE);
-  auto output = input1;
+  auto output = CreateTensor(dims1, QNN_TENSOR_TYPE_NATIVE);
   auto param_tensor = CreateTensor(dims1, QNN_TENSOR_TYPE_STATIC, 1);
 
   qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
@@ -349,7 +349,7 @@ TEST(OpWrapperEqualityOperatorTest, InputDims) {
 TEST(OpWrapperEqualityOperatorTest, ScalarParam) {
   std::vector<uint32_t> dims = {1, 1, 3};
   auto input = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
-  auto output = input;
+  auto output = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
   auto param_tensor = CreateTensor(dims, QNN_TENSOR_TYPE_STATIC, 1);
 
   qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
@@ -377,7 +377,7 @@ TEST(OpWrapperEqualityOperatorTest, ScalarParam) {
 TEST(OpWrapperEqualityOperatorTest, TensorParam) {
   std::vector<uint32_t> dims = {1, 1, 3};
   auto input = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
-  auto output = input;
+  auto output = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
   auto param_tensor = CreateTensor(dims, QNN_TENSOR_TYPE_STATIC, 1);
   auto param_tensor_diff = CreateTensor(dims, QNN_TENSOR_TYPE_STATIC, 2);
 
@@ -406,7 +406,7 @@ TEST(OpWrapperEqualityOperatorTest, TensorParam) {
 TEST(OpWrapperEqualityOperatorTest, InputSize) {
   std::vector<uint32_t> dims = {1, 1, 3};
   auto input = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
-  auto output = input;
+  auto output = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
   auto param_tensor = CreateTensor(dims, QNN_TENSOR_TYPE_STATIC, 1);
 
   qnn::OpWrapper op1{"op", "OP_TYPE", QnnOpCode::kUnknown};
