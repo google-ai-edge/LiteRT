@@ -14,6 +14,7 @@
 
 #include <any>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 #include <gmock/gmock.h>
@@ -23,10 +24,10 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -106,70 +107,79 @@ TEST(MediaTek, DispatchApiWithAhwb) {
   // Determine tensor buffer requirements.
   // ///////////////////////////////////////////////////////////////////////////
 
-  int num_tensor_buffer_types;
-  LiteRtTensorBufferRequirements input_0_tensor_buffer_requirements;
+  uint8_t input_0_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t input_0_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements input_0_tensor_buffer_requirements_ptr =
+      input_0_requirements_data;
   EXPECT_EQ(LiteRtDispatchGetInputRequirements(
                 invocation_context, /*input_index=*/0, &kInput0TensorType,
-                &input_0_tensor_buffer_requirements),
+                &input_0_tensor_buffer_requirements_ptr,
+                litert::TensorBufferRequirements::kDefaultBufferSize,
+                &input_0_actual_buffer_size),
             kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
-                input_0_tensor_buffer_requirements, &num_tensor_buffer_types),
-            kLiteRtStatusOk);
-  EXPECT_GE(num_tensor_buffer_types, 1);
-  LiteRtTensorBufferType input_0_tensor_buffer_type;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-                input_0_tensor_buffer_requirements, /*type_index=*/0,
-                &input_0_tensor_buffer_type),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_0_tensor_buffer_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  input_0_tensor_buffer_requirements_ptr));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_0_supported_types,
+      input_0_tensor_buffer_requirements.SupportedTypes());
+  EXPECT_GE(input_0_supported_types.size(), 1);
+  LiteRtTensorBufferType input_0_tensor_buffer_type =
+      static_cast<LiteRtTensorBufferType>(input_0_supported_types[0]);
   EXPECT_EQ(input_0_tensor_buffer_type, kLiteRtTensorBufferTypeAhwb);
-  size_t input_0_tensor_buffer_size;
-  EXPECT_EQ(
-      LiteRtGetTensorBufferRequirementsBufferSize(
-          input_0_tensor_buffer_requirements, &input_0_tensor_buffer_size),
-      kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_0_tensor_buffer_size,
+                              input_0_tensor_buffer_requirements.BufferSize());
   EXPECT_GE(input_0_tensor_buffer_size, sizeof(kTestInput0Tensor));
 
-  LiteRtTensorBufferRequirements input_1_tensor_buffer_requirements;
+  uint8_t input_1_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t input_1_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements input_1_tensor_buffer_requirements_ptr =
+      input_1_requirements_data;
   EXPECT_EQ(LiteRtDispatchGetInputRequirements(
                 invocation_context, /*input_index=*/1, &kInput1TensorType,
-                &input_1_tensor_buffer_requirements),
+                &input_1_tensor_buffer_requirements_ptr,
+                litert::TensorBufferRequirements::kDefaultBufferSize,
+                &input_1_actual_buffer_size),
             kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
-                input_1_tensor_buffer_requirements, &num_tensor_buffer_types),
-            kLiteRtStatusOk);
-  EXPECT_GE(num_tensor_buffer_types, 1);
-  LiteRtTensorBufferType input_1_tensor_buffer_type;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-                input_1_tensor_buffer_requirements, /*type_index=*/0,
-                &input_1_tensor_buffer_type),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_1_tensor_buffer_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  input_1_tensor_buffer_requirements_ptr));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_1_supported_types,
+      input_1_tensor_buffer_requirements.SupportedTypes());
+  EXPECT_GE(input_1_supported_types.size(), 1);
+  LiteRtTensorBufferType input_1_tensor_buffer_type =
+      static_cast<LiteRtTensorBufferType>(input_1_supported_types[0]);
   EXPECT_EQ(input_1_tensor_buffer_type, kLiteRtTensorBufferTypeAhwb);
-  size_t input_1_tensor_buffer_size;
-  EXPECT_EQ(
-      LiteRtGetTensorBufferRequirementsBufferSize(
-          input_1_tensor_buffer_requirements, &input_1_tensor_buffer_size),
-      kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_1_tensor_buffer_size,
+                              input_1_tensor_buffer_requirements.BufferSize());
   EXPECT_GE(input_1_tensor_buffer_size, sizeof(kTestInput1Tensor));
 
-  LiteRtTensorBufferRequirements output_tensor_buffer_requirements;
+  uint8_t output_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t output_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements output_requirements_ptr =
+      output_requirements_data;
   EXPECT_EQ(LiteRtDispatchGetOutputRequirements(
                 invocation_context, /*output_index=*/0, &kOutputTensorType,
-                &output_tensor_buffer_requirements),
+                &output_requirements_ptr,
+                litert::TensorBufferRequirements::kDefaultBufferSize,
+                &output_actual_buffer_size),
             kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
-                output_tensor_buffer_requirements, &num_tensor_buffer_types),
-            kLiteRtStatusOk);
-  EXPECT_GE(num_tensor_buffer_types, 1);
-  LiteRtTensorBufferType output_tensor_buffer_type;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-                output_tensor_buffer_requirements, /*type_index=*/0,
-                &output_tensor_buffer_type),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_tensor_buffer_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  output_requirements_ptr));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_supported_types,
+      output_tensor_buffer_requirements.SupportedTypes());
+  EXPECT_GE(output_supported_types.size(), 1);
+  LiteRtTensorBufferType output_tensor_buffer_type =
+      static_cast<LiteRtTensorBufferType>(output_supported_types[0]);
   EXPECT_EQ(output_tensor_buffer_type, kLiteRtTensorBufferTypeAhwb);
-  size_t output_tensor_buffer_size;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(
-                output_tensor_buffer_requirements, &output_tensor_buffer_size),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t output_tensor_buffer_size,
+                              output_tensor_buffer_requirements.BufferSize());
   EXPECT_GE(output_tensor_buffer_size, sizeof(kTestOutputTensor));
 
   // ///////////////////////////////////////////////////////////////////////////
@@ -414,70 +424,79 @@ TEST(MediaTek, DispatchApiWithDmaBuf) {
   // Determine tensor buffer requirements.
   // ///////////////////////////////////////////////////////////////////////////
 
-  int num_tensor_buffer_types;
-  LiteRtTensorBufferRequirements input_0_tensor_buffer_requirements;
+  uint8_t input_0_tensor_buffer_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t input_0_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements input_0_tensor_buffer_requirements_ptr =
+      input_0_tensor_buffer_requirements_data;
   EXPECT_EQ(LiteRtDispatchGetInputRequirements(
                 invocation_context, /*input_index=*/0, &kInput0TensorType,
-                &input_0_tensor_buffer_requirements),
+                &input_0_tensor_buffer_requirements_ptr,
+                litert::TensorBufferRequirements::kDefaultBufferSize,
+                &input_0_actual_buffer_size),
             kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
-                input_0_tensor_buffer_requirements, &num_tensor_buffer_types),
-            kLiteRtStatusOk);
-  EXPECT_GE(num_tensor_buffer_types, 2);
-  LiteRtTensorBufferType input_0_tensor_buffer_type;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-                input_0_tensor_buffer_requirements, /*type_index=*/1,
-                &input_0_tensor_buffer_type),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_0_tensor_buffer_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  input_0_tensor_buffer_requirements_ptr));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_0_supported_types,
+      input_0_tensor_buffer_requirements.SupportedTypes());
+  EXPECT_GE(input_0_supported_types.size(), 2);
+  LiteRtTensorBufferType input_0_tensor_buffer_type =
+      static_cast<LiteRtTensorBufferType>(input_0_supported_types[1]);
   EXPECT_EQ(input_0_tensor_buffer_type, kLiteRtTensorBufferTypeDmaBuf);
-  size_t input_0_tensor_buffer_size;
-  EXPECT_EQ(
-      LiteRtGetTensorBufferRequirementsBufferSize(
-          input_0_tensor_buffer_requirements, &input_0_tensor_buffer_size),
-      kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_0_tensor_buffer_size,
+                              input_0_tensor_buffer_requirements.BufferSize());
   EXPECT_GE(input_0_tensor_buffer_size, sizeof(kTestInput0Tensor));
 
-  LiteRtTensorBufferRequirements input_1_tensor_buffer_requirements;
+  uint8_t input_1_tensor_buffer_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t input_1_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements input_1_tensor_buffer_requirements_ptr =
+      input_1_tensor_buffer_requirements_data;
   EXPECT_EQ(LiteRtDispatchGetInputRequirements(
                 invocation_context, /*input_index=*/1, &kInput1TensorType,
-                &input_1_tensor_buffer_requirements),
+                &input_1_tensor_buffer_requirements_ptr,
+                litert::TensorBufferRequirements::kDefaultBufferSize,
+                &input_1_actual_buffer_size),
             kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
-                input_1_tensor_buffer_requirements, &num_tensor_buffer_types),
-            kLiteRtStatusOk);
-  EXPECT_GE(num_tensor_buffer_types, 2);
-  LiteRtTensorBufferType input_1_tensor_buffer_type;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-                input_1_tensor_buffer_requirements, /*type_index=*/1,
-                &input_1_tensor_buffer_type),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_1_tensor_buffer_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  input_1_tensor_buffer_requirements_ptr));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_1_supported_types,
+      input_1_tensor_buffer_requirements.SupportedTypes());
+  EXPECT_GE(input_1_supported_types.size(), 2);
+  LiteRtTensorBufferType input_1_tensor_buffer_type =
+      static_cast<LiteRtTensorBufferType>(input_1_supported_types[1]);
   EXPECT_EQ(input_1_tensor_buffer_type, kLiteRtTensorBufferTypeDmaBuf);
-  size_t input_1_tensor_buffer_size;
-  EXPECT_EQ(
-      LiteRtGetTensorBufferRequirementsBufferSize(
-          input_1_tensor_buffer_requirements, &input_1_tensor_buffer_size),
-      kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_1_tensor_buffer_size,
+                              input_1_tensor_buffer_requirements.BufferSize());
   EXPECT_GE(input_1_tensor_buffer_size, sizeof(kTestInput1Tensor));
 
-  LiteRtTensorBufferRequirements output_tensor_buffer_requirements;
+  uint8_t output_tensor_buffer_requirements_data
+      [litert::TensorBufferRequirements::kDefaultBufferSize];
+  size_t output_tensor_buffer_actual_buffer_size = 0;
+  LiteRtTensorBufferRequirements output_tensor_buffer_requirements_ptr =
+      output_tensor_buffer_requirements_data;
   EXPECT_EQ(LiteRtDispatchGetOutputRequirements(
                 invocation_context, /*output_index=*/0, &kOutputTensorType,
-                &output_tensor_buffer_requirements),
+                &output_tensor_buffer_requirements_ptr,
+                litert::TensorBufferRequirements::kDefaultBufferSize,
+                &output_tensor_buffer_actual_buffer_size),
             kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
-                output_tensor_buffer_requirements, &num_tensor_buffer_types),
-            kLiteRtStatusOk);
-  EXPECT_GE(num_tensor_buffer_types, 2);
-  LiteRtTensorBufferType output_tensor_buffer_type;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-                output_tensor_buffer_requirements, /*type_index=*/1,
-                &output_tensor_buffer_type),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_tensor_buffer_requirements,
+                              litert::TensorBufferRequirements::FromFlatBuffer(
+                                  output_tensor_buffer_requirements_ptr));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_supported_types,
+      output_tensor_buffer_requirements.SupportedTypes());
+  EXPECT_GE(output_supported_types.size(), 2);
+  LiteRtTensorBufferType output_tensor_buffer_type =
+      static_cast<LiteRtTensorBufferType>(output_supported_types[1]);
   EXPECT_EQ(output_tensor_buffer_type, kLiteRtTensorBufferTypeDmaBuf);
-  size_t output_tensor_buffer_size;
-  EXPECT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(
-                output_tensor_buffer_requirements, &output_tensor_buffer_size),
-            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t output_tensor_buffer_size,
+                              output_tensor_buffer_requirements.BufferSize());
   EXPECT_GE(output_tensor_buffer_size, sizeof(kTestOutputTensor));
 
   // ///////////////////////////////////////////////////////////////////////////

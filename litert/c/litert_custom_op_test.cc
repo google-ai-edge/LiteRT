@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
@@ -30,9 +31,9 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_custom_op_test_vectors.h"
 
@@ -158,24 +159,28 @@ TEST(CompiledModelTest, CustomOp) {
   std::vector<LiteRtTensorBuffer> input_tensor_buffers;
   input_tensor_buffers.reserve(num_inputs);
   for (auto i = 0; i < num_inputs; ++i) {
-    LiteRtTensorBufferRequirements tensor_buffer_requirements;
+    uint8_t buffer_requirements_data
+        [litert::TensorBufferRequirements::kDefaultBufferSize];
+    LiteRtTensorBufferRequirements tensor_buffer_requirements =
+        buffer_requirements_data;
+    size_t actual_buffer_size = 0;
     ASSERT_EQ(LiteRtGetCompiledModelInputBufferRequirements(
                   compiled_model, /*signature_index=*/0, i,
-                  &tensor_buffer_requirements),
+                  &tensor_buffer_requirements,
+                  litert::TensorBufferRequirements::kDefaultBufferSize,
+                  &actual_buffer_size),
               kLiteRtStatusOk);
-    LiteRtTensorBufferType tensor_buffer_type;
-    EXPECT_EQ(
-        LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-            tensor_buffer_requirements, /*type_index=*/0, &tensor_buffer_type),
-        kLiteRtStatusOk);
-    size_t tensor_buffer_size;
-    EXPECT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(
-                  tensor_buffer_requirements, &tensor_buffer_size),
-              kLiteRtStatusOk);
+    LITERT_ASSIGN_OR_ABORT(auto requirements,
+                           litert::TensorBufferRequirements::FromFlatBuffer(
+                               tensor_buffer_requirements));
+    LITERT_ASSIGN_OR_ABORT(auto tensor_buffer_types,
+                           requirements.SupportedTypes());
+    LITERT_ASSIGN_OR_ABORT(auto tensor_buffer_size, requirements.BufferSize());
     LiteRtTensorBuffer tensor_buffer;
     EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                  environment, tensor_buffer_type, &kInput0TensorType,
-                  tensor_buffer_size, &tensor_buffer),
+                  environment,
+                  static_cast<LiteRtTensorBufferType>(tensor_buffer_types[0]),
+                  &kInput0TensorType, tensor_buffer_size, &tensor_buffer),
               kLiteRtStatusOk);
     input_tensor_buffers.push_back(tensor_buffer);
   }
@@ -187,24 +192,28 @@ TEST(CompiledModelTest, CustomOp) {
   std::vector<LiteRtTensorBuffer> output_tensor_buffers;
   output_tensor_buffers.reserve(num_outputs);
   for (auto i = 0; i < num_outputs; ++i) {
-    LiteRtTensorBufferRequirements tensor_buffer_requirements;
+    uint8_t buffer_requirements_data
+        [litert::TensorBufferRequirements::kDefaultBufferSize];
+    LiteRtTensorBufferRequirements tensor_buffer_requirements =
+        buffer_requirements_data;
+    size_t actual_buffer_size = 0;
     ASSERT_EQ(LiteRtGetCompiledModelOutputBufferRequirements(
                   compiled_model, /*signature_index=*/0, i,
-                  &tensor_buffer_requirements),
+                  &tensor_buffer_requirements,
+                  litert::TensorBufferRequirements::kDefaultBufferSize,
+                  &actual_buffer_size),
               kLiteRtStatusOk);
-    LiteRtTensorBufferType tensor_buffer_type;
-    EXPECT_EQ(
-        LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-            tensor_buffer_requirements, /*type_index=*/0, &tensor_buffer_type),
-        kLiteRtStatusOk);
-    size_t tensor_buffer_size;
-    EXPECT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(
-                  tensor_buffer_requirements, &tensor_buffer_size),
-              kLiteRtStatusOk);
+    LITERT_ASSIGN_OR_ABORT(auto requirements,
+                           litert::TensorBufferRequirements::FromFlatBuffer(
+                               tensor_buffer_requirements));
+    LITERT_ASSIGN_OR_ABORT(auto tensor_buffer_types,
+                           requirements.SupportedTypes());
+    LITERT_ASSIGN_OR_ABORT(auto tensor_buffer_size, requirements.BufferSize());
     LiteRtTensorBuffer tensor_buffer;
     EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                  environment, tensor_buffer_type, &kInput0TensorType,
-                  tensor_buffer_size, &tensor_buffer),
+                  environment,
+                  static_cast<LiteRtTensorBufferType>(tensor_buffer_types[0]),
+                  &kInput0TensorType, tensor_buffer_size, &tensor_buffer),
               kLiteRtStatusOk);
     output_tensor_buffers.push_back(tensor_buffer);
   }

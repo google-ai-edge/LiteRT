@@ -419,19 +419,23 @@ class RuntimeProxy {
   LiteRtStatus GetCompiledModelInputBufferRequirements(
       LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex input_index,
-      LiteRtTensorBufferRequirements* buffer_requirements) {
+      LiteRtTensorBufferRequirements* buffer_requirements,
+      const size_t max_buffer_size, size_t* actual_buffer_size) {
     LITERT_PROXY_METHOD_STATUS(
         litert_get_compiled_model_input_buffer_requirements, compiled_model,
-        signature_index, input_index, buffer_requirements);
+        signature_index, input_index, buffer_requirements, max_buffer_size,
+        actual_buffer_size);
   }
 
   LiteRtStatus GetCompiledModelOutputBufferRequirements(
       LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex output_index,
-      LiteRtTensorBufferRequirements* buffer_requirements) {
+      LiteRtTensorBufferRequirements* buffer_requirements,
+      const size_t max_buffer_size, size_t* actual_buffer_size) {
     LITERT_PROXY_METHOD_STATUS(
         litert_get_compiled_model_output_buffer_requirements, compiled_model,
-        signature_index, output_index, buffer_requirements);
+        signature_index, output_index, buffer_requirements, max_buffer_size,
+        actual_buffer_size);
   }
 
   LiteRtStatus GetCompiledModelInputTensorLayout(

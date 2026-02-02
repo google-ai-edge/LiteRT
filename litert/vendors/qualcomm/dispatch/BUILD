@@ -64,6 +64,8 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_tensor_buffer_requirements",
+        "//litert/cc:litert_tensor_buffer_types",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -94,6 +96,8 @@ litert_device_test(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_tensor_buffer_requirements",
+        "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/dynamic_runtime:litert_environment",
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/core:filesystem_testonly",

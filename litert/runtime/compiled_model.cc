@@ -32,6 +32,8 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -54,7 +56,6 @@
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_tensor_buffer_utils.h"
@@ -82,7 +83,6 @@
 #include "litert/runtime/magic_number_utils.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
@@ -418,7 +418,6 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
   return {};
 }
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
-
 
 namespace {
 
@@ -873,7 +872,7 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(uint64_t model_hash) {
 }
 #endif  // !defined(LITERT_DISABLE_NPU)
 
-Expected<const LiteRtTensorBufferRequirementsT*>
+Expected<const litert::TensorBufferRequirements>
 LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
                           GetTensorIdentifier(*interp_, tensor));
@@ -889,22 +888,20 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   // Check if we have a cached CPU buffer requirement.
   auto cached_req = cpu_buffer_requirements_.find(tensor_id);
   if (cached_req != cpu_buffer_requirements_.end()) {
-    return cached_req->second.get();
+    return cached_req->second;
   }
-  LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
-  LiteRtTensorBufferType cpu_buffer_type[] = {
-      kLiteRtTensorBufferTypeHostMemory};
+  litert::TensorBufferType cpu_buffer_type[] = {
+      litert::TensorBufferType::kHostMemory};
   uint32_t cpu_buffer_strides[] = {0};
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
-      /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, tensor->bytes,
-      /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements));
-  cpu_buffer_requirements_[tensor_id] =
-      LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
-  return static_cast<const LiteRtTensorBufferRequirementsT*>(
-      litert_cpu_buffer_requirements);
+  LITERT_ASSIGN_OR_RETURN(
+      auto requirements,
+      litert::TensorBufferRequirements::Create(cpu_buffer_type, tensor->bytes,
+                                               cpu_buffer_strides));
+  cpu_buffer_requirements_[tensor_id] = requirements;
+  return std::move(requirements);
 }
 
-Expected<const LiteRtTensorBufferRequirementsT*>
+Expected<const litert::TensorBufferRequirements>
 LiteRtCompiledModelT::GetInputBufferRequirements(
     absl::string_view signature_key, size_t input_index) {
   auto runner = GetSignatureRunner(signature_key);
@@ -925,7 +922,7 @@ LiteRtCompiledModelT::GetInputBufferRequirements(
   return GetTensorBufferRequirements(input_tensor);
 }
 
-Expected<const LiteRtTensorBufferRequirementsT*>
+Expected<const litert::TensorBufferRequirements>
 LiteRtCompiledModelT::GetOutputBufferRequirements(
     absl::string_view signature_key, size_t output_index) {
   auto runner = GetSignatureRunner(signature_key);
@@ -1099,13 +1096,15 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 
   bool buffer_requires_cpu_sync = false;
 
-  Expected<LiteRtTensorBufferRequirementsConst> requirements =
+  Expected<const litert::TensorBufferRequirements&> requirements =
       buffer_context_->GetBufferRequirements(tensor);
   if (requirements) {
-    const auto& supported_types = (*requirements)->SupportedBufferTypes();
+    LITERT_ASSIGN_OR_RETURN(const auto& supported_types,
+                            requirements->SupportedTypes());
 
     for (auto& type : supported_types) {
-      if (type == buffer->buffer_type()) {
+      if (type ==
+          static_cast<litert::TensorBufferType>(buffer->buffer_type())) {
         // Register tensor buffer if it can be used by the backend.
         buffer->Duplicate();
         LiteRtTensorBufferPtr duplicated_buffer(buffer);
@@ -1121,7 +1120,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         tensor->data.data = nullptr;
         return {};
       }
-      if (type == kLiteRtTensorBufferTypeHostMemory) {
+      if (type == litert::TensorBufferType::kHostMemory) {
         buffer_requires_cpu_sync = true;
       }
     }

@@ -25,8 +25,9 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -47,9 +48,9 @@ class LiteRtDispatchInvocationContextT {
       LiteRtDispatchDeviceContextT& device_context,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name);
 
-  litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
+  litert::Expected<litert::TensorBufferRequirements> GetInputRequirements(
       int input_index, const LiteRtRankedTensorType& tensor_type);
-  litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
+  litert::Expected<litert::TensorBufferRequirements> GetOutputRequirements(
       int output_index, const LiteRtRankedTensorType& tensor_type);
 
   litert::Expected<void> AttachInput(

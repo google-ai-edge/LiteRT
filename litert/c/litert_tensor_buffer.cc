@@ -23,13 +23,12 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opencl_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "litert/runtime/tensor_buffer_requirements.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -430,25 +429,27 @@ LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  LITERT_ASSIGN_OR_RETURN(
+      auto requirements_cc,
+      litert::TensorBufferRequirements::FromFlatBuffer(requirements));
+  LITERT_ASSIGN_OR_RETURN(auto supported_types,
+                          requirements_cc.SupportedTypes());
   // Get the first supported buffer type from requirements
-  if (requirements->SupportedBufferTypes().empty()) {
+  if (supported_types.empty()) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LiteRtTensorBufferType buffer_type = requirements->SupportedBufferTypes()[0];
-  size_t buffer_size = requirements->BufferSize();
-  size_t alignment = requirements->Alignment();
+  LiteRtTensorBufferType buffer_type =
+      static_cast<LiteRtTensorBufferType>(supported_types[0]);
+  LITERT_ASSIGN_OR_RETURN(size_t buffer_size, requirements_cc.BufferSize());
+  LITERT_ASSIGN_OR_RETURN(size_t alignment, requirements_cc.Alignment());
 
   const LiteRtRankedTensorType* tensor_type_to_use = tensor_type;
   LiteRtRankedTensorType tensor_type_with_strides;
-  int num_requirement_strides = 0;
-  const uint32_t* requirement_strides = nullptr;
-  if (LiteRtGetTensorBufferRequirementsStrides(
-          requirements, &num_requirement_strides, &requirement_strides) ==
-          kLiteRtStatusOk &&
-      requirement_strides != nullptr && num_requirement_strides > 0) {
+  LITERT_ASSIGN_OR_RETURN(auto requirement_strides, requirements_cc.Strides());
+  if (requirement_strides.size() > 0) {
     tensor_type_with_strides = *tensor_type;
     tensor_type_with_strides.layout.has_strides = true;
-    for (int i = 0; i < num_requirement_strides; ++i) {
+    for (int i = 0; i < requirement_strides.size(); ++i) {
       tensor_type_with_strides.layout.strides[i] = requirement_strides[i];
     }
     tensor_type_to_use = &tensor_type_with_strides;

@@ -109,7 +109,8 @@ LiteRtDispatchDeviceContextDestroy(LiteRtDispatchDeviceContext device_context);
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements);
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    size_t max_buffer_size, size_t* actual_buffer_size);
 
 // Given a tensor type for an invocation context output, obtain the attributes
 // the HW requires for the associated tensor buffer. The returned
@@ -117,7 +118,8 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetInputRequirements(
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements);
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements,
+    size_t max_buffer_size, size_t* actual_buffer_size);
 
 // Registers a buffer with the given device context.
 // Note: The memory backing the buffer should be valid until
