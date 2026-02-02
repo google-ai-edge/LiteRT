@@ -232,9 +232,9 @@ void GraphToGraphTransform(G2GConfig g2g_option,
 
   // FastVLM Tranpose MatMul
   const std::vector<QnnOpCode> transpose_matmul = {
-      QnnOpCode::kElementWiseAdd,
+      QnnOpCode::kElementWiseBinary,
       QnnOpCode::kTranspose,
-      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kElementWiseBinary,
       QnnOpCode::kReshape,
       QnnOpCode::kMatMul,
       QnnOpCode::kMatMul,

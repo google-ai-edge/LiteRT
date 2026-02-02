@@ -618,11 +618,11 @@ size_t OptimizeMHAFastVlmPrefill(
       };
 
   int32_t add_1_index = -2;
-  if (ops[start_index + add_1_index].IsOpCode(QnnOpCode::kElementWiseAdd) &&
+  if (ops[start_index + add_1_index].IsOpCode(QnnOpCode::kElementWiseBinary) &&
       is_add_op_match_in_pattern(add_1_index)) {
     // Origin pattern, add_1_index is matched, do nothing.
   } else if (ops[start_index + add_1_index + 1].IsOpCode(
-                 QnnOpCode::kElementWiseAdd) &&
+                 QnnOpCode::kElementWiseBinary) &&
              is_add_op_match_in_pattern(add_1_index + 1)) {
     // For new Fast VLM pattern. Tranpose Ops are fused into MatMul Ops first by
     // OptimizeTransposeMatMul, the add_1_index becomes -1.
@@ -1399,11 +1399,12 @@ size_t OptimizeTransposeMatMul(
 
   auto& matmul_1 = ops[start_index + kMatmul1Index];
   // Get adj_y in MatMul Op.
-  auto& adj_y_param = matmul_1.GetScalarPararm(1);
-  if (adj_y_param.GetName() != QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1) {
+  auto adj_y_param = matmul_1.GetScalarParam(1);
+  if (!adj_y_param ||
+      adj_y_param->GetName() != QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1) {
     return 1;
   }
-  bool origin_adj_y = adj_y_param.GetValue<bool>();
+  bool origin_adj_y = adj_y_param->GetValue<bool>();
 
   auto& transpose_in_0 = transpose.GetInputTensor(0);
   auto& matmul_in_0 = matmul_1.GetInputTensor(0);
