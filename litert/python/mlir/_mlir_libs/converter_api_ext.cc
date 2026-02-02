@@ -18,8 +18,10 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "mlir-c/IR.h"
+#include "mlir-c/Pass.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"  // IWYU pragma: keep
 #include "mlir/CAPI/IR.h"
+#include "mlir/CAPI/Pass.h"
 #include "mlir/IR/Operation.h"
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h"
@@ -42,15 +44,47 @@ void ThrowIfFailed(absl::string_view prefix, const absl::Status& status) {
 NB_MODULE(converter_api_ext, m) {
   m.doc() = "LiteRT Converter API Extensions";
 
+  litert::RegisterPasses();
+
+  nb::class_<litert::ConvertToTFLConfig>(m, "ConvertToTFLConfig")
+      .def(nb::init<>())
+      .def_rw("model_origin_framework",
+              &litert::ConvertToTFLConfig::model_origin_framework,
+              "The source model type (default: 'UNSET')")
+
+      .def_rw("canonicalizing_inf_as_min_max_float",
+              &litert::ConvertToTFLConfig::canonicalizing_inf_as_min_max_float,
+              "Convert +/-Inf to MIN/MAX float values")
+
+      .def_rw("qdq_conversion_mode",
+              &litert::ConvertToTFLConfig::qdq_conversion_mode,
+              "Quantization mode: 'NONE', 'STATIC', 'DYNAMIC', 'STRICT'")
+
+      .def_rw("unsafe_fuse_dynamic_shaped_broadcast",
+              &litert::ConvertToTFLConfig::unsafe_fuse_dynamic_shaped_broadcast,
+              "Allows fusion of dynamic shaped broadcast ops");
+
   m.def(
-      "run_converter_passes",
-      [](MlirModule c_module_op) {
+      "prepare_mlir_context",
+      [](MlirContext c_context) {
+        litert::PrepareMlirContext(unwrap(c_context));
+      },
+      nb::arg("context"),
+      "Config and register the dialects and passes for MLIR context.");
+
+  m.def(
+      "run_convert_to_tfl_passes",
+      [](MlirModule c_module_op, MlirPassManager c_pass_manager,
+         litert::ConvertToTFLConfig& config) {
         mlir::ModuleOp module_op = unwrap(c_module_op);
-        absl::Status status = litert::RunStableHLOToTFLPasses(module_op);
+        mlir::PassManager* pass_manager = unwrap(c_pass_manager);
+        absl::Status status =
+            litert::RunConvertToTFLPasses(module_op, *pass_manager, config);
         ThrowIfFailed("Failed to run converter passes", status);
       },
-      nb::arg("module"),
-      "Runs all passes from StableHLO to TFL (the default conversion path).");
+      nb::arg("module"), nb::arg("pass_manager"), nb::arg("config"),
+      "Runs all passes from TF/StableHLO to TFL (the default conversion "
+      "path).");
 
   m.def(
       "set_signature",
@@ -103,5 +137,17 @@ NB_MODULE(converter_api_ext, m) {
       nb::arg("module"), nb::arg("export_path"),
       "Exports the MLIR module to flatbuffer and exports it to the given file "
       "path.");
+
+  m.def(
+      "export_flatbuffer_to_bytes",
+      [](MlirModule c_module_op) {
+        auto bytes_or = litert::ExportFlatbufferToBytes(unwrap(c_module_op));
+        ThrowIfFailed("Failed to export flatbuffer", bytes_or.status());
+
+        auto& bytes = bytes_or.value();
+        return nb::bytes(bytes.data(), bytes.size());
+      },
+      nb::arg("module"),
+      "Exports the MLIR module to flatbuffer and returns the bytes.");
 }
 }  // namespace

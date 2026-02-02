@@ -120,6 +120,7 @@ pybind_extension(
             "@llvm-project//mlir:IR",
             "@llvm-project//mlir:CAPIIRHeaders",
             "@llvm-project//mlir:CAPITransformsHeaders",
+            "@llvm-project//mlir:Pass",
         ],
         [
             # oss only: link to the shared library.
@@ -158,6 +159,7 @@ pybind_extension(
             "@llvm-project//mlir:IR",
             "@llvm-project//mlir:CAPIIRHeaders",
             "@llvm-project//mlir:CAPITransformsHeaders",
+            "@llvm-project//mlir:Pass",
         ],
         [
             # oss only: link to the shared library.
