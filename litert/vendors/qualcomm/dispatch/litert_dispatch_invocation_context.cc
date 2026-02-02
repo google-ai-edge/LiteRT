@@ -104,12 +104,12 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
   // Allocate buffer on the heap for tensor dump features.
   const size_t total_bytes = std::accumulate(
       mid, outputs_.end(), size_t{0}, [](size_t cnt, const auto& tensor) {
-        return cnt + tensor.GetTensorBytes();
+        return cnt + tensor.GetBytes();
       });
   dump_buffer_.resize(total_bytes);
   size_t byte_offset = 0;
   for (auto it = mid; it != outputs_.end(); ++it) {
-    uint32_t num_bytes = it->GetTensorBytes();
+    uint32_t num_bytes = it->GetBytes();
     it->SetDataSize(num_bytes);
     it->SetData(dump_buffer_.data() + byte_offset);
     byte_offset += num_bytes;
@@ -336,7 +336,7 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   if (is_uint16_) {
     for (int i = 0; i < inputs_.size(); ++i) {
       if (inputs_[i].IsQUInt16()) {
-        ConvertToUint16(input_buffer_handles_[i], inputs_[i].GetTensorBytes());
+        ConvertToUint16(input_buffer_handles_[i], inputs_[i].GetBytes());
       }
     }
   }
@@ -367,7 +367,7 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   if (is_uint16_) {
     for (int i = 0; i < outputs_.size(); ++i) {
       if (outputs_[i].IsQUInt16()) {
-        ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetTensorBytes());
+        ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetBytes());
       }
     }
   }
@@ -379,7 +379,7 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     auto status = WriteTensorTo(kDumpFolder, *it);
     if (!status) {
       LITERT_LOG(LITERT_ERROR, "Failed to dump tensor: %s",
-                 it->GetTensorName().data());
+                 it->GetName().data());
     }
   }
   return {};
@@ -502,7 +502,7 @@ Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
   qnn::CreateDirectoryRecursive(output_folder);
   // TODO (jiunkaiy): Change to absl strcat.
   std::filesystem::path output_path =
-      output_folder / (std::string(tensor.GetTensorName()) + ".raw");
+      output_folder / (std::string(tensor.GetName()) + ".raw");
   std::ofstream fout(output_path, std::ios::binary);
   if (fout.fail()) {
     LITERT_LOG(LITERT_ERROR, "Failed to write dumped tensor");
@@ -511,7 +511,7 @@ Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
   fout.write(static_cast<const char*>(tensor.Get()->v1.clientBuf.data),
              tensor.Get()->v1.clientBuf.dataSize);
   std::filesystem::path quant_param_path =
-      output_folder / (std::string(tensor.GetTensorName()) + ".csv");
+      output_folder / (std::string(tensor.GetName()) + ".csv");
   std::ofstream quant_file(quant_param_path);
   auto [scale, offset] = tensor.GetScaleOffset();
   std::stringstream quant_ss;

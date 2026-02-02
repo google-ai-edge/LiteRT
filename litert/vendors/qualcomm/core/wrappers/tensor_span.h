@@ -20,15 +20,15 @@ class TensorSpan {
     return src_->v1.dataType == QNN_DATATYPE_UFIXED_POINT_16;
   }
 
-  absl::string_view GetTensorName() const { return src_->v1.name; }
+  absl::string_view GetName() const { return src_->v1.name; }
 
   bool IsMarkedDump() const;
 
   Qnn_ScaleOffset_t GetScaleOffset() const;
 
-  std::uint32_t GetTensorNumElements() const;
+  std::uint32_t GetNumElements() const;
 
-  std::uint32_t GetTensorBytes() const;
+  std::uint32_t GetBytes() const;
 
   void SetDataSize(std::uint32_t data_size) {
     src_->v1.clientBuf.dataSize = data_size;

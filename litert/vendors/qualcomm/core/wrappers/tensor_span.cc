@@ -11,7 +11,7 @@
 
 namespace qnn {
 bool TensorSpan::IsMarkedDump() const {
-  return absl::EndsWith(GetTensorName(), kDumpSuffix) &&
+  return absl::EndsWith(GetName(), kDumpSuffix) &&
          src_->v1.type == QNN_TENSOR_TYPE_APP_READ;
 }
 
@@ -24,14 +24,14 @@ Qnn_ScaleOffset_t TensorSpan::GetScaleOffset() const {
   return {1.0f, 0};
 }
 
-std::uint32_t TensorSpan::GetTensorNumElements() const {
+std::uint32_t TensorSpan::GetNumElements() const {
   return std::accumulate(src_->v1.dimensions,
                          src_->v1.dimensions + src_->v1.rank, 1,
                          std::multiplies<>());
 }
 
-std::uint32_t TensorSpan::GetTensorBytes() const {
-  return GetDataTypeSize(src_->v1.dataType) * GetTensorNumElements();
+std::uint32_t TensorSpan::GetBytes() const {
+  return GetDataTypeSize(src_->v1.dataType) * GetNumElements();
 }
 
 }  // namespace qnn
