@@ -433,7 +433,6 @@ cc_library(
     deps = [
         ":data_type",
         ":shape",
-        "//tflite/types:half",
     ],
 )
 

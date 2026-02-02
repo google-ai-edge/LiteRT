@@ -22,7 +22,6 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/shape.h"
-#include "tflite/types/half.h"
 
 namespace tflite {
 namespace gpu {
@@ -35,11 +34,6 @@ struct StorageType;
 template <>
 struct StorageType<DataType::FLOAT32> {
   using value = std::vector<float>;
-};
-
-template <>
-struct StorageType<DataType::FLOAT16> {
-  using value = std::vector<tflite::half>;
 };
 
 template <>
