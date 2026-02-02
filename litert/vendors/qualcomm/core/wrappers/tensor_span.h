@@ -26,9 +26,9 @@ class TensorSpan {
 
   Qnn_ScaleOffset_t GetScaleOffset() const;
 
-  std::uint32_t GetNumElements() const;
+  size_t GetNumElements() const;
 
-  std::uint32_t GetBytes() const;
+  size_t GetBytes() const;
 
   void SetClientBuf(void* data, std::uint32_t data_size) {
     src_->v1.clientBuf.data = data;

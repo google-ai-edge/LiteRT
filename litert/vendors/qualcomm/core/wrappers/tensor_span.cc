@@ -24,13 +24,13 @@ Qnn_ScaleOffset_t TensorSpan::GetScaleOffset() const {
   return {1.0f, 0};
 }
 
-std::uint32_t TensorSpan::GetNumElements() const {
+size_t TensorSpan::GetNumElements() const {
   return std::accumulate(src_->v1.dimensions,
                          src_->v1.dimensions + src_->v1.rank, 1,
                          std::multiplies<>());
 }
 
-std::uint32_t TensorSpan::GetBytes() const {
+size_t TensorSpan::GetBytes() const {
   return GetDataTypeSize(src_->v1.dataType) * GetNumElements();
 }
 

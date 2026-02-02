@@ -14,8 +14,8 @@ namespace {
 TEST(TensorSpanTest, GetAndSet) {
   Qnn_Tensor_t tensor = QNN_TENSOR_INIT;
   std::array<std::uint32_t, 3> dims = {1, 2, 3};
-  static constexpr std::uint32_t kNumElements = 6;
-  static constexpr std::uint32_t kBytes = kNumElements * sizeof(std::int16_t);
+  static constexpr size_t kNumElements = 6;
+  static constexpr size_t kBytes = kNumElements * sizeof(std::int16_t);
   tensor.v1.rank = dims.size();
   tensor.v1.dimensions = dims.data();
   tensor.v1.dataType = QNN_DATATYPE_UFIXED_POINT_16;
