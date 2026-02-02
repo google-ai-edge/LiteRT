@@ -89,3 +89,15 @@ litert_device_exec(
     backend_id = "qualcomm",
     target = ":quantize_params_wrapper_test",
 )
+
+cc_test(
+    name = "tensor_span_test",
+    srcs = [
+        "tensor_span_test.cc",
+    ],
+    deps = [
+        "//litert/vendors/qualcomm/core/wrappers:tensor_span",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
