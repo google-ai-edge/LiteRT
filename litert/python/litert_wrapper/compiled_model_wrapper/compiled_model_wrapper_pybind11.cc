@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <functional>
-#include <memory>
+#include <stdexcept>
 #include <string>
-#include <vector>
 
 #include "litert/python/litert_wrapper/compiled_model_wrapper/compiled_model_wrapper.h"
 #include "pybind11/functional.h"  // from @pybind11
@@ -87,37 +85,49 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       .def("GetSignatureList",
            [](CompiledModelWrapper& self) {
              PyObject* r = self.GetSignatureList();
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("GetSignatureByIndex",
            [](CompiledModelWrapper& self, int index) {
              PyObject* r = self.GetSignatureByIndex(index);
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("GetNumSignatures",
            [](CompiledModelWrapper& self) {
              PyObject* r = self.GetNumSignatures();
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("GetSignatureIndex",
            [](CompiledModelWrapper& self, const std::string& key) {
              PyObject* r = self.GetSignatureIndex(key.c_str());
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("GetInputBufferRequirements",
            [](CompiledModelWrapper& self, int sig_idx, int in_idx) {
              PyObject* r = self.GetInputBufferRequirements(sig_idx, in_idx);
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("GetOutputBufferRequirements",
            [](CompiledModelWrapper& self, int sig_idx, int out_idx) {
              PyObject* r = self.GetOutputBufferRequirements(sig_idx, out_idx);
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("CreateInputBufferByName",
@@ -127,7 +137,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
              py::object self_obj = py::cast(&self);
              PyObject* r = self.CreateInputBufferByName(
                  self_obj.ptr(), sig_key.c_str(), input_name.c_str());
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("CreateOutputBufferByName",
@@ -137,7 +149,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
              py::object self_obj = py::cast(&self);
              PyObject* r = self.CreateOutputBufferByName(
                  self_obj.ptr(), sig_key.c_str(), out_name.c_str());
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("CreateInputBuffers",
@@ -145,7 +159,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
              // Pass Python wrapper reference so buffers keep model alive
              py::object self_obj = py::cast(&self);
              PyObject* r = self.CreateInputBuffers(self_obj.ptr(), sig_index);
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("CreateOutputBuffers",
@@ -153,13 +169,17 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
              // Pass Python wrapper reference so buffers keep model alive
              py::object self_obj = py::cast(&self);
              PyObject* r = self.CreateOutputBuffers(self_obj.ptr(), sig_index);
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("GetInputTensorDetails",
            [](CompiledModelWrapper& self, const std::string& sig_key) {
              PyObject* r = self.GetInputTensorDetails(sig_key.c_str());
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::reinterpret_steal<py::object>(r);
            })
       .def("RunByName",
@@ -167,7 +187,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
               py::object input_map, py::object output_map) {
              PyObject* r = self.RunByName(sig_key.c_str(), input_map.ptr(),
                                           output_map.ptr());
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::none();
            })
       .def("RunByIndex",
@@ -175,13 +197,17 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
               py::object out_list) {
              PyObject* r =
                  self.RunByIndex(sig_index, in_list.ptr(), out_list.ptr());
-             if (!r) throw py::error_already_set();
+             if (!r) {
+               throw py::error_already_set();
+             }
              return py::none();
            })
       .def("Run", [](CompiledModelWrapper& self, py::object in_list,
                      py::object out_list) {
         PyObject* r = self.RunByIndex(0, in_list.ptr(), out_list.ptr());
-        if (!r) throw py::error_already_set();
+        if (!r) {
+          throw py::error_already_set();
+        }
         return py::none();
       });
 }

@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <functional>
-#include <memory>
 #include <string>
-#include <vector>
 
 #include "litert/python/litert_wrapper/tensor_buffer_wrapper/tensor_buffer_wrapper.h"
 #include "pybind11/pybind11.h"  // from @pybind11
@@ -40,7 +37,9 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
          py::ssize_t num_elements) {
         PyObject* res = TensorBufferWrapper::CreateFromHostMemory(
             py_data.ptr(), dtype, num_elements);
-        if (!res) throw py::error_already_set();
+        if (!res) {
+          throw py::error_already_set();
+        }
         return py::reinterpret_steal<py::object>(res);
       },
       py::arg("py_data"), py::arg("dtype"), py::arg("num_elements"));
@@ -51,7 +50,9 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
         [](py::object capsule, py::object data_list, const std::string& dtype) {
           PyObject* res = TensorBufferWrapper::WriteTensor(
               capsule.ptr(), data_list.ptr(), dtype);
-          if (!res) throw py::error_already_set();
+          if (!res) {
+            throw py::error_already_set();
+          }
           // No return value needed
         });
 
@@ -61,7 +62,9 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
         [](py::object capsule, int num_elements, const std::string& dtype) {
           PyObject* res = TensorBufferWrapper::ReadTensor(capsule.ptr(),
                                                           num_elements, dtype);
-          if (!res) throw py::error_already_set();
+          if (!res) {
+            throw py::error_already_set();
+          }
           return py::reinterpret_steal<py::object>(res);
         });
 
@@ -69,8 +72,9 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
   // This should be called when the TensorBuffer is no longer needed.
   m.def("DestroyTensorBuffer", [](py::object capsule) {
     if (PyObject* res = TensorBufferWrapper::DestroyTensorBuffer(capsule.ptr());
-        !res)
+        !res) {
       throw py::error_already_set();
+    }
     // No return value needed
   });
 }
