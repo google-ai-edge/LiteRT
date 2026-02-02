@@ -118,7 +118,8 @@ bool GetBroadcastedShape(llvm::ArrayRef<EphemeralSymDim> shape1,
       if (i1->size == 1) {
         *iR = *i2;
         continue;
-      } else if (i2->size == 1) {
+      }
+      if (i2->size == 1) {
         *iR = *i1;
         continue;
       }
@@ -132,7 +133,8 @@ bool GetBroadcastedShape(llvm::ArrayRef<EphemeralSymDim> shape1,
     if (*i1 == *i2 || i2->size == 1) {
       *iR = *i1;
       continue;
-    } else if (i1->size == 1) {
+    }
+    if (i1->size == 1) {
       *iR = *i2;
       continue;
     }
@@ -207,7 +209,7 @@ mlir::Type GetBroadcastedType(mlir::Type type1, mlir::Type type2,
     if (composite_kind_1 == composite_kind_2) {
       result_composite_kind = composite_kind_1;
     } else {
-      // Handling heterogenous types here
+      // Handling heterogeneous types here
       // Only allow mixing ranked tensor with symbolic tensor.
       if (!IsARankedOrSymTensorType(type1) &&
           !IsARankedOrSymTensorType(type2)) {
@@ -347,11 +349,11 @@ llvm::LogicalResult VerifyOperandsBroadcastable(mlir::Operation* op) {
                             result_shape);
   auto it = ranked_operands.begin();
   if (it != ranked_operands.end()) {
-    it++;
+    ++it;
   }
-  for (; it != ranked_operands.end(); it++) {
-    llvm::SmallVector<EphemeralSymDim, 4> temp = result_shape;
-    if (!GetBroadcastedShape(temp, GetShape(*it), result_shape))
+  for (; it != ranked_operands.end(); ++it) {
+    if (llvm::SmallVector<EphemeralSymDim, 4> temp = result_shape;
+        !GetBroadcastedShape(temp, GetShape(*it), result_shape))
       return op->emitOpError("operands don't have broadcast-compatible shapes");
   }
 
