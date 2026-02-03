@@ -114,8 +114,8 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
       TensorBufferType buffer_type, LiteRtWGPUBuffer buffer, size_t size_bytes);
 
   static Expected<TensorBuffer> CreateFromWebGpuTexture(
-      const Environment& env, const RankedTensorType& tensor_type,
-      void* texture, size_t size_bytes);
+      LiteRtEnvironment env, const RankedTensorType& tensor_type, void* texture,
+      size_t size_bytes);
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
