@@ -292,7 +292,8 @@ TEST(MHASHATest, FastVlm) {
   constexpr size_t kNumHead = 14;
   constexpr size_t kShaSize = 13;
 
-  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseAdd));
+  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseBinary));
+  ASSERT_TRUE(IsElementWiseAdd(op_wrappers[0]));
   ASSERT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kReshape));
 
   for (size_t i = 0; i < kNumUnpack; ++i) {
@@ -300,15 +301,18 @@ TEST(MHASHATest, FastVlm) {
   }
 
   for (size_t i = 0; i < kNumHead; ++i) {
-    ASSERT_TRUE(op_wrappers[8 + kShaSize * i].IsOpCode(
-        QnnOpCode::kElementWiseMultiply));
+    ASSERT_TRUE(
+        op_wrappers[8 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseMultiply(op_wrappers[8 + kShaSize * i]));
     ASSERT_TRUE(op_wrappers[9 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
-        op_wrappers[10 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseAdd));
+        op_wrappers[10 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[10 + kShaSize * i]));
     ASSERT_TRUE(op_wrappers[11 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(op_wrappers[12 + kShaSize * i].IsOpCode(QnnOpCode::kConcat));
     ASSERT_TRUE(
-        op_wrappers[13 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseAdd));
+        op_wrappers[13 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[13 + kShaSize * i]));
     ASSERT_TRUE(op_wrappers[14 + kShaSize * i].IsOpCode(QnnOpCode::kReshape));
     ASSERT_TRUE(op_wrappers[15 + kShaSize * i].IsOpCode(QnnOpCode::kSoftmax));
     ASSERT_TRUE(
@@ -318,7 +322,8 @@ TEST(MHASHATest, FastVlm) {
     ASSERT_TRUE(op_wrappers[18 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(op_wrappers[19 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
-        op_wrappers[20 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseAdd));
+        op_wrappers[20 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[20 + kShaSize * i]));
   }
   ASSERT_TRUE(op_wrappers[op_wrappers.size() - 1].IsOpCode(QnnOpCode::kConcat));
 }
@@ -593,22 +598,26 @@ TEST(MHASHATest, FastVlmKvSwapped) {
   constexpr size_t kNumHead = 16;
   constexpr size_t kShaSize = 13;
 
-  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseAdd));
+  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseBinary));
+  ASSERT_TRUE(IsElementWiseAdd(op_wrappers[0]));
 
   for (size_t i = 0; i < kNumUnpack; ++i) {
     ASSERT_TRUE(op_wrappers[1 + i].IsOpCode(QnnOpCode::kUnPack));
   }
 
   for (size_t i = 0; i < kNumHead; ++i) {
-    ASSERT_TRUE(op_wrappers[7 + kShaSize * i].IsOpCode(
-        QnnOpCode::kElementWiseMultiply));
+    ASSERT_TRUE(
+        op_wrappers[7 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseMultiply(op_wrappers[7 + kShaSize * i]));
     ASSERT_TRUE(op_wrappers[8 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
-        op_wrappers[9 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseAdd));
+        op_wrappers[9 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[9 + kShaSize * i]));
     ASSERT_TRUE(op_wrappers[10 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(op_wrappers[11 + kShaSize * i].IsOpCode(QnnOpCode::kConcat));
     ASSERT_TRUE(
-        op_wrappers[12 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseAdd));
+        op_wrappers[12 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[12 + kShaSize * i]));
     ASSERT_TRUE(op_wrappers[13 + kShaSize * i].IsOpCode(QnnOpCode::kReshape));
     ASSERT_TRUE(op_wrappers[14 + kShaSize * i].IsOpCode(QnnOpCode::kSoftmax));
     ASSERT_TRUE(
@@ -618,7 +627,8 @@ TEST(MHASHATest, FastVlmKvSwapped) {
     ASSERT_TRUE(op_wrappers[17 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(op_wrappers[18 + kShaSize * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
-        op_wrappers[19 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseAdd));
+        op_wrappers[19 + kShaSize * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[19 + kShaSize * i]));
   }
   ASSERT_TRUE(op_wrappers[op_wrappers.size() - 1].IsOpCode(QnnOpCode::kConcat));
 }
