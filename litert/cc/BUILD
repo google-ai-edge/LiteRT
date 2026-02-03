@@ -768,6 +768,7 @@ cc_library(
         "//litert/c:litert_gl_types",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_profiler_event",
+        "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_handle",
     ],
 )

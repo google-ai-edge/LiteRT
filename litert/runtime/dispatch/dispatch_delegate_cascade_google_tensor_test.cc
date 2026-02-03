@@ -16,6 +16,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+
 #include "litert/cc/litert_tensor_buffer_types.h"
 
 #if defined(__ANDROID__)
@@ -113,8 +114,7 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg0, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
@@ -123,8 +123,7 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg1, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg2,
@@ -133,8 +132,7 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg2,
       input_buffer_requirements_arg2.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg2,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg2, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg3,
@@ -143,16 +141,14 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg3,
       input_buffer_requirements_arg3.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg3,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg3, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom2"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
   EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kAhwb));
 
   // ///////////////////////////////////////////////////////////////////////////
@@ -349,19 +345,19 @@ TEST(DispatchDelegate, CompiledModelAsync) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event input_event_0,
-      litert::Event::CreateFromSyncFenceFd(env.Get(), input_fence_0->GetFd(),
+      litert::Event::CreateFromSyncFenceFd(env, input_fence_0->GetFd(),
                                            /*owns_fd=*/false));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event input_event_1,
-      litert::Event::CreateFromSyncFenceFd(env.Get(), input_fence_1->GetFd(),
+      litert::Event::CreateFromSyncFenceFd(env, input_fence_1->GetFd(),
                                            /*owns_fd=*/false));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event input_event_2,
-      litert::Event::CreateFromSyncFenceFd(env.Get(), input_fence_2->GetFd(),
+      litert::Event::CreateFromSyncFenceFd(env, input_fence_2->GetFd(),
                                            /*owns_fd=*/false));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event input_event_3,
-      litert::Event::CreateFromSyncFenceFd(env.Get(), input_fence_3->GetFd(),
+      litert::Event::CreateFromSyncFenceFd(env, input_fence_3->GetFd(),
                                            /*owns_fd=*/false));
 
   input_buffers[0].SetEvent(std::move(input_event_0));
