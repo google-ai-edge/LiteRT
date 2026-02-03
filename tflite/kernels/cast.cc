@@ -29,7 +29,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/op_macros.h"
-#include "tflite/types/fp16.h"
+#include "tflite/types/fp16_internal.h"
 #include "tflite/types/half.h"
 
 #ifdef __ARM_NEON

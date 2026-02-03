@@ -110,7 +110,7 @@ class half {
 
 #else  // TFLITE_ARCH_FLOAT16
 
-#include "tflite/types/fp16.h"
+#include "tflite/types/fp16_internal.h"
 
 namespace tflite {
 
