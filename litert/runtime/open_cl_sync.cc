@@ -35,6 +35,7 @@
 #include "tflite/delegates/gpu/common/shape.h"
 #include "tflite/delegates/gpu/common/task/tensor_desc.h"
 #include "tflite/delegates/gpu/common/tensor.h"
+#include "tflite/delegates/gpu/common/types.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 
@@ -46,6 +47,7 @@ using tflite::gpu::HWC;
 using tflite::gpu::TensorDescriptor;
 using tflite::gpu::TensorStorageType;
 using TensorBool = tflite::gpu::Tensor<BHWC, DataType::BOOL>;
+using TensorFloat16 = tflite::gpu::Tensor<BHWC, DataType::FLOAT16>;
 using TensorFloat32 = tflite::gpu::Tensor<BHWC, DataType::FLOAT32>;
 using TensorInt32 = tflite::gpu::Tensor<BHWC, DataType::INT32>;
 
@@ -157,6 +159,9 @@ LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else if (tensor_desc->GetDataType() == DataType::INT32) {
     return LiteRtGpuMemoryUploadImpl<TensorInt32, int32_t>(
+        *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
+  } else if (tensor_desc->GetDataType() == DataType::FLOAT16) {
+    return LiteRtGpuMemoryUploadImpl<TensorFloat16, tflite::gpu::half>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else {
     return LiteRtGpuMemoryUploadImpl<TensorFloat32, float>(
