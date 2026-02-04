@@ -17,6 +17,10 @@ std::vector<OpWrapper> BuildUnpackOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs, const int32_t axis);
 
+OpWrapper CreateUnpackOp(const TensorWrapper& input_0,
+                         const std::vector<ConstTensorWrapperRef>& outputs,
+                         std::uint32_t axis);
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_UNPACK_OP_BUILDER_H_

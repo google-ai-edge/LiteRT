@@ -31,4 +31,19 @@ std::vector<OpWrapper> BuildUnpackOp(
   return res;
 }
 
+OpWrapper CreateUnpackOp(const TensorWrapper& input_0,
+                         const std::vector<ConstTensorWrapperRef>& outputs,
+                         std::uint32_t axis) {
+  auto name = GetUniqueOpName(QNN_OP_UN_PACK);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_UN_PACK, QnnOpCode::kUnPack);
+  op.AddInputTensor(input_0);
+  for (const auto& output : outputs) {
+    op.AddOutputTensor(output);
+  }
+  op.AddScalarParam<uint32_t>(QNN_OP_UN_PACK_PARAM_AXIS, axis);
+  return op;
+}
+
 }  // namespace qnn

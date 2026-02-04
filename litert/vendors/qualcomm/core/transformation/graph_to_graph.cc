@@ -264,6 +264,37 @@ void GraphToGraphTransform(G2GConfig g2g_option,
   Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
             OptimizeMHAFastVlmPrefill);
 
+  // Fast Vlm Decode Optimization
+  const std::vector<QnnOpCode> fast_vlm_mha_decode = {
+      QnnOpCode::kReshape, QnnOpCode::kReshape, QnnOpCode::kReshape,
+      /////// pos embedding 1
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kStridedSlice, QnnOpCode::kStridedSlice,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kConvert, QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kElementWiseBinary,  // add
+      /////// pos embedding 2
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kStridedSlice, QnnOpCode::kStridedSlice,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kConvert, QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kElementWiseBinary,  // add
+      /////// attention
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kReshape, QnnOpCode::kMatMul, QnnOpCode::kMatMul,
+      QnnOpCode::kConcat, QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kReshape, QnnOpCode::kSoftmax, QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice, QnnOpCode::kMatMul, QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kReshape
+    };
+  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
+            OptimizeMHAFastVlmDecode);
+
   // Attention Optimization
   const std::vector<QnnOpCode> attn = {
       QnnOpCode::kElementWiseBinary,
