@@ -15,6 +15,9 @@ std::vector<OpWrapper> BuildReshapeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
 
+OpWrapper CreateReshapeOp(const TensorWrapper& input_0,
+                          const TensorWrapper& output_0);
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_RESHAPE_OP_BUILDER_H_
