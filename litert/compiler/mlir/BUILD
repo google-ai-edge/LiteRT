@@ -6,9 +6,68 @@ package(
 )
 
 filegroup(
-    name = "pybind_ext_headers",
+    name = "pybind_ext_core_headers",
     srcs = [
+        "converter_api_core.h",
         "model_utils_core.h",
+    ],
+)
+
+cc_library(
+    name = "status_scoped_diagnostic_handler",
+    srcs = ["status_scoped_diagnostic_handler.cc"],
+    hdrs = [
+        "status_scoped_diagnostic_handler.h",
+    ],
+    deps = [
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
+    name = "converter_api_core",
+    srcs = ["converter_api_core.cc"],
+    hdrs = ["converter_api_core.h"],
+    deps = [
+        ":status_scoped_diagnostic_handler",
+        "//tflite/converter:common",
+        "//tflite/converter:converter_flags_proto_cc",
+        "//tflite/converter:flatbuffer_export",
+        "//tflite/converter:tensorflow_lite",
+        "//tflite/converter:tf_tfl_passes",
+        "//tflite/converter/metrics:converter_error_data_proto_cc",
+        "//tflite/converter/quantization/common/quantization_lib:quantization_config",
+        "//tflite/converter/stablehlo:prepare_hlo",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:AllExtensions",
+        "@llvm-project//mlir:AllPassesAndDialects",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:FuncExtensions",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:LLVMToLLVMIRTranslation",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:ReconcileUnrealizedCasts",
+        "@llvm-project//mlir:RegisterAllDialects",
+        "@llvm-project//mlir:RegisterAllExtensions",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TransformDialect",
+        "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_config_proto_cc",
+        "@stablehlo//:register",
+        "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:vhlo_ops",
     ],
 )
 
