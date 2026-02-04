@@ -26,6 +26,7 @@ MLIR_LIBS_SO_MODULE_NAMES = [
     "_mlir",
     "model_utils_ext",
     "converter_api_ext",
+    "_stablehlo",
 ]
 
 

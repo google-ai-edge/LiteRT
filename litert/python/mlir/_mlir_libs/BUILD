@@ -24,6 +24,11 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+PYBIND_COPTS = [
+    "-fexceptions",
+    "-frtti",
+]
+
 symlink_inputs(
     name = "_mlir_libs",
     rule = py_library,
@@ -34,6 +39,7 @@ symlink_inputs(
     }},
     deps = [
         ":_mlir",
+        ":_stablehlo",
         ":converter_api_ext",
         ":model_utils_ext",
     ],
@@ -63,6 +69,7 @@ cc_binary(
         "@llvm-project//mlir:CAPITransformsObjects",
         "@llvm-project//mlir:MLIRBindingsPythonCAPIObjects",
         "@nanobind",
+        "@stablehlo//:stablehlo_unified_capi_objects",
     ],
 )
 
@@ -76,10 +83,7 @@ pybind_extension(
         "@llvm-project//mlir:MLIRBindingsPythonCoreHeaders",
     ],
     common_lib_packages = ["litert/python"],
-    copts = [
-        "-fexceptions",
-        "-frtti",
-    ],
+    copts = PYBIND_COPTS,
     wrap_py_init = False,
     deps = [
         ":lib_litert_compiler_mlir",
@@ -98,10 +102,7 @@ pybind_extension(
         "@llvm-project//mlir:MLIRBindingsPythonCoreHeaders",
     ],
     common_lib_packages = ["litert/python"],
-    copts = [
-        "-fexceptions",
-        "-frtti",
-    ],
+    copts = PYBIND_COPTS,
     wrap_py_init = False,
     deps = [
         "@com_google_absl//absl/status",
@@ -138,10 +139,7 @@ pybind_extension(
         "@llvm-project//mlir:MLIRBindingsPythonCoreHeaders",
     ],
     common_lib_packages = ["litert/python"],
-    copts = [
-        "-fexceptions",
-        "-frtti",
-    ],
+    copts = PYBIND_COPTS,
     wrap_py_init = False,
     deps = [
         "@com_google_absl//absl/status",
@@ -165,6 +163,38 @@ pybind_extension(
             # oss only: link to the shared library.
             ":lib_litert_compiler_mlir",
             "@llvm-project//mlir:MLIRBindingsPythonCoreNoCAPI",
+        ],
+    ),
+)
+
+# External only target.
+pybind_extension(
+    name = "_stablehlo",
+    srcs = [
+        "@stablehlo//:stablehlo_py_api_files",
+    ],
+    common_lib_packages = ["litert/python"],
+    copts = PYBIND_COPTS,
+    wrap_py_init = False,
+    deps = [
+        "@llvm-project//mlir:MLIRBindingsPythonHeaders",
+        "@nanobind",
+        "@rules_python//python/cc:current_py_cc_headers",
+        "@xla//third_party/python_runtime:headers",
+    ] + if_google(
+        [
+            # google only: link everything statically here.
+            "@stablehlo//:stablehlo_capi",
+            "@llvm-project//llvm:Support",
+            "@llvm-project//mlir:IR",
+            "@llvm-project//mlir:CAPIIRHeaders",
+            "@llvm-project//mlir:CAPITransformsHeaders",
+        ],
+        [
+            # oss only: link to the shared library.
+            ":lib_litert_compiler_mlir",
+            "@llvm-project//mlir:MLIRBindingsPythonCoreNoCAPI",
+            "@stablehlo//:stablehlo_capi_headers",
         ],
     ),
 )
