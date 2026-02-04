@@ -17,5 +17,5 @@ LITERT_SDK_QUALCOMM_FULL_VERSION = "0.2.0"
 
 # The next version of LiteRT SDK for MediaTek version.
 # The minor version code should be bumped after every release.
-# It contains NeuroPilot UNKNOWN VERSION
+# It contains NeuroPilot 8.0.10 and 9.0.3 VERSION
 LITERT_SDK_MEDIATEK_FULL_VERSION = "0.2.0"
