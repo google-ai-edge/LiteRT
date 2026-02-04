@@ -3401,6 +3401,7 @@ std::optional<BufferOffset<tflite::SubGraph>> Translator::BuildSubGraph(
                                      const std::string& tensor_name) {
     // NoneType represents optional and may be skipped here.
     if (mlir::isa<NoneType>(value.getType())) {
+      tensor_index_map.insert({value, kTfLiteMigrationOptionalTensor});
       return true;
     }
 
