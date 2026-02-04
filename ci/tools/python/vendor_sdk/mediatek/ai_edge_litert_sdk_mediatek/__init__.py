@@ -41,8 +41,8 @@ def path_to_sdk_libs(version: str = "v8") -> Optional[pathlib.Path]:
       current system architecture is not Linux x86.
   """
   version_map = {
-      "v8": "v8_0_8/host/lib",
-      "v9": "v9_0_2/host/lib",
+      "v8": "v8_0_10/host/lib",
+      "v9": "v9_0_3/host/lib",
   }
   if version not in version_map:
     raise NotImplementedError(
