@@ -950,6 +950,21 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "litert_options_test",
+    srcs = ["litert_options_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_options",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
+        "//litert/core:options",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # cc_test(
 #     name = "litert_tensor_buffer_test",
@@ -993,21 +1008,6 @@ cc_library(
 #         ],
 #         "//conditions:default": [],
 #     }),
-# )
-#
-# cc_test(
-#     name = "litert_options_test",
-#     srcs = ["litert_options_test.cc"],
-#     deps = [
-#         ":litert_common",
-#         ":litert_options",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/strings",
-#         "//litert/cc/internal:scoped_file",
-#         "//litert/cc/internal:scoped_weight_source",
-#         "//litert/core:options",
-#         "//litert/test:matchers",
-#     ],
 # )
 #
 # litert_device_exec(
