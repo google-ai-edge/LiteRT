@@ -851,6 +851,18 @@ cc_library(
 )
 
 cc_test(
+    name = "litert_ranked_tensor_type_test",
+    srcs = ["litert_ranked_tensor_type_test.cc"],
+    deps = [
+        ":litert_element_type",
+        ":litert_layout",
+        ":litert_ranked_tensor_type",
+        "//litert/c:litert_model_types",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "litert_model_test",
     srcs = ["litert_model_test.cc"],
     data = [
