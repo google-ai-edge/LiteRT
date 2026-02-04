@@ -68,7 +68,10 @@ bool IsValidIntOrFloat(Type type, int64_t data_element_size, bool is_int,
   auto dense_elt_bit_width = GetDenseElementBitWidth(type);
   auto data_size = static_cast<size_t>(data_element_size * CHAR_BIT);
   if (dense_elt_bit_width != data_size) {
-    return false;
+    // Allow i1 to be represented as 1 byte.
+    if (!type.isInteger(1) || data_size != 8) {
+      return false;
+    }
   }
 
   // Check that the element type is either float or integer or index.
