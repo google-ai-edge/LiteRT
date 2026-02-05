@@ -1608,6 +1608,7 @@ cc_library(
         "flatbuffer_export_flags.h",
     ],
     deps = [
+        ":const_tensor_utils",
         ":control_edges",
         ":convert_type",
         ":converter_flags_proto_cc",
@@ -1641,7 +1642,6 @@ cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@flatbuffers",
