@@ -77,8 +77,7 @@ class SimpleOptions2 : public OpaqueOptions {
 namespace {
 
 TEST(OptionsHelperTest, ParseOptionsEmpty) {
-  auto [env, opts, opq, simple] = ParseOptions<SimpleOptions>(nullptr, nullptr);
-  EXPECT_FALSE(env);
+  auto [opts, opq, simple] = ParseOptions<SimpleOptions>(nullptr);
   EXPECT_FALSE(opts);
   EXPECT_FALSE(opq);
   EXPECT_FALSE(simple);
@@ -93,10 +92,8 @@ TEST(OptionsHelperTest, WithOpqOptions) {
 
   ASSERT_TRUE(lrt_opts->AddOpaqueOptions(std::move(*lrt_simple)));
 
-  auto [env, opts, opq, simple] =
-      ParseOptions<SimpleOptions>(nullptr, lrt_opts->Get());
+  auto [opts, opq, simple] = ParseOptions<SimpleOptions>(lrt_opts->Get());
 
-  EXPECT_FALSE(env);
   EXPECT_TRUE(opts);
   EXPECT_TRUE(opq);
   EXPECT_TRUE(simple);
@@ -116,10 +113,9 @@ TEST(OptionsHelperTest, With2OpqOptions) {
 
   ASSERT_TRUE(lrt_opts->AddOpaqueOptions(std::move(*lrt_simple2)));
 
-  auto [env, opts, opq, simple, simple2] =
-      ParseOptions<SimpleOptions, SimpleOptions2>(nullptr, lrt_opts->Get());
+  auto [opts, opq, simple, simple2] =
+      ParseOptions<SimpleOptions, SimpleOptions2>(lrt_opts->Get());
 
-  EXPECT_FALSE(env);
   EXPECT_TRUE(opts);
   EXPECT_TRUE(opq);
   EXPECT_TRUE(simple);

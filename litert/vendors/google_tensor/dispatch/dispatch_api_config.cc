@@ -66,9 +66,8 @@ std::vector<LiteRtTensorBufferType> TheSupportedTensorBufferTypes;
 
 LiteRtStatus InitializeDispatchApiConfig(
     LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
-  auto [env_opts, opts, opq_opts, darwinn_opts] =
-      litert::ParseOptions<litert::DarwinnRuntimeOptions>(environment_options,
-                                                          options);
+  auto [opts, opq_opts, darwinn_opts] =
+      litert::ParseOptions<litert::DarwinnRuntimeOptions>(options);
 
   if (darwinn_opts.HasValue()) {
     TheDarwinnOptions = std::make_unique<litert::DarwinnRuntimeOptions>(

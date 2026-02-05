@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 
+#include "litert/c/litert_any.h"
 #include "litert/vendors/cc/options_helper.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -27,7 +28,6 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -55,15 +55,16 @@ namespace mediatek {
 
 std::optional<std::string> GetSharedLibraryDir(
     LiteRtEnvironmentOptions environment_options) {
-  litert::EnvironmentOptions env_options(environment_options);
-  auto dispatch_lib_dir_any =
-      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (!dispatch_lib_dir_any) {
-    LITERT_LOG(LITERT_INFO, "No dispatch library dir option found: %s",
-               dispatch_lib_dir_any.Error().Message().c_str());
+  LiteRtAny dispatch_lib_dir_any;
+  auto status = LiteRtGetEnvironmentOptionsValue(
+      environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
+      &dispatch_lib_dir_any);
+  if (status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_INFO, "Failed to get dispatch library dir option: %s",
+               LiteRtGetStatusString(status));
     return std::nullopt;
   }
-  return std::string(std::get<const char*>(*dispatch_lib_dir_any));
+  return std::string(dispatch_lib_dir_any.str_value);
 }
 
 LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
@@ -73,9 +74,8 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
   static_environment_options = environment_options;
   static_options = options;
 
-  auto [env, opts, opq_opts, mediatek_opts] =
-      litert::ParseOptions<litert::mediatek::MediatekOptions>(
-          environment_options, options);
+  auto [opts, opq_opts, mediatek_opts] =
+      litert::ParseOptions<litert::mediatek::MediatekOptions>(options);
 
   if (!mediatek_opts) {
     LITERT_ASSIGN_OR_RETURN(mediatek_opts,

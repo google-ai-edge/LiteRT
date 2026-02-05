@@ -221,10 +221,8 @@ class LiteRtCompilerPluginT {
  public:
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env_options,
                         LiteRtOptions litert_options) {
-    std::tie(env_options_, litert_options_, opaque_options_,
-             qualcomm_options_) =
-        litert::ParseOptions<litert::qualcomm::QualcommOptions>(env_options,
-                                                                litert_options);
+    std::tie(litert_options_, opaque_options_, qualcomm_options_) =
+        litert::ParseOptions<litert::qualcomm::QualcommOptions>(litert_options);
     if (qualcomm_options_.HasValue()) {
       InitQnnOptions(qnn_options_, qualcomm_options_.Value());
     }
@@ -239,8 +237,6 @@ class LiteRtCompilerPluginT {
   QnnManager* QNN() { return qnn_manager_.get(); }
 
  private:
-  litert::Expected<litert::EnvironmentOptions> env_options_ = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null environment options");
   litert::Expected<litert::Options> litert_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::OpaqueOptions> opaque_options_ =

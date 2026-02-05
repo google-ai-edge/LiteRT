@@ -544,9 +544,11 @@ cc_library(
     hdrs = ["//litert/cc:litert_environment_options.h"],
     deps = [
         "//litert/cc:litert_any",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,

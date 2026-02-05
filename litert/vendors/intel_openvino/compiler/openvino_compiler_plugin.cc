@@ -241,8 +241,8 @@ struct LiteRtCompilerPluginT {
   using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
 
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
-    std::tie(compiler_env, compiler_opts, opq, intel_openvino_opts) =
-        litert::ParseOptions<IntelOpenVinoOptions>(env, options);
+    std::tie(compiler_opts, opq, intel_openvino_opts) =
+        litert::ParseOptions<IntelOpenVinoOptions>(options);
   }
 
   const ::litert::Expected<IntelOpenVinoOptions>& GetIntelOpenVinoOptions()
@@ -255,8 +255,6 @@ struct LiteRtCompilerPluginT {
   }
 
  private:
-  litert::Expected<litert::EnvironmentOptions> compiler_env = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null environment options");
   litert::Expected<litert::Options> compiler_opts =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::OpaqueOptions> opq =
