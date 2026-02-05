@@ -124,13 +124,6 @@ function Ensure-Include {
   return $true
 }
 
-# Remove incompatible flags from .litert_configure.bazelrc if present
-$ConfigureBazelrc = Join-Path $RepoRoot ".litert_configure.bazelrc"
-if (Test-Path $ConfigureBazelrc) {
-  Write-Host "Checking for incompatible flags in $ConfigureBazelrc..."
-  Replace-InFile $ConfigureBazelrc '-Wno-sign-compare' '' | Out-Null
-}
-
 # Verify Bazel version
 Write-Host "Checking Bazel version..."
 & $Bazel --version
@@ -160,15 +153,6 @@ if ($ExecRoot) {
       & cmd.exe /c "rmdir /s /q `"$ExecBazelOut`"" | Out-Null
     }
     New-Item -ItemType Junction -Path $ExecBazelOut -Target $WorkspaceBazelOut | Out-Null
-  }
-}
-
-# Deep patch external repositories to remove incompatible flags that might be hardcoded.
-Write-Host "Deep patching external repositories for incompatible flags..."
-$ExternalDir = Join-Path $OutputBase "external"
-if (Test-Path $ExternalDir) {
-  Get-ChildItem -Path $ExternalDir -Include "*.bazel","*.bzl","*.rc","BUILD*" -Recurse | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
-    Replace-InFile $_.FullName "-Wno-sign-compare" "" | Out-Null
   }
 }
 
