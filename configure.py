@@ -63,7 +63,7 @@ class UserInputError(Exception):
 
 
 def is_windows():
-  return platform.system() == 'Windows' or os.name == 'nt'
+  return platform.system() == 'Windows'
 
 
 def is_linux():
@@ -489,7 +489,7 @@ def set_cc_opt_flags(environ_cp):
     # maximum performance should compile TF in their environment and can pass
     # `-march=native` there.
     # See https://github.com/tensorflow/tensorflow/issues/45744 and duplicates
-    default_cc_opt_flags = ''
+    default_cc_opt_flags = '-Wno-sign-compare'
   question = (
       'Please specify optimization flags to use during compilation when'
       ' bazel option "--config=opt" is specified [Default is %s]: '
