@@ -232,12 +232,15 @@ cc_library(
     visibility = ["//litert:litert_public"],
     deps = [
         ":litert_any",
+        ":litert_common",
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -716,6 +719,7 @@ cc_library_with_testonly_vis(
         ":litert_environment_options",
         ":litert_expected",
         ":litert_macros",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/cc/internal:litert_handle",

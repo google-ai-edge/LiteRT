@@ -20,6 +20,7 @@
 
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
@@ -65,21 +66,22 @@ LiteRtStatus Initialize(LiteRtEnvironment environment, LiteRtOptions options) {
   TheEnvironmentOptions = environment_options;
   TheOptions = options;
 
+  const char* dispatch_lib_dir = nullptr;
+  if (environment_options) {
+    LiteRtAny dispatch_lib_dir_any;
+    auto status = LiteRtGetEnvironmentOptionsValue(
+        environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
+        &dispatch_lib_dir_any);
+    if (status == kLiteRtStatusOk && dispatch_lib_dir_any.str_value) {
+      dispatch_lib_dir = dispatch_lib_dir_any.str_value;
+    }
+  }
+
   // TODO LUKE confirm where the lib dir is coming from, the
   // "dispatch_library_dir" thing makes no sense Since this should be shared lib
   // for libqnn.so.
-  auto [env, opts, opq_opts, qnn_opts] =
-      litert::ParseOptions<litert::qualcomm::QualcommOptions>(
-          TheEnvironmentOptions, TheOptions);
-
-  const char* dispatch_lib_dir = nullptr;
-  if (env) {
-    auto dispatch_lib_dir_any =
-        env->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-    if (dispatch_lib_dir_any) {
-      dispatch_lib_dir = std::get<const char*>(*dispatch_lib_dir_any);
-    }
-  }
+  auto [opts, opq_opts, qnn_opts] =
+      litert::ParseOptions<litert::qualcomm::QualcommOptions>(TheOptions);
 
   std::optional<std::string> shared_library_dir_opt =
       dispatch_lib_dir != nullptr
