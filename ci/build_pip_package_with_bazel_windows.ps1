@@ -358,16 +358,16 @@ $BazelArgs = @(
   '--copt=/Iexternal\\com_google_protobuf\\src',
   '--host_copt=/Iexternal\\com_google_protobuf\\src'
 )
-if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += '--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)' }
+if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(' ') }
-if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += '--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)' }
+if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
 if ($env:USE_LOCAL_TF -eq 'true') { $BazelArgs += '--config=use_local_tf' }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 Write-Host 'Starting bazel build...'
 & $Bazel @BazelArgs //ci/tools/python/wheel:litert_wheel
 if ($LASTEXITCODE -ne 0) {
-  throw 'Bazel build failed with exit code $LASTEXITCODE'
+  throw "Bazel build failed with exit code $LASTEXITCODE"
 }
 
 $DistDir = Join-Path $RepoRoot 'dist'
