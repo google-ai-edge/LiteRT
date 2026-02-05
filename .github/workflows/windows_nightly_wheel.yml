@@ -98,6 +98,11 @@ jobs:
           echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
           echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
 
+      - name: Set BAZEL_CONFIG_FLAGS for Cache
+        run: |
+          $CacheDir = Join-Path $env:USERPROFILE ".cache" "bazel-windows"
+          echo "BAZEL_CONFIG_FLAGS=--disk_cache=$CacheDir" >> $env:GITHUB_ENV
+
       - name: Build LiteRT wheel for Windows
         run: |
           .\ci\build_pip_package_with_bazel_windows.ps1
@@ -107,3 +112,10 @@ jobs:
         with:
           name: litert-windows-wheels-py${{ matrix.python-version }}
           path: dist/*.whl
+
+      - name: Save bazel cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/.cache/bazel-windows
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
