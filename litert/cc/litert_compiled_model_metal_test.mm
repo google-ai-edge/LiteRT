@@ -160,16 +160,16 @@ const float kTolerance = 1e-5;
   XCTAssertTrue(options);
 
   // Create 1st model.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1, litert::CompiledModel::Create(
-      env, modelFilePath.UTF8String, options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model_1, litert::CompiledModel::Create(env, modelFilePath.UTF8String, options));
   XCTAssertEqual(compiled_model_1.GetNumSignatures(), 1);
   XCTAssertTrue(compiled_model_1);
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers_1, compiled_model_1.CreateInputBuffers());
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers_1, compiled_model_1.CreateOutputBuffers());
 
   // Create 2nd model.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_2, litert::CompiledModel::Create(
-      env, modelFilePath.UTF8String, options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model_2, litert::CompiledModel::Create(env, modelFilePath.UTF8String, options));
   XCTAssertEqual(compiled_model_2.GetNumSignatures(), 1);
   XCTAssertTrue(compiled_model_2);
 
