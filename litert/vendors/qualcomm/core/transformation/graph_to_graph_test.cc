@@ -794,7 +794,6 @@ TEST(MaskTransformTest, Gemma3) {
 
 TEST(MHASHATest, FastVlm) {
   // G2G Test case: MHA -> SHA
-
   // ------------------- Before ---------------------
   //                       In0
   //                        |
@@ -837,11 +836,15 @@ TEST(MHASHATest, FastVlm) {
   // -------------------- After ---------------------
   //                       In0
   //                        |
-  //                       Mul    In1  In2
-  //                      /   \     \  /
-  //              QIn    /     \    Add0
-  //                \   /       \   /
-  //                Matmul0   Matmul1
+  //                     Unpack        In1     In2
+  //                        | \\        |       |
+  //                        |  \\    Unpack   Unpack
+  //        QIn             |   ..     /\\      |\\
+  //         |             Mul        /  \\     | \\
+  //       Unpack         /   \      /    ..    |  ..
+  //       // \          /     \    Add0 -------┘
+  //      //   \        /       \   /
+  //     ..     └----Matmul0   Matmul1
   //                    \       /
   //                     Concat
   //                        |
@@ -852,14 +855,17 @@ TEST(MHASHATest, FastVlm) {
   //                     Reshape
   //                        |
   //                     Softmax
-  //                    /       \
-  //                  Slice0  Slice1
-  //                    |       |
-  //              VIn   |       |    In3
-  //                \   |       |    /
-  //                 Matmul2  Matmul3
-  //                     \     /
-  //                       Add2
+  //                    /       \     In3
+  //        VIn       Slice0  Slice1   |
+  //         |          |       |    Unpack
+  //       Unpack       |       |     /\\
+  //       //|          |       |    /  \\
+  //      // └------Matmul2  Matmul3     ..
+  //     ..              \     /
+  //                       Add2  ..
+  //                        |   //
+  //                        |  //
+  //                      Concat
   //                        |
   //                       Out
   TensorPool tensor_pool;
@@ -1050,45 +1056,50 @@ TEST(MHASHATest, FastVlm) {
   GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
   // Check total size after G2G
-  ASSERT_EQ(op_wrappers.size(), 191);
+  ASSERT_EQ(op_wrappers.size(), 179);
 
   // Check OpCode after G2G
-  const size_t num_unpack = 6;
   const size_t num_head = 14;
-  const size_t sha_size = 13;
+  const size_t sha_size = 12;
 
   ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseBinary));
   ASSERT_TRUE(IsElementWiseAdd(op_wrappers[0]));
   ASSERT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kTranspose));
 
-  for (size_t i = 0; i < num_unpack; ++i) {
+  for (size_t i = 0; i < 2; ++i) {
     ASSERT_TRUE(op_wrappers[2 + i].IsOpCode(QnnOpCode::kUnPack));
+  }
+
+  for (size_t i = 0; i < 2; ++i) {
+    ASSERT_TRUE(op_wrappers[4 + i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[4 + i]));
+  }
+
+  for (size_t i = 0; i < 4; ++i) {
+    ASSERT_TRUE(op_wrappers[6 + i].IsOpCode(QnnOpCode::kUnPack));
   }
 
   for (size_t i = 0; i < num_head; ++i) {
     ASSERT_TRUE(
-        op_wrappers[8 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseMultiply(op_wrappers[8 + sha_size * i]));
-    ASSERT_TRUE(op_wrappers[9 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
-    ASSERT_TRUE(
         op_wrappers[10 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[10 + sha_size * i]));
+    ASSERT_TRUE(IsElementWiseMultiply(op_wrappers[10 + sha_size * i]));
     ASSERT_TRUE(op_wrappers[11 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[12 + sha_size * i].IsOpCode(QnnOpCode::kConcat));
+    ASSERT_TRUE(op_wrappers[12 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[13 + sha_size * i].IsOpCode(QnnOpCode::kConcat));
     ASSERT_TRUE(
-        op_wrappers[13 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[13 + sha_size * i]));
-    ASSERT_TRUE(op_wrappers[14 + sha_size * i].IsOpCode(QnnOpCode::kReshape));
-    ASSERT_TRUE(op_wrappers[15 + sha_size * i].IsOpCode(QnnOpCode::kSoftmax));
-    ASSERT_TRUE(
-        op_wrappers[16 + sha_size * i].IsOpCode(QnnOpCode::kStridedSlice));
+        op_wrappers[14 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[14 + sha_size * i]));
+    ASSERT_TRUE(op_wrappers[15 + sha_size * i].IsOpCode(QnnOpCode::kReshape));
+    ASSERT_TRUE(op_wrappers[16 + sha_size * i].IsOpCode(QnnOpCode::kSoftmax));
     ASSERT_TRUE(
         op_wrappers[17 + sha_size * i].IsOpCode(QnnOpCode::kStridedSlice));
-    ASSERT_TRUE(op_wrappers[18 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
-    ASSERT_TRUE(op_wrappers[19 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
-        op_wrappers[20 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[20 + sha_size * i]));
+        op_wrappers[18 + sha_size * i].IsOpCode(QnnOpCode::kStridedSlice));
+    ASSERT_TRUE(op_wrappers[19 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(op_wrappers[20 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
+    ASSERT_TRUE(
+        op_wrappers[21 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
+    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[21 + sha_size * i]));
   }
   ASSERT_TRUE(op_wrappers[op_wrappers.size() - 1].IsOpCode(QnnOpCode::kConcat));
 }

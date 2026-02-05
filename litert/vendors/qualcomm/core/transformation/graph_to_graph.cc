@@ -10,6 +10,7 @@
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/transformation/embedding_gemma.h"
+#include "litert/vendors/qualcomm/core/transformation/kv_swapped_attn.h"
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
@@ -85,7 +86,7 @@ void Transform(std::function<bool(OpWrapper&)> validate_op_config,
 }  // namespace
 
 // TODO (jiunkaiy): Add more G2G transformation.
-void GraphToGraphTransform(const G2GConfig g2g_option,
+void GraphToGraphTransform(G2GConfig g2g_option,
                            std::vector<OpWrapper>& ops, TensorPool& tensor_pool,
                            std::function<bool(OpWrapper&)> validate_op_config) {
   if (g2g_option == G2GConfig::kOff) {
@@ -268,5 +269,27 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
       QnnOpCode::kTranspose,
   };
   Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
+
+  // Kv-swapped Fast Vlm Optimization
+  const std::vector<QnnOpCode> kv_swapped_fastvlm_prefill = {
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kConcat,
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kReshape,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kReshape,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kReshape};
+  Transform(validate_op_config, ops, tensor_pool, kv_swapped_fastvlm_prefill,
+            OptimizeKvSwappedFastVlmPrefill);
 }
 }  // namespace qnn
