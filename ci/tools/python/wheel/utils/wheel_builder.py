@@ -211,9 +211,14 @@ def prepare_build_tree(tree_path, args, project_name: str):
     if src_posix.startswith("litert/python/"):
       src_path = src_posix.removeprefix("litert/python/")
     elif src_posix.startswith("bazel-out/"):
-      if "litert/python/" not in src_posix:
+      delimiter = None
+      if "litert/python/" in src_posix:
+        delimiter = "litert/python/"
+      elif "ai_edge_litert/" in src_posix:
+        delimiter = "ai_edge_litert/"
+      else:
         raise ValueError(f"Unsupported source file: {src}")
-      src_path = src_posix.split("litert/python/", 1)[-1]
+      _, src_path = src_posix.split(delimiter, 1)
     else:
       raise ValueError(f"Unsupported source file: {src}")
     dest = _join_posix(src_dir, src_path)

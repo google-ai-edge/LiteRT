@@ -14,8 +14,8 @@
 
 from absl.testing import absltest as googletest
 from litert.python import _pywrap_litert_converter as converter_wrapper
-from tflite.converter import converter_flags_pb2
-from tflite.converter import model_flags_pb2
+from ai_edge_litert.tflite.converter import converter_flags_pb2
+from ai_edge_litert.tflite.converter import model_flags_pb2
 
 
 class ConverterWrapperTest(googletest.TestCase):
