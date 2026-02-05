@@ -60,8 +60,6 @@ litert_dynamic_lib(
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
-        "//litert/c/options:litert_google_tensor_options",
-        "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_extended_model",
