@@ -60,7 +60,6 @@ if (-not (Test-Path $Bazel)) {
   throw "Bazel not found at $Bazel"
 }
 
-# Optional: Print it so you can see it in your GitHub Action logs
 Write-Host "Using Bazel located at: $Bazel"
 
 function Get-BazelInfo {
@@ -318,6 +317,7 @@ Replace-InFile $ProtoMain '  rust::RustGenerator rust_generator;' '' | Out-Null
 Replace-InFile $ProtoMain '  cli.RegisterGenerator("--rust_out", "--rust_opt", &rust_generator,' '' | Out-Null
 Replace-InFile $ProtoMain '                        "Generate Rust sources.");' '' | Out-Null
 
+$HighwayHash = Join-Path $OutputBase 'external\highwayhash\highwayhash\compiler_specific.h'
 $OldAlign = "#if HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
 $NewAlign = "#if HH_MSC_VERSION`n#define HH_ALIGNAS(multiple) __declspec(align(multiple))`n#elif HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
 Replace-InFile $HighwayHash $OldAlign $NewAlign | Out-Null
@@ -353,6 +353,9 @@ $BazelArgs = @(
   'opt',
   '--config=windows',
   '--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1',
+  '--copt=-mavx2',
+  '--copt=-mfma',
+  '--copt=-mf16c',
   '--repo_env=USE_PYWRAP_RULES=True',
   '--define=protobuf_allow_msvc=true',
   '--copt=/Iexternal\\com_google_protobuf\\src',
