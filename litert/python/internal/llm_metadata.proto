@@ -23,16 +23,6 @@ import "litert/python/internal/llm_model_type.proto";
 import "litert/python/internal/sampler_params.proto";
 import "litert/python/internal/token.proto";
 
-// Deprecated. Please use jinja_prompt_template instead.
-// Prompt template to be used for prefill and decode calls.
-// Here is an example of the template based on Gemma's specifications here:
-// https://ai.google.dev/gemma/docs/formatting
-//
-//  message prepended {
-//    .prefix = "<start_of_turn>user\n ";
-//    .suffix = "<end_of_turn>\n<start_of_turn>model\n";
-//  }
-//
 message PromptAffixes {
   // Text prepended to the input prompt on the first chunck of the prefill call.
   // This is useful for adding start of user's turn markers.
@@ -43,22 +33,7 @@ message PromptAffixes {
   string suffix = 2;
 }
 
-// Deprecated. Please use jinja_prompt_template instead.
-// A collection of prompt templates for different roles.
-// Here is an example of the template based on Gemma's specifications here:
-// https://ai.google.dev/gemma/docs/formatting
-//
-//  message prompt_templates {
-//    .user = {
-//      .prefix = "<start_of_turn>user\n";
-//      .suffix = "<end_of_turn>\n";
-//    }
-//    .model = {
-//      .prefix = "<start_of_turn>model\n ";
-//      .suffix = "<end_of_turn>\n";
-//    }
-//  }
-//
+// Prompt template used by the session to format the input prompt.
 message PromptTemplates {
   // The template for user role.
   optional PromptAffixes user = 1;
@@ -80,9 +55,11 @@ message LlmMetadata {
   // Stop tokens to determine the end of output stream.
   repeated TokenUnion stop_tokens = 2;
 
-  // Prompt templates for different roles. Deprecated. Please use
-  // jinja_prompt_template instead.
-  optional PromptTemplates prompt_templates = 3 [deprecated = true];
+  // Prompt templates for different roles.
+  // Note: Conversation APIs support both Jinja and non-Jinja prompt
+  // templates with Jinja templates being preferred. However, the session
+  // layer only supports non-Jinja prompt templates defined in this field.
+  optional PromptTemplates prompt_templates = 3;
 
   // Default sampler parameters for the LLM model.
   optional SamplerParameters sampler_params = 4;
@@ -94,7 +71,7 @@ message LlmMetadata {
   LlmModelType llm_model_type = 6;
 
   // Default Jinja prompt template for the LLM model. If the field is not set,
-  // LiteRT-LM will use the deprecated prompt_templates field to generate the
+  // LiteRT-LM will use the prompt_templates field to generate the
   // Jinja prompt template for backward compatibility. If the prompt_templates
   // field is also not set, the input will not be formatted with jinja template.
   optional string jinja_prompt_template = 7;
