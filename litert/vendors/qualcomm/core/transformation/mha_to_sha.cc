@@ -800,6 +800,7 @@ size_t OptimizeMHAFastVlmPrefill(
 }
 
 namespace {
+// TODO(Alen): Please don't review this function. Will remove it before merged.
 std::vector<ConstTensorWrapperRef> SplitPositionEmbedding(
     std::vector<OpWrapper>& new_ops, TensorPool& tensor_pool,
     const OpWrapper& reshape, const OpWrapper& mul_cos,
@@ -904,137 +905,137 @@ size_t OptimizeMHAFastVlmDecode(
     size_t pattern_size) {
   QNN_LOG_INFO("[G2G] MHA optimization (fast vlm decode)");
 
-  const auto& reshape_0 = ops[start_index + 0];
-  const auto& reshape_1 = ops[start_index + 1];
-  const auto& reshape_2 = ops[start_index + 2];
-  // ROPE Q
-  const auto& mul_cos_0 = ops[start_index + 3];
-  const auto& mul_const_0 = ops[start_index + 6];
-  const auto& quantize_0 = ops[start_index + 7];
-  const auto& concat_0 = ops[start_index + 8];
-  const auto& mul_sin_0 = ops[start_index + 9];
-  const auto& add_0 = ops[start_index + 10];
-  // ROPE k
-  const auto& mul_cos_1 = ops[start_index + 11];
-  const auto& mul_const_1 = ops[start_index + 14];
-  const auto& quantize_1 = ops[start_index + 15];
-  const auto& concat_1 = ops[start_index + 16];
-  const auto& mul_sin_1 = ops[start_index + 17];
-  const auto& add_1 = ops[start_index + 18];
-  const auto& rope_k_reshape = ops[start_index + 19];
+  constexpr size_t kMulIndex = 0;
+  constexpr size_t kReshape0Index = 1;
+  constexpr size_t kMatmulK0Index = 2;
+  constexpr size_t kMatmulK1Index = 3;
+  constexpr size_t kConcatIndex = 4;
+  constexpr size_t kReshape1Index = 5;
+  constexpr size_t kAdd0Index = 6;
+  constexpr size_t kReshape2Index = 7;
+  constexpr size_t kSoftmaxIndex = 8;
+  constexpr size_t kSlice0Index = 9;
+  constexpr size_t kSlice1Index = 10;
+  constexpr size_t kMatmulV0Index = 11;
+  constexpr size_t kMatmulV1Index = 12;
+  constexpr size_t kAdd1Index = 13;
+  constexpr size_t kReshape3Index = 14;
+  const auto& mul = ops[start_index + kMulIndex];
+  const auto& reshape_0 = ops[start_index + kReshape0Index];
+  const auto& matmul_k0 = ops[start_index + kMatmulK0Index];
+  const auto& matmul_k1 = ops[start_index + kMatmulK1Index];
+  const auto& concat = ops[start_index + kConcatIndex];
+  const auto& reshape_1 = ops[start_index + kReshape1Index];
+  const auto& add_0 = ops[start_index + kAdd0Index];
+  const auto& reshape_2 = ops[start_index + kReshape2Index];
+  const auto& softmax = ops[start_index + kSoftmaxIndex];
+  const auto& slice_0 = ops[start_index + kSlice0Index];
+  const auto& slice_1 = ops[start_index + kSlice1Index];
+  const auto& matmul_v0 = ops[start_index + kMatmulV0Index];
+  const auto& matmul_v1 = ops[start_index + kMatmulV1Index];
+  const auto& add_1 = ops[start_index + kAdd1Index];
+  const auto& reshape_3 = ops[start_index + kReshape3Index];
 
+  constexpr size_t kUnpackAxis = 1;
   std::vector<OpWrapper> new_ops;
-  auto rope_q_outputs = SplitPositionEmbedding(
-      new_ops, tensor_pool, reshape_0, mul_cos_0, mul_const_0, quantize_0,
-      concat_0, mul_sin_0, add_0);
-  auto rope_k_outputs = SplitPositionEmbedding(
-      new_ops, tensor_pool, reshape_1, mul_cos_1, mul_const_1, quantize_1,
-      concat_1, mul_sin_1, add_1);
 
-  // use reshape to transpose, [1, 1, 128] -> [1, 128, 1]
-  std::vector<ConstTensorWrapperRef> transposed_rope_k_outputs;
-  transposed_rope_k_outputs.reserve(rope_k_outputs.size());
-  for (const auto& rope_k_output : rope_k_outputs) {
-    // TODO: refine
-    auto rope_k_output_dims = rope_k_output.get().GetDims();
-    const auto last_dim = rope_k_output_dims.back();
-    rope_k_output_dims.back() =
-        rope_k_output_dims[rope_k_output_dims.size() - 2];
-    rope_k_output_dims[rope_k_output_dims.size() - 2] = last_dim;
-    const auto& transposed_rope_k_output = tensor_pool.CloneNativeTensorFrom(
-        rope_k_reshape.GetOutputTensor(0), rope_k_output_dims);
-    transposed_rope_k_outputs.emplace_back(transposed_rope_k_output);
-    new_ops.emplace_back(
-        CreateReshapeOp(rope_k_output, transposed_rope_k_output));
+  // Unpack ROPE Q output
+  auto unpack_rope_q_dims = mul.GetInputTensor(0).GetDims();
+  const size_t num_unpack_rope_q_output = unpack_rope_q_dims[kUnpackAxis];
+  unpack_rope_q_dims.erase(unpack_rope_q_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_rope_q_outputs;
+  unpack_rope_q_outputs.reserve(num_unpack_rope_q_output);
+  for (size_t i = 0; i < num_unpack_rope_q_output; ++i) {
+    unpack_rope_q_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        mul.GetInputTensor(0), unpack_rope_q_dims));
   }
+  new_ops.emplace_back(CreateUnpackOp(mul.GetInputTensor(0),
+                                      unpack_rope_q_outputs, kUnpackAxis));
 
-  // MHA
-  const auto& mha_mul = ops[start_index + 20];
-  const auto& mha_matmul_k0 = ops[start_index + 22];
-  const auto& mha_matmul_k1 = ops[start_index + 23];
-  const auto& mha_concat = ops[start_index + 24];
-  const auto& mha_add_0 = ops[start_index + 26];
-  const auto& mha_reshape = ops[start_index + 27];
-  const auto& mha_softmax = ops[start_index + 28];
-  const auto& mha_slice_0 = ops[start_index + 29];
-  const auto& mha_slice_1 = ops[start_index + 30];
-  const auto& mha_matmul_v0 = ops[start_index + 31];
-  const auto& mha_matmul_v1 = ops[start_index + 32];
-  const auto& mha_add_1 = ops[start_index + 33];
-
-  constexpr std::uint32_t kUnpackDim = 1;
-  const auto& mha_matmul_k0_input_1 = mha_matmul_k0.GetInputTensor(1);
-  std::uint32_t num_kv_head = mha_matmul_k0_input_1.GetDim(kUnpackDim);  // 8
-  auto unpack_matmul_k0_output_dims = mha_matmul_k0_input_1.GetDims();
-  unpack_matmul_k0_output_dims.erase(unpack_matmul_k0_output_dims.begin() +
-                                     kUnpackDim);
-  std::vector<ConstTensorWrapperRef> unpack_matmul_k0_outputs;
-  for (size_t i = 0; i < num_kv_head; ++i) {
-    unpack_matmul_k0_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
-        mha_matmul_k0_input_1, unpack_matmul_k0_output_dims));
+  // Unpack ROPE K output
+  auto unpack_rope_k_dims = matmul_k1.GetInputTensor(1).GetDims();
+  const size_t num_unpack_rope_k_output = unpack_rope_k_dims[kUnpackAxis];
+  unpack_rope_k_dims.erase(unpack_rope_k_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_rope_k_outputs;
+  unpack_rope_k_outputs.reserve(num_unpack_rope_k_output);
+  for (size_t i = 0; i < num_unpack_rope_k_output; ++i) {
+    unpack_rope_k_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_k1.GetInputTensor(1), unpack_rope_k_dims));
   }
-  new_ops.emplace_back(CreateUnpackOp(mha_matmul_k0_input_1,
-                                      unpack_matmul_k0_outputs, kUnpackDim));
+  new_ops.emplace_back(CreateUnpackOp(matmul_k1.GetInputTensor(1),
+                                      unpack_rope_k_outputs, kUnpackAxis));
 
-  const auto& mha_matmul_v0_input_1 = mha_matmul_v0.GetInputTensor(1);
-  auto unpack_matmul_v0_output_dims = mha_matmul_v0_input_1.GetDims();
-  unpack_matmul_v0_output_dims.erase(unpack_matmul_v0_output_dims.begin() +
-                                     kUnpackDim);
-  std::vector<ConstTensorWrapperRef> unpack_matmul_v0_outputs;
-  for (size_t i = 0; i < num_kv_head; ++i) {
-    unpack_matmul_v0_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
-        mha_matmul_v0_input_1, unpack_matmul_v0_output_dims));
+  // Unpack Cache K input
+  auto unpack_cache_k_dims = matmul_k0.GetInputTensor(1).GetDims();
+  const size_t num_unpack_cache_k_output = unpack_cache_k_dims[kUnpackAxis];
+  unpack_cache_k_dims.erase(unpack_cache_k_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_cache_k_outputs;
+  unpack_cache_k_outputs.reserve(num_unpack_cache_k_output);
+  for (size_t i = 0; i < num_unpack_cache_k_output; ++i) {
+    unpack_cache_k_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_k0.GetInputTensor(1), unpack_cache_k_dims));
   }
-  new_ops.emplace_back(CreateUnpackOp(mha_matmul_v0_input_1,
-                                      unpack_matmul_v0_outputs, kUnpackDim));
+  new_ops.emplace_back(CreateUnpackOp(matmul_k0.GetInputTensor(1),
+                                      unpack_cache_k_outputs, kUnpackAxis));
 
-  const auto& reshape_2_input_0 = reshape_2.GetInputTensor(0);
-  const auto& reshape_2_output_0 = reshape_2.GetOutputTensor(0);
-  auto split_matmul_v1_dims = reshape_2_input_0.GetDims();
-  split_matmul_v1_dims.back() /= num_kv_head;
-  std::vector<ConstTensorWrapperRef> split_matmul_v1_outputs;
-  for (size_t i = 0; i < num_kv_head; ++i) {
-    const auto& split_matmul_v1_output = tensor_pool.CloneNativeTensorFrom(
-        reshape_2_output_0, split_matmul_v1_dims);
-    split_matmul_v1_outputs.emplace_back(split_matmul_v1_output);
+  // Unpack Cache V input
+  auto unpack_cache_v_dims = matmul_v0.GetInputTensor(1).GetDims();
+  const size_t num_unpack_cache_v_output = unpack_cache_v_dims[kUnpackAxis];
+  unpack_cache_v_dims.erase(unpack_cache_v_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_cache_v_outputs;
+  for (size_t i = 0; i < num_unpack_cache_v_output; ++i) {
+    unpack_cache_v_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_v0.GetInputTensor(1), unpack_cache_v_dims));
   }
-  new_ops.emplace_back(CreateSplitOp(tensor_pool, reshape_2_input_0,
-                                     split_matmul_v1_outputs,
-                                     reshape_2_input_0.GetRank() - 1));
+  new_ops.emplace_back(CreateUnpackOp(matmul_v0.GetInputTensor(1),
+                                      unpack_cache_v_outputs, kUnpackAxis));
 
+  // Unpack Slice V input
+  auto unpack_slice_v_dims = matmul_v1.GetInputTensor(1).GetDims();
+  const size_t num_unpack_slice_v_output = unpack_slice_v_dims[kUnpackAxis];
+  unpack_slice_v_dims.erase(unpack_slice_v_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_slice_v_outputs;
+  for (size_t i = 0; i < num_unpack_slice_v_output; ++i) {
+    unpack_slice_v_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_v1.GetInputTensor(1), unpack_slice_v_dims));
+  }
+  new_ops.emplace_back(CreateUnpackOp(matmul_v1.GetInputTensor(1),
+                                      unpack_slice_v_outputs, kUnpackAxis));
+
+  // Build SHA
+  const auto num_attn_head = unpack_rope_q_outputs.size();
+  const auto num_kv_head = unpack_rope_k_outputs.size();
+  const auto num_attn_per_kv_head = num_attn_head / num_kv_head;
   std::vector<ConstTensorWrapperRef> sha_outputs;
   for (size_t i = 0; i < num_kv_head; ++i) {
-    for (size_t j = 0; j < 2; ++j) {
+    for (size_t j = 0; j < num_attn_per_kv_head; ++j) {
       const auto& sha_output = BuildSingleSHA(
           new_ops, tensor_pool,
-          const_cast<TensorWrapper&>(unpack_matmul_v0_outputs[i].get()),
-          const_cast<TensorWrapper&>(unpack_matmul_k0_outputs[i].get()),
-          const_cast<TensorWrapper&>(rope_q_outputs[i * 2 + j].get()),
-          const_cast<TensorWrapper&>(add_1.GetInputTensor(0)),
-          const_cast<TensorWrapper&>(add_1.GetInputTensor(1)),
-          const_cast<TensorWrapper&>(split_matmul_v1_outputs[i].get()), 2,
-          mha_mul, mha_matmul_k0, add_1, mha_matmul_k1, mha_concat, mha_add_0,
-          mha_reshape, mha_softmax, mha_slice_0, mha_slice_1, mha_matmul_v0,
-          mha_matmul_v1, mha_add_1,
-          &(const_cast<TensorWrapper&>(transposed_rope_k_outputs[i].get())));
+          const_cast<TensorWrapper&>(unpack_cache_v_outputs[i].get()),
+          const_cast<TensorWrapper&>(unpack_cache_k_outputs[i].get()),
+          const_cast<TensorWrapper&>(unpack_rope_q_outputs[i * 2 + j].get()),
+          const_cast<TensorWrapper&>(add_0.GetInputTensor(0)),
+          const_cast<TensorWrapper&>(add_0.GetInputTensor(1)),
+          const_cast<TensorWrapper&>(unpack_slice_v_outputs[i].get()),
+          num_attn_per_kv_head, mul, matmul_k0, add_0, matmul_k1, concat, add_0,
+          reshape_2, softmax, slice_0, slice_1, matmul_v0, matmul_v1, add_1,
+          &(const_cast<TensorWrapper&>(unpack_rope_k_outputs[i].get())));
       sha_outputs.emplace_back(sha_output);
     }
   }
-  // TODO: refine concat reshape
-  constexpr size_t kFinalConcatAxis = 2;
-  const auto& final_reshape = ops[start_index + 34];
-  auto final_concat_dims = sha_outputs[0].get().GetDims();
-  final_concat_dims[kFinalConcatAxis] = 0;
+  // Concat SHA outputs by last dimension
+  const auto concat_axis = sha_outputs[0].get().GetRank() - 1;
+  auto concat_sha_dims = sha_outputs[0].get().GetDims();
+  concat_sha_dims[concat_axis] = 0;
   for (const auto& sha_output : sha_outputs) {
-    final_concat_dims[kFinalConcatAxis] +=
-        sha_output.get().GetDim(kFinalConcatAxis);
+    concat_sha_dims[concat_axis] += sha_output.get().GetDim(concat_axis);
   }
-  const auto& final_concat_output = tensor_pool.CloneNativeTensorFrom(
-      final_reshape.GetInputTensor(0), final_concat_dims);
-  new_ops.emplace_back(CreateConcatenationOp(sha_outputs, final_concat_output,
-                                             kFinalConcatAxis));
+  const auto& concat_sha_output = tensor_pool.CloneNativeTensorFrom(
+      reshape_3.GetInputTensor(0), concat_sha_dims);
   new_ops.emplace_back(
-      CreateReshapeOp(final_concat_output, final_reshape.GetOutputTensor(0)));
+      CreateConcatenationOp(sha_outputs, concat_sha_output, concat_axis));
+  new_ops.emplace_back(
+      CreateReshapeOp(concat_sha_output, reshape_3.GetOutputTensor(0)));
 
   // Validate new graph.
   const bool is_valid =

@@ -85,8 +85,8 @@ void Transform(std::function<bool(OpWrapper&)> validate_op_config,
 }  // namespace
 
 // TODO (jiunkaiy): Add more G2G transformation.
-void GraphToGraphTransform(G2GConfig g2g_option,
-                           std::vector<OpWrapper>& ops, TensorPool& tensor_pool,
+void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
+                           TensorPool& tensor_pool,
                            std::function<bool(OpWrapper&)> validate_op_config) {
   if (g2g_option == G2GConfig::kOff) {
     return;
@@ -266,32 +266,21 @@ void GraphToGraphTransform(G2GConfig g2g_option,
 
   // Fast Vlm Decode Optimization
   const std::vector<QnnOpCode> fast_vlm_mha_decode = {
-      QnnOpCode::kReshape, QnnOpCode::kReshape, QnnOpCode::kReshape,
-      /////// pos embedding 1
       QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kStridedSlice, QnnOpCode::kStridedSlice,
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kConvert, QnnOpCode::kConcat,
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kElementWiseBinary,  // add
-      /////// pos embedding 2
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kStridedSlice, QnnOpCode::kStridedSlice,
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kConvert, QnnOpCode::kConcat,
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kElementWiseBinary,  // add
-      /////// attention
       QnnOpCode::kReshape,
-      QnnOpCode::kElementWiseBinary,  // mul
-      QnnOpCode::kReshape, QnnOpCode::kMatMul, QnnOpCode::kMatMul,
-      QnnOpCode::kConcat, QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kConcat,
+      QnnOpCode::kReshape,
       QnnOpCode::kElementWiseBinary,  // add
-      QnnOpCode::kReshape, QnnOpCode::kSoftmax, QnnOpCode::kStridedSlice,
-      QnnOpCode::kStridedSlice, QnnOpCode::kMatMul, QnnOpCode::kMatMul,
+      QnnOpCode::kReshape,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
       QnnOpCode::kElementWiseBinary,  // add
-      QnnOpCode::kReshape
-    };
+      QnnOpCode::kReshape};
   Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
             OptimizeMHAFastVlmDecode);
 
