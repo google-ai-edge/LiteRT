@@ -60,7 +60,7 @@ jobs:
       - name : Set up cache keys and bazel output base.
         id: cache-keys
         run: |
-          $CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          $CACHE_RESTORE_KEY_2="${{ github.workflow }}-${{ matrix.python-version }}"
           $CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
           $CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
           # If it's not a pull request, then it will be the same as $CACHE_RESTORE_KEY_1-.
