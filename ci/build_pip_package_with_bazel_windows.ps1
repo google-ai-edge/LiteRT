@@ -40,13 +40,14 @@ if (-not $env:TF_LOCAL_SOURCE_PATH) {
 $Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
 
 if (-not $Bazel) {
-  throw "Bazel not found in system PATH"
+  throw 'Bazel not found in system PATH'
 }
 
 if ($Bazel -notmatch '\.exe$') {
   if (Test-Path "$Bazel.exe") {
     $Bazel = "$Bazel.exe"
-  } elseif (Test-Path $Bazel) {
+  }
+  elseif (Test-Path $Bazel) {
     # GitHub Actions hosted toolcache might provide 'bazel' without extension on Windows.
     # We copy it to .exe to ensure it's executable by PowerShell.
     Write-Host "Bazel found at $Bazel but lacks extension. Creating .exe wrapper..."
@@ -62,7 +63,7 @@ if (-not (Test-Path $Bazel)) {
 # Optional: Print it so you can see it in your GitHub Action logs
 Write-Host "Using Bazel located at: $Bazel"
 
-function Get-Bazel-Info {
+function Get-BazelInfo {
   param (
     [string]$Key
   )
@@ -125,36 +126,35 @@ function Ensure-Include {
 }
 
 # Remove incompatible flags from .litert_configure.bazelrc if present
-$ConfigureBazelrc = Join-Path $RepoRoot ".litert_configure.bazelrc"
+$ConfigureBazelrc = Join-Path $RepoRoot '.litert_configure.bazelrc'
 if (Test-Path $ConfigureBazelrc) {
   Write-Host "Checking for incompatible flags in $ConfigureBazelrc..."
   Replace-InFile $ConfigureBazelrc '-Wno-sign-compare' '' | Out-Null
 }
 
 # Verify Bazel version
-Write-Host "Checking Bazel version..."
+Write-Host 'Checking Bazel version...'
 & $Bazel --version
 if ($LASTEXITCODE -ne 0) {
   Write-Warning "Failed to check Bazel version. Exit code: $LASTEXITCODE"
 }
 
 # Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
-Write-Host "Fetching dependencies..."
-$FetchArgs = @("fetch", "--config=windows", "--repo_env=USE_PYWRAP_RULES=True", "//ci/tools/python/wheel:litert_wheel")
+Write-Host 'Fetching dependencies...'
+$FetchArgs = @('fetch', '--config=windows', '--repo_env=USE_PYWRAP_RULES=True', '//ci/tools/python/wheel:litert_wheel')
 & $Bazel $FetchArgs
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel fetch failed with exit code $LASTEXITCODE"
 }
 
-$OutputBase = Get-Bazel-Info "output_base"
+$OutputBase = Get-BazelInfo 'output_base'
 Write-Host "Bazel output_base: $OutputBase"
 
-$ExecRoot = Get-Bazel-Info "execution_root"
+$ExecRoot = Get-BazelInfo 'execution_root'
 Write-Host "Bazel execution_root: $ExecRoot"
 if ($ExecRoot) {
-  $ExecBazelOut = Join-Path $ExecRoot "bazel-out"
-  $WorkspaceBazelOut = Join-Path $RepoRoot "bazel-out"
-  Write-Host "Setting up bazel-out junction..."
+  $ExecBazelOut = Join-Path $ExecRoot 'bazel-out'
+  $WorkspaceBazelOut = Join-Path $RepoRoot 'bazel-out'
   if (Test-Path $WorkspaceBazelOut) {
     if (Test-Path $ExecBazelOut) {
       & cmd.exe /c "rmdir /s /q `"$ExecBazelOut`"" | Out-Null
@@ -163,12 +163,19 @@ if ($ExecRoot) {
   }
 }
 
-$LocalXlaTsl = Join-Path $OutputBase "external\local_xla\xla\tsl\tsl.bzl"
-Write-Host "Patching tsl.bzl..."
+# Deep patch external repositories to remove incompatible flags that might be hardcoded.
+Write-Host 'Deep patching external repositories for incompatible flags...'
+$ExternalDir = Join-Path $OutputBase 'external'
+if (Test-Path $ExternalDir) {
+  Get-ChildItem -Path $ExternalDir -Include '*.bazel','*.bzl','*.rc','BUILD*' -Recurse | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
+    Replace-InFile $_.FullName '-Wno-sign-compare' '' | Out-Null
+  }
+}
+
+$LocalXlaTsl = Join-Path $OutputBase 'external\local_xla\xla\tsl\tsl.bzl'
 Replace-InFile $LocalXlaTsl 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = False),' 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = True),' | Out-Null
 
-Write-Host "Patching Protobuf..."
-$ProtoContext = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\context.h"
+$ProtoContext = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\compiler\java\context.h'
 if (Test-Path $ProtoContext) {
   $ProtoLines = Get-Content $ProtoContext
   $ProtoLines = $ProtoLines | Where-Object { $_ -notmatch '^\s*#include\s*\\\s*$' }
@@ -178,8 +185,7 @@ Ensure-Include $ProtoContext '#include "google/protobuf/compiler/java/helpers.h"
 
 
 
-$ProtoJavaBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\java\BUILD.bazel"
-Write-Host "Patching compiler/java/BUILD.bazel..."
+$ProtoJavaBuild = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\compiler\java\BUILD.bazel'
 if (Test-Path $ProtoJavaBuild) {
   $BuildText = Get-Content $ProtoJavaBuild -Raw
   $InsertLine = [Environment]::NewLine + '        "field_common.h",'
@@ -190,14 +196,13 @@ if (Test-Path $ProtoJavaBuild) {
   Set-Content -Path $ProtoJavaBuild -Value $BuildText
 }
 
-$UntypedHeader = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.h"
-Write-Host "Patching untyped_message.h..."
+$UntypedHeader = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.h'
 if (Test-Path $UntypedHeader) {
   $Text = Get-Content $UntypedHeader -Raw
-  $Text = $Text.Replace(", UntypedMessage,", ", std::unique_ptr<UntypedMessage>,")
-  $Text = $Text.Replace("std::vector<UntypedMessage>>;", "std::vector<std::unique_ptr<UntypedMessage>>>;")
+  $Text = $Text.Replace(', UntypedMessage,', ', std::unique_ptr<UntypedMessage>,')
+  $Text = $Text.Replace('std::vector<UntypedMessage>>;', 'std::vector<std::unique_ptr<UntypedMessage>>>;')
 
-  if ($Text -notmatch "GetMessage\(int32_t field_number") {
+  if ($Text -notmatch 'GetMessage\(int32_t field_number') {
     $Insert = @"
   const UntypedMessage* GetMessage(int32_t field_number, size_t idx = 0) const {
     auto it = fields_.find(field_number);
@@ -214,7 +219,7 @@ if (Test-Path $UntypedHeader) {
   }
 
 "@
-    $Anchor = "  const ResolverPool::Message& desc() const { return *desc_; }"
+    $Anchor = '  const ResolverPool::Message& desc() const { return *desc_; }'
     if ($Text -match [regex]::Escape($Anchor)) {
       $Text = $Text.Replace($Anchor, $Insert + $Anchor)
     }
@@ -222,14 +227,13 @@ if (Test-Path $UntypedHeader) {
   Set-Content -Path $UntypedHeader -Value $Text
 }
 
-$UntypedCc = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.cc"
-Write-Host "Patching untyped_message.cc..."
+$UntypedCc = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.cc'
 if (Test-Path $UntypedCc) {
   $CcText = Get-Content $UntypedCc -Raw
-  $CcText = $CcText.Replace("InsertField(*field, std::move(group))", "InsertField(*field, std::make_unique<UntypedMessage>(std::move(group)))")
-  $CcText = $CcText.Replace("InsertField(field, std::move(*inner))", "InsertField(field, std::make_unique<UntypedMessage>(std::move(*inner)))")
+  $CcText = $CcText.Replace('InsertField(*field, std::move(group))', 'InsertField(*field, std::make_unique<UntypedMessage>(std::move(group)))')
+  $CcText = $CcText.Replace('InsertField(field, std::move(*inner))', 'InsertField(field, std::make_unique<UntypedMessage>(std::move(*inner)))')
 
-  $InsertFieldPattern = "(?s)template <typename T>\\s+absl::Status UntypedMessage::InsertField\\([^\\{]*\\)\\s*\\{.*?\\n\\}"
+  $InsertFieldPattern = '(?s)template <typename T>\\s+absl::Status UntypedMessage::InsertField\\([^\\{]*\\)\\s*\\{.*?\\n\\}'
   $InsertFieldReplacement = @"
 template <typename T>
 absl::Status UntypedMessage::InsertField(const ResolverPool::Field& field,
@@ -288,28 +292,23 @@ absl::Status UntypedMessage::InsertField(const ResolverPool::Field& field,
 }
 "@
   $NewCcText = [regex]::Replace($CcText, $InsertFieldPattern, $InsertFieldReplacement, 1)
-  if ($NewCcText -eq $CcText -and $CcText -notmatch "using value_type = std::decay_t<T>;") {
-    $NewCcText = $CcText.Replace("T&& value) {", "T&& value) {`n  using value_type = std::decay_t<T>;")
+  if ($NewCcText -eq $CcText -and $CcText -notmatch 'using value_type = std::decay_t<T>;') {
+    $NewCcText = $CcText.Replace('T&& value) {', 'T&& value) {`n  using value_type = std::decay_t<T>;')
   }
-  if ($NewCcText -notmatch "using value_type = std::decay_t<T>;") {
-    throw "Failed to patch untyped_message.cc InsertField template for MSVC."
+  if ($NewCcText -notmatch 'using value_type = std::decay_t<T>;') {
+    throw 'Failed to patch untyped_message.cc InsertField template for MSVC.'
   }
   Set-Content -Path $UntypedCc -Value $NewCcText
 }
 
-$UnparserTraits = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\json\internal\unparser_traits.h"
-Write-Host "Patching unparser_traits.h..."
-Replace-InFile $UnparserTraits "return &msg.Get<Msg>(f->proto().number())[idx];" "return msg.GetMessage(f->proto().number(), idx);" | Out-Null
+$UnparserTraits = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\json\internal\unparser_traits.h'
+Replace-InFile $UnparserTraits 'return &msg.Get<Msg>(f->proto().number())[idx];' 'return msg.GetMessage(f->proto().number(), idx);' | Out-Null
 
-
-
-$ProtoCompilerBuild = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\BUILD.bazel"
-Write-Host "Patching compiler/BUILD.bazel..."
+$ProtoCompilerBuild = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\compiler\BUILD.bazel'
 Replace-InFile $ProtoCompilerBuild '        "//src/google/protobuf/compiler/objectivec",' '' | Out-Null
 Replace-InFile $ProtoCompilerBuild '        "//src/google/protobuf/compiler/rust",' '' | Out-Null
 
-$ProtoMain = Join-Path $OutputBase "external\com_google_protobuf\src\google\protobuf\compiler\main.cc"
-Write-Host "Patching compiler/main.cc..."
+$ProtoMain = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\compiler\main.cc'
 Replace-InFile $ProtoMain '#include "google/protobuf/compiler/objectivec/generator.h"' '' | Out-Null
 Replace-InFile $ProtoMain '#include "google/protobuf/compiler/rust/generator.h"' '' | Out-Null
 Replace-InFile $ProtoMain '  objectivec::ObjectiveCGenerator objc_generator;' '' | Out-Null
@@ -319,73 +318,61 @@ Replace-InFile $ProtoMain '  rust::RustGenerator rust_generator;' '' | Out-Null
 Replace-InFile $ProtoMain '  cli.RegisterGenerator("--rust_out", "--rust_opt", &rust_generator,' '' | Out-Null
 Replace-InFile $ProtoMain '                        "Generate Rust sources.");' '' | Out-Null
 
-Write-Host "Patching HighwayHash..."
-$HighwayHashDir = Join-Path $OutputBase "external\highwayhash\highwayhash"
-if (-not (Test-Path $HighwayHashDir)) {
-  $HighwayHashDir = Join-Path $OutputBase "external\highwayhash"
-}
-
-$HighwayHash = Join-Path $HighwayHashDir "compiler_specific.h"
 $OldAlign = "#if HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
 $NewAlign = "#if HH_MSC_VERSION`n#define HH_ALIGNAS(multiple) __declspec(align(multiple))`n#elif HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
 Replace-InFile $HighwayHash $OldAlign $NewAlign | Out-Null
 
+$HighwayHashDir = Join-Path $OutputBase 'external\highwayhash\highwayhash'
 $PostfixPattern = '^(\s*)([^;]*?)\s+HH_ALIGNAS\((\d+)\)\s*([^;]*;\s*)$'
-Write-Host "Patching HighwayHash sources in $HighwayHashDir..."
-
-if (Test-Path $HighwayHashDir) {
-  Get-ChildItem -Path $HighwayHashDir -Recurse -Include *.h,*.cc | ForEach-Object {
-    $Lines = Get-Content $_.FullName
-    $Changed = $false
-    for ($i = 0; $i -lt $Lines.Count; $i++) {
-      $Line = $Lines[$i]
-      if ($Line -notmatch 'HH_ALIGNAS\(') { continue }
-      if ($Line -match '^\s*HH_ALIGNAS\(') { continue }
-      if ($Line -match '^\s*(//|#)') { continue }
-      if ($Line -match '^\s*(private|public|protected):') { continue }
-      $AlignIndex = $Line.IndexOf('HH_ALIGNAS(')
-      $BraceIndex = $Line.IndexOf('{')
-      if ($BraceIndex -ge 0 -and $BraceIndex -lt $AlignIndex) { continue }
-      $NewLine = $Line -replace $PostfixPattern, '$1HH_ALIGNAS($3) $2$4'
-      if ($NewLine -ne $Line) {
-        $Lines[$i] = $NewLine
-        $Changed = $true
-      }
-    }
-    if ($Changed) {
-      Set-Content -Path $_.FullName -Value $Lines
+Get-ChildItem -Path $HighwayHashDir -Recurse -Include *.h,*.cc | ForEach-Object {
+  $Lines = Get-Content $_.FullName
+  $Changed = $false
+  for ($i = 0; $i -lt $Lines.Count; $i++) {
+    $Line = $Lines[$i]
+    if ($Line -notmatch 'HH_ALIGNAS\(') { continue }
+    if ($Line -match '^\s*HH_ALIGNAS\(') { continue }
+    if ($Line -match '^\s*(//|#)') { continue }
+    if ($Line -match '^\s*(private|public|protected):') { continue }
+    $AlignIndex = $Line.IndexOf('HH_ALIGNAS(')
+    $BraceIndex = $Line.IndexOf('{')
+    if ($BraceIndex -ge 0 -and $BraceIndex -lt $AlignIndex) { continue }
+    $NewLine = $Line -replace $PostfixPattern, '$1HH_ALIGNAS($3) $2$4'
+    if ($NewLine -ne $Line) {
+      $Lines[$i] = $NewLine
+      $Changed = $true
     }
   }
-} else {
-  Write-Warning "HighwayHash directory not found: $HighwayHashDir"
+  if ($Changed) {
+    Set-Content -Path $_.FullName -Value $Lines
+  }
 }
 
 $BazelArgs = @(
-  "build",
-  "-c",
-  "opt",
-  "--config=windows",
-  "--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1",
-  "--repo_env=USE_PYWRAP_RULES=True",
-  "--define=protobuf_allow_msvc=true",
-  "--copt=/Iexternal\\com_google_protobuf\\src",
-  "--host_copt=/Iexternal\\com_google_protobuf\\src"
+  'build',
+  '-c',
+  'opt',
+  '--config=windows',
+  '--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1',
+  '--repo_env=USE_PYWRAP_RULES=True',
+  '--define=protobuf_allow_msvc=true',
+  '--copt=/Iexternal\\com_google_protobuf\\src',
+  '--host_copt=/Iexternal\\com_google_protobuf\\src'
 )
-if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
-if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(" ") }
-if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
-if ($env:USE_LOCAL_TF -eq "true") { $BazelArgs += "--config=use_local_tf" }
-if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(" ") }
+if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += '--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)' }
+if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(' ') }
+if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += '--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)' }
+if ($env:USE_LOCAL_TF -eq 'true') { $BazelArgs += '--config=use_local_tf' }
+if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
-Write-Host "Starting bazel build..."
+Write-Host 'Starting bazel build...'
 & $Bazel @BazelArgs //ci/tools/python/wheel:litert_wheel
 if ($LASTEXITCODE -ne 0) {
-  throw "Bazel build failed with exit code $LASTEXITCODE"
+  throw 'Bazel build failed with exit code $LASTEXITCODE'
 }
 
-$DistDir = Join-Path $RepoRoot "dist"
+$DistDir = Join-Path $RepoRoot 'dist'
 if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 
-Get-ChildItem -Path (Join-Path $RepoRoot "bazel-bin\ci\tools\python\wheel\dist") -Filter *.whl | Move-Item -Destination $DistDir
-Write-Host "Output can be found here:" $DistDir
+Get-ChildItem -Path (Join-Path $RepoRoot 'bazel-bin\ci\tools\python\wheel\dist') -Filter *.whl | Move-Item -Destination $DistDir
+Write-Host 'Output can be found here:' $DistDir
