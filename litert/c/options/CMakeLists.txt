@@ -34,12 +34,11 @@ target_include_directories(litert_c_options
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        litert_c_api
 )
 
 target_link_libraries(litert_c_options
     PUBLIC
         absl::status
         absl::statusor
-    PRIVATE
-        litert_c_api
 )

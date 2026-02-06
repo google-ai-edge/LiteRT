@@ -15,11 +15,11 @@
 # LiteRT C++ Internal Implementation
 cmake_minimum_required(VERSION 3.20)
 
-# Internal implementation library - header-only since no .cc files exist in this directory
-add_library(litert_cc_internal INTERFACE)
+# Internal implementation library
+add_library(litert_cc_internal STATIC litert_op_options.cc)
 
 target_include_directories(litert_cc_internal
-    INTERFACE
+    PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
@@ -27,7 +27,7 @@ target_include_directories(litert_cc_internal
 )
 
 target_link_libraries(litert_cc_internal
-    INTERFACE
+    PUBLIC
         litert_c_api
         litert_cc_api
         absl::status
