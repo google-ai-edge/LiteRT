@@ -73,9 +73,8 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
   static_environment_options = environment_options;
   static_options = options;
 
-  auto [env, opts, opq_opts, mediatek_opts] =
-      litert::ParseOptions<litert::mediatek::MediatekOptions>(
-          environment_options, options);
+  auto [opts, opq_opts, mediatek_opts] =
+      litert::ParseOptions<litert::mediatek::MediatekOptions>(options);
 
   if (!mediatek_opts) {
     LITERT_ASSIGN_OR_RETURN(mediatek_opts,

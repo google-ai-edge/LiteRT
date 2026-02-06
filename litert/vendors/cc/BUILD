@@ -36,7 +36,6 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_environment_options",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/internal:litert_handle",

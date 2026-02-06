@@ -404,8 +404,8 @@ class LiteRtCompilerPluginT {
   using GoogleTensorOptions = ::litert::google_tensor::GoogleTensorOptions;
 
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
-    std::tie(env_, opts_, opq_, google_tensor_opts_) =
-        litert::ParseOptions<GoogleTensorOptions>(env, options);
+    std::tie(opts_, opq_, google_tensor_opts_) =
+        litert::ParseOptions<GoogleTensorOptions>(options);
   }
 
   ::litert::Expected<GoogleTensorOptions>& GetGoogleTensorOptions() {
@@ -417,8 +417,6 @@ class LiteRtCompilerPluginT {
   LiteRtApiVersion GetLiteRtVersion() const { return litert_version_; }
 
  private:
-  litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null environment options");
   litert::Expected<litert::Options> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::OpaqueOptions> opq_ =
