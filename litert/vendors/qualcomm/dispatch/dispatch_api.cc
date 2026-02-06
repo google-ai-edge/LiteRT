@@ -248,6 +248,16 @@ LiteRtStatus InvocationContextDestroy(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus InvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (invocation_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  invocation_context->SetSchedulingInfo(scheduling_info);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
@@ -320,6 +330,8 @@ LiteRtDispatchInterface TheInterface = {
     /*.unregister_tensor_buffer=*/UnregisterTensorBuffer,
     /*.invocation_context_create=*/InvocationContextCreate,
     /*.invocation_context_destroy=*/InvocationContextDestroy,
+    /*.invocation_context_set_scheduling_info=*/
+    InvocationContextSetSchedulingInfo,
     /*.attach_input=*/AttachInput,
     /*.attach_output=*/AttachOutput,
     /*.detach_input=*/DetachInput,

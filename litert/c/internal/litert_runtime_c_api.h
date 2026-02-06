@@ -31,6 +31,7 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_scheduling_info.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 
@@ -289,12 +290,24 @@ typedef struct LiteRtRuntimeCApiStruct {
                                             LiteRtTensorBuffer* input_buffers,
                                             size_t num_output_buffers,
                                             LiteRtTensorBuffer* output_buffers);
+  // litert_compiled_model.h: LiteRtRunCompiledModelWithOptions
+  LiteRtStatus (*litert_run_compiled_model_with_options)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      LiteRtOptions options);
   // litert_compiled_model.h: LiteRtRunCompiledModelAsync
   LiteRtStatus (*litert_run_compiled_model_async)(
       LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
       size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
       size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
       bool* async);
+  // litert_compiled_model.h: LiteRtRunCompiledModelAsyncWithOptions
+  LiteRtStatus (*litert_run_compiled_model_async_with_options)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      bool* async, LiteRtOptions options);
   // litert_compiled_model.h: LiteRtSetCompiledModelCancellationFunction
   LiteRtStatus (*litert_set_compiled_model_cancellation_function)(
       LiteRtCompiledModel compiled_model, void* data,
@@ -730,6 +743,25 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_profile_summary)(LiteRtProfiler profiler,
                                              LiteRtCompiledModel compiled_model,
                                              const char** summary);
+  //
+  // Scheduling info APIs (litert_compiled_model.h)
+  //
+  // litert_compiled_model.h: LiteRtCompiledModelSetSchedulingInfo
+  LiteRtStatus (*litert_compiled_model_set_scheduling_info)(
+      LiteRtCompiledModel compiled_model,
+      const LiteRtSchedulingInfo* scheduling_info);
+  // litert_compiled_model.h: LiteRtRunCompiledModelWithSchedulingInfo
+  LiteRtStatus (*litert_run_compiled_model_with_scheduling_info)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      const LiteRtSchedulingInfo* scheduling_info);
+  // litert_compiled_model.h: LiteRtRunCompiledModelAsyncWithSchedulingInfo
+  LiteRtStatus (*litert_run_compiled_model_async_with_scheduling_info)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      bool* async, const LiteRtSchedulingInfo* scheduling_info);
 } LiteRtRuntimeCApiStruct;
 
 }  // extern "C"

@@ -214,9 +214,7 @@ cc_library(
     ],
     deps = [
         "//litert/build_common:build_config",
-        "//tflite/core/api",
-        "//tflite/profiling:memory_info",
-        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_scheduling_info",
         "@opencl_headers",
     ],
 )
@@ -319,6 +317,7 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_profiler_event",
+        "//litert/c:litert_scheduling_info",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
     ],
@@ -331,9 +330,7 @@ cc_library(
     visibility = [
         "//litert/cc/internal:__pkg__",
     ],
-    deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-    ],
+    deps = ["//litert/c:litert_runtime_c_api_shared_lib"],
 )
 
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
