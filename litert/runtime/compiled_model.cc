@@ -17,9 +17,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdarg>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -90,30 +87,27 @@
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
-#include "tflite/c/common.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/interpreter_builder.h"
-#include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
 #if !defined(LITERT_NO_BUILTIN_OPS)
 #include "tflite/kernels/register.h"
 #endif  // LITERT_NO_BUILTIN_OPS
-#include "tflite/model_builder.h"
 
 #if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 
-using ::litert::Error;
-using ::litert::Expected;
-using ::litert::Unexpected;
-using ::litert::internal::DispatchDelegateOptions;
-using ::litert::internal::GetTensorIdentifier;
+using litert::Error;
+using litert::Expected;
+using litert::Unexpected;
+using litert::internal::DispatchDelegateOptions;
+using litert::internal::GetTensorIdentifier;
 #if !defined(LITERT_DISABLE_NPU)
-using ::litert::internal::SerializeModel;
+using litert::internal::SerializeModel;
 #endif  // !defined(LITERT_DISABLE_NPU)
-using ::litert::internal::TfLiteTensorIdentifier;
+using litert::internal::TfLiteTensorIdentifier;
 
 namespace {
 std::optional<std::string> ExtractDirectory(absl::string_view path) {
@@ -124,30 +118,33 @@ std::optional<std::string> ExtractDirectory(absl::string_view path) {
   return std::string(path.substr(0, last_sep));
 }
 
-static void* StubOpInit(TfLiteContext* context, const char* buffer,
-                        size_t length) {
+void* StubOpInit([[maybe_unused]] TfLiteContext* context,
+                        [[maybe_unused]] const char* buffer,
+                        [[maybe_unused]] size_t length) {
   return nullptr;
 }
 
-static void StubOpFree(TfLiteContext* context, void* buffer) {}
+void StubOpFree([[maybe_unused]] TfLiteContext* context,
+                [[maybe_unused]] void* buffer) {}
 
-static TfLiteStatus StubOpPrepare(TfLiteContext* context, TfLiteNode* node) {
-  // Do nothing.
+TfLiteStatus StubOpPrepare([[maybe_unused]] TfLiteContext* context,
+                                  [[maybe_unused]] TfLiteNode* node) {
   return kTfLiteOk;
 }
 
-static TfLiteStatus StubOpEval(TfLiteContext* context, TfLiteNode* node) {
+TfLiteStatus StubOpEval(TfLiteContext* context,
+                        [[maybe_unused]] TfLiteNode* node) {
   // This should never be called as accelerators will handle the operations
   context->ReportError(
       context, "Stub operation invoked. This function should not be called.");
   return kTfLiteError;
 }
 
-static TfLiteRegistration sStubRegistration = {
-    .init = StubOpInit,
-    .free = StubOpFree,
-    .prepare = StubOpPrepare,
-    .invoke = StubOpEval,
+TfLiteRegistration sStubRegistration = {
+  .init = StubOpInit,
+  .free = StubOpFree,
+  .prepare = StubOpPrepare,
+  .invoke = StubOpEval,
 };
 
 #if !defined(LITERT_DISABLE_NPU)
