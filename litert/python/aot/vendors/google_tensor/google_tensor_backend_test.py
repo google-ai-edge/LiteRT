@@ -56,6 +56,14 @@ class MockMlirTransforms(components.MlirTransformsT):
     pass
 
 
+class _MockSdk:
+  """A mock class to be used for autospeccing the ai_edge_litert_sdk_google_tensor module."""
+
+  def path_to_sdk_libs(self) -> str:
+    """Returns the path to the SDK libraries."""
+    raise NotImplementedError
+
+
 class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
 
   @property
@@ -110,6 +118,44 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     self.assertEqual(
         kwargs["sdk_libs_path"], "/google_tensor_compiler_libs_path"
     )  # sdk_libs_path
+
+  @mock.patch.object(
+      common,
+      "get_resource",
+      autospec=True,
+      return_value="/fake/path/to/plugin.so",
+  )
+  @mock.patch.object(MockApplyPlugin, "__call__", autospec=True)
+  def test_apply_plugin_with_sdk_import(
+      self, mock_apply_plugin_call: mock.Mock, mock_get_resource: mock.Mock
+  ):
+    # Arrange: setup mocks.
+    mock_sdk = mock.create_autospec(_MockSdk, instance=True)
+    mock_sdk.path_to_sdk_libs.return_value = "/path/from/sdk"
+    self.enter_context(
+        mock.patch.dict(
+            "sys.modules",
+            {"ai_edge_litert_sdk_google_tensor": mock_sdk},
+        )
+    )
+    # Arrange: setup test data.
+    backend = google_tensor_backend.GoogleTensorBackend.create(
+        self.basic_config
+    )
+    model = types.Model("add_simple.tflite")
+    output_model = self.output_model
+    component = MockApplyPlugin()
+
+    # Act.
+    backend.call_component(model, output_model, component)
+
+    # Assert.
+    with self.subTest("get_resource"):
+      mock_get_resource.assert_called_once()
+    with self.subTest("apply_plugin_call"):
+      mock_apply_plugin_call.assert_called_once()
+      _, kwargs = mock_apply_plugin_call.call_args
+      self.assertEqual(kwargs["sdk_libs_path"], "/path/from/sdk")
 
   @mock.patch.object(MockApplyPlugin, "__call__", autospec=True)
   def test_apply_plugin_with_compiler_flags(
