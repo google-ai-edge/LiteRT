@@ -16,6 +16,7 @@ package(
 package_group(
     name = "friends",
     packages = [
+        "//litert/...",
         "//tflite/python/...",
         "//tflite/python/converter/...",
         "//tflite/toco/...",
