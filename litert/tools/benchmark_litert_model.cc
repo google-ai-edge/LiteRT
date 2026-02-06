@@ -238,12 +238,13 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
 
   auto use_profiler = params_.Get<bool>("use_profiler");
   if (use_profiler) {
-    LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
-    profiler_.StartProfiling();
+    LITERT_ASSIGN_OR_ABORT(auto profiler, compiled_model_->GetProfiler());
+    profiler_ = std::make_unique<litert::Profiler>(std::move(profiler));
+    profiler_->StartProfiling();
   }
   log_output_ = std::make_unique<BenchmarkLoggingListener>([this]() {
     if (profiler_) {
-      auto res = profiler_.GetProfileSummary(compiled_model_->Get());
+      auto res = profiler_->GetProfileSummary(compiled_model_->Get());
       if (res.HasValue()) {
         return res.Value();
       }

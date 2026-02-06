@@ -1099,8 +1099,8 @@ cc_library(
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_common",
-        "//litert/c:litert_profiler",
         "//litert/c:litert_profiler_event",
+        "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_handle",
     ],
 )

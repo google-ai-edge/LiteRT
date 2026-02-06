@@ -764,6 +764,7 @@ cc_library(
     name = "litert_profiler",
     hdrs = ["//litert/cc:litert_profiler.h"],
     deps = [
+        ":litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
