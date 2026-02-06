@@ -66,8 +66,7 @@ struct TestParams {
 };
 
 Expected<Options> CreateGpuOptions(
-    bool external_tensors_mode,
-    GpuOptions::Precision precision,
+    bool external_tensors_mode, GpuOptions::Precision precision,
     GpuOptions::BufferStorageType buffer_storage_type) {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
@@ -89,8 +88,10 @@ TEST_P(ParameterizedTest, Basic) {
   ASSERT_TRUE(env);
 
   auto param = GetParam();
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(
-      param.external_tensors_mode, param.precision, param.buffer_storage_type));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      CreateGpuOptions(param.external_tensors_mode, param.precision,
+                       param.buffer_storage_type));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
@@ -156,19 +157,19 @@ TEST_P(ParameterizedTest, Basic) {
 
 INSTANTIATE_TEST_SUITE_P(
     CompiledModelWebGpuTest, ParameterizedTest,
-    ::testing::ConvertGenerator<TestParams::TupleType>(::testing::Combine(
-        ::testing::ValuesIn<bool>({false, true}),
-        ::testing::ValuesIn<bool>({false, true}),
-        ::testing::ValuesIn<GpuOptions::Precision>({
-            GpuOptions::Precision::kDefault,
-            GpuOptions::Precision::kFp16,
-            GpuOptions::Precision::kFp32,
-        }),
-        ::testing::ValuesIn<GpuOptions::BufferStorageType>({
-            GpuOptions::BufferStorageType::kDefault,
-            GpuOptions::BufferStorageType::kBuffer,
-            GpuOptions::BufferStorageType::kTexture2D,
-        }))),
+    ::testing::ConvertGenerator<TestParams::TupleType>(
+        ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
+                           ::testing::ValuesIn<bool>({false, true}),
+                           ::testing::ValuesIn<GpuOptions::Precision>({
+                               GpuOptions::Precision::kDefault,
+                               GpuOptions::Precision::kFp16,
+                               GpuOptions::Precision::kFp32,
+                           }),
+                           ::testing::ValuesIn<GpuOptions::BufferStorageType>({
+                               GpuOptions::BufferStorageType::kDefault,
+                               GpuOptions::BufferStorageType::kBuffer,
+                               GpuOptions::BufferStorageType::kTexture2D,
+                           }))),
     [](const ::testing::TestParamInfo<TestParams>& info) {
       std::string precision;
       switch (info.param.precision) {
@@ -225,9 +226,10 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
   ASSERT_TRUE(env);
 
   auto param = GetParam();
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(
-      param.external_tensors_mode, GpuOptions::Precision::kDefault,
-      GpuOptions::BufferStorageType::kDefault));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options, CreateGpuOptions(param.external_tensors_mode,
+                                     GpuOptions::Precision::kDefault,
+                                     GpuOptions::BufferStorageType::kDefault));
 
   // Create 1st model.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -319,8 +321,8 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
                      << kTestOutputTensorForPipelineTest[i];
     }
-    EXPECT_THAT(output, Pointwise(FloatNear(1e-5),
-                kTestOutputTensorForPipelineTest));
+    EXPECT_THAT(output,
+                Pointwise(FloatNear(1e-5), kTestOutputTensorForPipelineTest));
   }
 }
 
@@ -331,10 +333,10 @@ INSTANTIATE_TEST_SUITE_P(
                            ::testing::ValuesIn<bool>({false, true}),
                            ::testing::ValuesIn<bool>({false, true}))),
     [](const ::testing::TestParamInfo<PipelineTestParams>& info) {
-      return absl::StrCat(
-          info.param.async_1st_model ? "Async1st" : "Sync1st", "_",
-          info.param.async_2nd_model ? "Async2nd" : "Sync2nd",
-          info.param.external_tensors_mode ? "_External" : "");
+      return absl::StrCat(info.param.async_1st_model ? "Async1st" : "Sync1st",
+                          "_",
+                          info.param.async_2nd_model ? "Async2nd" : "Sync2nd",
+                          info.param.external_tensors_mode ? "_External" : "");
     });
 
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {
@@ -481,9 +483,8 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResources) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options,
-      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
-                       GpuOptions::BufferStorageType::kDefault));
+      auto options, CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                                     GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
@@ -499,7 +500,7 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResources) {
                               compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
-  auto input_names = signatures[0].InputNames();
+  auto input_names = signatures[0].get().InputNames();
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
@@ -514,7 +515,7 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResources) {
   compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
-  auto output_names = signatures[0].OutputNames();
+  auto output_names = signatures[0].get().OutputNames();
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsWebGpuMemory());
@@ -564,9 +565,8 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResourcesExternalBuffer) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options,
-      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
-                       GpuOptions::BufferStorageType::kDefault));
+      auto options, CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                                     GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
@@ -629,7 +629,7 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResourcesExternalBuffer) {
   compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
-  auto output_names = signatures[0].OutputNames();
+  auto output_names = signatures[0].get().OutputNames();
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsWebGpuMemory());

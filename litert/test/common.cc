@@ -32,6 +32,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
@@ -116,8 +117,9 @@ std::string GetLiteRtPath(absl::string_view rel_path) {
 }
 
 ExtendedModel LoadTestFileModel(absl::string_view filename) {
-  LITERT_ASSIGN_OR_ABORT(
-      auto model, ExtendedModel::CreateFromFile(GetTestFilePath(filename)));
+  auto& env = Environment::GetDefault();
+  LITERT_ASSIGN_OR_ABORT(auto model, ExtendedModel::CreateFromFile(
+                                         *env, GetTestFilePath(filename)));
   return model;
 }
 

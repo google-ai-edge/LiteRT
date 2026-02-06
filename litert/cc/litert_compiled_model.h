@@ -18,8 +18,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -712,12 +714,19 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   }
 
   /// @brief Returns the list of signatures defined in the model.
-  Expected<std::vector<SimpleSignature>> GetSignatures() const {
-    return model_.GetSignatures();
+  Expected<const std::vector<std::reference_wrapper<const SimpleSignature>>>
+  GetSignatures() const {
+    LITERT_ASSIGN_OR_RETURN(const auto& signatures, model_.GetSignatures());
+    std::vector<std::reference_wrapper<const SimpleSignature>> result;
+    result.reserve(signatures.size());
+    for (const auto& sig : signatures) {
+      result.push_back(*sig);
+    }
+    return std::move(result);
   }
 
   /// @brief Returns the signature at the given index.
-  Expected<SimpleSignature> GetSignature(size_t signature_index) const {
+  Expected<const SimpleSignature&> GetSignature(size_t signature_index) const {
     return model_.GetSignature(signature_index);
   }
 
@@ -874,9 +883,9 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
             owned),
         env_(env) {
     if (model_owned == OwnHandle::kYes) {
-      model_ = Model::CreateFromOwnedHandle(litert_model);
+      model_ = Model(env, litert_model, OwnHandle::kYes);
     } else {
-      model_ = Model::CreateFromNonOwnedHandle(litert_model);
+      model_ = Model(env, litert_model, OwnHandle::kNo);
     }
   }
 

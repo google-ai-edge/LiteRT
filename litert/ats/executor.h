@@ -115,8 +115,9 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
     LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
     // Init compiled model api.
     LITERT_ASSIGN_OR_RETURN(
-        auto api, CompiledModelNext::Create(
-                      env, Model::CreateFromNonOwnedHandle(&model), options));
+        auto api,
+        CompiledModelNext::Create(
+            env, Model::CreateFromNonOwnedHandle(env, &model), options));
 
     return CpuCompiledModelExecutor(std::move(api), std::move(env));
   }
@@ -178,8 +179,9 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
 
     LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
     LITERT_ASSIGN_OR_RETURN(
-        auto api, CompiledModelNext::Create(
-                      env, Model::CreateFromNonOwnedHandle(&model), options));
+        auto api,
+        CompiledModelNext::Create(
+            env, Model::CreateFromNonOwnedHandle(env, &model), options));
 
     return NpuCompiledModelExecutor(std::move(api), std::move(env));
   }

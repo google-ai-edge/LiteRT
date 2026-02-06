@@ -15,6 +15,10 @@
 #include "litert/cc/internal/litert_extended_model.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <variant>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -22,10 +26,126 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 namespace litert {
+
+namespace {
+
+absl::string_view FetchTensorName(LiteRtTensor tensor) {
+  const char* name;
+  internal::AssertOk(LiteRtGetTensorName, tensor, &name);
+  return name;
+}
+
+std::uint32_t FetchTensorIndex(LiteRtTensor tensor) {
+  std::uint32_t index;
+  internal::AssertOk(LiteRtGetTensorIndex, tensor, &index);
+  return index;
+}
+
+LiteRtTensorTypeId FetchTensorTypeId(LiteRtTensor tensor) {
+  LiteRtTensorTypeId type_id;
+  internal::AssertOk(LiteRtGetTensorTypeId, tensor, &type_id);
+  return type_id;
+}
+
+std::variant<LiteRtUnrankedTensorType, litert::RankedTensorType>
+FetchTensorType(LiteRtTensor tensor, LiteRtTensorTypeId type_id) {
+  if (type_id == kLiteRtRankedTensorType) {
+    LiteRtRankedTensorType ranked_tensor_type;
+    internal::AssertOk(LiteRtGetRankedTensorType, tensor, &ranked_tensor_type);
+    return litert::RankedTensorType(ranked_tensor_type);
+  } else {
+    LiteRtUnrankedTensorType unranked_tensor_type;
+    internal::AssertOk(LiteRtGetUnrankedTensorType, tensor,
+                       &unranked_tensor_type);
+    return unranked_tensor_type;
+  }
+}
+
+absl::string_view FetchSignatureKey(LiteRtSignature signature) {
+  const char* key;
+  internal::AssertOk(LiteRtGetSignatureKey, signature, &key);
+  return key;
+}
+
+std::vector<std::string> FetchSignatureInputNames(LiteRtSignature signature) {
+  LiteRtParamIndex num_inputs;
+  internal::AssertOk(LiteRtGetNumSignatureInputs, signature, &num_inputs);
+  std::vector<std::string> input_names;
+  input_names.reserve(num_inputs);
+  for (int i = 0; i < num_inputs; ++i) {
+    const char* name;
+    internal::AssertOk(LiteRtGetSignatureInputName, signature, i, &name);
+    input_names.push_back(std::string(name));
+  }
+  return input_names;
+}
+
+std::vector<std::string> FetchSignatureOutputNames(LiteRtSignature signature) {
+  LiteRtParamIndex num_outputs;
+  internal::AssertOk(LiteRtGetNumSignatureOutputs, signature, &num_outputs);
+  std::vector<std::string> output_names;
+  output_names.reserve(num_outputs);
+  for (int i = 0; i < num_outputs; ++i) {
+    const char* name;
+    internal::AssertOk(LiteRtGetSignatureOutputName, signature, i, &name);
+    output_names.push_back(std::string(name));
+  }
+  return output_names;
+}
+
+std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureInputTensors(
+    LiteRtSignature signature) {
+  LiteRtParamIndex num_inputs;
+  internal::AssertOk(LiteRtGetNumSignatureInputs, signature, &num_inputs);
+  std::vector<std::unique_ptr<SimpleTensor>> input_tensors;
+  input_tensors.reserve(num_inputs);
+  for (int i = 0; i < num_inputs; ++i) {
+    LiteRtTensor tensor;
+    internal::AssertOk(LiteRtGetSignatureInputTensorByIndex, signature, i,
+                       &tensor);
+    input_tensors.push_back(std::make_unique<Tensor>(tensor));
+  }
+  return input_tensors;
+}
+
+std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
+    LiteRtSignature signature) {
+  LiteRtParamIndex num_outputs;
+  internal::AssertOk(LiteRtGetNumSignatureOutputs, signature, &num_outputs);
+  std::vector<std::unique_ptr<SimpleTensor>> output_tensors;
+  output_tensors.reserve(num_outputs);
+  for (int i = 0; i < num_outputs; ++i) {
+    LiteRtTensor tensor;
+    internal::AssertOk(LiteRtGetSignatureOutputTensorByIndex, signature, i,
+                       &tensor);
+    output_tensors.push_back(std::make_unique<Tensor>(tensor));
+  }
+  return output_tensors;
+}
+
+}  // namespace
+
+Signature::Signature(LiteRtSignature signature)
+    : internal::NonOwnedHandle<LiteRtSignature>(signature),
+      litert::SimpleSignature(FetchSignatureKey(signature),
+                              FetchSignatureInputNames(signature),
+                              FetchSignatureInputTensors(signature),
+                              FetchSignatureOutputNames(signature),
+                              FetchSignatureOutputTensors(signature)) {}
+
+Tensor::Tensor(LiteRtTensor tensor)
+    : internal::NonOwnedHandle<LiteRtTensor>(tensor),
+      litert::SimpleTensor(FetchTensorIndex(tensor), FetchTensorName(tensor),
+                           FetchTensorTypeId(tensor),
+                           FetchTensorType(tensor, FetchTensorTypeId(tensor))) {
+}
 
 bool Tensor::IsSubgraphInput() const {
   LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, RankedTensorType());

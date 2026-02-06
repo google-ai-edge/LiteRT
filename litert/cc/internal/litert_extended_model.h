@@ -17,6 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -34,6 +36,7 @@
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -68,13 +71,22 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
 };
 
 /// @brief A C++ wrapper for `LiteRtTensor`, representing a tensor in the model.
-class Tensor : public litert::SimpleTensor {
+class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
+               public litert::SimpleTensor {
  public:
-  explicit Tensor(LiteRtTensor tensor) : litert::SimpleTensor(tensor) {}
+  explicit Tensor(LiteRtTensor tensor);
 
-  // Allow copying Tensors (they are just handles).
-  Tensor(const Tensor& other) : litert::SimpleTensor(other.Get()) {}
+  // Allow copying Tensors.
+  Tensor(const Tensor& other)
+      : internal::NonOwnedHandle<LiteRtTensor>(other.Get()),
+        litert::SimpleTensor(other) {}
   Tensor(Tensor&&) = default;
+  Tensor& operator=(const Tensor& other) {
+    if (this != &other) {
+      *this = Tensor(other);
+    }
+    return *this;
+  }
   Tensor& operator=(Tensor&&) = default;
 
   LiteRtQuantizationTypeId QTypeId() const {
@@ -269,10 +281,10 @@ class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
 };
 
 /// @brief A C++ wrapper for `LiteRtSignature`, representing a model signature.
-class Signature : public litert::SimpleSignature {
+class Signature : public internal::NonOwnedHandle<LiteRtSignature>,
+                  public litert::SimpleSignature {
  public:
-  explicit Signature(LiteRtSignature signature)
-      : litert::SimpleSignature(signature) {}
+  explicit Signature(LiteRtSignature signature);
 
   LiteRtSubgraph Subgraph() const {
     LiteRtSubgraph subgraph;
@@ -287,21 +299,38 @@ class ExtendedModel : public litert::Model {
  public:
   ExtendedModel() = default;
 
+  static ExtendedModel CreateFromOwnedHandle(const Environment& env,
+                                             LiteRtModel model) {
+    return ExtendedModel(env.GetHolder(), model, OwnHandle::kNo);
+  }
+
   static ExtendedModel CreateFromOwnedHandle(LiteRtModel model) {
-    return ExtendedModel(model, OwnHandle::kYes);
+    auto& env = Environment::GetDefault();
+    return ExtendedModel(env->GetHolder(), model, OwnHandle::kYes);
+  }
+
+  static ExtendedModel CreateFromNonOwnedHandle(const Environment& env,
+                                                LiteRtModel model) {
+    return ExtendedModel(env.GetHolder(), model, OwnHandle::kNo);
   }
 
   static ExtendedModel CreateFromNonOwnedHandle(LiteRtModel model) {
-    return ExtendedModel(model, OwnHandle::kNo);
+    auto& env = Environment::GetDefault();
+    return ExtendedModel(env->GetHolder(), model, OwnHandle::kNo);
   }
 
   static Expected<ExtendedModel> CreateFromFile(const std::string& filename) {
+    return CreateFromFile(*Environment::GetDefault(), filename);
+  }
+
+  static Expected<ExtendedModel> CreateFromFile(const Environment& env,
+                                                const std::string& filename) {
     LiteRtModel model;
     if (auto status = LiteRtCreateModelFromFile(filename.c_str(), &model);
         status != kLiteRtStatusOk) {
       return Unexpected(status, "Failed to load model from file");
     }
-    return CreateFromOwnedHandle(model);
+    return CreateFromOwnedHandle(env, model);
   }
 
   /// @brief Creates a model from a buffer.
@@ -309,13 +338,18 @@ class ExtendedModel : public litert::Model {
   /// The caller must ensure that the buffer remains valid for the lifetime of
   /// the model.
   static Expected<ExtendedModel> CreateFromBuffer(BufferRef<uint8_t> buffer) {
+    return CreateFromBuffer(*Environment::GetDefault(), buffer);
+  }
+
+  static Expected<ExtendedModel> CreateFromBuffer(const Environment& env,
+                                                  BufferRef<uint8_t> buffer) {
     LiteRtModel model;
     if (auto status =
             LiteRtCreateModelFromBuffer(buffer.Data(), buffer.Size(), &model);
         status != kLiteRtStatusOk) {
       return Unexpected(status, "Failed to load model from buffer");
     }
-    return CreateFromOwnedHandle(model);
+    return CreateFromOwnedHandle(env, model);
   }
 
   Expected<absl::Span<const uint8_t>> Metadata(
@@ -367,7 +401,9 @@ class ExtendedModel : public litert::Model {
       return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
     }
     LiteRtSubgraph subgraph;
-    if (LiteRtGetSignatureSubgraph(signature->Get(), &subgraph) !=
+    const auto& sig = static_cast<const Signature&>(*signature);
+    if (LiteRtGetSignatureSubgraph(
+            sig.internal::NonOwnedHandle<LiteRtSignature>::Get(), &subgraph) !=
         kLiteRtStatusOk) {
       return Unexpected(kLiteRtStatusErrorNotFound, "Subgraph not found");
     }
@@ -376,44 +412,27 @@ class ExtendedModel : public litert::Model {
   }
 
   /// @brief Returns the list of signatures defined in the model.
-  Expected<std::vector<Signature>> GetSignatures() const {
-    LiteRtParamIndex num_signatures;
-    internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
-    std::vector<Signature> signatures;
-    signatures.reserve(num_signatures);
-    for (int i = 0; i < num_signatures; ++i) {
-      LiteRtSignature lite_rt_signature;
-      internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
-      Signature signature(lite_rt_signature);
-      signatures.push_back(std::move(signature));
+  Expected<std::vector<std::reference_wrapper<const Signature>>> GetSignatures()
+      const {
+    LITERT_ASSIGN_OR_RETURN(const auto& signatures,
+                            litert::Model::GetSignatures());
+    std::vector<std::reference_wrapper<const Signature>> result;
+    result.reserve(signatures.size());
+    for (const auto& sig : signatures) {
+      result.push_back(static_cast<const Signature&>(*sig));
     }
-    return std::move(signatures);
+    return result;
   }
 
   /// @brief Returns the list of signature key names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
-    LiteRtParamIndex num_signatures;
-    internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
-    std::vector<absl::string_view> signature_keys;
-    signature_keys.reserve(num_signatures);
-    for (int i = 0; i < num_signatures; ++i) {
-      LiteRtSignature lite_rt_signature;
-      internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
-      const char* key_cstr;
-      internal::AssertOk(LiteRtGetSignatureKey, lite_rt_signature, &key_cstr);
-      signature_keys.push_back(key_cstr);
-    }
-    return signature_keys;
+    return litert::Model::GetSignatureKeys();
   }
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       size_t signature_index) const {
-    LiteRtSignature lite_rt_signature;
-    internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
-                       &lite_rt_signature);
-    auto signature = Signature(lite_rt_signature);
-    return signature.InputNames();
+    return litert::Model::GetSignatureInputNames(signature_index);
   }
 
   /// @brief Returns the list of input names defined in the signature.
@@ -424,21 +443,13 @@ class ExtendedModel : public litert::Model {
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       absl::string_view signature_key) const {
-    auto signature = FindSignature(signature_key);
-    if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
-    }
-    return signature->InputNames();
+    return litert::Model::GetSignatureInputNames(signature_key);
   }
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       size_t signature_index) const {
-    LiteRtSignature lite_rt_signature;
-    internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
-                       &lite_rt_signature);
-    auto signature = Signature(lite_rt_signature);
-    return signature.OutputNames();
+    return litert::Model::GetSignatureOutputNames(signature_index);
   }
 
   /// @brief Returns the list of output names defined in the signature.
@@ -449,11 +460,7 @@ class ExtendedModel : public litert::Model {
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       absl::string_view signature_key) const {
-    auto signature = FindSignature(signature_key);
-    if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
-    }
-    return signature->OutputNames();
+    return litert::Model::GetSignatureOutputNames(signature_key);
   }
 
   /// @brief Serializes a model to a buffer.
@@ -472,8 +479,9 @@ class ExtendedModel : public litert::Model {
  private:
   /// @param owned Indicates if the created `TensorBuffer` object should take
   /// ownership of the provided `tensor_buffer` handle.
-  ExtendedModel(LiteRtModel model, OwnHandle owned)
-      : litert::Model(model, owned) {}
+  ExtendedModel(const internal::EnvironmentHolder& env, LiteRtModel model,
+                OwnHandle owned)
+      : litert::Model(env, model, owned) {}
 };
 
 struct SerializationOptions {

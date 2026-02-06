@@ -115,7 +115,7 @@ TEST(CcSignatureTest, Basic) {
   auto signatures = model.GetSignatures();
   ASSERT_TRUE(signatures);
   ASSERT_EQ(signatures->size(), 1);
-  auto& signature = signatures->at(0);
+  auto& signature = signatures->at(0).get();
   EXPECT_THAT(signature.Key(), Model::DefaultSignatureKey());
   auto input_names = signature.InputNames();
   EXPECT_THAT(input_names[0], "arg0");

@@ -87,6 +87,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
