@@ -686,7 +686,7 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     }
     case LiteRtOpCode::kLiteRtOpCodeTflTopkV2: {
       // TODO (Graham): Refactor all OpBuilder to follow QNN master definition
-      ::qnn::TensorWrapper k_tensor = input_tensors[1].get();
+      const auto& k_tensor = input_tensors[1].get();
       if (!k_tensor.IsTensorStatic() || k_tensor.GetTensorNumElements() != 1) {
         QNN_LOG_ERROR(
             "The param 'k' of TopK OP is not static or not 1 element");

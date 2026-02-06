@@ -38,6 +38,7 @@ cc_test(
     deps = [
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_span",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -87,4 +88,16 @@ litert_device_exec(
     name = "quantize_params_wrapper_device_test",
     backend_id = "qualcomm",
     target = ":quantize_params_wrapper_test",
+)
+
+cc_test(
+    name = "tensor_span_test",
+    srcs = [
+        "tensor_span_test.cc",
+    ],
+    deps = [
+        "//litert/vendors/qualcomm/core/wrappers:tensor_span",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
 )

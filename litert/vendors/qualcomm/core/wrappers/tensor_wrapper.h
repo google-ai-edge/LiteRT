@@ -21,7 +21,6 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
-static const char* kDumpSuffix = "_dump";
 
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>
@@ -53,8 +52,6 @@ inline constexpr Qnn_DataType_t GetQnnDataType(const bool is_quant) {
   }
   return QNN_DATATYPE_UNDEFINED;
 }
-
-std::size_t GetDataTypeSize(const Qnn_DataType_t data_type);
 
 template <typename T>
 void TransposeFromOHWIToHWIO(absl::Span<const T> weight_data,
@@ -104,13 +101,15 @@ class TensorWrapper final {
                          const std::vector<std::uint32_t>& dimentions,
                          std::uint32_t bytes, const void* data, bool copy_data);
 
-  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
+  TensorWrapper(const TensorWrapper&) = delete;
 
-  TensorWrapper(const TensorWrapper& other);
+  TensorWrapper& operator=(const TensorWrapper&) = delete;
 
-  TensorWrapper(TensorWrapper&& other);
+  TensorWrapper(TensorWrapper&& other) = delete;
 
-  ~TensorWrapper();
+  TensorWrapper& operator=(TensorWrapper&&) = delete;
+
+  ~TensorWrapper() = default;
 
   bool operator==(const TensorWrapper& other) const;
 
@@ -312,26 +311,16 @@ class TensorWrapper final {
   void ConvertQint16ToQuint16();
 
   void MarkDump() {
-    if (!absl::EndsWith(name_, kDumpSuffix)) {
-      name_ += kDumpSuffix;
+    if (!absl::EndsWith(name_, kTensorDumpNameSuffix)) {
+      name_ += kTensorDumpNameSuffix;
       qnn_tensor_.v2.name = name_.c_str();
     }
     SetTensorType(QNN_TENSOR_TYPE_APP_READ);
   }
 
-  bool IsMarkedDump() const {
-    return absl::EndsWith(name_, kDumpSuffix) &&
-           qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
-  }
-
  private:
-  void UpdateQnnQuantParams() {
-    std::visit(
-        [this](auto&& quantize_params) -> void {
-          quantize_params.CloneTo(qnn_tensor_.v2.quantizeParams);
-        },
-        quantize_params_);
-  }
+  void UpdateQnnQuantParams();
+
   Qnn_TensorType_t GetTensorType() const;
 
   void SetTensorType(Qnn_TensorType_t tensor_type) {
@@ -349,12 +338,13 @@ class TensorWrapper final {
            qnn_tensor_.v2.clientBuf.data != nullptr;
   }
 
-  Qnn_Tensor_t qnn_tensor_{.version = QNN_TENSOR_VERSION_2,
-                           .v2 = QNN_TENSOR_V2_INIT};
   std::string name_{};
   std::vector<std::uint32_t> dimentions_{};
   QuantizeParamsWrapperVariant quantize_params_{};
   std::vector<std::byte> owned_data_{};
+
+  Qnn_Tensor_t qnn_tensor_{.version = QNN_TENSOR_VERSION_2,
+                           .v2 = QNN_TENSOR_V2_INIT};
 };
 
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
@@ -390,8 +380,9 @@ std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {
   }
 
   return absl::MakeConstSpan(
-      reinterpret_cast<const T*>(qnn_tensor_.v2.clientBuf.data), num_elements);
+      static_cast<const T*>(qnn_tensor_.v2.clientBuf.data), num_elements);
 }
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_WRAPPERS_TENSOR_WRAPPER_H_
