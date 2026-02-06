@@ -763,7 +763,6 @@ cc_library(
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_common",
-        "//litert/c:litert_event",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_opencl_types",

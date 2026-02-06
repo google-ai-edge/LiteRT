@@ -317,7 +317,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   Expected<Event> GetEvent() const {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(env_.runtime->GetTensorBufferEvent(Get(), &event));
-    return Event::WrapCObject(event, OwnHandle::kNo);
+    return Event::WrapCObject(env_, event, OwnHandle::kNo);
   }
 
   /// @brief Sets the C++ `Event` object for the tensor buffer.

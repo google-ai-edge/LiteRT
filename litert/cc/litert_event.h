@@ -18,7 +18,6 @@
 #include <cstdint>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_opencl_types.h"
@@ -34,7 +33,7 @@ extern "C" {
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT events, used for synchronization.
-class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
+class Event : public internal::BaseHandle<LiteRtEvent> {
  public:
   // LINT.IfChange(event_type)
   enum class Type {
@@ -52,18 +51,20 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
                                                int sync_fence_fd,
                                                bool owns_fd) {
     LiteRtEvent event;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromSyncFenceFd(
+      auto env_holder = env.GetHolder();
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateEventFromSyncFenceFd(
         env.Get(), sync_fence_fd, owns_fd, &event));
-    return Event(event, OwnHandle::kYes);
+    return Event(env_holder, event, OwnHandle::kYes);
   }
 
   /// @brief Creates an `Event` object from an OpenCL event.
   static Expected<Event> CreateFromOpenClEvent(const Environment& env,
                                                LiteRtClEvent cl_event) {
     LiteRtEvent event;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtCreateEventFromOpenClEvent(env.Get(), cl_event, &event));
-    return Event(event, OwnHandle::kYes);
+    auto env_holder = env.GetHolder();
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateEventFromOpenClEvent(
+        env_holder.handle, cl_event, &event));
+    return Event(env_holder, event, OwnHandle::kYes);
   }
 
   /// @brief Creates an `Event` object from an EGL sync fence.
@@ -72,9 +73,10 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   static Expected<Event> CreateFromEglSyncFence(const Environment& env,
                                                 LiteRtEglSyncKhr egl_sync) {
     LiteRtEvent event;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtCreateEventFromEglSyncFence(env.Get(), egl_sync, &event));
-    return Event(event, OwnHandle::kYes);
+    auto env_holder = env.GetHolder();
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateEventFromEglSyncFence(
+        env_holder.handle, egl_sync, &event));
+    return Event(env_holder, event, OwnHandle::kYes);
   }
 
   /// @brief Creates a managed event of a given type.
@@ -82,33 +84,35 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   /// Currently, only `LiteRtEventTypeOpenCl` is supported.
   static Expected<Event> CreateManaged(const Environment& env, Type type) {
     LiteRtEvent event;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateManagedEvent(
-        env.Get(), static_cast<LiteRtEventType>(type), &event));
-    return Event(event, OwnHandle::kYes);
+    auto env_holder = env.GetHolder();
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateManagedEvent(
+        env_holder.handle, static_cast<LiteRtEventType>(type), &event));
+    return Event(env_holder, event, OwnHandle::kYes);
   }
 
   Expected<int> GetSyncFenceFd() {
     int fd;
-    LITERT_RETURN_IF_ERROR(LiteRtGetEventSyncFenceFd(Get(), &fd));
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetEventSyncFenceFd(Get(), &fd));
     return fd;
   }
 
   /// @brief Returns the underlying OpenCL event if the event type is OpenCL.
   Expected<LiteRtClEvent> GetOpenClEvent() {
     LiteRtClEvent cl_event;
-    LITERT_RETURN_IF_ERROR(LiteRtGetEventOpenClEvent(Get(), &cl_event));
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetEventOpenClEvent(Get(), &cl_event));
     return cl_event;
   }
 
   Expected<LiteRtEglSyncKhr> GetEglSync() {
     LiteRtEglSyncKhr egl_sync;
-    LITERT_RETURN_IF_ERROR(LiteRtGetEventEglSync(Get(), &egl_sync));
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetEventEglSync(Get(), &egl_sync));
     return egl_sync;
   }
 
   Expected<void*> GetCustomNativeEvent() {
     void* native = nullptr;
-    LITERT_RETURN_IF_ERROR(LiteRtGetEventCustomNativeEvent(Get(), &native));
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetEventCustomNativeEvent(Get(), &native));
     return native;
   }
 
@@ -116,14 +120,14 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   /// @param timeout_in_ms The timeout in milliseconds. A value of -1 indicates
   /// an indefinite wait.
   Expected<void> Wait(int64_t timeout_in_ms = -1) {
-    LITERT_RETURN_IF_ERROR(LiteRtWaitEvent(Get(), timeout_in_ms));
+    LITERT_RETURN_IF_ERROR(env_.runtime->WaitEvent(Get(), timeout_in_ms));
     return {};
   }
 
   /// @brief Signals the event.
   /// @note This is only supported for OpenCL events.
   Expected<void> Signal() {
-    LITERT_RETURN_IF_ERROR(LiteRtSignalEvent(Get()));
+    LITERT_RETURN_IF_ERROR(env_.runtime->SignalEvent(Get()));
     return {};
   }
 
@@ -131,7 +135,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   /// @note This is only supported for sync fence events.
   Expected<bool> IsSignaled() {
     bool is_signaled;
-    LITERT_RETURN_IF_ERROR(LiteRtIsEventSignaled(Get(), &is_signaled));
+    LITERT_RETURN_IF_ERROR(env_.runtime->IsEventSignaled(Get(), &is_signaled));
     return is_signaled;
   }
 
@@ -139,29 +143,39 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   /// @note This is only supported for sync fence events.
   Expected<int> DupFd() {
     int dup_fd;
-    LITERT_RETURN_IF_ERROR(LiteRtDupFdEvent(Get(), &dup_fd));
+    LITERT_RETURN_IF_ERROR(env_.runtime->DupFdEvent(Get(), &dup_fd));
     return dup_fd;
   }
 
   /// @brief Returns the underlying event type.
   Type Type() const {
     LiteRtEventType type;
-    LiteRtGetEventEventType(Get(), &type);
+    env_.runtime->GetEventEventType(Get(), &type);
     return static_cast<enum Type>(type);
   }
 
   /// @internal
   /// @brief Wraps a `LiteRtEvent` C object in an `Event` C++ object.
   /// @warning This is for internal use only.
-  static Event WrapCObject(LiteRtEvent event, OwnHandle owned) {
-    return Event(event, owned);
+  static Event WrapCObject(const internal::EnvironmentHolder& env,
+                           LiteRtEvent event, OwnHandle owned) {
+    return Event(env, event, owned);
   }
 
  private:
   /// @param owned Indicates if the created `TensorBufferRequirements` object
   /// should take ownership of the provided `requirements` handle.
-  explicit Event(LiteRtEvent event, OwnHandle owned)
-      : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
+  explicit Event(const internal::EnvironmentHolder& env, LiteRtEvent event,
+                 OwnHandle owned)
+      : internal::BaseHandle<LiteRtEvent>(
+            event,
+            [runtime = env.runtime](LiteRtEvent event) {
+              runtime->DestroyEvent(event);
+            },
+            owned),
+        env_(env) {}
+
+  internal::EnvironmentHolder env_;
 };
 
 }  // namespace litert
