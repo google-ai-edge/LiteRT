@@ -567,9 +567,10 @@ static StatusOr<std::vector<int32_t>> ConvertSparseIndexVector(
   }
 }
 
-static StatusOr<Operation*> BuildSparseConstOp(
-    const tflite::TensorT& tensor, const std::vector<uint8_t>& buffer,
-    OpBuilder& builder, Location loc) {
+static StatusOr<Operation*> BuildSparseConstOp(const tflite::TensorT& tensor,
+                                               llvm::ArrayRef<uint8_t> buffer,
+                                               OpBuilder& builder,
+                                               Location loc) {
   TF_ASSIGN_OR_RETURN(mlir::TensorType type,
                       tfl::GetTensorType(tensor, builder,
                                          /*is_constant=*/true));
@@ -645,7 +646,7 @@ static StatusOr<Operation*> BuildSparseConstOp(
 }
 
 StatusOr<Operation*> BuildConstOp(const tflite::TensorT& tensor,
-                                  const std::vector<uint8_t>& buffer,
+                                  llvm::ArrayRef<uint8_t> buffer,
                                   bool is_variable, OpBuilder builder,
                                   Location loc, bool use_stablehlo_constant) {
   if (tensor.sparsity != nullptr) {
@@ -1026,14 +1027,13 @@ StatusOr<Operation*> ConvertOp(
   if (builtin_code == tflite::BuiltinOperator_CUSTOM) {
     auto status = absl::OkStatus();
 
-    std::vector<uint8_t> custom_options;
+    llvm::ArrayRef<uint8_t> custom_options;
 
     if (IsValidBufferOffset(op.large_custom_options_offset)) {
-      custom_options.resize(op.large_custom_options_size);
-      memcpy(custom_options.data(),
-             reinterpret_cast<const uint8_t*>(model_ptr->allocation()->base()) +
-                 op.large_custom_options_offset,
-             op.large_custom_options_size);
+      custom_options = llvm::ArrayRef<uint8_t>(
+          reinterpret_cast<const uint8_t*>(model_ptr->allocation()->base()) +
+              op.large_custom_options_offset,
+          op.large_custom_options_size);
     } else {
       custom_options = op.custom_options;
     }
@@ -1548,7 +1548,7 @@ StatusOr<FuncOp> ConvertSubgraph(
         auto& const_tensor = *subgraph.tensors[input_num];
         auto const_loc = TensorLoc(const_tensor, builder, base_loc);
         StatusOr<Operation*> op_or_err;
-        std::vector<uint8_t> buffer;
+        llvm::ArrayRef<uint8_t> buffer;
         // Check if constant tensor is stored outside of the flatbuffers.
         if (const_tensor.external_buffer != 0) {
           op_or_err = BuildExternalConstOpWithExternalBuffer(
@@ -1558,10 +1558,9 @@ StatusOr<FuncOp> ConvertSubgraph(
             const uint8_t* file_begin_ptr = reinterpret_cast<const uint8_t*>(
                 model_ptr->allocation()->base());
 
-            buffer = std::vector<uint8_t>(
+            buffer = llvm::ArrayRef<uint8_t>(
                 file_begin_ptr + buffers[const_tensor.buffer]->offset,
-                file_begin_ptr + buffers[const_tensor.buffer]->offset +
-                    buffers[const_tensor.buffer]->size);
+                buffers[const_tensor.buffer]->size);
           } else {
             buffer = buffers[const_tensor.buffer]->data;
           }
@@ -1629,7 +1628,7 @@ StatusOr<FuncOp> ConvertSubgraph(
       auto& const_tensor = *subgraph.tensors[index];
       auto const_loc = TensorLoc(const_tensor, builder, base_loc);
       StatusOr<Operation*> op_or_err;
-      std::vector<uint8_t> buffer;
+      llvm::ArrayRef<uint8_t> buffer;
       // Check if constant tensor is stored outside of the flatbuffers.
       if (const_tensor.external_buffer != 0) {
         op_or_err = BuildExternalConstOpWithExternalBuffer(
@@ -1639,10 +1638,9 @@ StatusOr<FuncOp> ConvertSubgraph(
           const uint8_t* file_begin_ptr =
               reinterpret_cast<const uint8_t*>(model_ptr->allocation()->base());
 
-          buffer = std::vector<uint8_t>(
+          buffer = llvm::ArrayRef<uint8_t>(
               file_begin_ptr + buffers[const_tensor.buffer]->offset,
-              file_begin_ptr + buffers[const_tensor.buffer]->offset +
-                  buffers[const_tensor.buffer]->size);
+              buffers[const_tensor.buffer]->size);
         } else {
           buffer = buffers[const_tensor.buffer]->data;
         }
@@ -1836,7 +1834,7 @@ OwningOpRef<mlir::ModuleOp> tflite::FlatBufferToMlir(
   DebugMetadata debug_metadata;
   for (const auto& metadata : model->metadata) {
     if (metadata->name == tflite::kModelControlDependenciesMetadataKey) {
-      const std::vector<uint8_t>& data = model->buffers[metadata->buffer]->data;
+      llvm::ArrayRef<uint8_t> data(model->buffers[metadata->buffer]->data);
       if (!ParseModelControlDependencies(
               reinterpret_cast<const char*>(data.data()), data.size(),
               &model_control_dependencies)) {
@@ -1859,7 +1857,7 @@ OwningOpRef<mlir::ModuleOp> tflite::FlatBufferToMlir(
     }
 
     if (metadata->name == "debug_metadata") {
-      const std::vector<uint8_t>& data = model->buffers[metadata->buffer]->data;
+      llvm::ArrayRef<uint8_t> data(model->buffers[metadata->buffer]->data);
       auto status = ParseDebugMetadata(
           builder, reinterpret_cast<const char*>(data.data()), data.size(),
           debug_metadata);
@@ -1869,11 +1867,11 @@ OwningOpRef<mlir::ModuleOp> tflite::FlatBufferToMlir(
       continue;
     }
 
-    std::vector<uint8_t> buffer = model->buffers[metadata->buffer]->data;
+    const auto& buffer = model->buffers[metadata->buffer]->data;
     metadata_attrs.emplace_back(
         builder.getStringAttr(metadata->name),
         builder.getStringAttr(llvm::StringRef(
-            reinterpret_cast<char*>(buffer.data()), buffer.size())));
+            reinterpret_cast<const char*>(buffer.data()), buffer.size())));
   }
 
   std::vector<std::string> func_names;
