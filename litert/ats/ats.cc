@@ -38,7 +38,7 @@
 namespace litert::testing {
 namespace {
 
-static constexpr const char* kArt = R"(
+constexpr const char* kArt = R"(
    __   _ __      ___  __      ___ __________
   / /  (_) /____ / _ \/ /_____/ _ /_  __/ __/
  / /__/ / __/ -_) , _/ __/___/ __ |/ / _\ \
@@ -103,8 +103,8 @@ int Ats() {
   ABSL_CHECK(options);
 
   size_t test_id = 0;
-  typename AtsInferenceTest::Capture i_cap;
-  typename AtsCompileTest::Capture c_cap;
+  AtsInferenceTest::Capture i_cap;
+  AtsCompileTest::Capture c_cap;
 
   if (!options->CompileMode()) {
     RegisterAll<AtsInferenceTest>(*options, test_id, i_cap);

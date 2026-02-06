@@ -21,7 +21,6 @@
 #include <string>
 #include <utility>
 
-#include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/capture_common.h"
 #include "litert/ats/common.h"
@@ -37,9 +36,9 @@
 
 namespace litert::testing {
 
-using ::litert::internal::ApplyPlugin;
-using ::litert::internal::CompilerPlugin;
-using ::litert::internal::IsDir;
+using internal::ApplyPlugin;
+using internal::CompilerPlugin;
+using internal::IsDir;
 using ::testing::RegisterTest;
 
 // Fixture for tests that run aot flow on a graph and emit the result as file.
@@ -50,7 +49,7 @@ class AtsCompileTest : public ::testing::Test {
   static constexpr absl::string_view Name() { return "compile"; }
 
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
-                       const TestNames& names, typename Capture::Entry& cap) {
+                       const TestNames& names, Capture::Entry& cap) {
     RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
                  [graph = std::move(graph), &conf = std::as_const(conf), names,
@@ -84,7 +83,7 @@ class AtsCompileTest : public ::testing::Test {
 
  private:
   AtsCompileTest(TestGraph::Ptr graph, const AtsConf& conf,
-                 const TestNames& names, typename Capture::Entry& cap)
+                 const TestNames& names, Capture::Entry& cap)
       : graph_(std::move(graph)),
         conf_(conf),
         names_(std::move(names)),
@@ -94,7 +93,7 @@ class AtsCompileTest : public ::testing::Test {
   const AtsConf& conf_;
 
   TestNames names_;
-  typename Capture::Entry& cap_;
+  Capture::Entry& cap_;
 };
 
 }  // namespace litert::testing

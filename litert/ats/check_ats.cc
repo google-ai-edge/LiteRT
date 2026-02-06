@@ -81,8 +81,8 @@ Expected<void> CheckAts() {
 
   size_t test_id = 0;
 
-  typename AtsInferenceTest::Capture i_cap;
-  typename AtsCompileTest::Capture c_cap;
+  AtsInferenceTest::Capture i_cap;
+  AtsCompileTest::Capture c_cap;
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions());
   LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions());

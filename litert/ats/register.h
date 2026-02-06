@@ -30,7 +30,7 @@
 
 namespace litert::testing {
 
-// Gets the names of a postential future test case after consulting the options.
+// Gets the names of a potential future test case after consulting the options.
 // Only increments test_id if a name is returned.
 template <typename... Args>
 std::optional<TestNames> NamesForNextTest(size_t& test_id,
@@ -78,20 +78,20 @@ class RegisterFunctor {
   }
 
   RegisterFunctor(size_t iters, size_t& test_id, const AtsConf& options,
-                  typename Fixture::Capture& cap)
+                  Fixture::Capture& cap)
       : iters_(iters), test_id_(test_id), options_(options), cap_(cap) {}
 
  private:
   const size_t iters_;
   size_t& test_id_;
   const AtsConf& options_;
-  typename Fixture::Capture& cap_;
+  Fixture::Capture& cap_;
 };
 
 // Specializes the given test logic template with the cartesian product of
 // the given type lists and registers each specialization a given number
 // of times. Each of these registrations will yield a single test case with a
-// a different set of random parameters.
+// different set of random parameters.
 template <typename Fixture, template <typename...> typename Logic,
           typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
