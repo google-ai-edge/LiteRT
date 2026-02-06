@@ -45,7 +45,7 @@ TEST(Event, CreateManagedEglSyncFence) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event, Event::CreateManaged(env, Event::Type::kEglSyncFence));
-  EXPECT_EQ(event.Type(), LiteRtEventTypeEglSyncFence);
+  EXPECT_EQ(event.Type(), Event::Type::kEglSyncFence);
 }
 
 TEST(Event, CreateManagedEglNativeSyncFence) {
@@ -56,7 +56,7 @@ TEST(Event, CreateManagedEglNativeSyncFence) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event, Event::CreateManaged(env, Event::Type::kEglNativeSyncFence));
-  EXPECT_EQ(event.Type(), LiteRtEventTypeEglNativeSyncFence);
+  EXPECT_EQ(event.Type(), Event::Type::kEglNativeSyncFence);
 }
 
 }  // namespace
