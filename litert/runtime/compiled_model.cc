@@ -775,7 +775,7 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
 }
 
 #if !defined(LITERT_DISABLE_NPU)
-Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
+litert::Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptionsT& options, LiteRtEnvironmentT& env) {
   bool need_reserialization = false;
@@ -1120,9 +1120,6 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         tensor->allocation_type = kTfLiteNonCpu;
         tensor->data.data = nullptr;
         return {};
-      }
-      if (type == kLiteRtTensorBufferTypeHostMemory) {
-        buffer_requires_cpu_sync = true;
       }
     }
     // At this point, none of the supported buffer types of the backend matches
