@@ -29,6 +29,9 @@ type UrlString = string;
  * @property threads Whether to load the threaded version of the Wasm module.
  *     Defaults to false. Unused when specifying a .js file directly instead of
  *     a directory containing the Wasm files.
+ * @property jspi Whether to load the JSPI version of the Wasm module. Defaults
+ *     to false. Unused when specifying a .js file directly instead of a
+ *     directory containing the Wasm files.
  **/
 export interface LoadLiteRtOptions extends LoadOptions {}
 

@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-import {CompiledModel, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {CompiledModel, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 
 describe('LiteRt', () => {
   let liteRt: LiteRt;
 
   async function resetLiteRt(
-      loadFromDirectory = false, {threads = false}: LoadLiteRtOptions = {}) {
+      loadFromDirectory = false, options: LoadLiteRtOptions = {}) {
     unloadLiteRt();
     if (loadFromDirectory) {
-      liteRt = await loadLiteRt('/wasm', {threads});
+      liteRt = await loadLiteRt('/wasm', options);
     } else {
-      liteRt =
-          await loadLiteRt('/wasm/litert_wasm_internal.js');
+      liteRt = await loadLiteRt(
+          trustedResourceUrl`/wasm/litert_wasm_internal.js`, options);
     }
   }
 
@@ -80,6 +80,30 @@ describe('LiteRt', () => {
     });
   });
 
+  describe('jspi wasm', () => {
+    it('loads the JSPI Wasm module', async () => {
+      if (await supportsFeature('jspi')) {
+        try {
+          await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
+          expect(liteRt).toBeDefined();
+        } finally {
+          await resetLiteRt();
+        }
+      } else {
+        pending('This browser does not support JSPI');
+      }
+    });
+
+    it('throws an error if JSPI is not supported', async () => {
+      if (await supportsFeature('jspi')) {
+        pending('JSPI is supported in this browser');
+      } else {
+        await expectAsync(resetLiteRt(/* loadFromDirectory= */ true, {
+          jspi: true
+        })).toBeRejectedWithError('JSPI is not supported');
+      }
+    });
+  });
   it('setDefaultEnvironment() sets the default environment', async () => {
     await resetLiteRt();
     const environment = new Environment({webGpuDevice: null});

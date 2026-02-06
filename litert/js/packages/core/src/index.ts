@@ -25,5 +25,6 @@ export {type DType, type TypedArray} from './datatypes';
 export {type Accelerator} from './accelerator_types';
 export * from './load_litert';
 export {TensorBufferType} from './wasm_binding_types';
+export {supportsFeature} from './wasm_feature_detect';
 import {registerCopyFunctions} from './tensor_copy_functions';
 registerCopyFunctions();
