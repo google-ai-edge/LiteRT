@@ -549,7 +549,11 @@ litert_device_test(
 #     tags = [
 #         "manual",
 #         "no_oss",
-#         "notap",
+#         "nofastbuild",
+#         "noios",
+#         "nolinux",
+#         "nomacos",
+#         "nowindows",
 #         "requires-gpu-nvidia",
 #     ],
 #     deps = [
