@@ -520,7 +520,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     // Fall through to the next step if it's pre-compiled, else try to apply
     // plugins to the model.
     if (!IsCompiled(model)) {
-      litert::Expected<bool> maybe_initialzed_model =
+      Expected<bool> maybe_initialzed_model =
           ApplyPluginsWithCaching(model, hw_accelerators, *options, env);
       if (maybe_initialzed_model.HasValue() &&
           maybe_initialzed_model.Value() == true) {
@@ -772,7 +772,7 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
 }
 
 #if !defined(LITERT_DISABLE_NPU)
-litert::Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
+Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptionsT& options, LiteRtEnvironmentT& env) {
   bool need_reserialization = false;
@@ -897,8 +897,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
       /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements));
   cpu_buffer_requirements_[tensor_id] =
       LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
-  return static_cast<const LiteRtTensorBufferRequirementsT*>(
-      litert_cpu_buffer_requirements);
+  return litert_cpu_buffer_requirements;
 }
 
 Expected<const LiteRtTensorBufferRequirementsT*>
@@ -1332,7 +1331,7 @@ Expected<void> LiteRtCompiledModelT::Run(
   }
   if (profiler_ && profiler_->IsProfiling() &&
       event_handle != std::numeric_limits<uint64_t>::max()) {
-    profiler_->SetCurrentEventSource(ProfiledEventSource::LITERT);
+    profiler_->SetCurrentEventSource(LITERT);
     profiler_->EndEvent(event_handle);
   }
 
