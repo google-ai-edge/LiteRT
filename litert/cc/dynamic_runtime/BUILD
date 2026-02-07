@@ -540,46 +540,11 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_environment_options",
-    hdrs = ["//litert/cc:litert_environment_options.h"],
-    deps = [
-        "//litert/cc:litert_any",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_handle",
-    ] + select({
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
-
-cc_test(
-    name = "litert_environment_options_test",
-    srcs = ["//litert/cc:litert_environment_options_test.cc"],
-    deps = [
-        ":litert_environment",
-        ":litert_environment_options",
-        "//litert/cc:litert_any",
-        "//litert/cc:litert_expected",
-        "@com_google_googletest//:gtest_main",
-    ] + select({
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
-
-cc_library(
     name = "litert_environment",
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
-        ":litert_environment_options",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",

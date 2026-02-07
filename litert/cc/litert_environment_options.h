@@ -15,15 +15,17 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_OPTIONS_H_
 
-#include <any>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
 
-#include "litert/c/litert_any.h"
-#include "litert/c/litert_common.h"
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_environment_options.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 
 namespace litert {
 
@@ -32,15 +34,8 @@ namespace litert {
 /// This class provides methods to access various options related to the LiteRT
 /// environment, such as compiler settings, dispatch libraries, and hardware
 /// acceleration configurations (e.g., OpenCL, EGL, WebGPU, Metal, Vulkan).
-class EnvironmentOptions
-    : public internal::NonOwnedHandle<LiteRtEnvironmentOptions> {
+class EnvironmentOptions {
  public:
-  /// Constructs an EnvironmentOptions instance.
-  /// @note EnvironmentOptions are always owned by an environment and this class
-  /// only holds a non-owning handle.
-  explicit EnvironmentOptions(LiteRtEnvironmentOptions env)
-      : NonOwnedHandle(env) {}
-
   /// Tags for environment options. These tags are used to identify and retrieve
   /// specific configuration settings.
   enum class Tag : int {
@@ -89,26 +84,102 @@ class EnvironmentOptions
     kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
   };
 
+  struct Option {
+    Tag tag;
+    LiteRtVariant value;
+    // To keep the ownership of the string value.
+    std::string str_value;
+
+    Option(Tag param_tag, LiteRtVariant param_value) : tag(param_tag) {
+      if (std::holds_alternative<absl::string_view>(param_value)) {
+        str_value = std::get<absl::string_view>(param_value);
+        value = str_value.c_str();
+      } else if (std::holds_alternative<const char*>(param_value)) {
+        str_value = std::get<const char*>(param_value);
+        value = str_value.c_str();
+      } else {
+        value = param_value;
+      }
+    }
+
+    Option(const Option& other) : tag(other.tag), str_value(other.str_value) {
+      if (std::holds_alternative<const char*>(other.value)) {
+        value = str_value.c_str();
+      } else {
+        value = other.value;
+      }
+    }
+
+    Option& operator=(const Option& other) {
+      if (this != &other) {
+        tag = other.tag;
+        str_value = other.str_value;
+        if (std::holds_alternative<const char*>(other.value)) {
+          value = str_value.c_str();
+        } else {
+          value = other.value;
+        }
+      }
+      return *this;
+    }
+
+    Option(Option&& other) noexcept
+        : tag(other.tag), str_value(std::move(other.str_value)) {
+      if (std::holds_alternative<const char*>(other.value)) {
+        value = str_value.c_str();
+      } else {
+        value = std::move(other.value);
+      }
+    }
+
+    Option& operator=(Option&& other) noexcept {
+      if (this != &other) {
+        tag = other.tag;
+        str_value = std::move(other.str_value);
+        if (std::holds_alternative<const char*>(other.value)) {
+          value = str_value.c_str();
+        } else {
+          value = std::move(other.value);
+        }
+      }
+      return *this;
+    }
+  };
+
+  /// Constructs an `EnvironmentOptions` object from a span of options.
+  /// @param options A span of `Option` objects to initialize the environment
+  /// options with.
+  explicit EnvironmentOptions(absl::Span<const Option> options)
+      : options_(options.begin(), options.end()) {}
+
+  /// Retrieves all options.
+  /// @return A span of all options.
+  absl::Span<const Option> GetOptions() const {
+    return absl::MakeConstSpan(options_);
+  }
+
   /// Retrieves the value of an option specified by a tag.
   /// @param tag The tag of the option to retrieve.
   /// @return An `Expected` object containing the option value if successful,
   /// or an error if the option is not found or the handle is null.
-  Expected<LiteRtVariant> GetOption(Tag tag) const {
-    return GetOption(static_cast<LiteRtEnvOptionTag>(tag));
+  Expected<const LiteRtVariant> GetOption(Tag tag) const {
+    for (const auto& option : options_) {
+      if (option.tag == tag) {
+        return option.value;
+      }
+    }
+    return Error(Status::kErrorNotFound,
+                 "Option was not set for this environment.");
   }
 
   /// @deprecated Use `GetOption(Tag)` instead.
   [[deprecated("Use GetOption(Tag) instead.")]]
-  Expected<LiteRtVariant> GetOption(LiteRtEnvOptionTag tag) const {
-    if (Get() == nullptr) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Environment options are null");
-    }
-    LiteRtAny option;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetEnvironmentOptionsValue(Get(), tag, &option));
-    return ToStdAny(option);
+  Expected<const LiteRtVariant> GetOption(LiteRtEnvOptionTag tag) const {
+    return GetOption(static_cast<Tag>(tag));
   }
+
+ private:
+  std::vector<Option> options_;
 };
 
 }  // namespace litert
