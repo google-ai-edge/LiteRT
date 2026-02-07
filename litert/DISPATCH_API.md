@@ -226,17 +226,17 @@ illustrate how it operates.
 
   LiteRtTensorBuffer input_0_tensor_buffer;
   LITERT_EXPECT_OK(LiteRtCreateManagedTensorBuffer(
-      env.Get(), input_0_tensor_buffer_type, &kInput0TensorType,
+      env, input_0_tensor_buffer_type, &kInput0TensorType,
       input_0_tensor_buffer_size, &input_0_tensor_buffer));
 
   LiteRtTensorBuffer input_1_tensor_buffer;
   LITERT_EXPECT_OK(LiteRtCreateManagedTensorBuffer(
-      env.Get(), input_1_tensor_buffer_type, &kInput1TensorType,
+      env, input_1_tensor_buffer_type, &kInput1TensorType,
       input_1_tensor_buffer_size, &input_1_tensor_buffer));
 
   LiteRtTensorBuffer output_tensor_buffer;
   LITERT_EXPECT_OK(LiteRtCreateManagedTensorBuffer(
-      env.Get(), output_tensor_buffer_type, &kOutputTensorType,
+      env, output_tensor_buffer_type, &kOutputTensorType,
       output_tensor_buffer_size, &output_tensor_buffer));
 
   // ///////////////////////////////////////////////////////////////////////////

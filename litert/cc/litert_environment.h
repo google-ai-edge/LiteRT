@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -62,7 +63,7 @@ struct EnvironmentHolder {
 /// the same Environment.
 class Environment {
  public:
-  enum class OptionTag {
+  enum class [[deprecated("Use EnvironmentOptions::Tag instead.")]] OptionTag {
     CompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,
     DispatchLibraryDir = kLiteRtEnvOptionTagDispatchLibraryDir,
     ClDeviceId = kLiteRtEnvOptionTagOpenClDeviceId,
@@ -88,7 +89,7 @@ class Environment {
     RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
   };
 
-  struct Option {
+  struct [[deprecated("Use EnvironmentOptions::Option instead.")]] Option {
     OptionTag tag;
     LiteRtVariant value;
   };
@@ -97,11 +98,22 @@ class Environment {
     LiteRtEnvironmentOptions options;
     LITERT_RETURN_IF_ERROR(
         runtime_->GetEnvironmentOptions(handle_.get(), &options));
-    return EnvironmentOptions(options);
+    return FromCOptions(options);
   }
 
   static Expected<Environment> Create(absl::Span<const Option> options) {
-    auto c_options = ConvertOptions(options);
+    std::vector<EnvironmentOptions::Option> env_options;
+    env_options.reserve(options.size());
+    for (const auto& option : options) {
+      env_options.push_back(
+          {static_cast<EnvironmentOptions::Tag>(option.tag), option.value});
+    }
+    auto env_options_obj = EnvironmentOptions(env_options);
+    return Create(env_options_obj);
+  }
+
+  static Expected<Environment> Create(const EnvironmentOptions& options) {
+    auto c_options = ToCOptions(options.GetOptions());
     if (!c_options) {
       return c_options.Error();
     }
@@ -165,7 +177,7 @@ class Environment {
   /// @internal
   /// @brief Releases ownership of the environment handle.
   ///
-  /// After this call, `Get()` returns a null handle.
+  /// After this call, `GetHolder()` returns a null handle.
   internal::EnvironmentHolder Release() noexcept {
     return {runtime_.release(), handle_.release()};
   }
@@ -229,8 +241,8 @@ class Environment {
                   std::function<void(LiteRtEnvironment)>>
       handle_;
 
-  static Expected<std::vector<LiteRtEnvOption>> ConvertOptions(
-      absl::Span<const Option> options) {
+  static Expected<std::vector<LiteRtEnvOption>> ToCOptions(
+      absl::Span<const EnvironmentOptions::Option> options) {
     std::vector<LiteRtEnvOption> c_options;
     c_options.reserve(options.size());
 
@@ -248,6 +260,22 @@ class Environment {
     }
 
     return c_options;
+  }
+
+  Expected<EnvironmentOptions> FromCOptions(
+      LiteRtEnvironmentOptions options) const {
+    std::vector<EnvironmentOptions::Option> env_options;
+    for (int i = 0; i <= kLiteRtEnvOptionTagRuntimeLibraryDir; ++i) {
+      LiteRtAny value;
+      if (runtime_->GetEnvironmentOptionsValue(
+              options, static_cast<LiteRtEnvOptionTag>(i), &value) ==
+          kLiteRtStatusOk) {
+        EnvironmentOptions::Option option(
+            static_cast<EnvironmentOptions::Tag>(i), ToStdAny(value));
+        env_options.push_back(std::move(option));
+      }
+    }
+    return EnvironmentOptions(env_options);
   }
 
   static std::unique_ptr<RuntimeProxy> GetBuiltinRuntime() {

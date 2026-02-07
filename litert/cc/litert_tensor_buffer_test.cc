@@ -657,8 +657,8 @@ TEST(TensorBuffer, NotOwned) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LiteRtTensorBuffer litert_tensor_buffer;
   ASSERT_EQ(LiteRtCreateManagedTensorBuffer(
-                env.Get(), kLiteRtTensorBufferTypeHostMemory, &kTestTensorType,
-                sizeof(kTensorData), &litert_tensor_buffer),
+                env.GetHolder().handle, kLiteRtTensorBufferTypeHostMemory,
+                &kTestTensorType, sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
   TensorBuffer tensor_buffer = TensorBuffer::WrapCObject(
@@ -777,8 +777,8 @@ TEST(TensorBuffer, Duplicate) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LiteRtTensorBuffer litert_tensor_buffer;
   ASSERT_EQ(LiteRtCreateManagedTensorBuffer(
-                env.Get(), kLiteRtTensorBufferTypeHostMemory, &kTestTensorType,
-                sizeof(kTensorData), &litert_tensor_buffer),
+                env.GetHolder().handle, kLiteRtTensorBufferTypeHostMemory,
+                &kTestTensorType, sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
   TensorBuffer tensor_buffer = TensorBuffer::WrapCObject(
@@ -818,8 +818,8 @@ TEST(TensorBuffer, ReadWriteBasic) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LiteRtTensorBuffer litert_tensor_buffer;
   ASSERT_EQ(LiteRtCreateManagedTensorBuffer(
-                env.Get(), kLiteRtTensorBufferTypeHostMemory, &kTestTensorType,
-                sizeof(kTensorData), &litert_tensor_buffer),
+                env.GetHolder().handle, kLiteRtTensorBufferTypeHostMemory,
+                &kTestTensorType, sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
   TensorBuffer tensor_buffer = TensorBuffer::WrapCObject(
@@ -879,12 +879,12 @@ TEST(TensorBuffer, ClBufferFromGlBuffer) {
   // User provides CL-GL environment.
   auto user_gpu_env = UserGpuEnvironment::Create();
   ASSERT_TRUE(user_gpu_env != nullptr);
-  ASSERT_TRUE(user_gpu_env->GetEnvironment().Get() != nullptr);
+  ASSERT_TRUE(user_gpu_env->GetEnvironment().GetHolder().handle != nullptr);
   bool is_cl_gl_sharing_supported = false;
-  ASSERT_EQ(
-      LiteRtEnvironmentSupportsClGlInterop(user_gpu_env->GetEnvironment().Get(),
-                                           &is_cl_gl_sharing_supported),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtEnvironmentSupportsClGlInterop(
+                user_gpu_env->GetEnvironment().GetHolder().handle,
+                &is_cl_gl_sharing_supported),
+            kLiteRtStatusOk);
 
   if (!is_cl_gl_sharing_supported) {
     GTEST_SKIP() << "CL/GL sharing is not supported on this platform; "
@@ -1001,12 +1001,12 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
   // User provides EGL environment.
   auto user_gpu_env = UserGpuEnvironment::Create();
   ASSERT_TRUE(user_gpu_env != nullptr);
-  ASSERT_TRUE(user_gpu_env->GetEnvironment().Get() != nullptr);
+  ASSERT_TRUE(user_gpu_env->GetEnvironment().GetHolder().handle != nullptr);
   bool is_ahwb_gl_interop_supported = false;
-  ASSERT_EQ(
-      LiteRtEnvironmentSupportsAhwbGlInterop(
-          user_gpu_env->GetEnvironment().Get(), &is_ahwb_gl_interop_supported),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtEnvironmentSupportsAhwbGlInterop(
+                user_gpu_env->GetEnvironment().GetHolder().handle,
+                &is_ahwb_gl_interop_supported),
+            kLiteRtStatusOk);
   if (!is_ahwb_gl_interop_supported) {
     GTEST_SKIP() << "AHWB/GL interop is not supported on this platform; "
                     "skipping the test";
@@ -1107,12 +1107,12 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   }
   auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
   ASSERT_TRUE(user_gpu_env != nullptr);
-  ASSERT_TRUE(user_gpu_env->GetEnvironment().Get() != nullptr);
+  ASSERT_TRUE(user_gpu_env->GetEnvironment().GetHolder().handle != nullptr);
   bool is_ahwb_cl_interop_supported = false;
-  ASSERT_EQ(
-      LiteRtEnvironmentSupportsAhwbClInterop(
-          user_gpu_env->GetEnvironment().Get(), &is_ahwb_cl_interop_supported),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtEnvironmentSupportsAhwbClInterop(
+                user_gpu_env->GetEnvironment().GetHolder().handle,
+                &is_ahwb_cl_interop_supported),
+            kLiteRtStatusOk);
   if (!is_ahwb_cl_interop_supported) {
     GTEST_SKIP() << "AHWB/CL interop is not supported on this platform; "
                     "skipping the test";

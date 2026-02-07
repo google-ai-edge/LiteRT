@@ -118,8 +118,8 @@ namespace litert::testing {
 
 namespace {
 
-using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
-using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
+using mediatek::UpdateMediatekOptionsFromFlags;
+using qualcomm::UpdateQualcommOptionsFromFlags;
 
 Expected<AtsConf::SeedMap> ParseParamSeedMap() {
   const auto seed_flags = absl::GetFlag(FLAGS_seeds);

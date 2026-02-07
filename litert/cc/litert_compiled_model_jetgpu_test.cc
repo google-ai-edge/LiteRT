@@ -59,18 +59,15 @@ TEST_P(ParameterizedTest, Basic) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model,
-      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
-
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(GetParam()));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(*env, model, options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(*env, kModelFileName, options));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, compiled_model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
 
   auto signature_key = signatures[0].Key();

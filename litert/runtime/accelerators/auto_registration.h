@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_AUTO_REGISTRATION_H_
 #define ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_AUTO_REGISTRATION_H_
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
 
@@ -23,11 +22,6 @@ namespace litert {
 
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment);
-
-Expected<void> RegisterSharedObjectAccelerator(
-    LiteRtEnvironmentT& environment, absl::string_view shlib_path,
-    absl::string_view registration_function_name,
-    bool try_symbol_already_loaded = true);
 
 }  // namespace litert
 
