@@ -448,8 +448,9 @@ TEST(ApplyTest, ApplyPlugins) {
   LiteRtHwAccelerators compilation_options = static_cast<LiteRtHwAccelerators>(
       kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
       kLiteRtHwAcceleratorNpu);
-  auto result = litert::internal::ApplyPlugins(env->Get(), /*options=*/nullptr,
-                                               &model, compilation_options);
+  auto result = litert::internal::ApplyPlugins(env->GetHolder().handle,
+                                               /*options=*/nullptr, &model,
+                                               compilation_options);
   ASSERT_TRUE(result);
 
   ASSERT_EQ(model.NumSubgraphs(), 1);

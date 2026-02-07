@@ -98,7 +98,7 @@ Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
   ABSL_CHECK(litert_env != nullptr);
 
   LiteRtParamIndex size;
-  auto status = LiteRtGetNumAccelerators(litert_env->Get(), &size);
+  auto status = LiteRtGetNumAccelerators(litert_env->GetHolder().handle, &size);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to get number of accelerators.");
     ThrowLiteRtException(env, status, "Failed to get number of accelerators.");
@@ -109,7 +109,8 @@ Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
   accelerators.reserve(size);
   for (LiteRtParamIndex i = 0; i < size; ++i) {
     LiteRtAccelerator accelerator;
-    status = LiteRtGetAccelerator(litert_env->Get(), i, &accelerator);
+    status =
+        LiteRtGetAccelerator(litert_env->GetHolder().handle, i, &accelerator);
     if (status != kLiteRtStatusOk) {
       LITERT_LOG(LITERT_ERROR, "Failed to get accelerator.");
       continue;

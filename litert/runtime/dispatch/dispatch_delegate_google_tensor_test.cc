@@ -131,7 +131,7 @@ TEST(DispatchDelegate, CpuBuffer) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LiteRtExternalLiteRtBufferContextT buffer_context =
-      CreateBufferContext(env.Get(), interpreter);
+      CreateBufferContext(env.GetHolder().handle, interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -201,7 +201,7 @@ TEST(DispatchDelegate, HwBuffer) {
   tflite::Interpreter& interpreter = runtime->Interpreter();
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LiteRtExternalLiteRtBufferContextT buffer_context =
-      CreateBufferContext(env.Get(), interpreter);
+      CreateBufferContext(env.GetHolder().handle, interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);

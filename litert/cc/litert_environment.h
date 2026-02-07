@@ -165,7 +165,7 @@ class Environment {
   /// @internal
   /// @brief Releases ownership of the environment handle.
   ///
-  /// After this call, `Get()` returns a null handle.
+  /// After this call, `GetHolder()` returns a null handle.
   internal::EnvironmentHolder Release() noexcept {
     return {runtime_.release(), handle_.release()};
   }
