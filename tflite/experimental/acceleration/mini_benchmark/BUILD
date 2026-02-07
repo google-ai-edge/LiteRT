@@ -13,8 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "clean_dep")
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_binary.bzl", "py_binary")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -70,9 +70,10 @@ cc_test(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "copy_associated_files",
     srcs = ["copy_associated_files.py"],
+    strict_deps = True,
 )
 
 cc_library(
