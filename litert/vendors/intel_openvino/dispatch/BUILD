@@ -17,7 +17,7 @@ load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynami
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//:license"],
     default_visibility = ["//litert:litert_internal_users"],
 )
 
