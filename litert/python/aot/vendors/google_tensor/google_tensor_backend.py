@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC.
+# Copyright 2026 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -120,9 +120,18 @@ def _apply_plugin(
     # Otherwise we use the default library path.
     plugin_path = common.get_resource(COMPILER_PLUGIN_LIB_PATH)
     lib_dir = os.path.dirname(plugin_path)
-    sdk_libs_dir = os.environ.get("GOOGLE_TENSOR_COMPILER_LIB", None)
 
-    extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_dir}
+    try:
+      # pytype: disable=import-error
+      import ai_edge_litert_sdk_google_tensor  # pylint: disable=g-import-not-at-top
+      # pytype: enable=import-error
+
+      sdk_libs_path = str(
+          ai_edge_litert_sdk_google_tensor.path_to_sdk_libs()
+      )
+    except ImportError:
+      sdk_libs_path = os.environ.get("GOOGLE_TENSOR_COMPILER_LIB", None)
+    extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_path}
   except FileNotFoundError:
     extra_kwargs = {}
 

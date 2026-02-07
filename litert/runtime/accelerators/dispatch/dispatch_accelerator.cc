@@ -77,8 +77,8 @@ class NpuAccelerator final
                            ErrorStatusBuilder::InvalidArgument())
         << "Accelerator is not registered to an environment.";
 
-    auto dispatch_delegate = litert::CreateDispatchDelegatePtr(
-        &accelerator->env->GetOptions(), options);
+    auto dispatch_delegate =
+        litert::CreateDispatchDelegatePtr(accelerator->env, options);
     LITERT_RETURN_IF_ERROR(dispatch_delegate != nullptr,
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "Dispatch delegate failed to be created.";

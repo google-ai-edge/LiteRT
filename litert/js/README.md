@@ -10,7 +10,7 @@ more, directly in the browser. You can find pretrained models on
 [Kaggle](https://www.kaggle.com/models?framework=tfLite) or
 [HuggingFace](https://huggingface.co/models?library=tflite&sort=trending), or
 you can [convert your own from
-PyTorch](https://github.com/google-ai-edge/ai-edge-torch).
+PyTorch](https://github.com/google-ai-edge/litert-torch).
 
 ## Features
 

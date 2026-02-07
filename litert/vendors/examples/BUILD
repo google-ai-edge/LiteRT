@@ -298,14 +298,23 @@ cc_library(
     hdrs = ["example_transformations.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_builder",
         "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_matchers",
+        "//litert/cc/dynamic_runtime:litert_op_options",
     ],
 )
 
 litert_test(
     name = "example_transformations_test",
-    srcs = ["example_transformations_test.cc"],
+    srcs = [
+        "example_transformations_test.cc",
+        "matmul_requant_test.cc",
+    ],
+    data = [
+        "//litert/test:tflite_test_data",
+    ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": [],
         "//conditions:default": [
@@ -325,9 +334,19 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":example_transformations",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc/dynamic_runtime:litert_builder",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
         "//litert/core/model:model_testonly",
+        "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
         "//litert/test:matchers_oss",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
     ],
 )

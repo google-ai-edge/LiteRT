@@ -132,6 +132,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
@@ -139,7 +140,6 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
@@ -246,7 +246,9 @@ cc_library(
     deps = [
         ":litert_extended_model",
         ":litert_op_options",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
@@ -260,6 +262,22 @@ cc_library(
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
+)
+
+cc_library(
+    name = "litert_matchers",
+    hdrs = ["//litert/cc/internal:litert_matchers.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
+    deps = [
+        ":litert_extended_model",
+        ":litert_op_options",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/strings:string_view",
+    ],
 )
 
 cc_test(
@@ -422,9 +440,9 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
@@ -746,6 +764,7 @@ cc_library(
     name = "litert_profiler",
     hdrs = ["//litert/cc:litert_profiler.h"],
     deps = [
+        ":litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",

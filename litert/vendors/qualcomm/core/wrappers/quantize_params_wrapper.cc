@@ -14,14 +14,6 @@
 
 namespace qnn {
 
-UndefinedQuantizeParamsWrapper::UndefinedQuantizeParamsWrapper() = default;
-
-UndefinedQuantizeParamsWrapper::UndefinedQuantizeParamsWrapper(
-    const UndefinedQuantizeParamsWrapper&) = default;
-
-UndefinedQuantizeParamsWrapper::UndefinedQuantizeParamsWrapper(
-    UndefinedQuantizeParamsWrapper&&) = default;
-
 bool UndefinedQuantizeParamsWrapper::operator==(
     const UndefinedQuantizeParamsWrapper& other) const {
   return qnn_quantize_param_.encodingDefinition ==
@@ -51,12 +43,6 @@ ScaleOffsetQuantizeParamsWrapper::ScaleOffsetQuantizeParamsWrapper(
   qnn_quantize_param_.scaleOffsetEncoding = scale_offset;
 }
 
-ScaleOffsetQuantizeParamsWrapper::ScaleOffsetQuantizeParamsWrapper(
-    const ScaleOffsetQuantizeParamsWrapper&) = default;
-
-ScaleOffsetQuantizeParamsWrapper::ScaleOffsetQuantizeParamsWrapper(
-    ScaleOffsetQuantizeParamsWrapper&&) = default;
-
 bool ScaleOffsetQuantizeParamsWrapper::operator==(
     const ScaleOffsetQuantizeParamsWrapper& other) const {
   return qnn_quantize_param_.encodingDefinition ==
@@ -68,6 +54,7 @@ bool ScaleOffsetQuantizeParamsWrapper::operator==(
          qnn_quantize_param_.scaleOffsetEncoding.offset ==
              other.qnn_quantize_param_.scaleOffsetEncoding.offset;
 }
+
 void ScaleOffsetQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
   dst = qnn_quantize_param_;
 }
@@ -111,18 +98,31 @@ AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
 
 AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
     const AxisScaleOffsetQuantizeParamsWrapper& rhs)
-    : qnn_quantize_param_{rhs.qnn_quantize_param_},
-      scale_offsets_{rhs.scale_offsets_} {
+    : scale_offsets_{rhs.scale_offsets_},
+      qnn_quantize_param_{rhs.qnn_quantize_param_} {
   qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset =
       scale_offsets_.data();
 }
 
+AxisScaleOffsetQuantizeParamsWrapper&
+AxisScaleOffsetQuantizeParamsWrapper::operator=(
+    const AxisScaleOffsetQuantizeParamsWrapper& rhs) {
+  if (this != &rhs) {
+    scale_offsets_ = rhs.scale_offsets_;
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset =
+        scale_offsets_.data();
+  }
+  return *this;
+}
+
 AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
-    AxisScaleOffsetQuantizeParamsWrapper&& rhs)
-    : qnn_quantize_param_{rhs.qnn_quantize_param_},
-      scale_offsets_{std::move(rhs.scale_offsets_)} {
+    AxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept
+    : scale_offsets_{std::move(rhs.scale_offsets_)},
+      qnn_quantize_param_{rhs.qnn_quantize_param_} {
   qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset =
       scale_offsets_.data();
+  rhs.qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
 }
 
 bool AxisScaleOffsetQuantizeParamsWrapper::operator==(
@@ -149,6 +149,20 @@ bool AxisScaleOffsetQuantizeParamsWrapper::operator==(
         return a.scale == b.scale && a.offset == b.offset;
       });
 }
+
+AxisScaleOffsetQuantizeParamsWrapper&
+AxisScaleOffsetQuantizeParamsWrapper::operator=(
+    AxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept {
+  if (this != &rhs) {
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    scale_offsets_ = std::move(rhs.scale_offsets_);
+    qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset =
+        scale_offsets_.data();
+    rhs.qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
+  }
+  return *this;
+}
+
 void AxisScaleOffsetQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
   dst = qnn_quantize_param_;
 }
@@ -190,12 +204,6 @@ BwScaleOffsetQuantizeParamsWrapper::BwScaleOffsetQuantizeParamsWrapper(
   qnn_quantize_param_.bwScaleOffsetEncoding.offset = -1 * zero_point;
 }
 
-BwScaleOffsetQuantizeParamsWrapper::BwScaleOffsetQuantizeParamsWrapper(
-    const BwScaleOffsetQuantizeParamsWrapper& rhs) = default;
-
-BwScaleOffsetQuantizeParamsWrapper::BwScaleOffsetQuantizeParamsWrapper(
-    BwScaleOffsetQuantizeParamsWrapper&& rhs) = default;
-
 bool BwScaleOffsetQuantizeParamsWrapper::operator==(
     const BwScaleOffsetQuantizeParamsWrapper& other) const {
   return qnn_quantize_param_.encodingDefinition ==
@@ -236,20 +244,48 @@ BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
 
 BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
     const BwAxisScaleOffsetQuantizeParamsWrapper& rhs)
-    : qnn_quantize_param_{rhs.qnn_quantize_param_},
-      scales_{rhs.scales_},
-      offsets_{rhs.offsets_} {
+    : scales_{rhs.scales_},
+      offsets_{rhs.offsets_},
+      qnn_quantize_param_{rhs.qnn_quantize_param_} {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
 }
 
+BwAxisScaleOffsetQuantizeParamsWrapper&
+BwAxisScaleOffsetQuantizeParamsWrapper::operator=(
+    const BwAxisScaleOffsetQuantizeParamsWrapper& rhs) {
+  if (this != &rhs) {
+    scales_ = rhs.scales_;
+    offsets_ = rhs.offsets_;
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+  }
+  return *this;
+}
+
 BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
-    BwAxisScaleOffsetQuantizeParamsWrapper&& rhs)
-    : qnn_quantize_param_{rhs.qnn_quantize_param_},
-      scales_{std::move(rhs.scales_)},
-      offsets_{std::move(rhs.offsets_)} {
+    BwAxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept
+    : scales_{std::move(rhs.scales_)},
+      offsets_{std::move(rhs.offsets_)},
+      qnn_quantize_param_{rhs.qnn_quantize_param_} {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+  rhs.qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
+}
+
+BwAxisScaleOffsetQuantizeParamsWrapper&
+BwAxisScaleOffsetQuantizeParamsWrapper::operator=(
+    BwAxisScaleOffsetQuantizeParamsWrapper&& rhs) noexcept {
+  if (this != &rhs) {
+    qnn_quantize_param_ = rhs.qnn_quantize_param_;
+    scales_ = std::move(rhs.scales_);
+    offsets_ = std::move(rhs.offsets_);
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+    rhs.qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
+  }
+  return *this;
 }
 
 bool BwAxisScaleOffsetQuantizeParamsWrapper::operator==(

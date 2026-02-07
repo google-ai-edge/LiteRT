@@ -20,7 +20,6 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opencl_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -30,10 +29,6 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 
-#if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>
-#endif
-
 namespace litert {
 
 Expected<TensorBuffer> TensorBuffer::Duplicate() const {
@@ -41,8 +36,8 @@ Expected<TensorBuffer> TensorBuffer::Duplicate() const {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Cannot duplicate a non-owned tensor buffer");
   }
-  LITERT_RETURN_IF_ERROR(LiteRtDuplicateTensorBuffer(Get()));
-  return TensorBuffer(Get(), OwnHandle::kYes);
+  LITERT_RETURN_IF_ERROR(env_.runtime->DuplicateTensorBuffer(Get()));
+  return TensorBuffer(env_, Get(), OwnHandle::kYes);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateManaged(
@@ -50,44 +45,48 @@ Expected<TensorBuffer> TensorBuffer::CreateManaged(
     const RankedTensorType& tensor_type, size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      env.Get(), static_cast<LiteRtTensorBufferType>(buffer_type),
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateManagedTensorBuffer(
+      env_holder.handle, static_cast<LiteRtTensorBufferType>(buffer_type),
       &litert_tensor_type, buffer_size, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 
+// TODO(terryheo): make this function not depend on Environment.
 Expected<TensorBuffer> TensorBuffer::CreateManagedHostMemory(
     const RankedTensorType& tensor_type, size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
+  auto env_holder = GetDefaultEnvironment()->GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateManagedTensorBuffer(
       /*env=*/nullptr, kLiteRtTensorBufferTypeHostMemory, &litert_tensor_type,
       buffer_size, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 
+// TODO(terryheo): make this function not depend on Environment.
 Expected<TensorBuffer> TensorBuffer::CreateFromHostMemory(
     const RankedTensorType& tensor_type, void* host_mem_addr,
     size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
+  auto env_holder = GetDefaultEnvironment()->GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromHostMemory(
       &litert_tensor_type, host_mem_addr, buffer_size,
       /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromHostMemory(
-    const Environment&, const RankedTensorType& tensor_type,
+    const Environment& env, const RankedTensorType& tensor_type,
     void* host_mem_addr, size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromHostMemory(
       &litert_tensor_type, host_mem_addr, buffer_size,
       /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
@@ -96,11 +95,12 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
 #if LITERT_HAS_AHWB_SUPPORT
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+  auto env_holder = env.GetHolder();
 
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromAhwb(
-      env.Get(), &litert_tensor_type, ahwb, ahwb_offset,
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromAhwb(
+      env_holder.handle, &litert_tensor_type, ahwb, ahwb_offset,
       /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 #else
   return litert::Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
@@ -114,11 +114,12 @@ Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
 #if LITERT_HAS_OPENCL_SUPPORT
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromOpenClMemory(
-      env.Get(), &litert_tensor_type,
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromOpenClMemory(
+      env_holder.handle, &litert_tensor_type,
       static_cast<LiteRtTensorBufferType>(buffer_type), cl_memory, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 #else
   return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                             "OpenCL is not supported on this platform");
@@ -130,10 +131,11 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlBuffer(
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlBuffer(
-      env.Get(), &litert_tensor_type, target, id, size_bytes, offset,
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromGlBuffer(
+      env_holder.handle, &litert_tensor_type, target, id, size_bytes, offset,
       /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
@@ -142,10 +144,11 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
     size_t size_bytes, LiteRtGLint layer) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlTexture(
-      env.Get(), &litert_tensor_type, target, id, format, size_bytes, layer,
-      /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromGlTexture(
+      env_holder.handle, &litert_tensor_type, target, id, format, size_bytes,
+      layer, /*deallocator=*/nullptr, &tensor_buffer));
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 
 #if LITERT_HAS_WEBGPU_SUPPORT
@@ -154,22 +157,25 @@ Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuBuffer(
     TensorBufferType buffer_type, LiteRtWGPUBuffer buffer, size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromWebGpuBuffer(
-      env.Get(), &litert_tensor_type,
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromWebGpuBuffer(
+      env_holder.handle, &litert_tensor_type,
       static_cast<LiteRtTensorBufferType>(buffer_type), buffer, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuTexture(
-    LiteRtEnvironment env, const RankedTensorType& tensor_type,
-    void* texture, size_t size_bytes) {
+    const Environment& env, const RankedTensorType& tensor_type, void* texture,
+    size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromWebGpuTexture(
-      env, &litert_tensor_type, texture, size_bytes,
-      /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(
+      env_holder.runtime->CreateTensorBufferFromWebGpuTexture(
+          env_holder.handle, &litert_tensor_type, texture, size_bytes,
+          /*deallocator=*/nullptr, &tensor_buffer));
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
@@ -179,18 +185,19 @@ Expected<TensorBuffer> TensorBuffer::CreateFromMetalBuffer(
     TensorBufferType buffer_type, void* buffer, size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromMetalMemory(
-      env.Get(), &litert_tensor_type,
+  auto env_holder = env.GetHolder();
+  LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromMetalMemory(
+      env_holder.handle, &litert_tensor_type,
       static_cast<LiteRtTensorBufferType>(buffer_type), buffer, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
-  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 bool TensorBuffer::IsOpenClMemory() const {
   LiteRtTensorBufferType tensor_buffer_type;
-  if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
-      status != kLiteRtStatusOk) {
+  if (env_.runtime->GetTensorBufferType(Get(), &tensor_buffer_type) !=
+      kLiteRtStatusOk) {
     return false;
   }
   return ::IsOpenClMemory(tensor_buffer_type);
@@ -198,8 +205,8 @@ bool TensorBuffer::IsOpenClMemory() const {
 
 bool TensorBuffer::IsWebGpuMemory() const {
   LiteRtTensorBufferType tensor_buffer_type;
-  if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
-      status != kLiteRtStatusOk) {
+  if (env_.runtime->GetTensorBufferType(Get(), &tensor_buffer_type) !=
+      kLiteRtStatusOk) {
     return false;
   }
   return ::IsWebGpuMemory(tensor_buffer_type);
@@ -207,8 +214,8 @@ bool TensorBuffer::IsWebGpuMemory() const {
 
 bool TensorBuffer::IsMetalMemory() const {
   LiteRtTensorBufferType tensor_buffer_type;
-  if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
-      status != kLiteRtStatusOk) {
+  if (env_.runtime->GetTensorBufferType(Get(), &tensor_buffer_type) !=
+      kLiteRtStatusOk) {
     return false;
   }
   return ::IsMetalMemory(tensor_buffer_type);
@@ -216,8 +223,8 @@ bool TensorBuffer::IsMetalMemory() const {
 
 bool TensorBuffer::IsVulkanMemory() const {
   LiteRtTensorBufferType tensor_buffer_type;
-  if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
-      status != kLiteRtStatusOk) {
+  if (env_.runtime->GetTensorBufferType(Get(), &tensor_buffer_type) !=
+      kLiteRtStatusOk) {
     return false;
   }
   return ::IsVulkanMemory(tensor_buffer_type);

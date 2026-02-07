@@ -104,6 +104,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         # TODO: Remove this dependency.
@@ -124,6 +125,7 @@ cc_library(
     hdrs = ["dispatch_api_test_fixtures.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
@@ -161,6 +163,7 @@ cc_library(
 #         "@com_google_absl//absl/types:span",
 #         "//third_party/darwinn/driver_shared/fence:fence_test_util",
 #         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/c/internal:litert_logging",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model_npu",
 #         "//litert/vendors/c:litert_dispatch_c_api",
@@ -184,6 +187,7 @@ litert_device_test(
         "INTERNAL_THREAD_PKG",
         ":dispatch_api_test_fixtures",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",

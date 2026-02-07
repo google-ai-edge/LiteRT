@@ -59,11 +59,13 @@ interface SupportStatus {
 declare interface WasmFeatureValues {
   relaxedSimd: Promise<SupportStatus>|undefined;
   threads: Promise<SupportStatus>|undefined;
+  jspi: Promise<SupportStatus>|undefined;
 }
 
 const WASM_FEATURE_VALUES: WasmFeatureValues = {
   'relaxedSimd': undefined,
   'threads': undefined,
+  'jspi': undefined,
 };
 
 async function tryWasm(wasm: Uint8Array): Promise<SupportStatus> {
@@ -96,6 +98,18 @@ const WASM_FEATURE_CHECKS:
           }
         }
         return WASM_FEATURE_VALUES.threads!;
+      },
+      'jspi': () => {
+        if (WASM_FEATURE_VALUES.jspi === undefined) {
+          const supported =
+              typeof (WebAssembly as unknown as {Suspender: unknown}).Suspender
+              !== 'undefined';
+          WASM_FEATURE_VALUES.jspi = Promise.resolve({
+            supported,
+            error: supported ? undefined : new Error('JSPI is not supported')
+          });
+        }
+        return WASM_FEATURE_VALUES.jspi!;
       },
     };
 

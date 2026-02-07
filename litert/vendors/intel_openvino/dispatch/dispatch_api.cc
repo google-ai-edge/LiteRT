@@ -28,6 +28,7 @@
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
 
 #if defined(LITERT_WINDOWS_OS)
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/vendors/intel_openvino/dispatch/remote_tensor_buffer.h"
 #endif  // LITERT_WINDOWS_OS
@@ -90,8 +91,7 @@ LiteRtStatus LockRemoteTensorBuffer(LiteRtEnvironment env,
 // Initialize the Dispatch API runtime.
 // This function should be called before calling any other Dispatch API
 // functions.
-LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
-                                LiteRtOptions options) {
+LiteRtStatus DispatchInitialize(LiteRtEnvironment env, LiteRtOptions options) {
   ov::Core core;
   std::vector<std::string> availableDevices = core.get_available_devices();
   for (auto&& device : availableDevices)
@@ -99,21 +99,10 @@ LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
                device.c_str());
 
 #if defined(LITERT_WINDOWS_OS)
-  LiteRtEnvOption env_option{
-      /*tag=*/kLiteRtEnvOptionTagCustomTensorBufferHandlers,
-      /*value=*/{/*type=*/kLiteRtAnyTypeVoidPtr}};
-  // TODO:: How to free custom_tensor_buffer_handlers.
-  LiteRtCustomTensorBufferHandlers* custom_tensor_buffer_handlers =
-      (LiteRtCustomTensorBufferHandlers*)malloc(
-          sizeof(LiteRtCustomTensorBufferHandlers));
-  custom_tensor_buffer_handlers->create_func = CreateRemoteTensorBuffer;
-  custom_tensor_buffer_handlers->destroy_func = DestroyRemoteTensorBuffer;
-  custom_tensor_buffer_handlers->lock_func = LockRemoteTensorBuffer;
-  custom_tensor_buffer_handlers->unlock_func = UnlockRemoteTensorBuffer;
-  custom_tensor_buffer_handlers->clear_func = nullptr;
-  custom_tensor_buffer_handlers->import_func = nullptr;
-  env_option.value.ptr_value = custom_tensor_buffer_handlers;
-  LiteRtSetEnvironmentOptionsValue(environment_options, env_option);
+  LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
+      env, kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
+      CreateRemoteTensorBuffer, DestroyRemoteTensorBuffer,
+      LockRemoteTensorBuffer, UnlockRemoteTensorBuffer, nullptr, nullptr));
 #endif  // LITERT_WINDOWS_OS
 
   return kLiteRtStatusOk;

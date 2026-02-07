@@ -17,8 +17,6 @@
 
 #include <algorithm>
 #include <chrono>  // NOLINT
-#include <cstddef>
-#include <ctime>
 #include <functional>
 #include <optional>
 #include <ratio>  // NOLINT
@@ -102,8 +100,8 @@ class Latency
 // Information about the numerics of the execution.
 class Numerics : public Printable<ReferenceType, double> {
  public:
-  // Average mean squared error accross all the runs.
-  double AvgMse() const { return ::litert::Avg(mses_.cbegin(), mses_.cend()); }
+  // Average mean squared error across all the runs.
+  double AvgMse() const { return Avg(mses_.cbegin(), mses_.cend()); }
 
   // The type of reference used to validate against.
   ReferenceType reference_type = ReferenceType::kNone;  // NOLINT

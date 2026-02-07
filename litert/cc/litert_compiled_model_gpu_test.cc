@@ -259,9 +259,8 @@ TEST_P(CompiledModelGpuTest, Async) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
                               compiled_model.CreateInputBuffers());
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_event,
-      Event::CreateManaged(env->Get(), LiteRtEventTypeOpenCl));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_event,
+                              Event::CreateManaged(*env, Event::Type::kOpenCl));
   // Copy of the event to trigger the signal since the ownership of the
   // input_event is transferred to the input_buffers[0].
   LiteRtEvent litert_input_event = input_event.Get();
@@ -534,8 +533,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
-  LITERT_ASSERT_OK(
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
+  LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
   LITERT_ASSERT_OK(
@@ -603,8 +601,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
-  LITERT_ASSERT_OK(
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
+  LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
 
@@ -808,8 +805,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   float kInputTensor[] = {1.0f, 1.0f};
   LITERT_ASSERT_OK_AND_ASSIGN(TensorBufferRequirements requirements,
                               compiled_model.GetInputBufferRequirements(0));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
-                              requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type, requirements.SupportedTypes());
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(
@@ -831,6 +827,82 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   auto output = absl::MakeSpan(lock_and_addr.second, 2);
   constexpr float kExpectedOutput[] = {2.0f, 3.0f};
   EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kExpectedOutput));
+}
+
+// Runs model synchronously on OpenGL backend with a provided EGL environment.
+TEST(CompiledModelGpuTest, BasicOpenGlWithProvidedEglEnvironment) {
+  if (!HasOpenGlSupport()) {
+    GTEST_SKIP() << "OpenGL backend tests are not supported if OpenGL is not "
+                    "available.";
+  }
+  bool external_tensors_mode = false;
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+
+  std::vector<litert::Environment::Option> env_options;
+  env_options.push_back(
+      {litert::Environment::OptionTag::EglContext,
+       reinterpret_cast<int64_t>(egl_env->context().context())});
+  env_options.push_back({litert::Environment::OptionTag::EglDisplay,
+                         reinterpret_cast<int64_t>(egl_env->display())});
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env,
+                              litert::Environment::Create(env_options));
+#else
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options,
+                              CreateGpuOptions(external_tensors_mode));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
+  LITERT_ASSERT_OK(gpu_options.SetBackend(GpuOptions::Backend::kOpenGl));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  // Fill model inputs.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_EQ(input_names.size(), 2);
+  EXPECT_EQ(input_names.at(0), "arg0");
+  EXPECT_EQ(input_names.at(1), "arg1");
+  // EXPECT_EQ(input_buffers[0].BufferType(), TensorBufferType::kGlBuffer);
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  // EXPECT_EQ(input_buffers[1].BufferType(), TensorBufferType::kGlBuffer);
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Execute model.
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  // Check model output.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_EQ(output_names.size(), 1);
+  EXPECT_EQ(output_names.at(0), "tfl.add");
+  // EXPECT_EQ(output_buffers[0].BufferType(), TensorBufferType::kGlBuffer);
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(CompiledModelGpuTest, CompiledModelGpuTest,

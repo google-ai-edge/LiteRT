@@ -84,10 +84,18 @@ typedef enum {
   kLiteRtTensorBufferTypeVulkanImageBufferFp16 = 45,
   kLiteRtTensorBufferTypeVulkanBufferPacked = 46,
 
-  // 50-59 are reserved for custom NPU memory objects.
-  kLiteRtTensorBufferTypeOpenVINOTensorBuffer = 50,
+  // 100 - 199 are reserved for users custom memory objects.
+  // They should provide CPU access via lock() and unlock().
+  kLiteRtTensorBufferTypeUserCustomBuffer = 100,
+  kLiteRtTensorBufferTypeOpenVINOTensorBuffer = 100,
+  kLiteRtTensorBufferTypeUserCustomBufferEnd = 199,
 } LiteRtTensorBufferType;
 // LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types)
+
+inline bool IsUserCustomBuffer(LiteRtTensorBufferType buffer_type) {
+  return buffer_type >= kLiteRtTensorBufferTypeUserCustomBuffer &&
+         buffer_type <= kLiteRtTensorBufferTypeUserCustomBufferEnd;
+}
 
 inline bool IsOpenClMemory(LiteRtTensorBufferType buffer_type) {
   return buffer_type == kLiteRtTensorBufferTypeOpenClBuffer ||
@@ -97,10 +105,6 @@ inline bool IsOpenClMemory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked ||
          buffer_type == kLiteRtTensorBufferTypeOpenClImageBuffer ||
          buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16;
-}
-
-inline bool IsOpenVINOTensorBuffer(LiteRtTensorBufferType buffer_type) {
-  return buffer_type == kLiteRtTensorBufferTypeOpenVINOTensorBuffer;
 }
 
 inline bool IsWebGpuMemory(LiteRtTensorBufferType buffer_type) {

@@ -27,25 +27,27 @@ provided_models=()
 dry_run=""
 no_push=""
 
-function setup_context() {
-  function handle_user_data() {
-    local user_data=()
-    for f in "$@"; do
-      if [[ -f "$f" ]]; then
-        user_data+=($(realpath "${f}"))
-      elif [[ -d "$f" ]]; then
-        for ff in "${f%/}/"*; do
-          if [[ -f "$ff" ]]; then
-            user_data+=($(realpath "${ff}"))
-          fi
-        done
-      else
-        fatal "${f} is not a file or directory"
-      fi
-    done
-    echo "${user_data[@]}"
-  }
+# Resolves user provided data paths (files or directories) to absolute paths.
+# If a directory is provided, it resolves all files within it (non-recursive).
+function handle_user_data() {
+  local user_data=()
+  for f in "$@"; do
+    if [[ -f "$f" ]]; then
+      user_data+=($(realpath "${f}"))
+    elif [[ -d "$f" ]]; then
+      for ff in "${f%/}/"*; do
+        if [[ -f "$ff" ]]; then
+          user_data+=($(realpath "${ff}"))
+        fi
+      done
+    else
+      fatal "${f} is not a file or directory"
+    fi
+  done
+  echo "${user_data[@]}"
+}
 
+function setup_context() {
   local in_flags=$1
   for a in ${in_flags[@]}; do
     if [[ $a == "--user_data="* ]]; then
@@ -54,12 +56,21 @@ function setup_context() {
       dry_run="true"
     elif [[ $a == "--no_push"* ]]; then
       no_push="true"
+    elif [[ $a == "--models="* ]]; then
+      local m_path="${a#*=}"
+      d_data+=($(handle_user_data "${m_path}"))
+
+      local abs_path=$(realpath "${m_path}")
+      local dev_path=$(device_path "${abs_path}")
+      d_args+=("--extra_models=${dev_path}")
+      d_args+=("--do_register='ExtraModel'")
+      has_user_models="true"
     else
       d_args+=("${a}")
     fi
   done
   
-  if [[ -z "${no_push}" ]]; then
+  if [[ -z "${no_push}" && -z "${has_user_models}" ]]; then
     provided_models=($(get_provided_models))
     if [ $? -ne 0 ]; then
       echo "Failed to get provided models."
@@ -74,7 +85,7 @@ function setup_context() {
 
 function print_args() {
   print_hightlight "<<< LiteRt Mobile Install Scripts >>>"
-  
+
   print "libraries"
   for f in "${d_libs[@]}"; do
     print_file "${f}" "$(device_path "${f}")"

@@ -21,6 +21,7 @@
 extern "C" {
 #endif  // __cplusplus
 
+// LINT.IfChange(event_type)
 typedef enum {
   LiteRtEventTypeUnknown = 0,
   LiteRtEventTypeSyncFenceFd = 1,
@@ -29,6 +30,7 @@ typedef enum {
   LiteRtEventTypeEglNativeSyncFence = 4,
   LiteRtEventTypeCustom = 5,
 } LiteRtEventType;
+// LINT.ThenChange(../cc/litert_event.h:event_type)
 
 // Custom events managed by the client.
 typedef struct LiteRtCustomEventT* LiteRtCustomEvent;

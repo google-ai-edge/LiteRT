@@ -108,8 +108,8 @@ Expected<Tensor> Builder::BuildScalar(LiteRtElementType element_type,
   return Tensor(tensor);
 }
 
-Op Builder::BuildOp(LiteRtOpCode op_code, OpInputs& inputs,
-                    OpOutputs& outputs) const {
+Op Builder::BuildOp(LiteRtOpCode op_code, const std::vector<Tensor>& inputs,
+                    const std::vector<Tensor>& outputs) const {
   LiteRtOp litert_op;
   std::vector<LiteRtTensor> input_tensors;
   input_tensors.reserve(inputs.size());
@@ -125,6 +125,53 @@ Op Builder::BuildOp(LiteRtOpCode op_code, OpInputs& inputs,
                      input_tensors.data(), output_tensors.size(),
                      output_tensors.data(), &litert_op);
   return Op(litert_op);
+}
+
+Expected<std::vector<Tensor>> Builder::CreateOpWithOutputSpec(
+    LiteRtOpCode code, const std::vector<Tensor>& inputs,
+    const std::vector<RankedTensorSpec>& output_specs) const {
+  std::vector<Tensor> outputs;
+  outputs.reserve(output_specs.size());
+
+  std::vector<Tensor> results;
+  results.reserve(output_specs.size());
+
+  for (const auto& spec : output_specs) {
+    auto t_res = BuildTensor(spec);
+    if (!t_res) {
+      return t_res.Error();
+    }
+    outputs.push_back(Tensor(*t_res));
+    results.push_back(std::move(*t_res));
+  }
+
+  BuildOp(code, inputs, outputs);
+  return results;
+}
+
+Expected<Tensor> Builder::CreateOpWithOutputSpec(
+    LiteRtOpCode code, const std::vector<Tensor>& inputs,
+    RankedTensorSpec output_spec) const {
+  std::vector<RankedTensorSpec> specs;
+  specs.push_back(std::move(output_spec));
+  auto results = CreateOpWithOutputSpec(code, inputs, specs);
+  if (!results) {
+    return results.Error();
+  }
+  return std::move((*results)[0]);
+}
+
+Op Builder::ReplaceOp(Op& op, LiteRtOpCode new_code,
+                      const std::vector<Tensor>& inputs) const {
+  OpOutputs op_outputs = op.Outputs();
+  std::vector<Tensor> outputs;
+  outputs.reserve(op_outputs.size());
+  for (const auto& out : op_outputs) {
+    outputs.push_back(Tensor(out));
+  }
+  Op new_op = BuildOp(new_code, inputs, outputs);
+  EraseOp(op);
+  return new_op;
 }
 
 }  // namespace litert

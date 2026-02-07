@@ -661,8 +661,8 @@ TEST(TensorBuffer, NotOwned) {
                 sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
-  TensorBuffer tensor_buffer =
-      TensorBuffer::WrapCObject(litert_tensor_buffer, litert::OwnHandle::kNo);
+  TensorBuffer tensor_buffer = TensorBuffer::WrapCObject(
+      env.GetHolder(), litert_tensor_buffer, litert::OwnHandle::kNo);
   ASSERT_EQ(tensor_buffer.Get(), litert_tensor_buffer);
 
   LiteRtDestroyTensorBuffer(litert_tensor_buffer);
@@ -781,8 +781,8 @@ TEST(TensorBuffer, Duplicate) {
                 sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
-  TensorBuffer tensor_buffer =
-      TensorBuffer::WrapCObject(litert_tensor_buffer, litert::OwnHandle::kYes);
+  TensorBuffer tensor_buffer = TensorBuffer::WrapCObject(
+      env.GetHolder(), litert_tensor_buffer, litert::OwnHandle::kYes);
   ASSERT_EQ(GetReferenceCount(tensor_buffer), 1);
   {
     auto duplicated_tensor_buffer = tensor_buffer.Duplicate();
@@ -822,8 +822,8 @@ TEST(TensorBuffer, ReadWriteBasic) {
                 sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
-  TensorBuffer tensor_buffer =
-      TensorBuffer::WrapCObject(litert_tensor_buffer, litert::OwnHandle::kYes);
+  TensorBuffer tensor_buffer = TensorBuffer::WrapCObject(
+      env.GetHolder(), litert_tensor_buffer, litert::OwnHandle::kYes);
   auto write_success = tensor_buffer.Write<float>(absl::MakeSpan(
       kTensorData, sizeof(kTensorData) / sizeof(kTensorData[0])));
   ASSERT_TRUE(write_success);
@@ -1263,8 +1263,7 @@ TEST(TensorBuffer, Event) {
                                   sizeof(kTensorData)));
   // Create event.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      Event event,
-      Event::CreateFromSyncFenceFd(env.Get(), kFakeSyncFenceFd, true));
+      Event event, Event::CreateFromSyncFenceFd(env, kFakeSyncFenceFd, true));
   // Move event into tensor buffer.
   LITERT_EXPECT_OK(tensor_buffer.SetEvent(std::move(event)));
   EXPECT_TRUE(tensor_buffer.HasEvent());

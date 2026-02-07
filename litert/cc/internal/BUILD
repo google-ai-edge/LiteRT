@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC.
+# Copyright 2026 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ package(
 internal_static_library_visibility = [
     # copybara:uncomment_begin(oss)
     # "//litert:litert_cc_users_static_link",
+    # "//litert/vendors/examples:__subpackages__",
     # copybara:uncomment_end_and_comment_begin
     "//visibility:public",
     # copybara:comment_end
@@ -76,7 +77,6 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
-        ":litert_detail",
         ":litert_handle",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
@@ -94,6 +94,7 @@ cc_library(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_types",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
@@ -424,10 +425,12 @@ cc_library(
         ":litert_op_options",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
         "@com_google_absl//absl/types:span",
     ],
@@ -645,6 +648,38 @@ cc_library(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_c_api_runtimecapi",
+    ],
+)
+
+cc_library(
+    name = "litert_matchers",
+    hdrs = ["litert_matchers.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":litert_extended_model",
+        ":litert_op_options",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_matchers_test",
+    srcs = ["litert_matchers_test.cc"],
+    deps = [
+        ":litert_extended_model",
+        ":litert_matchers",
+        ":litert_op_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

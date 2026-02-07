@@ -27,8 +27,8 @@ namespace litert {
 
 using DispatchDelegatePtr = tflite::TfLiteOpaqueDelegateUniquePtr;
 
-DispatchDelegatePtr CreateDispatchDelegatePtr(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
+DispatchDelegatePtr CreateDispatchDelegatePtr(LiteRtEnvironment env,
+                                              LiteRtOptions options);
 
 }  // namespace litert
 

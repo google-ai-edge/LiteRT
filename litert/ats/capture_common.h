@@ -17,7 +17,6 @@
 
 #include <string>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/print.h"
@@ -26,8 +25,8 @@
 namespace litert::testing {
 
 // Information about the input model.
-struct ModelDetail : public Printable<std::string, std::string, bool> {
-  // File name, if in memeory only graph, an identifier of the graph.
+struct ModelDetail : Printable<std::string, std::string, bool> {
+  // File name, if in memory only graph, an identifier of the graph.
   std::string name = "";
   // Optional description or representation of the model.
   std::string desc = "";
@@ -48,7 +47,7 @@ struct ModelDetail : public Printable<std::string, std::string, bool> {
 
 // Information about the accelerator used if any.
 struct AcceleratorDetail
-    : public Printable<ExecutionBackend, std::string, std::string> {
+    : Printable<ExecutionBackend, std::string, std::string> {
   // The type of accelerator used.
   ExecutionBackend a_type = ExecutionBackend::kCpu;
 
@@ -74,7 +73,7 @@ struct AcceleratorDetail
 };
 
 // Information about any compilation that was done.
-struct CompilationDetail : public Printable<CompilationStatus> {
+struct CompilationDetail : Printable<CompilationStatus> {
   // The status of the compilation.
   CompilationStatus status = CompilationStatus::kNotRequested;
 

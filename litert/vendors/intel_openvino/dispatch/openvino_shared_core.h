@@ -22,7 +22,9 @@
 class OpenVINOSharedCore {
  public:
   OpenVINOSharedCore(const OpenVINOSharedCore&) = delete;
+  OpenVINOSharedCore(OpenVINOSharedCore&&) = delete;
   OpenVINOSharedCore& operator=(const OpenVINOSharedCore&) = delete;
+  OpenVINOSharedCore& operator=(OpenVINOSharedCore&&) = delete;
 
   static OpenVINOSharedCore* GetInstance();
 

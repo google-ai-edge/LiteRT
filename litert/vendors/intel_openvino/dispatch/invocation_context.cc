@@ -54,10 +54,7 @@ LiteRtDispatchInvocationContextT::Create(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get OpenVINO core from device context");
   }
-  ov::AnyMap configs_map;
-  configs_map["NPU_TURBO"] = "YES";
-  ov::CompiledModel compiled_model =
-      core->import_model(model_stream, "NPU", configs_map);
+  ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model

@@ -388,19 +388,21 @@ litert_device_test(
 #         "//litert/cc/internal:litert_platform_support",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/cc/options:litert_runtime_options",
-#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
 #         "@opencl_headers",
 #     ] + select({
 #         "@org_tensorflow//tensorflow:android": [
+#             "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
 #             "//tflite/delegates/gpu/cl:cl_device",
 #             "//tflite/delegates/gpu/cl:gl_interop",
 #             "//tflite/delegates/gpu/cl:opencl_wrapper",
 #             "//tflite/delegates/gpu/gl:egl_environment",
 #         ],
-#         "//conditions:default": [],
+#         "//conditions:default": [
+#             "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+#         ],
 #     }),
 # )
 #
@@ -547,7 +549,11 @@ litert_device_test(
 #     tags = [
 #         "manual",
 #         "no_oss",
-#         "notap",
+#         "nofastbuild",
+#         "noios",
+#         "nolinux",
+#         "nomacos",
+#         "nowindows",
 #         "requires-gpu-nvidia",
 #     ],
 #     deps = [
@@ -761,11 +767,11 @@ cc_library(
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_common",
-        "//litert/c:litert_event",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_profiler_event",
+        "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_handle",
     ],
 )
@@ -844,6 +850,18 @@ cc_library(
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_ranked_tensor_type_test",
+    srcs = ["litert_ranked_tensor_type_test.cc"],
+    deps = [
+        ":litert_element_type",
+        ":litert_layout",
+        ":litert_ranked_tensor_type",
+        "//litert/c:litert_model_types",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -938,13 +956,27 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
-        "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tensor_buffer_without_registry",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
-        "@opencl_headers",
+    ],
+)
+
+cc_test(
+    name = "litert_options_test",
+    srcs = ["litert_options_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_options",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
+        "//litert/core:options",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -991,21 +1023,6 @@ cc_library(
 #         ],
 #         "//conditions:default": [],
 #     }),
-# )
-#
-# cc_test(
-#     name = "litert_options_test",
-#     srcs = ["litert_options_test.cc"],
-#     deps = [
-#         ":litert_common",
-#         ":litert_options",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/strings",
-#         "//litert/cc/internal:scoped_file",
-#         "//litert/cc/internal:scoped_weight_source",
-#         "//litert/core:options",
-#         "//litert/test:matchers",
-#     ],
 # )
 #
 # litert_device_exec(
@@ -1086,8 +1103,8 @@ cc_library(
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_common",
-        "//litert/c:litert_profiler",
         "//litert/c:litert_profiler_event",
+        "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_handle",
     ],
 )

@@ -28,27 +28,27 @@ def openvino_configure():
         local_path_env = "OPENVINO_NATIVE_DIR",
         packages = json.encode([
             {
-                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.3/windows/openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64.zip",
+                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.1.0-20996-3ef8425ae12/openvino_toolkit_windows_2026.1.0.dev20260131_x86_64.zip",
                 "host_os": "windows",
                 "file_extension": "zip",
                 "symlink_mapping": {
-                    "openvino": "openvino_toolkit_windows_2025.3.0.19807.44526285f24_x86_64",
+                    "openvino": "openvino_toolkit_windows_2026.1.0.dev20260131_x86_64",
                 },
             },
             {
-                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.4.0rc2/openvino_toolkit_ubuntu22_2025.4.0.dev20251113_x86_64.tgz",
+                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.1.0-20996-3ef8425ae12/openvino_toolkit_ubuntu22_2026.1.0.dev20260131_x86_64.tgz",
                 "host_os": "linux",
                 "file_extension": "tgz",
                 "symlink_mapping": {
-                    "openvino": "openvino_toolkit_ubuntu22_2025.4.0.dev20251113_x86_64",
+                    "openvino": "openvino_toolkit_ubuntu22_2026.1.0.dev20260131_x86_64",
                 },
             },
             {
-                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.4.0rc2/openvino_toolkit_android_2025.4.0.dev20251113_x86_64.tgz",
+                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2026.1.0-20996-3ef8425ae12/openvino_toolkit_android_2026.1.0.dev20260131_x86_64.tgz",
                 "host_os": "linux",
                 "file_extension": "tgz",
                 "symlink_mapping": {
-                    "openvino_android": "openvino_toolkit_android_2025.4.0.dev20251113_x86_64",
+                    "openvino_android": "openvino_toolkit_android_2026.1.0.dev20260131_x86_64",
                 },
             },
         ]),

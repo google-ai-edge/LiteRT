@@ -164,6 +164,9 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 // Return an error if the backing buffer is not a custom tensor buffer.
+//
+// Caller should know the type of `tensor_buffer` and how to interpret the
+// custom buffer handle into an actual HW buffer type.
 LiteRtStatus LiteRtGetTensorBufferCustomTensorBufferHandle(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
 

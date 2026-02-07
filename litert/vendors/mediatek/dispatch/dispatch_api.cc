@@ -24,6 +24,7 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_environment_options.h"
@@ -65,14 +66,15 @@ std::optional<std::string> GetSharedLibraryDir(
   return std::string(std::get<const char*>(*dispatch_lib_dir_any));
 }
 
-LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
+LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
                               LiteRtOptions options) {
+  LiteRtEnvironmentOptions environment_options;
+  LiteRtGetEnvironmentOptions(environment, &environment_options);
   static_environment_options = environment_options;
   static_options = options;
 
-  auto [env, opts, opq_opts, mediatek_opts] =
-      litert::ParseOptions<litert::mediatek::MediatekOptions>(
-          environment_options, options);
+  auto [opts, opq_opts, mediatek_opts] =
+      litert::ParseOptions<litert::mediatek::MediatekOptions>(options);
 
   if (!mediatek_opts) {
     LITERT_ASSIGN_OR_RETURN(mediatek_opts,

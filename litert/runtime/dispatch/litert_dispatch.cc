@@ -23,6 +23,7 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/cc/internal/litert_shared_library.h"
@@ -79,9 +80,8 @@ LiteRtDispatchApi TheApi = {
     /*.graph_interface=*/nullptr,
 };
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
-  INVOKE_FUNC(initialize, environment_options, options);
+LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
+  INVOKE_FUNC(initialize, env, options);
 }
 
 litert::Expected<std::string> GetSharedLibraryPath(
@@ -109,12 +109,13 @@ litert::Expected<std::string> GetSharedLibraryPath(
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus LiteRtDispatchInitialize(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
+LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
+                                      LiteRtOptions options) {
   if (IsTheApiInitialized) {
     return kLiteRtStatusOk;
   }
-
+  LiteRtEnvironmentOptions environment_options;
+  LiteRtGetEnvironmentOptions(env, &environment_options);
   litert::EnvironmentOptions env_options(environment_options);
 
   // TODO(piyu): support Android systems where libraries are not unpacked in the
@@ -149,7 +150,7 @@ LiteRtStatus LiteRtDispatchInitialize(
     return kLiteRtStatusErrorWrongVersion;
   }
 
-  auto status = Initialize(environment_options, options);
+  auto status = Initialize(env, options);
   if (status == kLiteRtStatusOk) {
     IsTheApiInitialized = true;
   }

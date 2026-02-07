@@ -87,6 +87,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",

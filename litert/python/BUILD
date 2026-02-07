@@ -73,8 +73,7 @@ py_strict_library(
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
         # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
         # "//litert/python/mlir",
-        "//tflite/converter:converter_flags_proto_py",
-        "//tflite/converter:model_flags_proto_py",
+        "//ci/tools/python/wheel:tflite_converter_protos",
     ],
 )
 
@@ -116,8 +115,7 @@ py_strict_test(
     srcs = ["converter_wrapper_test.py"],
     deps = [
         ":pywrap_litert",
-        "//tflite/converter:converter_flags_proto_py",
-        "//tflite/converter:model_flags_proto_py",
+        "//ci/tools/python/wheel:tflite_converter_protos",
         "@absl_py//absl/testing:absltest",
     ],
 )

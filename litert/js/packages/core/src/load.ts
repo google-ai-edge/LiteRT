@@ -23,6 +23,7 @@ import {supportsFeature, throwIfFeatureNotSupported} from './wasm_feature_detect
 const WASM_JS_FILE_NAME = 'litert_wasm_internal.js';
 const WASM_JS_COMPAT_FILE_NAME = 'litert_wasm_compat_internal.js';
 const WASM_JS_THREADED_FILE_NAME = 'litert_wasm_threaded_internal.js';
+const WASM_JS_JSPI_FILE_NAME = 'litert_wasm_jspi_internal.js';
 
 /**
  * Options for loading LiteRT's Wasm module.
@@ -30,9 +31,13 @@ const WASM_JS_THREADED_FILE_NAME = 'litert_wasm_threaded_internal.js';
  * @property threads Whether to load the threaded version of the Wasm module.
  *     Defaults to false. Unused when specifying a .js file directly instead of
  *     a directory containing the Wasm files.
+ * @property jspi Whether to load the JSPI version of the Wasm module. Defaults
+ *     to false. Unused when specifying a .js file directly instead of a
+ *     directory containing the Wasm files.
  **/
 export interface LoadOptions {
   threads?: boolean;
+  jspi?: boolean;
 }
 
 /**
@@ -47,6 +52,10 @@ export async function load(
 
   const relaxedSimd = await supportsFeature('relaxedSimd');
   if (options?.threads) {
+    if (options?.jspi) {
+      throw new Error(
+          'The `threads` and `jspi` options are mutually exclusive.');
+    }
     if (isFullFilePath) {
       console.warn(
           `The \`threads\` option was specified, but the wasm path ${
@@ -63,10 +72,24 @@ export async function load(
     await throwIfFeatureNotSupported('threads');
   }
 
+  if (options?.jspi) {
+    if (isFullFilePath) {
+      console.warn(
+          `The \`jspi\` option was specified, but the wasm path ${
+              pathString} is a full ` +
+          `file path. Whether JSPI is available or not will depend on the ` +
+          `loaded file. To allow LiteRT.js to load the JSPI wasm file, ` +
+          `use a directory path instead of a full file path.`);
+    }
+    await throwIfFeatureNotSupported('jspi');
+  }
+
   let fileName = WASM_JS_COMPAT_FILE_NAME;
   if (relaxedSimd) {
     if (options?.threads) {
       fileName = WASM_JS_THREADED_FILE_NAME;
+    } else if (options?.jspi) {
+      fileName = WASM_JS_JSPI_FILE_NAME;
     } else {
       fileName = WASM_JS_FILE_NAME;
     }

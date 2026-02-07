@@ -14,8 +14,8 @@
 
 from absl.testing import absltest as googletest
 from litert.python import _pywrap_litert_converter as converter_wrapper
-from tflite.converter import converter_flags_pb2
-from tflite.converter import model_flags_pb2
+from ai_edge_litert.tflite.converter import converter_flags_pb2
+from ai_edge_litert.tflite.converter import model_flags_pb2
 
 
 class ConverterWrapperTest(googletest.TestCase):
@@ -28,13 +28,9 @@ class ConverterWrapperTest(googletest.TestCase):
         converter_wrapper.ConversionConfig.ModelType.Unknown,
     )
     self.assertEqual(
-        config.converter_flags,
-        converter_flags_pb2.ConverterFlags()
+        config.converter_flags, converter_flags_pb2.ConverterFlags()
     )
-    self.assertEqual(
-        config.model_flags,
-        model_flags_pb2.ModelFlags()
-    )
+    self.assertEqual(config.model_flags, model_flags_pb2.ModelFlags())
 
   def test_model_type_values(self):
     self.assertEqual(

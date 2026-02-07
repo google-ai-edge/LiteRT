@@ -41,4 +41,20 @@ TEST(LiteRtRuntimeOptionsTest, CreateWorks) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtRuntimeOptionsTest, CompressQuantizationZeroPointsRoundTrip) {
+  LiteRtOpaqueOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateRuntimeOptions(&options));
+
+  LiteRtRuntimeOptions runtime_options = nullptr;
+  LITERT_ASSERT_OK(LiteRtFindRuntimeOptions(options, &runtime_options));
+  LITERT_ASSERT_OK(LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, true));
+  bool enabled = false;
+  LITERT_ASSERT_OK(LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, &enabled));
+  EXPECT_TRUE(enabled);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 }  // namespace

@@ -16,6 +16,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
 namespace {
@@ -26,16 +27,21 @@ using ::testing::HasSubstr;
 
 // NOTE: This tests that all of the dynamic loading works properly and
 // the QNN SDK instance can be properly initialized and destroyed.
+auto CreateQnnManager(const ::qnn::Options& options) {
+#if defined(__x86_64__) || defined(_M_X64)
+  return QnnManager::Create(options, {}, ::qnn::kSocInfos[8]);
+#else
+  return QnnManager::Create(options);
+#endif
+}
 
 TEST(QnnManagerTest, SetupQnnManager) {
-  auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(options);
+  auto qnn = CreateQnnManager(::qnn::Options());
   ASSERT_TRUE(qnn);
 }
 
 TEST(QnnManagerTest, Dump) {
-  auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(options);
+  auto qnn = CreateQnnManager(::qnn::Options());
   ASSERT_TRUE(qnn);
 
   auto dump = Dump(**qnn);
@@ -46,7 +52,7 @@ TEST(QnnManagerTest, Dump) {
 
 TEST(QnnManagerTest, GetOptions) {
   auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(options);
+  auto qnn = CreateQnnManager(options);
   ASSERT_TRUE(qnn);
 
   const auto& options_ref = (*qnn)->GetOptions();

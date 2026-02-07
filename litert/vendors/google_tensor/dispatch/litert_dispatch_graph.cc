@@ -122,10 +122,9 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
 
 LiteRtStatus LiteRtDispatchGraphT::Destroy() {
   if (!registered_icontexts_.empty()) {
-    LITERT_LOG(
-        LITERT_ERROR,
-        "Cannot destroy graph with %zu invocation contexts registered",
-        registered_icontexts_.size());
+    LITERT_LOG(LITERT_ERROR,
+               "Cannot destroy graph with %zu invocation contexts registered",
+               registered_icontexts_.size());
     return kLiteRtStatusErrorRuntimeFailure;
   }
 

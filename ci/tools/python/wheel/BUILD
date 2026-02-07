@@ -44,6 +44,59 @@ genrule(
     cmd = "for f in $(SRCS); do sed -e 's/tflite\\.profiling\\.proto/ai_edge_litert/g' $$f > $(RULEDIR)/$$(basename $$f); done",
 )
 
+genrule(
+    name = "relocated_tflite_protos",
+    srcs = [
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter:model_flags_proto_py",
+        "//tflite/converter:types_proto_py",
+        "//tflite/converter/debug:debug_options_proto_py",
+    ],
+    outs = [
+        "ai_edge_litert/tflite/converter/converter_flags_pb2.py",
+        "ai_edge_litert/tflite/converter/model_flags_pb2.py",
+        "ai_edge_litert/tflite/converter/types_pb2.py",
+        "ai_edge_litert/tflite/converter/debug/debug_options_pb2.py",
+    ],
+    cmd = select({
+        "@bazel_tools//src/conditions:windows": """powershell -Command "
+            $$srcs = '$(SRCS)'.Split(' ');
+            $$base_out = '$(RULEDIR)/ai_edge_litert/tflite/converter';
+            New-Item -Path $$base_out/debug -ItemType Directory -Force | Out-Null;
+            foreach ($$f in $$srcs) {
+                $$fname = Split-Path $$f -Leaf;
+                if ($$fname -eq 'debug_options_pb2.py') {
+                    $$out_dir = Join-Path $$base_out 'debug'
+                } else {
+                    $$out_dir = $$base_out
+                };
+                $$out_path = Join-Path $$out_dir $$fname;
+                (Get-Content $$f -Raw).Replace('tflite.converter', 'ai_edge_litert.tflite.converter') | Set-Content $$out_path -Encoding UTF8
+            }
+        " """,
+        "//conditions:default": """
+            mkdir -p $(RULEDIR)/ai_edge_litert/tflite/converter/debug
+            for f in $(SRCS); do
+                fname=$$(basename $$f)
+                if [ "$$fname" == "debug_options_pb2.py" ]; then
+                    out_dir=$(RULEDIR)/ai_edge_litert/tflite/converter/debug
+                else
+                    out_dir=$(RULEDIR)/ai_edge_litert/tflite/converter
+                fi
+                sed 's/tflite\\.converter/ai_edge_litert.tflite.converter/g' $$f > $$out_dir/$$fname
+            done
+        """,
+    }),
+)
+
+py_library(
+    name = "tflite_converter_protos",
+    srcs = [":relocated_tflite_protos"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["@com_google_protobuf//:protobuf_python"],
+)
+
 # This includes the dependencies that lives in litert/python/
 # TODO(weiyiw): Walk the dependencies and pull in related files.
 # TODO(weiyiw): Support data files.
@@ -121,12 +174,11 @@ py_wheel(
     package_data = PACKAGE_DATA,
     platform_name = get_wheel_platform_name(),
     project_name = "ai_edge_litert",
-    py_srcs = ALL_PY_SRC_MODULES,
-    setup_py = ":setup_py",
-    structured_deps = [
-        "//tflite/converter:converter_flags_proto_py",
-        "//tflite/converter:model_flags_proto_py",
+    py_srcs = ALL_PY_SRC_MODULES + [
+        ":relocated_tflite_protos",
     ],
+    setup_py = ":setup_py",
+    structured_deps = [],
     # NOTE: There is no plan to release more 1.x versions. But if that's needed in the future,
     # LITERT_FULL_VERSION should be used here instead.
     version = LITERT_EXPERIMENTAL_VERSION,

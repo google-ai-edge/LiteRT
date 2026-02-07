@@ -72,6 +72,11 @@ class Tensor : public litert::SimpleTensor {
  public:
   explicit Tensor(LiteRtTensor tensor) : litert::SimpleTensor(tensor) {}
 
+  // Allow copying Tensors (they are just handles).
+  Tensor(const Tensor& other) : litert::SimpleTensor(other.Get()) {}
+  Tensor(Tensor&&) = default;
+  Tensor& operator=(Tensor&&) = default;
+
   LiteRtQuantizationTypeId QTypeId() const {
     LiteRtQuantizationTypeId q_type_id;
     internal::AssertOk(LiteRtGetQuantizationTypeId, Get(), &q_type_id);
@@ -185,6 +190,11 @@ using OpOutputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpOutputs>;
 class Op : public internal::NonOwnedHandle<LiteRtOp> {
  public:
   explicit Op(LiteRtOp op) : NonOwnedHandle<LiteRtOp>(op) {}
+
+  // Allow copying Ops (they are just handles).
+  Op(const Op& other) : NonOwnedHandle<LiteRtOp>(other.Get()) {}
+  Op(Op&&) = default;
+  Op& operator=(Op&&) = default;
 
   LiteRtOpCode Code() const {
     LiteRtOpCode opcode;

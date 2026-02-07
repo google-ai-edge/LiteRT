@@ -37,6 +37,7 @@ cc_library(
         ":dump_runtimecapi",
         ":outstream",
         ":tool_display",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_serialize",
@@ -429,9 +430,11 @@ cc_test(
 
 cc_library(
     name = "tensor_utils",
+    srcs = ["tensor_utils.cc"],
     hdrs = ["tensor_utils.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -617,7 +620,11 @@ cc_binary(
     srcs = ["gpu_numerics_check.cc"],
     tags = [
         "manual",
-        "notap",
+        "nofastbuild",
+        "noios",
+        "nolinux",
+        "nomacos",
+        "nowindows",
         "requires-gpu-nvidia",
     ],
     deps = NUMERICS_CHECK_DEPS + [
@@ -702,7 +709,11 @@ cc_binary(
     name = "benchmark_model_jet",
     tags = [
         "manual",
-        "notap",
+        "nofastbuild",
+        "noios",
+        "nolinux",
+        "nomacos",
+        "nowindows",
         "requires-gpu-nvidia",
     ],
     deps = [

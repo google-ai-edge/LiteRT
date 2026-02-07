@@ -76,10 +76,10 @@ constexpr LiteRtParamIndex kDefaultPartitionNum = 1;
 static constexpr absl::string_view kEntryPointNameFmt = "qnn_partition_%d";
 
 bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
-#ifdef __ANDROID__
-  return false;
-#else
+#if defined(__x86_64__) || defined(_M_X64)
   return dsp_arch >= ::qnn::DspArch::V73;
+#else
+  return false;
 #endif
 }
 
@@ -221,10 +221,8 @@ class LiteRtCompilerPluginT {
  public:
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env_options,
                         LiteRtOptions litert_options) {
-    std::tie(env_options_, litert_options_, opaque_options_,
-             qualcomm_options_) =
-        litert::ParseOptions<litert::qualcomm::QualcommOptions>(env_options,
-                                                                litert_options);
+    std::tie(litert_options_, opaque_options_, qualcomm_options_) =
+        litert::ParseOptions<litert::qualcomm::QualcommOptions>(litert_options);
     if (qualcomm_options_.HasValue()) {
       InitQnnOptions(qnn_options_, qualcomm_options_.Value());
     }
@@ -239,8 +237,6 @@ class LiteRtCompilerPluginT {
   QnnManager* QNN() { return qnn_manager_.get(); }
 
  private:
-  litert::Expected<litert::EnvironmentOptions> env_options_ = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null environment options");
   litert::Expected<litert::Options> litert_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::OpaqueOptions> opaque_options_ =

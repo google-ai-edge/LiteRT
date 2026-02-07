@@ -839,6 +839,16 @@ class RuntimeProxy {
                                tensor_buffer, hw_memory_handle);
   }
 
+  LiteRtStatus CreateTensorBufferFromWebGpuTexture(
+      LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+      void* webgpu_texture, size_t webgpu_texture_size,
+      LiteRtWebGpuTextureDeallocator deallocator,
+      LiteRtTensorBuffer* tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_tensor_buffer_from_web_gpu_texture,
+                               env, tensor_type, webgpu_texture,
+                               webgpu_texture_size, deallocator, tensor_buffer);
+  }
+
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
   LiteRtStatus CreateTensorBufferFromMetalMemory(
@@ -931,6 +941,10 @@ class RuntimeProxy {
 
   LiteRtStatus UnlockTensorBuffer(LiteRtTensorBuffer buffer) {
     LITERT_PROXY_METHOD_STATUS(litert_unlock_tensor_buffer, buffer);
+  }
+
+  LiteRtStatus ClearTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS(litert_clear_tensor_buffer, tensor_buffer);
   }
 
   void DestroyTensorBuffer(LiteRtTensorBuffer buffer) {

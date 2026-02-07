@@ -63,6 +63,10 @@ class RankedTensorType {
 
   ElementType ElementType() const { return element_type_; }
 
+  void SetElementType(enum ElementType element_type) {
+    element_type_ = element_type;
+  }
+
   const Layout& Layout() const { return layout_; }
 
   Expected<size_t> Bytes() const {

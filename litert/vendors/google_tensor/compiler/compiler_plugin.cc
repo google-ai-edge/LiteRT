@@ -404,8 +404,8 @@ class LiteRtCompilerPluginT {
   using GoogleTensorOptions = ::litert::google_tensor::GoogleTensorOptions;
 
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
-    std::tie(env_, opts_, opq_, google_tensor_opts_) =
-        litert::ParseOptions<GoogleTensorOptions>(env, options);
+    std::tie(opts_, opq_, google_tensor_opts_) =
+        litert::ParseOptions<GoogleTensorOptions>(options);
   }
 
   ::litert::Expected<GoogleTensorOptions>& GetGoogleTensorOptions() {
@@ -413,10 +413,10 @@ class LiteRtCompilerPluginT {
   }
 
   ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
+  void SetLiteRtVersion(LiteRtApiVersion v) { litert_version_ = v; }
+  LiteRtApiVersion GetLiteRtVersion() const { return litert_version_; }
 
  private:
-  litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null environment options");
   litert::Expected<litert::Options> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::OpaqueOptions> opq_ =
@@ -424,6 +424,7 @@ class LiteRtCompilerPluginT {
   litert::Expected<litert::google_tensor::GoogleTensorOptions>
       google_tensor_opts_ = litert::Error(kLiteRtStatusErrorInvalidArgument,
                                           "Null google tensor options");
+  LiteRtApiVersion litert_version_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
@@ -586,10 +587,17 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_RETURN_IF_ERROR(LiteRtOpaqueOptionsToGoogleTensorOptions(
       opaque_options, &google_tensor_options));
 
+  // Set litert version string (e.g., "0.1.0")
+  LiteRtApiVersion litert_version = compiler_plugin->GetLiteRtVersion();
+  std::string api_version_str =
+      absl::StrFormat("%d.%d.%d", litert_version.major, litert_version.minor,
+                      litert_version.patch);
+
   // Set compilation configuration.
   auto* compiler_config = google_tensor_options.mutable_compiler_config();
   compiler_config->set_compilation_client(
       GoogleTensorCompilerConfig::COMPILATION_CLIENT_LITERT_PLUGIN);
+  compiler_config->set_litert_version(api_version_str);
 
   // In the ODC flow, LiteRT doesn't set a valid value to soc_model, relying on
   // underlying layers to infer it. This allows the device type to be set as
@@ -687,5 +695,6 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  compiler_plugin->SetLiteRtVersion(api_version);
   return kLiteRtStatusOk;
 }

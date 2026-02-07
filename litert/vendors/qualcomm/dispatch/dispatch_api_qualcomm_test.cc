@@ -69,10 +69,9 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -329,10 +328,9 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -615,10 +613,9 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
       output_tensor_0.size() * sizeof(decltype(output_tensor_0)::value_type);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -910,10 +907,9 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
       output_tensor_0.size() * sizeof(decltype(output_tensor_0)::value_type);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;

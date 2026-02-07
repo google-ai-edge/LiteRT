@@ -26,7 +26,6 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
@@ -271,7 +270,7 @@ class LiteRtTensorBufferT {
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 
-  static litert::Expected<Ptr> CreateManagedOpenVINOTensorBuffer(
+  static litert::Expected<Ptr> CreateManagedCustomTensorBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 

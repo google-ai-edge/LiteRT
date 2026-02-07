@@ -17,6 +17,7 @@
 from typing import Any, List, Union
 import numpy as np
 
+
 def CreateTensorBufferFromHostMemory(
         py_data: List,
         dtype: str,
@@ -36,6 +37,7 @@ def CreateTensorBufferFromHostMemory(
     """
     ...
 
+
 def WriteTensor(
         capsule: object,
         data_list: List,
@@ -51,6 +53,7 @@ def WriteTensor(
         numpy dtype (e.g., np.float32).
     """
     ...
+
 
 def ReadTensor(
         capsule: object,
@@ -70,6 +73,7 @@ def ReadTensor(
       e.g., np.array(output_data, dtype=np.float32).reshape((1, 4))
     """
     ...
+
 
 def DestroyTensorBuffer(
         capsule: object
