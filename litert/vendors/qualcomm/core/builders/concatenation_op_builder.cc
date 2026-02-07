@@ -7,30 +7,39 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildConcatenationOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const std::int32_t axis) {
-  std::vector<OpWrapper> res;
-
-  auto& concat_op = CreateOpWrapper(res, QNN_OP_CONCAT);
+OpWrapper CreateConcatenationOp(
+    const std::vector<ConstTensorWrapperRef>& inputs,
+    const TensorWrapper& output, std::uint32_t axis) {
+  auto name = GetUniqueOpName(QNN_OP_CONCAT);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_CONCAT, QnnOpCode::kConcat);
   for (const auto& input : inputs) {
-    concat_op.AddInputTensor(input);
+    op.AddInputTensor(input);
   }
-  concat_op.AddOutputTensor(outputs[0]);
+  op.AddOutputTensor(output);
+  op.AddScalarParam<std::uint32_t>(QNN_OP_CONCAT_PARAM_AXIS, axis);
+  return op;
+}
 
-  std::uint32_t adjusted_axis =
-      (axis >= 0) ? axis : axis + inputs[0].get().GetRank();
-  concat_op.AddScalarParam<std::uint32_t>(QNN_OP_CONCAT_PARAM_AXIS,
-                                          adjusted_axis);
-
-  return res;
+OpWrapper CreateConcatenationOpWithSameParam(
+    const OpWrapper& src, const std::vector<ConstTensorWrapperRef>& inputs,
+    const TensorWrapper& output) {
+  auto name = GetUniqueOpName(QNN_OP_CONCAT);
+  OpWrapper op(src);
+  op.SetName(std::move(name));
+  op.ClearInputOutputTensors();
+  for (const auto& input : inputs) {
+    op.AddInputTensor(input);
+  }
+  op.AddOutputTensor(output);
+  return op;
 }
 
 }  // namespace qnn

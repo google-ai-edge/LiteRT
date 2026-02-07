@@ -4,16 +4,21 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_CONCATENATION_OP_BUILDER_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_CONCATENATION_OP_BUILDER_H_
 
-#include "litert/vendors/qualcomm/core/builders/op_builder.h"
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include <cstdint>
+#include <vector>
+
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildConcatenationOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const std::int32_t axis);
+OpWrapper CreateConcatenationOp(
+    const std::vector<ConstTensorWrapperRef>& inputs,
+    const TensorWrapper& output, std::uint32_t axis);
+
+OpWrapper CreateConcatenationOpWithSameParam(
+    const OpWrapper& src, const std::vector<ConstTensorWrapperRef>& inputs,
+    const TensorWrapper& output);
 
 }  // namespace qnn
 

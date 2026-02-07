@@ -104,6 +104,7 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+
 namespace litert::qnn {
 namespace {
 static const char* kLiteRtStr = "litert";
@@ -334,8 +335,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        std::vector<::qnn::OpWrapper>& op_wrappers) {
   switch (litert_op.Code()) {
     case LiteRtOpCode::kLiteRtOpCodeTflCast: {
-      op_wrappers =
-          ::qnn::BuildCastOp(tensor_pool, input_tensors, output_tensors);
+      op_wrappers.emplace_back(
+          ::qnn::CreateCastOp(input_tensors[0], output_tensors[0]));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflConcatenation: {
@@ -348,8 +349,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
 
       auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildConcatenationOp(tensor_pool, input_tensors,
-                                                {activation_input}, axis);
+      std::uint32_t adjusted_axis =
+          (axis >= 0) ? axis : axis + input_tensors[0].get().GetRank();
+      op_wrappers.emplace_back(::qnn::CreateConcatenationOp(
+          std::vector<::qnn::ConstTensorWrapperRef>(input_tensors.begin(),
+                                                    input_tensors.end()),
+          activation_input, adjusted_axis));
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
                                     activation_input, output_tensors[0]);
       break;
@@ -361,8 +366,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
 
       auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildElementwiseAddOp(tensor_pool, input_tensors,
-                                                 {activation_input});
+      op_wrappers.emplace_back(::qnn::CreateElementWiseAddOp(
+          input_tensors[0], input_tensors[1], activation_input));
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
                                     activation_input, output_tensors[0]);
       break;
@@ -417,8 +422,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
 
       auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildElementwiseMulOp(tensor_pool, input_tensors,
-                                                 {activation_input});
+      op_wrappers.emplace_back(::qnn::CreateElementWiseMulOp(
+          input_tensors[0], input_tensors[1], activation_input));
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
                                     activation_input, output_tensors[0]);
       break;
@@ -487,8 +492,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflNotEqual: {
-      op_wrappers = ::qnn::BuildElementwiseNotEqualOp(
-          tensor_pool, input_tensors, output_tensors);
+      op_wrappers.emplace_back(::qnn::CreateElementWiseNotEqualOp(
+          input_tensors[0], input_tensors[1], output_tensors[0]));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflLogicalOr: {
@@ -575,8 +580,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       bool adj_y{};
       LITERT_RETURN_IF_ERROR(
           LiteRtGetBatchMatmulAdjYOption(litert_op.Get(), &adj_y));
-      op_wrappers = ::qnn::BuildMatmulOp(tensor_pool, input_tensors,
-                                         output_tensors, adj_x, adj_y);
+      op_wrappers.emplace_back(::qnn::CreateMatmulOp(
+          input_tensors[0], input_tensors[1], output_tensors[0], adj_x, adj_y));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflQuantize: {
@@ -638,14 +643,15 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflReshape: {
-      op_wrappers =
-          ::qnn::BuildReshapeOp(tensor_pool, input_tensors, output_tensors);
+      op_wrappers.emplace_back(
+          ::qnn::CreateReshapeOp(input_tensors[0], output_tensors[0]));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflSelect:
     case LiteRtOpCode::kLiteRtOpCodeTflSelectV2: {
-      op_wrappers =
-          ::qnn::BuildSelectOp(tensor_pool, input_tensors, output_tensors);
+      op_wrappers.emplace_back(
+          ::qnn::CreateSelectOp(input_tensors[0], input_tensors[1],
+                                input_tensors[2], output_tensors[0]));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflSlice: {
@@ -657,8 +663,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       float beta{};
       LITERT_RETURN_IF_ERROR(
           LiteRtGetSoftmaxBetaOption(litert_op.Get(), &beta));
-      op_wrappers = ::qnn::BuildSoftmaxOp(tensor_pool, input_tensors,
-                                          output_tensors, beta);
+      op_wrappers.emplace_back(
+          ::qnn::CreateSoftmaxOp(input_tensors[0], output_tensors[0], beta));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflSplit: {
@@ -724,8 +730,14 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflUnpack: {
       int32_t axis{};
       LITERT_RETURN_IF_ERROR(LiteRtGetUnpackAxisOption(litert_op.Get(), &axis));
-      op_wrappers = ::qnn::BuildUnpackOp(tensor_pool, input_tensors,
-                                         output_tensors, axis);
+      const auto& unpack_input_0 = input_tensors[0].get();
+      const std::uint32_t adjusted_axis =
+          axis < 0 ? axis + unpack_input_0.GetRank() : axis;
+      op_wrappers.emplace_back(::qnn::CreateUnpackOp(
+          unpack_input_0,
+          std::vector<::qnn::ConstTensorWrapperRef>(output_tensors.begin(),
+                                                    output_tensors.end()),
+          adjusted_axis));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflDynamicUpdateSlice: {
@@ -1085,8 +1097,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflLogicalNot: {
-      op_wrappers = ::qnn::BuildElementwiseNotOp(tensor_pool, input_tensors,
-                                                 output_tensors);
+      op_wrappers.emplace_back(
+          ::qnn::CreateElementWiseNotOp(input_tensors[0], output_tensors[0]));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflGreaterEqual: {
@@ -1100,8 +1112,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflEqual: {
-      op_wrappers = ::qnn::BuildElementwiseEqualOp(tensor_pool, input_tensors,
-                                                   output_tensors);
+      op_wrappers.emplace_back(::qnn::CreateElementWiseEqualOp(
+          input_tensors[0], input_tensors[1], output_tensors[0]));
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflLog: {

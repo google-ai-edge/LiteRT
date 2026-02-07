@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -40,9 +41,8 @@ TEST(IrJsonDump, SerializeOpToJson) {
                                                 quant_param, {1, 1, 1280, 256});
   auto& output0 = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 1, 512, 1280});
-  auto matmul0 =
-      BuildMatmulOp(tensor_pool, {input0, input1}, {output0}, false, true);
-  nlohmann::json qnn_op = SerializeOpToJson(matmul0[0].GetOpConfig());
+  auto matmul0 = CreateMatmulOp(input0, input1, output0, false, true);
+  nlohmann::json qnn_op = SerializeOpToJson(matmul0.GetOpConfig());
 
   ASSERT_TRUE(qnn_op.contains("input_names"));
   EXPECT_EQ(qnn_op["input_names"][0], "0_qnn");
@@ -127,10 +127,8 @@ TEST(IrJsonDump, MatMul) {
                                                 quant_param, {1, 1, 1280, 256});
   auto& output0 = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, {1, 1, 512, 1280});
-  auto matmul0 =
-      BuildMatmulOp(tensor_pool, {input0, input1}, {output0}, false, true);
-  std::move(matmul0.begin(), matmul0.end(),
-            std::back_inserter(graph_op_wrappers));
+  graph_op_wrappers.emplace_back(
+      CreateMatmulOp(input0, input1, output0, false, true));
   absl::flat_hash_set<const ::qnn::TensorWrapper*> created_tensors;
   for (auto& op_wrapper : graph_op_wrappers) {
     for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
