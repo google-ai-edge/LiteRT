@@ -411,18 +411,24 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// provided input/output `TensorBuffer`s.
   Expected<void> Run(size_t signature_index,
                      absl::Span<const TensorBuffer> input_buffers,
-                     absl::Span<const TensorBuffer> output_buffers) const {
+                     absl::Span<const TensorBuffer> output_buffers,
+                     Options* run_options = nullptr) const {
     bool async = false;
-    return RunHelper(signature_index, input_buffers, output_buffers, async);
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     run_options ? run_options->Get() : nullptr);
   }
 
   /// @brief Runs the model for the default signature synchronously with the
   /// provided input/output `TensorBuffer`s.
   Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
-                     absl::Span<const TensorBuffer> output_buffers) const {
+                     absl::Span<const TensorBuffer> output_buffers,
+                     Options* run_options = nullptr) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
     bool async = false;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async);
+                     async, run_options ? run_options->Get() : nullptr);
   }
 
   /// @brief Runs the model for a given signature index asynchronously, if
@@ -433,9 +439,13 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<void> RunAsync(size_t signature_index,
                           const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
-                          bool& async) const {
+                          bool& async, Options* run_options = nullptr) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
     async = true;
-    return RunHelper(signature_index, input_buffers, output_buffers, async);
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     run_options ? run_options->Get() : nullptr);
   }
 
   /// @brief Runs the model for the default signature asynchronously, if
@@ -445,20 +455,24 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// otherwise, the function runs the model synchronously.
   Expected<void> RunAsync(const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
-                          bool& async) const {
+                          bool& async, Options* run_options = nullptr) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
     async = true;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async);
+                     async, run_options ? run_options->Get() : nullptr);
   }
 
   /// @brief Runs the model for a given signature key synchronously with the
   /// provided input/output `TensorBuffer`s.
   Expected<void> Run(absl::string_view signature_key,
                      const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers) const {
+                     const std::vector<TensorBuffer>& output_buffers,
+                     Options* run_options = nullptr) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             model_.GetSignatureIndex(signature_key));
-    return Run(signature_index, input_buffers, output_buffers);
+    return Run(signature_index, input_buffers, output_buffers, run_options);
   }
 
   /// @brief Runs the model for a given signature key asynchronously, if
@@ -469,11 +483,12 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<void> RunAsync(absl::string_view signature_key,
                           const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
-                          bool& async) const {
+                          bool& async, Options* run_options = nullptr) const {
     async = true;
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             model_.GetSignatureIndex(signature_key));
-    return RunAsync(signature_index, input_buffers, output_buffers, async);
+    return RunAsync(signature_index, input_buffers, output_buffers, async,
+                    run_options);
   }
 
   /// @brief Runs the model for a given signature key synchronously with the
@@ -484,10 +499,14 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<void> Run(
       absl::string_view signature_key,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
-      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map)
-      const {
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      Options* run_options = nullptr) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
     bool async = false;
-    return RunMapHelper(signature_key, input_map, output_map, async);
+    return RunMapHelper(signature_key, input_map, output_map, async,
+                        run_options ? run_options->Get() : nullptr);
   }
 
   /// @brief Runs the model for the default signature synchronously with the
@@ -497,11 +516,15 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// can skip providing those input buffers in the map.
   Expected<void> Run(
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
-      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map)
-      const {
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      Options* run_options = nullptr) const {
     bool async = false;
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
     return RunMapWithIndexHelper(/*signature_index=*/0, input_map, output_map,
-                                 async);
+                                 async,
+                                 run_options ? run_options->Get() : nullptr);
   }
 
   /// @brief Runs the model for a given signature key asynchronously, if
@@ -513,9 +536,13 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       absl::string_view signature_key,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
-      bool& async) const {
+      bool& async, Options* run_options = nullptr) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
     async = true;
-    return RunMapHelper(signature_key, input_map, output_map, async);
+    return RunMapHelper(signature_key, input_map, output_map, async,
+                        run_options ? run_options->Get() : nullptr);
   }
 
   /// @brief Returns `true` if the compiled model is fully accelerated with the
@@ -930,25 +957,26 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                size_t num_input_buffers,
                                LiteRtTensorBuffer* input_buffers,
                                size_t num_output_buffers,
-                               LiteRtTensorBuffer* output_buffers,
-                               bool& async) const;
+                               LiteRtTensorBuffer* output_buffers, bool& async,
+                               LiteRtOptions run_options = nullptr) const;
 
   Expected<void> RunHelper(size_t signature_index,
                            absl::Span<const TensorBuffer> input_buffers,
                            absl::Span<const TensorBuffer> output_buffers,
-                           bool& async) const;
+                           bool& async,
+                           LiteRtOptions run_options = nullptr) const;
 
   Expected<void> RunMapHelper(
       absl::string_view signature_key,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
-      bool& async) const;
+      bool& async, LiteRtOptions run_options = nullptr) const;
 
   Expected<void> RunMapWithIndexHelper(
       size_t signature_index,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
-      bool& async) const;
+      bool& async, LiteRtOptions run_options = nullptr) const;
 
   internal::EnvironmentHolder env_;
   Model model_;

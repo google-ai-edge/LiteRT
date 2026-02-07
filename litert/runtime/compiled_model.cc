@@ -1245,7 +1245,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 Expected<void> LiteRtCompiledModelT::Run(
     absl::string_view signature_key,
     const std::vector<LiteRtTensorBuffer>& input_buffers,
-    const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async) {
+    const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async,
+    LiteRtOptions run_options) {
   uint64_t event_handle = std::numeric_limits<uint64_t>::max();
   if (profiler_ && profiler_->IsProfiling()) {
     profiler_->SetCurrentEventSource(LITERT);
@@ -1346,6 +1347,13 @@ Expected<void> LiteRtCompiledModelT::Run(
 
   // Relay the intended async execution mode to DelegateKernel of Accelerator.
   buffer_context_->SetAsyncExecutionMode(async);
+  const LiteRtOptions previous_run_options = buffer_context_->GetRunOptions();
+  buffer_context_->SetRunOptions(run_options);
+  absl::Cleanup restore_run_options = [this, previous_run_options]() {
+    if (buffer_context_ != nullptr) {
+      buffer_context_->SetRunOptions(previous_run_options);
+    }
+  };
 
   if (auto res = runner->Invoke(); res != kTfLiteOk) {
     if (res == kTfLiteCancelled) {
@@ -1407,7 +1415,8 @@ Expected<void> LiteRtCompiledModelT::Run(
 Expected<void> LiteRtCompiledModelT::RunCApi(
     size_t signature_index, size_t num_input_buffers,
     const LiteRtTensorBuffer* input_buffers, size_t num_output_buffers,
-    const LiteRtTensorBuffer* output_buffers, bool* async) {
+    const LiteRtTensorBuffer* output_buffers, bool* async,
+    LiteRtOptions run_options) {
   if (signature_index >= signature_keys_.size()) {
     return Unexpected(kLiteRtStatusErrorIndexOOB,
                       "Signature index is out of range of signature keys");
@@ -1424,7 +1433,7 @@ Expected<void> LiteRtCompiledModelT::RunCApi(
   }
   bool async_ = async ? *async : false;
   auto result = Run(*signature_keys_[signature_index], input_buffers_vec,
-                    output_buffers_vec, async_);
+                    output_buffers_vec, async_, run_options);
   if (async) {
     *async = async_;
   }

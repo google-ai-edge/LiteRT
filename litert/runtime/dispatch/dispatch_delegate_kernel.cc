@@ -1008,6 +1008,23 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
 
     auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
     output_events.resize(num_node_outputs);
+
+    // Apply per-run options, if supported by the dispatch runtime.
+    {
+      LiteRtOptions run_options =
+          buffer_context_ ? buffer_context_->GetRunOptions() : nullptr;
+      LiteRtStatus status = LiteRtDispatchInvocationContextSetOptions(
+          invocation_context, run_options);
+      if (status != kLiteRtStatusOk &&
+          status != kLiteRtStatusErrorUnsupported) {
+        return Unexpected(
+            status,
+            absl::StrFormat(
+                "Failed to set dispatch invocation options for node %d: %d",
+                node_idx, status));
+      }
+    }
+
     LITERT_RETURN_IF_ERROR(LiteRtDispatchInvokeAsync(
         invocation_context, output_events.size(), output_events.data()));
 
@@ -1061,6 +1078,20 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
 
   // Run NPU bytecodes synchronously and in topological order.
   for (auto* invocation_context : node_invocation_contexts_) {
+    // Apply per-run options, if supported by the dispatch runtime.
+    {
+      LiteRtOptions run_options =
+          buffer_context_ ? buffer_context_->GetRunOptions() : nullptr;
+      LiteRtStatus status = LiteRtDispatchInvocationContextSetOptions(
+          invocation_context, run_options);
+      if (status != kLiteRtStatusOk &&
+          status != kLiteRtStatusErrorUnsupported) {
+        return Unexpected(
+            status,
+            absl::StrFormat("Failed to set dispatch invocation options: %d",
+                            status));
+      }
+    }
     LITERT_RETURN_IF_ERROR(LiteRtDispatchInvoke(invocation_context));
   }
 

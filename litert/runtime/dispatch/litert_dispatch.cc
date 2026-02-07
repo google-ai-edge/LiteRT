@@ -280,6 +280,24 @@ LiteRtStatus LiteRtDispatchInvocationContextDestroy(
   INVOKE_FUNC(invocation_context_destroy, invocation_context);
 }
 
+LiteRtStatus LiteRtDispatchInvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  if (!invocation_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface) {
+    LITERT_LOG(LITERT_ERROR, "Dispatch API interface not found");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (!TheApi.interface->invocation_context_set_options) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API invocation_context_set_options");
+  return TheApi.interface->invocation_context_set_options(invocation_context,
+                                                          options);
+}
+
 LiteRtStatus LiteRtDispatchAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {

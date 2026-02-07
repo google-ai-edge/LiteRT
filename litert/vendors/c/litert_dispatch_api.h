@@ -71,6 +71,9 @@ typedef LiteRtStatus (*LiteRtDispatchInvocationContextCreateT)(
 typedef LiteRtStatus (*LiteRtDispatchInvocationContextDestroyT)(
     LiteRtDispatchInvocationContext invocation_context);
 
+typedef LiteRtStatus (*LiteRtDispatchInvocationContextSetOptionsT)(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options);
+
 typedef LiteRtStatus (*LiteRtDispatchAttachInputT)(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle);
@@ -135,6 +138,7 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchGetMetricT get_metric;
   LiteRtDispatchDestroyMetricsT destroy_metrics;
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
+  LiteRtDispatchInvocationContextSetOptionsT invocation_context_set_options;
 } LiteRtDispatchInterface;
 
 // /////////////////////////////////////////////////////////////////////////////
