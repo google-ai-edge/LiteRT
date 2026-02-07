@@ -18,7 +18,7 @@ load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_android_
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//litert/build_common/tensorflow:license"],
     default_visibility = [
         # By default, visibility is restricted to litert_cc_users_dynamic_link. Individual targets can be
         # made public by setting their visibility to litert_public.

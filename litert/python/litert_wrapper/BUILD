@@ -15,7 +15,7 @@
 # copybara:uncomment load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//litert/build_common/tensorflow:license"],
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],
 )

@@ -20,7 +20,7 @@ load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//litert/build_common/tensorflow:license"],
     default_visibility = [
         "//visibility:public",  # copybara:comment_replace "//litert:litert_public",
     ],

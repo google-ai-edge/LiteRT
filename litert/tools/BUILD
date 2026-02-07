@@ -23,7 +23,7 @@ load("//litert/integration_test:litert_device_common.bzl", "dispatch_device_rloc
 load("//litert/tools:tool_test.bzl", "runfile_path", "tool_test")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//litert/build_common/tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
 )
 
