@@ -13,8 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 
 # Building blocks for generating accuracy validation metric graphs.
 load("//tflite/experimental/acceleration/mini_benchmark:build_defs.bzl", "validation_model", "validation_test")
@@ -31,20 +32,22 @@ package(
     licenses = ["notice"],
 )
 
-py_strict_library(
+py_library(
     name = "kl_divergence",
     srcs = [
         "kl_divergence.py",
     ],
+    strict_deps = True,
     visibility = ["//visibility:public"],
     deps = [
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "mobilenet",
     srcs = ["mobilenet.py"],
+    strict_deps = True,
     deps = [
         ":kl_divergence",
         "//tflite/python:lite",
@@ -88,9 +91,10 @@ validation_test(
     validation_model = ":mobilenet_float_with_validation.tflite",
 )
 
-py_strict_binary(
+py_binary(
     name = "blazeface_metrics",
     srcs = ["blazeface_metrics.py"],
+    strict_deps = True,
     deps = [
         ":kl_divergence",
         "//tflite/python:lite",
