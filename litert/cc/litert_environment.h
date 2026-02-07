@@ -213,6 +213,22 @@ class Environment {
     return Environment(env.handle, std::move(runtime), owned);
   }
 
+  /// @brief Returns the default environment.
+  ///
+  /// The default environment is created once and cached for all subsequent
+  /// calls.
+  ///
+  /// TODO(b/482414703): Remove this function after all users are migrated to
+  /// the new API.
+  ///
+  /// @warning Do NOT use the default environment. It is only provided for
+  /// backward compatibility with the previous API design.
+  [[deprecated("Do NOT use the default environment.")]]
+  static const Expected<Environment>& GetDefault() {
+    static const Expected<Environment> kDefaultEnvironment = Create({});
+    return kDefaultEnvironment;
+  }
+
  private:
   explicit Environment(
       LiteRtEnvironment env,

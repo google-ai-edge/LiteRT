@@ -57,7 +57,7 @@ Expected<TensorBuffer> TensorBuffer::CreateManagedHostMemory(
     const RankedTensorType& tensor_type, size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  auto env_holder = GetDefaultEnvironment()->GetHolder();
+  auto env_holder = Environment::GetDefault()->GetHolder();
   LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateManagedTensorBuffer(
       /*env=*/nullptr, kLiteRtTensorBufferTypeHostMemory, &litert_tensor_type,
       buffer_size, &tensor_buffer));
@@ -70,7 +70,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromHostMemory(
     size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  auto env_holder = GetDefaultEnvironment()->GetHolder();
+  auto env_holder = Environment::GetDefault()->GetHolder();
   LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateTensorBufferFromHostMemory(
       &litert_tensor_type, host_mem_addr, buffer_size,
       /*deallocator=*/nullptr, &tensor_buffer));

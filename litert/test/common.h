@@ -19,6 +19,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"

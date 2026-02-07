@@ -804,7 +804,6 @@ litert_device_exec(
 
 cc_library(
     name = "litert_model",
-    srcs = [":litert_model.cc"],
     hdrs = [":litert_model.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
@@ -822,8 +821,11 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_model_types",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
@@ -879,6 +881,7 @@ cc_test(
     ],
     deps = [
         ":litert_element_type",
+        ":litert_environment",
         ":litert_layout",
         ":litert_model",
         "//litert/c:litert_common",
