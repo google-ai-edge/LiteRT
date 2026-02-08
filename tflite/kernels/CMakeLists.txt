@@ -19,7 +19,7 @@ find_package(re2 REQUIRED)
 
 # Generate the mutable schema_generated.h header for tests.
 set(TF_SOURCE_DIR "${TENSORFLOW_SOURCE_DIR}/tensorflow")
-set(SCHEMA_GENERATED_ROOT ${TF_SOURCE_DIR}/compiler/mlir/lite/schema)
+set(SCHEMA_GENERATED_ROOT ${TFLITE_SOURCE_DIR}/converter/schema)
 set(SCHEMA_FILE ${SCHEMA_GENERATED_ROOT}/schema.fbs)
 set(SCHEMA_GENERATED_PATH ${SCHEMA_GENERATED_ROOT}/mutable)
 set(SCHEMA_GENERATED_FILE ${SCHEMA_GENERATED_PATH}/schema_generated.h)
@@ -84,18 +84,17 @@ set(TEST_FRAMEWORK_SRC
   ${TFLITE_SOURCE_DIR}/delegates/nnapi/acceleration_test_list.cc
   ${TFLITE_SOURCE_DIR}/delegates/nnapi/acceleration_test_util.cc
   ${TFLITE_SOURCE_DIR}/profiling/memory_info.cc
-  ${TFLITE_SOURCE_DIR}/../compiler/mlir/lite/schema/schema_conversion_utils.cc
+  ${TFLITE_SOURCE_DIR}/converter/schema/schema_conversion_utils.cc
   ${TFLITE_SOURCE_DIR}/tools/command_line_flags.cc
   ${DELEGATE_PROVIDERS}
   ${TFLITE_SOURCE_DIR}/tools/optimize/model_utils.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/tools/optimize/operator_property.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/tools/optimize/quantization_utils.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/kernels/internal/runtime_shape.cc
+  ${TFLITE_SOURCE_DIR}/converter/tools/optimize/operator_property.cc
   ${TFLITE_SOURCE_DIR}/tools/optimize/quantization_utils.cc
+  ${TFLITE_SOURCE_DIR}/kernels/internal/runtime_shape.cc
   ${TFLITE_SOURCE_DIR}/tools/tool_params.cc
-  ${TFLITE_SOURCE_DIR}/tools/versioning/op_version.cc
-  ${XLA_SOURCE_DIR}/xla/tsl/platform/default/env_time.cc
-  ${XLA_SOURCE_DIR}/xla/tsl/platform/default/logging.cc
+  ${TFLITE_SOURCE_DIR}/converter/tools/versioning/op_version.cc
+  ${TSL_SOURCE_DIR}/tsl/platform/default/env_time.cc
+  ${TSL_SOURCE_DIR}/tsl/platform/default/logging.cc
   internal/test_util.cc
   acceleration_test_util.cc
   acceleration_test_util_internal.cc

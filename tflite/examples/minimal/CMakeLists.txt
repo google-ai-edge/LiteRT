@@ -21,18 +21,22 @@ project(minimal C CXX)
 
 option(LINK_TFLITE_FLEX "Enable tensorflowlite_flex library linkage" OFF)
 
-set(TENSORFLOW_SOURCE_DIR "" CACHE PATH
-  "Directory that contains the TensorFlow project"
+set(REPO_ROOT "" CACHE PATH
+  "Directory that contains the LiteRT repository"
 )
-if(NOT TENSORFLOW_SOURCE_DIR)
-  get_filename_component(TENSORFLOW_SOURCE_DIR
+if(NOT REPO_ROOT)
+  get_filename_component(REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../../../"
     ABSOLUTE
   )
 endif()
 
+set(TENSORFLOW_SOURCE_DIR "${REPO_ROOT}/third_party/tensorflow" CACHE PATH
+  "Directory that contains the TensorFlow project" FORCE
+)
+
 add_subdirectory(
-  "${TENSORFLOW_SOURCE_DIR}/tensorflow/lite"
+  "${REPO_ROOT}/tflite"
   "${CMAKE_CURRENT_BINARY_DIR}/tensorflow-lite"
   EXCLUDE_FROM_ALL
 )

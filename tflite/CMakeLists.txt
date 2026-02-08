@@ -192,6 +192,10 @@ find_package(cpuinfo REQUIRED)  #CPUINFO is used by XNNPACK and RUY library
 find_package(ml_dtypes REQUIRED)
 find_package(ruy REQUIRED)
 # Include TSL, which is in tensorflow/third_party
+set(TFLITE_EXTRA_INCLUDES "${CMAKE_BINARY_DIR}/tflite_includes")
+file(MAKE_DIRECTORY "${TFLITE_EXTRA_INCLUDES}/xla")
+execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${TSL_SOURCE_DIR}/tsl" "${TFLITE_EXTRA_INCLUDES}/xla/tsl")
+include_directories(${TFLITE_EXTRA_INCLUDES})
 include_directories(
   ${TSL_SOURCE_DIR}
   ${XLA_SOURCE_DIR}
@@ -411,7 +415,6 @@ if(TFLITE_ENABLE_GPU)
     ${TFLITE_DELEGATES_GPU_COMMON_TRANSFORMATIONS_SRCS}
     ${TFLITE_SOURCE_DIR}/tools/versioning/gpu_compatibility.cc
     ${TFLITE_SOURCE_DIR}/tools/versioning/op_signature.cc
-    ${TF_SOURCE_DIR}/compiler/mlir/lite/tools/versioning/op_signature.cc
   )
   include_directories(
     AFTER
@@ -714,26 +717,26 @@ set(_ALL_TFLITE_SRCS
   ${TFLITE_SOURCE_DIR}/schema/conversion_metadata_generated.h
   ${TFLITE_SOURCE_DIR}/schema/schema_generated.h
   ${TFLITE_SRCS}
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/allocation.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/allocation.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/api/error_reporter.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/api/error_reporter.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/api/flatbuffer_conversions.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/api/verifier.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/c/tflite_types.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/macros.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/model_builder_base.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/core/model_builder_base.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/experimental/remat/metadata_util.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/experimental/remat/metadata_util.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/mmap_allocation.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/mmap_allocation_disabled.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/schema/conversion_metadata_generated.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/schema/schema_generated.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/schema/schema_utils.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/utils/control_edges.h
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/utils/string_utils.cc
-  ${TF_SOURCE_DIR}/compiler/mlir/lite/utils/string_utils.h
+  ${TFLITE_SOURCE_DIR}/converter/allocation.cc
+  ${TFLITE_SOURCE_DIR}/converter/allocation.h
+  ${TFLITE_SOURCE_DIR}/converter/core/api/error_reporter.cc
+  ${TFLITE_SOURCE_DIR}/converter/core/api/error_reporter.h
+  ${TFLITE_SOURCE_DIR}/converter/core/api/flatbuffer_conversions.cc
+  ${TFLITE_SOURCE_DIR}/converter/core/api/verifier.h
+  ${TFLITE_SOURCE_DIR}/converter/core/c/tflite_types.h
+  ${TFLITE_SOURCE_DIR}/converter/core/macros.h
+  ${TFLITE_SOURCE_DIR}/converter/core/model_builder_base.cc
+  ${TFLITE_SOURCE_DIR}/converter/core/model_builder_base.h
+  ${TFLITE_SOURCE_DIR}/converter/experimental/remat/metadata_util.cc
+  ${TFLITE_SOURCE_DIR}/converter/experimental/remat/metadata_util.h
+  ${TFLITE_SOURCE_DIR}/converter/mmap_allocation.cc
+  ${TFLITE_SOURCE_DIR}/converter/mmap_allocation_disabled.cc
+  ${TFLITE_SOURCE_DIR}/converter/schema/conversion_metadata_generated.h
+  ${TFLITE_SOURCE_DIR}/converter/schema/schema_generated.h
+  ${TFLITE_SOURCE_DIR}/converter/schema/schema_utils.cc
+  ${TFLITE_SOURCE_DIR}/converter/utils/control_edges.h
+  ${TFLITE_SOURCE_DIR}/converter/utils/string_utils.cc
+  ${TFLITE_SOURCE_DIR}/converter/utils/string_utils.h
   # go/keep-sorted end
 )
 

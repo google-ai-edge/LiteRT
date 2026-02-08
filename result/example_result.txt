@@ -1,0 +1,78 @@
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+=== Pre-invoke Interpreter State ===
+Interpreter has 1 subgraphs.
+
+-----------Subgraph-0 has 2 tensors and 1 nodes------------
+1 Inputs: [0] -> 3072B (0.00MB)
+1 Outputs: [1] -> 3072B (0.00MB)
+
+Tensor  ID Name                      Type            AllocType          Size (Bytes/MB)    Shape      MemAddr-Offset
+Tensor   0 arg0                      kTfLiteFloat32  kTfLiteArenaRw     3072     / 0.00 [1,768] [0, 3072)
+Tensor   1 tfl.l2_normalization      kTfLiteFloat32  kTfLiteArenaRw     3072     / 0.00 [1,768] [3072, 6144)
+
+kTfLiteArenaRw Info:
+Tensor 0 has the max size 3072 bytes (0.003 MB).
+This memory arena is estimated as[0x55a3b4d20a00, 0x55a3b4d1f200), taking 6144 bytes (0.006 MB).
+One possible set of tensors that have non-overlapping memory spaces with each other, and they take up the whole arena:
+Tensor 0 -> 1.
+
+kTfLiteArenaRwPersistent Info: not holding any allocation.
+
+kTfLiteMmapRo Info: not holding any allocation.
+
+kTfLiteDynamic Info: not holding any allocation.
+
+Node   0 Operator Builtin Code  11 L2_NORMALIZATION (not delegated)
+  1 Input Tensors:[0] -> 3072B (0.00MB)
+  1 Output Tensors:[1] -> 3072B (0.00MB)
+
+Execution plan as the list of 1 nodes invoked in-order: [0]
+--------------Subgraph-0 dump has completed--------------
+
+--------------Memory Arena Status Start--------------
+Total memory usage: 6144 bytes (0.006 MB)
+- Total arena memory usage: 6144 bytes (0.006 MB)
+- Total dynamic memory usage: 0 bytes (0.000 MB)
+
+Subgraph#0   Arena (Normal)           6144 (100.00%)
+--------------Memory Arena Status End--------------
+
+
+
+=== Post-invoke Interpreter State ===
+Interpreter has 1 subgraphs.
+
+-----------Subgraph-0 has 2 tensors and 1 nodes------------
+1 Inputs: [0] -> 3072B (0.00MB)
+1 Outputs: [1] -> 3072B (0.00MB)
+
+Tensor  ID Name                      Type            AllocType          Size (Bytes/MB)    Shape      MemAddr-Offset
+Tensor   0 arg0                      kTfLiteFloat32  kTfLiteArenaRw     3072     / 0.00 [1,768] [0, 3072)
+Tensor   1 tfl.l2_normalization      kTfLiteFloat32  kTfLiteArenaRw     3072     / 0.00 [1,768] [3072, 6144)
+
+kTfLiteArenaRw Info:
+Tensor 0 has the max size 3072 bytes (0.003 MB).
+This memory arena is estimated as[0x55a3b4d20a00, 0x55a3b4d1f200), taking 6144 bytes (0.006 MB).
+One possible set of tensors that have non-overlapping memory spaces with each other, and they take up the whole arena:
+Tensor 0 -> 1.
+
+kTfLiteArenaRwPersistent Info: not holding any allocation.
+
+kTfLiteMmapRo Info: not holding any allocation.
+
+kTfLiteDynamic Info: not holding any allocation.
+
+Node   0 Operator Builtin Code  11 L2_NORMALIZATION (not delegated)
+  1 Input Tensors:[0] -> 3072B (0.00MB)
+  1 Output Tensors:[1] -> 3072B (0.00MB)
+
+Execution plan as the list of 1 nodes invoked in-order: [0]
+--------------Subgraph-0 dump has completed--------------
+
+--------------Memory Arena Status Start--------------
+Total memory usage: 6144 bytes (0.006 MB)
+- Total arena memory usage: 6144 bytes (0.006 MB)
+- Total dynamic memory usage: 0 bytes (0.000 MB)
+
+Subgraph#0   Arena (Normal)           6144 (100.00%)
+--------------Memory Arena Status End--------------
