@@ -60,18 +60,18 @@ genrule(
     ],
     cmd = select({
         "@bazel_tools//src/conditions:windows": """powershell -Command "
-            $$srcs = '$(SRCS)'.Split(' ');
-            $$base_out = '$(RULEDIR)/ai_edge_litert/tflite/converter';
-            New-Item -Path $$base_out/debug -ItemType Directory -Force | Out-Null;
-            foreach ($$f in $$srcs) {
-                $$fname = Split-Path $$f -Leaf;
-                if ($$fname -eq 'debug_options_pb2.py') {
-                    $$out_dir = Join-Path $$base_out 'debug'
+            \\$$srcs = '$(SRCS)'.Split(' ');
+            \\$$base_out = '$(RULEDIR)/ai_edge_litert/tflite/converter';
+            New-Item -Path \\$$base_out/debug -ItemType Directory -Force | Out-Null;
+            foreach (\\$$f in \\$$srcs) {
+                \\$$fname = Split-Path \\$$f -Leaf;
+                if (\\$$fname -eq 'debug_options_pb2.py') {
+                    \\$$out_dir = Join-Path \\$$base_out 'debug'
                 } else {
-                    $$out_dir = $$base_out
+                    \\$$out_dir = \\$$base_out
                 };
-                $$out_path = Join-Path $$out_dir $$fname;
-                (Get-Content $$f -Raw).Replace('tflite.converter', 'ai_edge_litert.tflite.converter') | Set-Content $$out_path -Encoding UTF8
+                \\$$out_path = Join-Path \\$$out_dir \\$$fname;
+                (Get-Content \\$$f -Raw).Replace('tflite.converter', 'ai_edge_litert.tflite.converter') | Set-Content \\$$out_path -Encoding UTF8
             }
         " """,
         "//conditions:default": """
