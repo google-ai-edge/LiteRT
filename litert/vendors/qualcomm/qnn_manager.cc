@@ -38,7 +38,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/dynamic_loading.h"
 #include "litert/vendors/qualcomm/common.h"
-#include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -413,16 +412,6 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
 
       backend_ = std::make_unique<::qnn::IrBackend>(Api());
       LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
-
-      break;
-    }
-    case ::qnn::BackendType::kDspBackend: {
-      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::DspBackend::GetLibraryName()));
-      LITERT_RETURN_IF_ERROR(
-          ResolveApi(::qnn::DspBackend::GetExpectedBackendVersion()));
-
-      backend_ = std::make_unique<::qnn::DspBackend>(Api());
-      LITERT_RETURN_IF_ERROR(backend_->Init(options_, soc_info));
 
       break;
     }

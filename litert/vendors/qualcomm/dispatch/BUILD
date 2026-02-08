@@ -51,7 +51,13 @@ litert_dynamic_lib(
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_Qualcomm.so",
-    visibility = ["//litert:litert_public"],
+    visibility = [
+        # copybara:uncomment_begin
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
     deps = [
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/strings:str_format",
