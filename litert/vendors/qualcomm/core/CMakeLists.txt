@@ -12,6 +12,7 @@ add_library(qnn_core STATIC
     
     # Utils
     utils/miscs.cc
+    utils/test_utils.cc
     
     # Schema
     schema/soc_table.cc

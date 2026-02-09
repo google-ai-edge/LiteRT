@@ -27,6 +27,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 
 namespace litert {
 namespace {
@@ -34,6 +35,10 @@ namespace {
 constexpr absl::string_view kDispatchLibraryDir = "vendors/qualcomm/dispatch";
 
 TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
+
   const std::string dispatch_library_dir =
       testing::GetLiteRtPath(kDispatchLibraryDir);
   absl::string_view dispatch_library_dir_view(dispatch_library_dir);
@@ -70,6 +75,10 @@ TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
 }
 
 TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
+
   const std::string dispatch_library_dir =
       testing::GetLiteRtPath(kDispatchLibraryDir);
   absl::string_view dispatch_library_dir_view(dispatch_library_dir);

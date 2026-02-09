@@ -42,6 +42,7 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 
 namespace {
 
@@ -67,6 +68,10 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
@@ -329,6 +334,10 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
@@ -591,6 +600,10 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
   // ///////////////////////////////////////////////////////////////////////////
   // Set up data for input and output.
@@ -888,6 +901,10 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
   // ///////////////////////////////////////////////////////////////////////////
   // Set up data for input and output.
@@ -1182,6 +1199,9 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
 }
 
 TEST(Qualcomm, DispatchApiCompatibility) {
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
   static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
                                                 LITERT_API_VERSION_MINOR,
                                                 LITERT_API_VERSION_PATCH};
