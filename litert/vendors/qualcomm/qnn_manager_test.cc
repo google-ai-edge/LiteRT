@@ -15,8 +15,12 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <optional>
+
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
 namespace {
@@ -36,13 +40,37 @@ auto CreateQnnManager(const ::qnn::Options& options) {
 #endif
 }
 
+// Helper to get options based on target
+std::optional<::qnn::Options> GetOptionsForTarget() {
+  auto options = ::qnn::Options();
+  if (::qnn::IsTestHtpBackend()) {
+    options.SetBackendType(::qnn::BackendType::kHtpBackend);
+    return options;
+  }
+  if (::qnn::IsTestDspBackend()) {
+    options.SetBackendType(::qnn::BackendType::kDspBackend);
+    return options;
+  }
+  return std::nullopt;
+}
+
 TEST(QnnManagerTest, SetupQnnManager) {
-  auto qnn = CreateQnnManager(::qnn::Options());
+  auto options = GetOptionsForTarget();
+  if (!options) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
+  auto qnn = CreateQnnManager(*options);
   ASSERT_TRUE(qnn);
 }
 
 TEST(QnnManagerTest, Dump) {
-  auto qnn = CreateQnnManager(::qnn::Options());
+  auto options = GetOptionsForTarget();
+  if (!options) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
+  auto qnn = CreateQnnManager(*options);
   ASSERT_TRUE(qnn);
 
   auto dump = Dump(**qnn);
@@ -52,30 +80,38 @@ TEST(QnnManagerTest, Dump) {
 }
 
 TEST(QnnManagerTest, GetOptions) {
-  auto options = ::qnn::Options();
-  auto qnn = CreateQnnManager(options);
+  auto options = GetOptionsForTarget();
+  if (!options) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
+  auto qnn = CreateQnnManager(*options);
   ASSERT_TRUE(qnn);
 
   const auto& options_ref = (*qnn)->GetOptions();
-  EXPECT_EQ(options.GetLogLevel(), options_ref.GetLogLevel());
-  EXPECT_EQ(options.GetProfiling(), options_ref.GetProfiling());
-  EXPECT_EQ(options.GetUseHtpPreference(), options_ref.GetUseHtpPreference());
-  EXPECT_EQ(options.GetUseQint16AsQuint16(),
+  EXPECT_EQ(options->GetLogLevel(), options_ref.GetLogLevel());
+  EXPECT_EQ(options->GetProfiling(), options_ref.GetProfiling());
+  EXPECT_EQ(options->GetUseHtpPreference(), options_ref.GetUseHtpPreference());
+  EXPECT_EQ(options->GetUseQint16AsQuint16(),
             options_ref.GetUseQint16AsQuint16());
-  EXPECT_EQ(options.GetEnableWeightSharing(),
+  EXPECT_EQ(options->GetEnableWeightSharing(),
             options_ref.GetEnableWeightSharing());
-  EXPECT_EQ(options.GetHtpPerformanceMode(),
+  EXPECT_EQ(options->GetHtpPerformanceMode(),
             options_ref.GetHtpPerformanceMode());
-  EXPECT_EQ(options.GetDspPerformanceMode(),
+  EXPECT_EQ(options->GetDspPerformanceMode(),
             options_ref.GetDspPerformanceMode());
-  EXPECT_EQ(options.GetDumpTensorIds(), options_ref.GetDumpTensorIds());
-  EXPECT_EQ(options.GetIrJsonDir(), options_ref.GetIrJsonDir());
-  EXPECT_EQ(options.GetDlcDir(), options_ref.GetDlcDir());
+  EXPECT_EQ(options->GetDumpTensorIds(), options_ref.GetDumpTensorIds());
+  EXPECT_EQ(options->GetIrJsonDir(), options_ref.GetIrJsonDir());
+  EXPECT_EQ(options->GetDlcDir(), options_ref.GetDlcDir());
 }
 
 TEST(QnnManagerTest, GetSdkVersion) {
-  auto options = ::qnn::Options();
-  auto qnn = CreateQnnManager(options);
+  auto options = GetOptionsForTarget();
+  if (!options) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
+  auto qnn = CreateQnnManager(*options);
   ASSERT_TRUE(qnn);
   const auto sdk_version = qnn.Value().get()->GetSdkVersion();
   static constexpr SdkVersion kInitSdkVersion{0, 0, 0};
