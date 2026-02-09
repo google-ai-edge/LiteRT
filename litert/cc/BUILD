@@ -288,6 +288,7 @@ cc_library(
         ":litert_profiler",
         ":litert_ranked_tensor_type",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
@@ -375,6 +376,7 @@ litert_device_test(
 #         ":litert_profiler",
 #         ":litert_ranked_tensor_type",
 #         ":litert_tensor_buffer",
+#         ":litert_tensor_buffer_requirements",
 #         ":litert_tensor_buffer_types",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/container:flat_hash_map",
@@ -686,6 +688,7 @@ cc_test(
         ":litert_profiler",
         ":litert_ranked_tensor_type",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model",
@@ -896,7 +899,7 @@ cc_test(
 
 cc_library(
     name = "litert_tensor_buffer_requirements",
-    hdrs = [":litert_tensor_buffer_requirements.h"],
+    hdrs = ["litert_tensor_buffer_requirements.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_cc_users_static_link",
@@ -909,7 +912,7 @@ cc_library(
         ":litert_macros",
         ":litert_tensor_buffer_types",
         "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
@@ -920,10 +923,10 @@ cc_test(
     name = "litert_tensor_buffer_requirements_test",
     srcs = ["litert_tensor_buffer_requirements_test.cc"],
     deps = [
-        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
@@ -935,7 +938,6 @@ cc_library(
     name = "litert_tensor_buffer",
     hdrs = [
         ":litert_tensor_buffer.h",
-        ":litert_tensor_buffer_requirements.h",
     ],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)

@@ -85,6 +85,7 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
         "//litert/cc:litert_environment",
@@ -112,6 +113,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//tflite/c:common",
     ],
 )
@@ -555,6 +557,7 @@ cc_test(
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/test:common",
         "//litert/test:matchers",
