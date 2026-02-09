@@ -144,6 +144,7 @@ setuptools.setup(
     version=PACKAGE_VERSION,
     description=DOCLINES[0],
     long_description='\n'.join(DOCLINES[2:]),
+    long_description_content_type='text/plain',
     url='https://www.tensorflow.org/lite/',
     author='Google AI Edge Authors',
     author_email='packages@tensorflow.org',
