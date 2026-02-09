@@ -4,7 +4,7 @@
 load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["//:license"],
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
 )
 
