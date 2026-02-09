@@ -20,7 +20,7 @@ load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_library")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:public"],
 )
 

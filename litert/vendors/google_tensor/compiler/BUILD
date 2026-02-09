@@ -18,7 +18,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:private"],
 )
 

@@ -15,7 +15,7 @@
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//:license"],
     default_visibility = ["//litert/integration_test:__subpackages__"],
 )
 
