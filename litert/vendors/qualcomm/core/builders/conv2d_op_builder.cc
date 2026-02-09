@@ -41,7 +41,7 @@ std::vector<OpWrapper> BuildConv2dOp(
 
   // transpose filter
   TensorWrapper& filter_tensor = inputs[kFilterIndex];
-  const std::vector<uint32_t>& filters_dims = filter_tensor.GetDims();
+  const std::vector<uint32_t>& filters_dims = filter_tensor.GetDimensions();
   auto& filter_quant_params = filter_tensor.GetQuantParams();
   std::vector<std::uint32_t> permute_dims{filters_dims[1], filters_dims[2],
                                           filters_dims[3], filters_dims[0]};
@@ -128,13 +128,13 @@ std::vector<OpWrapper> BuildConv2dOp(
 
   // padding param
   const auto [padding_before_height, padding_after_height] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kHeightIndex),
-                                filter_tensor.GetDim(kHeightIndex), stride_h,
-                                dilation_h, padding_type);
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
+                                filter_tensor.GetDimension(kHeightIndex),
+                                stride_h, dilation_h, padding_type);
   const auto [padding_before_width, padding_after_width] =
-      ComputePaddingBeforeAfter(input_tensor.GetDim(kWidthIndex),
-                                filter_tensor.GetDim(kWidthIndex), stride_w,
-                                dilation_w, padding_type);
+      ComputePaddingBeforeAfter(input_tensor.GetDimension(kWidthIndex),
+                                filter_tensor.GetDimension(kWidthIndex),
+                                stride_w, dilation_w, padding_type);
   const std::array<std::uint32_t, 4> padding_data = {
       padding_before_height, padding_after_height, padding_before_width,
       padding_after_width};
@@ -146,14 +146,14 @@ std::vector<OpWrapper> BuildConv2dOp(
   conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
 
   // group param
-  if ((input_tensor.GetDim(kChannelIndex) %
-       filter_tensor.GetDim(kChannelIndex)) != 0) {
+  if ((input_tensor.GetDimension(kChannelIndex) %
+       filter_tensor.GetDimension(kChannelIndex)) != 0) {
     QNN_LOG_WARNING(
         "The channels of the input tensor cannot be evenly divided by the "
         "channels of the filter tensor.");
   }
-  if (const std::uint32_t groups = input_tensor.GetDim(kChannelIndex) /
-                                   filter_tensor.GetDim(kChannelIndex);
+  if (const std::uint32_t groups = input_tensor.GetDimension(kChannelIndex) /
+                                   filter_tensor.GetDimension(kChannelIndex);
       groups > 1) {
     conv_op.AddScalarParam<std::uint32_t>(QNN_OP_CONV_2D_PARAM_GROUP, groups);
   }

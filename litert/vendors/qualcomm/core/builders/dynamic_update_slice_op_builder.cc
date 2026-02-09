@@ -96,7 +96,7 @@ std::vector<OpWrapper> BuildDynamicUpdateSliceOp(
         "%s", "Dynamic Update Slice only supports operand tensor rank >= 2");
     return {};
   }
-  uint32_t table_size = input_tensor.GetDim(1);
+  uint32_t table_size = input_tensor.GetDimension(1);
   std::vector<uint32_t> static_table_dims = {table_size};
   std::vector<int32_t> table_data(table_size);
   std::iota(table_data.begin(), table_data.end(), 0);

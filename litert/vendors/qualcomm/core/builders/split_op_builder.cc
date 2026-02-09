@@ -42,7 +42,7 @@ std::vector<OpWrapper> BuildSplitOp(
                            ? (*axis_data)[0]
                            : (*axis_data)[0] + input_tensor.GetRank();
 
-  const std::uint32_t slice_size = input_tensor.GetDim(axis) / num_splits;
+  const std::uint32_t slice_size = input_tensor.GetDimension(axis) / num_splits;
   // The split_indice will do N cuts, split the dimension into N+1 clips
   // so 0 will not be included in the split_indice
   // for example, when we split 12 into 4 clip, the split index will be {3,6,9}
