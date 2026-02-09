@@ -117,7 +117,7 @@ jobs:
         run: twine check --strict dist/*
 
       - name: List the contents of ai-edge-litert wheel
-        run: python -m zipfile --list dist/*.whl
+        run: Get-ChildItem dist -Filter *.whl | ForEach-Object { python -m zipfile --list $_.FullName }
 
       - name: Install local wheel
         run: |
