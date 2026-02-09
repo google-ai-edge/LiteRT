@@ -17,7 +17,7 @@ load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_te
 load("//litert/python/aot/core:build_defs.bzl", "tflxx_deps_if_enabled")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["//:license"],
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_python_internal_users"],
 )
 

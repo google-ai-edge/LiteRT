@@ -24,7 +24,7 @@ load("//litert/integration_test:litert_device_script.bzl", "litert_device_script
 # copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_intel_openvino_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["//:license"],
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_public"],
 )
 

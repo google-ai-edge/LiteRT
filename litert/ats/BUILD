@@ -20,7 +20,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["//:license"],
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
         "//visibility:public",  # copybara:comment_replace "//litert:litert_public",
     ],

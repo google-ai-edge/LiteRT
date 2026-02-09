@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["//:license"],
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
 )
 
