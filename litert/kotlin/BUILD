@@ -25,7 +25,7 @@ load(
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = [
         "//third_party/odml/litert:__subpackages__",
     ],
