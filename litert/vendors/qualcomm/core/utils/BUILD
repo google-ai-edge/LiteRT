@@ -38,6 +38,27 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "test_utils",
+    srcs = ["test_utils.cc"],
+    hdrs = ["test_utils.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:common",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "test_main",
+    testonly = True,
+    srcs = ["test_main.cc"],
+    deps = [
+        ":test_utils",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
 cc_test(
     name = "utils_test",
     srcs = [
@@ -46,10 +67,12 @@ cc_test(
     deps = [
         ":log",
         ":miscs",
+        ":test_main",
+        ":test_utils",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:ir_backend",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_googletest//:gtest",
     ],
 )
 

@@ -11,6 +11,7 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
@@ -32,6 +33,9 @@ class QnnModelTest : public testing::TestWithParam<
 
   void SetUp() override {
     const auto& [options, soc_model_name] = GetParam();
+    if (!::qnn::IsTestHtpBackend()) {
+      GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+    }
     SetUpQnnModel(options, soc_model_name);
   }
 

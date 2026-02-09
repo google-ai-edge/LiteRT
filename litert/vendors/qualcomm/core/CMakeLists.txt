@@ -7,6 +7,14 @@ cmake_minimum_required(VERSION 3.20)
 # Common QNN library
 add_library(qnn_common STATIC
     common.cc
+tensor_pool.cc
+
+    # Utils
+    utils/miscs.cc
+    utils/test_utils.cc
+
+    # Schema
+    schema/soc_table.cc
 )
 
 target_include_directories(qnn_common
