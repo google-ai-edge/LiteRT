@@ -9,6 +9,7 @@
 #endif
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -222,4 +223,14 @@ std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name) {
   }
   return soc_model;
 }
+
+bool IsHtpBackend() {
+  // If env variable is not set, default to HTP (return true).
+  if (const char* env_p = std::getenv("GTEST_TARGET_BACKEND")) {
+    // If env variable is set, it must be HTP to return true.
+    return std::string(env_p) == "Htp";
+  }
+  return true;
+}
+
 }  // namespace qnn

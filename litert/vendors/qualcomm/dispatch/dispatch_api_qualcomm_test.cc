@@ -66,6 +66,10 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
@@ -325,6 +329,10 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
@@ -584,6 +592,10 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
   // ///////////////////////////////////////////////////////////////////////////
   // Set up data for input and output.
@@ -878,6 +890,10 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
 #endif
   // ///////////////////////////////////////////////////////////////////////////
   // Set up data for input and output.
