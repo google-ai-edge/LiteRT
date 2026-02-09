@@ -17,7 +17,9 @@
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/quantize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
@@ -189,7 +191,7 @@ TensorWrapper& BuildSingleSHA(
     const OpWrapper& reshape_3, const OpWrapper& softmax,
     const OpWrapper& slice_1, const OpWrapper& slice_2,
     const OpWrapper& matmul_v1, const OpWrapper& matmul_v2,
-    const OpWrapper& add_3) {
+    const OpWrapper& add_3, TensorWrapper* sha_add_output) {
   // Mul
   auto mul_output_dims = mul.GetOutputTensor(0).GetDims();
   mul_output_dims.erase(mul_output_dims.begin() + 1);
@@ -206,12 +208,16 @@ TensorWrapper& BuildSingleSHA(
   EmplaceOpWithIO(new_ops, matmul_k1, {mul_output, q_slice}, {matmul_q_output});
 
   // Add
-  auto add_1_output_dims = add_1.GetOutputTensor(0).GetDims();
-  add_1_output_dims.erase(add_1_output_dims.begin() + 1);
-  auto& add_1_output = tensor_pool.CloneNativeTensorFrom(
-      add_1.GetOutputTensor(0), add_1_output_dims);
-  EmplaceOpWithIO(new_ops, add_1, {sha_add_input_1, sha_add_input_2},
-                  {add_1_output});
+  // TODO(Alen): remove hack.
+  if (sha_add_output == nullptr) {
+    auto add_1_output_dims = add_1.GetOutputTensor(0).GetDims();
+    add_1_output_dims.erase(add_1_output_dims.begin() + 1);
+    auto& add_1_output = tensor_pool.CloneNativeTensorFrom(
+        add_1.GetOutputTensor(0), add_1_output_dims);
+    EmplaceOpWithIO(new_ops, add_1, {sha_add_input_1, sha_add_input_2},
+                    {add_1_output});
+    sha_add_output = &add_1_output;
+  }
 
   // Matmul k
   auto matmul_qk_output_dims = matmul_k2.GetOutputTensor(0).GetDims();
@@ -219,7 +225,7 @@ TensorWrapper& BuildSingleSHA(
   matmul_qk_output_dims[1] /= num_attn_per_kv_heads;
   auto& matmul_qk_output = tensor_pool.CloneNativeTensorFrom(
       matmul_k2.GetOutputTensor(0), matmul_qk_output_dims);
-  EmplaceOpWithIO(new_ops, matmul_k2, {mul_output, add_1_output},
+  EmplaceOpWithIO(new_ops, matmul_k2, {mul_output, *sha_add_output},
                   {matmul_qk_output});
 
   // Concat
@@ -563,68 +569,83 @@ size_t OptimizeMHAFastVlmPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
-  constexpr size_t add_1_index = -2;
-  constexpr size_t mul_index = 0;
-  constexpr size_t reshape_1_index = 1;
-  constexpr size_t matmul_q_index = 2;
-  constexpr size_t matmul_qk_index = 3;
-  constexpr size_t concat_index = 4;
-  constexpr size_t reshape_2_index = 5;
-  constexpr size_t add_2_index = 6;
-  constexpr size_t reshape_3_index = 7;
-  constexpr size_t softmax_index = 8;
-  constexpr size_t slice_1_index = 9;
-  constexpr size_t slice_2_index = 10;
-  constexpr size_t matmul_v1_index = 11;
-  constexpr size_t matmul_v2_index = 12;
-  constexpr size_t add_3_index = 13;
-  constexpr size_t reshape_4_index = 14;
-  constexpr size_t transpose_2_index = 15;
-  constexpr size_t reshape_5_index = 16;
+  constexpr size_t kMulIndex = 0;
+  constexpr size_t kReshape1Index = 1;
+  constexpr size_t kMatmulQIndex = 2;
+  constexpr size_t kMatmulQkIndex = 3;
+  constexpr size_t kConcatIndex = 4;
+  constexpr size_t kReshape2Index = 5;
+  constexpr size_t kAdd2Index = 6;
+  constexpr size_t kReshape3Index = 7;
+  constexpr size_t kSoftmaxIndex = 8;
+  constexpr size_t kSlice1Index = 9;
+  constexpr size_t kSlice2Index = 10;
+  constexpr size_t kMatmulV1Index = 11;
+  constexpr size_t kMatmulV2Index = 12;
+  constexpr size_t kAdd3Index = 13;
+  constexpr size_t kReshape4Index = 14;
+  constexpr size_t kTransposeIndex = 15;
+  constexpr size_t kReshape5Index = 16;
 
   const auto is_connected =
-      [&ops, &start_index](size_t output_op_index, size_t output_tensor_index,
-                           size_t input_op_index,
+      [&ops, &start_index](int32_t output_op_index, size_t output_tensor_index,
+                           int32_t input_op_index,
                            size_t input_tensor_index) -> bool {
-    return ops[start_index + output_op_index].GetOutputTensor(
-               output_tensor_index) ==
-           ops[start_index + input_op_index].GetInputTensor(input_tensor_index);
+    // Input/output op index might be negative.
+    int32_t out_op_idx = static_cast<int32_t>(start_index) + output_op_index;
+    int32_t in_op_idx = static_cast<int32_t>(start_index) + input_op_index;
+    return out_op_idx >= 0 && in_op_idx >= 0 &&
+           ops[out_op_idx].GetOutputTensor(output_tensor_index) ==
+               ops[in_op_idx].GetInputTensor(input_tensor_index);
   };
-  if (!(is_connected(add_1_index, 0, matmul_qk_index, 1) &&
-        is_connected(mul_index, 0, reshape_1_index, 0) &&
-        is_connected(reshape_1_index, 0, matmul_q_index, 0) &&
-        is_connected(reshape_1_index, 0, matmul_qk_index, 0) &&
-        is_connected(matmul_q_index, 0, concat_index, 0) &&
-        is_connected(matmul_qk_index, 0, concat_index, 1) &&
-        is_connected(concat_index, 0, reshape_2_index, 0) &&
-        is_connected(reshape_2_index, 0, add_2_index, 0) &&
-        is_connected(add_2_index, 0, reshape_3_index, 0) &&
-        is_connected(reshape_3_index, 0, softmax_index, 0) &&
-        is_connected(softmax_index, 0, slice_1_index, 0) &&
-        is_connected(softmax_index, 0, slice_2_index, 0) &&
-        is_connected(slice_1_index, 0, matmul_v1_index, 0) &&
-        is_connected(slice_2_index, 0, matmul_v2_index, 0) &&
-        is_connected(matmul_v1_index, 0, add_3_index, 0) &&
-        is_connected(matmul_v2_index, 0, add_3_index, 1) &&
-        is_connected(add_3_index, 0, reshape_4_index, 0) &&
-        is_connected(reshape_4_index, 0, transpose_2_index, 0) &&
-        is_connected(transpose_2_index, 0, reshape_5_index, 0) &&
-        IsElementWiseMultiply(ops[start_index + mul_index]) &&
-        IsElementWiseAdd(ops[start_index + add_2_index]) &&
-        IsElementWiseAdd(ops[start_index + add_3_index]))) {
+
+  const auto is_add_op_match_in_pattern =
+      [&is_connected](int32_t first_add_index) {
+        return is_connected(first_add_index, 0, kMatmulQkIndex, 1) &&
+               is_connected(kMulIndex, 0, kReshape1Index, 0) &&
+               is_connected(kReshape1Index, 0, kMatmulQIndex, 0) &&
+               is_connected(kReshape1Index, 0, kMatmulQkIndex, 0) &&
+               is_connected(kMatmulQIndex, 0, kConcatIndex, 0) &&
+               is_connected(kMatmulQkIndex, 0, kConcatIndex, 1) &&
+               is_connected(kConcatIndex, 0, kReshape2Index, 0) &&
+               is_connected(kReshape2Index, 0, kAdd2Index, 0) &&
+               is_connected(kAdd2Index, 0, kReshape3Index, 0) &&
+               is_connected(kReshape3Index, 0, kSoftmaxIndex, 0) &&
+               is_connected(kSoftmaxIndex, 0, kSlice1Index, 0) &&
+               is_connected(kSoftmaxIndex, 0, kSlice2Index, 0) &&
+               is_connected(kSlice1Index, 0, kMatmulV1Index, 0) &&
+               is_connected(kSlice2Index, 0, kMatmulV2Index, 0) &&
+               is_connected(kMatmulV1Index, 0, kAdd3Index, 0) &&
+               is_connected(kMatmulV2Index, 0, kAdd3Index, 1) &&
+               is_connected(kAdd3Index, 0, kReshape4Index, 0) &&
+               is_connected(kReshape4Index, 0, kTransposeIndex, 0) &&
+               is_connected(kTransposeIndex, 0, kReshape5Index, 0);
+      };
+
+  int32_t add_1_index = -2;
+  if (ops[start_index + add_1_index].IsOpCode(QnnOpCode::kElementWiseBinary) &&
+      is_add_op_match_in_pattern(add_1_index)) {
+    // Origin pattern, add_1_index is matched, do nothing.
+  } else if (ops[start_index + add_1_index + 1].IsOpCode(
+                 QnnOpCode::kElementWiseBinary) &&
+             is_add_op_match_in_pattern(add_1_index + 1)) {
+    // For new Fast VLM pattern. Tranpose Ops are fused into MatMul Ops first by
+    // OptimizeTransposeMatMul, the add_1_index becomes -1.
+    add_1_index += 1;
+  } else {
     return 1;
   }
   QNN_LOG_INFO("[G2G] MHA optimization (fast vlm Prefill)");
 
   // QKV Unpack
   const auto& matmul_v1_in =
-      ops[start_index + matmul_v1_index].GetInputTensor(1);
+      ops[start_index + kMatmulV1Index].GetInputTensor(1);
   auto unpack_1_dims =
-      ops[start_index + matmul_v1_index].GetInputTensor(1).GetDims();
+      ops[start_index + kMatmulV1Index].GetInputTensor(1).GetDims();
   uint32_t num_kv_heads = unpack_1_dims[1];
-  const auto& matmul_q_in = ops[start_index + matmul_q_index].GetInputTensor(1);
+  const auto& matmul_q_in = ops[start_index + kMatmulQIndex].GetInputTensor(1);
   auto unpack_2_dims = matmul_q_in.GetDims();
-  const auto& mul_in = ops[start_index + mul_index].GetInputTensor(0);
+  const auto& mul_in = ops[start_index + kMulIndex].GetInputTensor(0);
   auto unpack_3_dims = mul_in.GetDims();
   uint32_t num_attn_heads = unpack_3_dims[1];
   uint32_t num_attn_per_kv_heads = num_attn_heads / num_kv_heads;
@@ -633,25 +654,21 @@ size_t OptimizeMHAFastVlmPrefill(
   const auto& add_1_in_2 = ops[start_index + add_1_index].GetInputTensor(1);
   auto unpack_5_dims = add_1_in_2.GetDims();
   const auto& matmul_v2_in =
-      ops[start_index + matmul_v2_index].GetInputTensor(1);
+      ops[start_index + kMatmulV2Index].GetInputTensor(1);
   auto unpack_6_dims = matmul_v2_in.GetDims();
   const auto& pattern_output =
       ops[start_index + pattern_size - 1].GetOutputTensor(0);
   auto mha_output_dims = pattern_output.GetDims();
-  if (!(num_kv_heads == unpack_2_dims[1] &&
-        num_kv_heads == (unpack_3_dims[1] / 7) &&
-        num_kv_heads == unpack_4_dims[1] && num_kv_heads == unpack_5_dims[1] &&
-        num_kv_heads == unpack_6_dims[1] &&
-        num_kv_heads == (mha_output_dims[1] / 64))) {
+
+  if (!(num_kv_heads == unpack_2_dims[1] && num_kv_heads == unpack_4_dims[1] &&
+        num_kv_heads == unpack_5_dims[1] && num_kv_heads == unpack_6_dims[1])) {
     QNN_LOG_WARNING(
-        "[G2G] num_kv heads: %d not match heads in [unpack_2: %d, unpack_3: "
-        "%d, unpack_4: %d, unpack_5: %d, unpack_6: %d, "
-        "mha_output: %d]",
-        num_kv_heads, unpack_2_dims[1], unpack_3_dims[1] / 7, unpack_4_dims[1],
-        unpack_5_dims[1], unpack_6_dims[1], mha_output_dims[1] / 64);
+        "[G2G] num_kv heads: %d does not match heads in [unpack_2: %d, "
+        "unpack_4: %d, unpack_5: %d, unpack_6: %d]",
+        num_kv_heads, unpack_2_dims[1], unpack_4_dims[1], unpack_5_dims[1],
+        unpack_6_dims[1]);
     return 1;
   }
-  QNN_LOG_INFO("[G2G] num_kv_heads match...");
 
   std::vector<OpWrapper> new_ops;
   std::vector<TensorWrapperRef> unpack_1_sha_inputs;
@@ -739,13 +756,13 @@ size_t OptimizeMHAFastVlmPrefill(
           unpack_3_sha_inputs[i * num_attn_per_kv_heads + j],
           unpack_4_sha_inputs[i], unpack_5_sha_inputs[i],
           unpack_6_sha_inputs[i], num_attn_per_kv_heads,
-          ops[start_index + mul_index], ops[start_index + matmul_q_index],
-          ops[start_index + add_1_index], ops[start_index + matmul_qk_index],
-          ops[start_index + concat_index], ops[start_index + add_2_index],
-          ops[start_index + reshape_3_index], ops[start_index + softmax_index],
-          ops[start_index + slice_1_index], ops[start_index + slice_2_index],
-          ops[start_index + matmul_v1_index],
-          ops[start_index + matmul_v2_index], ops[start_index + add_3_index]);
+          ops[start_index + kMulIndex], ops[start_index + kMatmulQIndex],
+          ops[start_index + add_1_index], ops[start_index + kMatmulQkIndex],
+          ops[start_index + kConcatIndex], ops[start_index + kAdd2Index],
+          ops[start_index + kReshape3Index], ops[start_index + kSoftmaxIndex],
+          ops[start_index + kSlice1Index], ops[start_index + kSlice2Index],
+          ops[start_index + kMatmulV1Index], ops[start_index + kMatmulV2Index],
+          ops[start_index + kAdd3Index], nullptr);
       sha_outputs.emplace_back(sha_output);
     }
   }
@@ -774,12 +791,278 @@ size_t OptimizeMHAFastVlmPrefill(
                std::make_move_iterator(new_ops.end()));
     ops.erase(ops.begin() + start_index,
               ops.begin() + start_index + pattern_size);
+    QNN_LOG_INFO("[G2G] FastVLM optimization done.");
     return step_size;
   }
   QNN_LOG_WARNING(
       "[G2G] Validation failed. Rolling back to the original graph.");
   return 1;
 }
+
+namespace {
+// TODO(Alen): Please don't review this function. Will remove it before merged.
+std::vector<ConstTensorWrapperRef> SplitPositionEmbedding(
+    std::vector<OpWrapper>& new_ops, TensorPool& tensor_pool,
+    const OpWrapper& reshape, const OpWrapper& mul_cos,
+    const OpWrapper& mul_const, const OpWrapper& quantize,
+    const OpWrapper& concat, const OpWrapper& mul_sin, const OpWrapper& add) {
+  constexpr size_t kSplitAxis = 1;
+  const auto& pattern_input = reshape.GetInputTensor(0);
+  const size_t num_splits = reshape.GetOutputTensor(0).GetDim(kSplitAxis);
+
+  // position embedding cos
+  auto split_cos_dims = pattern_input.GetDims();
+  split_cos_dims.back() /= num_splits;
+  std::vector<ConstTensorWrapperRef> split_cos_outputs;
+  split_cos_outputs.reserve(num_splits);
+  for (size_t i = 0; i < num_splits; ++i) {
+    split_cos_outputs.emplace_back(
+        tensor_pool.CloneNativeTensorFrom(pattern_input, split_cos_dims));
+  }
+  auto& split_cos = new_ops.emplace_back(
+      CreateSplitOp(tensor_pool, pattern_input, split_cos_outputs,
+                    pattern_input.GetRank() - 1));
+
+  const auto& reshape_cos_output = tensor_pool.CloneNativeTensorFrom(
+      mul_cos.GetInputTensor(1), split_cos_dims);
+  auto& reshape_cos = new_ops.emplace_back(
+      CreateReshapeOp(mul_cos.GetInputTensor(1), reshape_cos_output));
+
+  std::vector<ConstTensorWrapperRef> mul_cos_outputs;
+  mul_cos_outputs.reserve(num_splits);
+  for (const auto& split_cos_output : split_cos_outputs) {
+    auto& mul_cos_output = tensor_pool.CloneNativeTensorFrom(
+        mul_cos.GetOutputTensor(0), split_cos_dims);
+    mul_cos_outputs.emplace_back(mul_cos_output);
+    new_ops.emplace_back(CreateElementWiseMulOp(
+        split_cos_output.get(), reshape_cos_output, mul_cos_output));
+  }
+
+  // position embedding sin
+  auto split_sin_dims = pattern_input.GetDims();
+  split_sin_dims.back() /= (num_splits * 2);
+  std::vector<ConstTensorWrapperRef> split_sin_outputs;
+  split_sin_outputs.reserve(num_splits * 2);
+  for (size_t i = 0; i < num_splits * 2; ++i) {
+    split_sin_outputs.emplace_back(
+        tensor_pool.CloneNativeTensorFrom(pattern_input, split_sin_dims));
+  }
+  auto& split_sin = new_ops.emplace_back(
+      CreateSplitOp(tensor_pool, pattern_input, split_sin_outputs,
+                    pattern_input.GetRank() - 1));
+
+  split_sin_dims.back() *= 2;
+  const auto& reshape_sin_output = tensor_pool.CloneNativeTensorFrom(
+      mul_sin.GetInputTensor(1), split_sin_dims);
+  auto& reshape_sin = new_ops.emplace_back(
+      CreateReshapeOp(mul_sin.GetInputTensor(1), reshape_sin_output));
+
+  std::vector<ConstTensorWrapperRef> mul_sin_outputs;
+  mul_sin_outputs.reserve(num_splits);
+  for (size_t i = 0; i < num_splits; ++i) {
+    const auto& quantize_input = split_sin_outputs[i * 2].get();
+    const auto& quantize_output = tensor_pool.CloneNativeTensorFrom(
+        quantize.GetOutputTensor(0), quantize_input.GetDims());
+    new_ops.emplace_back(CreateConvertOp(quantize_input, quantize_output));
+
+    const auto& mul_const_input = split_sin_outputs[i * 2 + 1].get();
+    const auto& mul_const_output = tensor_pool.CloneNativeTensorFrom(
+        mul_const.GetOutputTensor(0), mul_const_input.GetDims());
+    new_ops.emplace_back(CreateElementWiseMulOp(
+        mul_const_input, mul_const.GetInputTensor(1), mul_const_output));
+
+    const auto concat_axis = quantize_output.GetRank() - 1;
+    auto concat_dims = quantize_output.GetDims();
+    concat_dims[concat_axis] += mul_const_output.GetDim(concat_axis);
+    const auto& concat_output = tensor_pool.CloneNativeTensorFrom(
+        concat.GetOutputTensor(0), concat_dims);
+    new_ops.emplace_back(CreateConcatenationOp(
+        {mul_const_output, quantize_output}, concat_output, concat_axis));
+
+    const auto& mul_sin_output = tensor_pool.CloneNativeTensorFrom(
+        mul_sin.GetOutputTensor(0), concat_dims);
+    mul_sin_outputs.emplace_back(mul_sin_output);
+    new_ops.emplace_back(CreateElementWiseAddOp(
+        concat_output, reshape_sin_output, mul_sin_output));
+  }
+
+  // add
+  std::vector<ConstTensorWrapperRef> add_outputs;
+  for (size_t i = 0; i < num_splits; ++i) {
+    const auto& add_output = tensor_pool.CloneNativeTensorFrom(
+        add.GetOutputTensor(0), mul_sin_outputs[i].get().GetDims());
+    add_outputs.emplace_back(add_output);
+    new_ops.emplace_back(CreateElementWiseAddOp(
+        mul_sin_outputs[i], mul_cos_outputs[i], add_output));
+  }
+  return add_outputs;
+}
+}  // namespace
+
+size_t OptimizeMHAFastVlmDecode(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size) {
+  QNN_LOG_INFO("[G2G] MHA optimization (fast vlm decode)");
+
+  constexpr size_t kMulIndex = 0;
+  constexpr size_t kReshape0Index = 1;
+  constexpr size_t kMatmulK0Index = 2;
+  constexpr size_t kMatmulK1Index = 3;
+  constexpr size_t kConcatIndex = 4;
+  constexpr size_t kReshape1Index = 5;
+  constexpr size_t kAdd0Index = 6;
+  constexpr size_t kReshape2Index = 7;
+  constexpr size_t kSoftmaxIndex = 8;
+  constexpr size_t kSlice0Index = 9;
+  constexpr size_t kSlice1Index = 10;
+  constexpr size_t kMatmulV0Index = 11;
+  constexpr size_t kMatmulV1Index = 12;
+  constexpr size_t kAdd1Index = 13;
+  constexpr size_t kReshape3Index = 14;
+  const auto& mul = ops[start_index + kMulIndex];
+  const auto& reshape_0 = ops[start_index + kReshape0Index];
+  const auto& matmul_k0 = ops[start_index + kMatmulK0Index];
+  const auto& matmul_k1 = ops[start_index + kMatmulK1Index];
+  const auto& concat = ops[start_index + kConcatIndex];
+  const auto& reshape_1 = ops[start_index + kReshape1Index];
+  const auto& add_0 = ops[start_index + kAdd0Index];
+  const auto& reshape_2 = ops[start_index + kReshape2Index];
+  const auto& softmax = ops[start_index + kSoftmaxIndex];
+  const auto& slice_0 = ops[start_index + kSlice0Index];
+  const auto& slice_1 = ops[start_index + kSlice1Index];
+  const auto& matmul_v0 = ops[start_index + kMatmulV0Index];
+  const auto& matmul_v1 = ops[start_index + kMatmulV1Index];
+  const auto& add_1 = ops[start_index + kAdd1Index];
+  const auto& reshape_3 = ops[start_index + kReshape3Index];
+
+  constexpr size_t kUnpackAxis = 1;
+  std::vector<OpWrapper> new_ops;
+
+  // Unpack ROPE Q output
+  auto unpack_rope_q_dims = mul.GetInputTensor(0).GetDims();
+  const size_t num_unpack_rope_q_output = unpack_rope_q_dims[kUnpackAxis];
+  unpack_rope_q_dims.erase(unpack_rope_q_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_rope_q_outputs;
+  unpack_rope_q_outputs.reserve(num_unpack_rope_q_output);
+  for (size_t i = 0; i < num_unpack_rope_q_output; ++i) {
+    unpack_rope_q_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        mul.GetInputTensor(0), unpack_rope_q_dims));
+  }
+  new_ops.emplace_back(CreateUnpackOp(mul.GetInputTensor(0),
+                                      unpack_rope_q_outputs, kUnpackAxis));
+
+  // Unpack ROPE K output
+  auto unpack_rope_k_dims = matmul_k1.GetInputTensor(1).GetDims();
+  const size_t num_unpack_rope_k_output = unpack_rope_k_dims[kUnpackAxis];
+  unpack_rope_k_dims.erase(unpack_rope_k_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_rope_k_outputs;
+  unpack_rope_k_outputs.reserve(num_unpack_rope_k_output);
+  for (size_t i = 0; i < num_unpack_rope_k_output; ++i) {
+    unpack_rope_k_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_k1.GetInputTensor(1), unpack_rope_k_dims));
+  }
+  new_ops.emplace_back(CreateUnpackOp(matmul_k1.GetInputTensor(1),
+                                      unpack_rope_k_outputs, kUnpackAxis));
+
+  // Unpack Cache K input
+  auto unpack_cache_k_dims = matmul_k0.GetInputTensor(1).GetDims();
+  const size_t num_unpack_cache_k_output = unpack_cache_k_dims[kUnpackAxis];
+  unpack_cache_k_dims.erase(unpack_cache_k_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_cache_k_outputs;
+  unpack_cache_k_outputs.reserve(num_unpack_cache_k_output);
+  for (size_t i = 0; i < num_unpack_cache_k_output; ++i) {
+    unpack_cache_k_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_k0.GetInputTensor(1), unpack_cache_k_dims));
+  }
+  new_ops.emplace_back(CreateUnpackOp(matmul_k0.GetInputTensor(1),
+                                      unpack_cache_k_outputs, kUnpackAxis));
+
+  // Unpack Cache V input
+  auto unpack_cache_v_dims = matmul_v0.GetInputTensor(1).GetDims();
+  const size_t num_unpack_cache_v_output = unpack_cache_v_dims[kUnpackAxis];
+  unpack_cache_v_dims.erase(unpack_cache_v_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_cache_v_outputs;
+  for (size_t i = 0; i < num_unpack_cache_v_output; ++i) {
+    unpack_cache_v_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_v0.GetInputTensor(1), unpack_cache_v_dims));
+  }
+  new_ops.emplace_back(CreateUnpackOp(matmul_v0.GetInputTensor(1),
+                                      unpack_cache_v_outputs, kUnpackAxis));
+
+  // Unpack Slice V input
+  auto unpack_slice_v_dims = matmul_v1.GetInputTensor(1).GetDims();
+  const size_t num_unpack_slice_v_output = unpack_slice_v_dims[kUnpackAxis];
+  unpack_slice_v_dims.erase(unpack_slice_v_dims.begin() + kUnpackAxis);
+  std::vector<ConstTensorWrapperRef> unpack_slice_v_outputs;
+  for (size_t i = 0; i < num_unpack_slice_v_output; ++i) {
+    unpack_slice_v_outputs.emplace_back(tensor_pool.CloneNativeTensorFrom(
+        matmul_v1.GetInputTensor(1), unpack_slice_v_dims));
+  }
+  new_ops.emplace_back(CreateUnpackOp(matmul_v1.GetInputTensor(1),
+                                      unpack_slice_v_outputs, kUnpackAxis));
+
+  // Build SHA
+  const auto num_attn_head = unpack_rope_q_outputs.size();
+  const auto num_kv_head = unpack_rope_k_outputs.size();
+  const auto num_attn_per_kv_head = num_attn_head / num_kv_head;
+  std::vector<ConstTensorWrapperRef> sha_outputs;
+  for (size_t i = 0; i < num_kv_head; ++i) {
+    for (size_t j = 0; j < num_attn_per_kv_head; ++j) {
+      const auto& sha_output = BuildSingleSHA(
+          new_ops, tensor_pool,
+          const_cast<TensorWrapper&>(unpack_cache_v_outputs[i].get()),
+          const_cast<TensorWrapper&>(unpack_cache_k_outputs[i].get()),
+          const_cast<TensorWrapper&>(unpack_rope_q_outputs[i * 2 + j].get()),
+          const_cast<TensorWrapper&>(add_0.GetInputTensor(0)),
+          const_cast<TensorWrapper&>(add_0.GetInputTensor(1)),
+          const_cast<TensorWrapper&>(unpack_slice_v_outputs[i].get()),
+          num_attn_per_kv_head, mul, matmul_k0, add_0, matmul_k1, concat, add_0,
+          reshape_2, softmax, slice_0, slice_1, matmul_v0, matmul_v1, add_1,
+          &(const_cast<TensorWrapper&>(unpack_rope_k_outputs[i].get())));
+      sha_outputs.emplace_back(sha_output);
+    }
+  }
+  // Concat SHA outputs by last dimension
+  const auto concat_axis = sha_outputs[0].get().GetRank() - 1;
+  auto concat_sha_dims = sha_outputs[0].get().GetDims();
+  concat_sha_dims[concat_axis] = 0;
+  for (const auto& sha_output : sha_outputs) {
+    concat_sha_dims[concat_axis] += sha_output.get().GetDim(concat_axis);
+  }
+  const auto& concat_sha_output = tensor_pool.CloneNativeTensorFrom(
+      reshape_3.GetInputTensor(0), concat_sha_dims);
+  new_ops.emplace_back(
+      CreateConcatenationOp(sha_outputs, concat_sha_output, concat_axis));
+  new_ops.emplace_back(
+      CreateReshapeOp(concat_sha_output, reshape_3.GetOutputTensor(0)));
+
+  // Validate new graph.
+  const bool is_valid =
+      std::all_of(new_ops.begin(), new_ops.end(),
+                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                    return validate_op_config(op_wrapper);
+                  });
+  if (is_valid) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+    }
+    // Replace the matched pattern with a newly generated subgraph.
+    size_t step_size = new_ops.size();
+    ops.insert(ops.begin() + start_index + pattern_size,
+               std::make_move_iterator(new_ops.begin()),
+               std::make_move_iterator(new_ops.end()));
+    ops.erase(ops.begin() + start_index,
+              ops.begin() + start_index + pattern_size);
+    QNN_LOG_INFO("[G2G] FastVLM decode optimization done.");
+    return step_size;
+  }
+  QNN_LOG_WARNING(
+      "[G2G] Validation failed. Rolling back to the original graph.");
+  return 1;
+}
+
 namespace {
 
 bool OptimizeMHATinyGemmaPrefill(
@@ -1335,6 +1618,99 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
       return 1;
     }
     new_ops.clear();
+  }
+  return 1;
+}
+
+size_t OptimizeTransposeMatMul(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size) {
+  constexpr size_t kAddIndex = 0;
+  constexpr size_t kTransposeIndex = 1;
+  constexpr size_t kMulIndex = 2;
+  constexpr size_t kReshapeIndex = 3;
+  constexpr size_t kMatmul0Index = 4;
+  constexpr size_t kMatmul1Index = 5;
+  if (!(IS_CONNECTED(kAddIndex, 0, kTransposeIndex, 0)) &&
+      (IS_CONNECTED(kMulIndex, 0, kReshapeIndex, 0)) &&
+      (IS_CONNECTED(kReshapeIndex, 0, kMatmul0Index, 0)) &&
+      (IS_CONNECTED(kReshapeIndex, 0, kMatmul1Index, 0)) &&
+      (IS_CONNECTED(kTransposeIndex, 0, kMatmul1Index, 1))) {
+    return 1;
+  }
+
+  std::vector<OpWrapper> new_ops;
+  auto& transpose = ops[start_index + kTransposeIndex];
+
+  // Check if Transpose Op permute data is [0, 1, 3, 2].
+  auto transpose_perm_data =
+      transpose.GetTensorPararm(0).GetTensor().GetTensorData<uint32_t>();
+  const auto& transpose_perm_dims =
+      transpose.GetTensorPararm(0).GetTensor().GetDims();
+  if (!transpose_perm_data) {
+    QNN_LOG_ERROR(
+        "Failed to get permute date of Transpose Op. Rolling back to the "
+        "original graph.")
+    return 1;
+  }
+  if (transpose_perm_dims.size() != 1 && transpose_perm_dims[0] != 4) {
+    QNN_LOG_ERROR(
+        "The permute tensor dimension of Transpose Op does not match the "
+        "pattern. Rolling back to the original graph.")
+    return 1;
+  }
+  if (transpose_perm_data.value()[2] != 3 ||
+      transpose_perm_data.value()[3] != 2) {
+    QNN_LOG_ERROR(
+        "The permute date of Transpose Op does not match the pattern. Rolling "
+        "back to the original graph.")
+    return 1;
+  }
+
+  auto& matmul_1 = ops[start_index + kMatmul1Index];
+  // Get adj_y in MatMul Op.
+  auto adj_y_param = matmul_1.GetScalarParam(1);
+  if (!adj_y_param ||
+      adj_y_param->GetName() != QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1) {
+    return 1;
+  }
+  bool origin_adj_y = adj_y_param->GetValue<bool>();
+
+  auto& transpose_in_0 = transpose.GetInputTensor(0);
+  auto& matmul_in_0 = matmul_1.GetInputTensor(0);
+  auto& matmul_out_0 = matmul_1.GetOutputTensor(0);
+
+  auto new_matmul_1 =
+      BuildMatmulOp(tensor_pool,
+                    {const_cast<::qnn::TensorWrapper&>(matmul_in_0),
+                     const_cast<::qnn::TensorWrapper&>(transpose_in_0)},
+                    {const_cast<::qnn::TensorWrapper&>(matmul_out_0)},
+                    /*adj_x*/ false, /*adj_y*/ !origin_adj_y);
+  std::move(new_matmul_1.begin(), new_matmul_1.end(),
+            std::back_inserter(new_ops));
+
+  const bool is_valid =
+      std::all_of(new_ops.begin(), new_ops.end(),
+                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                    return validate_op_config(op_wrapper);
+                  });
+  if (is_valid) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+    }
+    // Insert the new op at the end.
+    ops.insert(ops.begin() + start_index + pattern_size,
+               std::make_move_iterator(new_ops.begin()),
+               std::make_move_iterator(new_ops.end()));
+    // Erase Transpose and MatMul 1.
+    ops.erase(ops.begin() + start_index + kMatmul1Index);
+    ops.erase(ops.begin() + start_index + kTransposeIndex);
+    QNN_LOG_INFO("[G2G] Fused Transpose - MatMul.");
+  } else {
+    QNN_LOG_ERROR(
+        "[G2G] Validation failed. Rolling back to the original graph.");
   }
   return 1;
 }
