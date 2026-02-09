@@ -268,7 +268,12 @@ class RewriteDequantizeCompositeOp
         // Fallback for dynamic/non-constant inputs: update the producer's type
         // directly
         rewriter.startOpModification(producer_op);
-        producer_op->getResults().front().setType(qtensor_type);
+        for (OpResult result : producer_op->getResults()) {
+          if (result == composite_op.getOperand(num_operands - 1)) {
+            result.setType(qtensor_type);
+            break;
+          }
+        }
         rewriter.finalizeOpModification(producer_op);
 
         tfl_quantize_input = operand;
