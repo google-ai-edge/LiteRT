@@ -257,6 +257,10 @@ benchmark_model --graph=model.tflite --use_gpu
 -   `--warmup_runs` (default: 1): Number of warmup iterations before
     benchmarking
 -   `--warmup_min_secs` (default: 0.5): Minimum warmup duration
+-   `--input_layer_value_range`: A map-like string representing value range for
+    integer and float input layers. Each item is separated by ':', and the item
+    value consists of input layer name and range values (both low and high are
+    inclusive) separated by ',', e.g., input1,1.0,2.0:input2,0,254
 
 ### Output Format
 

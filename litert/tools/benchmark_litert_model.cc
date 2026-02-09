@@ -20,6 +20,9 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -201,7 +204,44 @@ TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
   return kTfLiteOk;
 }
 
+TfLiteStatus PopulateInputValueRanges(
+    const std::string& value_ranges_string,
+    absl::flat_hash_map<std::string, BenchmarkLiteRtModel::ValueRange>*
+        input_layer_value_range) {
+  std::vector<std::string> value_ranges =
+      absl::StrSplit(value_ranges_string, ':');
+  for (const auto& val : value_ranges) {
+    std::vector<std::string> name_range = absl::StrSplit(val, ',');
+    if (name_range.size() != 3) {
+      LITERT_LOG(LITERT_ERROR, "Wrong input value range item specified: %s",
+                 val.c_str());
+      return kTfLiteError;
+    }
+
+    // Parse the range value.
+    float low, high;
+    bool has_low = absl::SimpleAtof(name_range[1], &low);
+    bool has_high = absl::SimpleAtof(name_range[2], &high);
+    if (!has_low || !has_high || low > high) {
+      LITERT_LOG(
+          LITERT_ERROR,
+          "Wrong low and high value of the input value range specified: %s",
+          val.c_str());
+      return kTfLiteError;
+    }
+    (*input_layer_value_range)[name_range[0]] = {low, high};
+  }
+  return kTfLiteOk;
+}
+
 TfLiteStatus BenchmarkLiteRtModel::Init() {
+  auto value_ranges_string =
+      params_.Get<std::string>("input_layer_value_range");
+  if (!value_ranges_string.empty()) {
+    TF_LITE_ENSURE_STATUS(PopulateInputValueRanges(value_ranges_string,
+                                                   &input_layer_value_range_));
+  }
+
   if (params_.Get<bool>("enable_perfetto")) {
     litert::internal::InitializePerfetto();
   }
@@ -267,6 +307,44 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   output_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
       std::move(output_buffers_result));
 
+  return kTfLiteOk;
+}
+
+TfLiteStatus BenchmarkLiteRtModel::PrepareInputData() {
+  auto signature = params_.Get<std::string>("signature_to_run_for");
+  LITERT_ASSIGN_OR_RETURN(auto input_names,
+                          compiled_model_->GetSignatureInputNames(signature),
+                          AsTfLiteStatus(_ << "Failed to get input names."));
+
+  if (input_names.size() != input_buffers_->size()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Input names count %zu does not match input buffers count %zu",
+               input_names.size(), input_buffers_->size());
+    return kTfLiteError;
+  }
+
+  int index = 0;
+  for (auto& buffer : *input_buffers_) {
+    std::string name(input_names[index]);
+    float low = 0.0f;
+    float high = 0.0f;
+    if (auto it = input_layer_value_range_.find(name);
+        it != input_layer_value_range_.end()) {
+      low = it->second.low;
+      high = it->second.high;
+    }
+
+    auto t_data = CreateRandomTensorData(buffer, name, low, high);
+    auto res = buffer.Write<char>(absl::MakeSpan(
+        reinterpret_cast<char*>(t_data.data.get()), t_data.bytes));
+    if (!res.HasValue()) {
+      LITERT_LOG(LITERT_ERROR, "PrepareInputData: %s",
+                 res.Error().Message().c_str());
+      return kTfLiteError;
+    }
+
+    ++index;
+  }
   return kTfLiteOk;
 }
 }  // namespace litert::benchmark
