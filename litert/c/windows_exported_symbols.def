@@ -280,6 +280,7 @@ EXPORTS
   LiteRtQualcommOptionsGetIrJsonDir
   LiteRtQualcommOptionsGetLogLevel
   LiteRtQualcommOptionsGetNumHvxThreads
+  LiteRtQualcommOptionsGetSaverOutputDir
   LiteRtQualcommOptionsGetOptimizationLevel
   LiteRtQualcommOptionsGetProfiling
   LiteRtQualcommOptionsGetSaverOutputDir
@@ -297,6 +298,7 @@ EXPORTS
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel
   LiteRtQualcommOptionsSetNumHvxThreads
+  LiteRtQualcommOptionsSetSaverOutputDir
   LiteRtQualcommOptionsSetOptimizationLevel
   LiteRtQualcommOptionsSetProfiling
   LiteRtQualcommOptionsSetSaverOutputDir
