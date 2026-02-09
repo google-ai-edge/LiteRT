@@ -33,6 +33,7 @@ cc_library(
     deps = [
         ":log",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
