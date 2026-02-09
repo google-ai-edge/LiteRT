@@ -101,6 +101,14 @@ HtpPerformanceMode Options::GetHtpPerformanceMode() const {
   return htp_performance_mode_;
 }
 
+void Options::SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode) {
+  dsp_performance_mode_ = dsp_performance_mode;
+}
+
+DspPerformanceMode Options::GetDspPerformanceMode() const {
+  return dsp_performance_mode_;
+}
+
 void Options::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
   dump_tensor_ids_ = ids;
 }
@@ -164,6 +172,7 @@ EnableWeightSharing: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
 HtpPerformanceMode: %d\n\
+DspPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
 IrJsonDir: %s\n\
 DlcDir: %s\n\
@@ -178,9 +187,10 @@ SaverOutputDir: %s\n";  // NOLINT
   return absl::StrFormat(
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
       use_htp_preference_, use_qint16_as_quint16_, enable_weight_sharing_,
-      use_conv_hmx_, use_fold_relu_, htp_performance_mode_, dump_tensor_ids,
-      ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
-      graph_priority_, saver_output_dir_);
+      use_conv_hmx_, use_fold_relu_, htp_performance_mode_,
+      dsp_performance_mode_, dump_tensor_ids, ir_json_dir_, dlc_dir_,
+      vtcm_size_, num_hvx_threads_, optimization_level_, graph_priority_,
+      saver_output_dir_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

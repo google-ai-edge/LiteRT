@@ -10,14 +10,11 @@ package(
 )
 
 cc_library(
-    name = "htp_perf_control",
-    srcs = ["htp_perf_control.cc"],
-    hdrs = ["htp_perf_control.h"],
+    name = "backend_utils",
+    hdrs = ["backend_utils.h"],
     deps = [
-        "//litert/vendors/qualcomm/core:common",
-        "//litert/vendors/qualcomm/core/utils:log",
-        "@com_google_absl//absl/base:core_headers",
-        "@qairt//:qnn_lib_headers",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -53,7 +50,7 @@ cc_library(
     srcs = ["htp_backend.cc"],
     hdrs = ["htp_backend.h"],
     deps = [
-        ":htp_perf_control",
+        ":backend_utils",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -68,6 +65,7 @@ cc_library(
     srcs = ["dsp_backend.cc"],
     hdrs = ["dsp_backend.h"],
     deps = [
+        ":backend_utils",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -78,18 +76,61 @@ cc_library(
 )
 
 cc_test(
-    name = "qnn_backend_test",
+    name = "ir_backend_test",
     srcs = [
-        "qnn_backend_test.cc",
+        "ir_backend_test.cc",
     ],
     deps = [
-        ":dsp_backend",
-        ":htp_backend",
         ":ir_backend",
-        ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "backend_utils_test",
+    srcs = [
+        "backend_utils_test.cc",
+    ],
+    deps = [
+        ":backend_utils",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dsp_backend_test",
+    srcs = [
+        "dsp_backend_test.cc",
+    ],
+    deps = [
+        ":backend_utils",
+        ":dsp_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_test(
+    name = "htp_backend_test",
+    srcs = [
+        "htp_backend_test.cc",
+    ],
+    deps = [
+        ":backend_utils",
+        ":htp_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
     ],
 )

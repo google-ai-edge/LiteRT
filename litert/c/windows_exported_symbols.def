@@ -276,6 +276,7 @@ EXPORTS
   LiteRtQualcommOptionsGetEnableWeightSharing
   LiteRtQualcommOptionsGetGraphPriority
   LiteRtQualcommOptionsGetHtpPerformanceMode
+  LiteRtQualcommOptionsGetDspPerformanceMode
   LiteRtQualcommOptionsGetIdentifier
   LiteRtQualcommOptionsGetIrJsonDir
   LiteRtQualcommOptionsGetLogLevel
@@ -294,6 +295,7 @@ EXPORTS
   LiteRtQualcommOptionsSetEnableWeightSharing
   LiteRtQualcommOptionsSetGraphPriority
   LiteRtQualcommOptionsSetHtpPerformanceMode
+  LiteRtQualcommOptionsSetDspPerformanceMode
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel
   LiteRtQualcommOptionsSetNumHvxThreads

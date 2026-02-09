@@ -121,6 +121,19 @@ std::string AbslUnparseFlag(QualcommOptions::HtpPerformanceMode options);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::DspPerformanceMode,
+                  qualcomm_dsp_performance_mode);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::DspPerformanceMode* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options);
+
+}  // namespace litert::qualcomm
+
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::Profiling,
                   qualcomm_profiling);
 

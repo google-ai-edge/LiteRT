@@ -69,7 +69,7 @@ TEST_P(LiteRtLog, SanityTest) {
 
   // Set log file pointer
   FILE* file_ptr = fopen(temp_path.c_str(), "w");
-  ASSERT_NE(file_ptr, nullptr);
+  ASSERT_TRUE(file_ptr);
   qnn::QNNLogger::SetLogFilePointer(file_ptr);
 
   // Set log_level and print message to file
@@ -149,7 +149,7 @@ TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
   auto api = ::qnn::ResolveQnnApi(
       handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());
 
-  ASSERT_EQ(api, nullptr);
+  ASSERT_FALSE(api);
 }
 
 TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
@@ -157,15 +157,7 @@ TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
   auto api = ::qnn::ResolveQnnApi(
       handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());
 
-  ASSERT_NE(api, nullptr);
-}
-
-TEST(MiscTests, DISABLED_LoadIrBackendApiTest) {
-  DLHandle handle = ::qnn::CreateDLHandle(::qnn::IrBackend::GetLibraryName());
-  auto api = ::qnn::ResolveQnnApi(
-      handle.get(), ::qnn::IrBackend::GetExpectedBackendVersion());
-
-  ASSERT_NE(api, nullptr);
+  ASSERT_TRUE(api);
 }
 
 }  // namespace qnn
