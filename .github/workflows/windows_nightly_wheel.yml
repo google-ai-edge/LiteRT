@@ -120,8 +120,7 @@ jobs:
         run: Get-ChildItem dist -Filter *.whl | ForEach-Object { python -m zipfile --list $_.FullName }
 
       - name: Install local wheel
-        run: |
-          python -m pip install dist/*.whl
+        run: Get-ChildItem dist -Filter *.whl | ForEach-Object { python -m pip install $_.FullName }
 
       - name: Import ai_edge_litert
         run: |
