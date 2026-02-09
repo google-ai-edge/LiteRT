@@ -13,7 +13,7 @@
 # limitations under the License.
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//:license"],
     default_visibility = [
         # By default, this package is private to avoid mistaken under-restricted visibility. Each target
         # is explicitly given visibility individually.

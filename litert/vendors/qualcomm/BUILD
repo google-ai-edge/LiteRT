@@ -22,7 +22,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qnn")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//:license"],
     default_visibility = ["//litert:__subpackages__"],
 )
 
