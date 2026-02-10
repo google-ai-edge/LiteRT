@@ -89,7 +89,6 @@ cc_library(
         "//litert/cc:litert_options",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
-        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",

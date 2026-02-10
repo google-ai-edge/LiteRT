@@ -74,6 +74,7 @@ cc_library(
     srcs = ["//litert/cc:litert_tensor_buffer.cc"],
     hdrs = [
         "//litert/cc:litert_tensor_buffer.h",
+        "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
         ":litert_handle",
@@ -539,7 +540,6 @@ cc_test(
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
-        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/test:common",
         "//litert/test:matchers",
