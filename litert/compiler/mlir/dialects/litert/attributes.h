@@ -15,18 +15,20 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_MLIR_DIALECTS_LITERT_ATTRIBUTES_H_
 
 #include <climits>
+#include <string>
 #include <type_traits>
 #include <utility>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "litert/compiler/mlir/dialects/litert/callback_resource.h"
 #include "litert/compiler/mlir/dialects/litert/lazy_blob_manager.h"
-#include "litert/compiler/mlir/dialects/litert/py_blob.h"
 
 namespace litert {
 
 class LITERTDialect;
 
 using LazyResourceElementsHandle = LazyResourceBlobHandle<LITERTDialect>;
+using CallbackResourceElementsHandle = CallbackResourceHandle<LITERTDialect>;
 
 }  // namespace litert
 

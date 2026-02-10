@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -200,4 +201,16 @@ pybind_extension(
             "@stablehlo//:stablehlo_capi_headers",
         ],
     ),
+)
+
+pytype_strict_contrib_test(
+    name = "converter_api_ext_test",
+    srcs = ["converter_api_ext_test.py"],
+    tags = ["no_oss"],
+    deps = [
+        ":converter_api_ext",
+        "//third_party/py/mlir:ir",
+        "@absl_py//absl/testing:absltest",
+        "@org_tensorflow//third_party/py/numpy:headers",
+    ],
 )
