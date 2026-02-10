@@ -182,6 +182,8 @@ class SimpleSignature : public internal::NonOwnedHandle<LiteRtSignature> {
 };
 
 /// @brief A C++ wrapper for `LiteRtModel`, representing a LiteRT model.
+///
+/// \internal
 class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
  public:
   Model() = default;
