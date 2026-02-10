@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 """MLIR Python bindings for LiteRT Compiler."""
+
 import importlib
 import sys
 
@@ -24,6 +25,8 @@ MLIR_LIBS_PACKAGE_NAME = f"{ROOT_PACKAGE_NAME}.mlir._mlir_libs"
 MLIR_LIBS_SO_MODULE_NAMES = [
     "_mlir",
     "model_utils_ext",
+    "converter_api_ext",
+    "_stablehlo",
 ]
 
 

@@ -41,7 +41,7 @@ enum DeviceType {
 }
 
 // Message to hold the configuration for the Google Tensor compiler.
-// NEXT ID: 3
+// NEXT ID: 4
 message GoogleTensorCompilerConfig {
   enum CompilationClient {
     COMPILATION_CLIENT_UNSPECIFIED = 0;
@@ -52,6 +52,8 @@ message GoogleTensorCompilerConfig {
   CompilationClient compilation_client = 1;
   // The SOC Devices to be compiled by the compiler.
   DeviceType device = 2;
+  // The litert version to be used by the compiler.
+  string litert_version = 3;
 }
 
 // Message to hold various compilation options for the Google Tensor compiler

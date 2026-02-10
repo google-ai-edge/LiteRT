@@ -33,6 +33,13 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * <NOTES SHOULD BE GROUPED PER AREA>
 -->
 
+* Removed methods from `litert::Event` which uses C type `LiteRtEnvironment`.
+  All C++ API should uses C++ `litert::Environment` instead.
+  Also removed method `CreateFromSyncFenceFd()` that doesn't accept
+  `litert::Environment`.
+
+* Updated `litert::Event::Type()` to return C++ types instead of C types.
+
 * The LiteRT headers no longer define the following OpenCL type names in the
   global namespace when OpenCL is _not_ supported: `cl_mem`, `cl_event`.
   These have been replaced with the type aliases `LiteRtClMem` and

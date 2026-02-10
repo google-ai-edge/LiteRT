@@ -73,6 +73,10 @@ if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:nightly_iso_date=${NIGHTLY_RELEASE_DATE}"
 fi
 
+if [[ ! -z "${BUILD_CONVERTER}" ]]; then
+  BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:build_converter=${BUILD_CONVERTER}"
+fi
+
 # Conditionally use local submodules vs http_archve tf
 if [[ "${USE_LOCAL_TF}" == "true" ]]; then
   BUILD_FLAGS+=("--config=use_local_tf")
@@ -124,6 +128,14 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/
+
+## Google Tensor SDK
+if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
+  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
+    ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/google_tensor:ai_edge_litert_sdk_google_tensor_sdist
+
+  mv bazel-bin/ci/tools/python/vendor_sdk/google_tensor/ai_edge_litert_sdk_google_tensor*.tar.gz dist/
+fi
 
 echo "Output can be found here:"
 find "./dist/"

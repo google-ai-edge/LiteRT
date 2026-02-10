@@ -24,7 +24,7 @@ namespace {
 constexpr std::size_t kInputIndex = 0;
 constexpr std::size_t kOutputIndex = 0;
 
-std::vector<std::uint32_t> GetStaticTensorDimention(
+std::vector<std::uint32_t> GetStaticTensorDimension(
     const std::vector<std::uint32_t>& input_dimensions,
     const std::vector<std::uint32_t>& output_dimensions) {
   std::uint32_t input_size = input_dimensions.size();
@@ -102,8 +102,8 @@ std::vector<OpWrapper> BuildBroadcastToOp(
         QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
   }
 
-  auto static_dims =
-      GetStaticTensorDimention(input_tensor.GetDims(), output_tensor.GetDims());
+  auto static_dims = GetStaticTensorDimension(input_tensor.GetDimensions(),
+                                              output_tensor.GetDimensions());
 
   TensorWrapper* static_tensor = nullptr;
   switch (data_type) {

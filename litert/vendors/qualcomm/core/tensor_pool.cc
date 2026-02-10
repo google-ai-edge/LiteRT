@@ -25,63 +25,63 @@ TensorPool::TensorPool() = default;
 
 TensorWrapper& TensorPool::CreateInputTensorWithSuffix(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions, std::string_view suffix) {
+    const std::vector<std::uint32_t>& dimensions, std::string_view suffix) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
   return tensor_wrappers_.emplace_back(std::move(tensor_name),
                                        QNN_TENSOR_TYPE_APP_WRITE, data_type,
-                                       quant_params, dimentions);
+                                       quant_params, dimensions);
 }
 
 TensorWrapper& TensorPool::CreateOutpuTensorWithSuffix(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions, std::string_view suffix) {
+    const std::vector<std::uint32_t>& dimensions, std::string_view suffix) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
   return tensor_wrappers_.emplace_back(std::move(tensor_name),
                                        QNN_TENSOR_TYPE_APP_READ, data_type,
-                                       quant_params, dimentions);
+                                       quant_params, dimensions);
 }
 
 TensorWrapper& TensorPool::CreateNativeTensor(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions) {
+    const std::vector<std::uint32_t>& dimensions) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
   return tensor_wrappers_.emplace_back(std::move(tensor_name),
                                        QNN_TENSOR_TYPE_NATIVE, data_type,
-                                       quant_params, dimentions);
+                                       quant_params, dimensions);
 }
 
 TensorWrapper& TensorPool::CreateNativeTensorWithSuffix(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions, std::string_view suffix) {
+    const std::vector<std::uint32_t>& dimensions, std::string_view suffix) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
   return tensor_wrappers_.emplace_back(std::move(tensor_name),
                                        QNN_TENSOR_TYPE_NATIVE, data_type,
-                                       quant_params, dimentions);
+                                       quant_params, dimensions);
 }
 
 TensorWrapper& TensorPool::CreateStaticTensor(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
+    const std::vector<std::uint32_t>& dimensions, std::uint32_t bytes,
     const void* data) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
   return tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
-      dimentions, bytes, data, true);
+      dimensions, bytes, data, true);
 }
 
 TensorWrapper* TensorPool::CreateStaticTensorWithValue(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions, float fill_value) {
+    const std::vector<std::uint32_t>& dimensions, float fill_value) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
 
   std::uint32_t num_data_element = std::accumulate(
-      dimentions.begin(), dimentions.end(), 1, std::multiplies<>());
+      dimensions.begin(), dimensions.end(), 1, std::multiplies<>());
   const std::uint32_t data_bytes =
       num_data_element * GetDataTypeSize(data_type);
 
@@ -195,18 +195,18 @@ TensorWrapper* TensorPool::CreateStaticTensorWithValue(
 
   return &tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
-      dimentions, data_bytes, data_ptr, true);
+      dimensions, data_bytes, data_ptr, true);
 }
 
 TensorWrapper& TensorPool::CreateStaticTensorWithSuffix(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions, std::string_view suffix,
+    const std::vector<std::uint32_t>& dimensions, std::string_view suffix,
     std::uint32_t bytes, const void* data, bool copy_data) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
   return tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
-      dimentions, bytes, data, copy_data);
+      dimensions, bytes, data, copy_data);
 }
 
 TensorWrapper& TensorPool::CloneNativeTensorFrom(const TensorWrapper& src) {
@@ -214,16 +214,16 @@ TensorWrapper& TensorPool::CloneNativeTensorFrom(const TensorWrapper& src) {
   auto tensor_name = std::to_string(id) + kQnnSuffix;
   return tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_NATIVE, src.GetDataType(),
-      src.quantize_params_, src.dimentions_);
+      src.quantize_params_, src.dimensions_);
 }
 
 TensorWrapper& TensorPool::CloneNativeTensorFrom(
-    const TensorWrapper& src, const std::vector<std::uint32_t>& dimentions) {
+    const TensorWrapper& src, const std::vector<std::uint32_t>& dimensions) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
   return tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_NATIVE, src.GetDataType(),
-      src.quantize_params_, dimentions);
+      src.quantize_params_, dimensions);
 }
 
 TensorWrapper& TensorPool::CloneStaticTensorFrom(const TensorWrapper& src,
@@ -232,18 +232,18 @@ TensorWrapper& TensorPool::CloneStaticTensorFrom(const TensorWrapper& src,
   auto tensor_name = std::to_string(id) + kQnnSuffix;
   return tensor_wrappers_.emplace_back(std::move(tensor_name),
                                        QNN_TENSOR_TYPE_STATIC, data_type,
-                                       src.quantize_params_, src.dimentions_,
+                                       src.quantize_params_, src.dimensions_,
                                        src.qnn_tensor_.v2.clientBuf.dataSize,
                                        src.qnn_tensor_.v2.clientBuf.data, true);
 }
 
 TensorWrapper& TensorPool::CloneStaticTensorFrom(
-    const TensorWrapper& src, const std::vector<std::uint32_t>& dimentions) {
+    const TensorWrapper& src, const std::vector<std::uint32_t>& dimensions) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
   return tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_STATIC,
-      src.qnn_tensor_.v2.dataType, src.quantize_params_, dimentions,
+      src.qnn_tensor_.v2.dataType, src.quantize_params_, dimensions,
       src.qnn_tensor_.v2.clientBuf.dataSize, src.qnn_tensor_.v2.clientBuf.data,
       true);
 }

@@ -33,6 +33,7 @@ py_library(
         ":func_dialect",
         ":ir",
         ":pass_manager",
+        ":stablehlo_dialect",
     ],
 )
 
@@ -104,6 +105,19 @@ symlink_inputs(
     deps = [
         ":core",
         ":extras",
+        ":ir",
+        "//litert/python/mlir/_mlir_libs",
+    ],
+)
+
+symlink_inputs(
+    name = "stablehlo_dialect",
+    rule = py_library,
+    symlinked_inputs = {"srcs": {
+        "dialects": ["@stablehlo//:stablehlo_ops_py_files"],
+    }},
+    deps = [
+        ":core",
         ":ir",
         "//litert/python/mlir/_mlir_libs",
     ],

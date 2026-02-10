@@ -51,9 +51,8 @@ using ::testing::litert::MeanSquaredErrorLt;
 
 // Fixture for tests that test execution on a given graph.
 class AtsInferenceTest : public RngTest {
- private:
   template <typename T>
-  using BufferView = typename SimpleBuffer::CView<T>;
+  using BufferView = SimpleBuffer::CView<T>;
 
  public:
   using Capture = InferenceCapture;
@@ -126,7 +125,8 @@ class AtsInferenceTest : public RngTest {
       }
       auto res = std::make_unique<CompiledModelExecutor>(std::move(*exec));
       return res;
-    } else if (conf_.IsCpu()) {
+    }
+    if (conf_.IsCpu()) {
       LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
                                              Graph(), conf_.TargetOptions()));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
@@ -195,13 +195,13 @@ class AtsInferenceTest : public RngTest {
   LiteRtModelT& Graph() const { return graph_->Graph(); }
 
   AtsInferenceTest(TestGraph::Ptr graph, const AtsConf& conf,
-                   const TestNames& names, typename Capture::Entry& cap)
+                   const TestNames& names, Capture::Entry& cap)
       : graph_(std::move(graph)), conf_(conf), names_(names), cap_(cap) {}
 
   TestGraph::Ptr graph_;
   const AtsConf& conf_;
   TestNames names_;
-  typename Capture::Entry& cap_;
+  Capture::Entry& cap_;
 };
 
 }  // namespace litert::testing

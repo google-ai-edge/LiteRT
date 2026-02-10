@@ -20,7 +20,6 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
@@ -31,7 +30,7 @@ namespace litert {
 // template param
 
 template <class... Discriminated>
-auto ParseOptions(LiteRtEnvironmentOptions env, LiteRtOptions options) {
+auto ParseOptions(LiteRtOptions options) {
   static constexpr auto kErr = kLiteRtStatusErrorInvalidArgument;
 
   auto opts = options ? Expected<litert::Options>(options, OwnHandle::kNo)
@@ -40,8 +39,6 @@ auto ParseOptions(LiteRtEnvironmentOptions env, LiteRtOptions options) {
       opts ? opts->GetOpaqueOptions() : Error(kErr, "Null opaque options");
 
   return std::make_tuple(
-      env ? Expected<EnvironmentOptions>(env)
-          : Error(kErr, "Null environment options"),
       std::move(opts), std::move(opq), [&]() -> Expected<Discriminated> {
         static_assert(std::is_base_of<OpaqueOptions, Discriminated>::value);
         if (opq) {

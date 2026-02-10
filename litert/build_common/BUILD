@@ -116,7 +116,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "android_gpu_enabled",
     match_all = [
-        "@platforms//os:android",
+        "@org_tensorflow//tensorflow:android",
         ":build_include_gpu_enabled",
     ],
 )

@@ -52,6 +52,18 @@ enum class HtpPerformanceMode {
   kExtremePowerSaver = 9,
 };
 
+enum class DspPerformanceMode {
+  kDefault = 0,
+  kSustainedHighPerformance = 1,
+  kBurst = 2,
+  kHighPerformance = 3,
+  kPowerSaver = 4,
+  kLowPowerSaver = 5,
+  kHighPowerSaver = 6,
+  kLowBalanced = 7,
+  kBalanced = 8,
+};
+
 enum class OptimizationLevel {
   kHtpOptimizeForInference = 0,
   kHtpOptimizeForPrepare = 1,
@@ -97,6 +109,9 @@ class Options {
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
 
+  void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
+  DspPerformanceMode GetDspPerformanceMode() const;
+
   // for per-layer dump
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds() const;
@@ -134,6 +149,7 @@ class Options {
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
+  DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;

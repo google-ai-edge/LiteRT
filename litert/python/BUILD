@@ -69,38 +69,61 @@ py_strict_library(
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_converter",
+        "//ci/tools/python/wheel:tflite_converter_protos",
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
-        # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
-        # "//litert/python/mlir",
-        "//tflite/converter:converter_flags_proto_py",
-        "//tflite/converter:model_flags_proto_py",
     ],
 )
+
+PYWRAP_LITERT_COMMON_LIB_DEF_FILES_OR_FILTERS = "//tflite/python:pywrap_tflite_common.json"
+
+PYWRAP_LITERT_COMMON_LIB_LINKOPTS = select({
+    "@bazel_tools//src/conditions:windows": [],
+    "@bazel_tools//src/conditions:darwin": [],
+    "//conditions:default": ["-Wl,-rpath,$$ORIGIN/"],
+})
+
+PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS = select({
+    "@bazel_tools//src/conditions:windows": None,
+    "@bazel_tools//src/conditions:darwin": "//tflite/python:pywrap_tflite_common_darwin.lds",
+    "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
+})
 
 pywrap_library(
     name = "pywrap_litert",
     common_lib_def_files_or_filters = {
-        "litert/python/pywrap_litert_common": "//tflite/python:pywrap_tflite_common.json",
+        "litert/python/pywrap_litert_common": PYWRAP_LITERT_COMMON_LIB_DEF_FILES_OR_FILTERS,
     },
     common_lib_linkopts = {
-        "litert/python/pywrap_litert_common": select({
-            "@bazel_tools//src/conditions:windows": [],
-            "@bazel_tools//src/conditions:darwin": [],
-            "//conditions:default": ["-Wl,-rpath,$$ORIGIN/"],
-        }),
+        "litert/python/pywrap_litert_common": PYWRAP_LITERT_COMMON_LIB_LINKOPTS,
     },
     common_lib_version_scripts = {
-        "litert/python/pywrap_litert_common": select({
-            "@bazel_tools//src/conditions:windows": None,
-            "@bazel_tools//src/conditions:darwin": "//tflite/python:pywrap_tflite_common_darwin.lds",
-            "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
-        }),
+        "litert/python/pywrap_litert_common": PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS,
     },
     pywrap_count = 11,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
+        "//tflite/python:tflite_pywrap_deps",
+    ],
+)
+
+pywrap_library(
+    name = "pywrap_litert_with_converter",
+    common_lib_def_files_or_filters = {
+        "litert/python/pywrap_litert_with_converter_common": PYWRAP_LITERT_COMMON_LIB_DEF_FILES_OR_FILTERS,
+    },
+    common_lib_linkopts = {
+        "litert/python/pywrap_litert_with_converter_common": PYWRAP_LITERT_COMMON_LIB_LINKOPTS,
+    },
+    common_lib_version_scripts = {
+        "litert/python/pywrap_litert_with_converter_common": PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS,
+    },
+    pywrap_count = 15,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":litert_pywrap_deps",
+        "//litert/python/mlir",
         "//tflite/python:tflite_pywrap_deps",
     ],
 )
@@ -111,13 +134,18 @@ pywrap_binaries(
     visibility = ["//visibility:public"],
 )
 
+pywrap_binaries(
+    name = "pywrap_litert_with_converter_binaries",
+    dep = ":pywrap_litert_with_converter",
+    visibility = ["//visibility:public"],
+)
+
 py_strict_test(
     name = "converter_wrapper_test",
     srcs = ["converter_wrapper_test.py"],
     deps = [
         ":pywrap_litert",
-        "//tflite/converter:converter_flags_proto_py",
-        "//tflite/converter:model_flags_proto_py",
+        "//ci/tools/python/wheel:tflite_converter_protos",
         "@absl_py//absl/testing:absltest",
     ],
 )

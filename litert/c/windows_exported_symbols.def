@@ -25,6 +25,7 @@ EXPORTS
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
+  LiteRtAppendOpaqueOptions
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
@@ -54,6 +55,7 @@ EXPORTS
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
   LiteRtCreateModelFromFile
+  LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
   LiteRtCreateProfiler
   LiteRtCreateRuntimeOptions
@@ -157,19 +159,21 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
+  LiteRtGetOpaqueOptions
+  LiteRtGetOpaqueOptionsData
+  LiteRtGetOpaqueOptionsHash
+  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetOpCode
   LiteRtGetOpInput
   LiteRtGetOpOutput
-  LiteRtGetOpaqueOptions
-  LiteRtGetOpaqueOptionsHash
-  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetOptionsHardwareAccelerators
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
-  LiteRtGetProfileSummary
   LiteRtGetProfilerEvents
+  LiteRtGetProfileSummary
   LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
+  LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints
   LiteRtGetRuntimeOptionsEnableProfiling
   LiteRtGetRuntimeOptionsErrorReporterMode
   LiteRtGetRuntimeOptionsIdentifier
@@ -262,6 +266,7 @@ EXPORTS
   LiteRtMediatekOptionsSetNeronSDKVersionType
   LiteRtMediatekOptionsSetOptimizationHint
   LiteRtMediatekOptionsSetPerformanceMode
+  LiteRtPopOpaqueOptions
   LiteRtPushOp
   LiteRtQualcommOptionsCreate
   LiteRtQualcommOptionsGet
@@ -271,13 +276,14 @@ EXPORTS
   LiteRtQualcommOptionsGetEnableWeightSharing
   LiteRtQualcommOptionsGetGraphPriority
   LiteRtQualcommOptionsGetHtpPerformanceMode
+  LiteRtQualcommOptionsGetDspPerformanceMode
   LiteRtQualcommOptionsGetIdentifier
   LiteRtQualcommOptionsGetIrJsonDir
   LiteRtQualcommOptionsGetLogLevel
   LiteRtQualcommOptionsGetNumHvxThreads
-  LiteRtQualcommOptionsGetSaverOutputDir
   LiteRtQualcommOptionsGetOptimizationLevel
   LiteRtQualcommOptionsGetProfiling
+  LiteRtQualcommOptionsGetSaverOutputDir
   LiteRtQualcommOptionsGetUseConvHMX
   LiteRtQualcommOptionsGetUseFoldReLU
   LiteRtQualcommOptionsGetUseHtpPreference
@@ -289,12 +295,13 @@ EXPORTS
   LiteRtQualcommOptionsSetEnableWeightSharing
   LiteRtQualcommOptionsSetGraphPriority
   LiteRtQualcommOptionsSetHtpPerformanceMode
+  LiteRtQualcommOptionsSetDspPerformanceMode
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel
   LiteRtQualcommOptionsSetNumHvxThreads
-  LiteRtQualcommOptionsSetSaverOutputDir
   LiteRtQualcommOptionsSetOptimizationLevel
   LiteRtQualcommOptionsSetProfiling
+  LiteRtQualcommOptionsSetSaverOutputDir
   LiteRtQualcommOptionsSetUseConvHMX
   LiteRtQualcommOptionsSetUseFoldReLU
   LiteRtQualcommOptionsSetUseHtpPreference
@@ -348,12 +355,11 @@ EXPORTS
   LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetProfilerCurrentEventSource
+  LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints
   LiteRtSetRuntimeOptionsEnableProfiling
   LiteRtSetRuntimeOptionsErrorReporterMode
-  LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints
   LiteRtSetTensorBufferEvent
   LiteRtSignalEvent
-  LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints
   LiteRtStartProfiler
   LiteRtStopProfiler
   LiteRtUnlockTensorBuffer

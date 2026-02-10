@@ -119,7 +119,7 @@ TEST(DispatchDelegate, CpuBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
   LiteRtExternalLiteRtBufferContextT buffer_context =
-      CreateBufferContext(env.Get(), interpreter);
+      CreateBufferContext(env.GetHolder().handle, interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -192,7 +192,7 @@ TEST(DispatchDelegate, HwBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
   LiteRtExternalLiteRtBufferContextT buffer_context =
-      CreateBufferContext(env.Get(), interpreter);
+      CreateBufferContext(env.GetHolder().handle, interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -336,9 +336,8 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(
-      input_buffer_types_arg0,
-      ElementsAre(TensorBufferType::kAhwb, TensorBufferType::kDmaBuf));
+  EXPECT_THAT(input_buffer_types_arg0,
+              ElementsAre(TensorBufferType::kAhwb, TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
@@ -347,19 +346,17 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(
-      input_buffer_types_arg1,
-      ElementsAre(TensorBufferType::kAhwb, TensorBufferType::kDmaBuf));
+  EXPECT_THAT(input_buffer_types_arg1,
+              ElementsAre(TensorBufferType::kAhwb, TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kAhwb,
-                                               TensorBufferType::kDmaBuf));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types,
+              ElementsAre(TensorBufferType::kAhwb, TensorBufferType::kDmaBuf));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,

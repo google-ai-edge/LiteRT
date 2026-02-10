@@ -104,6 +104,7 @@ limitations under the License.
 #include "tflite/converter/schema/schema_generated.h"
 #include "tflite/converter/tools/versioning/op_version.h"
 #include "tflite/converter/tools/versioning/runtime_version.h"
+#include "tflite/converter/utils/const_tensor_utils.h"
 #include "tflite/converter/utils/control_edges.h"
 #include "tflite/converter/utils/convert_type.h"
 #include "tflite/converter/utils/low_bit_utils.h"
@@ -579,15 +580,17 @@ class ExportBufferStorage {
 
   class ExportBuffer {
    public:
-    ExportBuffer(ItemT item, ApplyDataFromBufferFuncT apply, uint64_t hash)
-        : item_(std::move(item)), apply_(std::move(apply)), hash_(hash) {}
+    ExportBuffer(ItemT item, ApplyDataFromBufferFuncT apply, uint64_t hash,
+                 uint64_t byte_size_hint = 0)
+        : item_(std::move(item)),
+          apply_(std::move(apply)),
+          hash_(hash),
+          byte_size_hint_(byte_size_hint) {}
 
     inline absl::Status ApplyData(
         ExportBufferStorage::ApplyDataFuncT apply_data_func) {
       return apply_(item_, apply_data_func);
     }
-
-    inline uint64_t GetHash() { return hash_; }
 
     inline std::string GetData() {
       std::string data;
@@ -599,6 +602,9 @@ class ExportBufferStorage {
       return data;
     }
 
+    uint64_t hash() const { return hash_; }
+    uint64_t byte_size_hint() const { return byte_size_hint_; }
+
     ExportBuffer(const ExportBuffer&) = delete;
     ExportBuffer& operator=(const ExportBuffer&) = delete;
     ExportBuffer(ExportBuffer&&) noexcept = default;
@@ -608,13 +614,14 @@ class ExportBufferStorage {
     ItemT item_;
     ExportBufferStorage<KeyT, ItemT>::ApplyDataFromBufferFuncT apply_;
     uint64_t hash_;
+    uint64_t byte_size_hint_ = 0;
   };
 
   inline void Insert(KeyT key, ItemT item,
                      ExportBufferStorage::ApplyDataFromBufferFuncT apply,
-                     uint64_t hash) {
-    auto export_buffer =
-        std::make_unique<ExportBuffer>(std::move(item), std::move(apply), hash);
+                     uint64_t hash, uint64_t byte_size_hint = 0) {
+    auto export_buffer = std::make_unique<ExportBuffer>(
+        std::move(item), std::move(apply), hash, byte_size_hint);
     buffers_[key] = std::move(export_buffer);
   }
 
@@ -1245,9 +1252,10 @@ std::optional<BufferOffset<tflite::Buffer>> Translator::BuildBuffer(
     // string and computing the hash of the string, but can be reliable in some
     // cases where the MLIR attributes are not deduped properly (e.g. when two
     // consts of the same value are held in different attribute types).
-    const_buffer_storage_.Insert(index, std::make_pair(attr, inst),
-                                 std::move(applier),
-                                 /*hash=*/mlir::hash_value(attr));
+    const_buffer_storage_.Insert(
+        index, std::make_pair(attr, inst), std::move(applier),
+        /*hash=*/mlir::hash_value(attr),
+        /*byte_size_hint=*/mlir::TFL::GetSizeInBytes(type));
     return tflite::CreateBuffer(builder_, 0, 1, 1);
   } else {
     // Otherwise, creates a buffer with the flatbuffer immediately.
@@ -1697,7 +1705,8 @@ BufferOffset<tflite::Operator> Translator::BuildCustomOperator(
           [](const mlir::TFL::ConstBytesAttr& attr, auto apply) {
             return apply(attr.getValue().str());
           },
-          /*hash=*/mlir::hash_value(op.getCustomOption()));
+          /*hash=*/mlir::hash_value(op.getCustomOption()),
+          /*byte_size_hint=*/op.getCustomOption().getValue().size());
 
   auto opcode_index =
       GetOpcodeIndex(op.getCustomCode().str(), tflite::BuiltinOperator_CUSTOM);
@@ -3401,6 +3410,7 @@ std::optional<BufferOffset<tflite::SubGraph>> Translator::BuildSubGraph(
                                      const std::string& tensor_name) {
     // NoneType represents optional and may be skipped here.
     if (mlir::isa<NoneType>(value.getType())) {
+      tensor_index_map.insert({value, kTfLiteMigrationOptionalTensor});
       return true;
     }
 
@@ -4357,10 +4367,10 @@ absl::Status Translator::TranslateInternal() {
 
   // Return serialized string for the built FlatBuffer.
   if (use_buffer_offset_) {
-    export_stream_.get().write_zeros(builder_.GetSize());
+    uint64_t padded_buffer_size = builder_.GetSize();
     // Pad to be 16 bytes aligned
-    export_stream_.get().write_zeros(kFbAlignment -
-                                     builder_.GetSize() % kFbAlignment);
+    padded_buffer_size += kFbAlignment - builder_.GetSize() % kFbAlignment;
+    export_stream_.get().write_zeros(padded_buffer_size);
 
     if (auto status = AppendBufferData(); !status.ok()) {
       return status;
@@ -4385,9 +4395,22 @@ absl::Status Translator::TranslateInternal() {
 absl::Status Translator::AppendBufferData() {
   auto offset = [this]() { return export_stream_.get().tell(); };
 
+  // Reserve extra space for the buffer data. The pessimistic estimation is to
+  // account for the worst-case padding of 32 bytes for each buffer.
+  uint64_t estimated_buffer_size = 0;
+  for (const auto& [_, buffer] : const_buffer_storage_.buffers()) {
+    estimated_buffer_size += buffer->byte_size_hint();
+    estimated_buffer_size += 32;  // worst case padding
+  }
+  for (const auto& [_, buffer] : custom_op_buffer_storage_.buffers()) {
+    estimated_buffer_size += buffer->byte_size_hint();
+    estimated_buffer_size += 32;  // worst case padding
+  }
+  export_stream_.get().reserveExtraSpace(estimated_buffer_size);
+
   std::unordered_map<uint64_t, std::pair<int64_t, int64_t>> hashcode_to_pos;
   for (const auto& [index, buffer] : const_buffer_storage_.buffers()) {
-    uint64_t hash = buffer->GetHash();
+    uint64_t hash = buffer->hash();
     if (hashcode_to_pos.find(hash) == hashcode_to_pos.end()) {
       int64_t size = 0;
       int64_t buffer_offset = offset();

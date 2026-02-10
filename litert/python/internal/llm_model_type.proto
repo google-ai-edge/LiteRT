@@ -34,6 +34,7 @@ message LlmModelType {
     Qwen2p5 qwen2p5 = 7;
   }
   reserved 6;
+  reserved 8;
 }
 
 // The default model type for the generic model.

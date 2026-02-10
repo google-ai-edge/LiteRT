@@ -12,10 +12,15 @@ LITERT_EXPERIMENTAL_VERSION = "2.2.0"
 
 # The next version of LiteRT SDK for Qualcomm.
 # The minor version code should be bumped after every release.
-# It contains QAIRT 2.34.0.250424
+# It contains QAIRT 2.42.0.251225
 LITERT_SDK_QUALCOMM_FULL_VERSION = "0.2.0"
 
 # The next version of LiteRT SDK for MediaTek version.
 # The minor version code should be bumped after every release.
-# It contains NeuroPilot UNKNOWN VERSION
+# It contains NeuroPilot 8.0.10 and 9.0.3 VERSION
 LITERT_SDK_MEDIATEK_FULL_VERSION = "0.2.0"
+
+# The next version of LiteRT SDK for Google Tensor version.
+# The minor version code should be bumped after every release.
+# It contains Google Tensor ML SDK UNKNOWN VERSION
+LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = "0.1.0"

@@ -620,7 +620,11 @@ cc_binary(
     srcs = ["gpu_numerics_check.cc"],
     tags = [
         "manual",
-        "notap",
+        "nofastbuild",
+        "noios",
+        "nolinux",
+        "nomacos",
+        "nowindows",
         "requires-gpu-nvidia",
     ],
     deps = NUMERICS_CHECK_DEPS + [
@@ -705,7 +709,11 @@ cc_binary(
     name = "benchmark_model_jet",
     tags = [
         "manual",
-        "notap",
+        "nofastbuild",
+        "noios",
+        "nolinux",
+        "nomacos",
+        "nowindows",
         "requires-gpu-nvidia",
     ],
     deps = [

@@ -114,8 +114,8 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
       TensorBufferType buffer_type, LiteRtWGPUBuffer buffer, size_t size_bytes);
 
   static Expected<TensorBuffer> CreateFromWebGpuTexture(
-      LiteRtEnvironment env, const RankedTensorType& tensor_type, void* texture,
-      size_t size_bytes);
+      const Environment& env, const RankedTensorType& tensor_type,
+      void* texture, size_t size_bytes);
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
@@ -317,7 +317,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   Expected<Event> GetEvent() const {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(env_.runtime->GetTensorBufferEvent(Get(), &event));
-    return Event::WrapCObject(event, OwnHandle::kNo);
+    return Event::WrapCObject(env_, event, OwnHandle::kNo);
   }
 
   /// @brief Sets the C++ `Event` object for the tensor buffer.

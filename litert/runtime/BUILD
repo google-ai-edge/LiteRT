@@ -658,7 +658,13 @@ cc_test(
     name = "gl_buffer_test",
     srcs = ["gl_buffer_test.cc"],
     linkopts = litert_android_linkopts(),
-    tags = ["notap"],
+    tags = [
+        "nofastbuild",
+        "noios",
+        "nolinux",
+        "nomacos",
+        "nowindows",
+    ],
     deps = [
         ":ahwb_buffer",
         ":gl_buffer",

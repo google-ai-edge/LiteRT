@@ -219,9 +219,8 @@ class AtsConf {
   std::optional<internal::CompilerPlugin::Ref> Plugin() const {
     if (!plugin_) {
       return std::nullopt;
-    } else {
-      return std::ref(const_cast<internal::CompilerPlugin&>(*plugin_));
     }
+    return std::ref(const_cast<internal::CompilerPlugin&>(*plugin_));
   }
 
   // The SOC manufacturer to target for compilation. Only relevant for NPU

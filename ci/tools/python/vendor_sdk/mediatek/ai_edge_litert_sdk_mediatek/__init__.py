@@ -27,15 +27,32 @@ _SDK_FILES_SUBDIR = "data"
 
 
 def path_to_sdk_libs(version: str = "v8") -> Optional[pathlib.Path]:
-  sdk_path = get_sdk_path()
-  if version != "v8":
+  """Returns the path to the MediaTek SDK libraries for a given version.
+
+  Args:
+    version: The SDK version to use (e.g., "v8", "v9").
+
+  Returns:
+    A pathlib.Path to the SDK libraries, or None if the SDK path cannot be
+    determined.
+
+  Raises:
+    NotImplementedError: If the provided version is not supported or if the
+      current system architecture is not Linux x86.
+  """
+  version_map = {
+      "v8": "v8_0_10/host/lib",
+      "v9": "v9_0_3/host/lib",
+  }
+  if version not in version_map:
     raise NotImplementedError(
-        f"Unsupported version: {version}. Only 'v8' is supported."
+        f"Unsupported version: {version}. Only 'v8', 'v9' is supported."
     )
+  # Currently we only support linux x86 architecture.
+  sdk_path = get_sdk_path()
   if not sdk_path:
     return None
-  # Currently we only support linux x86 architecture.
-  return get_sdk_path() / "v8_0_8/host/lib"
+  return sdk_path / version_map[version]
 
 
 def get_sdk_path() -> Optional[pathlib.Path]:

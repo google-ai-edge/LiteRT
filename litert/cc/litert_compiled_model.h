@@ -529,7 +529,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     LiteRtProfiler profiler = nullptr;
     LITERT_RETURN_IF_ERROR(
         env_.runtime->CompiledModelGetProfiler(Get(), &profiler));
-    return Profiler(profiler, OwnHandle::kNo);
+    return Profiler(env_, profiler, OwnHandle::kNo);
   };
 
   /// @brief Sets a callback function that will be called after every node/op

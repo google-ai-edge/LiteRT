@@ -62,20 +62,12 @@ def type_from_mlir(ir_type: ir.Type):
   """
   # Try upcast ir.Type to known specialized ir cls.
   # TODO(cnchan): Isolate ir.Type upcasting from this function.
-  for dtype in (
+  for ir_type_cls in (
       ir_quant_d.UniformQuantizedType,
       ir_quant_d.UniformQuantizedPerAxisType,
   ):
-    try:
-      ir_type = dtype(ir_type)
-    except (TypeError, ValueError):
-      # We need to try another data type upcasting in the next iteration.
-      continue
-    except RuntimeError as e:
-      # We need to try another data type upcasting in the next iteration.
-      raise RuntimeError(f"Failed to upcast ir.Type: {ir_type}") from e
-    else:
-      # We found the correct, specialized ir type, break the loop.
+    if hasattr(ir_type_cls, "isinstance") and ir_type_cls.isinstance(ir_type):
+      ir_type = ir_type_cls(ir_type)
       break
 
   type_cls = core.mlir_transforms.get(ir_type) or core.mlir_transforms.get(

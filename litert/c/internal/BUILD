@@ -65,6 +65,16 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_accelerator_def",
+    hdrs = ["litert_accelerator_def.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
+cc_library(
     name = "litert_accelerator_registration",
     srcs = ["litert_accelerator_registration.cc"],
     hdrs = ["litert_accelerator_registration.h"],
@@ -289,6 +299,7 @@ cc_test(
 )
 
 # TODO(b/475253455): ensure that all types used in the API are opaque types.
+# This target should NOT introduce any dependency on the runtime implementation.
 cc_library(
     name = "litert_runtime_c_api",
     hdrs = ["litert_runtime_c_api.h"],
@@ -300,11 +311,11 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_layout",
-        "//litert/c:litert_metrics",
+        "//litert/c:litert_metrics_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_opencl_types",
@@ -314,21 +325,10 @@ cc_library(
     ],
 )
 
-# Do NOT use this target directly. This should only be used by RuntimeProxy.
-cc_library(
-    name = "litert_runtime_c_api_runtimecapi",
-    hdrs = ["litert_runtime_c_api.h"],
-    visibility = [
-        "//litert/cc/internal:__pkg__",
-    ],
-    deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-    ],
-)
-
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",
+    "litert_accelerator_def.h",
     "litert_accelerator_registration.h",
     "litert_delegate_wrapper.h",
     "litert_dispatch_delegate.h",

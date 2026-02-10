@@ -292,8 +292,8 @@ class LiteRtCompilerPluginT {
   using MediatekOptions = ::litert::mediatek::MediatekOptions;
 
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
-    std::tie(env_, opts_, opq_, mediatek_opts_) =
-        litert::ParseOptions<MediatekOptions>(env, options);
+    std::tie(opts_, opq_, mediatek_opts_) =
+        litert::ParseOptions<MediatekOptions>(options);
   }
 
   ::litert::Expected<MediatekOptions>& GetMediatekOptions() {
@@ -306,8 +306,6 @@ class LiteRtCompilerPluginT {
   int GetSubgraphIndex() const { return subgraph_index_; }
 
  private:
-  litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null environment options");
   litert::Expected<litert::Options> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::OpaqueOptions> opq_ =

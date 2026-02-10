@@ -43,7 +43,7 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'i386', 'i686')
 
 # --- Configuration for MediaTek NeuroPilot SDK Download ---
 # NeuroPilot version doesn't not necessarily match the SDK version though.
-NEUROPILOT_URL = 'https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/57c17aa0-90b4-4871-a7b6-cdcdc678b3aa.gz'  # pylint: disable=line-too-long
+NEUROPILOT_URL = 'https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/66f2c33a-2005-4f0b-afef-2053c8654e4f.gz'  # pylint: disable=line-too-long
 NEUROPILOT_CONTENT_DIR = 'neuro_pilot'
 NEUROPILOT_TARGET_DIR = 'ai_edge_litert_sdk_mediatek/data'
 # ---

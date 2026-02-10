@@ -287,3 +287,29 @@ TEST(TensorBufferRequirements, InvalidAlignment) {
                 &litert_requirements),
             kLiteRtStatusErrorInvalidArgument);
 }
+
+TEST(TensorBufferRequirements, SupportedType) {
+  auto requirements = litert::TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTensorBufferTypes,
+                     kNumSupportedTensorBufferTypes),
+      kBufferSize);
+  ASSERT_TRUE(requirements);
+
+  for (auto i = 0; i < kNumSupportedTensorBufferTypes; ++i) {
+    auto type = requirements->SupportedType(i);
+    ASSERT_TRUE(type);
+    EXPECT_EQ(*type, kSupportedTensorBufferTypes[i]);
+  }
+}
+
+TEST(TensorBufferRequirements, EmptyStrides) {
+  auto requirements = litert::TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTensorBufferTypes,
+                     kNumSupportedTensorBufferTypes),
+      kBufferSize);
+  ASSERT_TRUE(requirements);
+
+  auto strides = requirements->Strides();
+  ASSERT_TRUE(strides);
+  EXPECT_EQ(strides->size(), 0);
+}

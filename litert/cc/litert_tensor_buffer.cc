@@ -166,11 +166,11 @@ Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuBuffer(
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromWebGpuTexture(
-    LiteRtEnvironment env, const RankedTensorType& tensor_type, void* texture,
+    const Environment& env, const RankedTensorType& tensor_type, void* texture,
     size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-  auto env_holder = Environment::WrapCObject(env, OwnHandle::kNo).GetHolder();
+  auto env_holder = env.GetHolder();
   LITERT_RETURN_IF_ERROR(
       env_holder.runtime->CreateTensorBufferFromWebGpuTexture(
           env_holder.handle, &litert_tensor_type, texture, size_bytes,

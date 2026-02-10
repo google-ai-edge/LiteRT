@@ -54,6 +54,18 @@ TEST(LiteRtReturnIfErrorTest, ConvertsResultToLiteRtStatus) {
         return kLiteRtStatusOk;
       }(),
       kLiteRtStatusErrorNotFound);
+  EXPECT_EQ(
+      []() -> LiteRtStatus {
+        LITERT_RETURN_IF_ERROR(true);
+        return kLiteRtStatusOk;
+      }(),
+      kLiteRtStatusOk);
+  EXPECT_EQ(
+      []() -> LiteRtStatus {
+        LITERT_RETURN_IF_ERROR(false);
+        return kLiteRtStatusOk;
+      }(),
+      kLiteRtStatusErrorUnknown);
 }
 
 TEST(LiteRtReturnIfErrorTest, ConvertsResultToExpectedHoldingAnError) {
@@ -82,6 +94,30 @@ TEST(LiteRtReturnIfErrorTest, ConvertsResultToExpectedHoldingAnError) {
       AllOf(Property(&Expected<void>::HasValue, false),
             Property(&Expected<void>::Error,
                      Property(&Error::Status, kLiteRtStatusErrorNotFound))));
+  EXPECT_THAT(
+      []() -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(true);
+        return {};
+      }(),
+      Property(&Expected<void>::HasValue, true));
+  EXPECT_THAT(
+      []() -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(false);
+        return {};
+      }(),
+      AllOf(Property(&Expected<void>::HasValue, false),
+            Property(&Expected<void>::Error,
+                     Property(&Error::Status, kLiteRtStatusErrorUnknown))));
+  EXPECT_THAT(
+      []() -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(false) << "Extra message";
+        return {};
+      }(),
+      AllOf(Property(&Expected<void>::HasValue, false),
+            Property(&Expected<void>::Error,
+                     Property(&Error::Status, kLiteRtStatusErrorUnknown)),
+            Property(&Expected<void>::Error,
+                     Property(&Error::Message, HasSubstr("Extra message")))));
 }
 
 TEST(LiteRtReturnIfErrorTest, DoesntReturnOnSuccess) {
