@@ -19,6 +19,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_scheduling_info.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -139,6 +140,18 @@ LiteRtStatus LiteRtRunCompiledModel(LiteRtCompiledModel compiled_model,
                                     size_t num_output_buffers,
                                     LiteRtTensorBuffer* output_buffers);
 
+// Runs the model of the given signature synchronously, with the provided
+// input/output LiteRtTensorBuffer, and applies the provided runtime `options`
+// for this invocation.
+//
+// `options` is optional; when nullptr, the model is run with the compiled
+// options only.
+LiteRtStatus LiteRtRunCompiledModelWithOptions(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+    LiteRtOptions options);
+
 // Runs the model of the given signature asynchronously, if possible, with the
 // provided input/output LiteRtTensorBuffers. If asynchronous execution is
 // possible, then the function sets parameter `async` to true; if asynchronous
@@ -165,6 +178,49 @@ LiteRtStatus LiteRtRunCompiledModelAsync(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async);
+
+// Runs the model of the given signature asynchronously, if possible, with the
+// provided input/output LiteRtTensorBuffers, and applies the provided runtime
+// `options` for this invocation.
+//
+// `options` is optional; when nullptr, the model is run with the compiled
+// options only.
+LiteRtStatus LiteRtRunCompiledModelAsyncWithOptions(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
+    LiteRtOptions options);
+
+// Sets default scheduling information for all future requests on this compiled
+// model.
+//
+// This is the "set once per model" scenario. If `scheduling_info` is null, the
+// compiled model resets to default scheduling behavior.
+LiteRtStatus LiteRtCompiledModelSetSchedulingInfo(
+    LiteRtCompiledModel compiled_model,
+    const LiteRtSchedulingInfo* scheduling_info);
+
+// Runs the model for a given signature synchronously with per-request
+// scheduling info. This is the "set once per request" scenario.
+//
+// If `scheduling_info` is null, the compiled model's default scheduling info
+// (set via `LiteRtCompiledModelSetSchedulingInfo`) will be used.
+LiteRtStatus LiteRtRunCompiledModelWithSchedulingInfo(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+    const LiteRtSchedulingInfo* scheduling_info);
+
+// Runs the model for a given signature asynchronously, if possible, with
+// per-request scheduling info. This is the "set once per request" scenario.
+//
+// If `scheduling_info` is null, the compiled model's default scheduling info
+// (set via `LiteRtCompiledModelSetSchedulingInfo`) will be used.
+LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
+    const LiteRtSchedulingInfo* scheduling_info);
 
 // Sets a callback function that will be called periodically during model
 // execution to check if the execution should be cancelled.

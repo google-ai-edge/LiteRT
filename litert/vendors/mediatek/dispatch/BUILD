@@ -54,12 +54,7 @@ litert_dynamic_lib(
     ],
     visibility = ["//litert:__subpackages__"],
     deps = [
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/strings:str_format",
-        "@neuro_pilot//:v8_latest_host_headers",
         "//litert/c:litert_environment_options",
-        # Needed to build in OSS
-        "//litert/core/util:tensor_type_util",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -68,6 +63,9 @@ litert_dynamic_lib(
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:str_format",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
 

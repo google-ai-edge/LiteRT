@@ -209,6 +209,11 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_scheduling_info",
+    hdrs = ["litert_scheduling_info.h"],
+)
+
+cc_library(
     name = "litert_model_types",
     hdrs = ["litert_model_types.h"],
     deps = [
@@ -485,6 +490,7 @@ cc_library(
         ":litert_metrics",
         ":litert_model",
         ":litert_options",
+        ":litert_scheduling_info",
         ":litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",

@@ -91,6 +91,7 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_scheduling_info",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -155,6 +156,30 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "dispatch_delegate_scheduling_info_test",
+    srcs = ["dispatch_delegate_scheduling_info_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    deps = [
+        "//litert/c:litert_scheduling_info",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "dispatch_delegate",
     srcs = [
@@ -201,6 +226,16 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "litert_dispatch_dummy",
+    srcs = ["litert_dispatch_dummy.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics",
+        "//litert/vendors/c:litert_dispatch_c_api",
     ],
 )
 

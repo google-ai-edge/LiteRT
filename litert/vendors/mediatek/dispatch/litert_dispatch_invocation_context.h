@@ -55,6 +55,20 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
+  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
+    if (scheduling_info == nullptr) {
+      has_scheduling_info_ = false;
+      scheduling_info_ = LiteRtSchedulingInfo{};
+      return;
+    }
+    has_scheduling_info_ = true;
+    scheduling_info_ = *scheduling_info;
+  }
+
+  const LiteRtSchedulingInfo* GetSchedulingInfo() const {
+    return has_scheduling_info_ ? &scheduling_info_ : nullptr;
+  }
+
  private:
   class IoRequirementsBuilder {
    public:
@@ -89,6 +103,8 @@ class LiteRtDispatchInvocationContextT {
       input_requirements_builders_;
   std::vector<std::unique_ptr<IoRequirementsBuilder>>
       output_requirements_builders_;
+  bool has_scheduling_info_ = false;
+  LiteRtSchedulingInfo scheduling_info_{};
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

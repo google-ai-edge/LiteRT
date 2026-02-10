@@ -26,6 +26,10 @@
 #include <utility>
 #include <vector>
 
+#if !defined(LITERT_WINDOWS_OS)
+#include <unistd.h>
+#endif  // !defined(LITERT_WINDOWS_OS)
+
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
@@ -154,6 +158,45 @@ LiteRtLogSeverity GetLogSeverityForJitCompilationFailure(
                                                      : LITERT_VERBOSE;
 }
 #endif  // !defined(LITERT_DISABLE_NPU)
+
+constexpr uint32_t kAllSchedulingInfoFields =
+    kLiteRtSchedulingInfoFieldOriginalUid |
+    kLiteRtSchedulingInfoFieldDebugFeatureId |
+    kLiteRtSchedulingInfoFieldJobPriority | kLiteRtSchedulingInfoFieldGroupId;
+
+int32_t GetDefaultOriginalUid() {
+#if !defined(LITERT_WINDOWS_OS)
+  return static_cast<int32_t>(getuid());
+#else
+  return -1;
+#endif  // !defined(LITERT_WINDOWS_OS)
+}
+
+LiteRtSchedulingInfo GetDefaultSchedulingInfo() {
+  LiteRtSchedulingInfo info{};
+  info.fields_mask = kAllSchedulingInfoFields;
+  info.original_uid = GetDefaultOriginalUid();
+  info.debug_feature_id = 0;
+  info.job_priority = 0;
+  info.group_id = 0;
+  return info;
+}
+
+void ApplySchedulingInfoOverrides(const LiteRtSchedulingInfo& overrides,
+                                  LiteRtSchedulingInfo& target) {
+  if (overrides.fields_mask & kLiteRtSchedulingInfoFieldOriginalUid) {
+    target.original_uid = overrides.original_uid;
+  }
+  if (overrides.fields_mask & kLiteRtSchedulingInfoFieldDebugFeatureId) {
+    target.debug_feature_id = overrides.debug_feature_id;
+  }
+  if (overrides.fields_mask & kLiteRtSchedulingInfoFieldJobPriority) {
+    target.job_priority = overrides.job_priority;
+  }
+  if (overrides.fields_mask & kLiteRtSchedulingInfoFieldGroupId) {
+    target.group_id = overrides.group_id;
+  }
+}
 
 }  // namespace
 
@@ -1242,10 +1285,23 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                     "The given buffer type is not supported.");
 }
 
+Expected<void> LiteRtCompiledModelT::SetSchedulingInfo(
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (scheduling_info == nullptr) {
+    model_scheduling_info_ = LiteRtSchedulingInfo{};
+    return {};
+  }
+
+  model_scheduling_info_ = *scheduling_info;
+  model_scheduling_info_.fields_mask &= kAllSchedulingInfoFields;
+  return {};
+}
+
 Expected<void> LiteRtCompiledModelT::Run(
     absl::string_view signature_key,
     const std::vector<LiteRtTensorBuffer>& input_buffers,
-    const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async) {
+    const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async,
+    LiteRtOptions run_options, const LiteRtSchedulingInfo* scheduling_info) {
   uint64_t event_handle = std::numeric_limits<uint64_t>::max();
   if (profiler_ && profiler_->IsProfiling()) {
     profiler_->SetCurrentEventSource(LITERT);
@@ -1344,8 +1400,28 @@ Expected<void> LiteRtCompiledModelT::Run(
   }
   LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(runner));
 
+  // Relay scheduling information to DelegateKernel of Accelerator. This is
+  // used by vendor delegates (e.g. NPU dispatch implementations) to pass
+  // scheduling hints/metadata down to the hardware runtime.
+  LiteRtSchedulingInfo effective_scheduling_info = GetDefaultSchedulingInfo();
+  ApplySchedulingInfoOverrides(model_scheduling_info_,
+                               effective_scheduling_info);
+  if (scheduling_info != nullptr) {
+    ApplySchedulingInfoOverrides(*scheduling_info, effective_scheduling_info);
+  }
+  buffer_context_->SetCurrentSchedulingInfo(effective_scheduling_info);
+  auto clear_scheduling_info = absl::MakeCleanup(
+      [this]() { buffer_context_->ClearCurrentSchedulingInfo(); });
+
   // Relay the intended async execution mode to DelegateKernel of Accelerator.
   buffer_context_->SetAsyncExecutionMode(async);
+  const LiteRtOptions previous_run_options = buffer_context_->GetRunOptions();
+  buffer_context_->SetRunOptions(run_options);
+  absl::Cleanup restore_run_options = [this, previous_run_options]() {
+    if (buffer_context_ != nullptr) {
+      buffer_context_->SetRunOptions(previous_run_options);
+    }
+  };
 
   if (auto res = runner->Invoke(); res != kTfLiteOk) {
     if (res == kTfLiteCancelled) {
@@ -1407,7 +1483,28 @@ Expected<void> LiteRtCompiledModelT::Run(
 Expected<void> LiteRtCompiledModelT::RunCApi(
     size_t signature_index, size_t num_input_buffers,
     const LiteRtTensorBuffer* input_buffers, size_t num_output_buffers,
-    const LiteRtTensorBuffer* output_buffers, bool* async) {
+    const LiteRtTensorBuffer* output_buffers, bool* async,
+    LiteRtOptions run_options) {
+  return RunCApi(signature_index, num_input_buffers, input_buffers,
+                 num_output_buffers, output_buffers, async, run_options,
+                 /*scheduling_info=*/nullptr);
+}
+
+Expected<void> LiteRtCompiledModelT::RunCApi(
+    size_t signature_index, size_t num_input_buffers,
+    const LiteRtTensorBuffer* input_buffers, size_t num_output_buffers,
+    const LiteRtTensorBuffer* output_buffers, bool* async,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  return RunCApi(signature_index, num_input_buffers, input_buffers,
+                 num_output_buffers, output_buffers, async,
+                 /*run_options=*/nullptr, scheduling_info);
+}
+
+Expected<void> LiteRtCompiledModelT::RunCApi(
+    size_t signature_index, size_t num_input_buffers,
+    const LiteRtTensorBuffer* input_buffers, size_t num_output_buffers,
+    const LiteRtTensorBuffer* output_buffers, bool* async,
+    LiteRtOptions run_options, const LiteRtSchedulingInfo* scheduling_info) {
   if (signature_index >= signature_keys_.size()) {
     return Unexpected(kLiteRtStatusErrorIndexOOB,
                       "Signature index is out of range of signature keys");
@@ -1424,7 +1521,7 @@ Expected<void> LiteRtCompiledModelT::RunCApi(
   }
   bool async_ = async ? *async : false;
   auto result = Run(*signature_keys_[signature_index], input_buffers_vec,
-                    output_buffers_vec, async_);
+                    output_buffers_vec, async_, nullptr, scheduling_info);
   if (async) {
     *async = async_;
   }
