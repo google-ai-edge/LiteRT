@@ -101,21 +101,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "litert_external_litert_buffer_context",
-    hdrs = ["litert_external_litert_buffer_context.h"],
-    deps = [
-        ":litert_handle",
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_external_litert_buffer_context",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_tensor_buffer",
-        "//tflite/c:common",
-    ],
-)
-
 # -----------------------------------------------------------------------------
 # Common internal C++ libraries.
 # -----------------------------------------------------------------------------
