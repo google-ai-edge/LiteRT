@@ -1,12 +1,12 @@
 name: "windows_nightly_wheel"
 on:
   schedule:
-    - cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to build nightly wheel.
+    - cron: "0 7 * * *"  # Run at 7:00 am UTC every day to build nightly wheel.
 
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch: {} # Allow manual trigger
 
 jobs:
-  build-and-nightly:
+  build-nightly:
     name: "Build nightly Windows wheel - Python ${{ matrix.python-version }}"
     runs-on: Windows_x64  # Latest high spec runner ((96 cores and 384GB RAM)).
     strategy:
@@ -31,6 +31,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Install python-build and twine
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine wheel
+          python -m pip list
 
       - name: Set USE_BAZEL_VERSION
         shell: bash
@@ -107,10 +113,23 @@ jobs:
         run: |
           .\ci\build_pip_package_with_bazel_windows.ps1
 
-      - name: Upload Wheels
+      - name: Verify the distribution
+        run: twine check --strict dist/*
+
+      - name: List the contents of ai-edge-litert wheel
+        run: Get-ChildItem dist -Filter *.whl | ForEach-Object { python -m zipfile --list $_.FullName }
+
+      - name: Install local wheel
+        run: Get-ChildItem dist -Filter *.whl | ForEach-Object { python -m pip install $_.FullName }
+
+      - name: Import ai_edge_litert
+        run: |
+          python -c "import ai_edge_litert"
+
+      - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: litert-windows-wheels-py${{ matrix.python-version }}
+          name: ai-edge-litert-windows-${{ matrix.python-version }}
           path: dist/*.whl
 
       - name: Save bazel cache
@@ -119,3 +138,33 @@ jobs:
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+  upload-to-pypi:
+    name: "Upload Nightly Wheels to PyPI"
+    runs-on: Windows_x64
+    needs: build-nightly
+    if: success()
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install twine
+        run: python -m pip install twine
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ai-edge-litert-windows-*
+          path: dist
+          merge-multiple: true
+
+      - name: List downloaded wheels
+        run: dir dist
+
+      - name: Upload to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        run: twine upload dist/*.whl --non-interactive
