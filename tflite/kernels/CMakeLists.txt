@@ -90,11 +90,10 @@ set(TEST_FRAMEWORK_SRC
   ${TFLITE_SOURCE_DIR}/tools/optimize/model_utils.cc
   ${TFLITE_SOURCE_DIR}/converter/tools/optimize/operator_property.cc
   ${TFLITE_SOURCE_DIR}/tools/optimize/quantization_utils.cc
-  ${TFLITE_SOURCE_DIR}/kernels/internal/runtime_shape.cc
   ${TFLITE_SOURCE_DIR}/tools/tool_params.cc
   ${TFLITE_SOURCE_DIR}/converter/tools/versioning/op_version.cc
-  ${TSL_SOURCE_DIR}/tsl/platform/default/env_time.cc
-  ${TSL_SOURCE_DIR}/tsl/platform/default/logging.cc
+  ${TFLITE_SOURCE_DIR}/converter/tools/versioning/op_signature.cc
+  ${TFLITE_SOURCE_DIR}/kernels/tsl_logging_test_stub.cc
   internal/test_util.cc
   acceleration_test_util.cc
   acceleration_test_util_internal.cc

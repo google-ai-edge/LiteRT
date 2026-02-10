@@ -182,6 +182,7 @@ find_package(absl REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(farmhash REQUIRED)
 find_package(fft2d REQUIRED)
+set(FlatBuffers_ROOT "${CMAKE_BINARY_DIR}/flatbuffers" CACHE PATH "" FORCE)
 find_package(FlatBuffers REQUIRED)
 find_package(gemmlowp REQUIRED)
 if (NOT CMAKE_SYSTEM_PROCESSOR OR CMAKE_SYSTEM_PROCESSOR MATCHES "x86")
@@ -767,6 +768,9 @@ target_link_libraries(tensorflow-lite
     absl::strings
     absl::synchronization
     absl::variant
+    absl::log
+    absl::check
+    absl::base
     farmhash
     fft2d_fftsg2d
     flatbuffers::flatbuffers

@@ -1,0 +1,438 @@
+Failed to match any benchmarks against regex: .
+[==========] Running 189 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 188 tests from ConvolutionOpTest/ConvolutionOpTest
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32SingleThreaded/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannels/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithChannelsGrouped/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.InputAndFilterSameWidthHeight/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationReluN1Test/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.ActivationRelu6Test/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.StrideTest/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PaddingTest/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseFloat32/3 (0 ms)
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterFloat32/0
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterFloat32/1
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterFloat32/2
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterFloat32/3
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloat32WithAnisotropicStrides/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/2 (1 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedFloat32WithConstFilter/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithBiasFloat32/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedWithReluFloat32/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.HandCalculatedValidFloat32/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestFloatWithDilation/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantized/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedGrouped/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/0 (14 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/1 (11 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/2 (8 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestLargeIrregularQuantized/3 (7 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedOutputMultiplierGreaterThan1/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithAnisotropicStrides/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestQuantizedWithDilation/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridUint8WithDilation/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsUint8Grouped/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridUint8/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt4/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8WithDilation/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridInt8Big/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithChannelsInt8/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.PointwiseHybridInt8/3 (0 ms)
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterHybrid/0
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterHybrid/1
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterHybrid/2
+[ DISABLED ] ConvolutionOpTest/ConvolutionOpTest.DISABLED_PointwiseMultifilterHybrid/3
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/0
+/app/tflite/kernels/conv_test.cc:1719: Failure
+Death test: PerChannelQuantizedConvolutionOpModel m( GetRegistration(), {TensorType_INT8, {1, 2, 3, 2}, -63.5, 64, 0.5, -1}, {TensorType_INT8, {2, 2, 2, 2}, 0, 0, 0, 0, true, {1}, {1}, 0}, {TensorType_INT8, {}, -63.5, 64, 0.5, -1}, 1, 1)
+    Result: died but not with expected error.
+  Expected: contains regular expression "Cannot allocate tensors"
+Actual msg:
+[  DEATH   ] ERROR: /app/tflite/kernels/conv.cc:372 affine_quantization->zero_point->data[i] != 0 (1 != 0)
+[  DEATH   ] ERROR: Node number 0 (CONV_2D) failed to prepare.
+[  DEATH   ]
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/0, where GetParam() = "CblasOptimized" (2 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/1
+/app/tflite/kernels/conv_test.cc:1719: Failure
+Death test: PerChannelQuantizedConvolutionOpModel m( GetRegistration(), {TensorType_INT8, {1, 2, 3, 2}, -63.5, 64, 0.5, -1}, {TensorType_INT8, {2, 2, 2, 2}, 0, 0, 0, 0, true, {1}, {1}, 0}, {TensorType_INT8, {}, -63.5, 64, 0.5, -1}, 1, 1)
+    Result: died but not with expected error.
+  Expected: contains regular expression "Cannot allocate tensors"
+Actual msg:
+[  DEATH   ] ERROR: /app/tflite/kernels/conv.cc:372 affine_quantization->zero_point->data[i] != 0 (1 != 0)
+[  DEATH   ] ERROR: Node number 0 (CONV_2D) failed to prepare.
+[  DEATH   ]
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/1, where GetParam() = "GenericOptimized" (7 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/2
+/app/tflite/kernels/conv_test.cc:1719: Failure
+Death test: PerChannelQuantizedConvolutionOpModel m( GetRegistration(), {TensorType_INT8, {1, 2, 3, 2}, -63.5, 64, 0.5, -1}, {TensorType_INT8, {2, 2, 2, 2}, 0, 0, 0, 0, true, {1}, {1}, 0}, {TensorType_INT8, {}, -63.5, 64, 0.5, -1}, 1, 1)
+    Result: died but not with expected error.
+  Expected: contains regular expression "Cannot allocate tensors"
+Actual msg:
+[  DEATH   ] ERROR: /app/tflite/kernels/conv.cc:372 affine_quantization->zero_point->data[i] != 0 (1 != 0)
+[  DEATH   ] ERROR: Node number 0 (CONV_2D) failed to prepare.
+[  DEATH   ]
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/2, where GetParam() = "MultithreadedOptimized" (1 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/3
+/app/tflite/kernels/conv_test.cc:1719: Failure
+Death test: PerChannelQuantizedConvolutionOpModel m( GetRegistration(), {TensorType_INT8, {1, 2, 3, 2}, -63.5, 64, 0.5, -1}, {TensorType_INT8, {2, 2, 2, 2}, 0, 0, 0, 0, true, {1}, {1}, 0}, {TensorType_INT8, {}, -63.5, 64, 0.5, -1}, 1, 1)
+    Result: died but not with expected error.
+  Expected: contains regular expression "Cannot allocate tensors"
+Actual msg:
+[  DEATH   ] ERROR: /app/tflite/kernels/conv.cc:372 affine_quantization->zero_point->data[i] != 0 (1 != 0)
+[  DEATH   ] ERROR: Node number 0 (CONV_2D) failed to prepare.
+[  DEATH   ]
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/3, where GetParam() = "Reference" (2 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerTensorTest4bit/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannelTest/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias32/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x4Bias32/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimplePerChannel16x8Bias64/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.Simple4bitPerChannelTest/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannel/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelInt4/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridPerChannelGrouped/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithPaddingPerChannel/3 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/0
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/0 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/1
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/1 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/2
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/2 (0 ms)
+[ RUN      ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/3
+[       OK ] ConvolutionOpTest/ConvolutionOpTest.SimpleTestHybridWithDilationPerChannel/3 (0 ms)
+[----------] 188 tests from ConvolutionOpTest/ConvolutionOpTest (67 ms total)
+
+[----------] 1 test from QuantizedConvolutionOpTest/QuantizedConvolutionOpTest
+[ RUN      ] QuantizedConvolutionOpTest/QuantizedConvolutionOpTest.SimpleTestExplicitQuantizedOp/0
+[       OK ] QuantizedConvolutionOpTest/QuantizedConvolutionOpTest.SimpleTestExplicitQuantizedOp/0 (0 ms)
+[----------] 1 test from QuantizedConvolutionOpTest/QuantizedConvolutionOpTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 189 tests from 2 test suites ran. (67 ms total)
+[  PASSED  ] 185 tests.
+[  FAILED  ] 4 tests, listed below:
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/0, where GetParam() = "CblasOptimized"
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/1, where GetParam() = "GenericOptimized"
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/2, where GetParam() = "MultithreadedOptimized"
+[  FAILED  ] ConvolutionOpTest/ConvolutionOpTest.AsymmetricPerchannelQuantization/3, where GetParam() = "Reference"
+
+ 4 FAILED TESTS
+  YOU HAVE 8 DISABLED TESTS

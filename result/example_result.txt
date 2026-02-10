@@ -12,7 +12,7 @@ Tensor   1 tfl.l2_normalization      kTfLiteFloat32  kTfLiteArenaRw     3072    
 
 kTfLiteArenaRw Info:
 Tensor 0 has the max size 3072 bytes (0.003 MB).
-This memory arena is estimated as[0x55a3b4d20a00, 0x55a3b4d1f200), taking 6144 bytes (0.006 MB).
+This memory arena is estimated as[0x55e385a3ca00, 0x55e385a3b200), taking 6144 bytes (0.006 MB).
 One possible set of tensors that have non-overlapping memory spaces with each other, and they take up the whole arena:
 Tensor 0 -> 1.
 
@@ -52,7 +52,7 @@ Tensor   1 tfl.l2_normalization      kTfLiteFloat32  kTfLiteArenaRw     3072    
 
 kTfLiteArenaRw Info:
 Tensor 0 has the max size 3072 bytes (0.003 MB).
-This memory arena is estimated as[0x55a3b4d20a00, 0x55a3b4d1f200), taking 6144 bytes (0.006 MB).
+This memory arena is estimated as[0x55e385a3ca00, 0x55e385a3b200), taking 6144 bytes (0.006 MB).
 One possible set of tensors that have non-overlapping memory spaces with each other, and they take up the whole arena:
 Tensor 0 -> 1.
 

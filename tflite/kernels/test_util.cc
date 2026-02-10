@@ -742,9 +742,11 @@ void SingleOpModel::MaybeDumpModel() {
   }
 
   // Get the model buffer.
+  TFLITE_LOG(ERROR) << "MaybeDumpModel is stubbed out because ModelWriter is missing";
+  return;
   std::unique_ptr<uint8_t[]> buffer;
   size_t size = 0;
-  if (ModelWriter(interpreter_.get()).GetBuffer(&buffer, &size) != kTfLiteOk) {
+  if (false && ModelWriter(interpreter_.get()).GetBuffer(&buffer, &size) != kTfLiteOk) {
     TFLITE_LOG(ERROR) << "Failed to get model buffer";
     return;
   }
