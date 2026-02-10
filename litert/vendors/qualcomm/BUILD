@@ -96,7 +96,7 @@ litert_test(
     name = "qnn_manager_test",
     srcs = ["qnn_manager_test.cc"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "@platforms//os:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",

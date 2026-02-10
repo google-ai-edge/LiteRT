@@ -14,7 +14,7 @@ litert_test(
         "relu_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "@platforms//os:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -47,7 +47,7 @@ litert_test(
         "topk_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "@platforms//os:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -80,7 +80,7 @@ litert_test(
         "elementwise_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "@platforms//os:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -113,7 +113,7 @@ litert_test(
         "fully_connected_int2_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "@platforms//os:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",

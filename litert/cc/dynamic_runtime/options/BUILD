@@ -52,8 +52,8 @@ cc_library(
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -71,8 +71,8 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -124,8 +124,8 @@ cc_library(
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -144,8 +144,8 @@ cc_library(
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -164,8 +164,8 @@ cc_library(
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -183,8 +183,8 @@ cc_library(
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -202,8 +202,8 @@ cc_library(
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -240,8 +240,8 @@ cc_library(
         "//litert/runtime:litert_darwinn_options",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -272,8 +272,8 @@ cc_library(
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@platforms//os:ios": LITERT_C_API_DEPS,
+        "@platforms//os:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],

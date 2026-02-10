@@ -14,7 +14,7 @@ litert_test(
         "qnn_model_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "@platforms//os:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
