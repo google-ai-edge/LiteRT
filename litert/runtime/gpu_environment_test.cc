@@ -14,9 +14,9 @@
 
 #include "litert/runtime/gpu_environment.h"
 
-#include <any>
 #include <array>
 #include <cstdint>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -66,11 +66,13 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
   };
   auto litert_envt = LiteRtEnvironmentT::CreateWithOptions(environment_options);
   ASSERT_TRUE(litert_envt);
-  auto singleton_env =
-      litert::internal::GpuEnvironment::Create(litert_envt->get());
+  auto singleton_env_result =
+      litert::internal::GpuEnvironment::Create((*litert_envt)->GetOptions());
+  ASSERT_TRUE(singleton_env_result);
+  auto singleton_env = std::move(singleton_env_result->first);
   ASSERT_TRUE(singleton_env);
-  EXPECT_EQ((*singleton_env)->GetContext()->context(), env.context().context());
-  EXPECT_EQ((*singleton_env)->GetCommandQueue()->queue(), env.queue()->queue());
+  EXPECT_EQ(singleton_env->GetContext()->context(), env.context().context());
+  EXPECT_EQ(singleton_env->GetCommandQueue()->queue(), env.queue()->queue());
 }
 
 }  // namespace
