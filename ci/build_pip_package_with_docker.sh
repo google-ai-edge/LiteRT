@@ -43,6 +43,7 @@ if [ ! -d /root_dir ]; then
     -e RELEASE_VERSION=${RELEASE_VERSION} \
     -e TEST_WHEEL=${TEST_WHEEL:-false} \
     -e USE_LOCAL_TF=${USE_LOCAL_TF:-false} \
+    -e BUILD_CONVERTER=${BUILD_CONVERTER:-false} \
     --entrypoint /script_dir/build_pip_package_with_docker.sh \
     tflite-builder
   exit 0

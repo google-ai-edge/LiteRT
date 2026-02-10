@@ -1,4 +1,4 @@
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
@@ -13,6 +13,16 @@ package(
 string_flag(
     name = "nightly_iso_date",
     build_setting_default = "",
+)
+
+bool_flag(
+    name = "build_converter",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "build_converter_enabled",
+    flag_values = {":build_converter": "true"},
 )
 
 genrule(
@@ -120,9 +130,6 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot/vendors/mediatek:target",
     "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
     "//litert/python/aot/vendors/qualcomm:target",
-    # TODO(b/460805332): stop building mlir until protobuf symbol conflict is resolved.
-    # "//litert/python/mlir",
-    # "//litert/python/tools/model_utils",
     # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
     "//litert/python/internal:litertlm_core",
     "//litert/python/internal:litertlm_header_schema_py",
@@ -130,7 +137,13 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/internal:sampler_params_py_pb2",
     "//litert/python/internal:litertlm_builder",
     "//litert/python/tools:flatbuffer_utils",
-]
+] + select({
+    ":build_converter_enabled": [
+        "//litert/python/mlir",
+        "//litert/python/tools/model_utils",
+    ],
+    "//conditions:default": [],
+})
 
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
 PACKAGE_DATA = select({
@@ -161,15 +174,20 @@ py_wheel(
         ":fixed_protos",
         ":fixed_pydeps",
     ] + LITERT_RUNTIME_SHARED_LIB + [
-        "//litert/python:pywrap_litert_binaries",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
-        # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
-        # "//litert/python/mlir/_mlir_libs:libLiteRTCompilerMLIR.so",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
         "//tflite/python/metrics:metrics_interface",
-    ] + litert_gpu_accelerator_prebuilts(),
+    ] + litert_gpu_accelerator_prebuilts() + select({
+        ":build_converter_enabled": [
+            "//litert/python:pywrap_litert_with_converter_binaries",
+            "//litert/python/mlir/_mlir_libs:libLiteRTCompilerMLIR.so",
+        ],
+        "//conditions:default": [
+            "//litert/python:pywrap_litert_binaries",
+        ],
+    }),
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
     platform_name = get_wheel_platform_name(),

@@ -14,6 +14,10 @@
 
 #include <Python.h>
 
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -104,7 +108,7 @@ NB_MODULE(converter_api_ext, m) {
 
   m.def(
       "merge_modules",
-      [](std::vector<MlirOperation> c_module_ops) {
+      [](std::vector<MlirModule> c_module_ops) {
         if (c_module_ops.empty()) {
           throw nb::value_error(
               "Input must be a non-empty list of module ops.");
@@ -112,11 +116,8 @@ NB_MODULE(converter_api_ext, m) {
 
         std::vector<mlir::ModuleOp> module_ops;
         for (const auto& c_module_op : c_module_ops) {
-          auto module_op = llvm::dyn_cast<mlir::ModuleOp>(unwrap(c_module_op));
-          if (!module_op) {
-            throw nb::value_error("Element in list is not a valid module op.");
-          }
-          module_ops.push_back(module_op);
+          mlir::ModuleOp module_op = unwrap(c_module_op);
+          module_ops.push_back(std::move(module_op));
         }
 
         auto merged_module_or = litert::MergeModuleOps(module_ops);

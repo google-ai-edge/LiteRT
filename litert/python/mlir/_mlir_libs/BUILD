@@ -56,6 +56,7 @@ cc_library(
 
 cc_binary(
     name = "libLiteRTCompilerMLIR.so",
+    linkopts = ["-Wl,-Bsymbolic"],
     linkshared = 1,
     tags = [
         "nobuilder",

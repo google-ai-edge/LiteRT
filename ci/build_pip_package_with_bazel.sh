@@ -73,6 +73,10 @@ if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:nightly_iso_date=${NIGHTLY_RELEASE_DATE}"
 fi
 
+if [[ ! -z "${BUILD_CONVERTER}" ]]; then
+  BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:build_converter=${BUILD_CONVERTER}"
+fi
+
 # Conditionally use local submodules vs http_archve tf
 if [[ "${USE_LOCAL_TF}" == "true" ]]; then
   BUILD_FLAGS+=("--config=use_local_tf")
