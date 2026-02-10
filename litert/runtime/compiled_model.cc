@@ -85,7 +85,6 @@
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "weight_loader/external_weight_loader_litert.h"
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
-#include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/interpreter_builder.h"
