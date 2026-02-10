@@ -138,3 +138,30 @@ jobs:
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+  upload-to-pypi:
+    name: "Upload Nightly Wheels to PyPI"
+    runs-on: Windows_x64
+    needs: build-nightly
+    if: success()
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install twine
+        run: python -m pip install twine
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ai-edge-litert-windows-*
+          path: dist
+          merge-multiple: true
+
+      - name: List downloaded wheels
+        run: dir dist
+
+      - name: Upload to PyPI
+        run: twine upload dist/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}
