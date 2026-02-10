@@ -41,7 +41,8 @@ with litertlm_core.open_file(output_path, "wb") as f:
 import dataclasses
 import enum
 import os  # pylint: disable=unused-import
-from typing import Any, BinaryIO, Callable, IO, Optional, TypeVar, Union
+import shutil
+from typing import Any, BinaryIO, Callable, Optional, TypeVar
 import zlib
 import flatbuffers
 from google.protobuf import message
@@ -110,15 +111,24 @@ class TfLiteModelType(enum.Enum):
     return cls(value)
 
 
+@enum.unique
+class Backend(enum.StrEnum):
+  """Backend enum."""
+
+  CPU = "cpu"
+  GPU = "gpu"
+  NPU = "npu"
+  GPU_ARTISAN = "gpu_artisan"
+
+
 @dataclasses.dataclass
 class _SectionObject:
   # Metadata for the section.
   metadata: list[Metadata]
   # The data type of the section.
   data_type: schema.AnySectionDataType | int
-  # The data reader for the section. This should return the data as a byte
-  # string.
-  data_reader: Callable[[], bytes]
+  # The data writer for the section. This should write the data to stream.
+  data_writer: Callable[[BinaryIO], None]
 
 
 @enum.unique
@@ -130,7 +140,6 @@ class LlmModelType(enum.StrEnum):
   GEMMA3 = "gemma3"
   QWEN3 = "qwen3"
   QWEN2P5 = "qwen2p5"
-
 
 LitertLmFileBuilderT = TypeVar(
     "LitertLmFileBuilderT", bound="LitertLmFileBuilder"
@@ -210,22 +219,23 @@ class LitertLmFileBuilder:
 
     if _is_binary_proto(llm_metadata_path):
 
-      def data_reader():
+      def data_writer(stream: BinaryIO):
         with litertlm_core.open_file(llm_metadata_path, "rb") as f:
-          return f.read()
+          _copy_file_to_stream(f, stream)
 
     else:
 
-      def data_reader():
+      def data_writer(stream: BinaryIO):
         with litertlm_core.open_file(llm_metadata_path, "r") as f:
-          return text_format.Parse(
+          data = text_format.Parse(
               f.read(), llm_metadata_pb2.LlmMetadata()
           ).SerializeToString()
+          stream.write(data)
 
     section_object = _SectionObject(
         metadata=additional_metadata if additional_metadata else [],
         data_type=schema.AnySectionDataType.LlmMetadataProto,
-        data_reader=data_reader,
+        data_writer=data_writer,
     )
     self._sections.append(section_object)
     return self
@@ -234,6 +244,7 @@ class LitertLmFileBuilder:
       self,
       tflite_model_path: str,
       model_type: TfLiteModelType,
+      backend_constraint: Optional[str] = None,
       additional_metadata: Optional[list[Metadata]] = None,
   ) -> LitertLmFileBuilderT:
     """Adds a tflite model to the litertlm file.
@@ -241,6 +252,7 @@ class LitertLmFileBuilder:
     Args:
       tflite_model_path: The path to the tflite model file.
       model_type: The type of the tflite model.
+      backend_constraint: The backend constraint for the tflite model.
       additional_metadata: Additional metadata to add to the tflite model.
 
     Returns:
@@ -248,7 +260,8 @@ class LitertLmFileBuilder:
 
     Raises:
       FileNotFoundError: If the tflite model file is not found.
-      ValueError: If the model type metadata is overridden.
+      ValueError: If the model type metadata is overridden or backend_constraint
+      is invalid.
     """
     if not litertlm_core.path_exists(tflite_model_path):
       raise FileNotFoundError(
@@ -257,20 +270,76 @@ class LitertLmFileBuilder:
     metadata = [
         Metadata(key="model_type", value=model_type.value, dtype=DType.STRING)
     ]
+    if backend_constraint:
+      _validate_backend_constraints(backend_constraint)
+      metadata.append(
+          Metadata(
+              key="backend_constraint",
+              value=backend_constraint.lower(),
+              dtype=DType.STRING,
+          )
+      )
     if additional_metadata:
+      for metadata_item in additional_metadata:
+        if metadata_item.key == "model_type":
+          raise ValueError("Model type metadata cannot be overridden.")
+        if metadata_item.key == "backend_constraint":
+          raise ValueError("Backend constraint metadata cannot be overridden.")
+      metadata.extend(additional_metadata)
+
+    def data_writer(stream: BinaryIO):
+      with litertlm_core.open_file(tflite_model_path, "rb") as f:
+        _copy_file_to_stream(f, stream)
+
+    section_object = _SectionObject(
+        metadata=metadata,
+        data_type=schema.AnySectionDataType.TFLiteModel,
+        data_writer=data_writer,
+    )
+    self._sections.append(section_object)
+    return self
+
+  def add_tflite_weights(
+      self,
+      tflite_weights_path: str,
+      model_type: TfLiteModelType,
+      additional_metadata: Optional[list[Metadata]] = None,
+  ) -> LitertLmFileBuilderT:
+    """Adds tflite weights to the litertlm file.
+
+    Args:
+      tflite_weights_path: The path to the tflite weights file.
+      model_type: The type of the tflite model these weights correspond to.
+      additional_metadata: Additional metadata to add to the tflite weights.
+
+    Returns:
+      The current LitertLmFileBuilder object.
+
+    Raises:
+      FileNotFoundError: If the tflite weights file is not found.
+      ValueError: If the model type metadata is overridden.
+    """
+    if not litertlm_core.path_exists(tflite_weights_path):
+      raise FileNotFoundError(
+          f"Tflite weights file not found: {tflite_weights_path}"
+      )
+    metadata = [
+        Metadata(key="model_type", value=model_type.value, dtype=DType.STRING)
+    ]
+    if additional_metadata is not None:
       for metadata_item in additional_metadata:
         if metadata_item.key == "model_type":
           raise ValueError("Model type metadata cannot be overridden.")
       metadata.extend(additional_metadata)
 
-    def data_reader():
-      with litertlm_core.open_file(tflite_model_path, "rb") as f:
-        return f.read()
+    def data_writer(stream: BinaryIO):
+      with litertlm_core.open_file(tflite_weights_path, "rb") as f:
+        _copy_file_to_stream(f, stream)
 
     section_object = _SectionObject(
         metadata=metadata,
-        data_type=schema.AnySectionDataType.TFLiteModel,
-        data_reader=data_reader,
+        data_type=schema.AnySectionDataType.TFLiteWeights,
+        data_writer=data_writer,
     )
     self._sections.append(section_object)
     return self
@@ -300,14 +369,14 @@ class LitertLmFileBuilder:
           f"Sentencepiece tokenizer file not found: {sp_tokenizer_path}"
       )
 
-    def data_reader():
+    def data_writer(stream: BinaryIO):
       with litertlm_core.open_file(sp_tokenizer_path, "rb") as f:
-        return f.read()
+        _copy_file_to_stream(f, stream)
 
     section_object = _SectionObject(
         metadata=additional_metadata if additional_metadata else [],
         data_type=schema.AnySectionDataType.SP_Tokenizer,
-        data_reader=data_reader,
+        data_writer=data_writer,
     )
     self._sections.append(section_object)
     return self
@@ -336,25 +405,29 @@ class LitertLmFileBuilder:
           f"HF tokenizer file not found: {hf_tokenizer_path}"
       )
 
-    def read_and_compress(path: str) -> bytes:
-      with litertlm_core.open_file(path, "rb") as f:
+    def write_and_compress(stream: BinaryIO):
+      with litertlm_core.open_file(hf_tokenizer_path, "rb") as f:
         content = f.read()
-        uncompressed_size = len(content)
-        compressed_content = zlib.compress(content)
-        return uncompressed_size.to_bytes(8, "little") + compressed_content
+        if hf_tokenizer_path.endswith(".zlib"):
+          stream.write(content)
+        else:
+          assert hf_tokenizer_path.endswith(
+              ".json"
+          ), "HF tokenizer file must be either .json or .zlib format."
+          uncompressed_size = len(content)
+          compressed_content = zlib.compress(content)
+          stream.write(uncompressed_size.to_bytes(8, "little"))
+          stream.write(compressed_content)
 
     section_object = _SectionObject(
         metadata=additional_metadata if additional_metadata else [],
         data_type=schema.AnySectionDataType.HF_Tokenizer_Zlib,
-        data_reader=lambda: read_and_compress(hf_tokenizer_path),
+        data_writer=write_and_compress,
     )
     self._sections.append(section_object)
     return self
 
-  def build(
-      self,
-      stream: BinaryIO | IO[Union[bytes, str]],
-  ) -> None:
+  def build(self, stream: BinaryIO) -> None:
     """Builds the litertlm into the given stream."""
     stream.seek(0)
     # To simplify the build logic, we reserved the first block for the header.
@@ -366,7 +439,7 @@ class LitertLmFileBuilder:
     offsets = []
     for section in self._sections:
       start_offset = stream.tell()
-      stream.write(section.data_reader())
+      section.data_writer(stream)
       end_offset = stream.tell()
       offsets.append((start_offset, end_offset))
       _write_padding(stream, litertlm_core.BLOCK_SIZE)
@@ -445,6 +518,26 @@ class LitertLmFileBuilder:
     return schema.SectionMetadataEnd(builder)
 
 
+def _copy_file_to_stream(f_src: Any, f_dst: BinaryIO, buffer_size=1024 * 1024):
+  """Copies data from f_src to f_dst efficiently."""
+  # shutil.copyfileobj attempts to use os.sendfile (zero-copy) if available.
+  # This avoids loading data into Python memory, resulting in massive speedups
+  # for large files (>20GB).
+  shutil.copyfileobj(f_src, f_dst, length=buffer_size)
+
+
+def _validate_backend_constraints(backend_constraint: str) -> None:
+  """Validates the backend constraint string."""
+  backends = [b.strip().lower() for b in backend_constraint.split(",")]
+  valid_backends = set(Backend)
+  for backend in backends:
+    if backend not in valid_backends:
+      raise ValueError(
+          f"Invalid backend constraint: {backend}. Must be one of"
+          f" {list(valid_backends)}"
+      )
+
+
 def _is_binary_proto(filepath: str) -> bool:
   """Checks if a file is a binary protobuf or a textproto version of LlmMetadata.
 
@@ -476,7 +569,9 @@ def _is_binary_proto(filepath: str) -> bool:
       if msg.IsInitialized():
         return False
   except (text_format.ParseError, UnicodeDecodeError) as e:
-    raise ValueError(f"Failed to parse LlmMetadata from {filepath}.") from e
+    raise ValueError(
+        f"Failed to parse LlmMetadata from {filepath}. Exception: {e}"
+    ) from e
 
 
 def _write_padding(stream: BinaryIO, block_size: int) -> None:
