@@ -89,6 +89,11 @@ LiteRtStatus LiteRtDispatchInvocationContextDestroy(
   return kLiteRtStatusErrorUnsupported;
 }
 
+LiteRtStatus LiteRtDispatchInvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
 LiteRtStatus LiteRtDispatchAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {

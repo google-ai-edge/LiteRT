@@ -224,7 +224,7 @@ LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 
 #define LITERT_API_VERSION_MAJOR 0
 #define LITERT_API_VERSION_MINOR 1
-#define LITERT_API_VERSION_PATCH 0
+#define LITERT_API_VERSION_PATCH 1
 
 typedef struct LiteRtApiVersion {
   int major;

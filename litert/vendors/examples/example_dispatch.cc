@@ -24,6 +24,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -147,6 +148,23 @@ class LiteRtDispatchInvocationContextT {
     }
   }
 
+  void SetRunOptions(LiteRtOptions options) {
+    LiteRtHwAcceleratorSet accelerators = kLiteRtHwAcceleratorNone;
+    if (options) {
+      // Best-effort: if the option isn't present or is invalid, fall back to
+      // "no per-run override" semantics.
+      if (LiteRtGetOptionsHardwareAccelerators(options, &accelerators) !=
+          kLiteRtStatusOk) {
+        accelerators = kLiteRtHwAcceleratorNone;
+      }
+    }
+    run_accelerators_ = accelerators;
+  }
+
+  LiteRtHwAcceleratorSet GetRunAccelerators() const {
+    return run_accelerators_;
+  }
+
   const ::litert::example::ExampleGraph& ExampleGraph() const {
     return example_graph_;
   }
@@ -170,6 +188,7 @@ class LiteRtDispatchInvocationContextT {
   std::vector<BufferHandle> inputs_;
   std::vector<BufferHandle> outputs_;
   ::litert::example::ExampleGraph example_graph_;
+  LiteRtHwAcceleratorSet run_accelerators_ = kLiteRtHwAcceleratorNone;
 };
 
 namespace litert::example {
@@ -309,6 +328,12 @@ LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus InvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  invocation_context->SetRunOptions(options);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   invocation_context->Setup();
   const auto num_inputs = invocation_context->ExampleGraph().Inputs().size();
@@ -319,6 +344,16 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   LITERT_ASSIGN_OR_RETURN(
       auto results,
       ::litert::example::Execute(invocation_context->ExampleGraph(), inputs));
+  // Apply a simple per-run behavior tweak based on the provided options:
+  // if the per-run accelerator set contains CPU, scale outputs by 2.
+  if (invocation_context->GetRunAccelerators() & kLiteRtHwAcceleratorCpu) {
+    for (auto& output : results) {
+      for (auto& v : output) {
+        v *= 2.0f;
+      }
+    }
+  }
+
   for (int i = 0; i < results.size(); ++i) {
     invocation_context->GetOutput(i) = std::move(results[i]);
   }
@@ -360,6 +395,7 @@ LiteRtDispatchInterface ExampleInterface = {
     /*.get_metric=*/nullptr,
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
+    /*.invocation_context_set_options=*/InvocationContextSetOptions,
 };
 
 LiteRtDispatchApi ExampleApi = {

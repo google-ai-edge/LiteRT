@@ -156,6 +156,18 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   // Returns true if the async execution mode is set.
   inline bool IsAsyncExecutionMode() const { return async_execution_mode_; }
 
+  // Sets the per-run options to be used for the next invocation.
+  //
+  // This handle is not owned by the context and is expected to remain valid for
+  // the duration of the invocation.
+  inline void SetRunOptions(LiteRtOptions run_options) {
+    run_options_ = run_options;
+  }
+
+  // Returns the per-run options handle for the current invocation, or nullptr
+  // if no per-run options were provided.
+  inline LiteRtOptions GetRunOptions() const { return run_options_; }
+
   // Returns the LiteRtEnvironment used to create CompiledModel.
   inline LiteRtEnvironment GetEnvironment() const { return env_; }
 
@@ -234,6 +246,7 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
       const LiteRtExternalLiteRtBufferContextT&) = delete;
 
   bool async_execution_mode_ = false;
+  LiteRtOptions run_options_ = nullptr;
 
   // Dispatch annotations from the compiled model to be propagated to dispatch
   // graphs.
