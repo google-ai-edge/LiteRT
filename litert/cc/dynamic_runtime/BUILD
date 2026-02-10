@@ -549,7 +549,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_runtime_builtin_runtimecapi",
-        "//litert/cc/internal:litert_runtime_proxy_runtimecapi",
+        "//litert/cc/internal:litert_runtime_proxy",
         "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,

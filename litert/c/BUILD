@@ -129,6 +129,15 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_metrics_header",
+    hdrs = ["litert_metrics.h"],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+    ],
+)
+
+cc_library(
     name = "litert_environment_header",
     hdrs = ["litert_environment.h"],
     deps = [
