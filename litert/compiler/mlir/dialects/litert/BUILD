@@ -136,17 +136,15 @@ cc_library(
     ],
     deps = [
         ":attributes_inc_gen",
+        ":callback_resource",
         ":canonicalize_inc_gen",
         ":dialect_inc_gen",
         ":lazy_blob_manager",
         ":lazy_resource_blob",
         ":ops_inc_gen",
-        ":py_blob",
         ":tensor_parser",
         ":tensor_printer",
         ":types_inc_gen",
-        "//litert/compiler:xnn_runner",
-        "@XNNPACK",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_check",
@@ -174,37 +172,6 @@ cc_test(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-    ],
-)
-
-cc_test(
-    name = "lazy_dense_elements_attr_benchmark",
-    srcs = ["lazy_dense_elements_attr_benchmark.cc"],
-    tags = [
-        "no_oss",
-        "nosan",  # TODO(b/470388329): Re-enable once the bug is fixed.
-    ],
-    deps = [
-        ":dialect",
-        "//base:profiler",
-        "//litert/compiler/mlir/dialects/litert:lazy_resource_blob",
-        "//perftools/profiles/collector/heap:alloc_recorder",
-        "//perftools/profiles/proto:builder",
-        "//perftools/profiles/proto:encoder",
-        "//tflite/converter:tensorflow_lite_ops",
-        "//third_party/tcmalloc:malloc_extension",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest_main",
-        "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:ArithDialect",
-        "@llvm-project//mlir:FuncDialect",
-        "@llvm-project//mlir:IR",
-        "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:Support",
-        "@llvm-project//mlir:Transforms",
     ],
 )
 
@@ -331,17 +298,13 @@ cc_library(
 )
 
 cc_library(
-    name = "py_blob",
-    srcs = ["py_blob.cc"],
-    hdrs = ["py_blob.h"],
-    linkopts = [
-        "-Wl,--allow-shlib-undefined",  # Python headers may not be defined in litertd unit tests.
-    ],
+    name = "callback_resource",
+    srcs = ["callback_resource.cc"],
+    hdrs = ["callback_resource.h"],
     deps = [
-        "@com_google_absl//absl/functional:function_ref",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/base:no_destructor",
         "@llvm-project//llvm:Support",
-        "@xla//third_party/python_runtime:headers",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
     ],
 )
