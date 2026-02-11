@@ -3,7 +3,7 @@ load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
 load("//litert:litert.bzl", "MANYLINUX_LEVEL")
-load("//litert:version.bzl", "LITERT_EXPERIMENTAL_VERSION")
+load("//litert:version.bzl", "LITERT_CONVERTER_VERSION", "LITERT_EXPERIMENTAL_VERSION")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_prebuilts")
 
 package(
@@ -29,6 +29,13 @@ genrule(
     name = "setup_py",
     srcs = ["//ci/tools/python/wheel:setup_with_binary.py"],
     outs = ["setup.py"],
+    cmd = "cat $< > $@",
+)
+
+genrule(
+    name = "converter_setup_py",
+    srcs = ["//ci/tools/python/wheel:converter_setup_with_binary.py"],
+    outs = ["converter_setup.py"],
     cmd = "cat $< > $@",
 )
 
@@ -156,6 +163,8 @@ PACKAGE_DATA = select({
     "//conditions:default": [],
 })
 
+WHEEL_PLATFORM_NAME = get_wheel_platform_name()
+
 LITERT_RUNTIME_SHARED_LIB = select({
     "@bazel_tools//src/conditions:windows": [
         "//litert/c:litert_runtime_c_api_dll",
@@ -190,7 +199,7 @@ py_wheel(
     }),
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
-    platform_name = get_wheel_platform_name(),
+    platform_name = WHEEL_PLATFORM_NAME,
     project_name = "ai_edge_litert",
     py_srcs = ALL_PY_SRC_MODULES + [
         ":relocated_tflite_protos",
@@ -202,10 +211,37 @@ py_wheel(
     version = LITERT_EXPERIMENTAL_VERSION,
 )
 
+py_wheel(
+    name = "litert_converter_wheel",
+    srcs = [
+        "//litert/python:pywrap_litert_with_converter_binaries",
+        "//litert/python/mlir/_mlir_libs:libLiteRTCompilerMLIR.so",
+    ],
+    append_nightly_to_project_name = False,
+    nightly_suffix = ":nightly_iso_date",
+    platform_name = WHEEL_PLATFORM_NAME,
+    project_name = "litert_converter",
+    py_srcs = [
+        "//litert/python/mlir",
+        "//litert/python/tools/model_utils",
+    ],
+    setup_py = ":converter_setup_py",
+    structured_deps = [],
+    version = LITERT_CONVERTER_VERSION,
+)
+
 verify_manylinux_compliance_test(
     name = "manylinux_compliance_test",
     aarch64_compliance_tag = MANYLINUX_LEVEL + "_aarch64",
     ppc64le_compliance_tag = MANYLINUX_LEVEL + "_ppc64le",
     wheel = ":litert_wheel",
+    x86_64_compliance_tag = MANYLINUX_LEVEL + "_x86_64",
+)
+
+verify_manylinux_compliance_test(
+    name = "manylinux_compliance_test_converter",
+    aarch64_compliance_tag = MANYLINUX_LEVEL + "_aarch64",
+    ppc64le_compliance_tag = MANYLINUX_LEVEL + "_ppc64le",
+    wheel = ":litert_converter_wheel",
     x86_64_compliance_tag = MANYLINUX_LEVEL + "_x86_64",
 )
