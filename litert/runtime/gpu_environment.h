@@ -21,9 +21,9 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/core/environment_options.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -142,14 +142,15 @@ class GpuEnvironment {
   void* GetVulkanEnvironment() { return options_.vulkan_env; }
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 
-  // Create a GpuEnvironment with the given environment.
-  static Expected<std::unique_ptr<GpuEnvironment>> Create(
-      LiteRtEnvironmentT* environment) {
-    auto instance = std::make_unique<GpuEnvironment>();
-    instance->Initialize(environment);
-    LITERT_LOG(LITERT_INFO, "Created LiteRT GpuEnvironment.");
-    return std::move(instance);
-  }
+  // Create a GpuEnvironment with the given environment options.
+  // usage:
+  //  LITERT_ASSIGN_OR_RETURN(auto result,
+  //    GpuEnvironment::Create(env->GetOptions()));
+  //  env->AddOptions(result.second);
+  //  env->SetGpuEnvironment(std::move(result.first));
+  static Expected<
+      std::pair<std::unique_ptr<GpuEnvironment>, std::vector<LiteRtEnvOption>>>
+  Create(const LiteRtEnvironmentOptionsT& options);
 
   bool SupportsClGlInterop() { return properties_.is_gl_sharing_supported; }
 
@@ -168,7 +169,8 @@ class GpuEnvironment {
  private:
   // Load the OpenCL device, context and command queue from the environment if
   // available. Otherwise, create the default device, context and command queue.
-  Expected<void> Initialize(LiteRtEnvironment environment);
+  Expected<std::vector<LiteRtEnvOption>> Initialize(
+      const LiteRtEnvironmentOptionsT& options);
 
 #if LITERT_HAS_OPENCL_SUPPORT
   tflite::gpu::cl::CLDevice device_;

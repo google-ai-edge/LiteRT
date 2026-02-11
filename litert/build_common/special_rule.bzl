@@ -44,7 +44,7 @@ def gles_headers():
 
 def gles_linkopts():
     return select({
-        "@org_tensorflow//tensorflow:android": [
+        "@platforms//os:android": [
             "-lGLESv3",
             "-lEGL",
         ],
@@ -54,7 +54,7 @@ def gles_linkopts():
 def litert_android_linkopts():
     return select({
         "//litert:litert_android_no_jni": ["-lnativewindow"],
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "@platforms//os:android": ["-landroid"],
         "//conditions:default": [],
     })
 
@@ -90,19 +90,19 @@ def litert_gpu_accelerator_deps():
 # Prebuilt dependencies for GPU accelerators for each platform.
 def litert_gpu_accelerator_prebuilts():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             "@litert_prebuilts//:linux_x86_64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:linux_aarch64": [
+        "//litert:linux_aarch64": [
             "@litert_prebuilts//:linux_arm64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:macos_arm64": [
+        "//litert:macos_arm64": [
             "@litert_prebuilts//:macos_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
         ],
         "@platforms//os:windows": [
             "@litert_prebuilts//:windows_x86_64/libLiteRtWebGpuAccelerator.dll",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:android_arm64": [
+        "//litert:android_arm64": [
             "@litert_prebuilts//:android_arm64/libLiteRtClGlAccelerator.so",  # copybara:comment
         ],
         "//conditions:default": [],
@@ -111,19 +111,19 @@ def litert_gpu_accelerator_prebuilts():
 # Prebuilt dependencies for LiteRT runtime shared library for each platform.
 def litert_runtime_prebuilts():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             "@litert_prebuilts//:linux_x86_64/libLiteRt.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:linux_aarch64": [
+        "//litert:linux_aarch64": [
             "@litert_prebuilts//:linux_arm64/libLiteRt.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:macos_arm64": [
+        "//litert:macos_arm64": [
             "@litert_prebuilts//:macos_arm64/libLiteRt.dylib",  # copybara:comment
         ],
         "@platforms//os:windows": [
             "@litert_prebuilts//:windows_x86_64/libLiteRt.dll",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:android_arm64": [
+        "//litert:android_arm64": [
             "@litert_prebuilts//:android_arm64/libLiteRt.so",  # copybara:comment
         ],
         "//conditions:default": [],

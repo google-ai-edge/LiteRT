@@ -77,12 +77,12 @@ cc_test(
 cc_library(
     name = "dynamic_loading",
     srcs = select({
-        "@org_tensorflow//tensorflow:windows": ["dynamic_loading_windows.cc"],
+        "@platforms//os:windows": ["dynamic_loading_windows.cc"],
         "//conditions:default": ["dynamic_loading.cc"],
     }),
     hdrs = ["dynamic_loading.h"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:windows": [],
+        "@platforms//os:windows": [],
         "//conditions:default": ["-ldl"],
     }),
     # TODO: factor out the logic here that is used by vendors and move to cc/shared_lib utilities.
@@ -92,7 +92,7 @@ cc_library(
         "//litert/c:litert_common",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:windows": [
+        "@platforms//os:windows": [
             ":filesystem",
             "//litert/c/internal:litert_logging",
             "@com_google_absl//absl/strings",
@@ -141,7 +141,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
-        "//litert/runtime:gpu_environment_header",
+        "//litert/runtime:gpu_environment",
         "//litert/runtime:tensor_buffer_registry_header",
         "//tflite/core/api:error_reporter",
         "@com_google_absl//absl/types:span",
