@@ -214,6 +214,7 @@ cc_library(
     ],
     deps = [
         "//litert/build_common:build_config",
+        "//litert/c:litert_scheduling_info",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "@com_google_absl//absl/types:span",
@@ -320,9 +321,20 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_profiler_event",
+        "//litert/c:litert_scheduling_info",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
     ],
+)
+
+# Do NOT use this target directly. This should only be used by RuntimeProxy.
+cc_library(
+    name = "litert_runtime_c_api_runtimecapi",
+    hdrs = ["litert_runtime_c_api.h"],
+    visibility = [
+        "//litert/cc/internal:__pkg__",
+    ],
+    deps = ["//litert/c:litert_runtime_c_api_shared_lib"],
 )
 
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.

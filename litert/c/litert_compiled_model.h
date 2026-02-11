@@ -139,6 +139,18 @@ LiteRtStatus LiteRtRunCompiledModel(LiteRtCompiledModel compiled_model,
                                     size_t num_output_buffers,
                                     LiteRtTensorBuffer* output_buffers);
 
+// Runs the model of the given signature synchronously, with the provided
+// input/output LiteRtTensorBuffer, and applies the provided runtime `options`
+// for this invocation.
+//
+// `options` is optional; when nullptr, the model is run with the compiled
+// options only.
+LiteRtStatus LiteRtRunCompiledModelWithOptions(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+    LiteRtOptions options);
+
 // Runs the model of the given signature asynchronously, if possible, with the
 // provided input/output LiteRtTensorBuffers. If asynchronous execution is
 // possible, then the function sets parameter `async` to true; if asynchronous
@@ -165,6 +177,18 @@ LiteRtStatus LiteRtRunCompiledModelAsync(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async);
+
+// Runs the model of the given signature asynchronously, if possible, with the
+// provided input/output LiteRtTensorBuffers, and applies the provided runtime
+// `options` for this invocation.
+//
+// `options` is optional; when nullptr, the model is run with the compiled
+// options only.
+LiteRtStatus LiteRtRunCompiledModelAsyncWithOptions(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
+    LiteRtOptions options);
 
 // Sets a callback function that will be called periodically during model
 // execution to check if the execution should be cancelled.
