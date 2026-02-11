@@ -15,6 +15,7 @@
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/quantize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
@@ -1554,5 +1555,63 @@ TEST(MHAOptimization, AttentionWithSelect) {
   ASSERT_TRUE(op_wrappers[41].IsOpCode(QnnOpCode::kPack));
 }
 
+TEST(RotQuant, ReshapeHadamardReshape) {
+  // G2G Test case:
+  //
+  // ------------Before------------
+  //              Input
+  //                |
+  //             Reshape0
+  //                |
+  //        HadamardTransform
+  //                |
+  //             Reshape1
+  //                |
+  //              Output
+  //    
+  // ------------After------------
+  //              Input
+  //                |
+  //              Split
+  //             /     \\\
+  //            /       \\\
+  //  HadamardTransform  ...  
+  //            \       ///
+  //             \     ///
+  //              Concat
+  //                |
+  //              Output
+  //
+
+  TensorPool tensor_pool;
+  std::vector<OpWrapper> op_wrappers;
+  QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                               quant_param, {1, 128, 1152});
+  auto& rot_input = tensor_pool.CloneNativeTensorFrom(input, {1152, 128});
+  auto& rot_output = tensor_pool.CloneNativeTensorFrom(rot_input);
+  auto& output = tensor_pool.CloneNativeTensorFrom(input);
+  auto reshape0 = BuildReshapeOp(tensor_pool, {input}, {rot_input});
+  std::move(reshape0.begin(), reshape0.end(), std::back_inserter(op_wrappers));
+  auto rotation =
+      BuildHadamardTransformOp(tensor_pool, {rot_input}, {rot_output});
+  std::move(rotation.begin(), rotation.end(), std::back_inserter(op_wrappers));
+  auto reshape1 = BuildReshapeOp(tensor_pool, {rot_output}, {output});
+  std::move(reshape1.begin(), reshape1.end(), std::back_inserter(op_wrappers));
+
+  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOpt;
+  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+  // Check the optimized graph is correct.
+  constexpr std::size_t num_rotation = 1152 / 128;
+  constexpr std::size_t op_size = 2 + num_rotation;
+  ASSERT_EQ(op_wrappers.size(), op_size);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kSplit));
+  for (std::size_t i = 1; i < 1 + num_rotation; ++i) {
+    EXPECT_TRUE(op_wrappers[i].IsOpCode(QnnOpCode::kHadamardTransform));
+  }
+  EXPECT_TRUE(op_wrappers[op_size - 1].IsOpCode(QnnOpCode::kConcat));
+}
 }  // namespace
 }  // namespace qnn
