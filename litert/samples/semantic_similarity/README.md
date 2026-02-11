@@ -11,7 +11,7 @@ The model can be obtained here:
 
 1. **Build the project:**
    ```bash
-   bazel build -c opt //litert/litert/samples/semantic_similarity:semantic_similarity
+   bazel build -c opt //litert/samples/semantic_similarity:semantic_similarity
    ```
 1. **Run the application:**
    ```bash
