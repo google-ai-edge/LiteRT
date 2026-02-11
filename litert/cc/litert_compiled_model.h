@@ -926,6 +926,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return Environment::WrapCObject(env_, OwnHandle::kNo);
   }
 
+  // Compatibility overload that routes to the richer helper with default args.
   Expected<void> RunCApiHelper(LiteRtParamIndex signature_index,
                                size_t num_input_buffers,
                                LiteRtTensorBuffer* input_buffers,
@@ -933,13 +934,40 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                LiteRtTensorBuffer* output_buffers,
                                bool& async) const;
 
+  Expected<void> RunCApiHelper(LiteRtParamIndex signature_index,
+                               size_t num_input_buffers,
+                               LiteRtTensorBuffer* input_buffers,
+                               size_t num_output_buffers,
+                               LiteRtTensorBuffer* output_buffers, bool& async,
+                               LiteRtOptions run_options) const;
+
+  // Compatibility overload that routes to the richer helper with default args.
   Expected<void> RunHelper(size_t signature_index,
                            absl::Span<const TensorBuffer> input_buffers,
                            absl::Span<const TensorBuffer> output_buffers,
                            bool& async) const;
 
+  Expected<void> RunHelper(size_t signature_index,
+                           absl::Span<const TensorBuffer> input_buffers,
+                           absl::Span<const TensorBuffer> output_buffers,
+                           bool& async, LiteRtOptions run_options) const;
+
+  // Compatibility overload that routes to the richer helper with default args.
   Expected<void> RunMapHelper(
       absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      bool& async) const;
+
+  Expected<void> RunMapHelper(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      bool& async, LiteRtOptions run_options) const;
+
+  // Compatibility overload that routes to the richer helper with default args.
+  Expected<void> RunMapWithIndexHelper(
+      size_t signature_index,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;
@@ -948,7 +976,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       size_t signature_index,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
-      bool& async) const;
+      bool& async, LiteRtOptions run_options) const;
 
   internal::EnvironmentHolder env_;
   Model model_;

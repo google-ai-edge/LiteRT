@@ -32,6 +32,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_scheduling_info.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -154,7 +155,14 @@ class LiteRtCompiledModelT {
   litert::Expected<void> Run(
       absl::string_view signature_key,
       const std::vector<LiteRtTensorBuffer>& input_buffers,
-      const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async);
+      const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async,
+      LiteRtOptions run_options = nullptr,
+      const LiteRtSchedulingInfo* scheduling_info = nullptr);
+
+  // Sets model-level default scheduling info. If `scheduling_info` is null, the
+  // compiled model resets to default scheduling behavior.
+  litert::Expected<void> SetSchedulingInfo(
+      const LiteRtSchedulingInfo* scheduling_info);
 
   // The same as Run() for C API.
   litert::Expected<void> RunCApi(size_t signature_index,
@@ -162,7 +170,25 @@ class LiteRtCompiledModelT {
                                  const LiteRtTensorBuffer* input_buffers,
                                  size_t num_output_buffers,
                                  const LiteRtTensorBuffer* output_buffers,
-                                 bool* async);
+                                 bool* async,
+                                 LiteRtOptions run_options = nullptr);
+
+  // The same as RunCApi() but with per-request scheduling info.
+  litert::Expected<void> RunCApi(size_t signature_index,
+                                 size_t num_input_buffers,
+                                 const LiteRtTensorBuffer* input_buffers,
+                                 size_t num_output_buffers,
+                                 const LiteRtTensorBuffer* output_buffers,
+                                 bool* async,
+                                 const LiteRtSchedulingInfo* scheduling_info);
+
+  litert::Expected<void> RunCApi(size_t signature_index,
+                                 size_t num_input_buffers,
+                                 const LiteRtTensorBuffer* input_buffers,
+                                 size_t num_output_buffers,
+                                 const LiteRtTensorBuffer* output_buffers,
+                                 bool* async, LiteRtOptions run_options,
+                                 const LiteRtSchedulingInfo* scheduling_info);
 
   litert::Expected<void> StartMetricsCollection(int detail_level);
 
@@ -452,6 +478,10 @@ class LiteRtCompiledModelT {
   // Note: The ExternalLiteRtBufferContext must be destroyed after the
   // Interpreter.
   std::unique_ptr<LiteRtExternalLiteRtBufferContextT> buffer_context_;
+
+  // Model-level scheduling info overrides (bitmask in `fields_mask` indicates
+  // which fields are set).
+  LiteRtSchedulingInfo model_scheduling_info_{};
 
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   // The loader that manages external weight metadata and bindings.

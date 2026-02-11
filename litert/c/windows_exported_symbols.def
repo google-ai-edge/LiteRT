@@ -312,6 +312,8 @@ EXPORTS
   LiteRtResetProfiler
   LiteRtRunCompiledModel
   LiteRtRunCompiledModelAsync
+  LiteRtRunCompiledModelWithOptions
+LiteRtRunCompiledModelAsyncWithOptions
   LiteRtSerializeModel
   LiteRtSerializeModelWithSignatures
   LiteRtSetAcceleratorGetHardwareSupport

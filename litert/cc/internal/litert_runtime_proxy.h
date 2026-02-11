@@ -467,6 +467,19 @@ class RuntimeProxy {
         num_input_buffers, input_buffers, num_output_buffers, output_buffers);
   }
 
+  LiteRtStatus RunCompiledModelWithOptions(LiteRtCompiledModel compiled_model,
+                                           LiteRtParamIndex signature_index,
+                                           size_t num_input_buffers,
+                                           LiteRtTensorBuffer* input_buffers,
+                                           size_t num_output_buffers,
+                                           LiteRtTensorBuffer* output_buffers,
+                                           LiteRtOptions options) {
+    LITERT_PROXY_METHOD_STATUS(litert_run_compiled_model_with_options,
+                               compiled_model, signature_index,
+                               num_input_buffers, input_buffers,
+                               num_output_buffers, output_buffers, options);
+  }
+
   LiteRtStatus RunCompiledModelAsync(LiteRtCompiledModel compiled_model,
                                      LiteRtParamIndex signature_index,
                                      size_t num_input_buffers,
@@ -478,6 +491,17 @@ class RuntimeProxy {
                                signature_index, num_input_buffers,
                                input_buffers, num_output_buffers,
                                output_buffers, async);
+  }
+
+  LiteRtStatus RunCompiledModelAsyncWithOptions(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      bool* async, LiteRtOptions options) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_run_compiled_model_async_with_options, compiled_model,
+        signature_index, num_input_buffers, input_buffers, num_output_buffers,
+        output_buffers, async, options);
   }
 
   LiteRtStatus SetCompiledModelCancellationFunction(

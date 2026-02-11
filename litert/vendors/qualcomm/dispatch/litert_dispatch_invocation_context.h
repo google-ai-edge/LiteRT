@@ -66,6 +66,20 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Profile();
 
+  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
+    if (scheduling_info == nullptr) {
+      has_scheduling_info_ = false;
+      scheduling_info_ = LiteRtSchedulingInfo{};
+      return;
+    }
+    has_scheduling_info_ = true;
+    scheduling_info_ = *scheduling_info;
+  }
+
+  const LiteRtSchedulingInfo* GetSchedulingInfo() const {
+    return has_scheduling_info_ ? &scheduling_info_ : nullptr;
+  }
+
   Qnn_ContextHandle_t ContextHandle() { return context_handle_.get(); }
 
  private:
@@ -102,6 +116,8 @@ class LiteRtDispatchInvocationContextT {
   std::vector<::qnn::TensorWrapper> outputs_;
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
   std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
+  bool has_scheduling_info_ = false;
+  LiteRtSchedulingInfo scheduling_info_{};
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
