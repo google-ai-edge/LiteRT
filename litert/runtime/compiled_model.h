@@ -60,6 +60,10 @@ using TfLiteTensorIdentifier = litert::internal::TfLiteTensorIdentifier;
 using TensorIdentifierHash = litert::internal::TensorIdentifierHash;
 using TensorIdentifierEqual = litert::internal::TensorIdentifierEqual;
 
+namespace litert::internal {
+class DispatchDelegateOptions;
+}  // namespace litert::internal
+
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
  public:
@@ -242,6 +246,11 @@ class LiteRtCompiledModelT {
       LiteRtCompiledModelT* compiled_model, const TfLiteTensor* tensor,
       absl::Span<const int> new_shape);
 
+  // Friend function to test ApplyCustomOpAssets.
+  friend litert::Expected<void> ApplyCustomOpAssets(
+      LiteRtCompiledModelT* compiled_model,
+      litert::internal::DispatchDelegateOptions& dispatch_options);
+
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
     std::unique_ptr<LiteRtDelegateWrapperT,
@@ -374,6 +383,10 @@ class LiteRtCompiledModelT {
   // Returns true if the given signature needs tensor allocation.
   litert::Expected<bool> SignatureNeedsAllocation(
       const tflite::SignatureRunner* runner) const;
+
+  // Applies custom op assets to the dispatch options.
+  litert::Expected<void> ApplyCustomOpAssets(
+      litert::internal::DispatchDelegateOptions& dispatch_options);
 
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   // Restores external weights into tensor for CPU execution.

@@ -52,6 +52,7 @@ enum class OpCode {
   kMul,
   kSub,
   kRmsNorm,  // NOTE: No runtime support.
+  kCustom,
 };
 
 template <typename Sink>
@@ -66,6 +67,9 @@ void AbslStringify(Sink& sink, OpCode code) {
     case OpCode::kRmsNorm:
       sink.Append("rms_norm");
       break;
+    case OpCode::kCustom:
+      sink.Append("custom");
+      break;
   }
 }
 
@@ -76,6 +80,8 @@ inline Expected<OpCode> ParseOpCode(absl::string_view str) {
     return OpCode::kSub;
   } else if (str == "rms_norm") {
     return OpCode::kRmsNorm;
+  } else if (str == "custom") {
+    return OpCode::kCustom;
   } else {
     LITERT_LOG(LITERT_ERROR, "Invalid op code when parsing");
     return Error(kLiteRtStatusErrorInvalidArgument);

@@ -112,11 +112,13 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
+        "//litert/vendors/c:litert_dispatch_c_api",
     ],
 )
 
@@ -127,6 +129,7 @@ cc_test(
     ],
     deps = [
         ":dispatch_opaque_options",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_opaque_options",
         "@com_google_googletest//:gtest_main",
     ],

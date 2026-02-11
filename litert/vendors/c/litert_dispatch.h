@@ -51,13 +51,6 @@ typedef enum LiteRtDispatchExecutableType {
   kLiteRtDispatchExecutableTypeMlModel = 2,     // Vendor-specific ML model
 } LiteRtDispatchExecutableType;
 
-typedef struct LiteRtMemBuffer {
-  int fd;  // File descriptor for an mmapped buffer, -1 if unused.
-  const void* base_addr;  // Base address of the buffer.
-  size_t offset;          // Offset of the buffer from the base address.
-  size_t size;            // Buffer size.
-} LiteRtMemBuffer;
-
 // Initialize the Dispatch API runtime.
 //
 // This function should be called before calling any other Dispatch API
@@ -135,6 +128,15 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchRegisterTensorBuffer(
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
     LiteRtDispatchDeviceContext device_context,
     LiteRtTensorBufferHandle tensor_buffer_handle);
+
+// Register an asset with the given device context.
+// Note: The memory backing the asset buffer should be valid until the device
+// context is destroyed.
+// Users should be careful to ensure that the asset buffer outlives the
+// dispatch context, as the backend may hold a reference to this memory.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchRegisterAsset(
+    LiteRtDispatchDeviceContext device_context, const char* asset_name,
+    const LiteRtMemBuffer* asset_buffer);
 
 // Create an invocation context to run a given function from a given
 // executable. Parameter `function_name` is required if the provided executable

@@ -19,6 +19,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
@@ -60,6 +62,101 @@ TEST(TestCallDummyPlugin, PartitionSimpleMultiAdd) {
   ASSERT_EQ(selected_ops.size(), 2);
   ASSERT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflMul);
   ASSERT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeTflMul);
+}
+
+TEST(TestCallDummyPlugin, PartitionCustomOp) {
+  LiteRtOpaqueOptions compiler_options_opaque;
+  ASSERT_EQ(LiteRtCreateCompilerOptions(&compiler_options_opaque),
+            kLiteRtStatusOk);
+
+  LiteRtCompilerOptions compiler_options;
+  ASSERT_EQ(
+      LiteRtFindCompilerOptions(compiler_options_opaque, &compiler_options),
+      kLiteRtStatusOk);
+
+  ASSERT_EQ(LiteRtAddCompilerOptionCustomOpInfo(compiler_options, "litert_cust",
+                                                "dummy_path"),
+            kLiteRtStatusOk);
+
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options, compiler_options_opaque),
+            kLiteRtStatusOk);
+
+  auto plugin = CreatePlugin(nullptr, options);
+  auto model = testing::LoadTestFileModel("simple_npu_model_custom_op.tflite");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const auto selected_ops = selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 2);
+  // Order isn't guaranteed but likely topological or insertion order.
+  // Assuming mul then custom or custom then mul.
+
+  LiteRtDestroyOptions(options);
+}
+
+TEST(TestCallDummyPlugin, PartitionCustomOpUnsupported) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("simple_npu_model_custom_op.tflite");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const auto selected_ops = selected_op_list.Values();
+
+  // Should only match the Mul op (if supported) or none of the custom op.
+  // The model has 1 mul and 1 custom.
+  // The Mul op is supported by default in example plugin (kLiteRtOpCodeTflMul).
+  // So it should select 1 op (the Mul).
+  ASSERT_EQ(selected_ops.size(), 1);
+  ASSERT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflMul);
+}
+
+TEST(TestCallDummyPlugin, PartitionCustomOpWithDifferentName) {
+  // Setup compiler options with a custom op name "other_op".
+  LiteRtOpaqueOptions compiler_options_opaque;
+  ASSERT_EQ(LiteRtCreateCompilerOptions(&compiler_options_opaque),
+            kLiteRtStatusOk);
+
+  LiteRtCompilerOptions compiler_options;
+  ASSERT_EQ(
+      LiteRtFindCompilerOptions(compiler_options_opaque, &compiler_options),
+      kLiteRtStatusOk);
+
+  ASSERT_EQ(LiteRtAddCompilerOptionCustomOpInfo(compiler_options, "other_op",
+                                                "dummy_path"),
+            kLiteRtStatusOk);
+
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options, compiler_options_opaque),
+            kLiteRtStatusOk);
+
+  auto plugin = CreatePlugin(nullptr, options);
+
+  // The model contains a custom op named "litert_cust".
+  auto model = testing::LoadTestFileModel("simple_npu_model_custom_op.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const auto selected_ops = selected_op_list.Values();
+
+  // Since "litert_cust" is not in the compiler options (only "other_op" is),
+  // the plugin should NOT select the custom op.
+  // It should only select the Mul op which is supported by default.
+  ASSERT_EQ(selected_ops.size(), 1);
+  ASSERT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflMul);
+
+  LiteRtDestroyOptions(options);
 }
 
 TEST(TestCallDummyPlugin, CompileMulSubgraph) {

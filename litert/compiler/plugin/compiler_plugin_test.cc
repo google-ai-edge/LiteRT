@@ -15,6 +15,9 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 
 #include <array>
+#include <cstdio>
+#include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -741,6 +744,57 @@ TEST(CheckCompilerCompatibilityTest, Simple) {
   auto& plugin = plugins->front();
   ASSERT_TRUE(plugin.CheckCompilerCompatibility("ExampleSocModel"));
   ASSERT_FALSE(plugin.CheckCompilerCompatibility("UnsupportedSocModel"));
+}
+
+class CompilerPluginCustomOpTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Create a temporary file for the asset.
+    asset_path_ = std::tmpnam(nullptr);
+    std::ofstream file(asset_path_);
+    file << "dummy asset content";
+    file.close();
+  }
+
+  void TearDown() override { std::remove(asset_path_.c_str()); }
+
+  std::string asset_path_;
+};
+
+TEST_F(CompilerPluginCustomOpTest, LoadCustomOpAssetsSuccess) {
+  auto model = std::make_unique<LiteRtModelT>();
+  auto opts = CompilerOptions::Create();
+  ASSERT_TRUE(opts);
+
+  ASSERT_TRUE(opts->AddCustomOpInfo("my_op", asset_path_));
+
+  // Verify CompilerOptions behavior.
+  LiteRtCompilerOptions compiler_options;
+  ASSERT_EQ(LiteRtFindCompilerOptions(opts->Get(), &compiler_options),
+            kLiteRtStatusOk);
+
+  LiteRtParamIndex num_custom_ops = 0;
+  ASSERT_EQ(LiteRtGetCompilerOptionsNumCustomOpInfo(compiler_options,
+                                                    &num_custom_ops),
+            kLiteRtStatusOk);
+  ASSERT_EQ(num_custom_ops, 1);
+
+  const char* name;
+  const char* path;
+  ASSERT_EQ(
+      LiteRtGetCompilerOptionsCustomOpInfo(compiler_options, 0, &name, &path),
+      kLiteRtStatusOk);
+  EXPECT_STREQ(name, "my_op");
+  EXPECT_STREQ(path, asset_path_.c_str());
+
+  // Test LoadCustomOpAssets
+  LITERT_ASSERT_OK(LoadCustomOpAssets(compiler_options, *model));
+
+  auto metadata = model->FindMetadata("litert_npu_asset_my_op");
+  ASSERT_TRUE(metadata);
+  std::string content(reinterpret_cast<const char*>(metadata->Data()),
+                      metadata->Size());
+  EXPECT_EQ(content, "dummy asset content");
 }
 
 LiteRtStatus ReplaceAddWithMul(LiteRtBuilder builder, LiteRtOp op) {

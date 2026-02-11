@@ -21,6 +21,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
+#include <ios>
 #include <optional>
 #include <queue>
 #include <string>
@@ -805,10 +807,60 @@ Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
   return {};
 }
 
+Expected<void> LoadCustomOpAssets(const LiteRtCompilerOptions& opts,
+                                  LiteRtModelT& model) {
+  LiteRtParamIndex num_custom_ops = 0;
+  if (LiteRtGetCompilerOptionsNumCustomOpInfo(opts, &num_custom_ops) !=
+      kLiteRtStatusOk) {
+    // No custom op info, or failed to get count.
+    return {};
+  }
+
+  for (LiteRtParamIndex i = 0; i < num_custom_ops; ++i) {
+    const char* name;
+    const char* path;
+    if (LiteRtGetCompilerOptionsCustomOpInfo(opts, i, &name, &path) !=
+        kLiteRtStatusOk) {
+      continue;
+    }
+
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+      return Unexpected(kLiteRtStatusErrorFileIO,
+                        absl::StrCat("Failed to open custom op asset: ", path));
+    }
+    std::streamsize size = file.tellg();
+    if (size < 0) {
+      return Unexpected(kLiteRtStatusErrorFileIO,
+                        absl::StrCat("Failed to get size of asset: ", path));
+    }
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buffer(size);
+    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+      return Unexpected(kLiteRtStatusErrorFileIO,
+                        absl::StrCat("Failed to read custom op asset: ", path));
+    }
+
+    auto status = model.PushMetadata(
+        absl::StrCat("litert_npu_asset_", name),
+        OwningBufferRef<uint8_t>(static_cast<const uint8_t*>(buffer.data()),
+                                 buffer.size()));
+    if (status != kLiteRtStatusOk) {
+      return Unexpected(
+          status, absl::StrCat("Failed to push metadata for asset: ", name));
+    }
+  }
+  return {};
+}
+
 Expected<void> ApplyPlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
+  if (auto opts = compiler_plugin.CompilerOptions()) {
+    LITERT_RETURN_IF_ERROR(LoadCustomOpAssets(*opts, model));
+  }
+
   // Check compiler compatibility.
   const auto compatibility =
       compiler_plugin.CheckCompilerCompatibility(soc_model);

@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_APPLY_PLUGIN_FLAGS_H_
 
 #include <string>
+#include <vector>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -27,6 +28,8 @@
 ABSL_DECLARE_FLAG(std::string, cmd);
 
 ABSL_DECLARE_FLAG(::litert::tools::IntList, subgraphs);
+
+ABSL_DECLARE_FLAG(std::vector<std::string>, npu_custom_op_info);
 
 // Compiler plugin partition strategy flag.
 ABSL_DECLARE_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy);

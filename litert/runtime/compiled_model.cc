@@ -27,8 +27,8 @@
 #include <vector>
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -635,6 +635,10 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
+
+    LITERT_RETURN_IF_ERROR(
+        compiled_model->ApplyCustomOpAssets(dispatch_options));
+
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
@@ -1752,6 +1756,29 @@ void LiteRtCompiledModelT::SetCancellationFunction(
   interp_->SetCancellationFunction(data, check_cancelled_func);
 }
 
+Expected<void> LiteRtCompiledModelT::ApplyCustomOpAssets(
+    litert::internal::DispatchDelegateOptions& dispatch_options) {
+  // Populate custom op assets from metadata.
+  const auto* tfl_model = fb_model_->GetModel();
+  if (tfl_model->metadata()) {
+    for (const auto* meta : *tfl_model->metadata()) {
+      if (meta->name() &&
+          absl::StartsWith(meta->name()->c_str(), "litert_npu_asset_")) {
+        const auto* buffer = tfl_model->buffers()->Get(meta->buffer());
+        LiteRtMemBuffer mem_buffer;
+        mem_buffer.fd = -1;
+        mem_buffer.base_addr = buffer->data()->data();
+        mem_buffer.offset = 0;
+        mem_buffer.size = buffer->data()->size();
+        std::string asset_name = meta->name()->str().substr(17);
+        LITERT_RETURN_IF_ERROR(
+            dispatch_options.AddCustomOpAsset(asset_name, mem_buffer));
+      }
+    }
+  }
+  return {};
+}
+
 // -----------------------------------------------------------------------------
 // Friend APIs
 // -----------------------------------------------------------------------------
@@ -1773,4 +1800,10 @@ Expected<bool> InputTensorNeedsResize(
     LiteRtCompiledModelT* compiled_model, const TfLiteTensor* tensor,
     absl::Span<const int> new_shape) {
   return compiled_model->InputTensorNeedsResize(tensor, new_shape);
+}
+
+litert::Expected<void> ApplyCustomOpAssets(
+    LiteRtCompiledModelT* compiled_model,
+    litert::internal::DispatchDelegateOptions& dispatch_options) {
+  return compiled_model->ApplyCustomOpAssets(dispatch_options);
 }

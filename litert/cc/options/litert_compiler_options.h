@@ -40,6 +40,9 @@ class CompilerOptions : public OpaqueOptions {
 
   Expected<void> SetDummyOption(bool dummy_option);
   Expected<bool> GetDummyOption() const;
+
+  Expected<void> AddCustomOpInfo(const std::string& custom_op_name,
+                                 const std::string& custom_op_lib_path);
 };
 }  // namespace litert
 

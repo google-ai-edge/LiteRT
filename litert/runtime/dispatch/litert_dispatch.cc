@@ -28,6 +28,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -254,6 +255,16 @@ LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
     return kLiteRtStatusErrorInvalidArgument;
   }
   INVOKE_FUNC(unregister_tensor_buffer, device_context, tensor_buffer_handle);
+}
+
+LiteRtStatus LiteRtDispatchRegisterAsset(
+    LiteRtDispatchDeviceContext device_context, const char* asset_name,
+    const LiteRtMemBuffer* asset_buffer) {
+  if (!device_context || !asset_name || !asset_buffer) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  INVOKE_FUNC(register_asset, device_context, asset_name, asset_buffer);
 }
 
 LiteRtStatus LiteRtDispatchInvocationContextCreate(

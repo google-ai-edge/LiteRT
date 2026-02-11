@@ -15,9 +15,12 @@
 #include "litert/tools/flags/apply_plugin_flags.h"
 
 #include <string>
+#include <vector>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -30,6 +33,10 @@ ABSL_FLAG(std::string, cmd, "partition",
 ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
           "If provides, only the subgraphs with the given indices "
           "are applied with the plugin.");
+
+ABSL_FLAG(
+    std::vector<std::string>, npu_custom_op_info, std::vector<std::string>{},
+    "Custom op info in the format of custom_op_name,path_to_custom_op_asset.");
 
 ABSL_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy,
           kLiteRtCompilerOptionsPartitionStrategyDefault,
@@ -71,6 +78,16 @@ namespace litert {
 Expected<void> UpdateCompilerOptionsFromFlags(CompilerOptions& options) {
   LITERT_RETURN_IF_ERROR(
       options.SetPartitionStrategy(absl::GetFlag(FLAGS_partition_strategy)));
+
+  const auto& custom_op_infos = absl::GetFlag(FLAGS_npu_custom_op_info);
+  for (const auto& info : custom_op_infos) {
+    std::vector<std::string> parts = absl::StrSplit(info, ',');
+    if (parts.size() != 2) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Invalid custom op info format. Expected: name,path");
+    }
+    LITERT_RETURN_IF_ERROR(options.AddCustomOpInfo(parts[0], parts[1]));
+  }
 
   return {};
 }

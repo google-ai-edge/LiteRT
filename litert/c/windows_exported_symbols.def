@@ -19,6 +19,7 @@
 ; libLiteRtWebGpuAccelerator.dll when --define=resolve_symbols_from_exec=true.
 
 EXPORTS
+  LiteRtAddCompilerOptionCustomOpInfo
   LiteRtAddCustomOpKernelOption
   LiteRtAddEnvironmentOptions
   LiteRtAddExternalTensorBinding
@@ -97,6 +98,8 @@ EXPORTS
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
+  LiteRtGetCompilerOptionsCustomOpInfo
+  LiteRtGetCompilerOptionsNumCustomOpInfo
   LiteRtGetCompilerOptionsIdentifier
   LiteRtGetCompilerOptionsPartitionStrategy
   LiteRtGetCpuOptionsIdentifier

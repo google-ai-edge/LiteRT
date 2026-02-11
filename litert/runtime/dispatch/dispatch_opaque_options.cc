@@ -14,7 +14,12 @@
 
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
@@ -28,6 +33,7 @@ namespace {
 struct Payload {
   const void* alloc_base = nullptr;
   int alloc_base_fd = -1;
+  std::vector<std::pair<std::string, LiteRtMemBuffer>> custom_op_assets;
 };
 
 }  // namespace
@@ -70,6 +76,19 @@ Expected<void> DispatchDelegateOptions::SetAllocBaseFd(int alloc_base_fd) {
 Expected<int> DispatchDelegateOptions::GetAllocBaseFd() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->alloc_base_fd;
+}
+
+Expected<void> DispatchDelegateOptions::AddCustomOpAsset(
+    const std::string& name, const LiteRtMemBuffer& asset) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->custom_op_assets.push_back({name, asset});
+  return {};
+}
+
+Expected<const std::vector<std::pair<std::string, LiteRtMemBuffer>>*>
+DispatchDelegateOptions::GetCustomOpAssets() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return &payload->custom_op_assets;
 }
 
 }  // namespace litert::internal

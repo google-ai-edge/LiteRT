@@ -15,6 +15,7 @@
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
 #include <gtest/gtest.h>
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
@@ -66,6 +67,36 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFd) {
   auto alloc_base_fd = options->GetAllocBaseFd();
   ASSERT_TRUE(alloc_base_fd);
   ASSERT_EQ(*alloc_base_fd, dummy_fd);
+}
+
+TEST(DispatchDelegateOptionsTest, AddCustomOpAsset) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  LiteRtMemBuffer asset1 = {
+      .fd = -1,
+      .base_addr = nullptr,
+      .offset = 0,
+      .size = 100,
+  };
+  ASSERT_TRUE(options->AddCustomOpAsset("asset1", asset1));
+
+  LiteRtMemBuffer asset2 = {
+      .fd = 10,
+      .base_addr = (void*)0x1234,
+      .offset = 50,
+      .size = 200,
+  };
+  ASSERT_TRUE(options->AddCustomOpAsset("asset2", asset2));
+
+  auto assets = options->GetCustomOpAssets();
+  ASSERT_TRUE(assets);
+  ASSERT_EQ((*assets)->size(), 2);
+  ASSERT_EQ((*assets)->at(0).first, "asset1");
+  ASSERT_EQ((*assets)->at(0).second.size, 100);
+  ASSERT_EQ((*assets)->at(1).first, "asset2");
+  ASSERT_EQ((*assets)->at(1).second.size, 200);
+  ASSERT_EQ((*assets)->at(1).second.fd, 10);
 }
 
 }  // namespace

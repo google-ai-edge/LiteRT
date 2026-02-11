@@ -402,6 +402,7 @@ LiteRtDispatchInterface TheInterface = {
     .get_metric = nullptr,
     .destroy_metrics = nullptr,
     .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
+    .register_asset = nullptr,
 };
 
 LiteRtDispatchApi TheApi = {
