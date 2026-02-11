@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,9 +35,9 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Types.h"
 #include "mlir/Support/LLVM.h"
+#include "litert/compiler/mlir/dialects/litert/callback_resource.h"
 #include "litert/compiler/mlir/dialects/litert/dialect.h"
 #include "litert/compiler/mlir/dialects/litert/lazy_resource_blob.h"
-#include "litert/compiler/mlir/dialects/litert/py_blob.h"
 #include "litert/compiler/mlir/dialects/litert/tensor_parser.h"
 #include "litert/compiler/mlir/dialects/litert/tensor_printer.h"
 
@@ -85,20 +86,47 @@ void LITERTDialect::registerAttributes() {
 // PyDenseElementsAttr
 //===----------------------------------------------------------------------===//
 
-mlir::Attribute PyDenseElementsAttr::parse(mlir::AsmParser& parser,
-                                           mlir::Type type) {
+mlir::Attribute CallbackResourceElementsAttr::parse(mlir::AsmParser& parser,
+                                                    mlir::Type type) {
   parser.emitError(parser.getCurrentLocation())
       << "Parsing PyDenseElementsAttr is not supported.";
   return nullptr;
 }
 
-void PyDenseElementsAttr::print(mlir::AsmPrinter& printer) const {
+void CallbackResourceElementsAttr::print(mlir::AsmPrinter& printer) const {
   printer << "<__elided__>";
 }
 
-PyDenseElementsAttr PyDenseElementsAttr::get(mlir::ShapedType type,
-                                             litert::PyBlob&& py_blob) {
-  return Base::get(type.getContext(), type, std::move(py_blob));
+CallbackResourceBase* CallbackResourceElementsAttr::GetResource() {
+  return getRawHandle().getResource();
+}
+
+CallbackResourceElementsAttr CallbackResourceElementsAttr::get(
+    mlir::ShapedType type, CallbackResourceElementsHandle handle) {
+  return Base::get(type.getContext(), type, handle);
+}
+
+CallbackResourceElementsAttr CallbackResourceElementsAttr::get(
+    mlir::ShapedType type, std::unique_ptr<CallbackResourceBase> resource) {
+  // 1. Get the interface.
+  auto& interface =
+      CallbackResourceElementsHandle::getManagerInterface(type.getContext());
+
+  // 2. Access the manager.
+  CallbackResourceManager& manager = interface.GetCallbackResourceManager();
+
+  // 3. Cast the base Dialect* to the specific Dialect type required by the
+  // Handle. This satisfies the 'typename HandleT::Dialect*' requirement in the
+  // template.
+  using TargetDialect = CallbackResourceElementsHandle::Dialect;
+  auto* dialect = static_cast<TargetDialect*>(interface.getDialect());
+
+  // 4. Explicitly call Insert with the handle template argument.
+  auto handle = manager.Insert<CallbackResourceElementsHandle>(
+      dialect, details::GenerateUUID(), std::move(resource));
+
+  // 5. Build the attribute.
+  return Base::get(type.getContext(), type, handle);
 }
 
 //===----------------------------------------------------------------------===//
