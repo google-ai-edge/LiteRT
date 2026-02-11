@@ -69,8 +69,9 @@ Expected<LiteRtEnvironment> CreateGpuEnabledEnvironment() {
   LITERT_RETURN_IF_ERROR(
       LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
 
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env,
-                          litert::internal::GpuEnvironment::Create(env));
+  LITERT_ASSIGN_OR_RETURN(
+      auto gpu_env,
+      litert::internal::GpuEnvironment::Create(env->GetOptions()));
   LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
   return env;
 }

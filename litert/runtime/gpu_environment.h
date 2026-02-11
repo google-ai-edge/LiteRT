@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -24,6 +25,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/core/environment_options.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -142,11 +144,11 @@ class GpuEnvironment {
   void* GetVulkanEnvironment() { return options_.vulkan_env; }
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 
-  // Create a GpuEnvironment with the given environment.
+  // Create a GpuEnvironment with the given environment options.
   static Expected<std::unique_ptr<GpuEnvironment>> Create(
-      LiteRtEnvironmentT* environment) {
+      const LiteRtEnvironmentOptionsT& environment_options) {
     auto instance = std::make_unique<GpuEnvironment>();
-    instance->Initialize(environment);
+    instance->Initialize(environment_options);
     LITERT_LOG(LITERT_INFO, "Created LiteRT GpuEnvironment.");
     return std::move(instance);
   }
@@ -165,10 +167,15 @@ class GpuEnvironment {
   Expected<void> AddEnvironmentOptions(
       absl::Span<const LiteRtEnvOption> options);
 
+  const std::vector<LiteRtEnvOption>& GetGeneratedOptions() const {
+    return generated_options_;
+  }
+
  private:
   // Load the OpenCL device, context and command queue from the environment if
   // available. Otherwise, create the default device, context and command queue.
-  Expected<void> Initialize(LiteRtEnvironment environment);
+  Expected<void> Initialize(
+      const LiteRtEnvironmentOptionsT& environment_options);
 
 #if LITERT_HAS_OPENCL_SUPPORT
   tflite::gpu::cl::CLDevice device_;
@@ -186,6 +193,11 @@ class GpuEnvironment {
 
   GpuEnvironmentOptions options_;
   GpuEnvironmentProperties properties_;
+  // Contains GPU related LiteRtEnvOption that will be added to the LiteRT
+  // Environment after GPU environment is initialized.
+  // The values are mostly handles(pointers) to GPU resources and valid as long
+  // as the GpuEnvironment is alive.
+  std::vector<LiteRtEnvOption> generated_options_;
 };
 
 }  // namespace litert::internal

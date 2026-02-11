@@ -24,6 +24,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/environment_options.h"
 #include "litert/runtime/accelerator_registry.h"
 #include "litert/runtime/gpu_environment.h"
@@ -66,6 +67,8 @@ class LiteRtEnvironmentT {
 
   // Sets the GPU environment. The owner of the GPU environment is transferred
   // to the environment.
+  // Also updated the environment options with the generated options from the
+  // GPU environment.
   litert::Expected<void> SetGpuEnvironment(
       std::unique_ptr<litert::internal::GpuEnvironment> gpu_env) {
     if (gpu_env_) {
@@ -73,6 +76,8 @@ class LiteRtEnvironmentT {
                                 "GPU environment is already set.");
     }
     gpu_env_ = std::move(gpu_env);
+    LITERT_RETURN_IF_ERROR(AddOptions(gpu_env_->GetGeneratedOptions(),
+                                      /*overwrite=*/true));
     return {};
   }
 
