@@ -19,6 +19,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +52,58 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
                                        LiteRtModel model,
                                        LiteRtOptions compilation_options,
                                        LiteRtCompiledModel* compiled_model);
+
+// Creates a LiteRtCompiledModel from a flatbuffer file without constructing
+// a LiteRtModel IR. This is intended for CPU/GPU and NPU AOT execution.
+LiteRtStatus LiteRtCreateCompiledModelFromFileFlatbufferOnly(
+    LiteRtEnvironment environment, const char* filename,
+    LiteRtOptions compilation_options, LiteRtCompiledModel* compiled_model);
+
+// Creates a LiteRtCompiledModel from a flatbuffer buffer without constructing
+// a LiteRtModel IR. The caller must ensure the buffer remains valid for the
+// lifetime of the compiled model. Intended for CPU/GPU and NPU AOT execution.
+LiteRtStatus LiteRtCreateCompiledModelFromBufferFlatbufferOnly(
+    LiteRtEnvironment environment, const void* buffer_addr, size_t buffer_size,
+    LiteRtOptions compilation_options, LiteRtCompiledModel* compiled_model);
+
+// Returns the number of signatures in the compiled model.
+LiteRtStatus LiteRtGetCompiledModelNumSignatures(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex* num_signatures);
+
+// Returns the signature key for the given signature index.
+LiteRtStatus LiteRtGetCompiledModelSignatureKey(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char** signature_key);
+
+// Returns the number of inputs in the given signature.
+LiteRtStatus LiteRtGetCompiledModelNumSignatureInputs(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex* num_inputs);
+
+// Returns the input name for the given signature and input index.
+LiteRtStatus LiteRtGetCompiledModelSignatureInputName(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const char** input_name);
+
+// Returns the number of outputs in the given signature.
+LiteRtStatus LiteRtGetCompiledModelNumSignatureOutputs(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex* num_outputs);
+
+// Returns the output name for the given signature and output index.
+LiteRtStatus LiteRtGetCompiledModelSignatureOutputName(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex output_index, const char** output_name);
+
+// Returns the input tensor type for the given signature and input index.
+LiteRtStatus LiteRtGetCompiledModelInputTensorType(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, LiteRtRankedTensorType* tensor_type);
+
+// Returns the output tensor type for the given signature and output index.
+LiteRtStatus LiteRtGetCompiledModelOutputTensorType(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex output_index, LiteRtRankedTensorType* tensor_type);
 
 // Returns the buffer requirements for the given n-th input tensor. The returned
 // LiteRtTensorBufferRequirements is used to create the input tensor

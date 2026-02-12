@@ -42,6 +42,8 @@ EXPORTS
   LiteRtCompiledModelStopMetricsCollection
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
+  LiteRtCreateCompiledModelFromBufferFlatbufferOnly
+  LiteRtCreateCompiledModelFromFileFlatbufferOnly
   LiteRtCreateCompilerOptions
   LiteRtCreateCpuOptions
   LiteRtCreateEnvironment
@@ -94,9 +96,17 @@ EXPORTS
   LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
+  LiteRtGetCompiledModelInputTensorType
   LiteRtGetCompiledModelInputTensorLayout
+  LiteRtGetCompiledModelNumSignatureInputs
+  LiteRtGetCompiledModelNumSignatureOutputs
+  LiteRtGetCompiledModelNumSignatures
   LiteRtGetCompiledModelOutputBufferRequirements
+  LiteRtGetCompiledModelOutputTensorType
   LiteRtGetCompiledModelOutputTensorLayouts
+  LiteRtGetCompiledModelSignatureInputName
+  LiteRtGetCompiledModelSignatureKey
+  LiteRtGetCompiledModelSignatureOutputName
   LiteRtGetCompilerOptionsIdentifier
   LiteRtGetCompilerOptionsPartitionStrategy
   LiteRtGetCpuOptionsIdentifier

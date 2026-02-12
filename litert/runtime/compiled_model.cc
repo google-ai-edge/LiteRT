@@ -29,6 +29,7 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -116,6 +117,78 @@ std::optional<std::string> ExtractDirectory(absl::string_view path) {
     return std::nullopt;
   }
   return std::string(path.substr(0, last_sep));
+}
+bool HasAotBuildStamp(const tflite::FlatBufferModel& fb_model) {
+  const auto* model = fb_model.GetModel();
+  if (!model || !model->metadata() || !model->buffers()) {
+    return false;
+  }
+  const auto* metadata = model->metadata();
+  const auto* buffers = model->buffers();
+  for (size_t i = 0; i < metadata->size(); ++i) {
+    const auto* entry = metadata->Get(i);
+    if (!entry || !entry->name()) {
+      continue;
+    }
+    absl::string_view name(entry->name()->data(), entry->name()->size());
+    if (name != litert::internal::kLiteRtBuildStampKey) {
+      continue;
+    }
+    const auto buffer_index = entry->buffer();
+    if (buffer_index >= buffers->size()) {
+      return false;
+    }
+    const auto* buffer = buffers->Get(buffer_index);
+    if (!buffer || !buffer->data()) {
+      return false;
+    }
+    const auto* data = buffer->data();
+    if (data->empty()) {
+      return false;
+    }
+    litert::BufferRef<uint8_t> stamp_ref(data->data(), data->size());
+    auto parsed = litert::internal::ParseBuildStamp(stamp_ref);
+    return parsed.HasValue();
+  }
+  return false;
+}
+
+litert::Expected<LiteRtRankedTensorType> BuildRankedTensorType(
+    const TfLiteTensor* tensor) {
+  if (tensor == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Tensor is null");
+  }
+  const TfLiteIntArray* dims = tensor->dims;
+  if ((!dims || dims->size == 0) && tensor->dims_signature &&
+      tensor->dims_signature->size > 0) {
+    dims = tensor->dims_signature;
+  }
+  if (dims == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Tensor has no dimensions");
+  }
+  const int rank = dims->size;
+  if (rank > LITERT_TENSOR_MAX_RANK) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Tensor rank exceeds max supported rank");
+  }
+  LiteRtLayout layout{};
+  layout.rank = static_cast<unsigned int>(rank);
+  layout.has_strides = false;
+  for (int i = 0; i < rank; ++i) {
+    int32_t dim = dims->data[i];
+    if (tensor->dims_signature && tensor->dims_signature->size == dims->size) {
+      const int32_t sig_dim = tensor->dims_signature->data[i];
+      if (sig_dim < 0) {
+        dim = sig_dim;
+      }
+    }
+    layout.dimensions[i] = dim;
+  }
+  return LiteRtRankedTensorType{
+      /*element_type=*/static_cast<LiteRtElementType>(tensor->type),
+      /*layout=*/layout};
 }
 
 void* StubOpInit([[maybe_unused]] TfLiteContext* context,
@@ -596,45 +669,17 @@ class ScopedCompilationOptionsModifier {
 
 }  // namespace
 
-Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
-    LiteRtEnvironmentT* env, LiteRtModel model,
-    LiteRtOptions jit_compilation_options) {
-  if (!jit_compilation_options) {
-    return litert::ErrorStatusBuilder::InvalidArgument()
-           << "No compilation options passed.";
-  }
-
-  auto compiled_model = std::make_unique<LiteRtCompiledModelT>(env);
-
-  LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
-  LITERT_RETURN_IF_ERROR(LiteRtGetOptionsHardwareAccelerators(
-      jit_compilation_options, &hardware_accelerators));
-
-  if (hardware_accelerators == kLiteRtHwAcceleratorNone) {
-    return litert::ErrorStatusBuilder::InvalidArgument()
-           << "No acceleration provided.";
-  }
-
-  LITERT_RETURN_IF_ERROR(compiled_model->InitializeModel(
-      *model, hardware_accelerators, jit_compilation_options, *env));
-
-  LITERT_RETURN_IF_ERROR(compiled_model->InitializeRuntime(
-      env, hardware_accelerators, jit_compilation_options));
-  if (compiled_model->GetModelBase() == nullptr) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "Failed to initialize model memory.");
-  }
-
+Expected<void> LiteRtCompiledModelT::ApplyAccelerators(
+    LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options,
+    LiteRtHwAcceleratorSet hardware_accelerators) {
   ScopedCompilationOptionsModifier scoped_modifier(jit_compilation_options);
 
   {
     // Add information about the model allocation to the opaque chain.
     LITERT_ASSIGN_OR_RETURN(auto dispatch_options,
                             DispatchDelegateOptions::Create());
-    LITERT_RETURN_IF_ERROR(
-        dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
-    LITERT_RETURN_IF_ERROR(
-        dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
+    LITERT_RETURN_IF_ERROR(dispatch_options.SetAllocBase(GetModelBase()));
+    LITERT_RETURN_IF_ERROR(dispatch_options.SetAllocBaseFd(fb_model_fd_));
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
@@ -689,19 +734,16 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
                                     std::function<void(LiteRtDelegateWrapper)>>{
         delegate_wrapper, accelerator->DestroyDelegate};
 
-    if (compiled_model->interp_->ModifyGraphWithDelegate(delegate_ptr) !=
-        kTfLiteOk) {
+    if (interp_->ModifyGraphWithDelegate(delegate_ptr) != kTfLiteOk) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to modify graph with delegate");
     }
 
-    compiled_model->RegisterDelegate({std::move(delegate),
-                                      accelerator->StartMetricsCollection,
-                                      accelerator->StopMetricsCollection});
+    RegisterDelegate({std::move(delegate), accelerator->StartMetricsCollection,
+                      accelerator->StopMetricsCollection});
   }
 
-  LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops,
-                          compiled_model->HasNonDelegatedOps());
+  LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops, HasNonDelegatedOps());
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
       has_non_delegated_ops) {
     return Error(
@@ -709,7 +751,97 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
         "compilation accelerator set to allow using the CPU to run those.");
   }
-  compiled_model->CheckCpuTensors();
+  CheckCpuTensors();
+  return {};
+}
+
+Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
+    LiteRtEnvironmentT* env, LiteRtModel model,
+    LiteRtOptions jit_compilation_options) {
+  if (!jit_compilation_options) {
+    return litert::ErrorStatusBuilder::InvalidArgument()
+           << "No compilation options passed.";
+  }
+
+  auto compiled_model = std::make_unique<LiteRtCompiledModelT>(env);
+
+  LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOptionsHardwareAccelerators(
+      jit_compilation_options, &hardware_accelerators));
+
+  if (hardware_accelerators == kLiteRtHwAcceleratorNone) {
+    return litert::ErrorStatusBuilder::InvalidArgument()
+           << "No acceleration provided.";
+  }
+
+  LITERT_RETURN_IF_ERROR(compiled_model->InitializeModel(
+      *model, hardware_accelerators, jit_compilation_options, *env));
+
+  LITERT_RETURN_IF_ERROR(compiled_model->InitializeRuntime(
+      env, hardware_accelerators, jit_compilation_options));
+  if (compiled_model->GetModelBase() == nullptr) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to initialize model memory.");
+  }
+
+  LITERT_RETURN_IF_ERROR(compiled_model->ApplyAccelerators(
+      env, jit_compilation_options, hardware_accelerators));
+  return compiled_model;
+}
+
+Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::CreateFromFlatbuffer(
+    LiteRtEnvironmentT* env, tflite::FlatBufferModel::Ptr fb_model,
+    LiteRtOptions jit_compilation_options,
+    std::optional<std::string> model_path) {
+  if (!jit_compilation_options) {
+    return litert::ErrorStatusBuilder::InvalidArgument()
+           << "No compilation options passed.";
+  }
+  if (!fb_model) {
+    return litert::ErrorStatusBuilder::InvalidArgument()
+           << "Flatbuffer model is null.";
+  }
+
+  auto compiled_model = std::make_unique<LiteRtCompiledModelT>(env);
+
+  LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOptionsHardwareAccelerators(
+      jit_compilation_options, &hardware_accelerators));
+
+  if (hardware_accelerators == kLiteRtHwAcceleratorNone) {
+    return litert::ErrorStatusBuilder::InvalidArgument()
+           << "No acceleration provided.";
+  }
+  const bool has_aot_stamp = HasAotBuildStamp(*fb_model);
+  if (hardware_accelerators & kLiteRtHwAcceleratorNpu) {
+    if (!has_aot_stamp) {
+      return Error(
+          kLiteRtStatusErrorUnsupported,
+          "Flatbuffer-only compiled model does not support NPU JIT. "
+          "Use LiteRtModel IR for JIT compilation or provide an AOT-compiled "
+          "model with LiteRtStamp.");
+    }
+  }
+
+  compiled_model->fb_model_ = std::move(fb_model);
+  if (compiled_model->fb_model_ != nullptr) {
+    compiled_model->fb_model_fd_ =
+        GetAllocationFd(compiled_model->fb_model_->allocation());
+  }
+
+  if (model_path.has_value()) {
+    compiled_model->model_directory_ = ExtractDirectory(*model_path);
+  }
+
+  LITERT_RETURN_IF_ERROR(compiled_model->InitializeRuntime(
+      env, hardware_accelerators, jit_compilation_options));
+  if (compiled_model->GetModelBase() == nullptr) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to initialize model memory.");
+  }
+
+  LITERT_RETURN_IF_ERROR(compiled_model->ApplyAccelerators(
+      env, jit_compilation_options, hardware_accelerators));
   return compiled_model;
 }
 
@@ -985,6 +1117,136 @@ Expected<LiteRtLayout> LiteRtCompiledModelT::GetInputTensorLayout(
     layout.dimensions[i] = dims->data[i];
   }
   return layout;
+}
+
+litert::Expected<absl::string_view> LiteRtCompiledModelT::GetSignatureKey(
+    size_t signature_index) const {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  return absl::string_view(*signature_keys_[signature_index]);
+}
+
+litert::Expected<size_t> LiteRtCompiledModelT::GetSignatureIndex(
+    absl::string_view signature_key) const {
+  if (signature_key.empty()) {
+    return size_t{0};
+  }
+  for (size_t i = 0; i < signature_keys_.size(); ++i) {
+    if (*signature_keys_[i] == signature_key) {
+      return i;
+    }
+  }
+  return litert::Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+}
+
+litert::Expected<size_t> LiteRtCompiledModelT::GetNumSignatureInputs(
+    size_t signature_index) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  return runner->input_names().size();
+}
+
+litert::Expected<size_t> LiteRtCompiledModelT::GetNumSignatureOutputs(
+    size_t signature_index) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  return runner->output_names().size();
+}
+
+litert::Expected<absl::string_view> LiteRtCompiledModelT::GetSignatureInputName(
+    size_t signature_index, size_t input_index) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  const auto& input_names = runner->input_names();
+  if (input_index >= input_names.size()) {
+    return litert::Unexpected(kLiteRtStatusErrorIndexOOB,
+                              "Input index out of range");
+  }
+  return absl::string_view(input_names[input_index]);
+}
+
+litert::Expected<absl::string_view>
+LiteRtCompiledModelT::GetSignatureOutputName(size_t signature_index,
+                                             size_t output_index) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  const auto& output_names = runner->output_names();
+  if (output_index >= output_names.size()) {
+    return litert::Unexpected(kLiteRtStatusErrorIndexOOB,
+                              "Output index out of range");
+  }
+  return absl::string_view(output_names[output_index]);
+}
+
+litert::Expected<LiteRtRankedTensorType>
+LiteRtCompiledModelT::GetInputTensorType(size_t signature_index,
+                                         size_t input_index) {
+  LITERT_ASSIGN_OR_RETURN(auto input_name,
+                          GetSignatureInputName(signature_index, input_index));
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  auto* input_tensor = runner->input_tensor(input_name.data());
+  if (input_tensor == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Failed to get input tensor");
+  }
+  return BuildRankedTensorType(input_tensor);
+}
+
+litert::Expected<LiteRtRankedTensorType>
+LiteRtCompiledModelT::GetOutputTensorType(size_t signature_index,
+                                          size_t output_index) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto output_name, GetSignatureOutputName(signature_index, output_index));
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  const TfLiteTensor* output_tensor = runner->output_tensor(output_name.data());
+  if (output_tensor == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Failed to get output tensor");
+  }
+  return BuildRankedTensorType(output_tensor);
 }
 
 Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(
