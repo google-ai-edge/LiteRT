@@ -14,13 +14,13 @@
 #ifndef LITERT_OPS
 #define LITERT_OPS
 
-include "third_party/odml/litert/litert/compiler/mlir/dialects/litert/dialect.td"
-include "third_party/odml/litert/litert/compiler/mlir/dialects/litert/type_constraints.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/CommonAttrConstraints.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/OpBase.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/SymbolInterfaces.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/Interfaces/InferTypeOpInterface.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/Interfaces/SideEffectInterfaces.td"
+include "litert/compiler/mlir/dialects/litert/dialect.td"
+include "litert/compiler/mlir/dialects/litert/type_constraints.td"
+include "mlir/IR/CommonAttrConstraints.td"
+include "mlir/IR/OpBase.td"
+include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 
 
 // TODO(aarfaian): move traits to a more appropriate location

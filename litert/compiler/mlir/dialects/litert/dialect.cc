@@ -13,7 +13,6 @@
 // limitations under the License.
 #include "litert/compiler/mlir/dialects/litert/dialect.h"
 
-#include "xnnpack.h"  // from @XNNPACK
 #include "absl/log/log.h"  // from @com_google_absl
 #include "llvm/ADT/TypeSwitch.h"  // IWYU pragma: keep
 #include "mlir/Dialect/Arith/IR/Arith.h"  // IWYU pragma: keep
@@ -23,6 +22,7 @@
 #include "mlir/IR/Dialect.h"  // IWYU pragma: keep
 #include "mlir/IR/OpDefinition.h"
 #include "litert/compiler/mlir/dialects/litert/attributes.h"
+#include "litert/compiler/mlir/dialects/litert/callback_resource.h"
 #include "litert/compiler/mlir/dialects/litert/lazy_blob_manager.h"
 // clang-format off
 #include "litert/compiler/mlir/dialects/litert/dialect.cc.inc"  // IWYU pragma: keep
@@ -33,12 +33,9 @@ namespace litert {
 void LITERTDialect::initialize() {
   registerOps();
   addInterface<LazyBlobManagerDialectInterface>();
+  addInterface<CallbackResourceManagerDialectInterface>();
   registerAttributes();
   registerTypes();
-
-  if (xnn_status_success != xnn_initialize(nullptr)) {
-    LOG(ERROR) << "Failed to initialize XNNPACK";
-  }
 }
 
 }  // namespace litert
