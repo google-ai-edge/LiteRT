@@ -199,6 +199,8 @@ LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus Destroy() { return kLiteRtStatusOk; }
+
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
   *device_context = new LiteRtDispatchDeviceContextT();
   return kLiteRtStatusOk;
@@ -338,6 +340,7 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 
 LiteRtDispatchInterface ExampleInterface = {
     /*.initialize=*/Initialize,
+    /*.destroy=*/Destroy,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,
     /*.get_capabilities=*/GetCapabilities,
