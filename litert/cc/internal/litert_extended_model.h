@@ -68,13 +68,22 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
 };
 
 /// @brief A C++ wrapper for `LiteRtTensor`, representing a tensor in the model.
-class Tensor : public litert::SimpleTensor {
+class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
+               public litert::SimpleTensor {
  public:
-  explicit Tensor(LiteRtTensor tensor) : litert::SimpleTensor(tensor) {}
+  explicit Tensor(LiteRtTensor tensor);
 
-  // Allow copying Tensors (they are just handles).
-  Tensor(const Tensor& other) : litert::SimpleTensor(other.Get()) {}
+  // Allow copying Tensors.
+  Tensor(const Tensor& other)
+      : internal::NonOwnedHandle<LiteRtTensor>(other.Get()),
+        litert::SimpleTensor(other) {}
   Tensor(Tensor&&) = default;
+  Tensor& operator=(const Tensor& other) {
+    if (this != &other) {
+      *this = Tensor(other);
+    }
+    return *this;
+  }
   Tensor& operator=(Tensor&&) = default;
 
   LiteRtQuantizationTypeId QTypeId() const {
@@ -269,10 +278,10 @@ class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
 };
 
 /// @brief A C++ wrapper for `LiteRtSignature`, representing a model signature.
-class Signature : public litert::SimpleSignature {
+class Signature : public internal::NonOwnedHandle<LiteRtSignature>,
+                  public litert::SimpleSignature {
  public:
-  explicit Signature(LiteRtSignature signature)
-      : litert::SimpleSignature(signature) {}
+  explicit Signature(LiteRtSignature signature);
 
   LiteRtSubgraph Subgraph() const {
     LiteRtSubgraph subgraph;
@@ -361,19 +370,7 @@ class ExtendedModel : public litert::Model {
     return litert::Subgraph(subgraph);
   }
 
-  Expected<class Subgraph> Subgraph(absl::string_view signature_key) const {
-    auto signature = FindSignature(signature_key);
-    if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
-    }
-    LiteRtSubgraph subgraph;
-    if (LiteRtGetSignatureSubgraph(signature->Get(), &subgraph) !=
-        kLiteRtStatusOk) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Subgraph not found");
-    }
-
-    return litert::Subgraph(subgraph);
-  }
+  Expected<class Subgraph> Subgraph(absl::string_view signature_key) const;
 
   /// @brief Returns the list of signatures defined in the model.
   Expected<std::vector<Signature>> GetSignatures() const {

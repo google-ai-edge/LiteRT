@@ -635,6 +635,7 @@ cc_library(
         "//litert/cc:__subpackages__",
     ],
     deps = [
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_c_api",
     ],
