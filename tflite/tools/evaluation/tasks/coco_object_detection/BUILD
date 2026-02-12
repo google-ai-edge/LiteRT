@@ -1,4 +1,4 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary")
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_binary.bzl", "py_binary")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:build_def.bzl", "tflite_copts")
@@ -12,9 +12,10 @@ package(
     licenses = ["notice"],
 )
 
-py_strict_binary(
+py_binary(
     name = "preprocess_coco_minival",
     srcs = ["preprocess_coco_minival.py"],
+    strict_deps = True,
     visibility = ["//visibility:public"],
     deps = [
         "//tflite/tools/evaluation/proto:evaluation_stages_py",

@@ -1,5 +1,5 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_test.bzl", "py_test")
 
 pybind_extension(
     name = "register_list_ops_py",
@@ -16,9 +16,10 @@ pybind_extension(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "end_to_end_test",
     srcs = ["end_to_end_test.py"],
+    strict_deps = True,
     tags = ["nochromiumos_arm"],
     deps = [
         ":register_list_ops_py",
