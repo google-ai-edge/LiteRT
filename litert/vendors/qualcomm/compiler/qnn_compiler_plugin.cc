@@ -461,6 +461,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             break;
           }
         }
+      } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
+        if (options.GetGpuPerformanceMode() !=
+            ::qnn::GpuPerformanceMode::kDefault) {
+          context_configs = QnnManager::GpuPerformanceContextConfigs(
+              options.GetGpuPerformanceMode());
+          LITERT_LOG(LITERT_INFO, "Enable GPU performance mode: %d",
+                     static_cast<int>(options.GetGpuPerformanceMode()));
+        }
       }
       auto context_handle = qnn_manager->CreateContextHandle(
           context_configs, options.GetProfiling());

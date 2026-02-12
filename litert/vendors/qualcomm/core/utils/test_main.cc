@@ -29,6 +29,8 @@ bool ParseArgs(int argc, char** argv) {
         qnn::SetTestBackend(qnn::BackendType::kHtpBackend);
       } else if (backend_str == "dsp") {
         qnn::SetTestBackend(qnn::BackendType::kDspBackend);
+      } else if (backend_str == "gpu") {
+        qnn::SetTestBackend(qnn::BackendType::kGpuBackend);
       } else {
         std::cerr << "Unknown backend: " << backend_str << std::endl;
         return false;
