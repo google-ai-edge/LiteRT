@@ -384,8 +384,7 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   }
 
   // Backend Handle
-  std::vector<const QnnBackend_Config_t*> backend_configs;
-  backend_configs.emplace_back(nullptr);
+  std::array<const QnnBackend_Config_t*, 1> backend_configs = {nullptr};
 
   auto local_backend_handle = CreateBackendHandle(
       local_log_handle.get(), absl::MakeSpan(backend_configs));

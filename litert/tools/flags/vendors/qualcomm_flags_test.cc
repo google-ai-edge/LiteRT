@@ -516,6 +516,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetHtpPPoint(), 0);
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kDefault);
+  EXPECT_EQ(options.Value().GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kDefault);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);

@@ -272,6 +272,37 @@ TEST(QnnOptionTest, SetCustomOpPackage) {
   EXPECT_EQ(package.target, target);
 }
 
+TEST(QnnOptionTest, SetGpuPrecision) {
+  Options options;
+  options.SetGpuPrecision(GpuPrecision::kHybrid);
+  EXPECT_NE(options.GetGpuPrecision(), GpuPrecision::kFp16);
+  EXPECT_EQ(options.GetGpuPrecision(), GpuPrecision::kHybrid);
+  options.SetGpuPrecision(GpuPrecision::kFp16);
+  EXPECT_EQ(options.GetGpuPrecision(), GpuPrecision::kFp16);
+}
+
+TEST(QnnOptionTest, SetGpuPerformanceMode) {
+  Options options;
+  options.SetGpuPerformanceMode(GpuPerformanceMode::kHigh);
+  EXPECT_NE(options.GetGpuPerformanceMode(), GpuPerformanceMode::kDefault);
+  EXPECT_EQ(options.GetGpuPerformanceMode(), GpuPerformanceMode::kHigh);
+  options.SetGpuPerformanceMode(GpuPerformanceMode::kDefault);
+  EXPECT_EQ(options.GetGpuPerformanceMode(), GpuPerformanceMode::kDefault);
+}
+
+TEST(QnnOptionTest, SetGraphIOTensorMemType) {
+  Options options;
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
+
+  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kRaw);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(), GraphIOTensorMemType::kRaw);
+
+  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kMemHandle);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -299,19 +330,8 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(custom_op_package.compile_package_path.empty());
   EXPECT_TRUE(custom_op_package.dispatch_package_path.empty());
   EXPECT_TRUE(custom_op_package.target.empty());
-}
-
-TEST(QnnOptionTest, SetGraphIOTensorMemType) {
-  Options options;
-  EXPECT_EQ(options.GetGraphIOTensorMemType(),
-            GraphIOTensorMemType::kMemHandle);
-
-  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kRaw);
-  EXPECT_EQ(options.GetGraphIOTensorMemType(), GraphIOTensorMemType::kRaw);
-
-  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kMemHandle);
-  EXPECT_EQ(options.GetGraphIOTensorMemType(),
-            GraphIOTensorMemType::kMemHandle);
+  EXPECT_EQ(options.GetGpuPrecision(), GpuPrecision::kFp16);
+  EXPECT_EQ(options.GetGpuPerformanceMode(), GpuPerformanceMode::kHigh);
 }
 
 }  // namespace
