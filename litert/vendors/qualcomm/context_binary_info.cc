@@ -21,6 +21,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
@@ -197,6 +198,33 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   if (!binary_info) {
     LITERT_LOG(LITERT_ERROR, "Null binary info", "");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Null binary info");
+  }
+
+  // Compare the context binary's version against the current SDK version.
+  SdkVersion binary_version;
+  LITERT_ASSIGN_OR_RETURN(
+      binary_version,
+      QnnManager::ParseSdkVersion(binary_info->contextBinaryInfoV1.buildId));
+  const auto sdk_version = qnn.GetSdkVersion();
+  if (binary_version > sdk_version) {
+    LITERT_LOG(LITERT_ERROR,
+               "Context binary (%d.%d.%d) is newer than the current SDK "
+               "(%d.%d.%d). Please update your SDK.",
+               binary_version.major, binary_version.minor, binary_version.patch,
+               sdk_version.major, sdk_version.minor, sdk_version.patch);
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Context binary isn't compatible with the current SDK.");
+  } else if (binary_version < sdk_version) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Context binary (%d.%d.%d) is older than the current SDK (%d.%d.%d). "
+        "Consider regenerating it for optimal performance and compatibility.",
+        binary_version.major, binary_version.minor, binary_version.patch,
+        sdk_version.major, sdk_version.minor, sdk_version.patch);
+  } else {
+    LITERT_LOG(
+        LITERT_INFO, "Context binary SDK version matches current SDK: %d.%d.%d",
+        binary_version.major, binary_version.minor, binary_version.patch);
   }
 
   ContextBinaryInfo info;
