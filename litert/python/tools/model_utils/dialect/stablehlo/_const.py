@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC.
+# Copyright 2026 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,8 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""StableHLO dialect definitions."""
+"""stablehlo.constant operation definition."""
 
-# pylint: disable=redefined-builtin
-from ._composite import *
-from ._const import *
+from litert.python.tools.model_utils import core
+from litert.python.tools.model_utils.dialect import arith
+
+ConstantOp = arith.ConstantOp
+
+
+# Overload arith.constant to be stablehlo.constant
+core.register_mlir_transform("stablehlo.constant")(arith.ConstantOp)
+
+
+def constant(*args, **kwargs):
+  return arith.constant(*args, **kwargs)
