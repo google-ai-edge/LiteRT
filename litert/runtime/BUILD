@@ -639,6 +639,8 @@ cc_test(
         "//litert/cc/options:litert_runtime_options",
         "//litert/core:options",
         "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "//litert/runtime/dispatch:dispatch_opaque_options",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",

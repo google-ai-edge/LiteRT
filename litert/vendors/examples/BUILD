@@ -50,6 +50,7 @@ litert_dynamic_lib(
     name = "example_dispatch_lib",
     srcs = [
         "example_dispatch.cc",
+        "example_dispatch_context.h",
     ],
     hdrs = ["//litert/vendors/c:litert_dispatch.h"],
     export_litert_only = True,
@@ -122,7 +123,10 @@ litert_lib(
 
 litert_bin(
     name = "LiteRtDispatch",
-    srcs = ["example_dispatch.cc"],
+    srcs = [
+        "example_dispatch.cc",
+        "example_dispatch_context.h",
+    ],
     copts = select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
@@ -171,7 +175,11 @@ cc_test(
     srcs = [
         "example_plugin_test.cc",
     ],
-    data = ["//litert/test:mlir_test_data"],
+    data = [
+        ":libLiteRtCompilerPlugin_Example.so",
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
     # TODO: b/448411540 - Re-enable sans for this test once test helpers support tests w/o dlopen
     # that depend on dynamic runtime libraries.
     tags = [
@@ -182,13 +190,14 @@ cc_test(
     ],
     deps = [
         ":example_plugin",  # buildcleaner: keep
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -227,6 +236,7 @@ cc_library(
     name = "example_dispatch",
     testonly = True,
     srcs = ["example_dispatch.cc"],
+    hdrs = ["example_dispatch_context.h"],
     deps = [
         ":example_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -234,7 +244,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",
@@ -251,6 +260,7 @@ cc_test(
     deps = [
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
@@ -271,6 +281,7 @@ cc_test(
         ":example_dispatch_so",
         ":libLiteRtCompilerPlugin_Example.so",
         "//litert/test:mlir_test_data",
+        "//litert/test:testdata",
     ],
     # This test dlopens, so sanitzers are prone to false positive.
     tags = [
@@ -280,10 +291,11 @@ cc_test(
         "notsan",
     ],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc/dynamic_runtime:litert_compiled_model",
-        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/options:litert_compiler_options",
+        "//litert/compiler/plugin:compiler_plugin",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",

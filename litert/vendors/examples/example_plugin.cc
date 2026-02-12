@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -24,6 +25,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
@@ -42,6 +45,7 @@ constexpr char kExamplePluginVersion[] = "1";
 // Plugins can hold state.
 struct LiteRtCompilerPluginT {
   std::vector<LiteRtTransformation> transformations;
+  std::vector<std::string> supported_custom_ops;
 };
 
 LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
@@ -161,6 +165,29 @@ LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
   *compiler_plugin = new LiteRtCompilerPluginT;
+
+  if (options) {
+    LiteRtOpaqueOptions opaque_options;
+    if (LiteRtGetOpaqueOptions(options, &opaque_options) == kLiteRtStatusOk) {
+      LiteRtCompilerOptions compiler_options;
+      if (LiteRtFindCompilerOptions(opaque_options, &compiler_options) ==
+          kLiteRtStatusOk) {
+        LiteRtParamIndex num_custom_ops;
+        if (LiteRtGetCompilerOptionsNumCustomOpInfo(
+                compiler_options, &num_custom_ops) == kLiteRtStatusOk) {
+          for (LiteRtParamIndex i = 0; i < num_custom_ops; ++i) {
+            const char* name;
+            const char* path;
+            if (LiteRtGetCompilerOptionsCustomOpInfo(
+                    compiler_options, i, &name, &path) == kLiteRtStatusOk) {
+              (*compiler_plugin)->supported_custom_ops.push_back(name);
+            }
+          }
+        }
+      }
+    }
+  }
+
   return kLiteRtStatusOk;
 }
 
@@ -198,6 +225,17 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       if (opts->name == "odml.rms_norm") {
         LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
       }
+    } else if (op.Code() == kLiteRtOpCodeTflCustom) {
+      const char* custom_code = nullptr;
+      if (LiteRtGetCustomCode(op.Get(), &custom_code) == kLiteRtStatusOk &&
+          custom_code) {
+        for (const auto& supported_op : compiler_plugin->supported_custom_ops) {
+          if (supported_op == custom_code) {
+            LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+            break;
+          }
+        }
+      }
     }
   }
   return kLiteRtStatusOk;
@@ -214,6 +252,8 @@ Expected<OpCode> ConvertOpCode(LiteRtOpCode code) {
       return OpCode::kSub;
     case kLiteRtOpCodeShloComposite:
       return OpCode::kRmsNorm;
+    case kLiteRtOpCodeTflCustom:
+      return OpCode::kCustom;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op code: %d", code);
       return Error(kLiteRtStatusErrorUnsupported);

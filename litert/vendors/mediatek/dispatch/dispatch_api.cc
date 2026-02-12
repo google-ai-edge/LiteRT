@@ -338,6 +338,7 @@ LiteRtDispatchInterface TheInterface = {
     .get_metric = nullptr,
     .destroy_metrics = nullptr,
     .check_runtime_compatibility = litert::mediatek::CheckRuntimeCompatibility,
+    .register_asset = nullptr,
 };
 
 LiteRtDispatchApi TheApi = {

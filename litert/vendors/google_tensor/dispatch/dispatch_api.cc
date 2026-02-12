@@ -451,6 +451,7 @@ LiteRtDispatchInterface TheInterface = {
     .destroy_metrics = litert::google_tensor::DestroyMetrics,
     .check_runtime_compatibility =
         litert::google_tensor::CheckRuntimeCompatibility,
+    .register_asset = nullptr,
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {

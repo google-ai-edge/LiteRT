@@ -61,6 +61,10 @@ typedef LiteRtStatus (*LiteRtDispatchUnregisterTensorBufferT)(
     LiteRtDispatchDeviceContext device_context,
     LiteRtTensorBufferHandle handle);
 
+typedef LiteRtStatus (*LiteRtDispatchRegisterAssetT)(
+    LiteRtDispatchDeviceContext device_context, const char* asset_name,
+    const LiteRtMemBuffer* asset_buffer);
+
 typedef LiteRtStatus (*LiteRtDispatchInvocationContextCreateT)(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
@@ -135,6 +139,7 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchGetMetricT get_metric;
   LiteRtDispatchDestroyMetricsT destroy_metrics;
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
+  LiteRtDispatchRegisterAssetT register_asset;
 } LiteRtDispatchInterface;
 
 // /////////////////////////////////////////////////////////////////////////////

@@ -16,6 +16,8 @@
 
 #include "litert/cc/options/litert_compiler_options.h"
 
+#include <string>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -75,6 +77,15 @@ Expected<bool> CompilerOptions::GetDummyOption() const {
   LITERT_RETURN_IF_ERROR(
       LiteRtGetDummyCompilerOptions(compiler_options, &dummy_option));
   return dummy_option;
+}
+
+Expected<void> CompilerOptions::AddCustomOpInfo(
+    const std::string& custom_op_name, const std::string& custom_op_lib_path) {
+  LiteRtCompilerOptions compiler_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
+  LITERT_RETURN_IF_ERROR(LiteRtAddCompilerOptionCustomOpInfo(
+      compiler_options, custom_op_name.c_str(), custom_op_lib_path.c_str()));
+  return {};
 }
 
 }  // namespace litert

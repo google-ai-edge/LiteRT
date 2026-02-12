@@ -35,45 +35,12 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
+#include "litert/vendors/examples/example_dispatch_context.h"
 
 namespace {
-using Buffer = ::litert::example::Data;
-using BufferHandle = Buffer*;
+using Buffer = LiteRtDispatchDeviceContextT::Buffer;
+using BufferHandle = LiteRtDispatchDeviceContextT::BufferHandle;
 }  // namespace
-
-class LiteRtDispatchDeviceContextT {
- public:
-  LiteRtDispatchDeviceContextT() = default;
-  ~LiteRtDispatchDeviceContextT() = default;
-
-  ::litert::Expected<BufferHandle> RegisterBuffer(LiteRtTensorBuffer b) {
-    auto* handle = &buffers_.emplace_back();
-    registered_buffers_[handle] = b;
-    return handle;
-  }
-
-  ::litert::Expected<void> UnregisterBuffer(BufferHandle handle) {
-    registered_buffers_.erase(handle);
-    for (auto it = buffers_.begin(); it != buffers_.end(); ++it) {
-      if (&*it == handle) {
-        buffers_.erase(it);
-        break;
-      }
-    }
-    return {};
-  }
-
-  ::litert::TensorBuffer Lookup(BufferHandle handle) {
-    return ::litert::TensorBuffer::WrapCObject(registered_buffers_[handle],
-                                               ::litert::OwnHandle::kNo);
-  }
-
- private:
-  using RegistredBuffers =
-      absl::flat_hash_map<BufferHandle, LiteRtTensorBuffer>;
-  std::list<Buffer> buffers_;
-  RegistredBuffers registered_buffers_;
-};
 
 class LiteRtDispatchInvocationContextT {
  public:
@@ -97,7 +64,7 @@ class LiteRtDispatchInvocationContextT {
 
     if (example_graph.version() != "1") {
       return litert::Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
-                             "Bytecode version is not compatible");
+                           "Bytecode version is not compatible");
     }
 
     return Ptr(new LiteRtDispatchInvocationContextT(
@@ -257,6 +224,21 @@ LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus RegisterAsset(LiteRtDispatchDeviceContext device_context,
+                           const char* asset_name,
+                           const LiteRtMemBuffer* asset_buffer) {
+  if (device_context == nullptr || asset_name == nullptr ||
+      asset_buffer == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // read asset_buufer as string and set it in device context.
+  device_context->SetCustomOpAsset(
+      absl::string_view(reinterpret_cast<const char*>(asset_buffer->base_addr),
+                        asset_buffer->size));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus InvocationContextCreate(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
@@ -360,6 +342,7 @@ LiteRtDispatchInterface ExampleInterface = {
     /*.get_metric=*/nullptr,
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
+    /*.register_asset=*/RegisterAsset,
 };
 
 LiteRtDispatchApi ExampleApi = {

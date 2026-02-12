@@ -67,6 +67,17 @@ LiteRtStatus LiteRtSetDummyCompilerOptions(LiteRtCompilerOptions options,
 LiteRtStatus LiteRtGetDummyCompilerOptions(LiteRtCompilerOptionsConst options,
                                            bool* dummy_option);
 
+LiteRtStatus LiteRtAddCompilerOptionCustomOpInfo(
+    LiteRtCompilerOptions options, const char* custom_op_name,
+    const char* custom_op_lib_path);
+
+LiteRtStatus LiteRtGetCompilerOptionsNumCustomOpInfo(
+    LiteRtCompilerOptionsConst options, LiteRtParamIndex* num_custom_ops);
+
+LiteRtStatus LiteRtGetCompilerOptionsCustomOpInfo(
+    LiteRtCompilerOptionsConst options, LiteRtParamIndex index,
+    const char** custom_op_name, const char** custom_op_lib_path);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

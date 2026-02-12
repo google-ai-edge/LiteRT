@@ -71,6 +71,7 @@ filegroup(
     srcs = glob([
         "testdata/*.tflite",
         "testdata/*.bin",
+        "testdata/*.so",
     ]) + [":mlir_test_data"],
 )
 

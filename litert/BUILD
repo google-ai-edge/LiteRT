@@ -79,6 +79,7 @@ package_group(
         "//litert/core/model/...",
         "//litert/test/...",
         "//litert/tools/...",
+        "//litert/vendors/examples/...",
     ] + litert_cc_users() + litert_friends(),
 )
 

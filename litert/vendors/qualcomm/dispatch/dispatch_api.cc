@@ -350,6 +350,7 @@ LiteRtDispatchInterface TheInterface = {
     /*.get_metric=*/nullptr,
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
+    /*.register_asset=*/nullptr,
 };
 
 LiteRtDispatchApi TheApi = {

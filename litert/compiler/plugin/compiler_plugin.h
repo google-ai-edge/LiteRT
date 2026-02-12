@@ -81,6 +81,11 @@ class CompiledResult {
 
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
+  friend Expected<void> ApplyPlugin(
+      CompilerPlugin& compiler_plugin, LiteRtModelT& model,
+      absl::string_view soc_model,
+      const absl::flat_hash_set<uint32_t>& subgraphs_to_partition);
+
  public:
   friend class CompilerPluginFriend;
   // Get the number of transformations registered by the plugin.
@@ -182,6 +187,11 @@ class CompilerPlugin {
 
   CompiledResult MakeResult() const { return CompiledResult(plugin_api_); }
 };
+
+// Loads custom op assets from compiler options and pushes them to the model
+// metadata.
+Expected<void> LoadCustomOpAssets(const LiteRtCompilerOptions& opts,
+                                  LiteRtModelT& model);
 
 // Higher level functions for applying plugin to graph.
 //===---------------------------------------------------------------------------

@@ -171,6 +171,12 @@ typedef struct LiteRtModelSerializationOptions {
   size_t bytecode_alignment;
 } LiteRtModelSerializationOptions;
 
+typedef struct LiteRtMemBuffer {
+  int fd;  // File descriptor for an mmapped buffer, -1 if unused.
+  const void* base_addr;  // Base address of the buffer.
+  size_t offset;          // Offset of the buffer from the base address.
+  size_t size;            // Buffer size.
+} LiteRtMemBuffer;
 
 #ifdef __cplusplus
 }

@@ -200,6 +200,8 @@ Expected<std::vector<Data>> Execute(const ExampleGraph& graph,
   auto binary = [](float lhs, float rhs, float& result, OpCode code) {
     if (code == OpCode::kMul) {
       result = lhs * rhs;
+    } else if (code == OpCode::kCustom) {
+      result = lhs;
     } else {
       result = lhs - rhs;
     }

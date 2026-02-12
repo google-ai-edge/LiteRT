@@ -16,6 +16,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
@@ -26,6 +29,7 @@ struct LiteRtCompilerOptionsT {
   LiteRtCompilerOptionsPartitionStrategy partition_strategy =
       kLiteRtCompilerOptionsPartitionStrategyDefault;
   bool dummy_option = false;
+  std::vector<std::pair<std::string, std::string>> custom_op_info;
 };
 
 LiteRtStatus LiteRtCreateCompilerOptions(LiteRtOpaqueOptions* options) {
@@ -45,6 +49,10 @@ LiteRtStatus LiteRtCreateCompilerOptions(LiteRtOpaqueOptions* options) {
         reinterpret_cast<const LiteRtCompilerOptionsT*>(payload);
     uint64_t ans = 0;
     litert::HashCombine(ans, options->dummy_option);
+    for (const auto& info : options->custom_op_info) {
+      litert::HashCombine(ans, info.first);
+      litert::HashCombine(ans, info.second);
+    }
     return ans;
   };
   LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, compiler_hash));
@@ -103,5 +111,40 @@ LiteRtStatus LiteRtGetDummyCompilerOptions(LiteRtCompilerOptionsConst options,
     return kLiteRtStatusErrorInvalidArgument;
   }
   *dummy_option = options->dummy_option;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddCompilerOptionCustomOpInfo(
+    LiteRtCompilerOptions options, const char* custom_op_name,
+    const char* custom_op_lib_path) {
+  if (options == nullptr || custom_op_name == nullptr ||
+      custom_op_lib_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->custom_op_info.push_back({custom_op_name, custom_op_lib_path});
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerOptionsNumCustomOpInfo(
+    LiteRtCompilerOptionsConst options, LiteRtParamIndex* num_custom_ops) {
+  if (options == nullptr || num_custom_ops == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_custom_ops = options->custom_op_info.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerOptionsCustomOpInfo(
+    LiteRtCompilerOptionsConst options, LiteRtParamIndex index,
+    const char** custom_op_name, const char** custom_op_lib_path) {
+  if (options == nullptr || custom_op_name == nullptr ||
+      custom_op_lib_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (index >= options->custom_op_info.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *custom_op_name = options->custom_op_info[index].first.c_str();
+  *custom_op_lib_path = options->custom_op_info[index].second.c_str();
   return kLiteRtStatusOk;
 }

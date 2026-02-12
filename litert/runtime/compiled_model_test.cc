@@ -15,6 +15,7 @@
 #include "litert/runtime/compiled_model.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -31,6 +32,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -46,7 +48,9 @@
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/model_serialize.h"
 #include "litert/core/options.h"
+#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
@@ -1305,6 +1309,67 @@ TEST(CompiledModelTest, CheckResizeFail) {
 
   LiteRtDestroyOptions(jit_compilation_options);
   LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, ApplyCustomOpAssets) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel from file.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Add custom op asset metadata.
+  std::string asset_data = "asset_content";
+  // The key must start with "litert_npu_asset_".
+  ASSERT_EQ(
+      model->PushMetadata("litert_npu_asset_test_asset",
+                          reinterpret_cast<const uint8_t*>(asset_data.data()),
+                          asset_data.size()),
+      kLiteRtStatusOk);
+
+  // Serialize the model to update the flatbuffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto serialized_buf, litert::internal::SerializeModel(std::move(*model)));
+
+  // Create a new LiteRtModel from the serialized buffer.
+  LiteRtModel new_model;
+  ASSERT_EQ(LiteRtCreateModelFromBuffer(serialized_buf.Data(),
+                                        serialized_buf.Size(), &new_model),
+            kLiteRtStatusOk);
+
+  // Create CompiledModel with the new model.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtCompiledModelT::Ptr compiled_model,
+                              LiteRtCompiledModelT::Create(
+                                  env_ptr, new_model, jit_compilation_options));
+
+  // Apply custom op assets and verify.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto dispatch_options,
+      litert::internal::DispatchDelegateOptions::Create());
+  LITERT_ASSERT_OK(ApplyCustomOpAssets(compiled_model.get(), dispatch_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto assets,
+                              dispatch_options.GetCustomOpAssets());
+  ASSERT_EQ(assets->size(), 1);
+  EXPECT_EQ(assets->at(0).first, "test_asset");
+  EXPECT_EQ(
+      std::string(reinterpret_cast<const char*>(assets->at(0).second.base_addr),
+                  assets->at(0).second.size),
+      asset_data);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyModel(new_model);
   LiteRtDestroyEnvironment(env_ptr);
 }
 

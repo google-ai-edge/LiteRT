@@ -25,11 +25,15 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/core/build_stamp.h"
 #include "litert/runtime/dispatch/dispatch_delegate_kernel.h"
+#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_opaque.h"
@@ -210,6 +214,24 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   }
 
   LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(&device_context_));
+
+  LiteRtOpaqueOptions opaque_options_handle;
+  if (LiteRtGetOpaqueOptions(options_, &opaque_options_handle) ==
+      kLiteRtStatusOk) {
+    auto opaque_options = litert::OpaqueOptions::WrapCObject(
+        opaque_options_handle, litert::OwnHandle::kNo);
+    auto dispatch_options_expected =
+        litert::internal::DispatchDelegateOptions::Create(opaque_options);
+    if (dispatch_options_expected) {
+      auto assets_expected = dispatch_options_expected->GetCustomOpAssets();
+      if (assets_expected) {
+        for (const auto& [name, buffer] : **assets_expected) {
+          LITERT_RETURN_IF_ERROR(LiteRtDispatchRegisterAsset(
+              device_context_, name.c_str(), &buffer));
+        }
+      }
+    }
+  }
 
   return {};
 }

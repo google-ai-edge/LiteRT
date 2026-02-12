@@ -15,8 +15,13 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 
+#include <map>
+#include <string>
+#include <vector>
+
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/vendors/c/litert_dispatch.h"
 
 namespace litert::internal {
 
@@ -47,7 +52,7 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // alloc_base_fd -------------------------------------------------------------
 
-  // Alloc base fd is simiilar to alloc base but it is a file descriptor to
+  // Alloc base fd is similar to alloc base but it is a file descriptor to
   // assets stored externally.
 
   // Set alloc base fd.
@@ -55,6 +60,16 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+  // custom_op_assets ----------------------------------------------------------
+
+  // Add a custom op asset.
+  Expected<void> AddCustomOpAsset(const std::string& name,
+                                  const LiteRtMemBuffer& asset);
+
+  // Get custom op assets.
+  Expected<const std::vector<std::pair<std::string, LiteRtMemBuffer>>*>
+  GetCustomOpAssets();
 };
 
 }  // namespace litert::internal

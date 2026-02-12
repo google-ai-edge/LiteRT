@@ -113,5 +113,44 @@ TEST(LiteRtCompilerOptionsTest, Hash) {
   LiteRtDestroyOpaqueOptions(options1);
   LiteRtDestroyOpaqueOptions(options2);
 }
+
+TEST(LiteRtCompilerOptionsTest, CustomOpInfo) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
+  LiteRtCompilerOptions compiler_options;
+  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
+
+  LiteRtParamIndex num_custom_ops;
+  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsNumCustomOpInfo(compiler_options,
+                                                           &num_custom_ops));
+  EXPECT_EQ(num_custom_ops, 0);
+
+  LITERT_ASSERT_OK(
+      LiteRtAddCompilerOptionCustomOpInfo(compiler_options, "op1", "path1"));
+  LITERT_ASSERT_OK(
+      LiteRtAddCompilerOptionCustomOpInfo(compiler_options, "op2", "path2"));
+
+  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsNumCustomOpInfo(compiler_options,
+                                                           &num_custom_ops));
+  EXPECT_EQ(num_custom_ops, 2);
+
+  const char* name;
+  const char* path;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerOptionsCustomOpInfo(compiler_options, 0, &name, &path));
+  EXPECT_STREQ(name, "op1");
+  EXPECT_STREQ(path, "path1");
+
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerOptionsCustomOpInfo(compiler_options, 1, &name, &path));
+  EXPECT_STREQ(name, "op2");
+  EXPECT_STREQ(path, "path2");
+
+  EXPECT_EQ(
+      LiteRtGetCompilerOptionsCustomOpInfo(compiler_options, 2, &name, &path),
+      kLiteRtStatusErrorIndexOOB);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
 }  // namespace
 }  // namespace litert::compiler
