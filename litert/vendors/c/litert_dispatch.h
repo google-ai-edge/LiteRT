@@ -149,6 +149,16 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreate(
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextDestroy(
     LiteRtDispatchInvocationContext invocation_context);
 
+// Provides per-invocation options to the runtime associated with a
+// `LiteRtDispatchInvocationContext`.
+//
+// `options` is optional and may be null. The dispatch runtime may ignore some
+// or all options, or return an error if it cannot apply them for the next
+// invocation. If the loaded dispatch runtime does not implement this hook,
+// LiteRT returns `kLiteRtStatusErrorUnsupported`.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options);
+
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle);

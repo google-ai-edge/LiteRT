@@ -154,7 +154,8 @@ class LiteRtCompiledModelT {
   litert::Expected<void> Run(
       absl::string_view signature_key,
       const std::vector<LiteRtTensorBuffer>& input_buffers,
-      const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async);
+      const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async,
+      LiteRtOptions run_options = nullptr);
 
   // The same as Run() for C API.
   litert::Expected<void> RunCApi(size_t signature_index,
@@ -162,7 +163,8 @@ class LiteRtCompiledModelT {
                                  const LiteRtTensorBuffer* input_buffers,
                                  size_t num_output_buffers,
                                  const LiteRtTensorBuffer* output_buffers,
-                                 bool* async);
+                                 bool* async,
+                                 LiteRtOptions run_options = nullptr);
 
   litert::Expected<void> StartMetricsCollection(int detail_level);
 
