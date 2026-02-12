@@ -52,7 +52,6 @@
 #include "litert/compiler/mlir/dialects/litert/dialect.h"
 #include "litert/compiler/mlir/dialects/litert/traits.h"
 #include "litert/compiler/mlir/dialects/litert/types.h"
-#include "litert/compiler/xnn_runner.h"
 
 #define GET_OP_CLASSES
 #include "litert/compiler/mlir/dialects/litert/ops.cc.inc"  // IWYU pragma: keep
@@ -283,12 +282,12 @@ llvm::LogicalResult GetDimensionSizeOp::inferReturnTypes(
 //===----------------------------------------------------------------------===//
 
 template <typename T>
-  requires std::is_same_v<T, mlir::RankedTensorType> ||
-           std::is_same_v<T, SymTensorType>
 static llvm::LogicalResult TransposeOpInferReturnTypes(
     std::optional<mlir::Location> loc, T ranked_type,
     const std::vector<int64_t>& permutation,
     llvm::SmallVectorImpl<mlir::Type>& inferred_return_types) {
+  static_assert(std::is_same_v<T, mlir::RankedTensorType> ||
+                std::is_same_v<T, SymTensorType>);
   int64_t rank = ranked_type.getRank();
   if (static_cast<int64_t>(permutation.size()) != rank) {
     return mlir::emitOptionalError(loc, "TransposeOp operand rank ", rank,
@@ -388,44 +387,7 @@ llvm::LogicalResult AddOp::inferReturnTypes(
   return mlir::success();
 }
 
-mlir::OpFoldResult AddFoldLazyDense(LazyDenseElementsAttr lhs,
-                                    LazyDenseElementsAttr rhs,
-                                    mlir::Type type) {
-  auto shaped_type = mlir::dyn_cast<mlir::ShapedType>(type);
-  std::vector<size_t> shape;
-  for (auto dim : shaped_type.getShape()) {
-    shape.push_back(dim);
-  }
-
-  auto lhs_data_handle = lhs.GetDataHandle();
-  auto lhs_data = lhs_data_handle.GetDataAs<float>();
-
-  auto rhs_data_handle = rhs.GetDataHandle();
-  auto rhs_data = rhs_data_handle.GetDataAs<float>();
-  std::vector<float> result(rhs_data.size());
-
-  auto xnn_runner_or = XnnRunner::Create();
-  if (!xnn_runner_or.ok()) {
-    LOG(FATAL) << "Couldn't create XnnRunner";
-  }
-  auto xnn_runner = *std::move(xnn_runner_or);
-  if (auto status = xnn_runner.BinaryAdd(shape, lhs_data, shape, rhs_data,
-                                         shape, &result);
-      !status.ok()) {
-    LOG(FATAL) << "Couldn't run XnnRunner";
-  }
-
-  return LazyDenseElementsAttr::get<float>(shaped_type, result);
-}
-
 mlir::OpFoldResult AddOp::fold(FoldAdaptor adaptor) {
-  auto lhs_ld = mlir::dyn_cast_or_null<LazyDenseElementsAttr>(adaptor.getLhs());
-  auto rhs_ld = mlir::dyn_cast_or_null<LazyDenseElementsAttr>(adaptor.getRhs());
-
-  if (lhs_ld && rhs_ld) {
-    return AddFoldLazyDense(lhs_ld, rhs_ld, getType());
-  }
-
   auto is_zero = [](mlir::Attribute a) {
     return matchPattern(a, mlir::m_Zero()) ||
            matchPattern(a, mlir::m_AnyZeroFloat());

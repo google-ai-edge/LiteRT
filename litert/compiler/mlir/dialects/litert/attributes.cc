@@ -17,7 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <format>
+#include <cstdio>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,9 +35,9 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Types.h"
 #include "mlir/Support/LLVM.h"
+#include "litert/compiler/mlir/dialects/litert/callback_resource.h"
 #include "litert/compiler/mlir/dialects/litert/dialect.h"
 #include "litert/compiler/mlir/dialects/litert/lazy_resource_blob.h"
-#include "litert/compiler/mlir/dialects/litert/py_blob.h"
 #include "litert/compiler/mlir/dialects/litert/tensor_parser.h"
 #include "litert/compiler/mlir/dialects/litert/tensor_printer.h"
 
@@ -50,26 +51,24 @@ namespace details {
 std::string GenerateUUID() {
   uint8_t b[16];
 
-  // Fill the buffer with OS-level random entropy
+  // Fill buffer with OS-level entropy
   if (auto EC = llvm::getRandomBytes(b, 16)) {
-    // Fallback or error handling: in most LLVM tools,
-    // high-level errors are handled via llvm::report_fatal_error
     ABSL_CHECK(false) << "Failed to generate random bytes: " << EC.message();
   }
 
-  // RFC 4122 Version 4 Requirements:
-  // Set the four most significant bits of the 7th byte to 0100 (Version 4)
+  // RFC 4122 Version 4: Set version to 4 (0100) and variant to 1 (10xx)
   b[6] = (b[6] & 0x0F) | 0x40;
-
-  // Set the two most significant bits of the 9th byte to 10 (Variant 1)
   b[8] = (b[8] & 0x3F) | 0x80;
 
-  // Format into the standard 8-4-4-4-12 hex string
-  return std::format(
-      "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:"
-      "02x}{:02x}{:02x}{:02x}{:02x}",
+  // Format to standard 8-4-4-4-12 string representation
+  char buf[37];
+  std::snprintf(
+      buf, sizeof(buf),
+      "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
       b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11],
       b[12], b[13], b[14], b[15]);
+
+  return std::string(buf);
 }
 
 }  // namespace details
@@ -85,20 +84,47 @@ void LITERTDialect::registerAttributes() {
 // PyDenseElementsAttr
 //===----------------------------------------------------------------------===//
 
-mlir::Attribute PyDenseElementsAttr::parse(mlir::AsmParser& parser,
-                                           mlir::Type type) {
+mlir::Attribute CallbackResourceElementsAttr::parse(mlir::AsmParser& parser,
+                                                    mlir::Type type) {
   parser.emitError(parser.getCurrentLocation())
       << "Parsing PyDenseElementsAttr is not supported.";
   return nullptr;
 }
 
-void PyDenseElementsAttr::print(mlir::AsmPrinter& printer) const {
+void CallbackResourceElementsAttr::print(mlir::AsmPrinter& printer) const {
   printer << "<__elided__>";
 }
 
-PyDenseElementsAttr PyDenseElementsAttr::get(mlir::ShapedType type,
-                                             litert::PyBlob&& py_blob) {
-  return Base::get(type.getContext(), type, std::move(py_blob));
+CallbackResourceBase* CallbackResourceElementsAttr::GetResource() {
+  return getRawHandle().getResource();
+}
+
+CallbackResourceElementsAttr CallbackResourceElementsAttr::get(
+    mlir::ShapedType type, CallbackResourceElementsHandle handle) {
+  return Base::get(type.getContext(), type, handle);
+}
+
+CallbackResourceElementsAttr CallbackResourceElementsAttr::get(
+    mlir::ShapedType type, std::unique_ptr<CallbackResourceBase> resource) {
+  // 1. Get the interface.
+  auto& interface =
+      CallbackResourceElementsHandle::getManagerInterface(type.getContext());
+
+  // 2. Access the manager.
+  CallbackResourceManager& manager = interface.GetCallbackResourceManager();
+
+  // 3. Cast the base Dialect* to the specific Dialect type required by the
+  // Handle. This satisfies the 'typename HandleT::Dialect*' requirement in the
+  // template.
+  using TargetDialect = CallbackResourceElementsHandle::Dialect;
+  auto* dialect = static_cast<TargetDialect*>(interface.getDialect());
+
+  // 4. Explicitly call Insert with the handle template argument.
+  auto handle = manager.Insert<CallbackResourceElementsHandle>(
+      dialect, details::GenerateUUID(), std::move(resource));
+
+  // 5. Build the attribute.
+  return Base::get(type.getContext(), type, handle);
 }
 
 //===----------------------------------------------------------------------===//

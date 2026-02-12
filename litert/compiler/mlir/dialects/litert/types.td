@@ -14,11 +14,11 @@
 #ifndef LITERT_TYPES
 #define LITERT_TYPES
 
-include "third_party/odml/litert/litert/compiler/mlir/dialects/litert/dialect.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/AttrTypeBase.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/BuiltinTypes.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/BuiltinTypeInterfaces.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/Traits.td"
+include "litert/compiler/mlir/dialects/litert/dialect.td"
+include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/BuiltinTypes.td"
+include "mlir/IR/BuiltinTypeInterfaces.td"
+include "mlir/IR/Traits.td"
 
 class LITERT_Type<string name, string type_mnemonic, list<Trait> traits = [],
                   string base_cpp_class = "::mlir::Type">
