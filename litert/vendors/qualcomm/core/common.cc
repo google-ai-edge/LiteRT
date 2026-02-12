@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"   // from @com_google_absl
+#include "absl/strings/str_join.h"     // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
 namespace qnn {
@@ -151,6 +151,20 @@ void Options::SetGraphPriority(GraphPriority graph_priority) {
   graph_priority_ = graph_priority;
 }
 
+void Options::SetGpuPrecision(GpuPrecision gpu_precision) {
+  gpu_precision_ = gpu_precision;
+}
+
+GpuPrecision Options::GetGpuPrecision() const { return gpu_precision_; }
+
+void Options::SetGpuPerformanceMode(GpuPerformanceMode gpu_performance_mode) {
+  gpu_performance_mode_ = gpu_performance_mode;
+}
+
+GpuPerformanceMode Options::GetGpuPerformanceMode() const {
+  return gpu_performance_mode_;
+}
+
 absl::string_view Options::GetSaverOutputDir() const {
   return saver_output_dir_;
 }
@@ -173,6 +187,7 @@ UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
 HtpPerformanceMode: %d\n\
 DspPerformanceMode: %d\n\
+GpuPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
 IrJsonDir: %s\n\
 DlcDir: %s\n\
@@ -180,7 +195,8 @@ VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n\
 GraphPriority: %d\n\
-SaverOutputDir: %s\n";  // NOLINT
+SaverOutputDir: %s\n\
+GpuPrecision: %d\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
@@ -188,9 +204,9 @@ SaverOutputDir: %s\n";  // NOLINT
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
       use_htp_preference_, use_qint16_as_quint16_, enable_weight_sharing_,
       use_conv_hmx_, use_fold_relu_, htp_performance_mode_,
-      dsp_performance_mode_, dump_tensor_ids, ir_json_dir_, dlc_dir_,
-      vtcm_size_, num_hvx_threads_, optimization_level_, graph_priority_,
-      saver_output_dir_);
+      dsp_performance_mode_, gpu_performance_mode_, dump_tensor_ids,
+      ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
+      graph_priority_, saver_output_dir_, gpu_precision_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

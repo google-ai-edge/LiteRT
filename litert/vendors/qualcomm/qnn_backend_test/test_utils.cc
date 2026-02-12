@@ -28,6 +28,9 @@ std::string QnnTestPrinter(
 
   // TODO (chunhsue-qti): Add more backend once it expands.
   switch (options.GetBackendType()) {
+    case ::qnn::BackendType::kGpuBackend:
+      ss << "Gpu";
+      break;
     case ::qnn::BackendType::kHtpBackend:
       ss << "Htp";
       break;

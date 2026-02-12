@@ -252,6 +252,24 @@ TEST(QnnOptionTest, SetGraphPriority) {
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
 }
 
+TEST(QnnOptionTest, GpuPrecision) {
+  Options options;
+  options.SetGpuPrecision(GpuPrecision::kHybrid);
+  EXPECT_NE(options.GetGpuPrecision(), GpuPrecision::kFp16);
+  EXPECT_EQ(options.GetGpuPrecision(), GpuPrecision::kHybrid);
+  options.SetGpuPrecision(GpuPrecision::kFp16);
+  EXPECT_EQ(options.GetGpuPrecision(), GpuPrecision::kFp16);
+}
+
+TEST(QnnOptionTest, GpuPerformanceMode) {
+  Options options;
+  options.SetGpuPerformanceMode(GpuPerformanceMode::kHigh);
+  EXPECT_NE(options.GetGpuPerformanceMode(), GpuPerformanceMode::kDefault);
+  EXPECT_EQ(options.GetGpuPerformanceMode(), GpuPerformanceMode::kHigh);
+  options.SetGpuPerformanceMode(GpuPerformanceMode::kDefault);
+  EXPECT_EQ(options.GetGpuPerformanceMode(), GpuPerformanceMode::kDefault);
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -271,6 +289,8 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
+  EXPECT_EQ(options.GetGpuPrecision(), GpuPrecision::kFp16);
+  EXPECT_EQ(options.GetGpuPerformanceMode(), GpuPerformanceMode::kDefault);
 }
 
 }  // namespace

@@ -267,6 +267,36 @@ LiteRtStatus LiteRtQualcommOptionsSetBackend(
 LiteRtStatus LiteRtQualcommOptionsGetBackend(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend* qnn_backend);
 
+typedef enum LiteRtQualcommOptionsGpuPrecision {
+  kLiteRtQualcommGpuPrecisionUserProvided = 0,
+  kLiteRtQualcommGpuPrecisionFp32 = 1,
+  kLiteRtQualcommGpuPrecisionFp16 = 2,
+  kLiteRtQualcommGpuPrecisionHybrid = 3,
+} LiteRtQualcommOptionsGpuPrecision;
+
+LiteRtStatus LiteRtQualcommOptionsSetGpuPrecision(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPrecision gpu_precision);
+
+LiteRtStatus LiteRtQualcommOptionsGetGpuPrecision(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPrecision* gpu_precision);
+
+typedef enum LiteRtQualcommOptionsGpuPerformanceMode {
+  kLiteRtQualcommGpuPerformanceModeDefault = 0,
+  kLiteRtQualcommGpuPerformanceModeHigh = 1,
+  kLiteRtQualcommGpuPerformanceModeNormal = 2,
+  kLiteRtQualcommGpuPerformanceModeLow = 3,
+} LiteRtQualcommOptionsGpuPerformanceMode;
+
+LiteRtStatus LiteRtQualcommOptionsSetGpuPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPerformanceMode gpu_performance_mode);
+
+LiteRtStatus LiteRtQualcommOptionsGetGpuPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPerformanceMode* gpu_performance_mode);
+
 LiteRtStatus LiteRtQualcommOptionsSetSaverOutputDir(
     LiteRtQualcommOptions options, const char* saver_output_dir);
 

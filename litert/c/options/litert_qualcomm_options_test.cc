@@ -437,6 +437,16 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetSaverOutputDir(), "");
   options->SetSaverOutputDir("tmp");
   EXPECT_EQ(options->GetSaverOutputDir(), "tmp");
+
+  EXPECT_EQ(options->GetGpuPrecision(), QualcommOptions::GpuPrecision::kFp16);
+  options->SetGpuPrecision(QualcommOptions::GpuPrecision::kFp32);
+  EXPECT_EQ(options->GetGpuPrecision(), QualcommOptions::GpuPrecision::kFp32);
+
+  EXPECT_EQ(options->GetGpuPerformanceMode(),
+            QualcommOptions::GpuPerformanceMode::kDefault);
+  options->SetGpuPerformanceMode(QualcommOptions::GpuPerformanceMode::kHigh);
+  EXPECT_EQ(options->GetGpuPerformanceMode(),
+            QualcommOptions::GpuPerformanceMode::kHigh);
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {
@@ -495,6 +505,42 @@ TEST(LiteRtQualcommOptionsTest, Backend) {
   LITERT_ASSERT_OK(
       LiteRtQualcommOptionsGetBackend(qualcomm_options, &qnn_backend));
   EXPECT_EQ(qnn_backend, kLiteRtQualcommBackendDsp);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, GpuPrecision) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetGpuPrecision(
+      qualcomm_options, kLiteRtQualcommGpuPrecisionHybrid));
+
+  LiteRtQualcommOptionsGpuPrecision gpu_precision;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetGpuPrecision(qualcomm_options,
+                                                        &gpu_precision));
+  EXPECT_EQ(gpu_precision, kLiteRtQualcommGpuPrecisionHybrid);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, GpuPerformanceMode) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetGpuPerformanceMode(
+      qualcomm_options, kLiteRtQualcommGpuPerformanceModeHigh));
+
+  LiteRtQualcommOptionsGpuPerformanceMode gpu_performance_mode;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetGpuPerformanceMode(
+      qualcomm_options, &gpu_performance_mode));
+  EXPECT_EQ(gpu_performance_mode, kLiteRtQualcommGpuPerformanceModeHigh);
 
   LiteRtDestroyOpaqueOptions(options);
 }

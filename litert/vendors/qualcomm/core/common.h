@@ -78,6 +78,20 @@ enum class GraphPriority {
   kHigh = 4,
 };
 
+enum class GpuPrecision {
+  kUserProvided = 0,
+  kFp32 = 1,
+  kFp16 = 2,
+  kHybrid = 3,
+};
+
+enum class GpuPerformanceMode {
+  kDefault = 0,
+  kHigh = 1,
+  kNormal = 2,
+  kLow = 3,
+};
+
 class Options {
  public:
   Options() = default;
@@ -134,6 +148,12 @@ class Options {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority() const;
 
+  void SetGpuPrecision(GpuPrecision gpu_precision);
+  GpuPrecision GetGpuPrecision() const;
+
+  void SetGpuPerformanceMode(GpuPerformanceMode gpu_performance_mode);
+  GpuPerformanceMode GetGpuPerformanceMode() const;
+
   std::string Dump() const;
 
   absl::string_view GetSaverOutputDir() const;
@@ -158,6 +178,8 @@ class Options {
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
+  GpuPrecision gpu_precision_ = GpuPrecision::kFp16;
+  GpuPerformanceMode gpu_performance_mode_ = GpuPerformanceMode::kDefault;
   std::string saver_output_dir_;
 };
 

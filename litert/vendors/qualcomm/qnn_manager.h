@@ -92,6 +92,8 @@ class QnnManager {
 
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
+  static absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(
+      ::qnn::GpuPerformanceMode performance_mode);
   // Get resolved function pointers for qnn sdk calls. Nullptr if functions
   // have not been resolved yet.
   const QnnApi* Api() const;

@@ -269,6 +269,34 @@ absl::string_view QualcommOptions::GetSaverOutputDir() {
   return absl::string_view(saver_output_dir);
 }
 
+void QualcommOptions::SetGpuPrecision(
+    QualcommOptions::GpuPrecision gpu_precision) {
+  internal::AssertOk(
+      LiteRtQualcommOptionsSetGpuPrecision, Data(),
+      static_cast<LiteRtQualcommOptionsGpuPrecision>(gpu_precision));
+}
+
+QualcommOptions::GpuPrecision QualcommOptions::GetGpuPrecision() {
+  LiteRtQualcommOptionsGpuPrecision gpu_precision;
+  internal::AssertOk(LiteRtQualcommOptionsGetGpuPrecision, Data(),
+                     &gpu_precision);
+  return static_cast<QualcommOptions::GpuPrecision>(gpu_precision);
+}
+
+void QualcommOptions::SetGpuPerformanceMode(
+    QualcommOptions::GpuPerformanceMode gpu_performance_mode) {
+  internal::AssertOk(
+      LiteRtQualcommOptionsSetGpuPerformanceMode, Data(),
+      static_cast<LiteRtQualcommOptionsGpuPerformanceMode>(gpu_performance_mode));
+}
+
+QualcommOptions::GpuPerformanceMode QualcommOptions::GetGpuPerformanceMode() {
+  LiteRtQualcommOptionsGpuPerformanceMode gpu_performance_mode;
+  internal::AssertOk(LiteRtQualcommOptionsGetGpuPerformanceMode, Data(),
+                     &gpu_performance_mode);
+  return static_cast<QualcommOptions::GpuPerformanceMode>(gpu_performance_mode);
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {

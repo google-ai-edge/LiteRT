@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/flags/declare.h"  // from @com_google_absl
+#include "absl/flags/declare.h"        // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -78,8 +78,12 @@ ABSL_DECLARE_FLAG(uint32_t, qualcomm_num_hvx_thread);
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
                   qualcomm_optimization_level);
+
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
                   qualcomm_graph_priority);
+
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GpuPrecision,
+                  qualcomm_gpu_precision);
 
 namespace litert::qualcomm {
 
@@ -95,6 +99,12 @@ bool AbslParseFlag(absl::string_view text,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority);
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GpuPrecision* gpu_precision,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::GpuPrecision gpu_precision);
 
 }  // namespace litert::qualcomm
 
@@ -131,6 +141,20 @@ bool AbslParseFlag(absl::string_view text,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options);
+
+}  // namespace litert::qualcomm
+
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GpuPerformanceMode,
+                  qualcomm_gpu_performance_mode);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GpuPerformanceMode* gpu_performance_mode,
+                   std::string* error);
+
+std::string AbslUnparseFlag(
+    QualcommOptions::GpuPerformanceMode gpu_performance_mode);
 
 }  // namespace litert::qualcomm
 

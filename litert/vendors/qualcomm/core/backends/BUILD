@@ -46,6 +46,21 @@ cc_library(
 )
 
 cc_library(
+    name = "gpu_backend",
+    srcs = ["gpu_backend.cc"],
+    hdrs = ["gpu_backend.h"],
+    deps = [
+        ":backend_utils",
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "htp_backend",
     srcs = ["htp_backend.cc"],
     hdrs = ["htp_backend.h"],
@@ -72,6 +87,20 @@ cc_library(
         "//litert/vendors/qualcomm/core/utils:log",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_test(
+    name = "gpu_backend_test",
+    srcs = [
+        "gpu_backend_test.cc",
+    ],
+    deps = [
+        ":gpu_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

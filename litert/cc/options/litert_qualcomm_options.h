@@ -180,6 +180,26 @@ class QualcommOptions : public OpaqueOptions {
   void SetBackend(Backend qnn_backend);
   Backend GetBackend();
 
+  enum class GpuPrecision : int {
+    kUserProvided = kLiteRtQualcommGpuPrecisionUserProvided,
+    kFp32 = kLiteRtQualcommGpuPrecisionFp32,
+    kFp16 = kLiteRtQualcommGpuPrecisionFp16,
+    kHybrid = kLiteRtQualcommGpuPrecisionHybrid,
+  };
+
+  void SetGpuPrecision(GpuPrecision gpu_precision);
+  GpuPrecision GetGpuPrecision();
+
+  enum class GpuPerformanceMode : int {
+    kDefault = kLiteRtQualcommGpuPerformanceModeDefault,
+    kHigh = kLiteRtQualcommGpuPerformanceModeHigh,
+    kNormal = kLiteRtQualcommGpuPerformanceModeNormal,
+    kLow = kLiteRtQualcommGpuPerformanceModeLow,
+  };
+
+  void SetGpuPerformanceMode(GpuPerformanceMode gpu_performance_mode);
+  GpuPerformanceMode GetGpuPerformanceMode();
+
   void SetSaverOutputDir(const std::string& saver_output_dir);
   absl::string_view GetSaverOutputDir();
 

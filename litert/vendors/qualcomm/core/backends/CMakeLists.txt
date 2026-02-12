@@ -9,6 +9,7 @@ add_library(qnn_backends STATIC)
 
 target_sources(qnn_backends
     PRIVATE
+        gpu_backend.cc
         dsp_backend.cc
         htp_backend.cc
         ir_backend.cc

@@ -23,19 +23,20 @@
 #include <filesystem>
 #include <string>
 
+#include "GPU/QnnGpuGraph.h"  // from @qairt
+#include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "IR/QnnIrGraph.h"
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "QnnCommon.h"                 // from @qairt
+#include "QnnGraph.h"                  // from @qairt
+#include "QnnTypes.h"                  // from @qairt
+#include "absl/strings/str_cat.h"      // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/types/span.h"           // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpGraph.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnGraph.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 
@@ -68,6 +69,21 @@ Qnn_Priority_t GetGraphPriorityValue(::qnn::GraphPriority graph_priority) {
       return QNN_PRIORITY_HIGH;
     default:
       return QNN_PRIORITY_UNDEFINED;
+  }
+}
+
+QnnGpu_Precision_t GetGpuPrecisionValue(::qnn::GpuPrecision precision) {
+  switch (precision) {
+    case ::qnn::GpuPrecision::kUserProvided:
+      return QNN_GPU_PRECISION_USER_PROVIDED;
+    case ::qnn::GpuPrecision::kFp32:
+      return QNN_GPU_PRECISION_FP32;
+    case ::qnn::GpuPrecision::kFp16:
+      return QNN_GPU_PRECISION_FP16;
+    case ::qnn::GpuPrecision::kHybrid:
+      return QNN_GPU_PRECISION_HYBRID;
+    default:
+      return QNN_GPU_PRECISION_FP16;
   }
 }
 
@@ -195,6 +211,26 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
   return absl::MakeSpan(result.data(), num_config + 1);
 }
 
+inline absl::Span<const QnnGraph_Config_t*> GetGpuGraphConfigs(
+    const ::qnn::Options& options) {
+  static std::array<QnnGpuGraph_CustomConfig_t, 1> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 2> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 3> result;
+
+  // Precision
+  graph_custom_configs[0] = QNN_GPU_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[0].precision =
+      GetGpuPrecisionValue(options.GetGpuPrecision());
+
+  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[0].customConfig = &graph_custom_configs[0];
+  result[0] = &graph_configs[0];
+
+  result[1] = nullptr;
+  return absl::MakeSpan(result.data(), 2);
+}
+
 absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs(
     const ::qnn::Options& options, absl::string_view qnn_graph_name) {
   static std::array<QnnIrGraph_CustomConfig_t, 1> graph_custom_configs;
@@ -243,6 +279,9 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
   switch (options.GetBackendType()) {
     case ::qnn::BackendType::kHtpBackend:
       graph_configs = PickGraphConfigHeuristic(options);
+      break;
+    case ::qnn::BackendType::kGpuBackend:
+      graph_configs = GetGpuGraphConfigs(options);
       break;
     case ::qnn::BackendType::kIrBackend:
       graph_configs = GetDefaultIrGraphConfigs(options, qnn_graph_name);

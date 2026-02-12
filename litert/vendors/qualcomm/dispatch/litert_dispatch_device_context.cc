@@ -157,6 +157,8 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   QnnMemHtp_Descriptor_t mem_htp_descriptor = {};
   switch (qnn_manager_.GetOptions().GetBackendType()) {
     // DSP Backend only supports QNN_MEM_TYPE_ION.
+    case ::qnn::BackendType::kGpuBackend:
+      [[fallthrough]];
     case ::qnn::BackendType::kDspBackend:
       mem_descriptor.memType = QNN_MEM_TYPE_ION;
       mem_descriptor.ionInfo.fd = buffer_fd;

@@ -14,9 +14,10 @@
 
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 
+#include <gtest/gtest.h>
+
 #include <string>
 
-#include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
@@ -466,6 +467,102 @@ TEST(BackendTest, Parse) {
   }
 }
 
+TEST(GpuPerformanceModeTest, Malformed) {
+  std::string error;
+  QualcommOptions::GpuPerformanceMode value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(GpuPerformanceModeTest, Parse) {
+  std::string error;
+  QualcommOptions::GpuPerformanceMode value;
+
+  {
+    static constexpr absl::string_view kMode = "default";
+    static constexpr QualcommOptions::GpuPerformanceMode kModeEnum =
+        QualcommOptions::GpuPerformanceMode::kDefault;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "high";
+    static constexpr QualcommOptions::GpuPerformanceMode kModeEnum =
+        QualcommOptions::GpuPerformanceMode::kHigh;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "normal";
+    static constexpr QualcommOptions::GpuPerformanceMode kModeEnum =
+        QualcommOptions::GpuPerformanceMode::kNormal;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMode = "low";
+    static constexpr QualcommOptions::GpuPerformanceMode kModeEnum =
+        QualcommOptions::GpuPerformanceMode::kLow;
+    EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, AbslUnparseFlag(value));
+  }
+}
+
+TEST(GpuPrecisionTest, Malformed) {
+  std::string error;
+  QualcommOptions::GpuPrecision value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(GpuPrecisionTest, Parse) {
+  std::string error;
+  QualcommOptions::GpuPrecision value;
+
+  {
+    static constexpr absl::string_view kGpuPrecision = "user_provided";
+    static constexpr QualcommOptions::GpuPrecision kGpuPrecisionEnum =
+        QualcommOptions::GpuPrecision::kUserProvided;
+    EXPECT_TRUE(AbslParseFlag(kGpuPrecision, &value, &error));
+    EXPECT_EQ(value, kGpuPrecisionEnum);
+    EXPECT_EQ(kGpuPrecision, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kGpuPrecision = "fp32";
+    static constexpr QualcommOptions::GpuPrecision kGpuPrecisionEnum =
+        QualcommOptions::GpuPrecision::kFp32;
+    EXPECT_TRUE(AbslParseFlag(kGpuPrecision, &value, &error));
+    EXPECT_EQ(value, kGpuPrecisionEnum);
+    EXPECT_EQ(kGpuPrecision, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kGpuPrecision = "fp16";
+    static constexpr QualcommOptions::GpuPrecision kGpuPrecisionEnum =
+        QualcommOptions::GpuPrecision::kFp16;
+    EXPECT_TRUE(AbslParseFlag(kGpuPrecision, &value, &error));
+    EXPECT_EQ(value, kGpuPrecisionEnum);
+    EXPECT_EQ(kGpuPrecision, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kGpuPrecision = "hybrid";
+    static constexpr QualcommOptions::GpuPrecision kGpuPrecisionEnum =
+        QualcommOptions::GpuPrecision::kHybrid;
+    EXPECT_TRUE(AbslParseFlag(kGpuPrecision, &value, &error));
+    EXPECT_EQ(value, kGpuPrecisionEnum);
+    EXPECT_EQ(kGpuPrecision, AbslUnparseFlag(value));
+  }
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());
@@ -479,6 +576,10 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kDefault);
+  EXPECT_EQ(options.Value().GetDspPerformanceMode(),
+            QualcommOptions::DspPerformanceMode::kDefault);
+  EXPECT_EQ(options.Value().GetGpuPerformanceMode(),
+            QualcommOptions::GpuPerformanceMode::kDefault);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
@@ -487,6 +588,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
+  EXPECT_EQ(options.Value().GetGpuPrecision(),
+            QualcommOptions::GpuPrecision::kFp16);
 }
 
 }  // namespace

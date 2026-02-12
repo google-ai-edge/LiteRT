@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/flags/flag.h"           // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -337,8 +337,18 @@ ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
           "can be replayed on any QNN backend. See Qualcomm "
           "AI Runtime (QAIRT) SDK document for more details.");
 
-namespace litert::qualcomm {
+ABSL_FLAG(
+    litert::qualcomm::QualcommOptions::GpuPrecision, qualcomm_gpu_precision,
+    litert::qualcomm::QualcommOptions::GpuPrecision::kFp16,
+    "Precision for GPU backend that defines the optimization levels of the "
+    "graph tensors that are not input nor output tensors.");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::GpuPerformanceMode,
+          qualcomm_gpu_performance_mode,
+          litert::qualcomm::QualcommOptions::GpuPerformanceMode::kDefault,
+          "GPU performance mode.");
+
+namespace litert::qualcomm {
 bool AbslParseFlag(absl::string_view text,
                    QualcommOptions::OptimizationLevel* optimization_level,
                    std::string* error) {
@@ -388,6 +398,30 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GpuPrecision* gpu_precision,
+                   std::string* error) {
+  if (text == "user_provided") {
+    *gpu_precision = QualcommOptions::GpuPrecision::kUserProvided;
+    return true;
+  }
+  if (text == "fp32") {
+    *gpu_precision = QualcommOptions::GpuPrecision::kFp32;
+    return true;
+  }
+
+  if (text == "fp16") {
+    *gpu_precision = QualcommOptions::GpuPrecision::kFp16;
+    return true;
+  }
+  if (text == "hybrid") {
+    *gpu_precision = QualcommOptions::GpuPrecision::kHybrid;
+    return true;
+  }
+  *error = "Unknown gpu precision";
+  return false;
+}
+
 std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority) {
   switch (graph_priority) {
     case QualcommOptions::GraphPriority::kDefault:
@@ -417,6 +451,58 @@ std::string AbslUnparseFlag(
   return "O1";
 }
 
+std::string AbslUnparseFlag(QualcommOptions::GpuPrecision gpu_precision) {
+  switch (gpu_precision) {
+    case QualcommOptions::GpuPrecision::kUserProvided:
+      return "user_provided";
+    case QualcommOptions::GpuPrecision::kFp32:
+      return "fp32";
+    case QualcommOptions::GpuPrecision::kFp16:
+      return "fp16";
+    case QualcommOptions::GpuPrecision::kHybrid:
+      return "hybrid";
+  }
+  return "fp16";
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GpuPerformanceMode* gpu_performance_mode,
+                   std::string* error) {
+  if (text == "default") {
+    *gpu_performance_mode = QualcommOptions::GpuPerformanceMode::kDefault;
+    return true;
+  }
+  if (text == "high") {
+    *gpu_performance_mode = QualcommOptions::GpuPerformanceMode::kHigh;
+    return true;
+  }
+  if (text == "normal") {
+    *gpu_performance_mode = QualcommOptions::GpuPerformanceMode::kNormal;
+    return true;
+  }
+  if (text == "low") {
+    *gpu_performance_mode = QualcommOptions::GpuPerformanceMode::kLow;
+    return true;
+  }
+  *error = "Unknown gpu performance mode";
+  return false;
+}
+
+std::string AbslUnparseFlag(
+    QualcommOptions::GpuPerformanceMode gpu_performance_mode) {
+  switch (gpu_performance_mode) {
+    case QualcommOptions::GpuPerformanceMode::kDefault:
+      return "default";
+    case QualcommOptions::GpuPerformanceMode::kHigh:
+      return "high";
+    case QualcommOptions::GpuPerformanceMode::kNormal:
+      return "normal";
+    case QualcommOptions::GpuPerformanceMode::kLow:
+      return "low";
+  }
+  return "default";
+}
+
 }  // namespace litert::qualcomm
 
 ABSL_FLAG(bool, qualcomm_use_conv_hmx, true,
@@ -434,7 +520,6 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           "QNN backend to use.");
 
 namespace litert::qualcomm {
-
 bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,
                    std::string* error) {
   if (text == "gpu") {
@@ -476,7 +561,6 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options) {
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
-
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto weight_share = absl::GetFlag(FLAGS_qualcomm_enable_weight_sharing);
   opts.SetEnableWeightSharing(weight_share);
@@ -499,6 +583,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto dsp_performance_mode =
       absl::GetFlag(FLAGS_qualcomm_dsp_performance_mode);
   opts.SetDspPerformanceMode(dsp_performance_mode);
+
+  const auto gpu_performance_mode =
+      absl::GetFlag(FLAGS_qualcomm_gpu_performance_mode);
+  opts.SetGpuPerformanceMode(gpu_performance_mode);
 
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);
@@ -538,6 +626,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const std::string saver_output_dir =
       absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
   opts.SetSaverOutputDir(saver_output_dir);
+
+  const auto gpu_precision = absl::GetFlag(FLAGS_qualcomm_gpu_precision);
+  opts.SetGpuPrecision(gpu_precision);
 
   return {};
 }

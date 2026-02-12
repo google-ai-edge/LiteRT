@@ -129,6 +129,10 @@ inline LiteRtStatus InitQnnOptions(
       static_cast<::qnn::GraphPriority>(qualcomm_options.GetGraphPriority()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
   qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
+  qnn_options.SetGpuPrecision(
+      static_cast<::qnn::GpuPrecision>(qualcomm_options.GetGpuPrecision()));
+  qnn_options.SetGpuPerformanceMode(static_cast<::qnn::GpuPerformanceMode>(
+      qualcomm_options.GetGpuPerformanceMode()));
 
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;

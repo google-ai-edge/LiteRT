@@ -51,6 +51,10 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsGraphPriority graph_priority =
       kLiteRTQualcommGraphPriorityDefault;
   std::string saver_output_dir;
+  LiteRtQualcommOptionsGpuPrecision gpu_precision =
+      kLiteRtQualcommGpuPrecisionFp16;
+  LiteRtQualcommOptionsGpuPerformanceMode gpu_performance_mode =
+      kLiteRtQualcommGpuPerformanceModeDefault;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -77,7 +81,8 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
         options->qnn_backend, options->enable_weight_sharing,
         options->htp_performance_mode, options->dsp_performance_mode,
         options->ir_json_dir, options->dlc_dir, options->vtcm_size,
-        options->num_hvx_threads, options->optimization_level);
+        options->num_hvx_threads, options->optimization_level,
+        options->gpu_precision, options->gpu_performance_mode);
     return ans;
   };
   LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, qti_hash));
@@ -523,6 +528,54 @@ LiteRtStatus LiteRtQualcommOptionsGetBackend(
   }
 
   *qnn_backend = options->qnn_backend;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetGpuPrecision(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPrecision gpu_precision) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->gpu_precision = gpu_precision;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetGpuPrecision(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPrecision* gpu_precision) {
+  if (gpu_precision == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *gpu_precision = options->gpu_precision;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetGpuPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPerformanceMode gpu_performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->gpu_performance_mode = gpu_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetGpuPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsGpuPerformanceMode* gpu_performance_mode) {
+  if (gpu_performance_mode == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *gpu_performance_mode = options->gpu_performance_mode;
 
   return kLiteRtStatusOk;
 }
