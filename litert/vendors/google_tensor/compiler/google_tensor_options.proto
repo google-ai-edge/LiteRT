@@ -66,8 +66,6 @@ message GoogleTensorOptions {
   bool int64_to_int32_truncation = 2;
   // Specifies the output directory for compiler artifacts.
   string output_dir = 3;
-  // Whether to dump per-operator timing information.
-  bool dump_op_timings = 4;
   // Enables support for compiling large models.
   bool enable_large_model_support = 5;
   // Enables compilation support for 4-bit hybrid operations.
