@@ -271,3 +271,10 @@ def LegalizeBMM4dAdjY_1 : Pat<
           ConstantStrAttr<StrAttr, "tfl.bmm_4d_adj_y">, $attrs, $_, $_),
         (TFL_BatchMatMulOp $lhs, $rhs, ConstBoolAttrFalse, ConstBoolAttrTrue,
                      ConstBoolAttrFalse)>;
+
+def LegalizeBMM4dAdjY_2 : Pat<
+        (MHLO_CompositeOp:$composite
+          (variadic $_, $_, $lhs, $rhs),
+          ConstantStrAttr<StrAttr, "tfl.bmm_4d_adj_y">, $attrs, $_, $_),
+        (TFL_BatchMatMulOp $lhs, $rhs, ConstBoolAttrFalse, ConstBoolAttrTrue,
+                     ConstBoolAttrFalse)>;
