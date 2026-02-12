@@ -694,7 +694,6 @@ cc_test(
         "//litert/c:litert_compiled_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_handle",
         "//litert/cc/options:litert_runtime_options",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -902,19 +901,16 @@ cc_library(
     hdrs = [":litert_tensor_buffer_requirements.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_cc_users_static_link",
+        # "//litert:litert_public",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
     ],
     deps = [
         ":litert_expected",
-        ":litert_macros",
         ":litert_tensor_buffer_types",
         "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_handle",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -1250,7 +1246,6 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_model_predicates",
         "//litert/cc/dynamic_runtime:litert_profiler",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_runtime_builtin_runtimecapi",
         # C++ Common Options API targets.
         "//litert/cc/dynamic_runtime:litert_opaque_options",

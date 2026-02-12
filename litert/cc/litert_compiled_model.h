@@ -210,14 +210,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// The returned `TensorBufferRequirements` is used to create the input
   /// tensor buffer.
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
-      size_t signature_index, size_t input_index) const {
-    LiteRtTensorBufferRequirements buffer_requirements;
-    LITERT_RETURN_IF_ERROR(
-        env_.runtime->GetCompiledModelInputBufferRequirements(
-            Get(), signature_index, input_index, &buffer_requirements));
-    return TensorBufferRequirements::WrapCObject(buffer_requirements,
-                                                 OwnHandle::kNo);
-  }
+      size_t signature_index, size_t input_index) const;
 
   /// @brief An overload of `GetInputBufferRequirements` that takes an input
   /// tensor name.
@@ -282,14 +275,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// The returned `TensorBufferRequirements` is used to create the output
   /// tensor buffer.
   Expected<TensorBufferRequirements> GetOutputBufferRequirements(
-      size_t signature_index, size_t output_index) const {
-    LiteRtTensorBufferRequirements buffer_requirements;
-    LITERT_RETURN_IF_ERROR(
-        env_.runtime->GetCompiledModelOutputBufferRequirements(
-            Get(), signature_index, output_index, &buffer_requirements));
-    return TensorBufferRequirements::WrapCObject(buffer_requirements,
-                                                 OwnHandle::kNo);
-  }
+      size_t signature_index, size_t output_index) const;
 
   /// @brief An overload of `GetOutputBufferRequirements` that takes an output
   /// tensor name.

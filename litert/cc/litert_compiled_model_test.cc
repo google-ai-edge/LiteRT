@@ -983,5 +983,59 @@ TEST(CompiledModelTest, ResizeInputTensorNonStrictAllowsStaticShapes) {
       /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
 }
 
+TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Check input buffer requirements.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements input_requirements,
+      compiled_model.GetInputBufferRequirements(/*input_name=*/"arg0"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> input_types,
+                              input_requirements.SupportedTypes());
+  EXPECT_THAT(input_types, ElementsAre(TensorBufferType::kHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_size,
+                              input_requirements.BufferSize());
+  EXPECT_EQ(input_size, kTestInput0Size * sizeof(float));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_alignment,
+                              input_requirements.Alignment());
+  EXPECT_GE(input_alignment, 0);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_strides, input_requirements.Strides());
+  EXPECT_EQ(input_strides.size(), 1);
+  EXPECT_EQ(input_strides[0], 0);
+
+  // Check output buffer requirements.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements output_requirements,
+      compiled_model.GetOutputBufferRequirements(/*output_name=*/"tfl.add"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_types,
+                              output_requirements.SupportedTypes());
+  EXPECT_THAT(output_types, ElementsAre(TensorBufferType::kHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t output_size,
+                              output_requirements.BufferSize());
+  EXPECT_EQ(output_size, kTestOutputSize * sizeof(float));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t output_alignment,
+                              output_requirements.Alignment());
+  EXPECT_GE(output_alignment, 0);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_strides,
+                              output_requirements.Strides());
+  EXPECT_EQ(output_strides.size(), 1);
+  EXPECT_EQ(output_strides[0], 0);
+}
+
 }  // namespace
 }  // namespace litert

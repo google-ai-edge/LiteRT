@@ -15,6 +15,7 @@
 #include "litert/cc/litert_compiled_model.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <utility>
@@ -27,6 +28,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -38,6 +40,49 @@
 #include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace litert {
+
+namespace {
+/// @brief Converts a `LiteRtTensorBufferRequirements` C object to a
+/// `TensorBufferRequirements` C++ object.
+Expected<TensorBufferRequirements> ToTensorBufferRequirements(
+    const internal::EnvironmentHolder& env,
+    const LiteRtTensorBufferRequirements litert_requirements) {
+  int num_types;
+  LITERT_RETURN_IF_ERROR(
+      env.runtime->GetNumTensorBufferRequirementsSupportedBufferTypes(
+          litert_requirements, &num_types));
+  std::vector<TensorBufferType> supported_types;
+  supported_types.reserve(num_types);
+  for (int i = 0; i < num_types; ++i) {
+    LiteRtTensorBufferType type;
+    LITERT_RETURN_IF_ERROR(
+        env.runtime->GetTensorBufferRequirementsSupportedTensorBufferType(
+            litert_requirements, i, &type));
+    supported_types.push_back(static_cast<TensorBufferType>(type));
+  }
+
+  size_t buffer_size;
+  LITERT_RETURN_IF_ERROR(env.runtime->GetTensorBufferRequirementsBufferSize(
+      litert_requirements, &buffer_size));
+
+  int num_strides;
+  const uint32_t* strides_ptr;
+  LITERT_RETURN_IF_ERROR(env.runtime->GetTensorBufferRequirementsStrides(
+      litert_requirements, &num_strides, &strides_ptr));
+  std::vector<uint32_t> strides;
+  if (num_strides > 0 && strides_ptr != nullptr) {
+    strides.assign(strides_ptr, strides_ptr + num_strides);
+  }
+
+  size_t alignment;
+  LITERT_RETURN_IF_ERROR(env.runtime->GetTensorBufferRequirementsAlignment(
+      litert_requirements, &alignment));
+
+  return TensorBufferRequirements::CreateWithAlignment(
+      absl::MakeConstSpan(supported_types), buffer_size, alignment,
+      absl::MakeConstSpan(strides));
+}
+}  // namespace
 
 Expected<size_t> CompiledModel::FindInputIndex(
     size_t signature_index, absl::string_view input_name) const {
@@ -246,6 +291,22 @@ void CompiledModel::SetCancellationFunction(
   check_cancelled_func_ = std::move(check_cancelled_func);
   env_.runtime->SetCompiledModelCancellationFunction(Get(), this,
                                                      &CheckCancelledWrapper);
+}
+
+Expected<TensorBufferRequirements> CompiledModel::GetInputBufferRequirements(
+    size_t signature_index, size_t input_index) const {
+  LiteRtTensorBufferRequirements buffer_requirements;
+  LITERT_RETURN_IF_ERROR(env_.runtime->GetCompiledModelInputBufferRequirements(
+      Get(), signature_index, input_index, &buffer_requirements));
+  return ToTensorBufferRequirements(env_, buffer_requirements);
+}
+
+Expected<TensorBufferRequirements> CompiledModel::GetOutputBufferRequirements(
+    size_t signature_index, size_t output_index) const {
+  LiteRtTensorBufferRequirements buffer_requirements;
+  LITERT_RETURN_IF_ERROR(env_.runtime->GetCompiledModelOutputBufferRequirements(
+      Get(), signature_index, output_index, &buffer_requirements));
+  return ToTensorBufferRequirements(env_, buffer_requirements);
 }
 
 }  // namespace litert

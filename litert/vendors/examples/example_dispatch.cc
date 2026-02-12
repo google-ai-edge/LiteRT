@@ -24,6 +24,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -97,7 +98,7 @@ class LiteRtDispatchInvocationContextT {
 
     if (example_graph.version() != "1") {
       return litert::Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
-                             "Bytecode version is not compatible");
+                           "Bytecode version is not compatible");
     }
 
     return Ptr(new LiteRtDispatchInvocationContextT(
@@ -209,17 +210,22 @@ LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
   return kLiteRtStatusOk;
 }
 
-Expected<TensorBufferRequirements> GetTensorBufferRequirements(
+Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   RankedTensorType t(tensor_type);
   if (t.Layout().HasStrides()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported by QNN");
   }
-  static constexpr std::array<const TensorBufferType, 1> types = {
-      TensorBufferType::kHostMemory};
+  std::vector<LiteRtTensorBufferType> buffer_types_c = {
+      kLiteRtTensorBufferTypeHostMemory};
   LITERT_ASSIGN_OR_RETURN(const auto size, t.Bytes());
-  return TensorBufferRequirements::Create(types, size, {}, OwnHandle::kNo);
+
+  LiteRtTensorBufferRequirements requirements;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
+      buffer_types_c.size(), buffer_types_c.data(), size, 0, nullptr,
+      &requirements));
+  return requirements;
 }
 
 LiteRtStatus GetInputRequirements(
@@ -228,7 +234,7 @@ LiteRtStatus GetInputRequirements(
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
   LITERT_ASSIGN_OR_RETURN(auto requirements,
                           GetTensorBufferRequirements(*tensor_type));
-  *tensor_buffer_requirements = requirements.Get();
+  *tensor_buffer_requirements = requirements;
   return kLiteRtStatusOk;
 }
 
@@ -238,7 +244,7 @@ LiteRtStatus GetOutputRequirements(
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
   LITERT_ASSIGN_OR_RETURN(auto requirements,
                           GetTensorBufferRequirements(*tensor_type));
-  *tensor_buffer_requirements = requirements.Get();
+  *tensor_buffer_requirements = requirements;
   return kLiteRtStatusOk;
 }
 
