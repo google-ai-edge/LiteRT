@@ -1,4 +1,4 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library")
+load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary")
 load(
     "@org_tensorflow//tensorflow:tensorflow.bzl",
     "tf_cc_binary",
@@ -7,6 +7,7 @@ load(
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_library.bzl", "py_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
@@ -125,12 +126,13 @@ test_suite(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "mlir_convert",
     srcs = ["mlir_convert.py"],
     data = [
         "//tflite/converter:tf_tfl_translate",
     ],
+    strict_deps = True,
     deps = [
         ":zip_test_utils",
         "//tflite/python:lite",
@@ -141,9 +143,10 @@ py_strict_library(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "op_tests",
     srcs = glob(["op_tests/*.py"]),
+    strict_deps = True,
     deps = [
         ":zip_test_utils",
         "@org_tensorflow//third_party/py/numpy",
@@ -159,9 +162,10 @@ py_strict_library(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "generate_examples_lib",
     srcs = ["generate_examples_lib.py"],
+    strict_deps = True,
     deps = [
         ":op_tests",
         ":zip_test_utils",
@@ -169,9 +173,10 @@ py_strict_library(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "zip_test_utils",
     srcs = ["zip_test_utils.py"],
+    strict_deps = True,
     deps = [
         ":generate_examples_report",
         "//tflite/python:lite",
@@ -203,9 +208,10 @@ py_strict_binary(
     ),
 )
 
-py_strict_library(
+py_library(
     name = "generate_examples_report",
     srcs = ["generate_examples_report.py"],
+    strict_deps = True,
 )
 
 cc_library(
