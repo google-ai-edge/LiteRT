@@ -108,7 +108,10 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
         LiteRtGetCompiledModelOutputTensorLayouts,
     .litert_get_compiled_model_environment = LiteRtGetCompiledModelEnvironment,
     .litert_run_compiled_model = LiteRtRunCompiledModel,
+    .litert_run_compiled_model_with_options = LiteRtRunCompiledModelWithOptions,
     .litert_run_compiled_model_async = LiteRtRunCompiledModelAsync,
+    .litert_run_compiled_model_async_with_options =
+        LiteRtRunCompiledModelAsyncWithOptions,
     .litert_set_compiled_model_cancellation_function =
         LiteRtSetCompiledModelCancellationFunction,
     .litert_destroy_compiled_model = LiteRtDestroyCompiledModel,

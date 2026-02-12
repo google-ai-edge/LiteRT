@@ -191,13 +191,25 @@ Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
                                             size_t num_output_buffers,
                                             LiteRtTensorBuffer* output_buffers,
                                             bool& async) const {
+  return RunCApiHelper(signature_index, num_input_buffers, input_buffers,
+                       num_output_buffers, output_buffers, async,
+                       /*run_options=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
+                                            size_t num_input_buffers,
+                                            LiteRtTensorBuffer* input_buffers,
+                                            size_t num_output_buffers,
+                                            LiteRtTensorBuffer* output_buffers,
+                                            bool& async,
+                                            LiteRtOptions run_options) const {
   LiteRtStatus status =
-      async ? env_.runtime->RunCompiledModelAsync(
+      async ? env_.runtime->RunCompiledModelAsyncWithOptions(
                   Get(), signature_index, num_input_buffers, input_buffers,
-                  num_output_buffers, output_buffers, &async)
-            : env_.runtime->RunCompiledModel(
+                  num_output_buffers, output_buffers, &async, run_options)
+            : env_.runtime->RunCompiledModelWithOptions(
                   Get(), signature_index, num_input_buffers, input_buffers,
-                  num_output_buffers, output_buffers);
+                  num_output_buffers, output_buffers, run_options);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to invoke the compiled model");
   }
@@ -207,6 +219,14 @@ Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
 Expected<void> CompiledModel::RunHelper(
     size_t signature_index, absl::Span<const TensorBuffer> input_buffers,
     absl::Span<const TensorBuffer> output_buffers, bool& async) const {
+  return RunHelper(signature_index, input_buffers, output_buffers, async,
+                   /*run_options=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunHelper(
+    size_t signature_index, absl::Span<const TensorBuffer> input_buffers,
+    absl::Span<const TensorBuffer> output_buffers, bool& async,
+    LiteRtOptions run_options) const {
   auto input_buffers_ptr =
       std::make_unique<LiteRtTensorBuffer[]>(input_buffers.size());
   for (int i = 0; i < input_buffers.size(); ++i) {
@@ -219,7 +239,7 @@ Expected<void> CompiledModel::RunHelper(
   }
   return RunCApiHelper(signature_index, input_buffers.size(),
                        input_buffers_ptr.get(), output_buffers.size(),
-                       output_buffers_ptr.get(), async);
+                       output_buffers_ptr.get(), async, run_options);
 }
 
 Expected<void> CompiledModel::RunMapHelper(
@@ -227,12 +247,22 @@ Expected<void> CompiledModel::RunMapHelper(
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async) const {
+  return RunMapHelper(signature_key, input_map, output_map, async,
+                      /*run_options=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunMapHelper(
+    absl::string_view signature_key,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+    bool& async, LiteRtOptions run_options) const {
   auto signature_index = model_.GetSignatureIndex(signature_key);
   if (!signature_index) {
     return Unexpected(kLiteRtStatusErrorNotFound,
                       "Failed to get signature_index");
   }
-  return RunMapWithIndexHelper(*signature_index, input_map, output_map, async);
+  return RunMapWithIndexHelper(*signature_index, input_map, output_map, async,
+                               run_options);
 }
 
 Expected<void> CompiledModel::RunMapWithIndexHelper(
@@ -240,6 +270,15 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async) const {
+  return RunMapWithIndexHelper(signature_index, input_map, output_map, async,
+                               /*run_options=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunMapWithIndexHelper(
+    size_t signature_index,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+    bool& async, LiteRtOptions run_options) const {
   LITERT_ASSIGN_OR_RETURN(auto input_names,
                           model_.GetSignatureInputNames(signature_index));
   size_t num_inputs = input_names.size();
@@ -268,7 +307,8 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
     output_buffers_ptr[i] = it->second.Get();
   }
   return RunCApiHelper(signature_index, num_inputs, input_buffers_ptr.get(),
-                       num_outputs, output_buffers_ptr.get(), async);
+                       num_outputs, output_buffers_ptr.get(), async,
+                       run_options);
 }
 
 Expected<bool> CompiledModel::IsFullyAccelerated() {
