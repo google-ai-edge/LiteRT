@@ -14,8 +14,8 @@
 #ifndef LITERT_DIALECT
 #define LITERT_DIALECT
 
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/DialectBase.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/OpBase.td"
+include "mlir/IR/DialectBase.td"
+include "mlir/IR/OpBase.td"
 
 def LITERT_Dialect : Dialect {
   let name = "litert";
