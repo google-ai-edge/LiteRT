@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_gpu_options.h"
 
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -43,10 +44,10 @@ struct LiteRtGpuOptionsPayloadT {
   bool prefer_texture_weights = false;
   // The null-terminated directory to use for serialization.
   // If program_cache_fd is set, this field is ignored for the program cache.
-  const char* serialization_dir = nullptr;
+  char* serialization_dir = nullptr;
   // The unique null-terminated token string that acts as a 'namespace' for
   // all serialization entries.
-  const char* model_cache_key = nullptr;
+  char* model_cache_key = nullptr;
   // When set to true AND the serialization_dir and model_cache_key are also
   // set, the delegate will serialize the program cache.
   bool serialize_program_cache = true;
@@ -103,6 +104,11 @@ struct LiteRtGpuOptionsPayloadT {
   // The file descriptor to use for program caching. If set, it overrides the
   // serialization_dir.
   int program_cache_fd = -1;
+
+  ~LiteRtGpuOptionsPayloadT() {
+    std::free(serialization_dir);
+    std::free(model_cache_key);
+  }
 };
 
 namespace litert {
@@ -236,7 +242,13 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
     const char* serialization_dir) {
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
-  payload->serialization_dir = serialization_dir;
+  if (payload->serialization_dir) {
+    std::free(payload->serialization_dir);
+    payload->serialization_dir = nullptr;
+  }
+  if (serialization_dir) {
+    payload->serialization_dir = strdup(serialization_dir);
+  }
   return kLiteRtStatusOk;
 }
 
@@ -244,7 +256,13 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
     LiteRtOpaqueOptions gpu_accelerator_options, const char* model_cache_key) {
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
-  payload->model_cache_key = model_cache_key;
+  if (payload->model_cache_key) {
+    std::free(payload->model_cache_key);
+    payload->model_cache_key = nullptr;
+  }
+  if (model_cache_key) {
+    payload->model_cache_key = strdup(model_cache_key);
+  }
   return kLiteRtStatusOk;
 }
 
