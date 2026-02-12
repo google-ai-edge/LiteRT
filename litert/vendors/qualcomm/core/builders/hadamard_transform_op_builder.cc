@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -63,6 +64,20 @@ std::optional<float> GetSylvesterHadamardScale(const TensorWrapper& weight) {
   } else if (const auto* p = std::get_if<ScaleOffsetQuantizeParamsWrapper>(
                  &weight.GetQuantParams())) {
     return p->GetScale() * (hadamard_value + p->GetZeroPoint()) * std::sqrt(n);
+  } else if (const auto* p = std::get_if<AxisScaleOffsetQuantizeParamsWrapper>(
+                 &weight.GetQuantParams())) {
+    std::vector<float> scales;
+    p->GetScales(scales);
+    std::vector<std::int32_t> zero_points;
+    p->GetZeroPoints(zero_points);
+    if (std::all_of(
+            zero_points.begin(), zero_points.end(),
+            [&zero_points](std::int32_t i) { return i == zero_points[0]; }) &&
+        std::all_of(scales.begin(), scales.end(), [&scales](float i) {
+          return std::fabs(scales[0] - i) <= 1e-6f;
+        })) {
+      return scales[0] * (hadamard_value + zero_points[0]) * std::sqrt(n);
+    }
   }
   return std::nullopt;
 }
