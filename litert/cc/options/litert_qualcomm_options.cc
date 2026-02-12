@@ -298,4 +298,34 @@ absl::string_view QualcommOptions::GetSaverOutputDir() {
   return val;
 }
 
+void QualcommOptions::SetGpuPrecision(GpuPrecision gpu_precision) {
+  LrtQualcommOptionsSetGpuPrecision(options_,
+                               static_cast<LrtQualcommOptionsGpuPrecision>(gpu_precision));
+}
+
+QualcommOptions::GpuPrecision QualcommOptions::GetGpuPrecision() {
+  LrtQualcommOptionsGpuPrecision val;
+  auto status = LrtQualcommOptionsGetGpuPrecision(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return GpuPrecision::kFp16;
+  }
+  return static_cast<GpuPrecision>(val);
+}
+
+void QualcommOptions::SetGpuPerformanceMode(
+    GpuPerformanceMode gpu_performance_mode) {
+  LrtQualcommOptionsSetGpuPerformanceMode(
+      options_,
+      static_cast<LrtQualcommOptionsGpuPerformanceMode>(gpu_performance_mode));
+}
+
+QualcommOptions::GpuPerformanceMode QualcommOptions::GetGpuPerformanceMode() {
+  LrtQualcommOptionsGpuPerformanceMode val;
+  auto status = LrtQualcommOptionsGetGpuPerformanceMode(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return GpuPerformanceMode::kDefault;
+  }
+  return static_cast<GpuPerformanceMode>(val);
+}
+
 }  // namespace litert::qualcomm
