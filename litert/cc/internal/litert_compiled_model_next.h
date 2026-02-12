@@ -63,9 +63,20 @@ class CompiledModelNext : public CompiledModel {
                                             const litert::Model& model,
                                             const Options& compilation_options);
 
+  /// @brief Creates a `CompiledModelNext` from a model file.
+  static Expected<CompiledModelNext> Create(litert::Environment& env,
+                                            const std::string& model_filename,
+                                            Options& compilation_options);
+
   /// @brief A simplified version that only takes hardware accelerators.
   static Expected<CompiledModelNext> Create(
       litert::Environment& env, const litert::Model& model,
+      litert::HwAccelerators hardware_accelerators);
+
+  /// @brief Creates a `CompiledModelNext` from a model file using default
+  /// compilation options.
+  static Expected<CompiledModelNext> Create(
+      litert::Environment& env, const std::string& model_filename,
       litert::HwAccelerators hardware_accelerators);
 
   // Keep the stable CompiledModel APIs available alongside Next-only overloads.
@@ -299,6 +310,12 @@ class CompiledModelNext : public CompiledModel {
                              OwnHandle owned)
       : CompiledModel(env, litert_model,
                       /*model_owned=*/OwnHandle::kNo, compiled_model, owned) {}
+
+  explicit CompiledModelNext(internal::EnvironmentHolder& env,
+                             LiteRtModel litert_model, OwnHandle model_owned,
+                             LiteRtCompiledModel compiled_model,
+                             OwnHandle owned)
+      : CompiledModel(env, litert_model, model_owned, compiled_model, owned) {}
 };
 
 }  // namespace litert
