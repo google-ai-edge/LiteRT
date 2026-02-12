@@ -13,78 +13,33 @@
 // limitations under the License.
 
 #include "litert/cc/options/litert_runtime_options.h"
+#include <cstdlib>
+#include <cstring>
+#include <sstream>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
-#include "litert/c/options/litert_runtime_options.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "third_party/tomlplusplus/toml.hpp"
 
 namespace litert {
 
-absl::string_view RuntimeOptions::Identifier() {
-  return LiteRtGetRuntimeOptionsIdentifier();
-}
-
 Expected<RuntimeOptions> RuntimeOptions::Create() {
-  LiteRtOpaqueOptions options;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateRuntimeOptions(&options));
-  return RuntimeOptions(options, OwnHandle::kYes);
+  return RuntimeOptions();
 }
 
-Expected<void> RuntimeOptions::SetEnableProfiling(
-  bool enable_profiling) {
-LiteRtRuntimeOptions runtime_options;
-LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsEnableProfiling(
-    runtime_options, enable_profiling));
-return {};
+Expected<OpaqueOptions> RuntimeOptions::GetOpaqueOptions() {
+  toml::table tbl;
+  tbl.insert_or_assign("enable_profiling", enable_profiling_);
+  tbl.insert_or_assign("error_reporter_mode", error_reporter_mode_);
+  tbl.insert_or_assign("compress_quantization_zero_points",
+                      compress_quantization_zero_points_);
+  std::stringstream ss;
+  ss << tbl;
+  char* payload = static_cast<char*>(malloc(ss.str().length() + 1));
+  strncpy(payload, ss.str().c_str(), ss.str().length() + 1);
+  return OpaqueOptions::Create(
+      kPayloadIdentifier.data(), payload,
+      [](void* ptr) { free(ptr); });
 }
-
-Expected<bool> RuntimeOptions::GetEnableProfiling() const {
-LiteRtRuntimeOptions runtime_options;
-LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-bool enable_profiling;
-LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsEnableProfiling(
-    runtime_options, &enable_profiling));
-return enable_profiling;
-}
-
-Expected<void> RuntimeOptions::SetErrorReporterMode(
-    LiteRtErrorReporterMode error_reporter_mode) {
-  LiteRtRuntimeOptions runtime_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsErrorReporterMode(
-      runtime_options, error_reporter_mode));
-  return {};
-}
-
-Expected<LiteRtErrorReporterMode> RuntimeOptions::GetErrorReporterMode() const {
-  LiteRtRuntimeOptions runtime_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-  LiteRtErrorReporterMode error_reporter_mode;
-  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsErrorReporterMode(
-      runtime_options, &error_reporter_mode));
-  return error_reporter_mode;
-}
-
-Expected<void> RuntimeOptions::SetCompressQuantizationZeroPoints(
-    bool compress_zero_points) {
-  LiteRtRuntimeOptions runtime_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
-      runtime_options, compress_zero_points));
-  return {};
-}
-
-Expected<bool> RuntimeOptions::GetCompressQuantizationZeroPoints() const {
-  LiteRtRuntimeOptions runtime_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
-  bool compress_zero_points;
-  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
-      runtime_options, &compress_zero_points));
-  return compress_zero_points;
-}
-
 }  // namespace litert
