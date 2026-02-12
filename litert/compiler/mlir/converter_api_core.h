@@ -14,6 +14,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_MLIR_CONVERTER_API_CORE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_MLIR_CONVERTER_API_CORE_H_
 
+#include <Python.h>
+
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -22,9 +25,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Types.h"
 #include "mlir/Pass/PassManager.h"
 
 namespace litert {
@@ -83,6 +88,16 @@ absl::Status ExportFlatbufferToFile(mlir::ModuleOp module_op,
 // Exports the MLIR module to flatbuffer and returns the bytes.
 absl::StatusOr<llvm::SmallVector<char>> ExportFlatbufferToBytes(
     mlir::ModuleOp module_op);
+
+// Returns a callback resource attribute that wraps the given Python
+// chunk iterator factory. The factory is expected to be a callable that
+// returns an iterator that yields bytes in chunks.
+absl::StatusOr<mlir::Attribute> GetPyChunkedCallbackResourceAttr(
+    mlir::Type type, PyObject* chunk_iterator_factory);
+
+// Returns the bytes of the given callback resource attribute.
+absl::StatusOr<std::vector<uint8_t>> GetPyChunkedCallbackResourceAttrBytes(
+    mlir::Attribute attr);
 
 }  // namespace litert
 

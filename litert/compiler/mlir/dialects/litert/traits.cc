@@ -43,6 +43,8 @@ namespace {
 struct EphemeralSymDim {
   int64_t size;
   mlir::SymbolRefAttr symbol = nullptr;
+  explicit EphemeralSymDim(int64_t size, mlir::SymbolRefAttr symbol = nullptr)
+      : size(size), symbol(symbol) {}
 
   bool IsDynamic() const { return mlir::ShapedType::isDynamic(size); }
   bool IsDynamicWithoutSymbol() const { return IsDynamic() && !symbol; }
@@ -68,11 +70,12 @@ llvm::SmallVector<EphemeralSymDim> GetShape(mlir::Type type) {
   if (auto s_type = mlir::dyn_cast<mlir::ShapedType>(type)) {
     llvm::ArrayRef<int64_t> shape = s_type.getShape();
     for (const auto& s : shape) {
-      new_shape.emplace_back(s);
+      new_shape.push_back(EphemeralSymDim(s));
     }
   } else if (auto s_type = mlir::dyn_cast<SymTensorType>(type)) {
     for (const auto& sym_dim : s_type.getShape()) {
-      new_shape.emplace_back(sym_dim.getSize(), sym_dim.getSymbol());
+      new_shape.push_back(
+          EphemeralSymDim(sym_dim.getSize(), sym_dim.getSymbol()));
     }
   }
   return new_shape;
