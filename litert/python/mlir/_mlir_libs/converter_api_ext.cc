@@ -150,5 +150,33 @@ NB_MODULE(converter_api_ext, m) {
       },
       nb::arg("module"),
       "Exports the MLIR module to flatbuffer and returns the bytes.");
+
+  m.def(
+      "get_py_chunked_callback_resource_attr",
+      [](MlirType c_type, nb::callable chunk_iterator_factory) {
+        mlir::Type type = unwrap(c_type);
+        auto attr_or = litert::GetPyChunkedCallbackResourceAttr(
+            type, chunk_iterator_factory.ptr());
+        ThrowIfFailed("Failed to get callback resource attr", attr_or.status());
+        return wrap(attr_or.value());
+      },
+      nb::arg("type"), nb::arg("chunk_iterator_factory"),
+      "Returns a resource attribute that uses the Python callable to generate "
+      "chunks of data for the attribute. The callable should return "
+      "iterator of (chunked) bytes in packed little-endian format.");
+
+  m.def(
+      "get_py_chunked_callback_resource_attr_bytes",
+      [](MlirAttribute c_attr) {
+        mlir::Attribute attr = unwrap(c_attr);
+        auto bytes_or = litert::GetPyChunkedCallbackResourceAttrBytes(attr);
+        ThrowIfFailed("Failed to get callback resource attr bytes",
+                      bytes_or.status());
+        auto& bytes = bytes_or.value();
+        return nb::bytes(bytes.data(), bytes.size());
+      },
+      nb::arg("attr"),
+      "Gets and concatenates the bytes of an attribute from "
+      "get_py_chunked_callback_resource_attr.");
 }
 }  // namespace
