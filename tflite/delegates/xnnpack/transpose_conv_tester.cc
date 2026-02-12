@@ -28,26 +28,27 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "fp16.h"  // from @FP16
-#include "flatbuffers/flatbuffers.h"  // from @flatbuffers
+#include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "flatbuffers/string.h"  // from @flatbuffers
 #include "tflite/core/c/builtin_op_data.h"
+#include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"
-#include "tflite/core/model.h"
 #include "tflite/delegates/xnnpack/test_util.h"
+#include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 #include "tflite/interpreter.h"
-#include "tflite/schema/schema_conversion_utils.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/version.h"
 
 namespace tflite {
 namespace xnnpack {
 
-void TransposeConvTester::Test(TfLiteDelegate* delegate) const {
+void TransposeConvTester::Test(TfLiteDelegate* delegate) {
   std::random_device random_device;
   auto rng = std::mt19937(random_device());
   auto f32rng = std::bind(std::uniform_real_distribution<float>(), rng);
 
-  std::vector<char> buffer = CreateTfLiteModel();
-  const Model* model = GetModel(buffer.data());
+  const Model* model = GetModel();
 
   std::unique_ptr<Interpreter> delegate_interpreter;
   ASSERT_EQ(
@@ -79,7 +80,7 @@ void TransposeConvTester::Test(TfLiteDelegate* delegate) const {
   ASSERT_EQ(delegate_interpreter->ModifyGraphWithDelegate(delegate), kTfLiteOk);
 
   if (weights_cache_ != nullptr) {
-    TfLiteXNNPackDelegateWeightsCacheFinalizeHard(weights_cache_);
+    TfLiteXNNPackDelegateWeightsCacheFinalizeSoft(weights_cache_);
   }
 
   const int input_data_size =

@@ -21,6 +21,7 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "tflite/core/c/common.h"
+#include "tflite/delegates/xnnpack/test_util.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/schema/schema_generated.h"
@@ -32,7 +33,8 @@ namespace xnnpack {
 // input, output, and weights, runs this model in two TensorFlow Lite
 // interpreters, one with the delegate applied, and the other without, and
 // compares the results.
-class QuantizedDepthwiseConv2DTester {
+class QuantizedDepthwiseConv2DTester
+    : public ModelCache<QuantizedDepthwiseConv2DTester> {
  public:
   QuantizedDepthwiseConv2DTester() = default;
   QuantizedDepthwiseConv2DTester(const QuantizedDepthwiseConv2DTester&) =
@@ -261,10 +263,10 @@ class QuantizedDepthwiseConv2DTester {
   void Test(Interpreter* delegate_interpreter,
             Interpreter* default_interpreter) const;
 
-  void Test(TfLiteDelegate* delegate) const;
+  void Test(TfLiteDelegate* delegate);
 
  private:
-  std::vector<char> CreateTfLiteModel() const;
+  std::vector<char> CreateTfLiteModel() const override;
 
   inline ::tflite::Padding Padding() const { return padding_; }
 

@@ -24,6 +24,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/common.h"
+#include "tflite/delegates/xnnpack/test_util.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/schema/schema_generated.h"
@@ -37,7 +38,8 @@ enum class WeightsType {
   kTensorWiseQuantizedInt8,
 };
 
-class DynamicallyQuantizedFullyConnectedTester {
+class DynamicallyQuantizedFullyConnectedTester
+    : public ModelCache<DynamicallyQuantizedFullyConnectedTester> {
  public:
   DynamicallyQuantizedFullyConnectedTester() = default;
   DynamicallyQuantizedFullyConnectedTester(
@@ -140,10 +142,10 @@ class DynamicallyQuantizedFullyConnectedTester {
   void Test(Interpreter* delegate_interpreter,
             Interpreter* default_interpreter) const;
 
-  void Test(TfLiteDelegate* delegate) const;
+  void Test(TfLiteDelegate* delegate);
 
  private:
-  std::vector<char> CreateTfLiteModel() const;
+  std::vector<char> CreateTfLiteModel() const override;
 
   inline bool HasBias() const { return has_bias_; }
 
