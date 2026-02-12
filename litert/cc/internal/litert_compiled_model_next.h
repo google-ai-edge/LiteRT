@@ -31,6 +31,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer.h"
 
 /// @file
 /// @brief Defines an advanced `CompiledModel` with new and experimental
@@ -67,6 +68,10 @@ class CompiledModelNext : public CompiledModel {
       litert::Environment& env, const litert::Model& model,
       litert::HwAccelerators hardware_accelerators);
 
+  // Keep the stable CompiledModel APIs available alongside Next-only overloads.
+  using CompiledModel::Run;
+  using CompiledModel::RunAsync;
+
   /// @brief Starts the collection of hardware-specific metrics at a given
   /// level of detail.
   Expected<void> StartMetricsCollection(int detail_level);
@@ -74,6 +79,121 @@ class CompiledModelNext : public CompiledModel {
   /// @brief Stops the collection of hardware-specific metrics and reports the
   /// collected data.
   Expected<Metrics> StopMetricsCollection();
+
+  /// @brief Runs with per-run options for a given signature index.
+  Expected<void> Run(size_t signature_index,
+                     absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers,
+                     Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     run_options ? run_options->Get() : nullptr);
+  }
+
+  /// @brief Runs default signature with per-run options.
+  Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers,
+                     Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
+                     async, run_options ? run_options->Get() : nullptr);
+  }
+
+  /// @brief Runs asynchronously with per-run options for a given signature.
+  Expected<void> RunAsync(size_t signature_index,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async, Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    async = true;
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     run_options ? run_options->Get() : nullptr);
+  }
+
+  /// @brief Runs default signature asynchronously with per-run options.
+  Expected<void> RunAsync(const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async, Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    async = true;
+    return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
+                     async, run_options ? run_options->Get() : nullptr);
+  }
+
+  /// @brief Runs by signature key with per-run options.
+  Expected<void> Run(absl::string_view signature_key,
+                     const std::vector<TensorBuffer>& input_buffers,
+                     const std::vector<TensorBuffer>& output_buffers,
+                     Options* run_options) const {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            model_.GetSignatureIndex(signature_key));
+    return Run(signature_index, input_buffers, output_buffers, run_options);
+  }
+
+  /// @brief Runs by signature key asynchronously with per-run options.
+  Expected<void> RunAsync(absl::string_view signature_key,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async, Options* run_options) const {
+    async = true;
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            model_.GetSignatureIndex(signature_key));
+    return RunAsync(signature_index, input_buffers, output_buffers, async,
+                    run_options);
+  }
+
+  /// @brief Runs by signature key with per-run options using named maps.
+  Expected<void> Run(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunMapHelper(signature_key, input_map, output_map, async,
+                        run_options ? run_options->Get() : nullptr);
+  }
+
+  /// @brief Runs default signature with per-run options using named maps.
+  Expected<void> Run(
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunMapWithIndexHelper(/*signature_index=*/0, input_map, output_map,
+                                 async,
+                                 run_options ? run_options->Get() : nullptr);
+  }
+
+  /// @brief Runs by signature key asynchronously with per-run options using
+  /// named maps.
+  Expected<void> RunAsync(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      bool& async, Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    async = true;
+    return RunMapHelper(signature_key, input_map, output_map, async,
+                        run_options ? run_options->Get() : nullptr);
+  }
 
   /// @brief Sets a dispatch annotation on the compiled model.
   ///
