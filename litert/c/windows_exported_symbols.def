@@ -104,7 +104,6 @@ EXPORTS
   LiteRtGetCpuOptionsXNNPackFlags
   LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor
   LiteRtGetCpuOptionsXnnPackWeightCachePath
-  LiteRtGetDefaultSignatureKey
   LiteRtGetDummyCompilerOptions
   LiteRtGetEnvironmentOptions
   LiteRtGetEnvironmentOptionsValue

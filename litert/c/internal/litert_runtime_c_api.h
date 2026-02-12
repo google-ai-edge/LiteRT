@@ -163,8 +163,6 @@ typedef struct LiteRtRuntimeCApiStruct {
   //
   // LiteRtSignature
   //
-  // litert_model.h: LiteRtGetDefaultSignatureKey
-  LiteRtStatus (*litert_get_default_signature_key)(const char** signature_key);
   // litert_model.h: LiteRtGetSignatureKey
   LiteRtStatus (*litert_get_signature_key)(LiteRtSignature signature,
                                            const char** signature_key);

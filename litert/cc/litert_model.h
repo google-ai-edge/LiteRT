@@ -25,6 +25,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -369,9 +370,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   static absl::string_view DefaultSignatureKey() {
-    const char* key;
-    internal::AssertOk(LiteRtGetDefaultSignatureKey, &key);
-    return key;
+    return kDefaultSignatureKey;
   }
 
   /// @brief Returns the tensor type for the n-th input tensor.

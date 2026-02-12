@@ -35,6 +35,7 @@
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -201,7 +202,7 @@ TEST(CompiledModelTest, Basic) {
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
   absl::string_view signature_key = signatures[0]->Key();
-  EXPECT_EQ(signature_key, LiteRtSignatureT::kDefaultSignatureKey);
+  EXPECT_EQ(signature_key, litert::kDefaultSignatureKey);
 
   const std::vector<std::string>& input_names = signatures[0]->InputNames();
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
@@ -225,7 +226,7 @@ TEST(CompiledModelTest, Basic) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/0));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
       input_buffer_requirements_arg0->SupportedBufferTypes();
@@ -235,7 +236,7 @@ TEST(CompiledModelTest, Basic) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/1));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
       input_buffer_requirements_arg1->SupportedBufferTypes();
@@ -245,7 +246,7 @@ TEST(CompiledModelTest, Basic) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*output_index=*/0));
   const std::vector<LiteRtTensorBufferType>& output_buffer_types =
       output_buffer_requirements->SupportedBufferTypes();
@@ -353,7 +354,7 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
   absl::string_view signature_key = signatures[0]->Key();
-  EXPECT_EQ(signature_key, LiteRtSignatureT::kDefaultSignatureKey);
+  EXPECT_EQ(signature_key, litert::kDefaultSignatureKey);
 
   const std::vector<std::string>& input_names = signatures[0]->InputNames();
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
@@ -376,7 +377,7 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/0));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
       input_buffer_requirements_arg0->SupportedBufferTypes();
@@ -386,7 +387,7 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/1));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
       input_buffer_requirements_arg1->SupportedBufferTypes();
@@ -396,7 +397,7 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*output_index=*/0));
   const std::vector<LiteRtTensorBufferType>& output_buffer_types =
       output_buffer_requirements->SupportedBufferTypes();
@@ -488,7 +489,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
   absl::string_view signature_key = signatures[0]->Key();
-  EXPECT_EQ(signature_key, LiteRtSignatureT::kDefaultSignatureKey);
+  EXPECT_EQ(signature_key, litert::kDefaultSignatureKey);
 
   const std::vector<std::string>& input_names = signatures[0]->InputNames();
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
@@ -512,7 +513,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/0));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
       input_buffer_requirements_arg0->SupportedBufferTypes();
@@ -522,7 +523,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/1));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
       input_buffer_requirements_arg1->SupportedBufferTypes();
@@ -532,7 +533,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*output_index=*/0));
   const std::vector<LiteRtTensorBufferType>& output_buffer_types =
       output_buffer_requirements->SupportedBufferTypes();
@@ -616,7 +617,7 @@ TEST(CompiledModelTest, WithProfiler) {
   absl::Span<LiteRtSignature> signatures = model->Signatures();
   ASSERT_EQ(signatures.size(), 1);
   absl::string_view signature_key = signatures[0]->Key();
-  EXPECT_EQ(signature_key, LiteRtSignatureT::kDefaultSignatureKey);
+  EXPECT_EQ(signature_key, litert::kDefaultSignatureKey);
 
   const std::vector<std::string>& input_names = signatures[0]->InputNames();
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
@@ -651,7 +652,7 @@ TEST(CompiledModelTest, WithProfiler) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg0,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/0));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
       input_buffer_requirements_arg0->SupportedBufferTypes();
@@ -661,7 +662,7 @@ TEST(CompiledModelTest, WithProfiler) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* input_buffer_requirements_arg1,
       compiled_model->GetInputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*input_index=*/1));
   const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
       input_buffer_requirements_arg1->SupportedBufferTypes();
@@ -671,7 +672,7 @@ TEST(CompiledModelTest, WithProfiler) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       const LiteRtTensorBufferRequirementsT* output_buffer_requirements,
       compiled_model->GetOutputBufferRequirements(
-          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*signature_key=*/litert::kDefaultSignatureKey,
           /*output_index=*/0));
   const std::vector<LiteRtTensorBufferType>& output_buffer_types =
       output_buffer_requirements->SupportedBufferTypes();
@@ -1091,8 +1092,7 @@ TEST(CompiledModelTest, BindExternalWeightBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBuffer> output_buffers,
       CreateOutputBuffersFromRequirements(
-          env_ptr, *model, LiteRtSignatureT::kDefaultSignatureKey,
-          *compiled_model));
+          env_ptr, *model, litert::kDefaultSignatureKey, *compiled_model));
   ASSERT_EQ(output_buffers.size(), 1);
 
   // Provide data for the non-weight input tensor.
@@ -1187,7 +1187,7 @@ TEST(CompiledModelTest, GetOutputTensorShapes) {
   std::vector<LiteRtLayout> output_layouts(1);
   auto output_tensor_shapes = absl::MakeSpan(output_layouts);
   LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
-      LiteRtSignatureT::kDefaultSignatureKey, output_tensor_shapes));
+      litert::kDefaultSignatureKey, output_tensor_shapes));
   ASSERT_EQ(output_tensor_shapes.size(), 1);
   // The output tensor shape is [[2]]
   EXPECT_EQ(output_tensor_shapes[0].rank, 1);
@@ -1257,7 +1257,7 @@ TEST(CompiledModelTest, CheckResize) {
   std::vector<LiteRtLayout> output_layouts(1);
   auto output_tensor_shapes = absl::MakeSpan(output_layouts);
   LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
-      LiteRtSignatureT::kDefaultSignatureKey, output_tensor_shapes));
+      litert::kDefaultSignatureKey, output_tensor_shapes));
   ASSERT_EQ(output_tensor_shapes.size(), 1);
   // The output tensor shape is [1, 128, 4]
   EXPECT_EQ(output_tensor_shapes[0].rank, 3);

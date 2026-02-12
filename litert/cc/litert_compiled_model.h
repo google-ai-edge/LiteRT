@@ -28,6 +28,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
@@ -689,7 +690,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
 
   /// @brief Returns the default signature key of the model.
   static absl::string_view DefaultSignatureKey() {
-    return Model::DefaultSignatureKey();
+    return kDefaultSignatureKey;
   }
 
   /// @brief Returns the list of signature key names defined in the signature.

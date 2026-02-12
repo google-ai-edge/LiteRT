@@ -43,6 +43,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
@@ -226,8 +227,7 @@ TEST(ModelLoadTest, WithSignature) {
   auto model = litert::testing::LoadTestFileModel(kAddSimple);
   auto& litert_model = *model.Get();
 
-  auto signature =
-      litert_model.FindSignature(LiteRtSignatureT::kDefaultSignatureKey);
+  auto signature = litert_model.FindSignature(litert::kDefaultSignatureKey);
   ASSERT_TRUE(signature);
 
   EXPECT_EQ(signature->get().InputNames().size(), 1);
@@ -238,8 +238,7 @@ TEST(ModelLoadTest, WithSignature) {
 TEST(ModelLoadTest, NoSignature) {
   auto model = litert::testing::LoadTestFileModel("add_simple.tflite");
   auto& litert_model = *model.Get();
-  auto signature =
-      litert_model.FindSignature(LiteRtSignatureT::kDefaultSignatureKey);
+  auto signature = litert_model.FindSignature(litert::kDefaultSignatureKey);
   ASSERT_TRUE(signature);
   EXPECT_EQ(signature->get().InputNames().size(), 1);
   EXPECT_EQ(signature->get().OutputNames().size(), 1);

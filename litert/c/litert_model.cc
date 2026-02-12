@@ -252,14 +252,6 @@ LiteRtStatus LiteRtPushOp(LiteRtOpList op_list, LiteRtOp op,
 // Signature
 //
 
-LiteRtStatus LiteRtGetDefaultSignatureKey(const char** signature_key) {
-  if (!signature_key) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *signature_key = LiteRtSignatureT::kDefaultSignatureKey.data();
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus LiteRtGetSignatureKey(LiteRtSignature signature,
                                    const char** signature_key) {
   if (!signature || !signature_key) {

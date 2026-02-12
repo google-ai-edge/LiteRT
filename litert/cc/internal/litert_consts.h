@@ -32,6 +32,9 @@ static constexpr size_t kExpectedMaxNumOfOpOutputs = 8;
 static constexpr size_t kExpectedMaxNumOfSubgraphInputs = 4;
 static constexpr size_t kExpectedMaxNumOfSubgraphOutputs = 4;
 
+/// @brief Default signature key. This is the key that is used if models don't
+/// define any signatures.
+static constexpr char kDefaultSignatureKey[] = "<placeholder signature>";
 }  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_CONSTS_H_

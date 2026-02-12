@@ -29,6 +29,7 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
+#include "litert/cc/internal/litert_consts.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -119,8 +120,8 @@ std::optional<std::string> ExtractDirectory(absl::string_view path) {
 }
 
 void* StubOpInit([[maybe_unused]] TfLiteContext* context,
-                        [[maybe_unused]] const char* buffer,
-                        [[maybe_unused]] size_t length) {
+                 [[maybe_unused]] const char* buffer,
+                 [[maybe_unused]] size_t length) {
   return nullptr;
 }
 
@@ -128,7 +129,7 @@ void StubOpFree([[maybe_unused]] TfLiteContext* context,
                 [[maybe_unused]] void* buffer) {}
 
 TfLiteStatus StubOpPrepare([[maybe_unused]] TfLiteContext* context,
-                                  [[maybe_unused]] TfLiteNode* node) {
+                           [[maybe_unused]] TfLiteNode* node) {
   return kTfLiteOk;
 }
 
@@ -141,10 +142,10 @@ TfLiteStatus StubOpEval(TfLiteContext* context,
 }
 
 TfLiteRegistration sStubRegistration = {
-  .init = StubOpInit,
-  .free = StubOpFree,
-  .prepare = StubOpPrepare,
-  .invoke = StubOpEval,
+    .init = StubOpInit,
+    .free = StubOpFree,
+    .prepare = StubOpPrepare,
+    .invoke = StubOpEval,
 };
 
 #if !defined(LITERT_DISABLE_NPU)
@@ -256,9 +257,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interp_->SetNumThreads(num_threads);
 
   if (jit_compilation_options) {
-    const auto& bindings =
-        jit_compilation_options
-            ->external_tensor_bindings;
+    const auto& bindings = jit_compilation_options->external_tensor_bindings;
     for (const auto& binding : bindings) {
       if (litert::internal::SetCustomAllocationForInputTensor(
               interp_.get(), binding) != kTfLiteOk) {
@@ -280,7 +279,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   signature_keys_ = interp_->signature_keys();
   if (signature_keys_.empty()) {
     static auto* default_signature_key =
-        new std::string(LiteRtSignatureT::kDefaultSignatureKey);
+        new std::string(litert::kDefaultSignatureKey);
     signature_keys_.push_back(default_signature_key);
   }
 
@@ -416,7 +415,6 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
 }
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
-
 namespace {
 
 int GetAllocationFd(const tflite::Allocation* allocation) {
@@ -437,7 +435,7 @@ Expected<std::vector<litert::internal::CompilerPlugin>> TryGetCompilerPlugins(
   auto option = env.GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir);
   if (!option.has_value() || option->type != kLiteRtAnyTypeString) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Compiler plugin is not configured");
+                 "Compiler plugin is not configured");
   }
   std::string compiler_plugin_lib_path = option->str_value;
   const std::array<const absl::string_view, 1>
@@ -946,24 +944,21 @@ LiteRtCompiledModelT::GetOutputBufferRequirements(
 Expected<LiteRtLayout> LiteRtCompiledModelT::GetInputTensorLayout(
     size_t signature_index, size_t input_index) {
   if (signature_index >= signature_keys_.size()) {
-    return Unexpected(
-        kLiteRtStatusErrorIndexOOB,
-        "Signature index is out of range of signature keys");
+    return Unexpected(kLiteRtStatusErrorIndexOOB,
+                      "Signature index is out of range of signature keys");
   }
   auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
   if (runner == nullptr) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Failed to get signature runner");
+                      "Failed to get signature runner");
   }
   const auto& input_names = runner->subgraph_input_names();
   if (input_index >= input_names.size()) {
-    return Unexpected(kLiteRtStatusErrorIndexOOB,
-                              "Input index out of range");
+    return Unexpected(kLiteRtStatusErrorIndexOOB, "Input index out of range");
   }
   auto* input_tensor = runner->input_tensor(input_names[input_index]);
   if (input_tensor == nullptr) {
-    return Unexpected(kLiteRtStatusErrorNotFound,
-                              "Failed to get input tensor");
+    return Unexpected(kLiteRtStatusErrorNotFound, "Failed to get input tensor");
   }
 
   const TfLiteIntArray* dims = input_tensor->dims;
@@ -975,8 +970,8 @@ Expected<LiteRtLayout> LiteRtCompiledModelT::GetInputTensorLayout(
   const size_t rank = dims ? dims->size : 0;
   if (rank > LITERT_TENSOR_MAX_RANK) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Input tensor rank exceeds maximum supported "
-                              "rank for layouts");
+                      "Input tensor rank exceeds maximum supported "
+                      "rank for layouts");
   }
 
   LiteRtLayout layout{};
@@ -1033,10 +1028,10 @@ tflite::SignatureRunner* LiteRtCompiledModelT::GetSignatureRunner(
   if (signature_runners_.contains(signature_key)) {
     return signature_runners_[signature_key];
   }
-  auto runner = interp_->GetSignatureRunner(
-      signature_key == LiteRtSignatureT::kDefaultSignatureKey
-          ? nullptr
-          : std::string(signature_key).c_str());
+  auto runner =
+      interp_->GetSignatureRunner(signature_key == litert::kDefaultSignatureKey
+                                      ? nullptr
+                                      : std::string(signature_key).c_str());
   signature_runners_[signature_key] = runner;
   return runner;
 }
@@ -1075,7 +1070,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       // Shape change detected - perform automatic resize.
       if (runner->ResizeInputTensor(
               tensor_name, std::vector(buffer_shape.begin(),
-                                            buffer_shape.end())) == kTfLiteOk) {
+                                       buffer_shape.end())) == kTfLiteOk) {
         LITERT_RETURN_IF_ERROR(MarkSignatureNeedsAllocation(runner));
         LITERT_LOG(LITERT_INFO, "Automatically resized input tensor %s",
                    tensor_name ? tensor_name : "<unnamed>");
@@ -1494,11 +1489,10 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
   }
 
   if (!tensor->dims_signature || tensor->dims_signature->size == 0) {
-    return Unexpected(
-        kLiteRtStatusErrorInvalidArgument,
-        absl::StrCat("Cannot auto-resize tensor ",
-                     tensor->name ? tensor->name : "<unnamed>",
-                     ": no dims_signature exists"));
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      absl::StrCat("Cannot auto-resize tensor ",
+                                   tensor->name ? tensor->name : "<unnamed>",
+                                   ": no dims_signature exists"));
   }
   // Validate that the tensor has dynamic dimensions (contains -1).
   absl::Span<const int> signature_shape = absl::MakeConstSpan(
@@ -1508,9 +1502,9 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
       std::find(signature_shape.begin(), signature_shape.end(), -1) !=
           signature_shape.end(),
       Unexpected(kLiteRtStatusErrorInvalidArgument,
-                         absl::StrCat("Cannot auto-resize tensor ",
-                                      tensor->name ? tensor->name : "<unnamed>",
-                                      ": no dynamic dimensions found")));
+                 absl::StrCat("Cannot auto-resize tensor ",
+                              tensor->name ? tensor->name : "<unnamed>",
+                              ": no dynamic dimensions found")));
 
   // Validate that new shape is compatible with tensor structure.
   LITERT_RETURN_IF_ERROR(
@@ -1528,23 +1522,21 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
       // Static dim ⇒ must be identical.
       LITERT_RETURN_IF_ERROR(
           signature_shape[i] == new_shape[i],
-          Unexpected(
-              kLiteRtStatusErrorInvalidArgument,
-              absl::StrCat("Cannot auto-resize tensor ",
-                           tensor->name ? tensor->name : "<unnamed>",
-                           ": static dimension mismatch at index ", i,
-                           " (current: ", signature_shape[i],
-                           ", new: ", new_shape[i], ")")));
+          Unexpected(kLiteRtStatusErrorInvalidArgument,
+                     absl::StrCat("Cannot auto-resize tensor ",
+                                  tensor->name ? tensor->name : "<unnamed>",
+                                  ": static dimension mismatch at index ", i,
+                                  " (current: ", signature_shape[i],
+                                  ", new: ", new_shape[i], ")")));
     } else {
       // Dynamic dim ⇒ new value must be positive.
       LITERT_RETURN_IF_ERROR(
           new_shape[i] > 0,
-          Unexpected(
-              kLiteRtStatusErrorInvalidArgument,
-              absl::StrCat("Cannot auto-resize tensor ",
-                           tensor->name ? tensor->name : "<unnamed>",
-                           ": invalid dimension size ", new_shape[i],
-                           " at index ", i)));
+          Unexpected(kLiteRtStatusErrorInvalidArgument,
+                     absl::StrCat("Cannot auto-resize tensor ",
+                                  tensor->name ? tensor->name : "<unnamed>",
+                                  ": invalid dimension size ", new_shape[i],
+                                  " at index ", i)));
     }
   }
 
@@ -1571,39 +1563,36 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
     size_t signature_index, size_t input_index, absl::Span<const int> dims,
     bool strict_mode) {
   if (signature_index >= signature_keys_.size()) {
-    return Unexpected(
-        kLiteRtStatusErrorIndexOOB,
-        "Signature index is out of range of signature keys");
+    return Unexpected(kLiteRtStatusErrorIndexOOB,
+                      "Signature index is out of range of signature keys");
   }
 
   auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
   if (runner == nullptr) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Failed to get signature runner");
+                      "Failed to get signature runner");
   }
 
   const auto& input_names = runner->subgraph_input_names();
   if (input_index >= input_names.size()) {
-    return Unexpected(kLiteRtStatusErrorIndexOOB,
-                              "Input index out of range");
+    return Unexpected(kLiteRtStatusErrorIndexOOB, "Input index out of range");
   }
 
   const auto& input_name = input_names[input_index];
   auto* input_tensor = runner->input_tensor(input_name);
   if (input_tensor == nullptr) {
-    return Unexpected(kLiteRtStatusErrorNotFound,
-                              "Failed to get input tensor");
+    return Unexpected(kLiteRtStatusErrorNotFound, "Failed to get input tensor");
   }
 
   // Get current tensor shape.
   if (dims.empty()) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "New shape must not be empty.");
+                      "New shape must not be empty.");
   }
   for (int dim : dims) {
     if (dim <= 0) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                                "Dimensions must be positive.");
+                        "Dimensions must be positive.");
     }
   }
 
@@ -1629,14 +1618,13 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
 
   if (!signature_shape) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Failed to get current shape.");
+                      "Failed to get current shape.");
   }
 
   if (strict_mode) {
     if (signature_shape->size != dims.size()) {
-      return Unexpected(
-          kLiteRtStatusErrorInvalidArgument,
-          "New shape rank does not match current shape rank.");
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "New shape rank does not match current shape rank.");
     }
 
     bool has_dynamic_shape = false;
@@ -1645,14 +1633,13 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
       if (signature_dim == -1) {
         has_dynamic_shape = true;
       } else if (signature_dim != dims[i]) {
-        return Unexpected(
-            kLiteRtStatusErrorInvalidArgument,
-            "New shape is not compatible with current shape.");
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          "New shape is not compatible with current shape.");
       }
     }
     if (!has_dynamic_shape) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                                "Tensor does not have a dynamic shape.");
+                        "Tensor does not have a dynamic shape.");
     }
   }
 
@@ -1661,7 +1648,7 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
       input_name, std::vector(dims.begin(), dims.end()));
   if (status != kTfLiteOk) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "Failed to resize input tensor");
+                      "Failed to resize input tensor");
   }
 
   cpu_buffer_requirements_.clear();
@@ -1769,17 +1756,16 @@ Expected<::tflite::Interpreter*> GetInterpreter(
     LiteRtCompiledModelT* compiled_model) {
   if (compiled_model == nullptr) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Compiled model is null");
+                      "Compiled model is null");
   }
   if (compiled_model->interp_ == nullptr) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Interpreter is null");
+    return Unexpected(kLiteRtStatusErrorInvalidArgument, "Interpreter is null");
   }
   return compiled_model->interp_.get();
 }
 
-Expected<bool> InputTensorNeedsResize(
-    LiteRtCompiledModelT* compiled_model, const TfLiteTensor* tensor,
-    absl::Span<const int> new_shape) {
+Expected<bool> InputTensorNeedsResize(LiteRtCompiledModelT* compiled_model,
+                                      const TfLiteTensor* tensor,
+                                      absl::Span<const int> new_shape) {
   return compiled_model->InputTensorNeedsResize(tensor, new_shape);
 }

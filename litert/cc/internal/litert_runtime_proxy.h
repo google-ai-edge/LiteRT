@@ -249,10 +249,6 @@ class RuntimeProxy {
   //
   // LiteRtSignature
   //
-  LiteRtStatus GetDefaultSignatureKey(const char** signature_key) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_default_signature_key, signature_key);
-  }
-
   LiteRtStatus GetSignatureKey(LiteRtSignature signature,
                                const char** signature_key) {
     LITERT_PROXY_METHOD_STATUS(litert_get_signature_key, signature,

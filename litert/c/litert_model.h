@@ -158,10 +158,6 @@ LiteRtStatus LiteRtGetSubgraphOp(LiteRtSubgraph subgraph,
 // LiteRtSignature
 //
 
-// Default signature key. This is the key that is used if models don't
-// define any signatures.
-LiteRtStatus LiteRtGetDefaultSignatureKey(const char** signature_key);
-
 // Get the signature key string defined in the model.
 // The returned string pointer is owned by the LiteRtModel to which the given
 // Signature belongs. It becomes invalid when the LiteRtModel is destroyed.
