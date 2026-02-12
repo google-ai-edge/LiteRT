@@ -189,11 +189,29 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
                       "Tensor strides are not supported by QNN");
   }
 
+  // QnnGpu imports the DMA-BUF fd as OpenCL memory and rejects
+  // QNN_MEM_TYPE_ION (i.e. FastRPC-backed buffers), so advertise only
+  // DMA-BUF for the GPU backend.
   static constexpr std::array<const LiteRtTensorBufferType, 2>
-      kSupportedTensorBufferTypes = {
+      kHtpDspSupportedTensorBufferTypes = {
           kLiteRtTensorBufferTypeFastRpc,
           kLiteRtTensorBufferTypeDmaBuf,
       };
+  static constexpr std::array<const LiteRtTensorBufferType, 1>
+      kGpuSupportedTensorBufferTypes = {
+          kLiteRtTensorBufferTypeDmaBuf,
+      };
+
+  const LiteRtTensorBufferType* supported_types = nullptr;
+  size_t num_supported_types = 0;
+  if (qnn_manager_.GetOptions().GetBackendType() ==
+      ::qnn::BackendType::kGpuBackend) {
+    supported_types = kGpuSupportedTensorBufferTypes.data();
+    num_supported_types = kGpuSupportedTensorBufferTypes.size();
+  } else {
+    supported_types = kHtpDspSupportedTensorBufferTypes.data();
+    num_supported_types = kHtpDspSupportedTensorBufferTypes.size();
+  }
 
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
@@ -203,8 +221,7 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
   LiteRtTensorBufferRequirements requirements;
   if (auto status =
           device_context_->runtime_context()->create_tensor_buffer_requirements(
-              kSupportedTensorBufferTypes.size(),
-              kSupportedTensorBufferTypes.data(), *buffer_size,
+              num_supported_types, supported_types, *buffer_size,
               /*num_strides=*/0,
               /*strides=*/nullptr, &requirements);
       status != kLiteRtStatusOk) {

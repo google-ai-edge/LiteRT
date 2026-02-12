@@ -428,6 +428,41 @@ class QualcommOptions {
     return static_cast<GraphIOTensorMemType>(val);
   }
 
+  enum class GpuPrecision : int {
+    kUserProvided = kLiteRtQualcommGpuPrecisionUserProvided,
+    kFp32 = kLiteRtQualcommGpuPrecisionFp32,
+    kFp16 = kLiteRtQualcommGpuPrecisionFp16,
+    kHybrid = kLiteRtQualcommGpuPrecisionHybrid,
+  };
+
+  void SetGpuPrecision(GpuPrecision gpu_precision) {
+    LrtQualcommOptionsSetGpuPrecision(
+        options_, static_cast<LrtQualcommOptionsGpuPrecision>(gpu_precision));
+  }
+  GpuPrecision GetGpuPrecision() {
+    LrtQualcommOptionsGpuPrecision val;
+    LrtQualcommOptionsGetGpuPrecision(options_, &val);
+    return static_cast<GpuPrecision>(val);
+  }
+
+  enum class GpuPerformanceMode : int {
+    kDefault = kLiteRtQualcommGpuPerformanceModeDefault,
+    kHigh = kLiteRtQualcommGpuPerformanceModeHigh,
+    kNormal = kLiteRtQualcommGpuPerformanceModeNormal,
+    kLow = kLiteRtQualcommGpuPerformanceModeLow,
+  };
+
+  void SetGpuPerformanceMode(GpuPerformanceMode gpu_performance_mode) {
+    LrtQualcommOptionsSetGpuPerformanceMode(
+        options_, static_cast<LrtQualcommOptionsGpuPerformanceMode>(
+                      gpu_performance_mode));
+  }
+  GpuPerformanceMode GetGpuPerformanceMode() {
+    LrtQualcommOptionsGpuPerformanceMode val;
+    LrtQualcommOptionsGetGpuPerformanceMode(options_, &val);
+    return static_cast<GpuPerformanceMode>(val);
+  }
+
  private:
   LrtQualcommOptions options_;
 };

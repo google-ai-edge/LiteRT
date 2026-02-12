@@ -520,11 +520,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             break;
           }
           default: {
-            LITERT_LOG(LITERT_WARNING,
-                       "Only support weight sharing feature in Htp Backend, "
-                       "disable weight sharing feature");
-            break;
+            LITERT_LOG(LITERT_ERROR,
+                       "Weight sharing is only supported in HTP backend.");
+            return kLiteRtStatusErrorInvalidArgument;
           }
+        }
+      } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
+        if (options.GetGpuPerformanceMode() !=
+            ::qnn::GpuPerformanceMode::kDefault) {
+          context_configs = QnnManager::GpuPerformanceContextConfigs(
+              options.GetGpuPerformanceMode());
+          LITERT_LOG(LITERT_INFO, "Enable GPU performance mode: %d",
+                     static_cast<int>(options.GetGpuPerformanceMode()));
         }
       }
       auto context_handle = qnn_manager->CreateContextHandle(

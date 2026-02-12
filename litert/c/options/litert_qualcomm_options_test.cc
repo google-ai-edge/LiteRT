@@ -412,6 +412,44 @@ TEST(QualcommOptionsTest, CppWrapper) {
       QualcommOptions::GraphIOTensorMemType::kMemHandle);
   EXPECT_EQ(options->GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);
+
+  EXPECT_EQ(options->GetGpuPrecision(),
+            QualcommOptions::GpuPrecision::kFp16);
+  options->SetGpuPrecision(QualcommOptions::GpuPrecision::kFp32);
+  EXPECT_EQ(options->GetGpuPrecision(), QualcommOptions::GpuPrecision::kFp32);
+
+  EXPECT_EQ(options->GetGpuPerformanceMode(),
+            QualcommOptions::GpuPerformanceMode::kDefault);
+  options->SetGpuPerformanceMode(QualcommOptions::GpuPerformanceMode::kHigh);
+  EXPECT_EQ(options->GetGpuPerformanceMode(),
+            QualcommOptions::GpuPerformanceMode::kHigh);
+}
+
+TEST(LiteRtQualcommOptionsTest, GpuPrecision) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetGpuPrecision(
+      qualcomm_options, kLiteRtQualcommGpuPrecisionHybrid));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetGpuPrecision(), QualcommOptions::GpuPrecision::kHybrid);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, GpuPerformanceMode) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetGpuPerformanceMode(
+      qualcomm_options, kLiteRtQualcommGpuPerformanceModeHigh));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetGpuPerformanceMode(),
+            QualcommOptions::GpuPerformanceMode::kHigh);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
 }
 
 }  // namespace
