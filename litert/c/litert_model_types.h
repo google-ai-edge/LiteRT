@@ -67,13 +67,25 @@ typedef enum {
   kLiteRtElementTypeTfVariant = 15,   // kTfLiteVariant,
 } LiteRtElementType;
 
-// Tensor whose rank is dynamic.
+/// Tensor type when its rank is dynamic.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef struct {
   // The primitive element type of the constituent data.
   LiteRtElementType element_type;
 } LiteRtUnrankedTensorType;
 
-// Tensor whose rank is static but dimensions may be dynamic.
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtUnrankedTensorType) == 4,
+              "LiteRtUnrankedTensorType size mismatch");
+static_assert(offsetof(LiteRtUnrankedTensorType, element_type) == 0,
+              "LiteRtUnrankedTensorType element_type offset mismatch");
+#endif  // __cplusplus
+
+/// Tensor type when its rank is static but dimensions may be dynamic.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef struct {
   // The primitive element type of the constituent data.
   LiteRtElementType element_type;
@@ -81,6 +93,19 @@ typedef struct {
   // Shape information.
   LiteRtLayout layout;
 } LiteRtRankedTensorType;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+#if !defined(_MSC_VER)
+static_assert(sizeof(LiteRtRankedTensorType) == 72,
+              "LiteRtRankedTensorType size mismatch");
+#else   // !defined(_MSC_VER)
+static_assert(sizeof(LiteRtRankedTensorType) == 76,
+              "LiteRtRankedTensorType size mismatch");
+#endif  // !defined(_MSC_VER)
+static_assert(offsetof(LiteRtRankedTensorType, layout) == 4,
+              "LiteRtRankedTensorType layout offset mismatch");
+#endif  // __cplusplus
 
 inline bool LiteRtIsSameUnrankedTensorType(
     const LiteRtUnrankedTensorType* type1,

@@ -49,6 +49,9 @@ inline const char* LiteRtAnyTypeToString(LiteRtAnyType type) {
   return "Unknown";
 }
 
+/// An object that holds various value type.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef struct {
   LiteRtAnyType type;
   union {
@@ -59,6 +62,11 @@ typedef struct {
     const void* ptr_value;
   };
 } LiteRtAny;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtAny) == 16, "LiteRtAny size mismatch");
+#endif  // __cplusplus
 
 #ifdef __cplusplus
 }
