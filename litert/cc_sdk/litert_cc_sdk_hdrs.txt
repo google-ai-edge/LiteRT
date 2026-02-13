@@ -28,7 +28,6 @@ litert/c/litert_tensor_buffer.h
 litert/c/litert_webgpu_types.h
 litert/c/options/litert_compiler_options.h
 litert/c/options/litert_cpu_options.h
-litert/c/options/litert_darwinn_runtime_options.h
 litert/c/options/litert_google_tensor_options_type.h
 litert/c/options/litert_google_tensor_options.h
 litert/c/options/litert_gpu_options.h

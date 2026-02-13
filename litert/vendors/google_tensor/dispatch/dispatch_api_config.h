@@ -20,7 +20,6 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/options/litert_darwinn_options.h"
 
 namespace litert::google_tensor {
 
@@ -44,12 +43,6 @@ LiteRtStatus InitializeDispatchApiConfig(
 // WARNING: `InitializeDispatchApiConfig` must be called prior to calling any of
 // the following methods.
 
-// Returns a pointer to the DarwiNN-specific options provided by the application
-// when initializing the LiteRT Dispatch API.
-//
-// If no DarwiNN-specific options were provided, nullptr is returned.
-DarwinnRuntimeOptions* absl_nullable GetTheDarwinnOptions();
-
 // Returns the Google Tensor Dispatch API build ID.
 const char* absl_nonnull GetTheBuildId();
 
@@ -69,7 +62,7 @@ inline bool IsTensorBufferTypeSupported(LiteRtTensorBufferType type) {
       GetTheSupportedTensorBufferTypes();
 
   return absl::c_find(supported_tensor_buffer_types, type) !=
-           supported_tensor_buffer_types.end();
+         supported_tensor_buffer_types.end();
 }
 
 }  // namespace litert::google_tensor
