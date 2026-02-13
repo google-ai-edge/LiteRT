@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -135,6 +136,24 @@ CompiledModelNext::StopMetricsCollection() {
   }
   return CompiledModelNext::Metrics{.metrics =
                                         std::move(compiled_model_metrics)};
+}
+
+Expected<void> CompiledModelNext::SetSchedulingInfo(
+    const LiteRtSchedulingInfo& scheduling_info) const {
+  auto status =
+      env_.runtime->CompiledModelSetSchedulingInfo(Get(), &scheduling_info);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to set scheduling info");
+  }
+  return {};
+}
+
+Expected<void> CompiledModelNext::ClearSchedulingInfo() const {
+  auto status = env_.runtime->CompiledModelSetSchedulingInfo(Get(), nullptr);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to clear scheduling info");
+  }
+  return {};
 }
 
 }  // namespace litert

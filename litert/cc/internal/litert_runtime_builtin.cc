@@ -284,4 +284,11 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
     .litert_get_num_profiler_events = LiteRtGetNumProfilerEvents,
     .litert_get_profiler_events = LiteRtGetProfilerEvents,
     .litert_get_profile_summary = LiteRtGetProfileSummary,
+    // Scheduling info APIs
+    .litert_compiled_model_set_scheduling_info =
+        LiteRtCompiledModelSetSchedulingInfo,
+    .litert_run_compiled_model_with_scheduling_info =
+        LiteRtRunCompiledModelWithSchedulingInfo,
+    .litert_run_compiled_model_async_with_scheduling_info =
+        LiteRtRunCompiledModelAsyncWithSchedulingInfo,
 };

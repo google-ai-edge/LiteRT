@@ -388,7 +388,8 @@ Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
                                             bool& async) const {
   return RunCApiHelper(signature_index, num_input_buffers, input_buffers,
                        num_output_buffers, output_buffers, async,
-                       /*run_options=*/nullptr);
+                       /*run_options=*/nullptr,
+                       /*scheduling_info=*/nullptr);
 }
 
 Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
@@ -398,13 +399,47 @@ Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
                                             LiteRtTensorBuffer* output_buffers,
                                             bool& async,
                                             LiteRtOptions run_options) const {
-  LiteRtStatus status =
-      async ? env_.runtime->RunCompiledModelAsyncWithOptions(
-                  Get(), signature_index, num_input_buffers, input_buffers,
-                  num_output_buffers, output_buffers, &async, run_options)
-            : env_.runtime->RunCompiledModelWithOptions(
-                  Get(), signature_index, num_input_buffers, input_buffers,
-                  num_output_buffers, output_buffers, run_options);
+  return RunCApiHelper(signature_index, num_input_buffers, input_buffers,
+                       num_output_buffers, output_buffers, async, run_options,
+                       /*scheduling_info=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunCApiHelper(
+    LiteRtParamIndex signature_index, size_t num_input_buffers,
+    LiteRtTensorBuffer* input_buffers, size_t num_output_buffers,
+    LiteRtTensorBuffer* output_buffers, bool& async, LiteRtOptions run_options,
+    const LiteRtSchedulingInfo* scheduling_info) const {
+  if (run_options != nullptr && scheduling_info != nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Run options and scheduling info are mutually exclusive");
+  }
+
+  LiteRtStatus status;
+  if (scheduling_info != nullptr) {
+    status =
+        async ? env_.runtime->RunCompiledModelAsyncWithSchedulingInfo(
+                    Get(), signature_index, num_input_buffers, input_buffers,
+                    num_output_buffers, output_buffers, &async, scheduling_info)
+              : env_.runtime->RunCompiledModelWithSchedulingInfo(
+                    Get(), signature_index, num_input_buffers, input_buffers,
+                    num_output_buffers, output_buffers, scheduling_info);
+  } else if (run_options != nullptr) {
+    status = async
+                 ? env_.runtime->RunCompiledModelAsyncWithOptions(
+                       Get(), signature_index, num_input_buffers, input_buffers,
+                       num_output_buffers, output_buffers, &async, run_options)
+                 : env_.runtime->RunCompiledModelWithOptions(
+                       Get(), signature_index, num_input_buffers, input_buffers,
+                       num_output_buffers, output_buffers, run_options);
+  } else {
+    status = async
+                 ? env_.runtime->RunCompiledModelAsync(
+                       Get(), signature_index, num_input_buffers, input_buffers,
+                       num_output_buffers, output_buffers, &async)
+                 : env_.runtime->RunCompiledModel(
+                       Get(), signature_index, num_input_buffers, input_buffers,
+                       num_output_buffers, output_buffers);
+  }
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to invoke the compiled model");
   }
@@ -415,13 +450,24 @@ Expected<void> CompiledModel::RunHelper(
     size_t signature_index, absl::Span<const TensorBuffer> input_buffers,
     absl::Span<const TensorBuffer> output_buffers, bool& async) const {
   return RunHelper(signature_index, input_buffers, output_buffers, async,
-                   /*run_options=*/nullptr);
+                   /*run_options=*/nullptr,
+                   /*scheduling_info=*/nullptr);
 }
 
 Expected<void> CompiledModel::RunHelper(
     size_t signature_index, absl::Span<const TensorBuffer> input_buffers,
     absl::Span<const TensorBuffer> output_buffers, bool& async,
     LiteRtOptions run_options) const {
+  return RunHelper(signature_index, input_buffers, output_buffers, async,
+                   run_options,
+                   /*scheduling_info=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunHelper(
+    size_t signature_index, absl::Span<const TensorBuffer> input_buffers,
+    absl::Span<const TensorBuffer> output_buffers, bool& async,
+    LiteRtOptions run_options,
+    const LiteRtSchedulingInfo* scheduling_info) const {
   auto input_buffers_ptr =
       std::make_unique<LiteRtTensorBuffer[]>(input_buffers.size());
   for (int i = 0; i < input_buffers.size(); ++i) {
@@ -434,7 +480,8 @@ Expected<void> CompiledModel::RunHelper(
   }
   return RunCApiHelper(signature_index, input_buffers.size(),
                        input_buffers_ptr.get(), output_buffers.size(),
-                       output_buffers_ptr.get(), async, run_options);
+                       output_buffers_ptr.get(), async, run_options,
+                       scheduling_info);
 }
 
 Expected<void> CompiledModel::RunMapHelper(
@@ -443,7 +490,8 @@ Expected<void> CompiledModel::RunMapHelper(
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async) const {
   return RunMapHelper(signature_key, input_map, output_map, async,
-                      /*run_options=*/nullptr);
+                      /*run_options=*/nullptr,
+                      /*scheduling_info=*/nullptr);
 }
 
 Expected<void> CompiledModel::RunMapHelper(
@@ -452,12 +500,23 @@ Expected<void> CompiledModel::RunMapHelper(
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async, LiteRtOptions run_options) const {
   auto signature_index = GetSignatureIndex(signature_key);
+  return RunMapHelper(signature_key, input_map, output_map, async, run_options,
+                      /*scheduling_info=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunMapHelper(
+    absl::string_view signature_key,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+    bool& async, LiteRtOptions run_options,
+    const LiteRtSchedulingInfo* scheduling_info) const {
+  auto signature_index = GetSignatureIndex(signature_key);
   if (!signature_index) {
     return Unexpected(kLiteRtStatusErrorNotFound,
                       "Failed to get signature_index");
   }
   return RunMapWithIndexHelper(*signature_index, input_map, output_map, async,
-                               run_options);
+                               run_options, scheduling_info);
 }
 
 Expected<void> CompiledModel::RunMapWithIndexHelper(
@@ -466,7 +525,8 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async) const {
   return RunMapWithIndexHelper(signature_index, input_map, output_map, async,
-                               /*run_options=*/nullptr);
+                               /*run_options=*/nullptr,
+                               /*scheduling_info=*/nullptr);
 }
 
 Expected<void> CompiledModel::RunMapWithIndexHelper(
@@ -474,6 +534,17 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async, LiteRtOptions run_options) const {
+  return RunMapWithIndexHelper(signature_index, input_map, output_map, async,
+                               run_options,
+                               /*scheduling_info=*/nullptr);
+}
+
+Expected<void> CompiledModel::RunMapWithIndexHelper(
+    size_t signature_index,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+    bool& async, LiteRtOptions run_options,
+    const LiteRtSchedulingInfo* scheduling_info) const {
   LITERT_ASSIGN_OR_RETURN(auto input_names,
                           GetSignatureInputNames(signature_index));
   size_t num_inputs = input_names.size();
@@ -503,7 +574,7 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
   }
   return RunCApiHelper(signature_index, num_inputs, input_buffers_ptr.get(),
                        num_outputs, output_buffers_ptr.get(), async,
-                       run_options);
+                       run_options, scheduling_info);
 }
 
 Expected<bool> CompiledModel::IsFullyAccelerated() {

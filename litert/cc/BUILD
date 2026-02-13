@@ -295,6 +295,7 @@ cc_library(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
