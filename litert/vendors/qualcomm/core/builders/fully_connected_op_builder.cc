@@ -90,4 +90,17 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
   return res;
 }
 
+OpWrapper CreateFullyConnectedOp(const TensorWrapper& input,
+                                 const TensorWrapper& output,
+                                 const TensorWrapper& filter) {
+  auto name = GetUniqueOpName(QNN_OP_FULLY_CONNECTED);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_FULLY_CONNECTED, QnnOpCode::kFullyConnected);
+  op.AddInputTensor(input);
+  op.AddInputTensor(filter);
+  op.AddOutputTensor(output);
+  return op;
+}
+
 }  // namespace qnn

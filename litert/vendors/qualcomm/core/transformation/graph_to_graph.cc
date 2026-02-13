@@ -281,8 +281,43 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kMatMul,
       QnnOpCode::kElementWiseBinary,  // add
       QnnOpCode::kReshape};
-  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
-            OptimizeMHAFastVlmDecode);
+  // Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_decode,
+  //           OptimizeMHAFastVlmDecode);
+
+  // Fast Vlm Decode MHA-SHA + split RoPE and FC
+  const std::vector<QnnOpCode> fast_vlm_mha_decode_split_rope_fc = {
+      // MLP
+      QnnOpCode::kFullyConnected, QnnOpCode::kReshape, QnnOpCode::kReshape,
+      QnnOpCode::kFullyConnected, QnnOpCode::kReshape, QnnOpCode::kReshape,
+      QnnOpCode::kFullyConnected, QnnOpCode::kReshape, QnnOpCode::kReshape,
+      // ROPE
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kStridedSlice, QnnOpCode::kStridedSlice,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kConvert, QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kElementWiseBinary,  // add
+      // ROPE
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kStridedSlice, QnnOpCode::kStridedSlice,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kConvert, QnnOpCode::kConcat,
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kReshape,
+      // MHA
+      QnnOpCode::kElementWiseBinary,  // mul
+      QnnOpCode::kReshape, QnnOpCode::kMatMul, QnnOpCode::kMatMul,
+      QnnOpCode::kConcat, QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kReshape, QnnOpCode::kSoftmax, QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice, QnnOpCode::kMatMul, QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseBinary,  // add
+      QnnOpCode::kReshape
+    };
+  Transform(validate_op_config, ops, tensor_pool,
+            fast_vlm_mha_decode_split_rope_fc,
+            ExtremelyOptimizeMHAFastVlmDecode);
 
   // Attention Optimization
   const std::vector<QnnOpCode> attn = {

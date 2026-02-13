@@ -327,4 +327,22 @@ void BwAxisScaleOffsetQuantizeParamsWrapper::SetAxis(const std::int32_t axis) {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis = axis;
 }
 
+void BwAxisScaleOffsetQuantizeParamsWrapper::GetScales(
+    std::vector<float>& scales) const {
+  scales.clear();
+  scales.reserve(scales_.size());
+  for (const auto scale : scales_) {
+    scales.emplace_back(scale);
+  }
+}
+
+void BwAxisScaleOffsetQuantizeParamsWrapper::GetZeroPoints(
+    std::vector<std::int32_t>& zero_points) const {
+  zero_points.clear();
+  zero_points.reserve(offsets_.size());
+  for (const auto offset : offsets_) {
+    zero_points.emplace_back(-1 * offset);
+  }
+}
+
 }  // namespace qnn

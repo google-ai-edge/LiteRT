@@ -143,6 +143,10 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   void SetAxis(const std::int32_t axis);
 
+  void GetScales(std::vector<float>& scales) const;
+
+  void GetZeroPoints(std::vector<std::int32_t>& zero_points) const;
+
   std::uint32_t GetBitwidth() const {
     return qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth;
   }

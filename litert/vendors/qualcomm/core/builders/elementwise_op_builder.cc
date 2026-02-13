@@ -14,6 +14,37 @@
 
 namespace qnn {
 
+OpWrapper CreateElementWiseAddOp(const TensorWrapper& input_0,
+                                 const TensorWrapper& input_1,
+                                 const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_BINARY);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary);
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddOutputTensor(output_0);
+  op.AddScalarParam<std::uint32_t>(QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+                                   QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
+  return op;
+}
+
+OpWrapper CreateElementWiseMulOp(const TensorWrapper& input_0,
+                                 const TensorWrapper& input_1,
+                                 const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_BINARY);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary);
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddOutputTensor(output_0);
+  op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
+  return op;
+}
+
 std::vector<OpWrapper> BuildElementwiseAddOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {

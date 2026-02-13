@@ -50,4 +50,18 @@ std::vector<OpWrapper> BuildPackOp(TensorPool& tensor_pool,
   return res;
 }
 
+OpWrapper CreatePackOp(const std::vector<ConstTensorWrapperRef>& inputs,
+                       const TensorWrapper& output, std::uint32_t axis) {
+  auto name = GetUniqueOpName(QNN_OP_PACK);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_PACK, QnnOpCode::kPack);
+  for (const auto& input : inputs) {
+    op.AddInputTensor(input.get());
+  }
+  op.AddOutputTensor(output);
+  op.AddScalarParam<std::uint32_t>(QNN_OP_PACK_PARAM_AXIS, axis);
+  return op;
+}
+
 }  // namespace qnn
