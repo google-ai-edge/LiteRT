@@ -36,6 +36,11 @@ package(
 )
 
 cc_library(
+    name = "litert_scheduling_info",
+    hdrs = ["litert_scheduling_info.h"],
+)
+
+cc_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],
@@ -307,6 +312,7 @@ cc_library(
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
+        ":litert_scheduling_info",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
@@ -322,6 +328,19 @@ cc_library(
         "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
+    ],
+)
+
+# Do NOT use this target directly. This should only be used by RuntimeProxy.
+cc_library(
+    name = "litert_runtime_c_api_runtimecapi",
+    hdrs = ["litert_runtime_c_api.h"],
+    visibility = [
+        "//litert/cc/internal:__pkg__",
+    ],
+    deps = [
+        ":litert_scheduling_info",
+        "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )
 
