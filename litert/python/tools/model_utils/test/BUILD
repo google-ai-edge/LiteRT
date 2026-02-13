@@ -14,7 +14,7 @@
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = ["//visibility:private"],
     licenses = ["notice"],
 )

@@ -16,7 +16,7 @@ load("@rules_python//python:py_library.bzl", "py_library")
 load("//litert/build_common:litert_build_defs.bzl", "if_google")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = [
         # copybara:uncomment "//visibility:private",
         "//visibility:public",  # copybara:comment

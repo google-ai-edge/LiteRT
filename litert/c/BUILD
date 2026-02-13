@@ -50,7 +50,7 @@ LITERT_MIN_IOS_VERSION = "14.0"
 LITERT_MIN_MACOS_VERSION = "14.0"
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_c_users",

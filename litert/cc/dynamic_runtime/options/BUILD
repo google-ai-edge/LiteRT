@@ -16,7 +16,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = [
         # By default, visibility is restricted to litert_cc_users_dynamic_link. Individual targets can be
         # made public by setting their visibility to litert_public.

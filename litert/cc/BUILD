@@ -27,7 +27,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "liter
 # copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_public",

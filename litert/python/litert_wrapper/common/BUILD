@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 # copybara:uncomment load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],
 )

@@ -25,7 +25,7 @@ WINDOWS_PYBIND_UNDEFS = select({
 })
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
     default_visibility = ["//litert:litert_python_users"],
 )
 
