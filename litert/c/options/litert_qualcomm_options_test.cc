@@ -100,6 +100,24 @@ TEST(LiteRtQualcommOptionsTest, UseQint16AsQuint16) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, UseInt64BiasAsInt32) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsSetUseInt64BiasAsInt32(qualcomm_options, false));
+
+  bool use_int64_bias_as_int32;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetUseInt64BiasAsInt32(
+      qualcomm_options, &use_int64_bias_as_int32));
+  EXPECT_FALSE(use_int64_bias_as_int32);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, EnableWeightSharing) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -369,6 +387,10 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_FALSE(options->GetUseQint16AsQuint16());
   options->SetUseQint16AsQuint16(true);
   EXPECT_TRUE(options->GetUseQint16AsQuint16());
+
+  EXPECT_TRUE(options->GetUseInt64BiasAsInt32());
+  options->SetUseInt64BiasAsInt32(false);
+  EXPECT_FALSE(options->GetUseInt64BiasAsInt32());
 
   EXPECT_EQ(options->GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kDefault);

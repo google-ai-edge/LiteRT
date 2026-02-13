@@ -33,6 +33,7 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsProfiling profiling = kLiteRtQualcommProfilingOff;
   bool use_htp_preference = false;
   bool use_qint16_as_quint16 = false;
+  bool use_int64_bias_as_int32 = true;
   LiteRtQualcommOptionsBackend qnn_backend = kLiteRtQualcommBackendHtp;
   bool enable_weight_sharing = false;
   bool use_conv_hmx = true;
@@ -74,8 +75,9 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
     litert::HashCombine(
         ans, options->log_level, options->profiling,
         options->use_htp_preference, options->use_qint16_as_quint16,
-        options->qnn_backend, options->enable_weight_sharing,
-        options->htp_performance_mode, options->dsp_performance_mode,
+        options->use_int64_bias_as_int32, options->qnn_backend,
+        options->enable_weight_sharing, options->htp_performance_mode,
+        options->dsp_performance_mode,
         options->ir_json_dir, options->dlc_dir, options->vtcm_size,
         options->num_hvx_threads, options->optimization_level);
     return ans;
@@ -224,6 +226,28 @@ LiteRtStatus LiteRtQualcommOptionsGetUseQint16AsQuint16(
   }
 
   *use_qint16_as_quint16 = options->use_qint16_as_quint16;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetUseInt64BiasAsInt32(
+    LiteRtQualcommOptions options, bool use_int64_bias_as_int32) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->use_int64_bias_as_int32 = use_int64_bias_as_int32;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetUseInt64BiasAsInt32(
+    LiteRtQualcommOptions options, bool* use_int64_bias_as_int32) {
+  if (use_int64_bias_as_int32 == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *use_int64_bias_as_int32 = options->use_int64_bias_as_int32;
 
   return kLiteRtStatusOk;
 }

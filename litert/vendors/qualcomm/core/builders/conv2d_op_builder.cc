@@ -36,7 +36,8 @@ std::vector<OpWrapper> BuildConv2dOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs, const std::uint32_t stride_h,
     const std::uint32_t stride_w, const std::uint32_t dilation_h,
-    const std::uint32_t dilation_w, const PaddingType padding_type) {
+    const std::uint32_t dilation_w, const PaddingType padding_type,
+    const bool use_int64_bias_as_int32) {
   std::vector<OpWrapper> res;
 
   // transpose filter
@@ -103,7 +104,32 @@ std::vector<OpWrapper> BuildConv2dOp(
     // QNN only support per-tensor quant for bias,
     // and the scale and offset are both zero.
     bias_tensor.ConvertAxisScaleOffsetToScaleOffset();
-    conv_op.AddInputTensor(bias_tensor);
+
+    if (use_int64_bias_as_int32 && bias_tensor.IsTensorStatic() &&
+        bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
+      const auto original_data = bias_tensor.GetTensorData<int64_t>();
+      if (!original_data.has_value()) {
+        QNN_LOG_ERROR(
+            "Failed to get static tensor data when convert bias tensor from "
+            "int64 to int32.");
+        return {};
+      }
+      const auto num_elements = bias_tensor.GetTensorNumElements();
+      std::vector<int32_t> converted_data(num_elements);
+      for (size_t i = 0; i < num_elements; ++i) {
+        converted_data[i] = static_cast<int32_t>((*original_data)[i]);
+      }
+      auto& converted_bias_tensor = tensor_pool.CreateStaticTensor(
+          QNN_DATATYPE_SFIXED_POINT_32, bias_tensor.GetQuantParams(),
+          bias_tensor.GetDimensions(),
+          num_elements * sizeof(decltype(converted_data)::value_type),
+          converted_data.data());
+
+      conv_op.AddInputTensor(converted_bias_tensor);
+      QNN_LOG_WARNING("Convert bias tensor in conv2d op from int64 to int32.");
+    } else {
+      conv_op.AddInputTensor(bias_tensor);
+    }
   }
 
   conv_op.AddOutputTensor(outputs[kOutputIndex]);

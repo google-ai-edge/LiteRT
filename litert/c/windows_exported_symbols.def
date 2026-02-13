@@ -287,6 +287,7 @@ EXPORTS
   LiteRtQualcommOptionsGetUseFoldReLU
   LiteRtQualcommOptionsGetUseHtpPreference
   LiteRtQualcommOptionsGetUseQint16AsQuint16
+  LiteRtQualcommOptionsGetUseInt64BiasAsInt32
   LiteRtQualcommOptionsGetVtcmSize
   LiteRtQualcommOptionsSetBackend
   LiteRtQualcommOptionsSetDlcDir
@@ -305,6 +306,7 @@ EXPORTS
   LiteRtQualcommOptionsSetUseFoldReLU
   LiteRtQualcommOptionsSetUseHtpPreference
   LiteRtQualcommOptionsSetUseQint16AsQuint16
+  LiteRtQualcommOptionsSetUseInt64BiasAsInt32
   LiteRtQualcommOptionsSetVtcmSize
   LiteRtRegisterAccelerator
   LiteRtRegisterTensorBufferHandlers
