@@ -38,6 +38,9 @@ package(
 cc_library(
     name = "litert_scheduling_info",
     hdrs = ["litert_scheduling_info.h"],
+    visibility = [
+        "//visibility:public",
+    ],
 )
 
 cc_library(

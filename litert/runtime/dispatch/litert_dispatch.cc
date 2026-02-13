@@ -14,7 +14,9 @@
 
 #include "litert/vendors/c/litert_dispatch.h"
 
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
+#include "litert/c/litert_model_types.h"
 
 #if !defined(LITERT_WINDOWS_OS)
 #include <dlfcn.h>
@@ -296,6 +298,21 @@ LiteRtStatus LiteRtDispatchInvocationContextSetOptions(
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API invocation_context_set_options");
   return TheApi.interface->invocation_context_set_options(invocation_context,
                                                           options);
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (!invocation_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface ||
+      !TheApi.interface->invocation_context_set_scheduling_info) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  return TheApi.interface->invocation_context_set_scheduling_info(
+      invocation_context, scheduling_info);
 }
 
 LiteRtStatus LiteRtDispatchAttachInput(

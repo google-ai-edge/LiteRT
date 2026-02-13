@@ -50,6 +50,7 @@ cc_library(
     deps = [
         # only depend on the headers, not the implementation.
         "//litert/c/internal:litert_dispatch_headers",
+        "//litert/c/internal:litert_scheduling_info",
     ],
 )
 

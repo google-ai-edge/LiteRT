@@ -440,6 +440,7 @@ LiteRtDispatchInterface ExampleInterface = {
     /*.unregister_tensor_buffer=*/UnregisterTensorBuffer,
     /*.invocation_context_create=*/InvocationContextCreate,
     /*.invocation_context_destroy=*/InvocationContextDestroy,
+    /*.invocation_context_set_scheduling_info=*/nullptr,
     /*.attach_input=*/AttachInput,
     /*.attach_output=*/AttachOutput,
     /*.detach_input=*/DetachInput,
