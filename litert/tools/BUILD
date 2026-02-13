@@ -383,6 +383,7 @@ cc_library(
         "//tflite/tools/benchmark:benchmark_model_lib",
         "//tflite/tools/benchmark:benchmark_params",
         "//tflite/tools/benchmark/proto:benchmark_result_cc",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
@@ -404,9 +405,11 @@ cc_test(
     data = ["//litert/test:testdata/mobilenet_v2_1.0_224.tflite"],
     deps = [
         ":benchmark_litert_model",
+        "//litert/cc:litert_tensor_buffer",
         "//tflite/core/c:private_c_api_types",
         "//tflite/tools/benchmark:benchmark_model_lib",
         "//tflite/tools/benchmark:benchmark_params",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

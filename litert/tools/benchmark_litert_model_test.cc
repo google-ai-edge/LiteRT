@@ -18,12 +18,16 @@ limitations under the License.
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#include <cstddef>
 #include <fstream>
 #include <ios>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_tensor_buffer.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/tools/benchmark/benchmark_model.h"
 #include "tflite/tools/benchmark/benchmark_params.h"
@@ -50,7 +54,21 @@ class TestBenchmarkListener : public BenchmarkListener {
   BenchmarkResults results_;
 };
 
-TEST(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
+}  // namespace
+
+// Test fixture moved out of anonymous namespace to be accessible for
+// friendship.
+class BenchmarkLiteRtModelTest : public ::testing::Test {
+ protected:
+  std::vector<litert::TensorBuffer>& GetInputBuffers(
+      BenchmarkLiteRtModel& benchmark) {
+    return *benchmark.input_buffers_;
+  }
+};
+
+namespace {
+
+TEST_F(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
   params.Set<std::string>("graph", kModelPath);
   params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
@@ -70,7 +88,7 @@ TEST(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   EXPECT_GE(listener.results_.model_size_mb(), 0);
 }
 
-TEST(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
+TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
   BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
   params.Set<std::string>("graph", kModelPath);
   params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
@@ -139,7 +157,7 @@ TEST(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
                   listener.results_.throughput_MB_per_second());
 }
 
-TEST(BenchmarkLiteRtModelTest, BenchmarkWithModelRuntimeInfoFilePath) {
+TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithModelRuntimeInfoFilePath) {
   BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
   params.Set<std::string>("graph", kModelPath);
   params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
@@ -166,6 +184,40 @@ TEST(BenchmarkLiteRtModelTest, BenchmarkWithModelRuntimeInfoFilePath) {
   EXPECT_GT(model_runtime_details.subgraphs(0).execution_plan_size(), 0);
   EXPECT_GT(model_runtime_details.subgraphs(0).nodes_size(), 0);
   EXPECT_GT(model_runtime_details.subgraphs(0).edges_size(), 0);
+}
+
+// Use TEST_F to use the friend class fixture.
+TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithInputLayerValueRange) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", false);
+  // The input name of mobilenet_v2_1.0_224.tflite is "input".
+  params.Set<std::string>("input_layer_value_range", "input,10.0,20.0");
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+  EXPECT_EQ(benchmark.Init(), kTfLiteOk);
+  EXPECT_EQ(benchmark.PrepareInputData(), kTfLiteOk);
+
+  // Verify the input data range.
+  auto& input_buffers = GetInputBuffers(benchmark);
+  ASSERT_EQ(input_buffers.size(), 1);
+  auto& buffer = input_buffers[0];
+
+  auto size_bytes_res = buffer.Size();
+  ASSERT_TRUE(size_bytes_res.HasValue());
+  size_t size_bytes = size_bytes_res.Value();
+  size_t num_elements = size_bytes / sizeof(float);
+
+  std::vector<float> data(num_elements);
+  ASSERT_TRUE(buffer.Read<float>(absl::MakeSpan(data)).HasValue());
+
+  for (size_t i = 0; i < num_elements; ++i) {
+    EXPECT_GE(data[i], 10.0f);
+    EXPECT_LE(data[i], 20.0f);
+  }
 }
 
 }  // namespace
