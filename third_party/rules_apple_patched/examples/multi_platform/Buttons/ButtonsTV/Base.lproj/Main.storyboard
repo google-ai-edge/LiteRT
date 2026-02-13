@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder.AppleTV.Storyboard" version="3.0" toolsVersion="12113" systemVersion="16C67" targetRuntime="AppleTV" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" colorMatched="YES" initialViewController="BYZ-38-t0r">
+    <device id="appleTV" orientation="landscape">
+        <adaptation id="light"/>
+    </device>
+    <dependencies>
+        <deployment identifier="tvOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="12078"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <!--View Controller-->
+        <scene sceneID="tne-QT-ifu">
+            <objects>
+                <viewController id="BYZ-38-t0r" customClass="ViewController" customModule="ButtonsTV" customModuleProvider="target" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="y3c-jy-aDJ"/>
+                        <viewControllerLayoutGuide type="bottom" id="wfy-db-euE"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="8bC-Xf-vdC">
+                        <rect key="frame" x="0.0" y="0.0" width="1920" height="1080"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="0" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="HeU-aL-BiL">
+                                <rect key="frame" x="948" y="223" width="24" height="46"/>
+                                <accessibility key="accessibilityConfiguration" identifier="clickCount"/>
+                                <fontDescription key="fontDescription" style="UICTFontTextStyleHeadline"/>
+                                <nil key="textColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="QjS-ZF-7QH">
+                                <rect key="frame" x="872" y="497" width="176" height="86"/>
+                                <accessibility key="accessibilityConfiguration" label="clickButton"/>
+                                <inset key="contentEdgeInsets" minX="40" minY="20" maxX="40" maxY="20"/>
+                                <state key="normal" title="Click!"/>
+                                <connections>
+                                    <action selector="pressedButtonWithSender:" destination="BYZ-38-t0r" eventType="primaryActionTriggered" id="LEM-TL-BJ8"/>
+                                </connections>
+                            </button>
+                        </subviews>
+                        <color key="backgroundColor" red="0.0" green="0.0" blue="0.0" alpha="0.0" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="QjS-ZF-7QH" firstAttribute="centerY" secondItem="8bC-Xf-vdC" secondAttribute="centerY" id="A0S-6g-980"/>
+                            <constraint firstItem="QjS-ZF-7QH" firstAttribute="top" secondItem="HeU-aL-BiL" secondAttribute="bottom" constant="228" id="Hga-F0-gPZ"/>
+                            <constraint firstItem="HeU-aL-BiL" firstAttribute="centerX" secondItem="8bC-Xf-vdC" secondAttribute="centerX" id="T5B-Qg-2vu"/>
+                            <constraint firstItem="QjS-ZF-7QH" firstAttribute="centerX" secondItem="8bC-Xf-vdC" secondAttribute="centerX" id="hoV-1u-pPB"/>
+                        </constraints>
+                    </view>
+                    <connections>
+                        <outlet property="label" destination="HeU-aL-BiL" id="qsg-Me-TAv"/>
+                    </connections>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="dkx-z0-nzr" sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+</document>

@@ -27,6 +27,37 @@ http_archive(
     ],
 )
 
+
+
+http_archive(
+    name = "bazel_features",
+    sha256 = "a660027f5a87f13224ab54b8dc6e191693c554f2692fcca46e8e29ee7dabc43b",
+    strip_prefix = "bazel_features-1.30.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.30.0/bazel_features-v1.30.0.tar.gz",
+)
+
+local_repository(
+    name = "xctestrunner",
+    path = "third_party/xctestrunner_patched",
+)
+
+local_repository(
+    name = "build_bazel_rules_apple",
+    path = "third_party/rules_apple_patched",
+)
+
+http_archive(
+    name = "build_bazel_apple_support",
+    sha256 = "73c8dc6cdd7cea87956db9279a69c9e68bd2a5ec6a6a507e36d6e2d7da4d71a4",
+    url = "https://github.com/bazelbuild/apple_support/releases/download/1.21.1/apple_support.1.21.1.tar.gz",
+)
+
+http_archive(
+    name = "build_bazel_rules_swift",
+    sha256 = "28db894977ac51c8f3ab7c6dc9d655a85510366734e900b3c5302ce1ed91256c",
+    url = "https://github.com/bazelbuild/rules_swift/releases/download/2.4.0/rules_swift.2.4.0.tar.gz",
+)
+
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
 # tensorflow is updated to do the same patchcmd.
 http_archive(

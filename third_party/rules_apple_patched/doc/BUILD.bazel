@@ -1,0 +1,90 @@
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@io_bazel_stardoc//stardoc:stardoc.bzl", "stardoc")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+_PLAIN_DOC_SRCS = [
+    "providers",
+]
+
+_RULES_DOC_SRCS = [
+    "apple",
+    "docc",
+    "dtrace",
+    "header_map",
+    "ios.doc",
+    "macos.doc",
+    "resources",
+    "tvos.doc",
+    "versioning",
+    "visionos.doc",
+    "watchos.doc",
+    "xcarchive",
+    "xctrunner",
+]
+
+_DOC_SRCS = _PLAIN_DOC_SRCS + _RULES_DOC_SRCS
+
+[
+    stardoc(
+        name = file + "_doc",
+        out = file + ".gen.md",
+        input = "//apple:%s.bzl" % file,
+        tags = [
+            "no-cache",
+            "no-sandbox",  # https://github.com/bazelbuild/stardoc/issues/112
+        ],
+        deps = ["//apple:" + file],
+    )
+    for file in _DOC_SRCS
+]
+
+# Help developers who get a red CI result by telling them how to fix it
+_failure_message = "\nPlease update the docs by running\n    bazel run //doc:update"
+
+[
+    diff_test(
+        name = "check_" + file,
+        failure_message = _failure_message,
+        file1 = file + ".gen.md",
+        file2 = "%s.md" % file.replace(".doc", ""),
+    )
+    for file in _PLAIN_DOC_SRCS
+]
+
+[
+    diff_test(
+        name = "check_" + file,
+        failure_message = _failure_message,
+        file1 = file + ".gen.md",
+        file2 = "rules-%s.md" % file.replace(".doc", ""),
+    )
+    for file in _RULES_DOC_SRCS
+]
+
+write_file(
+    name = "gen_update",
+    out = "update.sh",
+    content = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+    ] + [
+        'cp -fv doc/{src}.gen.md "$BUILD_WORKSPACE_DIRECTORY/doc/{dst}.md"'.format(
+            src = file,
+            dst = file.replace(".doc", ""),
+        )
+        for file in _PLAIN_DOC_SRCS
+    ] + [
+        'cp -fv doc/{src}.gen.md "$BUILD_WORKSPACE_DIRECTORY/doc/rules-{dst}.md"'.format(
+            src = file,
+            dst = file.replace(".doc", ""),
+        )
+        for file in _RULES_DOC_SRCS
+    ],
+)
+
+sh_binary(
+    name = "update",
+    srcs = ["update.sh"],
+    data = [file + ".gen.md" for file in _DOC_SRCS],
+)
