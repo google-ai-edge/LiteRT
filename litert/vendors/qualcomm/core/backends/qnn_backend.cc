@@ -51,6 +51,7 @@ QnnDevice_CoreInfo_t& QnnBackend::AllocateDeviceCoreInfo() {
   back = QNN_DEVICE_CORE_INFO_INIT;
   return back;
 }
+
 QnnBackend::QnnLogHandle QnnBackend::CreateLogHandle(
     ::qnn::LogLevel log_level) {
   if (log_level != ::qnn::LogLevel::kOff) {
