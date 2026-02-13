@@ -179,6 +179,12 @@ LiteRtStatus InvocationContextDestroy(
   return invocation_context->Destroy();
 }
 
+LiteRtStatus InvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+  return invocation_context->SetRunOptions(options);
+}
+
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
@@ -451,6 +457,8 @@ LiteRtDispatchInterface TheInterface = {
     .destroy_metrics = litert::google_tensor::DestroyMetrics,
     .check_runtime_compatibility =
         litert::google_tensor::CheckRuntimeCompatibility,
+    .invocation_context_set_options =
+        litert::google_tensor::InvocationContextSetOptions,
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {
