@@ -38,6 +38,7 @@ EXPORTS
   LiteRtCompiledModelResizeInputTensor
   LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCompiledModelSetDispatchAnnotation
+  LiteRtCompiledModelSetSchedulingInfo
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
   LiteRtCreateAccelerator
@@ -313,6 +314,8 @@ EXPORTS
   LiteRtRunCompiledModelAsync
   LiteRtRunCompiledModelWithOptions
   LiteRtRunCompiledModelAsyncWithOptions
+  LiteRtRunCompiledModelWithSchedulingInfo
+  LiteRtRunCompiledModelAsyncWithSchedulingInfo
   LiteRtSerializeModel
   LiteRtSerializeModelWithSignatures
   LiteRtSetAcceleratorGetHardwareSupport

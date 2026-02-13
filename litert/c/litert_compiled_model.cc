@@ -26,6 +26,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
@@ -191,6 +192,67 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithOptions(
                                      input_buffers, num_output_buffers,
                                      output_buffers, async_ptr, options);
 
+  if (!res) {
+    LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
+    return res.Error().Status();
+  }
+  return kLiteRtStatusOk;
+}
+LiteRtStatus LiteRtCompiledModelSetSchedulingInfo(
+    LiteRtCompiledModel compiled_model,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (!compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto res = compiled_model->SetSchedulingInfo(scheduling_info);
+  if (!res) {
+    LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
+    return res.Error().Status();
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtRunCompiledModelWithSchedulingInfo(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (!compiled_model || (num_input_buffers > 0 && !input_buffers) ||
+      (num_output_buffers > 0 && !output_buffers)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  bool async = false;
+  auto res = compiled_model->RunCApi(signature_index, num_input_buffers,
+                                     input_buffers, num_output_buffers,
+                                     output_buffers, &async, scheduling_info);
+  if (!res) {
+    LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
+    return res.Error().Status();
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (!compiled_model || (num_input_buffers > 0 && !input_buffers) ||
+      (num_output_buffers > 0 && !output_buffers)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (async) {
+    *async = true;
+  }
+  bool async_ = true;
+  bool* async_ptr = async ? async : &async_;
+
+  auto res = compiled_model->RunCApi(
+      signature_index, num_input_buffers, input_buffers, num_output_buffers,
+      output_buffers, async_ptr, scheduling_info);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
     return res.Error().Status();

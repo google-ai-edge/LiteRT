@@ -1184,6 +1184,7 @@ cc_library(
         # C++ API headers.
         "litert_any.h",
         "litert_common.h",
+        "//litert/c/internal:litert_scheduling_info",
         "litert_buffer_ref.h",
         "litert_tensor_buffer_types.h",
         "litert_compiled_model.h",
@@ -1238,6 +1239,7 @@ cc_library(
         # C++ API targets.
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/functional:any_invocable",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_custom_op_kernel",
         "//litert/cc/dynamic_runtime:litert_environment",

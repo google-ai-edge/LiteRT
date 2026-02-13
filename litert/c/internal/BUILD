@@ -221,6 +221,7 @@ cc_library(
         "//litert/vendors/c:__pkg__",
     ],
     deps = [
+        ":litert_scheduling_info",
         "//litert/build_common:build_config",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
