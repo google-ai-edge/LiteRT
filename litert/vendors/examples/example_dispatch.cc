@@ -24,6 +24,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -148,6 +149,30 @@ class LiteRtDispatchInvocationContextT {
     }
   }
 
+  // Stores per-invocation options to be used for the next invocation.
+  //
+  // For this example implementation, we uses the "Hardware Accelerators"
+  // option as an example to demonstrate how to pass per rn option.
+  // If the option is provided, it is stored and used to control the behavior
+  // of the next call to `Invoke`.
+  // This is only a reference implementation to demonstrate the API use case.
+  void SetRunOptions(LiteRtOptions options) {
+    LiteRtHwAcceleratorSet accelerators = kLiteRtHwAcceleratorNone;
+    if (options) {
+      // Best-effort: if the option isn't present or is invalid, fall back to
+      // "no per-run override" semantics.
+      if (LiteRtGetOptionsHardwareAccelerators(options, &accelerators) !=
+          kLiteRtStatusOk) {
+        accelerators = kLiteRtHwAcceleratorNone;
+      }
+    }
+    run_accelerators_ = accelerators;
+  }
+
+  LiteRtHwAcceleratorSet GetRunAccelerators() const {
+    return run_accelerators_;
+  }
+
   const ::litert::example::ExampleGraph& ExampleGraph() const {
     return example_graph_;
   }
@@ -171,6 +196,7 @@ class LiteRtDispatchInvocationContextT {
   std::vector<BufferHandle> inputs_;
   std::vector<BufferHandle> outputs_;
   ::litert::example::ExampleGraph example_graph_;
+  LiteRtHwAcceleratorSet run_accelerators_ = kLiteRtHwAcceleratorNone;
 };
 
 namespace litert::example {
@@ -315,6 +341,35 @@ LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
   return kLiteRtStatusOk;
 }
 
+// Implements the `invocation_context_set_options` hook of the Dispatch API.
+//
+// This function serves as the bridge between the C-based Dispatch API and the
+// C++ implementation class `LiteRtDispatchInvocationContextT`. Its primary
+// purpose is to receive and apply per-invocation options to a specific
+// invocation context.
+//
+// When the LiteRT runtime needs to set options for a single execution (invoke)
+// call, it uses this function from the dispatch table. The provided `options`
+// are passed down to the underlying `LiteRtDispatchInvocationContextT`
+// instance, allowing the dispatch plugin to modify its behavior for the next
+// `Invoke` call.
+//
+// Parameters:
+//   invocation_context: A handle to the specific invocation context object
+//                       (an instance of LiteRtDispatchInvocationContextT) to
+//                       which the options should be applied.
+//   options:            A handle to the LiteRtOptions object containing the
+//                       per-invocation settings. The dispatch plugin can query
+//                       specific options from this object.
+//
+// Returns:
+//   kLiteRtStatusOk on success, or an error code if applying the options fails.
+LiteRtStatus InvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  invocation_context->SetRunOptions(options);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   invocation_context->Setup();
   const auto num_inputs = invocation_context->ExampleGraph().Inputs().size();
@@ -325,6 +380,36 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   LITERT_ASSIGN_OR_RETURN(
       auto results,
       ::litert::example::Execute(invocation_context->ExampleGraph(), inputs));
+
+  // Apply a simple per-run behavior tweak based on the provided options:
+  // if the per-run accelerator set contains CPU, scale outputs by 2.
+  //
+  // IMPORTANT: This section serves as a reference implementation to demonstrate
+  // the usage of the per-run options API. In a real-world scenario, the
+  // dispatch plugin would use the options to alter the execution flow,
+  // for example, by selecting a different hardware accelerator or adjusting
+  // runtime parameters.
+  //
+  // To facilitate testing and verification of the options propagation mechanism
+  // within the LiteRT framework, we introduce an artificial behavior change
+  // here. Specifically, if the `kLiteRtHwAcceleratorCpu` flag is set in the
+  // per-run options, we scale all output values by a factor of 2. This allows
+  // integration tests to easily check if the options were received and
+  // processed correctly by this dispatch plugin.
+  //
+  // This scaling is purely for testing purposes and does not represent a
+  // realistic use case for hardware accelerator selection. In a production
+  // environment, the choice of accelerator would influence the underlying
+  // computation kernels used, rather than arbitrarily changing the output
+  // values.
+  if (invocation_context->GetRunAccelerators() & kLiteRtHwAcceleratorCpu) {
+    for (auto& output : results) {
+      for (auto& v : output) {
+        v *= 2.0f;
+      }
+    }
+  }
+
   for (int i = 0; i < results.size(); ++i) {
     invocation_context->GetOutput(i) = std::move(results[i]);
   }
@@ -366,6 +451,7 @@ LiteRtDispatchInterface ExampleInterface = {
     /*.get_metric=*/nullptr,
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
+    /*.invocation_context_set_options=*/InvocationContextSetOptions,
 };
 
 LiteRtDispatchApi ExampleApi = {
