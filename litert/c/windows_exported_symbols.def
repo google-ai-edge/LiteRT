@@ -22,6 +22,7 @@ EXPORTS
   LiteRtAddCustomOpKernelOption
   LiteRtAddEnvironmentOptions
   LiteRtAddExternalTensorBinding
+  LiteRtAddGpuOptionsBufferStorageTensorPattern
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
@@ -117,6 +118,7 @@ EXPORTS
   LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType
   LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization
+  LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern
   LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern
   LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
   LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey
@@ -145,6 +147,7 @@ EXPORTS
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
   LiteRtGetNextOpaqueOptions
+  LiteRtGetNumGpuAcceleratorCompilationOptionsBufferStorageTensorPatterns
   LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures

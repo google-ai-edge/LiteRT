@@ -108,6 +108,10 @@ LiteRtStatus GpuOptions::AddExternalTensorPattern(const char* pattern) {
   return LiteRtAddGpuOptionsExternalTensorPattern(Get(), pattern);
 }
 
+LiteRtStatus GpuOptions::AddBufferStorageTensorPattern(const char* pattern) {
+  return LiteRtAddGpuOptionsBufferStorageTensorPattern(Get(), pattern);
+}
+
 Expected<void> GpuOptions::SetPriority(Priority priority) {
   LITERT_RETURN_IF_ERROR(LiteRtSetGpuOptionsGpuPriority(
       Get(), static_cast<LiteRtGpuPriority>(priority)));

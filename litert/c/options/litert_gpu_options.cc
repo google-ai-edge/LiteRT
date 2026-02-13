@@ -104,6 +104,12 @@ struct LiteRtGpuOptionsPayloadT {
   // The file descriptor to use for program caching. If set, it overrides the
   // serialization_dir.
   int program_cache_fd = -1;
+  // Added in version 2.1.0.
+  // List of prefix patterns of the tensor name that is used for buffer storage
+  // type. When it matches, those tensors will use buffer storage type.
+  //
+  // WARNING: This option is experimental and subject to change.
+  std::vector<std::string> buffer_storage_tensor_patterns;
 
   ~LiteRtGpuOptionsPayloadT() {
     std::free(serialization_dir);
@@ -191,6 +197,14 @@ LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
   payload->external_tensor_patterns.push_back(std::string(pattern));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddGpuOptionsBufferStorageTensorPattern(
+    LiteRtOpaqueOptions gpu_options, const char* pattern) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->buffer_storage_tensor_patterns.push_back(std::string(pattern));
   return kLiteRtStatusOk;
 }
 
@@ -562,6 +576,31 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
       << "`payload` cannot be null.";
   *external_tensor_pattern =
       payload->external_tensor_patterns[pattern_index].c_str();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetNumGpuAcceleratorCompilationOptionsBufferStorageTensorPatterns(
+    int* num_patterns, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(num_patterns, ErrorStatusBuilder::InvalidArgument())
+      << "`num_patterns` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *num_patterns = payload->buffer_storage_tensor_patterns.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern(
+    const char** buffer_storage_tensor_pattern, int pattern_index,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(buffer_storage_tensor_pattern,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`buffer_storage_tensor_pattern` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *buffer_storage_tensor_pattern =
+      payload->buffer_storage_tensor_patterns[pattern_index].c_str();
   return kLiteRtStatusOk;
 }
 
