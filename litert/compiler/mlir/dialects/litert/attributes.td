@@ -14,11 +14,11 @@
 #ifndef LITERT_ATTRIBUTES
 #define LITERT_ATTRIBUTES
 
-include "third_party/odml/litert/litert/compiler/mlir/dialects/litert/dialect.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/BuiltinAttributeInterfaces.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/CommonAttrConstraints.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/OpAsmInterface.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/OpBase.td"
+include "litert/compiler/mlir/dialects/litert/dialect.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/CommonAttrConstraints.td"
+include "mlir/IR/OpAsmInterface.td"
+include "mlir/IR/OpBase.td"
 
 class LITERT_Attr<string name, string attrMnemonic, list<Trait> traits = [],
                  string baseCppClass = "::mlir::Attribute">
@@ -27,21 +27,24 @@ class LITERT_Attr<string name, string attrMnemonic, list<Trait> traits = [],
   let attrName = "litert." # attrMnemonic;
 }
 
-def LITERT_PyDenseElementsAttr : LITERT_Attr<"PyDenseElements", 
-  "py_dense", [ElementsAttrInterface]> {
+def LITERT_CallbackResourceElementsAttr : LITERT_Attr<"CallbackResourceElements",
+  "callback_resource", [ElementsAttrInterface]> {
   let parameters = (ins
     AttributeSelfTypeParameter<"", "mlir::ShapedType">:$type,
-    "litert::PyBlob":$py_blob
+    ResourceHandleParameter<"CallbackResourceElementsHandle">:$raw_handle
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-      "mlir::ShapedType":$type, "litert::PyBlob&&":$py_blob
+      "mlir::ShapedType":$type, "CallbackResourceElementsHandle":$handle
+    )>,
+    AttrBuilderWithInferredContext<(ins
+      "mlir::ShapedType":$type, "std::unique_ptr<CallbackResourceBase>":$resource
     )>,
   ];
 
   let extraClassDeclaration = [{
-    const litert::PyBlob& GetPyBlob() const;
+     CallbackResourceBase* GetResource();
   }];
 
   let skipDefaultBuilders = 1;
