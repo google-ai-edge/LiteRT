@@ -34,7 +34,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
@@ -338,6 +337,71 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+}
+
+// Tests Compiled Model signature accessors.
+TEST(CompiledModelTest, SignatureAccessors) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Check signature keys.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signature_keys,
+                              compiled_model.GetSignatureKeys());
+  EXPECT_THAT(signature_keys,
+              ElementsAre(compiled_model.DefaultSignatureKey()));
+
+  // Check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, compiled_model.GetSignatures());
+  ASSERT_EQ(signatures.size(), 1);
+  EXPECT_EQ(signatures[0].Key(), compiled_model.DefaultSignatureKey());
+  EXPECT_THAT(signatures[0].InputNames(), ElementsAre("arg0", "arg1"));
+  EXPECT_THAT(signatures[0].OutputNames(), ElementsAre("tfl.add"));
+
+  // Check GetSignature by index.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signature, compiled_model.GetSignature(0));
+  EXPECT_EQ(signature.Key(), compiled_model.DefaultSignatureKey());
+
+  // Check signature input names by key.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames(
+                                  compiled_model.DefaultSignatureKey()));
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  // Check signature output names by key.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames(
+                                  compiled_model.DefaultSignatureKey()));
+  EXPECT_THAT(output_names, ElementsAre("tfl.add"));
+}
+
+TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Check GetSignature with invalid index.
+  EXPECT_FALSE(compiled_model.GetSignature(100).HasValue());
+
+  // Check GetSignatureIndex with invalid key.
+  EXPECT_FALSE(compiled_model.GetSignatureIndex("invalid_key").HasValue());
+
+  // Check GetSignatureInputNames with invalid key.
+  EXPECT_FALSE(compiled_model.GetSignatureInputNames("invalid_key").HasValue());
+
+  // Check GetSignatureOutputNames with invalid key.
+  EXPECT_FALSE(
+      compiled_model.GetSignatureOutputNames("invalid_key").HasValue());
 }
 
 // Tests Compiled Model async API on CPU. In the CPU case, the async API should

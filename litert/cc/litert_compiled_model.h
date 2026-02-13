@@ -203,7 +203,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
       absl::string_view signature_name, absl::string_view input_name) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return GetInputBufferRequirements(signature_index, input_name);
   }
 
@@ -242,7 +242,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<TensorBufferRequirements> GetOutputBufferRequirements(
       absl::string_view signature_name, absl::string_view output_name) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return GetOutputBufferRequirements(signature_index, output_name);
   }
 
@@ -255,7 +255,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       size_t signature_index, bool update_allocation = false) const {
     // get num tensors here
     LITERT_ASSIGN_OR_RETURN(auto output_names,
-                            model_.GetSignatureOutputNames(signature_index));
+                            GetSignatureOutputNames(signature_index));
     int num_tensors = output_names.size();
     std::vector<LiteRtLayout> litert_layout_vector(num_tensors);
     LITERT_RETURN_IF_ERROR(env_.runtime->GetCompiledModelOutputTensorLayouts(
@@ -341,7 +341,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<std::vector<TensorBuffer>> CreateInputBuffers(
       absl::string_view signature_name) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return CreateInputOutputBuffers(signature_index, /*is_input=*/true);
   }
 
@@ -372,7 +372,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<std::vector<TensorBuffer>> CreateOutputBuffers(
       absl::string_view signature_name) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return CreateOutputBuffers(signature_index);
   }
 
@@ -445,7 +445,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                      const std::vector<TensorBuffer>& input_buffers,
                      const std::vector<TensorBuffer>& output_buffers) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_key));
+                            GetSignatureIndex(signature_key));
     return Run(signature_index, input_buffers, output_buffers);
   }
 
@@ -460,7 +460,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                           bool& async) const {
     async = true;
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_key));
+                            GetSignatureIndex(signature_key));
     return RunAsync(signature_index, input_buffers, output_buffers, async);
   }
 
@@ -580,7 +580,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                    absl::string_view input_name,
                                    absl::Span<const int> dims) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return ResizeInputTensor(signature_index, input_name, dims);
   }
 
@@ -625,7 +625,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                             absl::string_view input_name,
                                             absl::Span<const int> dims) {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return ResizeInputTensorNonStrict(signature_index, input_name, dims);
   }
 
@@ -686,123 +686,140 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   // Underlying model accessors
   //----------------------------------------------------------------------------
 
-  /// @brief Returns the number of signatures defined in the model.
-  size_t GetNumSignatures() const { return model_.GetNumSignatures(); }
-
   /// @brief Returns the default signature key of the model.
   static absl::string_view DefaultSignatureKey() {
     return kDefaultSignatureKey;
   }
 
-  /// @brief Returns the list of signature key names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
-    return model_.GetSignatureKeys();
+  /// @brief Returns the number of signatures defined in the model.
+  size_t GetNumSignatures() const {
+    LiteRtParamIndex num_signatures;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetNumModelSignatures(model_.Get(), &num_signatures));
+    return num_signatures;
   }
+
+  /// @brief Returns the list of signature key names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureKeys() const;
 
   /// @brief Returns the list of signatures defined in the model.
-  Expected<std::vector<SimpleSignature>> GetSignatures() const {
-    return model_.GetSignatures();
-  }
+  Expected<std::vector<SimpleSignature>> GetSignatures() const;
 
   /// @brief Returns the signature at the given index.
-  Expected<SimpleSignature> GetSignature(size_t signature_index) const {
-    return model_.GetSignature(signature_index);
-  }
+  Expected<SimpleSignature> GetSignature(size_t signature_index) const;
 
   /// @brief Returns the signature index for a given signature key.
   ///
   /// Returns 0 if the signature key is empty.
-  Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const {
-    return model_.GetSignatureIndex(signature_key);
-  }
+  Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const;
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
-      size_t signature_index) const {
-    return model_.GetSignatureInputNames(signature_index);
-  }
+      size_t signature_index) const;
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
-    return model_.GetSignatureInputNames();
+    return GetSignatureInputNames(/*signature_index=*/0);
   }
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       absl::string_view signature_key) const {
-    return model_.GetSignatureInputNames(signature_key);
+    auto signature = FindSignature(signature_key);
+    if (!signature) {
+      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+    }
+    return signature->InputNames();
   }
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
-      size_t signature_index) const {
-    return model_.GetSignatureOutputNames(signature_index);
-  }
+      size_t signature_index) const;
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
-    return model_.GetSignatureOutputNames();
+    return GetSignatureOutputNames(/*signature_index=*/0);
   }
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       absl::string_view signature_key) const {
-    return model_.GetSignatureOutputNames(signature_key);
+    auto signature = FindSignature(signature_key);
+    if (!signature) {
+      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+    }
+    return signature->OutputNames();
   }
 
   /// @brief Returns the tensor type for the n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
                                                 size_t input_index) const {
-    return model_.GetInputTensorType(signature_index, input_index);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    return signature.InputTensorType(input_index);
   }
 
   /// @brief Returns the tensor type for a given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
       size_t signature_index, absl::string_view input_name) const {
-    return model_.GetInputTensorType(signature_index, input_name);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    return signature.InputTensorType(input_name);
   }
 
   /// @brief Returns the tensor type for a given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
       absl::string_view signature_key, absl::string_view input_name) const {
-    return model_.GetInputTensorType(signature_key, input_name);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    return signature.InputTensorType(input_name);
   }
 
   /// @brief Gets the input tensor type of the default signature for a given
   /// input name.
   Expected<RankedTensorType> GetInputTensorType(
       absl::string_view input_name) const {
-    return model_.GetInputTensorType(input_name);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    return signature.InputTensorType(input_name);
   }
 
   /// @brief Returns the tensor type for the n-th output tensor.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  size_t output_index) const {
-    return model_.GetOutputTensorType(signature_index, output_index);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    return signature.OutputTensorType(output_index);
   }
 
   /// @brief Returns the tensor type for a given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
       size_t signature_index, absl::string_view output_name) const {
-    return model_.GetOutputTensorType(signature_index, output_name);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(signature_index));
+    return signature.OutputTensorType(output_name);
   }
 
   /// @brief Returns the tensor type for a given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
       absl::string_view signature_key, absl::string_view output_name) const {
-    return model_.GetOutputTensorType(signature_key, output_name);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            FindSignature(signature_key));
+    return signature.OutputTensorType(output_name);
   }
 
   /// @brief Gets the output tensor type of the default signature for a given
   /// output name.
   Expected<RankedTensorType> GetOutputTensorType(
       absl::string_view output_name) const {
-    return model_.GetOutputTensorType(output_name);
+    LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
+                            GetSignature(/*signature_index=*/0));
+    return signature.OutputTensorType(output_name);
   }
 
  protected:
   /// @internal
-  /// @brief Creates a `CompiledModel` from a provided `litert::Model`.
+  /// @brief Creates a `CompiledModel` from a provided `LiteRtModel`.
   ///
   /// The model is loaded into memory, and the caller takes ownership of the
   /// returned `CompiledModel` object. The caller should keep the model alive
@@ -816,10 +833,9 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// specify the NPU accelerator in `hardware_accelerators` to use it
   /// properly.
   static Expected<CompiledModel> Create(litert::Environment& env,
-                                        const litert::Model& model,
+                                        const LiteRtModel litert_model,
                                         Options& compilation_options) {
     LITERT_RETURN_IF_ERROR(compilation_options.Build());
-    LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;
     auto env_holder = env.GetHolder();
     LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
@@ -830,6 +846,13 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                          /*owned=*/OwnHandle::kYes);
   }
 
+  [[deprecated("Use Create with LiteRtModel instead.")]]
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        const litert::Model& model,
+                                        Options& compilation_options) {
+    return Create(env, model.Get(), compilation_options);
+  }
+
   /// @internal
   /// @brief A simplified version of `Create` that uses default compilation
   /// options.
@@ -837,6 +860,15 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// The provided hardware accelerator is used to select the target
   /// accelerator.
   /// @note This should be specified for both JIT and AOT compiled models.
+  static Expected<CompiledModel> Create(
+      litert::Environment& env, const LiteRtModel litert_model,
+      litert::HwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
+    return Create(env, litert_model, compilation_options);
+  }
+
+  [[deprecated("Use Create with LiteRtModel instead.")]]
   static Expected<CompiledModel> Create(
       litert::Environment& env, const litert::Model& model,
       litert::HwAccelerators hardware_accelerators) {
@@ -862,9 +894,14 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
             owned),
         env_(env) {
     if (model_owned == OwnHandle::kYes) {
-      model_ = Model::CreateFromOwnedHandle(litert_model);
+      model_ = internal::BaseHandle<LiteRtModel>(
+          litert_model,
+          [runtime = env.runtime](LiteRtModel model) {
+            runtime->DestroyModel(model);
+          },
+          OwnHandle::kYes);
     } else {
-      model_ = Model::CreateFromNonOwnedHandle(litert_model);
+      model_ = internal::NonOwnedHandle<LiteRtModel>(litert_model);
     }
   }
 
@@ -874,7 +911,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<size_t> FindInputIndex(size_t signature_index,
                                   absl::string_view input_name) const;
 
-  /// @brief Returns the signature output index for a given output tensor name.
+  /// @brief Returns the signature output index for a given output tensor
+  /// name.
   Expected<size_t> FindOutputIndex(size_t signature_index,
                                    absl::string_view output_name) const;
 
@@ -896,7 +934,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       absl::string_view signature_name, absl::string_view tensor_name,
       bool is_input) const {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
+                            GetSignatureIndex(signature_name));
     return CreateInputOutputBuffer(signature_index, tensor_name, is_input);
   }
 
@@ -904,6 +942,12 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// subgraph.
   Expected<std::vector<TensorBuffer>> CreateInputOutputBuffers(
       size_t signature_index, bool is_input) const;
+
+  /// @brief Returns the `SimpleSignature` object for the given signature key.
+  ///
+  /// Returns the default signature if the signature key is empty.
+  Expected<SimpleSignature> FindSignature(
+      absl::string_view signature_key) const;
 
   /// @internal
   /// @brief Returns the environment used to create this compiled model.
@@ -967,10 +1011,9 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       bool& async, LiteRtOptions run_options) const;
 
   internal::EnvironmentHolder env_;
-  Model model_;
   absl::AnyInvocable<bool()> check_cancelled_func_;
+  internal::BaseHandle<LiteRtModel> model_;
 };
-
 }  // namespace litert
 
 #endif  // ODML_LITERT_LITERT_CC_LITERT_COMPILED_MODEL_H_
