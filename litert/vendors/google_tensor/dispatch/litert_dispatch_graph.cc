@@ -26,11 +26,13 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#include "litert/vendors/google_tensor/dispatch/darwinn_options.h"
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
-#include "litert/vendors/google_tensor/dispatch/sb_dispatch_annotations.h"
 
 namespace gt = litert::google_tensor;
 
@@ -70,48 +72,10 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
   graph = new LiteRtDispatchGraphT(device_context, thr_graph);
   absl::Cleanup graph_cleanup = [graph] { graph->Destroy(); };
 
-  if (device_context->darwinn_options().has_value()) {
-    const LiteRtDispatchDeviceContextT::DarwinnOptionsData& darwinn_options =
-        *(device_context->darwinn_options());
-
-    if (std::optional<uint32_t> device_power_state =
-            darwinn_options.inference_power_state;
-        device_power_state.has_value()) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuDevicePowerState.data(),
-          std::to_string(*device_power_state).c_str()));
-    }
-
-    if (std::optional<uint32_t> memory_power_state =
-            darwinn_options.inference_memory_power_state;
-        memory_power_state.has_value()) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuMemoryPowerState.data(),
-          std::to_string(*memory_power_state).c_str()));
-    }
-
-    if (std::optional<int8_t> inference_priority =
-            darwinn_options.inference_priority;
-        inference_priority.has_value()) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kPriority.data(),
-          std::to_string(*inference_priority).c_str()));
-    }
-
-    if (darwinn_options.atomic_inference) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::DispatchDirectiveAnnotations::kEdgetpuAtomicInference.data(),
-          "1"));
-    }
-
-    if (darwinn_options.prefer_coherent) {
-      LITERT_RETURN_IF_ERROR(graph->AnnotateGraph(
-          gt::GraphDirectiveAnnotations::kPreferCoherent.data(), "1"));
-    }
-
-    LITERT_LOG(LITERT_INFO,
-               "Successfully applied Darwinn options as graph annotations");
-  }
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  LITERT_RETURN_IF_ERROR(
+      gt::ApplyDarwinnOptionsToGraph(graph, device_context->darwinn_options()));
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
   LITERT_RETURN_IF_ERROR(device_context->RegisterGraph(graph));
   graph->registered_with_device_context_ = true;

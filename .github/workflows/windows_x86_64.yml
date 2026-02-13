@@ -134,7 +134,6 @@ jobs:
             //litert/cc/internal:litert_logging_test `
             //litert/cc/internal:litert_op_options_test `
             //litert/cc/internal:litert_builder_test `
-            //litert/cc/options:litert_darwinn_options_test `
             //litert/cc/options:litert_cpu_options_test `
             //litert/cc/options:litert_gpu_options_test `
             //litert/cc/options:litert_runtime_options_test `

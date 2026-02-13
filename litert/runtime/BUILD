@@ -827,10 +827,13 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "litert_darwinn_options",
-    hdrs = ["litert_darwinn_options.h"],
-)
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "litert_darwinn_options",
+#     hdrs = ["litert_darwinn_options.h"],
+#     deps = ["//litert/c:litert_common"],
+# )
+# copybara:uncomment_end
 
 cc_test(
     name = "profiler_test",

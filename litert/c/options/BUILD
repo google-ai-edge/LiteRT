@@ -274,18 +274,20 @@ cc_test(
 
 # DARWINN ##########################################################################################
 
-cc_library(
-    name = "litert_darwinn_runtime_options",
-    srcs = ["litert_darwinn_runtime_options.cc"],
-    hdrs = ["litert_darwinn_runtime_options.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/runtime:litert_darwinn_options",
-    ],
-)
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "litert_darwinn_runtime_options",
+#     srcs = ["litert_darwinn_runtime_options.cc"],
+#     hdrs = ["litert_darwinn_runtime_options.h"],
+#     deps = [
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_opaque_options",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/runtime:litert_darwinn_options",
+#     ],
+# )
+# copybara:uncomment_end
 
 filegroup(
     name = "options_headers",
