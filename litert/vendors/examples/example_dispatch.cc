@@ -16,21 +16,23 @@
 #include <cstdint>
 #include <list>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
@@ -41,6 +43,8 @@
 namespace {
 using Buffer = ::litert::example::Data;
 using BufferHandle = Buffer*;
+
+std::optional<LiteRtSchedulingInfo> LastSchedulingInfo;
 }  // namespace
 
 class LiteRtDispatchDeviceContextT {
@@ -177,6 +181,20 @@ class LiteRtDispatchInvocationContextT {
     return example_graph_;
   }
 
+  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
+    if (scheduling_info == nullptr) {
+      has_scheduling_info_ = false;
+      scheduling_info_ = LiteRtSchedulingInfo{};
+      return;
+    }
+    has_scheduling_info_ = true;
+    scheduling_info_ = *scheduling_info;
+  }
+
+  const LiteRtSchedulingInfo* GetSchedulingInfo() const {
+    return has_scheduling_info_ ? &scheduling_info_ : nullptr;
+  }
+
   ~LiteRtDispatchInvocationContextT() = default;
 
  private:
@@ -196,6 +214,9 @@ class LiteRtDispatchInvocationContextT {
   std::vector<BufferHandle> inputs_;
   std::vector<BufferHandle> outputs_;
   ::litert::example::ExampleGraph example_graph_;
+
+  bool has_scheduling_info_ = false;
+  LiteRtSchedulingInfo scheduling_info_{};
   LiteRtHwAcceleratorSet run_accelerators_ = kLiteRtHwAcceleratorNone;
 };
 
@@ -306,6 +327,23 @@ LiteRtStatus InvocationContextCreate(
 LiteRtStatus InvocationContextDestroy(
     LiteRtDispatchInvocationContext invocation_context) {
   delete invocation_context;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus InvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (invocation_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  invocation_context->SetSchedulingInfo(scheduling_info);
+
+  if (scheduling_info != nullptr) {
+    LastSchedulingInfo = *scheduling_info;
+  } else {
+    LastSchedulingInfo.reset();
+  }
+
   return kLiteRtStatusOk;
 }
 
@@ -440,7 +478,8 @@ LiteRtDispatchInterface ExampleInterface = {
     /*.unregister_tensor_buffer=*/UnregisterTensorBuffer,
     /*.invocation_context_create=*/InvocationContextCreate,
     /*.invocation_context_destroy=*/InvocationContextDestroy,
-    /*.invocation_context_set_scheduling_info=*/nullptr,
+    /*.invocation_context_set_scheduling_info=*/
+    InvocationContextSetSchedulingInfo,
     /*.attach_input=*/AttachInput,
     /*.attach_output=*/AttachOutput,
     /*.detach_input=*/DetachInput,
@@ -469,5 +508,22 @@ LiteRtDispatchApi ExampleApi = {
 
 LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
   *api = ::litert::example::ExampleApi;
+  return kLiteRtStatusOk;
+}
+
+extern "C" LiteRtStatus LiteRtDispatchExampleClearLastSchedulingInfo() {
+  LastSchedulingInfo.reset();
+  return kLiteRtStatusOk;
+}
+
+extern "C" LiteRtStatus LiteRtDispatchExampleGetLastSchedulingInfo(
+    LiteRtSchedulingInfo* out) {
+  if (!out) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!LastSchedulingInfo.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *out = *LastSchedulingInfo;
   return kLiteRtStatusOk;
 }
