@@ -16,10 +16,12 @@ enum class SnapdragonModel {
   SM8475 = 42,
   SM8550 = 43,
   SA8255 = 52,
+  SXR2230P = 53,
   SM8650 = 57,
   SC8380XP = 60,
   SM8750 = 69,
   SM8850 = 87,
+  SAR2230P = 95,
 };
 
 enum class DspArch {

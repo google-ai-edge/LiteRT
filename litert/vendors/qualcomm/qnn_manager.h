@@ -161,7 +161,12 @@ class QnnManager {
 
   LiteRtStatus ValidateOp(::qnn::OpWrapper& op);
 
-  bool IsLegacySocModel() { return soc_info_.dsp_arch == ::qnn::DspArch::V68; }
+  bool IsFp16Supported() {
+    // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
+    // restrictions.
+    return soc_info_.dsp_arch != ::qnn::DspArch::V68 &&
+           soc_info_.soc_model != ::qnn::SnapdragonModel::SAR2230P;
+  }
 
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.

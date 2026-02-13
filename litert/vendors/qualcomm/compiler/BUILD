@@ -126,7 +126,7 @@ litert_test(
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
-        "//litert/vendors/qualcomm:qnn_manager",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",

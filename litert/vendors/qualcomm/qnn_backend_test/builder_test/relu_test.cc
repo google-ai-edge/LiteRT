@@ -26,7 +26,10 @@ TEST_P(QnnModelTest, SingleRelu) {
   ASSERT_FALSE(ops.empty());
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
-
+  if (!is_fp16_supported_) {
+    GTEST_SKIP() << "The rest of this test applies only to HTP targets with "
+                    "FP16 support.";
+  }
   ASSERT_TRUE(qnn_model_.ValidateOpConfig());
   ASSERT_TRUE(qnn_model_.Finalize());
 

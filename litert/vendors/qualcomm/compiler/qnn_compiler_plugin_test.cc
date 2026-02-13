@@ -33,6 +33,7 @@
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace litert {
 namespace {
@@ -189,7 +190,7 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 13);
+  ASSERT_EQ(num_supported_soc_models, ::qnn::kNumSocInfos);
 
   const char* config_id;
   LITERT_ASSERT_OK(
