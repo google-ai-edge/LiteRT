@@ -1,0 +1,2 @@
+This file should appear in the app bundle's root because it is included in
+the resources attribute, not structured_resources.

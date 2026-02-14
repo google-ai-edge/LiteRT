@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    This is a fake provisioning profile used for integration tests. These tests
+    force the identity to be "-", so these files will not be read to detect the
+    identity, but can be used to validate that they are embedded correctly.
+-->
+<plist version="1.0">
+<dict>
+    <key>AppIDName</key>
+    <string>Wildcard</string>
+    <key>ApplicationIdentifierPrefix</key>
+    <array>
+    <string>FOOBARBAZ1</string>
+    </array>
+    <key>CreationDate</key>
+    <date>2017-01-04T13:44:01Z</date>
+    <key>Platform</key>
+    <array>
+        <string>tvOS</string>
+    </array>
+    <key>DeveloperCertificates</key>
+    <array>
+        <data>NOT_A_VALID_CERTIFICATE</data>
+    </array>
+    <key>Entitlements</key>
+    <dict>
+        <key>com.apple.developer.pass-type-identifiers</key>
+        <array>
+            <string>FOOBARBAZ1.*</string>
+        </array>
+        <key>keychain-access-groups</key>
+        <array>
+            <string>FOOBARBAZ1.*</string>
+        </array>
+        <key>get-task-allow</key>
+        <true/>
+        <key>application-identifier</key>
+        <string>FOOBARBAZ1.*</string>
+        <key>com.apple.developer.team-identifier</key>
+        <string>FOOBARBAZ1</string>
+    </dict>
+    <key>ExpirationDate</key>
+    <date>2117-01-04T13:44:01Z</date>
+    <key>Name</key>
+    <string>Integration Testing tvOS</string>
+    <key>ProvisionedDevices</key>
+    <array>
+    </array>
+    <key>TeamIdentifier</key>
+    <array>
+        <string>FOOBARBAZ1</string>
+    </array>
+    <key>TeamName</key>
+    <string>Bazel Rules Apple</string>
+    <key>TimeToLive</key>
+    <integer>36500</integer>
+    <key>UUID</key>
+    <string>eaf3d44a-f20e-11e6-bc64-92361f002671</string>
+    <key>Version</key>
+    <integer>1</integer>
+</dict>
+</plist>

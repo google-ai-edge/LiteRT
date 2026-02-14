@@ -1,0 +1,5 @@
+.DS_Store
+.idea
+*.pyc
+# Ignore all bazel-* symlinks.
+/bazel-*

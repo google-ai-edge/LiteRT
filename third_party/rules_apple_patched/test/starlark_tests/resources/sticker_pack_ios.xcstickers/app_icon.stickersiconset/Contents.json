@@ -1,0 +1,78 @@
+{
+  "images" : [
+    {
+      "size" : "29x29",
+      "idiom" : "iphone",
+      "filename" : "sticker_29pt_2x.png",
+      "scale" : "2x"
+    },
+    {
+      "size" : "29x29",
+      "idiom" : "iphone",
+      "filename" : "sticker_29pt_3x.png",
+      "scale" : "3x"
+    },
+    {
+      "size" : "60x45",
+      "idiom" : "iphone",
+      "filename" : "sticker_60x45pt_2x.png",
+      "scale" : "2x"
+    },
+    {
+      "size" : "60x45",
+      "idiom" : "iphone",
+      "filename" : "sticker_60x45pt_3x.png",
+      "scale" : "3x"
+    },
+    {
+      "size" : "29x29",
+      "idiom" : "ipad",
+      "filename" : "sticker_29pt_2x.png",
+      "scale" : "2x"
+    },
+    {
+      "size" : "67x50",
+      "idiom" : "ipad",
+      "filename" : "sticker_67x50pt_2x.png",
+      "scale" : "2x"
+    },
+    {
+      "size" : "74x55",
+      "idiom" : "ipad",
+      "filename" : "sticker_74x55pt_2x.png",
+      "scale" : "2x"
+    },
+    {
+      "size" : "27x20",
+      "idiom" : "universal",
+      "filename" : "sticker_27x20pt_2x.png",
+      "scale" : "2x",
+      "platform" : "ios"
+    },
+    {
+      "size" : "27x20",
+      "idiom" : "universal",
+      "filename" : "sticker_27x20pt_3x.png",
+      "scale" : "3x",
+      "platform" : "ios"
+    },
+    {
+      "size" : "32x24",
+      "idiom" : "universal",
+      "filename" : "sticker_32x24pt_2x.png",
+      "scale" : "2x",
+      "platform" : "ios"
+    },
+    {
+      "size" : "32x24",
+      "idiom" : "universal",
+      "filename" : "sticker_32x24pt_3x.png",
+      "scale" : "3x",
+      "platform" : "ios"
+    }
+  ],
+  "info" : {
+    "version" : 1,
+    "author" : "xcode"
+  }
+}

@@ -1,0 +1,1 @@
+main_thread_checker gets the libMainThreadChecker.dylib from the DEVELOPER_DIR and zips them out for IPA bundling.

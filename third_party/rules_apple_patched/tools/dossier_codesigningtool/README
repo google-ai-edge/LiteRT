@@ -1,0 +1,4 @@
+dossier_codesigningtool provides functions to sign or create dossiers for iOS
+app bundles.
+
+codesigningtool uses codesign which is only available on macOS platforms.

@@ -1,0 +1,52 @@
+# Copyright 2017 Google Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""The class contains exceptions in iOS test runner."""
+
+
+class IllegalArgumentError(Exception):
+  """Exception class for illegal argument."""
+
+
+class XctestrunError(Exception):
+  """Exception class for xctestrun error."""
+
+
+class PlistError(Exception):
+  """Exception class for invalid plist."""
+
+
+class BuildFailureError(Exception):
+  """Exception class for xcode project build failure."""
+
+
+class BundleError(Exception):
+  """Exception class for invalid bundle."""
+
+
+class ProvisioningProfileError(Exception):
+  """Exception class for invalid provisioning profile."""
+
+
+class SimError(Exception):
+  """Exception class for simulator error."""
+
+
+class XcodebuildTestError(Exception):
+  """Exception class for simulator error."""
+
+
+class XcresultError(Exception):
+  """Exception class for parsing xcresult error."""
+

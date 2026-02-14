@@ -1,0 +1,14 @@
+{
+  "assets" : [
+    {
+      "size" : "400x240",
+      "idiom" : "tv",
+      "filename" : "AppIconSmall.imagestack",
+      "role" : "primary-app-icon"
+    }
+  ],
+  "info" : {
+    "version" : 1,
+    "author" : "xcode"
+  }
+}

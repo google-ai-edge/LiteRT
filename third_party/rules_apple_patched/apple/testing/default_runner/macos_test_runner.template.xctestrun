@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BazelMacOSTests</key>
+	<dict>
+		<key>IsAppHostedTestBundle</key>
+		<BAZEL_TEST_HOST_BASED/>
+		<key>TestBundlePath</key>
+		<string>BAZEL_TEST_BUNDLE_PATH</string>
+		<key>TestHostPath</key>
+		<string>BAZEL_TEST_HOST_PATH</string>
+		<key>TestingEnvironmentVariables</key>
+		<dict>
+			<key>DYLD_FALLBACK_LIBRARY_PATH</key>
+			<string>__PLATFORMS__/MacOSX.platform/Developer/usr/lib</string>
+			<key>DYLD_FRAMEWORK_PATH</key>
+			<string>__PLATFORMS__/MacOSX.platform/Developer/Library/Frameworks:__SHAREDFRAMEWORKS__</string>
+			<key>DYLD_LIBRARY_PATH</key>
+			<string>__PLATFORMS__/MacOSX.platform/Developer/Library/Frameworks:__SHAREDFRAMEWORKS__</string>
+			<key>DYLD_INSERT_LIBRARIES</key>
+			<string>%(xctestrun_insert_libraries)s</string>
+			<key>XCInjectBundleInto</key>
+			<string>BAZEL_TEST_HOST_BINARY</string>
+			BAZEL_TEST_ENVIRONMENT
+		</dict>
+	</dict>
+</dict>
+</plist>

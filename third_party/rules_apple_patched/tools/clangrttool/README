@@ -1,0 +1,2 @@
+clangrttool scans a Mach-O binary for references to Clang runtime libraries,
+e.g. ASAN, TSAN, and zips them out for IPA bundling.

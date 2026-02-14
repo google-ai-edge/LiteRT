@@ -1,0 +1,6 @@
+imported_dynamic_framework_processor processes an imported dynamic framework
+such that the given framework only contains the same slices as the app binary,
+copies every file belonging to the dynamic framework to a temporary location,
+then codesigns and zips the dynamic framework as a cacheable artifact.
+
+imported_dynamic_framework_processor can run on Darwin only.

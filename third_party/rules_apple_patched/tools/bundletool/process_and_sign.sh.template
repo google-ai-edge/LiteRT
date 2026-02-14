@@ -1,0 +1,89 @@
+#!/bin/bash
+set -eu
+
+# NOTES:
+# 1. This can run on Linux or Mac depending on what work it needs to do.
+# 2. This script is passed arguments but they are *NOT* used, the arguments
+#    are there to allow action logging to have some visibility into what the
+#    actions running the script is doing each time.
+
+# The path where the archive should be created, including the name of the
+# archive itself.
+readonly OUTPUT_PATH=%output_path%
+# The name of the ipa post processor executable, if any, that should be run on
+# the directory containing the package contents.
+readonly POST_PROCESSOR=%ipa_post_processor%
+# Indicates whether the final archive should be compressed (1) or not (0).
+readonly SHOULD_COMPRESS=%should_compress%
+# Indicates whether the final archive should be verified by unzipping (1) or not (0).
+readonly SHOULD_VERIFY=%should_verify%
+# The path to archive with the unprocessed and unsigned bundle.
+readonly UNPROCESSED_ARCHIVE_PATH=%unprocessed_archive_path%
+# The absolute path to the directory where the unprocessed archive will be
+# extracted for post-processing and signing.
+readonly WORK_DIR=%work_dir%
+
+# Blow away the old working dir if it's still there from a previous build.
+if [[ -d "$WORK_DIR" ]]; then
+  chmod -R u+w "$WORK_DIR"
+  rm -rf "$WORK_DIR"
+fi
+mkdir -p "$WORK_DIR"
+
+# Expand the unprocessed archive into the temporary directory.
+unzip -qq -d "$WORK_DIR" "$UNPROCESSED_ARCHIVE_PATH"
+
+# Execute the archive post-processor, if it was provided.
+if [[ -n "$POST_PROCESSOR" ]]; then
+  "$POST_PROCESSOR" "$WORK_DIR"
+fi
+
+# Sign the application, if requested. This may expand to nothing in the case
+# where signing is not being performed.
+%signing_command_lines%
+
+if [[ "$SHOULD_COMPRESS" == "1" ]]; then
+  readonly COMPRESSION_METHOD=deflate
+else
+  readonly COMPRESSION_METHOD=store
+fi
+
+# Create the final ZIP archive and copy it into its destination in bazel-bin/.
+readonly OUTPUT_BASENAME=$(basename "$OUTPUT_PATH")
+pushd "$WORK_DIR" >/dev/null
+# Ensure that the entries in the ZIP are writable when expanded, because some
+# tools rely on the ability to unzip it, modify it, and re-sign it.
+chmod -R u+w .
+# Fix the timestamps (depth first so the directory is update after the files in
+# it so updating files doesn't update the directory).
+TZ=UTC find . -depth -exec touch -h -t 198001010000 {} \+
+
+# We rely on `zip` instead of macOS `ditto` because this allows the action to
+# run both on Linux and macOS instances.
+#
+# Avoid zip -r and feed the things in to zip in a deterministic order (not
+# directory order) to ensure a stable result.
+#
+# To keep the file smaller, only files and symbolic links should be needed,
+# but it appears that atleast Xcode drag/drop install on devices can fail for
+# iPhones if there isn't an entry for the App bundles, so include directories
+# with and Info.plist or Contents/Info.plist since they will also be bundles.
+#
+# Symbolic links are included to support macOS applications containing versioned
+# frameworks (which contain relative symbolic links).
+(
+  find . -type f -or -type l && \
+  find . -path "*/Info.plist" | sed -E 's|(/Contents)?/Info.plist$||g' \
+) \
+  | sort \
+  | zip -qX \
+    --symlinks \
+    "-@" \
+    --compression-method \
+    "$COMPRESSION_METHOD" "$OUTPUT_BASENAME"
+popd >/dev/null
+mv "$WORK_DIR/$OUTPUT_BASENAME" "$OUTPUT_PATH"
+# Verify the CRC checksums in the zip file by running unzip -t
+if [[ "$SHOULD_VERIFY" == "1" ]]; then
+  unzip -t -qq "$OUTPUT_PATH"
+fi

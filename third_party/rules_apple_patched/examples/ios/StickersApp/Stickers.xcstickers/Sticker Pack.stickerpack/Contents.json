@@ -1,0 +1,17 @@
+{
+  "stickers" : [
+    {
+      "filename" : "Star.sticker"
+    },
+    {
+      "filename" : "Circle.stickersequence"
+    }
+  ],
+  "info" : {
+    "version" : 1,
+    "author" : "xcode"
+  },
+  "properties" : {
+    "grid-size" : "small"
+  }
+}

@@ -1,0 +1,7 @@
+module(
+    name = "xctestrunner",
+    version = "0.2.15",
+    compatibility_level = 1,
+)
+
+bazel_dep(name = "rules_python", version = "1.0.0")

@@ -1,0 +1,80 @@
+{
+    "images": [
+        {
+            "filename": "app_icon_29pt_2x.png",
+            "idiom": "iphone",
+            "scale": "2x",
+            "size": "29x29"
+        },
+        {
+            "filename": "app_icon_29pt_3x.png",
+            "idiom": "iphone",
+            "scale": "3x",
+            "size": "29x29"
+        },
+        {
+            "filename": "app_icon_40pt_2x.png",
+            "idiom": "iphone",
+            "scale": "2x",
+            "size": "40x40"
+        },
+        {
+            "filename": "app_icon_40pt_3x.png",
+            "idiom": "iphone",
+            "scale": "3x",
+            "size": "40x40"
+        },
+        {
+            "filename": "app_icon_40pt_3x.png",
+            "idiom": "iphone",
+            "scale": "2x",
+            "size": "60x60"
+        },
+        {
+            "filename": "app_icon_60pt_3x.png",
+            "idiom": "iphone",
+            "scale": "3x",
+            "size": "60x60"
+        },
+        {
+            "filename": "app_icon_29pt.png",
+            "idiom": "ipad",
+            "scale": "1x",
+            "size": "29x29"
+        },
+        {
+            "filename": "app_icon_29pt_2x.png",
+            "idiom": "ipad",
+            "scale": "2x",
+            "size": "29x29"
+        },
+        {
+            "filename": "app_icon_40pt.png",
+            "idiom": "ipad",
+            "scale": "1x",
+            "size": "40x40"
+        },
+        {
+            "filename": "app_icon_40pt_2x.png",
+            "idiom": "ipad",
+            "scale": "2x",
+            "size": "40x40"
+        },
+        {
+            "filename": "app_icon_76pt_2x.png",
+            "idiom": "ipad",
+            "scale": "2x",
+            "size": "76x76"
+        },
+        {
+            "filename": "app_icon_167pt.png",
+            "idiom": "ipad",
+            "scale": "2x",
+            "size": "83.5x83.5"
+        }
+    ],
+    "info": {
+        "author": "xcode",
+        "version": 1
+    }
+}

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>BAZEL_TEST_PRODUCT_MODULE_NAME</key>
+  <dict>
+    <key>ProductModuleName</key>
+    <string>BAZEL_TEST_PRODUCT_MODULE_NAME</string>
+    <key>TestBundlePath</key>
+    <string>BAZEL_TEST_BUNDLE_PATH</string>
+    <key>TestExecutionOrdering</key>
+    <string>BAZEL_TEST_ORDER_STRING</string>
+    <key>IsAppHostedTestBundle</key>
+    <BAZEL_TEST_HOST_BASED/>
+    <key>TestHostPath</key>
+    <string>BAZEL_TEST_HOST_PATH</string>
+    <key>TestHostBundleIdentifier</key>
+    <string>BAZEL_TEST_HOST_BUNDLE_IDENTIFIER</string>
+    <key>IsUITestBundle</key>
+    <BAZEL_IS_UI_TEST_BUNDLE/>
+    <key>IsXCTRunnerHostedTestBundle</key>
+	  <BAZEL_IS_XCTRUNNER_HOSTED_BUNDLE/>
+    <key>UITargetAppPath</key>
+    <string>BAZEL_TARGET_APP_PATH</string>
+    <key>DependentProductPaths</key>
+    <array>
+        <string>BAZEL_TEST_BUNDLE_PATH</string>
+        <string>BAZEL_TARGET_APP_PATH</string>
+        <string>BAZEL_TEST_HOST_PATH</string>
+    </array>
+    <key>TestingEnvironmentVariables</key>
+    <dict>
+      <key>DYLD_INSERT_LIBRARIES</key>
+      <string>BAZEL_INSERT_LIBRARIES</string>
+      <key>DYLD_LIBRARY_PATH</key>
+      <string>BAZEL_DYLD_LIBRARY_PATH</string>
+      <key>__XCODE_BUILT_PRODUCTS_DIR_PATHS</key>
+      <string>/DUMMY_SRCROOT/</string>
+      BAZEL_TEST_ENVIRONMENT
+    </dict>
+BAZEL_ATTACHMENT_LIFETIME_SECTION
+    <key>ClangProfileDataDirectoryPath</key>
+    <string>BAZEL_COVERAGE_OUTPUT_DIR</string>
+BAZEL_COMMAND_LINE_ARGS_SECTION
+BAZEL_SKIP_TEST_SECTION
+BAZEL_ONLY_TEST_SECTION
+  </dict>
+  <key>__xctestrun_metadata__</key>
+  <dict>
+    <key>CodeCoverageBuildableInfos</key>
+    <array>
+      <dict>
+        <key>Architecture</key>
+        <string>BAZEL_ARCHITECTURE</string>
+        <key>BuildableIdentifier</key>
+        <string>000000000000000000000000:primary</string>
+        <key>IncludeInReport</key>
+        <true/>
+        <key>IsStatic</key>
+        <false/>
+        <key>Name</key>
+        <string>BAZEL_TEST_BUNDLE_NAME</string>
+        <key>ProductPath</key>
+        <string>BAZEL_PRODUCT_PATH</string>
+        <key>Toolchains</key>
+        <array>
+          <string>com.apple.dt.toolchain.XcodeDefault</string>
+        </array>
+      </dict>
+    </array>
+    <key>FormatVersion</key>
+    <integer>1</integer>
+  </dict>
+</dict>
+</plist>
