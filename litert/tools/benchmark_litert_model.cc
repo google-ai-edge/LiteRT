@@ -214,10 +214,11 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   environment_ = std::make_unique<litert::Environment>(std::move(env_result));
 
   auto compilation_options = CreateCompiledModelOptions(params_);
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model_result,
-                          litert::CompiledModel::Create(*environment_, *model_,
-                                                        compilation_options),
-                          AsTfLiteStatus(_ << "Failed to compile model."));
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_result,
+      litert::CompiledModel::Create(*environment_, model_->Get(),
+                                    compilation_options),
+      AsTfLiteStatus(_ << "Failed to compile model."));
 
   compiled_model_ =
       std::make_unique<litert::CompiledModel>(std::move(compiled_model_result));

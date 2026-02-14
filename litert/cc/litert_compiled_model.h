@@ -37,7 +37,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
@@ -848,13 +848,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                          /*owned=*/OwnHandle::kYes);
   }
 
-  [[deprecated("Use Create with LiteRtModel instead.")]]
-  static Expected<CompiledModel> Create(litert::Environment& env,
-                                        const litert::Model& model,
-                                        Options& compilation_options) {
-    return Create(env, model.Get(), compilation_options);
-  }
-
   /// @internal
   /// @brief A simplified version of `Create` that uses default compilation
   /// options.
@@ -868,15 +861,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
     compilation_options.SetHardwareAccelerators(hardware_accelerators);
     return Create(env, litert_model, compilation_options);
-  }
-
-  [[deprecated("Use Create with LiteRtModel instead.")]]
-  static Expected<CompiledModel> Create(
-      litert::Environment& env, const litert::Model& model,
-      litert::HwAccelerators hardware_accelerators) {
-    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
-    compilation_options.SetHardwareAccelerators(hardware_accelerators);
-    return Create(env, model, compilation_options);
   }
 
   /// @brief Constructs a `CompiledModel` instance.

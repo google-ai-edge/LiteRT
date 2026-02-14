@@ -283,7 +283,7 @@ cc_library(
         ":litert_expected",
         ":litert_layout",
         ":litert_macros",
-        ":litert_model",
+        ":litert_model_types",
         ":litert_options",
         ":litert_profiler",
         ":litert_ranked_tensor_type",
@@ -806,6 +806,27 @@ litert_device_exec(
 )
 
 cc_library(
+    name = "litert_model_types",
+    hdrs = ["litert_model_types.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_element_type",
+        ":litert_expected",
+        ":litert_macros",
+        ":litert_ranked_tensor_type",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "litert_model",
     srcs = [":litert_model.cc"],
     hdrs = [":litert_model.h"],
@@ -821,6 +842,7 @@ cc_library(
         ":litert_element_type",
         ":litert_expected",
         ":litert_macros",
+        ":litert_model_types",
         ":litert_ranked_tensor_type",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
@@ -1285,6 +1307,7 @@ cc_library(
         "//litert/build_common:build_config",
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_model_types",
         "//litert/cc/internal:litert_logging",
         "//litert/core:options",
         "//litert/cc/internal:scoped_file",
