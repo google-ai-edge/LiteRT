@@ -59,6 +59,8 @@ enum class GoogleTensorSouthBoundFeature {
   kDmaBufRegistration = 6,
   // thrGraphAnnotateGraph with `key == kOriginalUid`
   kOriginalUidDispatchDirective = 7,
+  // BufferDirectiveAnnotations::kRequestFence
+  kRequestFence = 8,
 };
 
 // Returns `true` if `feature` is supported by the available Google Tensor
@@ -88,6 +90,9 @@ inline bool GoogleTensorSouthBoundFeatureSupported(
     case GoogleTensorSouthBoundFeature::kOriginalUidDispatchDirective:
       return GoogleTensorSouthBoundMajorVersion() > 0 ||
              GoogleTensorSouthBoundMinorVersion() >= 16;
+    case GoogleTensorSouthBoundFeature::kRequestFence:
+      return GoogleTensorSouthBoundMajorVersion() > 0 ||
+             GoogleTensorSouthBoundMinorVersion() >= 17;
   }
 }
 
