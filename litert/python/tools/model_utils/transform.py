@@ -14,6 +14,7 @@
 """Transforms between ModelUtils objects, MLIR objects, and flatbuffers."""
 
 import contextlib
+import functools
 import os
 import re
 
@@ -74,7 +75,7 @@ def read_flatbuffer(
   ir_context = get_ir_context(ir_context)
   ir_module = core.pybind.flatbuffer_to_mlir(content, ir_context)
   with ir_context:
-    module = _mlir_to_python(ir_module)
+    module = mlir_to_model_utils(ir_module)
   return module, ir_context
 
 
@@ -109,11 +110,11 @@ def read_mlir(
           content = f.read()
       ir_module = ir.Module.parse(content)
 
-    module = _mlir_to_python(ir_module)
+    module = mlir_to_model_utils(ir_module)
   return module, ir_context
 
 
-def convert_to_mlir(
+def model_utils_to_mlir(
     module: mlir.ModuleOp,
     ir_context: ir.Context | None = None,
 ) -> ir.Module:
@@ -151,7 +152,7 @@ def write_flatbuffer(
   elif isinstance(module_op, ir.Operation):
     ir_module = module_op
   else:
-    ir_module = convert_to_mlir(module_op, ir_context)
+    ir_module = model_utils_to_mlir(module_op, ir_context)
 
   with get_ir_context(ir_context, allow_new=False):
     _run_ir_pass_pipeline(
@@ -170,7 +171,7 @@ def write_flatbuffer(
   return fbs
 
 
-def _mlir_to_python(ir_op: ir.Operation | ir.Module):
+def mlir_to_model_utils(ir_op: ir.Operation | ir.Module):
   """Converts an MLIR operation to a ModelUtils operation."""
 
   if isinstance(ir_op, ir.Module):
@@ -234,6 +235,11 @@ def _mlir_to_python(ir_op: ir.Operation | ir.Module):
 
   op = build_op(ir_op, {})[0]
   return op
+
+
+@functools.wraps(model_utils_to_mlir)
+def convert_to_mlir(*args, **kwargs):
+  return model_utils_to_mlir(*args, **kwargs)
 
 
 def _python_to_mlir(op: core.MlirOpBase):
