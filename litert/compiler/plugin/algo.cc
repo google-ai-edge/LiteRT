@@ -54,7 +54,7 @@ class DisjointSets {
 // LiteRt Core union-find algorithm.
 //
 // This algorithm is used to group partitions into sub DAGs.
-// The input to the algorithm is a list of ops with the their partition index.
+// The input to the algorithm is a list of ops with the partition index.
 //
 //        [ (op_0, 0),
 //          (op_1, 0),
@@ -71,7 +71,7 @@ class DisjointSets {
 //
 //        [ op_0, op_1, op_2, op3, op_4, op_5 ...]
 //
-// The output of the union find algorithm is a list of list of ops, where each
+// The output of the union find algorithm is a list of ops, where each
 // list is a disjoint set(a sub DAG within the original Subgraph). For
 // example,
 //
@@ -79,7 +79,7 @@ class DisjointSets {
 //          [op_2, op_3],
 //          [op_4, op_5] ... ]
 //
-//  Similarly, algorithm on the next parition would return something like
+//  Similarly, algorithm on the next partition would return something like
 //
 //        [ [op_7, op_8, op_9],
 //          [op_10, op_11],
@@ -163,7 +163,7 @@ std::vector<std::vector<LiteRtOp>> DisjointSets::GetBuckets() {
   for (auto it = map_.Begin(); it != map_.End(); ++it) {
     auto* bucket = GetBucket(it->first);
 
-    if (invert_map.find(bucket) == invert_map.end()) {
+    if (!invert_map.contains(bucket)) {
       invert_map.insert_or_assign(bucket, std::vector<LiteRtOp>{});
     }
 
@@ -427,38 +427,35 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
   }
   auto verify_tensor_type = [&](const LiteRtTensorT& dest_tensor,
                                 const LiteRtTensorT& source_tensor) {
-    auto& destination_op_tensor_type = dest_tensor.Type();
-    auto& source_subgraph_tensor_type = source_tensor.Type();
-    if (destination_op_tensor_type.first != source_subgraph_tensor_type.first) {
+    const auto& [dst_fst, dest_snd] = dest_tensor.Type();
+    const auto& [src_fst, src_snd] = source_tensor.Type();
+    if (dst_fst != src_fst) {
       LITERT_LOG(LITERT_ERROR,
                  "Tensors of destination op and source subgraph "
                  "are not the same type.");
       return kLiteRtStatusErrorInvalidArgument;
     }
-    if (destination_op_tensor_type.first == kLiteRtUnrankedTensorType) {
-      if (!LiteRtIsSameUnrankedTensorType(
-              &destination_op_tensor_type.second.unranked_tensor_type,
-              &source_subgraph_tensor_type.second.unranked_tensor_type)) {
+    if (dst_fst == kLiteRtUnrankedTensorType) {
+      if (!LiteRtIsSameUnrankedTensorType(&dest_snd.unranked_tensor_type,
+                                          &src_snd.unranked_tensor_type)) {
         LITERT_LOG(LITERT_ERROR,
                    "tensors of destination op and source subgraph "
                    "does not have the same unranked tensor type.");
         return kLiteRtStatusErrorInvalidArgument;
       }
     }
-    if (destination_op_tensor_type.first == kLiteRtRankedTensorType) {
+    if (dst_fst == kLiteRtRankedTensorType) {
       // check element type is the same.
-      if (destination_op_tensor_type.second.ranked_tensor_type.element_type !=
-          source_subgraph_tensor_type.second.ranked_tensor_type.element_type) {
+      if (dest_snd.ranked_tensor_type.element_type !=
+          src_snd.ranked_tensor_type.element_type) {
         LITERT_LOG(LITERT_ERROR,
                    "Tensors of destination op and source subgraph "
                    "does not have the same element type.");
         return kLiteRtStatusErrorInvalidArgument;
       }
       bool is_same_layout = false;
-      LiteRtIsSameLayout(
-          &destination_op_tensor_type.second.ranked_tensor_type.layout,
-          &source_subgraph_tensor_type.second.ranked_tensor_type.layout,
-          &is_same_layout);
+      LiteRtIsSameLayout(&dest_snd.ranked_tensor_type.layout,
+                         &src_snd.ranked_tensor_type.layout, &is_same_layout);
       if (!is_same_layout) {
         LITERT_LOG(LITERT_ERROR,
                    "Tensors of destination op and source subgraph "
@@ -606,7 +603,7 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
     original_output->ClearDefiningOp();
   }
 
-  // Clear the input/ouput tensor of the original composite op, so the
+  // Clear the input/output tensor of the original composite op, so the
   // composite op will be removed by DCE.
   destination_op.Inputs().clear();
   destination_op.Outputs().clear();
