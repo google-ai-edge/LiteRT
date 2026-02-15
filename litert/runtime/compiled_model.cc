@@ -594,10 +594,10 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     // Fall through to the next step if it's pre-compiled, else try to apply
     // plugins to the model.
     if (!IsCompiled(model)) {
-      Expected<bool> maybe_initialzed_model =
+      Expected<bool> maybe_initialized_model =
           ApplyPluginsWithCaching(model, hw_accelerators, *options, env);
-      if (maybe_initialzed_model.HasValue() &&
-          maybe_initialzed_model.Value() == true) {
+      if (maybe_initialized_model.HasValue() &&
+          maybe_initialized_model.Value() == true) {
         // The compiled model's flatbuffer has initialized by applying the
         // plugins.
         return {};
