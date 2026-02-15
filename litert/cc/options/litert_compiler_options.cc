@@ -16,6 +16,9 @@
 
 #include "litert/cc/options/litert_compiler_options.h"
 
+#include <cstdint>
+#include <vector>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -58,6 +61,35 @@ CompilerOptions::GetPartitionStrategy() const {
   LITERT_RETURN_IF_ERROR(LiteRtGetCompilerOptionsPartitionStrategy(
       compiler_options, &partition_strategy));
   return partition_strategy;
+}
+
+Expected<void> CompilerOptions::AddSkipDelegationOps(
+    int subgraph_index, const std::vector<std::uint32_t>& ids) {
+  LiteRtCompilerOptions compiler_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
+  LITERT_RETURN_IF_ERROR(LiteRtAddCompilerOptionsSkipDelegationOps(
+      compiler_options, subgraph_index, ids.data(), ids.size()));
+  return {};
+}
+
+Expected<std::vector<std::uint32_t>> CompilerOptions::GetSkipDelegationOps(
+    int subgraph_index) const {
+  LiteRtCompilerOptions compiler_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
+
+  std::vector<std::uint32_t> skip_delegation_op_ids;
+  const std::uint32_t* ids = nullptr;
+  size_t number_of_ids = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetCompilerOptionsSkipDelegationOps(
+      compiler_options, subgraph_index, &ids, &number_of_ids));
+  if (ids == nullptr) {
+    return skip_delegation_op_ids;
+  }
+  skip_delegation_op_ids.reserve(number_of_ids);
+  for (size_t i = 0; i < number_of_ids; i++) {
+    skip_delegation_op_ids.emplace_back(ids[i]);
+  }
+  return skip_delegation_op_ids;
 }
 
 Expected<void> CompilerOptions::SetDummyOption(bool dummy_option) {
