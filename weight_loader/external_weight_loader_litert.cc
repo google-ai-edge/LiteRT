@@ -94,8 +94,8 @@ struct LiteRtWeightInfo : public WeightInfo {
   // TODO(b/453768409): Refactor external weight loader to only use cc API.
   // The type of the tensor.
   LiteRtRankedTensorType tensor_type;
-  // The preferred buffer type for the tensor data.
-  LiteRtTensorBufferType preferred_buffer_type;
+  // The GPU buffer type for the tensor data.
+  LiteRtTensorBufferType gpu_buffer_type;
 };
 
 absl::StatusOr<LiteRtRankedTensorType> BuildRankedTensorType(
@@ -129,7 +129,7 @@ absl::StatusOr<LiteRtRankedTensorType> BuildRankedTensorType(
   return type;
 }
 
-LiteRtTensorBufferType SelectDefaultBufferType() {
+LiteRtTensorBufferType SelectGpuBufferType() {
   return kLiteRtTensorBufferTypeOpenClBuffer;
 }
 
@@ -529,8 +529,8 @@ absl::Status EnsureOpenClTensorBuffer(Entry& entry,
 
   LiteRtTensorBuffer device_buffer;
   LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      env, info.preferred_buffer_type, &info.tensor_type,
-      static_cast<size_t>(info.length), &device_buffer));
+      env, info.gpu_buffer_type, &info.tensor_type, info.length,
+      &device_buffer));
   entry.access->SetDeviceBuffer(LiteRtTensorBufferPtr(device_buffer));
 
   cl_mem cl_memory;
@@ -539,8 +539,8 @@ absl::Status EnsureOpenClTensorBuffer(Entry& entry,
 
   LiteRtRankedTensorType tensor_type_c = info.tensor_type;
   LiteRtStatus upload_status = ::litert::internal::LiteRtGpuMemoryUpload(
-      gpu_env, &tensor_type_c, info.preferred_buffer_type,
-      static_cast<size_t>(info.length), data.data(), cl_memory);
+      gpu_env, &tensor_type_c, info.gpu_buffer_type, info.length, data.data(),
+      cl_memory);
   if (upload_status != kLiteRtStatusOk) {
     return absl::InternalError(
         absl::StrFormat("Failed to upload OpenCL buffer (status=%d)",
@@ -606,7 +606,7 @@ void ParseFlatBuffer(const tflite::Model& model,
         continue;
       }
       info.tensor_type = *ranked_type;
-      info.preferred_buffer_type = SelectDefaultBufferType();
+      info.gpu_buffer_type = SelectGpuBufferType();
 
       auto group_it = group_lookup.find(info.group_id);
       if (group_it != group_lookup.end() && group_it->second &&
