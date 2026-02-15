@@ -34,15 +34,19 @@ typedef void* HwMemoryHandle;
 // Custom hardware memory information data.
 // Custom TensorBuffer handler can use this to keep additional information
 // about the hardware memory such as CPU mapped memory pointer.
-// The information should be kept in the child structure of `HwMemoryInfo`.
+// The information should be kept in the child structure of `HwMemoryInfoV1`.
 // It's created by `CreateCustomTensorBuffer` and destroyed by
 // `DestroyCustomTensorBuffer`.
-struct HwMemoryInfo {
+//
+// Note: If you update this struct, you must also update the
+// `LITERT_ACCELERATOR_DEF_CURRENT_VERSION` in
+// `litert/c/internal/litert_accelerator_def.h` to the new version.
+struct HwMemoryInfoV1 {
   HwMemoryHandle memory_handle;
   void* raw_handle;
 };
 
-typedef struct HwMemoryInfo* HwMemoryInfoPtr;
+typedef struct HwMemoryInfoV1* HwMemoryInfoPtr;
 
 // Custom TensorBuffer handler function to create a custom TensorBuffer.
 typedef LiteRtStatus (*CreateCustomTensorBuffer)(
