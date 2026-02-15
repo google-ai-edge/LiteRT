@@ -284,8 +284,7 @@ cc_library(
         # "//litert:__subpackages__",
         # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
-        # "//third_party/odml/litert_lm/kotlin:__subpackages__",
-        # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
+        # "//third_party/odml/litert_lm:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
