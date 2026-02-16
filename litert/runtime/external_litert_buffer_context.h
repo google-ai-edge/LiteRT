@@ -123,6 +123,14 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
         std::move(tensor_buffer));
   }
 
+  // Unregisters a tensor buffer for the given tensor.
+  LiteRtStatus UnregisterTensorBuffer(const TfLiteOpaqueTensor* tensor);
+
+  inline LiteRtStatus UnregisterTensorBuffer(const TfLiteTensor* tensor) {
+    return UnregisterTensorBuffer(
+        reinterpret_cast<const TfLiteOpaqueTensor*>(tensor));
+  }
+
   // Gets a registered tensor buffer for the given tensor.
   // The returned TensorBuffer object is a duplicate (reference counted)
   // of registered TensorBuffer.

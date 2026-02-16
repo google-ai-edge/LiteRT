@@ -47,6 +47,12 @@ LiteRtStatus LiteRtExternalLiteRtBufferContextRegisterTensorBuffer(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer(
+    LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor) {
+  LITERT_RETURN_IF_ERROR(context->UnregisterTensorBuffer(tensor));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtExternalLiteRtBufferContextRegisterBufferRequirements(
     LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor,
     LiteRtTensorBufferRequirements buffer_requirements) {

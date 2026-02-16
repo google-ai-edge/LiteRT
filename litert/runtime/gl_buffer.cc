@@ -154,6 +154,7 @@ GlBuffer::GlBuffer(GlBuffer&& other) {
   ahwb_ = other.ahwb_;
 #endif  // LITERT_HAS_AHWB_SUPPORT
   // Reset the other GlBuffer to a default state.
+  other.deallocator_ = nullptr;
   other.data_ = nullptr;
   other.size_bytes_ = 0;
 #if LITERT_HAS_AHWB_SUPPORT
