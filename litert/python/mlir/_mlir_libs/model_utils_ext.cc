@@ -18,15 +18,11 @@
 #include <cstdint>
 #include <string>
 
-#include "llvm/Support/Casting.h"
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "mlir-c/IR.h"
-#include "mlir-c/Transforms.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"  // IWYU pragma: keep
 #include "mlir/CAPI/IR.h"
 #include "nanobind/nanobind.h"
-#include "nanobind/stl/string.h"
-#include "nanobind/stl/string_view.h"
-#include "nanobind/stl/vector.h"
 #include "litert/compiler/mlir/model_utils_core.h"
 
 namespace {
@@ -40,15 +36,6 @@ NB_MODULE(model_utils_ext, m) {
   Py_Initialize();
 
   m.doc() = "LiteRT ModelUtils Extensions";
-
-  model_utils::RegisterPasses();
-
-  m.def("register_dialects", [](MlirContext context) {
-    mlir::DialectRegistry registry;
-    model_utils::RegisterDialects(registry);
-    unwrap(context)->appendDialectRegistry(registry);
-    unwrap(context)->loadAllAvailableDialects();
-  });
 
   m.def(
       "filecheck_check_input",
@@ -65,39 +52,18 @@ NB_MODULE(model_utils_ext, m) {
           return wrap(module_op.release());
         });
 
-  m.def("mlir_to_flatbuffer", [](MlirOperation c_op) {
-    auto op = unwrap(c_op);
-    auto module_op = llvm::dyn_cast<mlir::ModuleOp>(op);
-    if (module_op == nullptr) {
-      throw nb::value_error("Failed to cast the input to mlir::ModuleOp.");
-    }
-    std::string data = model_utils::MlirToFlatbuffer(module_op);
-    return nb::bytes(data.c_str(), data.size());
-  });
-
   m.def("get_operation_attribute_names", [](MlirOperation c_op) {
-    mlir::Operation* op = unwrap(c_op);
-    return model_utils::GetOperationAttributeNames(op);
+    return model_utils::GetOperationAttributeNames(unwrap(c_op));
   });
 
   m.def("get_dictionary_attr_names", [](MlirAttribute c_attr) {
-    auto attr = llvm::dyn_cast<mlir::DictionaryAttr>(unwrap(c_attr));
-    if (attr == nullptr) {
-      throw nb::value_error(
-          "Failed to cast the input to mlir::DictionaryAttr.");
-    }
-    return model_utils::GetDictionaryAttrNames(attr);
+    return model_utils::GetDictionaryAttrNames(unwrap(c_attr));
   });
 
   m.def(
       "get_dense_elements_attr_bytes",
       [](MlirAttribute c_attr, int64_t offset, int64_t size) {
-        auto attr = llvm::dyn_cast<mlir::DenseElementsAttr>(unwrap(c_attr));
-        if (attr == nullptr) {
-          throw nb::value_error(
-              "Failed to cast the input to mlir::DenseElementsAttr.");
-        }
-        auto bytes = model_utils::GetDenseElementsAttrBytes(attr);
+        auto bytes = model_utils::GetDenseElementsAttrBytes(unwrap(c_attr));
 
         if (size < 0) {
           size = bytes.size();

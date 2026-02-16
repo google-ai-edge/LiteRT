@@ -16,8 +16,20 @@
 import abc
 import collections
 from litert.python.mlir import ir
-from litert.python.mlir.dialects import quant as ir_quant_d
 from litert.python.tools.model_utils import core
+
+try:
+  # TODO: b/493741937 - Remove this when quant dialect is available in OSS.
+  # pylint: disable=g-import-not-at-top
+  from litert.python.mlir.dialects import quant as ir_quant_d
+  # pylint: enable=g-import-not-at-top
+  IR_UniformQuantizedType = ir_quant_d.UniformQuantizedType
+  IR_UniformQuantizedPerAxisType = ir_quant_d.UniformQuantizedPerAxisType
+except ImportError:
+  # pylint: disable=invalid-name
+  IR_UniformQuantizedType = object()
+  IR_UniformQuantizedPerAxisType = object()
+  # pylint: enable=invalid-name
 
 
 class QuantizedTypeBase(collections.UserString[str], abc.ABC):
@@ -43,7 +55,7 @@ class QuantizedTypeBase(collections.UserString[str], abc.ABC):
     return ir.Type.parse(self.data)
 
 
-@core.register_mlir_transform(ir_quant_d.UniformQuantizedType)
+@core.register_mlir_transform(IR_UniformQuantizedType)
 class UniformQuantizedType(QuantizedTypeBase):
   """MLIR UniformQuantizedType (per-layer/per-tensor quantization)."""
 
@@ -65,7 +77,7 @@ class UniformQuantizedType(QuantizedTypeBase):
     self.storage_type_max = storage_type_max
 
   @classmethod
-  def from_mlir(cls, ir_type: ir_quant_d.UniformQuantizedType):
+  def from_mlir(cls, ir_type: IR_UniformQuantizedType):
     return cls(
         storage_type=str(ir_type.storage_type),
         expressed_type=str(ir_type.expressed_type),
@@ -107,7 +119,7 @@ class UniformQuantizedType(QuantizedTypeBase):
     return type_str
 
 
-@core.register_mlir_transform(ir_quant_d.UniformQuantizedPerAxisType)
+@core.register_mlir_transform(IR_UniformQuantizedPerAxisType)
 class UniformQuantizedPerAxisType(QuantizedTypeBase):
   """MLIR UniformQuantizedPerAxisType (per-axis/per-channel quantization)."""
 
@@ -131,7 +143,7 @@ class UniformQuantizedPerAxisType(QuantizedTypeBase):
     self.storage_type_max = storage_type_max
 
   @classmethod
-  def from_mlir(cls, ir_type: ir_quant_d.UniformQuantizedPerAxisType):
+  def from_mlir(cls, ir_type: IR_UniformQuantizedPerAxisType):
     return cls(
         storage_type=str(ir_type.storage_type),
         expressed_type=str(ir_type.expressed_type),

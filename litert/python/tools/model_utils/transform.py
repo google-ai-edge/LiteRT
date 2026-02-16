@@ -23,6 +23,8 @@ from litert.python.mlir import passmanager
 from xdsl import irdl
 
 import os # import gfile
+from litert.python.mlir._mlir_libs import converter_api_ext
+from litert.python.mlir._mlir_libs import model_utils_ext
 from litert.python.tools.model_utils import core
 from litert.python.tools.model_utils.dialect import mlir
 
@@ -37,9 +39,7 @@ def get_ir_context(ctx: ir.Context | None = None, allow_new=True):
     return ir.Context.current
   if allow_new:
     ctx = ir.Context()
-    ctx.enable_multithreading = False
-    ctx.allow_unregistered_dialects = True
-    core.pybind.register_dialects(ctx)
+    converter_api_ext.prepare_mlir_context(ctx)
     return ctx
   return contextlib.nullcontext()
 
@@ -73,7 +73,7 @@ def read_flatbuffer(
       content = f.read()
 
   ir_context = get_ir_context(ir_context)
-  ir_module = core.pybind.flatbuffer_to_mlir(content, ir_context)
+  ir_module = model_utils_ext.flatbuffer_to_mlir(content, ir_context)
   with ir_context:
     module = mlir_to_model_utils(ir_module)
   return module, ir_context
@@ -163,7 +163,7 @@ def write_flatbuffer(
         )""",
         ir_module,
     )
-    fbs = core.pybind.mlir_to_flatbuffer(ir_module)
+    fbs = converter_api_ext.export_flatbuffer_to_bytes(ir_module)
 
   if file is not None:
     with open(file, "wb") as f:
@@ -188,7 +188,7 @@ def mlir_to_model_utils(ir_op: ir.Operation | ir.Module):
 
     attributes = {
         name: mlir.attribute_from_mlir(ir_op.attributes[name])
-        for name in core.pybind.get_operation_attribute_names(ir_op)
+        for name in model_utils_ext.get_operation_attribute_names(ir_op)
     }
 
     op_cls = core.mlir_transforms.get(ir_op.name)

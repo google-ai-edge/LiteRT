@@ -19,8 +19,8 @@ from litert.python.mlir import ir
 import numpy as np
 
 __all__ = [
-    "dtype_to_ir_type",
-    "ir_type_to_dtype",
+    'dtype_to_ir_type',
+    'ir_type_to_dtype',
 ]
 
 
@@ -84,7 +84,7 @@ def dtype_to_ir_type(dtype: np.dtype | np.generic) -> ir.Type:
     ir_type = ir.F64Type.get()
 
   else:
-    raise TypeError(f"No handler to convert to MLIR IR Type for dtype: {dtype}")
+    raise TypeError(f'No handler to convert to MLIR IR Type for dtype: {dtype}')
 
   return ir_type
 
@@ -123,7 +123,7 @@ def ir_type_to_dtype(ir_type: ir.Type) -> np.dtype:
       elif ir_type.width == 64:
         return np.dtype(np.int64)
       else:
-        raise TypeError(f"Unsupported signless integer width: {ir_type.width}")
+        raise TypeError(f'Unsupported signless integer width: {ir_type.width}')
 
     # Check if the type is unsigned
     else:
@@ -141,9 +141,48 @@ def ir_type_to_dtype(ir_type: ir.Type) -> np.dtype:
       elif ir_type.width == 64:
         return np.dtype(np.uint64)
       else:
-        raise TypeError(f"Unsupported unsigned integer width: {ir_type.width}")
+        raise TypeError(f'Unsupported unsigned integer width: {ir_type.width}')
 
   else:
     raise TypeError(
-        f"No handler to convert to NumPy dtype for IR Type: {ir_type}"
+        f'No handler to convert to NumPy dtype for IR Type: {ir_type}'
     )
+
+
+def numpy_array_to_mlir_compatible(arr: np.ndarray) -> np.ndarray:
+  """Converts a tensor to a numpy array.
+
+  The numpy array is compatible with MLIR contiguity and endianness.
+
+  Args:
+    arr: The numpy array to convert.
+
+  Returns:
+    The numpy array compatible with MLIR.
+  """
+  if arr.dtype == bool or arr.dtype == np.bool_:
+    # packbits returns uint8; bitorder='little' is crucial for MLIR
+    return np.packbits(arr, axis=None, bitorder='little')
+
+  target_dtype = {
+      # Floating point
+      np.float16: '<f2',
+      np.float32: '<f4',
+      np.float64: '<f8',
+      # Signed Integers
+      np.int8: '<i1',
+      np.int16: '<i2',
+      np.int32: '<i4',
+      np.int64: '<i8',
+      # Unsigned Integers
+      np.uint8: '<u1',
+      np.uint16: '<u2',
+      np.uint32: '<u4',
+      np.uint64: '<u8',
+  }.get(arr.dtype.type)
+
+  if target_dtype is None:
+    raise TypeError(f'Unsupported dtype for MLIR conversion: {arr.dtype}')
+
+  # Ensure C-contiguity and the specific bit-width/endianness
+  return np.ascontiguousarray(arr, dtype=target_dtype)

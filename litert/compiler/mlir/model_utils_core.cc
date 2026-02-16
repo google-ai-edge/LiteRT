@@ -19,82 +19,26 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "llvm/ADT/StringRef.h"
 #include "llvm/FileCheck/FileCheck.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
-#include "mlir/Conversion/Passes.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/Extensions/AllExtensions.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Func/Transforms/Passes.h"
-#include "mlir/Dialect/Quant/IR/Quant.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
-#include "mlir/Pass/PassRegistry.h"
-#include "mlir/Transforms/Passes.h"
-#include "stablehlo/dialect/Register.h"
-#include "stablehlo/dialect/StablehloOps.h"
-#include "stablehlo/dialect/VhloOps.h"
-#include "stablehlo/transforms/Passes.h"
-#include "stablehlo/transforms/optimization/Passes.h"
-#include "tflite/converter/flatbuffer_export.h"
+#include "litert/compiler/mlir/converter_api_core.h"
 #include "tflite/converter/flatbuffer_import.h"
-#include "tflite/converter/ir/tfl_ops.h"
-#include "tflite/converter/quantization/ir/QuantOps.h"
-#include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
-#include "tflite/converter/transforms/optimize_pass.h"
 #include "tflite/converter/transforms/passes.h"
 
 namespace litert::model_utils {
 
-void RegisterDialects(mlir::DialectRegistry& registry) {
-  mlir::stablehlo::registerAllDialects(registry);
-  mlir::func::registerAllExtensions(registry);
-  registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
-                  mlir::quant::QuantDialect,
-                  mlir::quantfork::QuantizationForkDialect,
-                  mlir::TFL::TensorFlowLiteDialect,
-                  mlir::stablehlo::StablehloDialect, mlir::vhlo::VhloDialect>();
-}
-
-void RegisterPasses() {
-  mlir::registerTransformsPasses();
-  mlir::registerReconcileUnrealizedCastsPass();
-  mlir::func::registerFuncPasses();
-  mlir::stablehlo::registerPassPipelines();
-  mlir::stablehlo::registerPasses();
-  mlir::stablehlo::registerOptimizationPasses();
-
-  mlir::odml::registerLegalizeStablehloToVhloPass();
-  mlir::PassRegistration<mlir::TFL::OptimizePass>(
-      []() { return mlir::TFL::CreateOptimizePass(); });
-  mlir::PassRegistration<mlir::OperationPass<mlir::func::FuncOp>>(
-      []() { return mlir::TFL::CreatePrepareQuantizePass(); });
-  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
-      []() { return mlir::TFL::CreatePropagateQsvPass(); });
-  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
-      []() { return mlir::TFL::CreatePostQuantizePass(true); });
-  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
-      []() { return mlir::TFL::CreateFuseQDQPass(); });
-}
-
 mlir::OwningOpRef<mlir::ModuleOp> FlatbufferToMlir(mlir::MLIRContext* context,
                                                    absl::string_view buffer) {
-  mlir::DialectRegistry registry;
-  RegisterDialects(registry);
-  context->appendDialectRegistry(registry);
-  context->loadAllAvailableDialects();
+  PrepareMlirContext(context);
   return tflite::FlatBufferToMlir(buffer, context,
                                   mlir::UnknownLoc::get(context));
-}
-
-std::string MlirToFlatbuffer(mlir::ModuleOp module_op) {
-  tflite::FlatbufferExportOptions options;
-  std::string bytes;
-  tflite::MlirToFlatBufferTranslateFunction(module_op, options, &bytes, true);
-  return bytes;
 }
 
 std::vector<std::string> GetOperationAttributeNames(mlir::Operation* op) {
@@ -109,20 +53,26 @@ std::vector<std::string> GetOperationAttributeNames(mlir::Operation* op) {
   return attr_names;
 }
 
-std::vector<std::string> GetDictionaryAttrNames(mlir::DictionaryAttr attr) {
-  if (attr == nullptr) {
+std::vector<std::string> GetDictionaryAttrNames(mlir::Attribute attr) {
+  auto dict_attr = llvm::dyn_cast<mlir::DictionaryAttr>(attr);
+  if (dict_attr == nullptr) {
     return {};
   }
 
   std::vector<std::string> attr_names;
-  for (auto attr : attr) {
+  for (auto attr : dict_attr) {
     attr_names.push_back(attr.getName().str());
   }
   return attr_names;
 }
 
-absl::string_view GetDenseElementsAttrBytes(mlir::DenseElementsAttr attr) {
-  return absl::string_view(attr.getRawData().data(), attr.getRawData().size());
+absl::string_view GetDenseElementsAttrBytes(mlir::Attribute attr) {
+  auto dense_attr = llvm::dyn_cast<mlir::DenseElementsAttr>(attr);
+  if (dense_attr == nullptr) {
+    return "";
+  }
+  return absl::string_view(dense_attr.getRawData().data(),
+                           dense_attr.getRawData().size());
 }
 
 bool FileCheckCheckInput(absl::string_view input, absl::string_view check) {

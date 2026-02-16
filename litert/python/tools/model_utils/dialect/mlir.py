@@ -18,15 +18,23 @@ import collections
 from typing import Any, Literal, Sequence, Union, cast, final
 
 from litert.python.mlir import ir
-from litert.python.mlir.dialects import quant as ir_quant_d
 import numpy as np
 import xdsl
 from xdsl import irdl
 
+from litert.python.mlir._mlir_libs import model_utils_ext
 from litert.python.tools.model_utils import core
 
 SSAValue = irdl.SSAValue
 Printer = xdsl.printer.Printer
+
+try:
+  # TODO: b/493741937 - Remove this when quant dialect is available in OSS.
+  # pylint: disable=g-import-not-at-top
+  from litert.python.mlir.dialects import quant as ir_quant_d
+  # pylint: enable=g-import-not-at-top
+except ImportError:
+  ir_quant_d = None
 
 
 def attribute_from_mlir(ir_attr: ir.Attribute):
@@ -62,13 +70,14 @@ def type_from_mlir(ir_type: ir.Type):
   """
   # Try upcast ir.Type to known specialized ir cls.
   # TODO(cnchan): Isolate ir.Type upcasting from this function.
-  for ir_type_cls in (
-      ir_quant_d.UniformQuantizedType,
-      ir_quant_d.UniformQuantizedPerAxisType,
-  ):
-    if hasattr(ir_type_cls, "isinstance") and ir_type_cls.isinstance(ir_type):
-      ir_type = ir_type_cls(ir_type)
-      break
+  if ir_quant_d is not None:
+    for ir_type_cls in (
+        ir_quant_d.UniformQuantizedType,
+        ir_quant_d.UniformQuantizedPerAxisType,
+    ):
+      if hasattr(ir_type_cls, "isinstance") and ir_type_cls.isinstance(ir_type):
+        ir_type = ir_type_cls(ir_type)
+        break
 
   type_cls = core.mlir_transforms.get(ir_type) or core.mlir_transforms.get(
       type(ir_type)
@@ -515,7 +524,7 @@ class DictAttr(
 
   @classmethod
   def from_mlir(cls, dict_attr: ir.DictAttr):
-    names = core.pybind.get_dictionary_attr_names(dict_attr)
+    names = model_utils_ext.get_dictionary_attr_names(dict_attr)
     data = {}
     for name in names:
       attr = dict_attr[name]
@@ -626,7 +635,7 @@ class DenseElementsAttr(
     return attr
 
   def _raw_bytes(self, offset: int = 0, size: int = -1) -> bytes:
-    return core.pybind.get_dense_elements_attr_bytes(
+    return model_utils_ext.get_dense_elements_attr_bytes(
         self.to_mlir(), offset, size
     )
 

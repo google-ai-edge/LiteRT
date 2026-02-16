@@ -18,7 +18,7 @@ import functools
 from litert.python.mlir import ir
 
 from absl.testing import absltest as googletest
-from litert.python.tools.model_utils import core
+from litert.python.mlir._mlir_libs import model_utils_ext
 from litert.python.tools.model_utils import transform
 from litert.python.tools.model_utils.dialect import mlir
 
@@ -100,5 +100,5 @@ class ModelUtilsTestCase(googletest.TestCase):
     if isinstance(actual, (mlir.ModuleOp, ir.Module, ir.Operation)):
       actual = ir_text(actual)
 
-    if not core.pybind.filecheck_check_input(actual, check):
+    if not model_utils_ext.filecheck_check_input(actual, check):
       self.fail(f"Got output:\n\n{actual}\nExpected to match:\n{check}")
