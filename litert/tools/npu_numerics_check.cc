@@ -26,6 +26,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_environment_options.h"
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
@@ -53,6 +54,10 @@ ABSL_FLAG(std::string, cpu_model, "", "CPU Model filename to use for testing.");
 ABSL_FLAG(std::string, npu_model, "", "NPU Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to the dispatch library.");
+ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
+          "Path to the compiler plugin library. Only for JIT compilation.");
+ABSL_FLAG(std::string, compiler_cache_dir, "",
+          "Path to the compiler cache directory. Only for JIT compilation.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(float, epsilon, 1e-4f,
           "Threshold value for npu / cpu inference comparison");
@@ -75,16 +80,26 @@ using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
 using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
 
 Expected<Environment> GetEnvironment() {
-  std::vector<litert::Environment::Option> environment_options = {};
-
+  std::vector<EnvironmentOptions::Option> env_options;
   const auto dispatch_library_dir = absl::GetFlag(FLAGS_dispatch_library_dir);
   if (!dispatch_library_dir.empty()) {
-    environment_options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::DispatchLibraryDir,
-        absl::string_view(dispatch_library_dir)});
+    env_options.push_back(EnvironmentOptions::Option{
+        EnvironmentOptions::Tag::kDispatchLibraryDir, dispatch_library_dir});
   }
-
-  return Environment::Create(absl::MakeConstSpan(environment_options));
+  const auto compiler_plugin_library_dir =
+      absl::GetFlag(FLAGS_compiler_plugin_library_dir);
+  if (!compiler_plugin_library_dir.empty()) {
+    env_options.push_back(EnvironmentOptions::Option{
+        EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+        compiler_plugin_library_dir});
+    const auto compiler_cache_dir = absl::GetFlag(FLAGS_compiler_cache_dir);
+    if (!compiler_cache_dir.empty()) {
+      env_options.push_back(EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kCompilerCacheDir, compiler_cache_dir});
+    }
+  }
+  auto env_options_obj = EnvironmentOptions(env_options);
+  return Environment::Create(env_options_obj);
 }
 
 Expected<Options> GetOptions() {
