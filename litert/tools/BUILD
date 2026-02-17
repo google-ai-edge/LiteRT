@@ -555,9 +555,11 @@ cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
+        ":tensor_utils",
         "//litert/cc:litert_common",
-        "//litert/tools:tensor_utils",
+        "//litert/cc:litert_environment_options",
         "//litert/tools/flags/vendors:google_tensor_flags",
+        "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
     ] + select({
