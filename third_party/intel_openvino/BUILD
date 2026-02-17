@@ -16,7 +16,7 @@
 # Dummy BUILD file to make this directory a package.
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml/litert:license"],
 )
 
 licenses(["notice"])
