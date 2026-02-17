@@ -27,6 +27,39 @@ http_archive(
     ],
 )
 
+http_archive(
+    name = "build_bazel_rules_swift",
+    sha256 = "0d20e77d06e2e50c60b2d6a56e2c3c1e8d7a315087a1a4c9b1d9ed3be8c4f2d3",
+    strip_prefix = "rules_swift-1.15.0",
+    url = "https://github.com/bazelbuild/rules_swift/releases/download/1.15.0/rules_swift-1.15.0.tar.gz",
+)
+
+http_archive(
+    name = "build_bazel_apple_support",
+    sha256 = "e2e9b066c6c5a8e0f76a5b6f387b875d00127f5025d2b7f3f3b9000a82f3c859",
+    strip_prefix = "apple_support-1.12.0",
+    url = "https://github.com/bazelbuild/apple_support/releases/download/1.12.0/apple_support-1.12.0.tar.gz",
+)
+
+http_archive(
+    name = "build_bazel_rules_apple",
+    sha256 = "8f57e50d60c4d5d90a7c139c882f05a10bd7b0a889b1b60b8d35687a410651b5",
+    strip_prefix = "rules_apple-2.2.0",
+    url = "https://github.com/bazelbuild/rules_apple/releases/download/2.2.0/rules_apple-2.2.0.tar.gz",
+)
+
+load("@build_bazel_rules_swift//swift:repositories.bzl", "swift_rules_dependencies")
+
+swift_rules_dependencies()
+
+load("@build_bazel_apple_support//lib:repositories.bzl", "apple_support_dependencies")
+
+apple_support_dependencies()
+
+load("@build_bazel_rules_apple//apple:repositories.bzl", "apple_rules_dependencies")
+
+apple_rules_dependencies()
+
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
 # tensorflow is updated to do the same patchcmd.
 http_archive(
