@@ -45,6 +45,15 @@ void ThrowIfFailed(absl::string_view prefix, const absl::Status& status) {
   }
 }
 
+mlir::ModuleOp GetModuleOp(MlirOperation c_op) {
+  auto op = unwrap(c_op);
+  auto module_op = llvm::dyn_cast<mlir::ModuleOp>(op);
+  if (module_op == nullptr) {
+    throw nb::value_error("Failed to cast the input to mlir::ModuleOp.");
+  }
+  return module_op;
+}
+
 NB_MODULE(converter_api_ext, m) {
   m.doc() = "LiteRT Converter API Extensions";
 
@@ -130,9 +139,10 @@ NB_MODULE(converter_api_ext, m) {
 
   m.def(
       "export_flatbuffer_to_file",
-      [](MlirModule c_module_op, std::string export_path) {
+      [](MlirOperation c_op, std::string export_path) {
+        auto module_op = GetModuleOp(c_op);
         absl::Status status =
-            litert::ExportFlatbufferToFile(unwrap(c_module_op), export_path);
+            litert::ExportFlatbufferToFile(module_op, export_path);
         ThrowIfFailed("Failed to export flatbuffer", status);
       },
       nb::arg("module"), nb::arg("export_path"),
@@ -141,8 +151,9 @@ NB_MODULE(converter_api_ext, m) {
 
   m.def(
       "export_flatbuffer_to_bytes",
-      [](MlirModule c_module_op) {
-        auto bytes_or = litert::ExportFlatbufferToBytes(unwrap(c_module_op));
+      [](MlirOperation c_op) {
+        auto module_op = GetModuleOp(c_op);
+        auto bytes_or = litert::ExportFlatbufferToBytes(module_op);
         ThrowIfFailed("Failed to export flatbuffer", bytes_or.status());
 
         auto& bytes = bytes_or.value();
