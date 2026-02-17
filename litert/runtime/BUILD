@@ -368,6 +368,7 @@ GPU_ENVIRONMENT_DEPS = [
     "//litert/c/internal:litert_logging",
     "//litert/cc:litert_expected",
     "//litert/cc:litert_macros",
+    "//litert/core:environment_options",
     "@opencl_headers",
     "//tflite/delegates/gpu/cl:cl_command_queue",
     "//tflite/delegates/gpu/cl:cl_context",
@@ -401,7 +402,6 @@ cc_library(
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_any",
-        "//litert/core:environment",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ] + litert_metal_deps(),
