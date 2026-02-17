@@ -9,6 +9,7 @@
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -16,6 +17,8 @@
 #include "QnnCommon.h"  // from @qairt
 #include "QnnGraph.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+#include "IR/QnnIrGraph.h"
+
 
 namespace qnn {
 namespace {
@@ -71,10 +74,37 @@ bool QnnModel::ValidateOpConfig() {
                      });
 }
 
+absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs(
+    const ::qnn::Options& options, absl::string_view qnn_graph_name) {
+  static std::array<QnnIrGraph_CustomConfig_t, 1> graph_custom_configs;
+  graph_custom_configs[0].option = QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION;
+  graph_custom_configs[0].serializationOption.serializationType =
+      QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER;
+  static std::string dlc_path;  // NOLINT
+  // Set DLC path based on the qnn graph name and DLC directory from options.
+  std::filesystem::path dlc_dir = std::string(options.GetDlcDir());
+  dlc_path = (dlc_dir / absl::StrCat(qnn_graph_name, ".dlc")).string();
+  graph_custom_configs[0].serializationOption.outputPath = dlc_path.c_str();
+
+  static std::array<QnnGraph_Config_t, 1> graph_configs;
+  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[0].customConfig = &graph_custom_configs[0];
+
+  static std::array<const QnnGraph_Config_t*, 2> result = {&graph_configs[0],
+                                                           nullptr};
+
+  return absl::MakeSpan(result.data(), result.size());
+}
+
 bool QnnModel::Finalize() {
   absl::flat_hash_set<const ::qnn::TensorWrapper*> created_tensors;
+  ::qnn::Options options;
+  options.SetDlcDir(
+      "/local/mnt/workspace/chunhsuehlee/LiteRT/models_google/dlc");
   QNN_RETURN_STATUS_IF_NOT_OK(api_->graphCreate(
-      context_handle_, "test", DefaultGraphConfigs().data(), &graph_handle_));
+      context_handle_, "test",
+      GetDefaultIrGraphConfigs(options, "ScatterNd_int8").data(), &graph_handle_));
   for (auto& op_wrapper : op_wrappers_) {
     for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
       if (!created_tensors.count(&(tensor_wrapper_ref.get()))) {

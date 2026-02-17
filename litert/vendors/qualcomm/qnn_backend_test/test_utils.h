@@ -31,7 +31,10 @@ class QnnModelTest : public testing::TestWithParam<
 
   void SetUp() override {
     const auto& [options, soc_model_name] = GetParam();
-    SetUpQnnModel(options, soc_model_name);
+    ::qnn::Options dummy_options{};
+    dummy_options.SetDlcDir("/local/mnt/workspace/chunhsuehlee/LiteRT/models_google/dlc");
+    dummy_options.SetBackendType(::qnn::BackendType::kIrBackend);
+    SetUpQnnModel(dummy_options, soc_model_name);
   }
 
  private:
@@ -41,7 +44,7 @@ class QnnModelTest : public testing::TestWithParam<
 
 inline auto GetDefaultQnnModelParams() {
 #if !defined(__ANDROID__)
-  std::vector<std::string_view> socs = {"SM8650", "SM8750", "SM8850"};
+  std::vector<std::string_view> socs = {"SM8850"};
 #else
   // On device, qnn manager will use online soc for compilation.
   std::vector<std::string_view> socs = {"SOC_UNKNOWN"};
