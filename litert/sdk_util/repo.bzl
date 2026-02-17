@@ -74,6 +74,7 @@ def _prepare_repo_files(ctx):
                 auth = get_auth(ctx, [url]),
                 stripPrefix = strip_prefix,
                 type = file_type,
+                canonical_id = package.get("canonical_id", ctx.attr.canonical_id),
             )
 
             # Apply package-specific symlink mappings
@@ -93,6 +94,7 @@ def _prepare_repo_files(ctx):
             auth = get_auth(ctx, [ctx.attr.url]),
             stripPrefix = ctx.attr.strip_prefix,
             type = file_type,
+            canonical_id = ctx.attr.canonical_id,
         )
 
     if ctx.attr.symlink_mapping:
@@ -155,6 +157,7 @@ configurable_repo = repository_rule(
             - file_extension: (optional) File type (default: "tar.gz")
             - strip_prefix: (optional) Prefix to strip when extracting
             - symlink_mapping: (optional) Dict of symlinks to create for this package
+            - canonical_id: (optional) A canonical ID for this package download.
 
             Must be a valid JSON string. Use json.encode() to create it.
             """,
