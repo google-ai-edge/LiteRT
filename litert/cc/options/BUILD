@@ -65,11 +65,9 @@ cc_library(
     hdrs = ["litert_compiler_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -80,7 +78,11 @@ cc_test(
     srcs = ["litert_compiler_options_test.cc"],
     deps = [
         ":litert_compiler_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options_header",
         "//litert/c/options:litert_compiler_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -231,8 +233,6 @@ cc_library(
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

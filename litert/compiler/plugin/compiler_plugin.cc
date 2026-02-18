@@ -39,6 +39,7 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_op_options.h"
@@ -47,6 +48,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/plugin/algo.h"
+#include "litert/compiler/plugin/litert_compiler_options.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/dynamic_loading.h"
 #include "litert/core/environment.h"
@@ -639,12 +641,7 @@ Expected<PartitionResult> PartitionModel(
     LiteRtCompilerOptionsPartitionStrategy strategy =
         kLiteRtCompilerOptionsPartitionStrategyDefault;
     if (compiler_options.HasValue()) {
-      auto status = LiteRtGetCompilerOptionsPartitionStrategy(*compiler_options,
-                                                              &strategy);
-      if (status != kLiteRtStatusOk) {
-        return Unexpected(
-            status, "Failed to get partition strategy from compiler options.");
-      }
+      strategy = compiler_options->partition_strategy;
     }
     LITERT_RETURN_IF_ERROR(PartitionSubgraph(
         std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy));
@@ -903,13 +900,32 @@ Expected<ApplyPluginsResult> ApplyPlugins(
   return result;
 }
 
-Expected<LiteRtCompilerOptions> CompilerPlugin::CompilerOptions() const {
-  LiteRtCompilerOptions compiler_options;
+Expected<LiteRtCompilerOptionsT> CompilerPlugin::CompilerOptions() const {
+  LiteRtCompilerOptionsT result;
+  if (options_ == nullptr) {
+    return litert::Error(kLiteRtStatusErrorNotFound,
+                         "No compiler options found");
+  }
   LiteRtOpaqueOptions opaque_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options_, &opaque_options));
-  LITERT_RETURN_IF_ERROR(
-      LiteRtFindCompilerOptions(opaque_options, &compiler_options));
-  return compiler_options;
+
+  // Parse compiler options from the opaque options.
+  void* data;
+  if (auto status = LiteRtFindOpaqueOptionsData(
+          opaque_options, LiteRtCompilerOptionsT::Identifier(), &data);
+      status != kLiteRtStatusOk) {
+    if (status == kLiteRtStatusErrorNotFound) {
+      return result;
+    }
+    return Unexpected(status);
+  }
+  std::string options_str(static_cast<const char*>(data));
+  if (auto status = litert::internal::ParseLiteRtCompilerOptions(
+          options_str.data(), options_str.size(), &result);
+      status != kLiteRtStatusOk) {
+    return Unexpected(status);
+  }
+  return result;
 }
 
 Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
