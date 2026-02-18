@@ -48,6 +48,10 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  // Do not check when soc_model_name is not specified.
+  if (!soc_model_name) {
+    return kLiteRtStatusOk;
+  }
   // Example plugin does not depend on any compiler library, so we can
   // return an error to test the error handling.
   if (strcmp(soc_model_name, litert::example::kIncompatiblePluginSocModel) ==
