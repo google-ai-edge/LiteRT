@@ -20,6 +20,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
@@ -236,13 +237,15 @@ TEST(Buffer, GpuWriteAhwbRead) {
   LITERT_ASSERT_OK(LiteRtDupFdEvent(egl_sync_event, &egl_sync_fd));
 
   // Wrap native fence in LiteRT event.
-  LiteRtEventT gpu_write_event = {
-      .type = LiteRtEventTypeSyncFenceFd, .fd = egl_sync_fd, .owns_fd = true};
+  LiteRtEvent gpu_write_event = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateEventFromSyncFenceFd(
+      env, egl_sync_fd, /*owns_fd=*/true, &gpu_write_event));
+  absl::Cleanup event_destroyer([&] { LiteRtDestroyEvent(gpu_write_event); });
 
   // Read from AHWB on CPU, waiting for GPU write to complete.
   LITERT_ASSERT_OK_AND_ASSIGN(
       void* ahwb_host_data_after_write_data,
-      AhwbBuffer::Lock(ahwb_buffer.ahwb, &gpu_write_event));
+      AhwbBuffer::Lock(ahwb_buffer.ahwb, gpu_write_event));
   ASSERT_NE(ahwb_host_data_after_write_data, nullptr);
   auto ahwb_host_data_after_write = absl::MakeSpan(
       reinterpret_cast<float*>(ahwb_host_data_after_write_data), 4);

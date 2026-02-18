@@ -684,6 +684,7 @@ cc_test(
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
     ] + gtest_main_no_heapcheck_deps() + select({
         "@org_tensorflow//tensorflow:android": [
