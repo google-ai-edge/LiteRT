@@ -16,7 +16,6 @@
 #include <Python.h>
 #include <stdlib.h>
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -30,8 +29,6 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Conversion/Passes.h"
@@ -60,9 +57,6 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Transforms/Passes.h"
-#include "litert/compiler/mlir/dialects/litert/attributes.h"
-#include "litert/compiler/mlir/dialects/litert/callback_resource.h"
-#include "litert/compiler/mlir/dialects/litert/dialect.h"
 #include "litert/compiler/mlir/status_scoped_diagnostic_handler.h"
 #include "stablehlo/dialect/Register.h"
 #include "stablehlo/dialect/StablehloOps.h"
@@ -94,105 +88,6 @@ mlir::func::FuncOp GetFuncOpByName(mlir::ModuleOp module_op,
   return main_func;
 }
 
-// A callback resource that wraps a Python generator function that yields
-// bytes in chunks.
-class PyChunkedCallbackResource : public CallbackResourceBase {
- public:
-  // Note: We expect 'chunk_iterator_factory' to be the Python function
-  // that, when called, returns the generator/iterator.
-  explicit PyChunkedCallbackResource(PyObject* chunk_iterator_factory)
-      : iterator_factory_ptr_(chunk_iterator_factory) {
-    if (iterator_factory_ptr_) {
-      PyGILState_STATE gstate = PyGILState_Ensure();
-      Py_XINCREF(iterator_factory_ptr_);
-      PyGILState_Release(gstate);
-    }
-  }
-
-  ~PyChunkedCallbackResource() override { Cleanup(); }
-
-  void Cleanup() override {
-    if (iterator_factory_ptr_) {
-      PyGILState_STATE gstate = PyGILState_Ensure();
-      Py_DECREF(iterator_factory_ptr_);
-      iterator_factory_ptr_ = nullptr;
-      PyGILState_Release(gstate);
-    }
-  }
-
-  llvm::Error ApplyBytes(
-      llvm::function_ref<llvm::Error(llvm::StringRef)> applier) override {
-    if (!iterator_factory_ptr_) {
-      return llvm::make_error<llvm::StringError>(
-          "Resource already cleaned up", llvm::inconvertibleErrorCode());
-    }
-
-    PyGILState_STATE gstate = PyGILState_Ensure();
-
-    // Get the iterator from the factory (the generator object)
-    PyObject* iterator = PyObject_CallObject(iterator_factory_ptr_, nullptr);
-    if (!iterator) {
-      return HandlePythonError(gstate, "Failed to call chunk iterator factory");
-    }
-
-    // Ensure it is actually an iterator
-    PyObject* iter_handle = PyObject_GetIter(iterator);
-    Py_DECREF(iterator);  // Clean up the generator object itself
-    if (!iter_handle) {
-      return HandlePythonError(gstate, "Result of factory is not iterable");
-    }
-
-    // Iterate over the chunks
-    PyObject* item;
-    while ((item = PyIter_Next(iter_handle))) {
-      if (!PyBytes_Check(item)) {
-        Py_DECREF(item);
-        Py_DECREF(iter_handle);
-        PyGILState_Release(gstate);
-        return llvm::make_error<llvm::StringError>(
-            "Iterator yielded non-bytes object",
-            llvm::inconvertibleErrorCode());
-      }
-
-      // Extract data and pass to applier
-      const char* buffer = PyBytes_AsString(item);
-      Py_ssize_t size = PyBytes_Size(item);
-
-      llvm::Error err = applier(llvm::StringRef(buffer, size));
-
-      Py_DECREF(item);
-
-      if (err) {
-        Py_DECREF(iter_handle);
-        PyGILState_Release(gstate);
-        return err;
-      }
-    }
-
-    // Check if iteration stopped due to error or natural end
-    Py_DECREF(iter_handle);
-    if (PyErr_Occurred()) {
-      return HandlePythonError(gstate, "Error during iteration");
-    }
-
-    PyGILState_Release(gstate);
-    return llvm::Error::success();
-  }
-
- private:
-  // Helper to convert Python errors to llvm::Error and release GIL
-  llvm::Error HandlePythonError(PyGILState_STATE gstate,
-                                const std::string& msg) {
-    PyErr_Print();  // Or handle the error string more specifically
-    PyGILState_Release(gstate);
-    return llvm::make_error<llvm::StringError>(
-        msg + " for resource: " + GetKey().str(),
-        llvm::inconvertibleErrorCode());
-  }
-
-  PyObject* iterator_factory_ptr_;
-};
-
 template <typename OStream>
 absl::Status ExportFlatbuffer(mlir::ModuleOp module_op,
                               OStream& export_stream) {
@@ -216,53 +111,6 @@ absl::Status ExportFlatbuffer(mlir::ModuleOp module_op,
   options.serialize_stablehlo_ops = true;
   // tflite::kModelUseStablehloTensorKey
   options.metadata["keep_stablehlo_constant"] = "true";
-
-  // Register the callback resource applier to serialize the callback resource
-  // attributes.
-  auto callback_resource_attr_applier = [](mlir::Attribute attr,
-                                           mlir::Operation* op)
-      -> std::optional<tflite::FlatbufferExportAttributeBufferApplier> {
-    if (!mlir::isa<litert::CallbackResourceElementsAttr>(attr)) {
-      return std::nullopt;
-    }
-
-    return [](const std::pair<mlir::Attribute, mlir::Operation*>& attr_and_op,
-              auto apply) -> absl::Status {
-      auto [attr, _] = attr_and_op;
-      auto callback_resource_attr =
-          mlir::cast<litert::CallbackResourceElementsAttr>(attr);
-
-      CallbackResourceBase* resource = callback_resource_attr.GetResource();
-      if (!resource) {
-        return absl::InternalError(
-            "CallbackResourceAttr has no associated resource.");
-      }
-
-      // We wrap the 'apply' callback to handle the translation between
-      // llvm::StringRef/llvm::Error and absl::string_view/absl::Status.
-      llvm::Error err =
-          resource->ApplyBytes([&](llvm::StringRef chunk) -> llvm::Error {
-            // Assumes the chunk is already in packed little-endian format.
-            absl::Status status =
-                apply(absl::string_view(chunk.data(), chunk.size()));
-
-            if (!status.ok()) {
-              return llvm::make_error<llvm::StringError>(
-                  status.message(), llvm::inconvertibleErrorCode());
-            }
-            return llvm::Error::success();
-          });
-
-      // Convert the final LLVM error back to absl::Status for the exporter
-      if (err) {
-        return absl::InternalError(llvm::toString(std::move(err)));
-      }
-
-      return absl::OkStatus();
-    };
-  };
-  options.attribute_buffer_applier_factories.push_back(
-      callback_resource_attr_applier);
 
   return tflite::MlirToFlatBufferTranslateFunction(module_op, options,
                                                    export_stream);
@@ -454,11 +302,11 @@ void PrepareMlirContext(mlir::MLIRContext* context) {
   mlir::func::registerAllExtensions(registry);
   mlir::registerAllDialects(registry);
   mlir::registerAllExtensions(registry);
-  registry.insert<
-      mlir::arith::ArithDialect, mlir::func::FuncDialect,
-      mlir::quant::QuantDialect, mlir::quantfork::QuantizationForkDialect,
-      mlir::TFL::TensorFlowLiteDialect, mlir::stablehlo::StablehloDialect,
-      mlir::vhlo::VhloDialect, litert::LITERTDialect>();
+  registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                  mlir::quant::QuantDialect,
+                  mlir::quantfork::QuantizationForkDialect,
+                  mlir::TFL::TensorFlowLiteDialect,
+                  mlir::stablehlo::StablehloDialect, mlir::vhlo::VhloDialect>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
 }
@@ -608,41 +456,6 @@ absl::Status ExportFlatbufferToFile(mlir::ModuleOp module_op,
                                             output_path, ": ", ec.message()));
   }
   return ExportFlatbuffer(module_op, export_stream);
-}
-
-absl::StatusOr<mlir::Attribute> GetPyChunkedCallbackResourceAttr(
-    mlir::Type type, PyObject* chunk_iterator_factory) {
-  mlir::ShapedType shaped_type = mlir::dyn_cast<mlir::ShapedType>(type);
-  if (!shaped_type) {
-    return absl::InvalidArgumentError("The given type is not a shaped type.");
-  }
-  auto resource =
-      std::make_unique<PyChunkedCallbackResource>(chunk_iterator_factory);
-  return litert::CallbackResourceElementsAttr::get(shaped_type,
-                                                   std::move(resource));
-}
-
-absl::StatusOr<std::vector<uint8_t>> GetPyChunkedCallbackResourceAttrBytes(
-    mlir::Attribute attr) {
-  auto resource_attr =
-      mlir::dyn_cast<litert::CallbackResourceElementsAttr>(attr);
-  if (!resource_attr) {
-    return absl::InvalidArgumentError(
-        "The given attribute is not a callback resource elements attribute.");
-  }
-  CallbackResourceBase* resource = resource_attr.GetResource();
-  if (resource == nullptr) {
-    return absl::InvalidArgumentError(
-        "Failed to get the resource from the attribute.");
-  }
-
-  llvm::Expected<std::vector<uint8_t>> bytes_or = resource->GetBytes();
-  if (!bytes_or) {
-    std::string err_msg = llvm::toString(bytes_or.takeError());
-    return absl::InternalError(
-        absl::StrCat("Failed to get bytes from the resource: ", err_msg));
-  }
-  return std::move(*bytes_or);
 }
 
 }  // namespace litert

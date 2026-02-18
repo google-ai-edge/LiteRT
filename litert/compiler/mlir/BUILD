@@ -34,8 +34,6 @@ cc_library(
     hdrs = ["converter_api_core.h"],
     deps = [
         ":status_scoped_diagnostic_handler",
-        "//litert/compiler/mlir/dialects/litert:callback_resource",
-        "//litert/compiler/mlir/dialects/litert:dialect",
         "//tflite/converter:common",
         "//tflite/converter:converter_flags_proto_cc",
         "//tflite/converter:flatbuffer_export",

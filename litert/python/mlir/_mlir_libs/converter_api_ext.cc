@@ -14,6 +14,8 @@
 
 #include <Python.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,8 +28,11 @@
 #include "mlir/Bindings/Python/NanobindAdaptors.h"  // IWYU pragma: keep
 #include "mlir/CAPI/IR.h"
 #include "mlir/CAPI/Pass.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/Support/LLVM.h"
 #include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
 #include "nanobind/stl/string.h"
 #include "nanobind/stl/string_view.h"
 #include "nanobind/stl/vector.h"
@@ -52,6 +57,30 @@ mlir::ModuleOp GetModuleOp(MlirOperation c_op) {
     throw nb::value_error("Failed to cast the input to mlir::ModuleOp.");
   }
   return module_op;
+}
+
+static void GetDlpackType(mlir::Type type, uint8_t& code, uint8_t& bits) {
+  if (type.isF32()) {
+    code = (uint8_t)nb::dlpack::dtype_code::Float;
+    bits = 32;
+  } else if (type.isF64()) {
+    code = (uint8_t)nb::dlpack::dtype_code::Float;
+    bits = 64;
+  } else if (type.isInteger(32)) {
+    code = (uint8_t)nb::dlpack::dtype_code::Int;
+    bits = 32;
+  } else if (type.isInteger(64)) {
+    code = (uint8_t)nb::dlpack::dtype_code::Int;
+    bits = 64;
+  } else if (type.isInteger(8)) {
+    code = (uint8_t)nb::dlpack::dtype_code::Int;
+    bits = 8;
+  } else if (type.isInteger(1)) {
+    code = (uint8_t)nb::dlpack::dtype_code::Bool;
+    bits = 8;
+  } else {
+    throw nb::value_error("Unsupported MLIR element type.");
+  }
 }
 
 NB_MODULE(converter_api_ext, m) {
@@ -134,7 +163,8 @@ NB_MODULE(converter_api_ext, m) {
         return wrap(merged_module_or.value().release());
       },
       nb::arg("module_ops"),
-      "Merges multiple MLIR module ops into one. Public symbol name collisions "
+      "Merges multiple MLIR module ops into one. Public symbol name "
+      "collisions "
       "will cause this to fail.");
 
   m.def(
@@ -146,7 +176,8 @@ NB_MODULE(converter_api_ext, m) {
         ThrowIfFailed("Failed to export flatbuffer", status);
       },
       nb::arg("module"), nb::arg("export_path"),
-      "Exports the MLIR module to flatbuffer and exports it to the given file "
+      "Exports the MLIR module to flatbuffer and exports it to the given "
+      "file "
       "path.");
 
   m.def(
@@ -163,31 +194,34 @@ NB_MODULE(converter_api_ext, m) {
       "Exports the MLIR module to flatbuffer and returns the bytes.");
 
   m.def(
-      "get_py_chunked_callback_resource_attr",
-      [](MlirType c_type, nb::callable chunk_iterator_factory) {
-        mlir::Type type = unwrap(c_type);
-        auto attr_or = litert::GetPyChunkedCallbackResourceAttr(
-            type, chunk_iterator_factory.ptr());
-        ThrowIfFailed("Failed to get callback resource attr", attr_or.status());
-        return wrap(attr_or.value());
-      },
-      nb::arg("type"), nb::arg("chunk_iterator_factory"),
-      "Returns a resource attribute that uses the Python callable to generate "
-      "chunks of data for the attribute. The callable should return "
-      "iterator of (chunked) bytes in packed little-endian format.");
-
-  m.def(
-      "get_py_chunked_callback_resource_attr_bytes",
+      "dense_resource_elements_attr_to_numpy",
       [](MlirAttribute c_attr) {
-        mlir::Attribute attr = unwrap(c_attr);
-        auto bytes_or = litert::GetPyChunkedCallbackResourceAttrBytes(attr);
-        ThrowIfFailed("Failed to get callback resource attr bytes",
-                      bytes_or.status());
-        auto& bytes = bytes_or.value();
-        return nb::bytes(bytes.data(), bytes.size());
+        auto attr =
+            mlir::dyn_cast<mlir::DenseResourceElementsAttr>(unwrap(c_attr));
+        if (attr == nullptr) {
+          throw nb::value_error(
+              "Failed to cast the input to mlir::DenseResourceElementsAttr.");
+        }
+        auto shaped_type = mlir::dyn_cast<mlir::ShapedType>(attr.getType());
+        if (shaped_type == nullptr) {
+          throw nb::value_error(
+              "Failed to cast the input to mlir::ShapedType.");
+        }
+        auto element_type = shaped_type.getElementType();
+
+        auto mlir_shape = shaped_type.getShape();
+        std::vector<size_t> shape(mlir_shape.begin(), mlir_shape.end());
+
+        uint8_t type_code, bits;
+        GetDlpackType(element_type, type_code, bits);
+
+        auto data = attr.getData();
+        return nb::ndarray<nb::numpy>(const_cast<char*>(data.data()),
+                                      shape.size(), shape.data(), nb::handle(),
+                                      nullptr,  // assume C-contiguous
+                                      {type_code, bits, 1});
       },
       nb::arg("attr"),
-      "Gets and concatenates the bytes of an attribute from "
-      "get_py_chunked_callback_resource_attr.");
+      "Converts a dense resource elements attr to a numpy array.");
 }
 }  // namespace
