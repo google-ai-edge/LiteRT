@@ -223,6 +223,28 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
   return kLiteRtStatusOk;
 }
 
+// enable_dynamic_range_quantization -----------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetEnableDynamicRangeQuantization(
+    LiteRtGoogleTensorOptions options, bool enable_dynamic_range_quantization) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->enable_dynamic_range_quantization =
+      enable_dynamic_range_quantization;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
+    LiteRtGoogleTensorOptions options,
+    bool* enable_dynamic_range_quantization) {
+  if (options == nullptr || enable_dynamic_range_quantization == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *enable_dynamic_range_quantization =
+      options->enable_dynamic_range_quantization;
+  return kLiteRtStatusOk;
+}
+
 // testing flags ---------------------------------------------------------------
 LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(
     LiteRtGoogleTensorOptions options, const std::string& testing_flags) {

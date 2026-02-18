@@ -69,6 +69,11 @@ class GoogleTensorOptions : public OpaqueOptions {
 
   LiteRtGoogleTensorOptionsShardingIntensity GetShardingIntensity() const;
 
+  bool GetEnableDynamicRangeQuantization() const;
+
+  void SetEnableDynamicRangeQuantization(
+      bool enable_dynamic_range_quantization);
+
   std::vector<std::vector<std::string>> GetTestingFlags() const;
 
   void SetTestingFlags(const std::string& testing_flags);

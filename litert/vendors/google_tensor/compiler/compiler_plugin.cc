@@ -254,6 +254,16 @@ LiteRtStatus LiteRtOpaqueOptionsToGoogleTensorOptions(
       break;
   }
 
+  // ENABLE DYNAMIC RANGE QUANTIZATION
+  bool enable_dynamic_range_quantization;
+  if (LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
+          google_tensor_options_data, &enable_dynamic_range_quantization) !=
+      kLiteRtStatusOk) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  google_tensor_options->set_enable_dynamic_range_quantization(
+      enable_dynamic_range_quantization);
+
   // TESTING FLAGS
   std::vector<std::vector<std::string>> testing_flags;
   if (LiteRtGoogleTensorOptionsGetTestingFlags(

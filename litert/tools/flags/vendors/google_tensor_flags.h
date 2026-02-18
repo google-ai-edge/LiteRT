@@ -46,6 +46,8 @@ ABSL_DECLARE_FLAG(bool, google_tensor_enable_4bit_compilation);
 ABSL_DECLARE_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
                   google_tensor_sharding_intensity);
 
+ABSL_DECLARE_FLAG(bool, google_tensor_enable_dynamic_range_quantization);
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtGoogleTensorOptionsShardingIntensity* options,
                    std::string* error);

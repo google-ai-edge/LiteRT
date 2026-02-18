@@ -226,6 +226,7 @@ EXPORTS
   LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation
   LiteRtGoogleTensorOptionsGetOutputDir
   LiteRtGoogleTensorOptionsGetShardingIntensity
+  LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization
   LiteRtGoogleTensorOptionsGetTestingFlags
   LiteRtGoogleTensorOptionsSetDumpOpTimings
   LiteRtGoogleTensorOptionsSetEnable4BitCompilation
@@ -234,6 +235,7 @@ EXPORTS
   LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation
   LiteRtGoogleTensorOptionsSetOutputDir
   LiteRtGoogleTensorOptionsSetShardingIntensity
+  LiteRtGoogleTensorOptionsSetEnableDynamicRangeQuantization
   LiteRtGoogleTensorOptionsSetTestingFlags
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent
