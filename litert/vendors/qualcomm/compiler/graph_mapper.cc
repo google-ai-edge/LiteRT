@@ -220,7 +220,7 @@ absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs(
 
 absl::Span<const QnnGraph_Config_t*> GraphMapper::PickGraphConfigHeuristic(
     const ::qnn::Options& options) {
-  if (qnn_.IsLegacySocModel()) {
+  if (qnn_.IsFp16Supported()) {
     return GetLegacyGraphConfigs(options);
   } else {
     return GetDefaultGraphConfigs(options);
