@@ -15,6 +15,7 @@
 #include "litert/core/environment.h"
 
 #include <memory>
+#include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -54,4 +55,41 @@ extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
   LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment(), nullptr);
 
   return gpu_env;
+}
+
+LiteRtEnvironmentT::LiteRtEnvironmentT() = default;
+
+LiteRtEnvironmentT::~LiteRtEnvironmentT() = default;
+
+litert::Expected<void> LiteRtEnvironmentT::SetGpuEnvironment(
+    std::unique_ptr<litert::internal::GpuEnvironment> gpu_env) {
+  if (gpu_env_) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "GPU environment is already set.");
+  }
+  gpu_env_ = std::move(gpu_env);
+  return {};
+}
+
+litert::Expected<litert::internal::GpuEnvironment*>
+LiteRtEnvironmentT::GetGpuEnvironment() {
+  if (!HasGpuEnvironment()) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "GPU environment is not set.");
+  }
+  return gpu_env_.get();
+}
+
+bool LiteRtEnvironmentT::HasGpuEnvironment() { return gpu_env_ != nullptr; }
+
+bool LiteRtEnvironmentT::SupportsClGlInterop() {
+  return gpu_env_ != nullptr && gpu_env_->SupportsClGlInterop();
+}
+
+bool LiteRtEnvironmentT::SupportsAhwbClInterop() {
+  return gpu_env_ != nullptr && gpu_env_->SupportsAhwbClInterop();
+}
+
+bool LiteRtEnvironmentT::SupportsAhwbGlInterop() {
+  return gpu_env_ != nullptr && gpu_env_->SupportsAhwbGlInterop();
 }
