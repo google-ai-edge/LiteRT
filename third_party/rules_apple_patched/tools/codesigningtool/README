@@ -1,0 +1,4 @@
+codesigningtool selects the appropriate signing identity for iOS apps or Apple
+executable bundles.
+
+codesigningtool uses codesign which is only available on macOS platforms.

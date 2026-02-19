@@ -1,0 +1,4 @@
+plisttool implements the logic that performs substitutions, merges, and converts
+Info.plist files to binary format.
+
+plisttool only runs on Darwin.

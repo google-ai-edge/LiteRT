@@ -1,0 +1,13 @@
+{
+  "assets" : [
+    {
+      "filename" : "Circular.imageset",
+      "idiom" : "watch",
+      "role" : "circular"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

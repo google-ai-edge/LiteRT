@@ -1,0 +1,2 @@
+This file should be inside the directory "structured/nested.txt" inside the app
+bundle because it was included using the structured_resources attribute.

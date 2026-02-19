@@ -1,0 +1,4 @@
+"hello" = "buongiorno";
+
+/* Test non ascii characters as well. */
+"help" = "ជំនួយ";

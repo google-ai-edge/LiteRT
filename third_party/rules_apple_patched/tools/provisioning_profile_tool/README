@@ -1,0 +1,3 @@
+provisioning_profile_tool is used to extract information from a provisioning_profile.
+
+provisioning_profile_tool only runs on Darwin.

@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# Copyright 2019 The Bazel Authors. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -eu
+
+# Loads the unittest framework for common assert methods.
+%{dependencies}s
+
+ARCHIVE_PATH="%{archive}s"
+STANDALONE_BINARY="%{standalone_binary}s"
+
+if [[ -n "$ARCHIVE_PATH" ]]; then
+
+  # Unzip the archive into a temporary location.
+  ARCHIVE_ROOT="$(mktemp -d "${TEST_TMPDIR:-${TMPDIR:-/tmp}}/bundle_tmp_dir.XXXXXX")"
+
+  trap 'chmod -R u+w "${ARCHIVE_ROOT}"
+    rm -rf "${ARCHIVE_ROOT}"' ERR EXIT
+
+  # Check if the archive path is a directory, if it is, this means the
+  # build rule output is a tree artifact and not an archive, therefore
+  # copying the directory recursively is enough.
+  if [ -d "$ARCHIVE_PATH/" ];
+  then
+    cp -rf "$ARCHIVE_PATH" "$ARCHIVE_ROOT"
+    # Set write permission to allow for safe file removal in test cleanup.
+    chmod -R +w "$ARCHIVE_ROOT"
+  else
+    unzip -qq "$ARCHIVE_PATH" -d "$ARCHIVE_ROOT"
+  fi
+
+  # Define common bundle locations to be used by the verifier scripts.
+  BINARY="$ARCHIVE_ROOT/%{archive_relative_binary}s"
+  BUNDLE_ROOT="$ARCHIVE_ROOT/%{archive_relative_bundle}s"
+  CONTENT_ROOT="$ARCHIVE_ROOT/%{archive_relative_contents}s"
+  RESOURCE_ROOT="$ARCHIVE_ROOT/%{archive_relative_resources}s"
+
+elif [[ -n "$STANDALONE_BINARY" ]]; then
+
+  # If only a binary was provided instead of an archive, treat that as the root
+  # element for all root "bundle" locations used by the verifier scripts.
+  ARCHIVE_ROOT="$STANDALONE_BINARY"
+  BINARY="$STANDALONE_BINARY"
+  BUNDLE_ROOT="$STANDALONE_BINARY"
+  CONTENT_ROOT="$STANDALONE_BINARY"
+  RESOURCE_ROOT="$STANDALONE_BINARY"
+
+else
+  fail "Internal Error: Test did not assign an archive or a binary value."
+fi
+
+# Parse any environmental variables passed into bash arrays for use within the
+# sourced verification scripts.
+if [[ -n "${APPLE_TEST_ENV_KEYS-}" ]]; then
+  for key in $APPLE_TEST_ENV_KEYS
+  do
+    eval "declare -a ${key}"
+    eval "${key}=()"
+    i="0"
+    while eval "[[ -n \${APPLE_TEST_ENV_${key}_${i}-} ]]"
+    do
+      eval "${key}+=(\"\${APPLE_TEST_ENV_${key}_${i}}\")"
+      i=$[$i+1]
+    done
+  done
+fi
+
+# Invoke the verifier script.
+source %{verifier_script}s

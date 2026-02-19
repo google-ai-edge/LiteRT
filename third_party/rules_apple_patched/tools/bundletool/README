@@ -1,0 +1,4 @@
+bundletool creates an Apple bundle by taking a list of files/ZIPs and
+destination paths and builds the directory structure for those files.
+
+bundletool can run either on Linux or Darwin.

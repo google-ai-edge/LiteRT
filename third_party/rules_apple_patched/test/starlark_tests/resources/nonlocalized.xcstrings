@@ -1,0 +1,16 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "nonlocalized_string" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I'm the same in every language!"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
