@@ -15,3 +15,4 @@
 
 # pylint: disable=redefined-builtin
 from ._composite import *
+from ._const import *

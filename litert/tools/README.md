@@ -223,6 +223,45 @@ analyze_model_main --model_path=<model_path> --only_summarize
 analyze_model_main --model_path=<model_path>
 ```
 
+## `dump_ops`
+
+Splits a LiteRT model into multiple smaller models, each containing a single
+operator from the original model. This is useful for isolating specific operators
+for debugging or benchmarking.
+
+### Basic Usage
+
+```bash
+dump_ops --model_path=<model_path>
+```
+
+### Batch Mode
+
+Process multiple models in a directory.
+
+```bash
+dump_ops --input_dir=<directory_path> --output_dir=<output_dir>
+```
+
+The tool will:
+1.  Iterate through all files in the input directory.
+2.  Attempt to load each file as a LiteRT model.
+3.  Dump ops for valid models, prefixing output files with the model name.
+4.  Report statistics at the end (models processed, unique op codes, etc.).
+
+### Parameter Reference
+
+-   **`--model_path`** (string, required for single mode): Path to the input
+    LiteRT model file (.tflite).
+-   **`--input_dir`** (string, required for batch mode): Directory containing
+    tflite models for batch processing.
+-   **`--output_dir`** (string, default: "/tmp/dump_ops"): Directory where the
+    extracted single-op models will be saved.
+-   **`--filter_opcode`** (string, optional): Only dump operators whose opcode
+    contains this substring.
+-   **`--unique`** (bool, default: false): If true, only dump unique operators
+    (deduplicated by opcode and options).
+
 ## `benchmark_model`
 
 Benchmark the performance of a LiteRT model on different hardware with improved

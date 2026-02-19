@@ -26,7 +26,7 @@
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/environment.h"
+#include "litert/core/environment_options.h"
 
 #if LITERT_HAS_METAL_SUPPORT
 #include "litert/runtime/metal_info.h"
@@ -50,22 +50,18 @@ namespace litert {
 namespace internal {
 
 GpuEnvironmentOptions CreateGpuEnvironmentOptions(
-    LiteRtEnvironmentT* environment) {
+    const LiteRtEnvironmentOptionsT& environment_options) {
   GpuEnvironmentOptions options;
-  // If environment is not provided, return the default (empty) options.
-  if (!environment) {
-    return options;
-  }
 
   auto callback_option =
-      environment->GetOption(kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy);
-  if (callback_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy);
+  if (callback_option.HasValue() &&
       callback_option->type == kLiteRtAnyTypeVoidPtr) {
     options.callback_on_destroy = reinterpret_cast<void (*)(void*)>(
         const_cast<void*>(callback_option->ptr_value));
-    auto user_data_option = environment->GetOption(
+    auto user_data_option = environment_options.GetOption(
         kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy);
-    if (user_data_option.has_value() &&
+    if (user_data_option.HasValue() &&
         user_data_option->type == kLiteRtAnyTypeVoidPtr) {
       options.callback_user_data_on_destroy = reinterpret_cast<void*>(
           const_cast<void*>(user_data_option->ptr_value));
@@ -74,26 +70,26 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 
 #if LITERT_HAS_OPENCL_SUPPORT
   auto device_option =
-      environment->GetOption(kLiteRtEnvOptionTagOpenClDeviceId);
-  if (device_option.has_value() && device_option->type == kLiteRtAnyTypeInt) {
+      environment_options.GetOption(kLiteRtEnvOptionTagOpenClDeviceId);
+  if (device_option.HasValue() && device_option->type == kLiteRtAnyTypeInt) {
     options.device_id =
         reinterpret_cast<cl_device_id>(device_option->int_value);
   }
   auto platform_option =
-      environment->GetOption(kLiteRtEnvOptionTagOpenClPlatformId);
-  if (platform_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagOpenClPlatformId);
+  if (platform_option.HasValue() &&
       platform_option->type == kLiteRtAnyTypeInt) {
     options.platform_id =
         reinterpret_cast<cl_platform_id>(platform_option->int_value);
   }
   auto context_option =
-      environment->GetOption(kLiteRtEnvOptionTagOpenClContext);
-  if (context_option.has_value() && context_option->type == kLiteRtAnyTypeInt) {
+      environment_options.GetOption(kLiteRtEnvOptionTagOpenClContext);
+  if (context_option.HasValue() && context_option->type == kLiteRtAnyTypeInt) {
     options.context = reinterpret_cast<cl_context>(context_option->int_value);
   }
   auto command_queue_option =
-      environment->GetOption(kLiteRtEnvOptionTagOpenClCommandQueue);
-  if (command_queue_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagOpenClCommandQueue);
+  if (command_queue_option.HasValue() &&
       command_queue_option->type == kLiteRtAnyTypeInt) {
     options.command_queue =
         reinterpret_cast<cl_command_queue>(command_queue_option->int_value);
@@ -102,15 +98,15 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 
 #if LITERT_HAS_OPENGL_SUPPORT
   auto egl_display_option =
-      environment->GetOption(kLiteRtEnvOptionTagEglDisplay);
-  if (egl_display_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagEglDisplay);
+  if (egl_display_option.HasValue() &&
       egl_display_option->type == kLiteRtAnyTypeInt) {
     options.egl_display =
         reinterpret_cast<EGLDisplay>(egl_display_option->int_value);
   }
   auto egl_context_option =
-      environment->GetOption(kLiteRtEnvOptionTagEglContext);
-  if (egl_context_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagEglContext);
+  if (egl_context_option.HasValue() &&
       egl_context_option->type == kLiteRtAnyTypeInt) {
     options.egl_context =
         reinterpret_cast<EGLContext>(egl_context_option->int_value);
@@ -119,15 +115,15 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 
 #if LITERT_HAS_WEBGPU_SUPPORT
   auto wgpu_device_option =
-      environment->GetOption(kLiteRtEnvOptionTagWebGpuDevice);
-  if (wgpu_device_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagWebGpuDevice);
+  if (wgpu_device_option.HasValue() &&
       wgpu_device_option->type == kLiteRtAnyTypeInt) {
     options.webgpu_device =
         reinterpret_cast<WGPUDevice>(wgpu_device_option->int_value);
   }
   auto wgpu_queue_option =
-      environment->GetOption(kLiteRtEnvOptionTagWebGpuQueue);
-  if (wgpu_queue_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagWebGpuQueue);
+  if (wgpu_queue_option.HasValue() &&
       wgpu_queue_option->type == kLiteRtAnyTypeInt) {
     options.webgpu_queue =
         reinterpret_cast<WGPUQueue>(wgpu_queue_option->int_value);
@@ -136,12 +132,12 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 
 #if LITERT_HAS_METAL_SUPPORT
   auto metal_device_option =
-      environment->GetOption(kLiteRtEnvOptionTagMetalDevice);
+      environment_options.GetOption(kLiteRtEnvOptionTagMetalDevice);
   auto metal_command_queue_option =
-      environment->GetOption(kLiteRtEnvOptionTagMetalCommandQueue);
-  if (metal_device_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagMetalCommandQueue);
+  if (metal_device_option.HasValue() &&
       metal_device_option->type == kLiteRtAnyTypeVoidPtr &&
-      metal_command_queue_option.has_value() &&
+      metal_command_queue_option.HasValue() &&
       metal_command_queue_option->type == kLiteRtAnyTypeVoidPtr) {
     LiteRtCreateWithCommandQueue(
         const_cast<void*>(metal_command_queue_option->ptr_value),
@@ -151,8 +147,8 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 
 #if LITERT_HAS_VULKAN_SUPPORT
   auto vulkan_env_option =
-      environment->GetOption(kLiteRtEnvOptionTagVulkanEnvironment);
-  if (vulkan_env_option.has_value() &&
+      environment_options.GetOption(kLiteRtEnvOptionTagVulkanEnvironment);
+  if (vulkan_env_option.HasValue() &&
       vulkan_env_option->type == kLiteRtAnyTypeInt) {
     options.vulkan_env = reinterpret_cast<void*>(vulkan_env_option->int_value);
   }
@@ -199,7 +195,8 @@ GpuEnvironment::~GpuEnvironment() {
   }
 }
 
-Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
+Expected<void> GpuEnvironment::Initialize(
+    const LiteRtEnvironmentOptionsT& environment_options) {
 #if LITERT_HAS_OPENCL_SUPPORT
   // Set up OpenCL.
   LITERT_RETURN_IF_ERROR(tflite::gpu::cl::LoadOpenCL().ok())
@@ -208,10 +205,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
   // Set up options.
-  options_ = CreateGpuEnvironmentOptions(environment);
-  // Options that will be added to the LiteRT Environment after GPU environment
-  // is initialized.
-  std::vector<LiteRtEnvOption> created_gpu_resources;
+  options_ = CreateGpuEnvironmentOptions(environment_options);
 
 #if LITERT_HAS_OPENCL_SUPPORT
   // Set up device.
@@ -229,14 +223,14 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
     LITERT_ASSIGN_OR_RETURN(
         auto device_id,
         ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(device_.id()))));
-    created_gpu_resources.push_back(LiteRtEnvOption{
+    generated_options_.push_back(LiteRtEnvOption{
         .tag = kLiteRtEnvOptionTagOpenClDeviceId, .value = device_id});
     options_.device_id = device_.id();
     // New option: cl_platform_id
     LITERT_ASSIGN_OR_RETURN(
         auto platform_id, ToLiteRtAny(LiteRtVariant(
                               reinterpret_cast<int64_t>(device_.platform()))));
-    created_gpu_resources.push_back(LiteRtEnvOption{
+    generated_options_.push_back(LiteRtEnvOption{
         .tag = kLiteRtEnvOptionTagOpenClPlatformId, .value = platform_id});
     options_.platform_id = device_.platform();
 
@@ -304,14 +298,14 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       LITERT_ASSIGN_OR_RETURN(
           auto egl_display, ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(
                                 egl_env_->display()))));
-      created_gpu_resources.push_back(LiteRtEnvOption{
+      generated_options_.push_back(LiteRtEnvOption{
           .tag = kLiteRtEnvOptionTagEglDisplay, .value = egl_display});
       options_.egl_display = egl_env_->display();
       // New option: egl_context
       LITERT_ASSIGN_OR_RETURN(
           auto egl_context, ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(
                                 egl_env_->context().context()))));
-      created_gpu_resources.push_back(LiteRtEnvOption{
+      generated_options_.push_back(LiteRtEnvOption{
           .tag = kLiteRtEnvOptionTagEglContext, .value = egl_context});
       options_.egl_context = egl_env_->context().context();
 
@@ -342,7 +336,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
     LITERT_ASSIGN_OR_RETURN(
         auto context_id, ToLiteRtAny(LiteRtVariant(
                              reinterpret_cast<int64_t>(context_.context()))));
-    created_gpu_resources.push_back(LiteRtEnvOption{
+    generated_options_.push_back(LiteRtEnvOption{
         .tag = kLiteRtEnvOptionTagOpenClContext, .value = context_id});
     options_.context = context_.context();
   }
@@ -359,7 +353,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
     LITERT_ASSIGN_OR_RETURN(auto command_queue_id,
                             ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(
                                 command_queue_.queue()))));
-    created_gpu_resources.push_back(
+    generated_options_.push_back(
         LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
                         .value = command_queue_id});
     options_.command_queue = command_queue_.queue();
@@ -380,17 +374,14 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
     LITERT_RETURN_IF_ERROR(LiteRtCreateMetalInfo(&metal_info_ptr));
     if (metal_info_ptr == nullptr) {
       LITERT_LOG(LITERT_ERROR, "Failed to create default Metal device.");
-      return {};
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to create default Metal device.");
     }
     metal_info_ = std::move(metal_info_ptr);
     LITERT_LOG(LITERT_INFO, "Created default Metal device.");
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
-  // Add all new options to the LiteRT environment.
-  if (!created_gpu_resources.empty()) {
-    environment->AddOptions(created_gpu_resources);
-  }
 #if LITERT_HAS_OPENCL_SUPPORT
   LITERT_LOG(
       LITERT_DEBUG,

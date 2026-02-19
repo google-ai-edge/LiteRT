@@ -96,6 +96,7 @@ litert_dynamic_lib(
     ],
     deps = [
         "@com_google_absl//absl/algorithm:container",
+        "//litert/c/internal:litert_scheduling_info",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/cleanup",

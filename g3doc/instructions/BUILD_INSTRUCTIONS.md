@@ -65,8 +65,8 @@ cd LiteRT
 ./configure
 
 # Build
-bazel build //litert/cc:litert_api
-bazel build //litert/tools:all
+bazel build //litert/cc:litert_compiled_model
+bazel build //litert/tools:benchmark_model
 ```
 
 ### Step 3: Verify Installation
@@ -102,13 +102,13 @@ git clone https://github.com/google-ai-edge/LiteRT.git
 cd LiteRT
 
 # Build for Apple Silicon
-bazel build --config=macos_arm64 //litert/cc:litert_api
+bazel build --config=macos_arm64 //litert/cc:litert_compiled_model
 
 # Or build for Intel Mac
-bazel build --config=macos_x86_64 //litert/cc:litert_api
+bazel build --config=macos_x86_64 //litert/cc:litert_compiled_model
 
 # Build tools
-bazel build //litert/tools:all
+bazel build //litert/tools:benchmark_model
 ```
 
 ## Windows Build Instructions
@@ -153,8 +153,8 @@ build --config=windows
 "@ | Out-File -Encoding ASCII .bazelrc.user
 
 # Build
-bazel build //litert/cc:litert_api
-bazel build //litert/tools:all
+bazel build //litert/cc:litert_compiled_model
+bazel build //litert/tools:benchmark_model
 ```
 
 ## Android Build Instructions

@@ -60,9 +60,11 @@ litert_dynamic_lib(
     deps = [
         ":example_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
@@ -141,6 +143,7 @@ litert_bin(
         ":litert_dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
@@ -163,6 +166,7 @@ litert_lib(
     ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_scheduling_info",
     ],
 )
 
@@ -230,12 +234,13 @@ cc_library(
     deps = [
         ":example_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/internal:litert_handle",
         "//litert/vendors/c:litert_dispatch_c_api",

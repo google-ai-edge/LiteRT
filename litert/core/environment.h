@@ -17,29 +17,32 @@
 
 #include <memory>
 #include <optional>
-#include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/environment_options.h"
 #include "litert/runtime/accelerator_registry.h"
-#include "litert/runtime/gpu_environment.h"
 #include "litert/runtime/tensor_buffer_registry.h"
+
+namespace litert::internal {
+class GpuEnvironment;
+}  // namespace litert::internal
 
 // A singleton class that contains global LiteRT environment options.
 class LiteRtEnvironmentT {
  public:
   using Ptr = std::unique_ptr<LiteRtEnvironmentT>;
 
-  LiteRtEnvironmentT() = default;
+  LiteRtEnvironmentT();
   // Create an environment instance with options.
   static litert::Expected<Ptr> CreateWithOptions(
       absl::Span<const LiteRtEnvOption> options);
 
-  ~LiteRtEnvironmentT() = default;
+  ~LiteRtEnvironmentT();
 
   std::optional<LiteRtAny> GetOption(LiteRtEnvOptionTag tag) const {
     auto opt = options_.GetOption(tag);
@@ -66,39 +69,22 @@ class LiteRtEnvironmentT {
 
   // Sets the GPU environment. The owner of the GPU environment is transferred
   // to the environment.
+  // Also updated the environment options with the generated options from the
+  // GPU environment.
   litert::Expected<void> SetGpuEnvironment(
-      std::unique_ptr<litert::internal::GpuEnvironment> gpu_env) {
-    if (gpu_env_) {
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                "GPU environment is already set.");
-    }
-    gpu_env_ = std::move(gpu_env);
-    return {};
-  }
+      std::unique_ptr<litert::internal::GpuEnvironment> gpu_env);
 
   // Returns the GPU environment object.
-  litert::Expected<litert::internal::GpuEnvironment*> GetGpuEnvironment() {
-    if (!HasGpuEnvironment()) {
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                "GPU environment is not set.");
-    }
-    return gpu_env_.get();
-  }
+  litert::Expected<litert::internal::GpuEnvironment*> GetGpuEnvironment();
 
   // Returns true if the GPU environment is set.
-  bool HasGpuEnvironment() { return gpu_env_ != nullptr; }
+  bool HasGpuEnvironment();
 
-  bool SupportsClGlInterop() {
-    return gpu_env_ != nullptr && gpu_env_->SupportsClGlInterop();
-  }
+  bool SupportsClGlInterop();
 
-  bool SupportsAhwbClInterop() {
-    return gpu_env_ != nullptr && gpu_env_->SupportsAhwbClInterop();
-  }
+  bool SupportsAhwbClInterop();
 
-  bool SupportsAhwbGlInterop() {
-    return gpu_env_ != nullptr && gpu_env_->SupportsAhwbGlInterop();
-  }
+  bool SupportsAhwbGlInterop();
 
  private:
   litert::internal::AcceleratorRegistry accelerators_;

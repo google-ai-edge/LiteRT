@@ -64,6 +64,26 @@ class LiteRtDispatchInvocationContextT {
 
   LiteRtStatus StopMetricsCollection(LiteRtDispatchMetrics& metrics);
 
+  LiteRtStatus SetRunOptions(LiteRtOptions options) {
+    run_options_ = options;
+    return kLiteRtStatusOk;
+  }
+
+  LiteRtOptions GetRunOptions() const { return run_options_; }
+
+  LiteRtStatus SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
+    if (scheduling_info == nullptr) {
+      scheduling_info_.reset();
+      return kLiteRtStatusOk;
+    }
+    scheduling_info_ = *scheduling_info;
+    return kLiteRtStatusOk;
+  }
+
+  const LiteRtSchedulingInfo* GetSchedulingInfo() const {
+    return scheduling_info_.has_value() ? &(*scheduling_info_) : nullptr;
+  }
+
   ThrInvocationContext* absl_nonnull thr_invocation_context() {
     return thr_invocation_context_;
   }
@@ -100,6 +120,10 @@ class LiteRtDispatchInvocationContextT {
   bool registered_with_graph_ = false;
   // Associates an input edge ID with its attached fence.
   absl::flat_hash_map<LiteRtDispatchEdgeId, ThrFenceHandle> in_fences_;
+
+  LiteRtOptions run_options_ = nullptr;
+
+  std::optional<LiteRtSchedulingInfo> scheduling_info_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

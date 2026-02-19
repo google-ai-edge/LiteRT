@@ -207,7 +207,7 @@ TEST(GpuAcceleratorPayload, SetAndGetSerializationDir) {
       compilation_options, "/data/local/tmp"));
   LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
       &serialization_dir, payload));
-  EXPECT_EQ(serialization_dir, "/data/local/tmp");
+  EXPECT_THAT(serialization_dir, StrEq("/data/local/tmp"));
 
   LiteRtDestroyOpaqueOptions(compilation_options);
 }
@@ -231,7 +231,7 @@ TEST(GpuAcceleratorPayload, SetAndGetModelToken) {
       compilation_options, "model_cache"));
   LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
       &model_cache_key, payload));
-  EXPECT_EQ(model_cache_key, "model_cache");
+  EXPECT_THAT(model_cache_key, StrEq("model_cache"));
 
   LiteRtDestroyOpaqueOptions(compilation_options);
 }

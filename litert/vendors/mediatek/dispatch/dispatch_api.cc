@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/vendors/cc/options_helper.h"
 
@@ -238,6 +239,16 @@ LiteRtStatus LiteRtInvocationContextDestroy(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtInvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (invocation_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  invocation_context->SetSchedulingInfo(scheduling_info);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
@@ -327,6 +338,8 @@ LiteRtDispatchInterface TheInterface = {
         litert::mediatek::LiteRtInvocationContextCreate,
     .invocation_context_destroy =
         litert::mediatek::LiteRtInvocationContextDestroy,
+    .invocation_context_set_scheduling_info =
+        litert::mediatek::LiteRtInvocationContextSetSchedulingInfo,
     .attach_input = litert::mediatek::LiteRtAttachInput,
     .attach_output = litert::mediatek::LiteRtAttachOutput,
     .detach_input = litert::mediatek::LiteRtDetachInput,

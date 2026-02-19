@@ -29,11 +29,10 @@ class MlirPass(core.ModulePassBase):
 
   def call(self, module: mlir.ModuleOp):
     pm = passmanager.PassManager.parse(self.pipeline)
-    ir_module = transform._python_to_mlir(module)  # pylint: disable=protected-access
-
+    ir_module = transform.model_utils_to_mlir(module)
     pm.run(ir_module)
 
-    new_module = transform._mlir_to_python(ir_module)  # pylint: disable=protected-access
+    new_module = transform.mlir_to_model_utils(ir_module)
 
     module.replace_by(new_module)
     return module

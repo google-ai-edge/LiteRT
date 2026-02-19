@@ -669,6 +669,14 @@ class Delegate {
       }
       // Configure the delegate to use the cache provider.
       if (weight_cache_provider_->IsActive()) {
+        if (options_.weight_cache_lock_memory) {
+          if (!weight_cache_provider_->LockMemory()) {
+            TFLITE_LOG_PROD(
+                tflite::TFLITE_LOG_ERROR,
+                "XNNPack weight cache could not be locked in memory.");
+          }
+        }
+
         options_.weights_cache =
             reinterpret_cast<TfLiteXNNPackDelegateWeightsCache*>(
                 weight_cache_provider_->GetCacheProvider().context);

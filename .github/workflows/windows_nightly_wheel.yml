@@ -49,7 +49,7 @@ jobs:
 
       - name: Set NIGHTLY_RELEASE_DATE
         run: |
-          $date = Get-Date -Format "yyyyMMdd"
+          $date = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([System.DateTime]::UtcNow, 'America/Los_Angeles').ToString('yyyyMMdd')
           echo "NIGHTLY_RELEASE_DATE=$date" >> $env:GITHUB_ENV
 
       - name: Configure tensorflow & python path

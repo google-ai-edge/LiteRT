@@ -28,7 +28,9 @@ extern "C" {
 // Max number of dimensions in any ranked tensor type.
 #define LITERT_TENSOR_MAX_RANK 8
 
-// The shape information for tensor types of fixed rank.
+/// The shape information for tensor types of fixed rank.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef struct {
   unsigned int rank : 7;  // The number of dimensions.
   bool has_strides : 1;   // Whether the layout has strides.
@@ -40,6 +42,23 @@ typedef struct {
   // Strides. Used only if has_strides is true.
   uint32_t strides[LITERT_TENSOR_MAX_RANK];
 } LiteRtLayout;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+#if !defined(_MSC_VER)
+static_assert(sizeof(LiteRtLayout) == 68, "LiteRtLayout size mismatch");
+static_assert(offsetof(LiteRtLayout, dimensions) == 4,
+              "LiteRtLayout dimensions offset mismatch");
+static_assert(offsetof(LiteRtLayout, strides) == 36,
+              "LiteRtLayout strides offset mismatch");
+#else   // !defined(_MSC_VER)
+static_assert(sizeof(LiteRtLayout) == 72, "LiteRtLayout size mismatch");
+static_assert(offsetof(LiteRtLayout, dimensions) == 8,
+              "LiteRtLayout dimensions offset mismatch");
+static_assert(offsetof(LiteRtLayout, strides) == 40,
+              "LiteRtLayout strides offset mismatch");
+#endif  // !defined(_MSC_VER)
+#endif  // __cplusplus
 
 // Return the number of scalar elements in the provided tensor layout. Return an
 // error if the layout includes dynamic dimensions.

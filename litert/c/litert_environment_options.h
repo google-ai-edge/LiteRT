@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_ENVIRONMENT_OPTIONS_H_
 #define ODML_LITERT_LITERT_C_LITERT_ENVIRONMENT_OPTIONS_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "litert/c/litert_any.h"
@@ -56,10 +57,20 @@ typedef enum {
   kLiteRtEnvOptionTagRuntimeLibraryDir = 22,
 } LiteRtEnvOptionTag;
 
+/// An object that holds option data for the LiteRtEnvironment.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef struct {
   LiteRtEnvOptionTag tag;
   LiteRtAny value;
 } LiteRtEnvOption;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtEnvOption) == 24, "LiteRtEnvOption size mismatch");
+static_assert(offsetof(LiteRtEnvOption, value) == 8,
+              "LiteRtEnvOption value offset mismatch");
+#endif  // __cplusplus
 
 // Arbitrary size of array following the pattern in TfLiteIntArray.
 #if defined(_MSC_VER)

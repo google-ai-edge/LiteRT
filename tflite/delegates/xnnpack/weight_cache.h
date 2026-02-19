@@ -23,6 +23,7 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
 #include "tflite/c/common.h"
@@ -271,6 +272,16 @@ class MMapWeightCacheProvider {
   // Loads the weight cache previously set with `SetFilePath`.
   [[nodiscard /*Loading cache data may fail.*/]]
   bool Load();
+
+  // Attempts to lock the cache in memory. Only applicable when the OS supports
+  // memory locking and the cache is mapped.
+  [[nodiscard /*Locking cache data may fail.*/]]
+  bool LockMemory();
+
+  // Attempts to unlock the cache in memory. Only applicable when the OS
+  // supports memory locking and the cache is mapped and locked.
+  [[nodiscard /*Unlocking cache data may fail.*/]]
+  bool UnlockMemory();
 
   // Checks if the cache is currently being built or if it was loaded from a
   // file.

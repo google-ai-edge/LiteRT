@@ -150,6 +150,8 @@ litert_test(
     ],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     tags = [
+        "manual",
+        "nobuilder",
         "notap",
     ],
     deps = [
@@ -183,6 +185,8 @@ litert_test(
         "no-remote-exec",
         "notap",
         "no_oss",
+        "manual",
+        "nobuilder",
     ],
     target_compatible_with = select({
         "@platforms//os:android": [],

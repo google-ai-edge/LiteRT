@@ -21,6 +21,7 @@
 #include "litert/test/matchers.h"
 
 using ::testing::Eq;
+using ::testing::StrEq;
 
 namespace litert::ml_drift {
 namespace {
@@ -194,7 +195,7 @@ TEST(GpuAcceleratorCompilationOptions, SetSerializationDir) {
   options.SetSerializationDir("/data/local/tmp");
   LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
       &serialization_dir, payload));
-  EXPECT_EQ(serialization_dir, "/data/local/tmp");
+  EXPECT_THAT(serialization_dir, StrEq("/data/local/tmp"));
 }
 
 TEST(GpuAcceleratorCompilationOptions, SetModelCacheKey) {
@@ -210,7 +211,7 @@ TEST(GpuAcceleratorCompilationOptions, SetModelCacheKey) {
   options.SetModelCacheKey("model_cache");
   LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
       &model_cache_key, payload));
-  EXPECT_EQ(model_cache_key, "model_cache");
+  EXPECT_THAT(model_cache_key, StrEq("model_cache"));
 }
 
 TEST(GpuAcceleratorCompilationOptions, SetProgramCacheFd) {

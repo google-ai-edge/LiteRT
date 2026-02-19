@@ -58,7 +58,7 @@ message GoogleTensorCompilerConfig {
 
 // Message to hold various compilation options for the Google Tensor compiler
 // plugin.
-// NEXT ID: 10
+// NEXT ID: 11
 message GoogleTensorOptions {
   // Specifies the type of float truncation to be applied.
   GoogleTensorOptionsTruncationType float_truncation_type = 1;
@@ -79,4 +79,6 @@ message GoogleTensorOptions {
   string testing_flags = 8;
   // The compiler configuration to be used by the compiler.
   GoogleTensorCompilerConfig compiler_config = 9;
+  // Enables dynamic range quantization.
+  bool enable_dynamic_range_quantization = 10;
 }

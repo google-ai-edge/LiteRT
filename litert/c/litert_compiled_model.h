@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 
@@ -189,6 +190,37 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithOptions(
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
     LiteRtOptions options);
+
+// Sets default scheduling information for all future requests on this compiled
+// model.
+//
+// This is the "set once per model" scenario. If `scheduling_info` is null, the
+// compiled model resets to default scheduling behavior.
+LiteRtStatus LiteRtCompiledModelSetSchedulingInfo(
+    LiteRtCompiledModel compiled_model,
+    const LiteRtSchedulingInfo* scheduling_info);
+
+// Runs the model for a given signature synchronously with per-request
+// scheduling info. This is the "set once per request" scenario.
+//
+// If `scheduling_info` is null, the compiled model's default scheduling info
+// (set via `LiteRtCompiledModelSetSchedulingInfo`) will be used.
+LiteRtStatus LiteRtRunCompiledModelWithSchedulingInfo(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+    const LiteRtSchedulingInfo* scheduling_info);
+
+// Runs the model for a given signature asynchronously, if possible, with
+// per-request scheduling info. This is the "set once per request" scenario.
+//
+// If `scheduling_info` is null, the compiled model's default scheduling info
+// (set via `LiteRtCompiledModelSetSchedulingInfo`) will be used.
+LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+    size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
+    const LiteRtSchedulingInfo* scheduling_info);
 
 // Sets a callback function that will be called periodically during model
 // execution to check if the execution should be cancelled.

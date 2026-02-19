@@ -143,7 +143,7 @@ std::vector<uint8_t> ExpectedSlice(std::string_view payload) {
       payload.begin() + kSliceOffset + kSliceLengthBytes);
 }
 
-void ExpectHostBufferEquals(const weight_loader::WeightAccess* access,
+void ExpectHostBufferEquals(const WeightAccess* access,
                             absl::Span<const uint8_t> expected) {
   ASSERT_NE(access, nullptr);
   const auto host_buffer = access->GetHostBuffer();
@@ -167,7 +167,7 @@ void ExpectWeightInfo(const WeightInfo& info) {
   EXPECT_EQ(info.packing, "");
 }
 
-void ExpectHostBufferMetadata(const weight_loader::WeightAccess* access) {
+void ExpectHostBufferMetadata(const WeightAccess* access) {
   ASSERT_NE(access, nullptr);
   LiteRtTensorBuffer host_buffer = access->GetHostBuffer();
 
@@ -200,7 +200,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromFilesystemPath) {
   ASSERT_NE(loader, nullptr);
   const auto& weight_info = GetSingleWeightInfo(*loader);
   ExpectWeightInfo(weight_info);
-  weight_loader::WeightAccessRequest request;
+  WeightAccessRequest request;
   request.cpu = true;
   absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
   ASSERT_TRUE(status.ok()) << status.message();
@@ -235,7 +235,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   ASSERT_NE(loader, nullptr);
   const auto& weight_info = GetSingleWeightInfo(*loader);
   ExpectWeightInfo(weight_info);
-  weight_loader::WeightAccessRequest request;
+  WeightAccessRequest request;
   request.cpu = true;
   absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
   ASSERT_TRUE(status.ok()) << status.message();

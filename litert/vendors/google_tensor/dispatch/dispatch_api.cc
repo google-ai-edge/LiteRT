@@ -14,6 +14,8 @@
 
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
+#include "litert/c/internal/litert_scheduling_info.h"
+
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
@@ -177,6 +179,19 @@ LiteRtStatus InvocationContextDestroy(
   GT_LOG_RETURN_IF_NULL(invocation_context);
 
   return invocation_context->Destroy();
+}
+
+LiteRtStatus InvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+  return invocation_context->SetRunOptions(options);
+}
+
+LiteRtStatus InvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  GT_LOG_RETURN_IF_NULL(invocation_context);
+  return invocation_context->SetSchedulingInfo(scheduling_info);
 }
 
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
@@ -439,6 +454,8 @@ LiteRtDispatchInterface TheInterface = {
     .invocation_context_create = litert::google_tensor::InvocationContextCreate,
     .invocation_context_destroy =
         litert::google_tensor::InvocationContextDestroy,
+    .invocation_context_set_scheduling_info =
+        litert::google_tensor::InvocationContextSetSchedulingInfo,
     .attach_input = litert::google_tensor::AttachInput,
     .attach_output = litert::google_tensor::AttachOutput,
     .detach_input = litert::google_tensor::DetachInput,
@@ -451,6 +468,8 @@ LiteRtDispatchInterface TheInterface = {
     .destroy_metrics = litert::google_tensor::DestroyMetrics,
     .check_runtime_compatibility =
         litert::google_tensor::CheckRuntimeCompatibility,
+    .invocation_context_set_options =
+        litert::google_tensor::InvocationContextSetOptions,
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {

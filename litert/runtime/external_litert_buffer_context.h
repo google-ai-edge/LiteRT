@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -168,6 +169,35 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   // if no per-run options were provided.
   inline LiteRtOptions GetRunOptions() const { return run_options_; }
 
+  // Sets scheduling info for the current inference request.
+  inline void SetCurrentSchedulingInfo(
+      const LiteRtSchedulingInfo& scheduling_info) {
+    current_scheduling_info_ = scheduling_info;
+    if (current_scheduling_info_.fields_mask &
+        kLiteRtSchedulingInfoFieldDebugFeatureId) {
+      current_debug_feature_id_storage_ =
+          current_scheduling_info_.debug_feature_id != nullptr
+              ? current_scheduling_info_.debug_feature_id
+              : "";
+      current_scheduling_info_.debug_feature_id =
+          current_debug_feature_id_storage_.c_str();
+    } else {
+      current_scheduling_info_.debug_feature_id = nullptr;
+    }
+    has_current_scheduling_info_ = true;
+  }
+
+  // Clears the current inference request scheduling info.
+  inline void ClearCurrentSchedulingInfo() {
+    has_current_scheduling_info_ = false;
+  }
+
+  // Returns scheduling info for the current inference request, or null if
+  // unset.
+  inline const LiteRtSchedulingInfo* GetCurrentSchedulingInfo() const {
+    return has_current_scheduling_info_ ? &current_scheduling_info_ : nullptr;
+  }
+
   // Returns the LiteRtEnvironment used to create CompiledModel.
   inline LiteRtEnvironment GetEnvironment() const { return env_; }
 
@@ -247,6 +277,9 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
 
   bool async_execution_mode_ = false;
   LiteRtOptions run_options_ = nullptr;
+  bool has_current_scheduling_info_ = false;
+  LiteRtSchedulingInfo current_scheduling_info_{};
+  std::string current_debug_feature_id_storage_;
 
   // Dispatch annotations from the compiled model to be propagated to dispatch
   // graphs.

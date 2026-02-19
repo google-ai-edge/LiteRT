@@ -30,6 +30,7 @@
 #include "absl/container/node_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
@@ -324,6 +325,25 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
                                     kLiteRtTensorBufferLockModeRead));
         std::memcpy(host_buffer, tensor_data, buffer_size);
         LITERT_RETURN_IF_ERROR(tensor_buffer_info.tensor_buffer->Unlock());
+      }
+    }
+  }
+
+  // Apply per-request scheduling info (if provided) to each invocation context.
+  //
+  // The scheduling info is set by the CompiledModel for the duration of a
+  // single inference request via the ExternalLiteRtBufferContext.
+  if (buffer_context_) {
+    const LiteRtSchedulingInfo* scheduling_info =
+        buffer_context_->GetCurrentSchedulingInfo();
+    for (auto invocation_context : node_invocation_contexts_) {
+      LiteRtStatus status = LiteRtDispatchInvocationContextSetSchedulingInfo(
+          invocation_context, scheduling_info);
+      if (status != kLiteRtStatusOk &&
+          status != kLiteRtStatusErrorUnsupported) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to set scheduling info on invocation context: %d",
+                   status);
       }
     }
   }

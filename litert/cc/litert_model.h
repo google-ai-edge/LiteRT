@@ -24,14 +24,13 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
 /// @file
@@ -39,148 +38,6 @@
 /// types.
 
 namespace litert {
-
-/// @brief A C++ wrapper for `LiteRtTensor` with limited functionality.
-class SimpleTensor : public internal::NonOwnedHandle<LiteRtTensor> {
- public:
-  explicit SimpleTensor(LiteRtTensor tensor) : NonOwnedHandle(tensor) {}
-
-  ElementType ElementType() const {
-    if (TypeId() == kLiteRtUnrankedTensorType) {
-      LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType());
-      return static_cast<enum ElementType>(tensor_type.element_type);
-    } else {
-      LITERT_ASSIGN_OR_ABORT(auto tensor_type, RankedTensorType());
-      return tensor_type.ElementType();
-    }
-  }
-
-  bool HasType(const RankedTensorType& type) const {
-    auto t = RankedTensorType();
-    return t && *t == type;
-  }
-
-  bool HasType(const LiteRtRankedTensorType& type) const {
-    auto t = RankedTensorType();
-    return t && *t == ::litert::RankedTensorType(type);
-  }
-
-  LiteRtTensorTypeId TypeId() const {
-    LiteRtTensorTypeId type_id;
-    internal::AssertOk(LiteRtGetTensorTypeId, Get(), &type_id);
-    return type_id;
-  }
-
-  Expected<LiteRtUnrankedTensorType> UnrankedTensorType() const {
-    if (TypeId() != kLiteRtUnrankedTensorType) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Not an unranked invalid tensor");
-    }
-    LiteRtUnrankedTensorType unranked_tensor_type;
-    internal::AssertOk(LiteRtGetUnrankedTensorType, Get(),
-                       &unranked_tensor_type);
-    return unranked_tensor_type;
-  }
-
-  Expected<RankedTensorType> RankedTensorType() const {
-    if (TypeId() != kLiteRtRankedTensorType) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Not a ranked tensor type");
-    }
-    LiteRtRankedTensorType ranked_tensor_type;
-    internal::AssertOk(LiteRtGetRankedTensorType, Get(), &ranked_tensor_type);
-    return litert::RankedTensorType(ranked_tensor_type);
-  }
-
-  absl::string_view Name() const {
-    const char* name;
-    internal::AssertOk(LiteRtGetTensorName, Get(), &name);
-    return absl::string_view(name);
-  }
-
-  std::uint32_t TensorIndex() const {
-    std::uint32_t tensor_index;
-    internal::AssertOk(LiteRtGetTensorIndex, Get(), &tensor_index);
-    return tensor_index;
-  }
-};
-
-/// @brief A simplified C++ wrapper for `LiteRtSignature`, representing a model
-/// signature.
-class SimpleSignature : public internal::NonOwnedHandle<LiteRtSignature> {
- public:
-  explicit SimpleSignature(LiteRtSignature signature)
-      : internal::NonOwnedHandle<LiteRtSignature>(signature) {}
-
-  absl::string_view Key() const {
-    const char* key;
-    internal::AssertOk(LiteRtGetSignatureKey, Get(), &key);
-    return key;
-  }
-
-  std::vector<absl::string_view> InputNames() const {
-    LiteRtParamIndex num_inputs;
-    internal::AssertOk(LiteRtGetNumSignatureInputs, Get(), &num_inputs);
-    std::vector<absl::string_view> input_names;
-    input_names.reserve(num_inputs);
-    for (int i = 0; i < num_inputs; ++i) {
-      const char* input_name;
-      internal::AssertOk(LiteRtGetSignatureInputName, Get(), i, &input_name);
-      input_names.push_back(input_name);
-    }
-    return input_names;
-  }
-
-  std::vector<absl::string_view> OutputNames() const {
-    LiteRtParamIndex num_outputs;
-    internal::AssertOk(LiteRtGetNumSignatureOutputs, Get(), &num_outputs);
-    std::vector<absl::string_view> output_names;
-    output_names.reserve(num_outputs);
-    for (int i = 0; i < num_outputs; ++i) {
-      const char* output_name;
-      internal::AssertOk(LiteRtGetSignatureOutputName, Get(), i, &output_name);
-      output_names.push_back(output_name);
-    }
-    return output_names;
-  }
-
-  /// @brief Returns the input tensor type for the given input signature name.
-  Expected<RankedTensorType> InputTensorType(absl::string_view name) const {
-    LITERT_ASSIGN_OR_RETURN(auto tensor, InputTensor(name));
-    return tensor.RankedTensorType();
-  }
-
-  /// @brief Returns the input tensor type at the given index.
-  Expected<RankedTensorType> InputTensorType(size_t index) const {
-    LITERT_ASSIGN_OR_RETURN(auto tensor, InputTensor(index));
-    return tensor.RankedTensorType();
-  }
-
-  /// @brief Returns the output tensor type for the given output signature
-  /// name.
-  Expected<RankedTensorType> OutputTensorType(absl::string_view name) const {
-    LITERT_ASSIGN_OR_RETURN(auto tensor, OutputTensor(name));
-    return tensor.RankedTensorType();
-  }
-
-  /// @brief Returns the output tensor type at the given index.
-  Expected<RankedTensorType> OutputTensorType(size_t index) const {
-    LITERT_ASSIGN_OR_RETURN(auto tensor, OutputTensor(index));
-    return tensor.RankedTensorType();
-  }
-
-  /// @brief Returns the input tensor for the given input signature name.
-  Expected<SimpleTensor> InputTensor(absl::string_view name) const;
-
-  /// @brief Returns the input tensor at the given index.
-  Expected<SimpleTensor> InputTensor(size_t index) const;
-
-  /// @brief Returns the output tensor for the given output signature name.
-  Expected<SimpleTensor> OutputTensor(absl::string_view name) const;
-
-  /// @brief Returns the output tensor at the given index.
-  Expected<SimpleTensor> OutputTensor(size_t index) const;
-};
 
 /// @brief A C++ wrapper for `LiteRtModel`, representing a LiteRT model.
 ///
@@ -238,45 +95,14 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   /// @brief Returns the list of signatures defined in the model.
-  Expected<std::vector<SimpleSignature>> GetSignatures() const {
-    LiteRtParamIndex num_signatures;
-    internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
-    std::vector<SimpleSignature> signatures;
-    signatures.reserve(num_signatures);
-    for (int i = 0; i < num_signatures; ++i) {
-      LiteRtSignature lite_rt_signature;
-      internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
-      SimpleSignature signature(lite_rt_signature);
-      signatures.push_back(std::move(signature));
-    }
-    return std::move(signatures);
-  }
+  Expected<std::vector<SimpleSignature>> GetSignatures() const;
 
   /// @brief Returns the list of signature key names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
-    LiteRtParamIndex num_signatures;
-    internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
-    std::vector<absl::string_view> signature_keys;
-    signature_keys.reserve(num_signatures);
-    for (int i = 0; i < num_signatures; ++i) {
-      LiteRtSignature lite_rt_signature;
-      internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
-      const char* key_cstr;
-      internal::AssertOk(LiteRtGetSignatureKey, lite_rt_signature, &key_cstr);
-      signature_keys.push_back(key_cstr);
-    }
-    return signature_keys;
-  }
+  Expected<std::vector<absl::string_view>> GetSignatureKeys() const;
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
-      size_t signature_index) const {
-    LiteRtSignature lite_rt_signature;
-    internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
-                       &lite_rt_signature);
-    auto signature = SimpleSignature(lite_rt_signature);
-    return signature.InputNames();
-  }
+      size_t signature_index) const;
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
@@ -295,13 +121,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
-      size_t signature_index) const {
-    LiteRtSignature lite_rt_signature;
-    internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
-                       &lite_rt_signature);
-    auto signature = SimpleSignature(lite_rt_signature);
-    return signature.OutputNames();
-  }
+      size_t signature_index) const;
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
@@ -319,55 +139,18 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   /// @brief Returns the signature at the given index.
-  Expected<SimpleSignature> GetSignature(size_t signature_index) const {
-    LiteRtSignature lite_rt_signature;
-    internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
-                       &lite_rt_signature);
-    return SimpleSignature(lite_rt_signature);
-  }
+  Expected<SimpleSignature> GetSignature(size_t signature_index) const;
 
   /// @brief Returns the signature index for the given signature key.
   ///
   /// Returns 0 if the signature key is empty.
-  Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const {
-    if (signature_key.empty()) {
-      return 0;
-    }
-    LiteRtParamIndex num_signatures;
-    internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
-    for (int i = 0; i < num_signatures; ++i) {
-      LiteRtSignature lite_rt_signature;
-      internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
-      const char* key_cstr;
-      internal::AssertOk(LiteRtGetSignatureKey, lite_rt_signature, &key_cstr);
-      if (absl::string_view(key_cstr) == signature_key) {
-        return i;
-      }
-    }
-    return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
-  }
+  Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const;
 
   /// @brief Returns the `SimpleSignature` object for the given signature key.
   ///
   /// Returns the default signature if the signature key is empty.
   Expected<SimpleSignature> FindSignature(
-      absl::string_view signature_key) const {
-    if (signature_key.empty()) {
-      return GetSignature(/*signature_index=*/0);
-    }
-    LiteRtParamIndex num_signatures;
-    internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
-    for (int i = 0; i < num_signatures; ++i) {
-      LiteRtSignature lite_rt_signature;
-      internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
-      const char* key_cstr;
-      internal::AssertOk(LiteRtGetSignatureKey, lite_rt_signature, &key_cstr);
-      if (absl::string_view(key_cstr) == signature_key) {
-        return SimpleSignature(lite_rt_signature);
-      }
-    }
-    return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
-  }
+      absl::string_view signature_key) const;
 
   static absl::string_view DefaultSignatureKey() {
     return kDefaultSignatureKey;

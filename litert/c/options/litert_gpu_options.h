@@ -63,6 +63,13 @@ LiteRtStatus LiteRtSetGpuOptionsExternalTensorsMode(
 LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
     LiteRtOpaqueOptions gpu_options, const char* pattern);
 
+// Add a prefix pattern to match buffer storage tensors. When this pattern is
+// matched, the tensor will use buffer storage type.
+//
+// WARNING: This is an experimental feature and subject to change.
+LiteRtStatus LiteRtAddGpuOptionsBufferStorageTensorPattern(
+    LiteRtOpaqueOptions gpu_options, const char* pattern);
+
 // Sets the GPU priority. Low priority helps to unblock UI workloads.
 //
 // WARNING: This is an experimental feature and subject to change.
@@ -249,6 +256,15 @@ LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
 
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
     const char** external_tensor_pattern, int pattern_index,
+    LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus
+LiteRtGetNumGpuAcceleratorCompilationOptionsBufferStorageTensorPatterns(
+    int* num_patterns, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern(
+    const char** buffer_storage_tensor_pattern, int pattern_index,
     LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,

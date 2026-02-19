@@ -22,6 +22,7 @@ EXPORTS
   LiteRtAddCustomOpKernelOption
   LiteRtAddEnvironmentOptions
   LiteRtAddExternalTensorBinding
+  LiteRtAddGpuOptionsBufferStorageTensorPattern
   LiteRtAddGpuOptionsExternalTensorPattern
   LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
@@ -38,6 +39,7 @@ EXPORTS
   LiteRtCompiledModelResizeInputTensor
   LiteRtCompiledModelResizeInputTensorNonStrict
   LiteRtCompiledModelSetDispatchAnnotation
+  LiteRtCompiledModelSetSchedulingInfo
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
   LiteRtCreateAccelerator
@@ -116,6 +118,7 @@ EXPORTS
   LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType
   LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization
+  LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern
   LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern
   LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
   LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey
@@ -144,6 +147,7 @@ EXPORTS
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
   LiteRtGetNextOpaqueOptions
+  LiteRtGetNumGpuAcceleratorCompilationOptionsBufferStorageTensorPatterns
   LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
@@ -222,6 +226,7 @@ EXPORTS
   LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation
   LiteRtGoogleTensorOptionsGetOutputDir
   LiteRtGoogleTensorOptionsGetShardingIntensity
+  LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization
   LiteRtGoogleTensorOptionsGetTestingFlags
   LiteRtGoogleTensorOptionsSetDumpOpTimings
   LiteRtGoogleTensorOptionsSetEnable4BitCompilation
@@ -230,6 +235,7 @@ EXPORTS
   LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation
   LiteRtGoogleTensorOptionsSetOutputDir
   LiteRtGoogleTensorOptionsSetShardingIntensity
+  LiteRtGoogleTensorOptionsSetEnableDynamicRangeQuantization
   LiteRtGoogleTensorOptionsSetTestingFlags
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent
@@ -313,6 +319,8 @@ EXPORTS
   LiteRtRunCompiledModelAsync
   LiteRtRunCompiledModelWithOptions
   LiteRtRunCompiledModelAsyncWithOptions
+  LiteRtRunCompiledModelWithSchedulingInfo
+  LiteRtRunCompiledModelAsyncWithSchedulingInfo
   LiteRtSerializeModel
   LiteRtSerializeModelWithSignatures
   LiteRtSetAcceleratorGetHardwareSupport

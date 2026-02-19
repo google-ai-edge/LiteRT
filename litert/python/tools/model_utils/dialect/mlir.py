@@ -621,8 +621,6 @@ class DenseElementsAttr(
   def _numpy_to_attr(self, x: np.ndarray | np.generic):
     element_type = core.utils.dtype_to_ir_type(x.dtype)
     shape = x.shape
-    if x.dtype == np.bool_:
-      x = np.packbits(x, bitorder="little")  # type: ignore
     x = np.ascontiguousarray(x)
     attr = ir.DenseElementsAttr.get(x, type=element_type, shape=shape)  # type: ignore
     return attr
@@ -653,19 +651,8 @@ class DenseElementsAttr(
       )
 
     dtype = core.utils.ir_type_to_dtype(tensor_ty.element_type)
-    shape = tensor_ty.shape
-
     raw_data = self._raw_bytes(offset=byte_offset, size=byte_size)
-
-    if dtype == np.dtype(np.bool_):
-      numel = int(np.prod(shape))
-      numel = min(byte_size, numel) if byte_size > 0 else numel
-      numel = numel if not self.is_splat() else 1
-      flat_arr = np.frombuffer(raw_data, dtype=np.uint8)
-      flat_arr = np.unpackbits(flat_arr, bitorder="little")
-      flat_arr = flat_arr[:numel].astype(dtype)
-    else:
-      flat_arr = np.frombuffer(raw_data, dtype=dtype)
+    flat_arr = np.frombuffer(raw_data, dtype=dtype)
     return flat_arr
 
   def _shape(self) -> list[int] | None:

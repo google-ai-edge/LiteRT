@@ -16,10 +16,12 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
-#include "openvino/runtime/core.hpp"
+#include <optional>
+
 #include "openvino/runtime/infer_request.hpp"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/internal/litert_scheduling_info.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
@@ -64,6 +66,17 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
+  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
+    if (scheduling_info == nullptr) {
+      scheduling_info_ = std::nullopt;
+    }
+    scheduling_info_ = *scheduling_info;
+  }
+
+  const LiteRtSchedulingInfo* GetSchedulingInfo() const {
+    return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;
+  }
+
  private:
   LiteRtDispatchInvocationContextT(ov::InferRequest& infer_request,
                                    LiteRtDispatchDeviceContextT& device_context,
@@ -73,6 +86,8 @@ class LiteRtDispatchInvocationContextT {
   ov::InferRequest infer_request_;
   // Timeout is in milliseconds
   static constexpr int kInferRequestTimeoutMs = 10000;
+
+  std::optional<LiteRtSchedulingInfo> scheduling_info_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

@@ -105,6 +105,13 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
     LiteRtGoogleTensorOptions options,
     LiteRtGoogleTensorOptionsShardingIntensity* sharding_intensity);
 
+// enable_dynamic_range_quantization -----------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetEnableDynamicRangeQuantization(
+    LiteRtGoogleTensorOptions options, bool enable_dynamic_range_quantization);
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
+    LiteRtGoogleTensorOptions options, bool* enable_dynamic_range_quantization);
+
 #ifdef __cplusplus
 // testing flags ---------------------------------------------------------------
 LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(

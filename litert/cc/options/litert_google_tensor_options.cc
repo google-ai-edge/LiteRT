@@ -147,6 +147,20 @@ GoogleTensorOptions::GetShardingIntensity() const {
   return sharding_intensity;
 }
 
+void GoogleTensorOptions::SetEnableDynamicRangeQuantization(
+    bool enable_dynamic_range_quantization) {
+  internal::AssertOk(LiteRtGoogleTensorOptionsSetEnableDynamicRangeQuantization,
+                     Data(), enable_dynamic_range_quantization);
+}
+
+bool GoogleTensorOptions::GetEnableDynamicRangeQuantization() const {
+  LiteRtGoogleTensorOptions options_data = Data();
+  bool enable_dynamic_range_quantization;
+  LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
+      options_data, &enable_dynamic_range_quantization);
+  return enable_dynamic_range_quantization;
+}
+
 void GoogleTensorOptions::SetTestingFlags(const std::string& testing_flags) {
   internal::AssertOk(LiteRtGoogleTensorOptionsSetTestingFlags, Data(),
                      testing_flags);

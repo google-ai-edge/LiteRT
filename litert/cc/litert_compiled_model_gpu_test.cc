@@ -14,6 +14,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -139,6 +141,68 @@ TEST_P(CompiledModelGpuTest, Basic2nd) {
   // Run the test twice to verify that the CL environment is shared between
   // instances.
   BasicTest(CompiledModelGpuTest::GetParam());
+}
+
+TEST(CompiledModelGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
+  // Objects for the second model, which will outlive the first.
+  std::unique_ptr<litert::Environment> env2;
+  std::optional<CompiledModel> compiled_model2;
+
+  {
+    // Create the first environment and model and run it.
+    LITERT_ASSERT_OK_AND_ASSIGN(auto env1, litert::Environment::Create({}));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto options1, CreateGpuOptions(/*external_tensors_mode=*/false));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model1,
+        CompiledModel::Create(env1, testing::GetTestFilePath(kModelFileName),
+                              options1));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                                compiled_model1.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                                compiled_model1.CreateOutputBuffers());
+    ASSERT_TRUE(input_buffers[0].Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+    ASSERT_TRUE(input_buffers[1].Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+    compiled_model1.Run(input_buffers, output_buffers);
+
+    // Create the second environment and model.
+    LITERT_ASSERT_OK_AND_ASSIGN(auto env2_val, litert::Environment::Create({}));
+    env2 = std::make_unique<litert::Environment>(std::move(env2_val));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto options2, CreateGpuOptions(/*external_tensors_mode=*/false));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto model2,
+        CompiledModel::Create(*env2, testing::GetTestFilePath(kModelFileName),
+                              options2));
+    compiled_model2.emplace(std::move(model2));
+  }
+
+  // Destruction of env1 and compiled_model1 should have no effect on the
+  // second.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model2->CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model2->CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  compiled_model2->Run(input_buffers, output_buffers);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model2->GetSignatureOutputNames());
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
 }
 
 TEST_P(CompiledModelGpuTest, WithProfiler) {

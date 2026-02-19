@@ -36,6 +36,14 @@ package(
 )
 
 cc_library(
+    name = "litert_scheduling_info",
+    hdrs = ["litert_scheduling_info.h"],
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+cc_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],
@@ -213,6 +221,7 @@ cc_library(
         "//litert/vendors/c:__pkg__",
     ],
     deps = [
+        ":litert_scheduling_info",
         "//litert/build_common:build_config",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
@@ -275,8 +284,7 @@ cc_library(
         # "//litert:__subpackages__",
         # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
-        # "//third_party/odml/litert_lm/kotlin:__subpackages__",
-        # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
+        # "//third_party/odml/litert_lm:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -307,6 +315,7 @@ cc_library(
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
+        ":litert_scheduling_info",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
@@ -322,6 +331,19 @@ cc_library(
         "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
+    ],
+)
+
+# Do NOT use this target directly. This should only be used by RuntimeProxy.
+cc_library(
+    name = "litert_runtime_c_api_runtimecapi",
+    hdrs = ["litert_runtime_c_api.h"],
+    visibility = [
+        "//litert/cc/internal:__pkg__",
+    ],
+    deps = [
+        ":litert_scheduling_info",
+        "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )
 

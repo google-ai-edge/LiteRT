@@ -61,7 +61,8 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
 
   if (has_gpu_options) {
     LITERT_ASSIGN_OR_RETURN(
-        auto gpu_env, litert::internal::GpuEnvironment::Create(env.get()));
+        auto gpu_env,
+        litert::internal::GpuEnvironment::Create(env->GetOptions()));
     LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
   }
 
@@ -116,7 +117,8 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
   LITERT_RETURN_IF_ERROR(
       environment->AddOptions(absl::MakeSpan(options, num_options)));
   LITERT_ASSIGN_OR_RETURN(
-      auto gpu_env, litert::internal::GpuEnvironment::Create(environment));
+      auto gpu_env,
+      litert::internal::GpuEnvironment::Create(environment->GetOptions()));
   LITERT_RETURN_IF_ERROR(environment->SetGpuEnvironment(std::move(gpu_env)));
   return kLiteRtStatusOk;
 }

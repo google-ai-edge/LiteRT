@@ -11,11 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-include "third_party/llvm/llvm-project/mlir/include/mlir/Dialect/Arith/IR/ArithOps.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/Constraints.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/OpBase.td"
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/PatternBase.td"
-include "third_party/odml/litert/litert/compiler/mlir/dialects/litert/ops.td"
+include "mlir/Dialect/Arith/IR/ArithOps.td"
+include "mlir/IR/Constraints.td"
+include "mlir/IR/OpBase.td"
+include "mlir/IR/PatternBase.td"
+include "litert/compiler/mlir/dialects/litert/ops.td"
 
 //===----------------------------------------------------------------------===//
 // Pattern Helpers

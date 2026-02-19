@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
@@ -740,6 +741,25 @@ typedef struct LiteRtRuntimeCApiStruct {
   LiteRtStatus (*litert_get_profile_summary)(LiteRtProfiler profiler,
                                              LiteRtCompiledModel compiled_model,
                                              const char** summary);
+  //
+  // Scheduling info APIs (litert_compiled_model.h)
+  //
+  // litert_compiled_model.h: LiteRtCompiledModelSetSchedulingInfo
+  LiteRtStatus (*litert_compiled_model_set_scheduling_info)(
+      LiteRtCompiledModel compiled_model,
+      const LiteRtSchedulingInfo* scheduling_info);
+  // litert_compiled_model.h: LiteRtRunCompiledModelWithSchedulingInfo
+  LiteRtStatus (*litert_run_compiled_model_with_scheduling_info)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      const LiteRtSchedulingInfo* scheduling_info);
+  // litert_compiled_model.h: LiteRtRunCompiledModelAsyncWithSchedulingInfo
+  LiteRtStatus (*litert_run_compiled_model_async_with_scheduling_info)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      bool* async, const LiteRtSchedulingInfo* scheduling_info);
 } LiteRtRuntimeCApiStruct;
 
 }  // extern "C"
