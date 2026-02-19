@@ -25,6 +25,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -258,6 +259,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("mediatek_nerun_pilot_version",
                             BenchmarkParam::Create<std::string>("version8"));
+    default_params.AddParam("input_layer_value_range",
+                            BenchmarkParam::Create<std::string>(""));
     return default_params;
   }
 
@@ -319,7 +322,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   }
 
   InputTensorData CreateRandomTensorData(const litert::TensorBuffer& t,
-                                         std::string name) {
+                                         std::string name,
+                                         float low_range_override = 0.0f,
+                                         float high_range_override = 0.0f) {
     float low_range = 0;
     float high_range = 0;
     LITERT_ASSIGN_OR_ABORT(const auto t_tensor_type, t.TensorType());
@@ -328,28 +333,16 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     tflite::utils::GetDataRangesForType(
         static_cast<TfLiteType>(t_tensor_type.ElementType()), &low_range,
         &high_range);
+    if (low_range_override != high_range_override) {
+      low_range = low_range_override;
+      high_range = high_range_override;
+    }
     return tflite::utils::CreateRandomTensorData(
         name, static_cast<TfLiteType>(t_tensor_type.ElementType()),
         num_elements, low_range, high_range);
   }
 
-  TfLiteStatus PrepareInputData() override {
-    int index = 0;
-    for (auto& buffer : *input_buffers_) {
-      auto t_data =
-          CreateRandomTensorData(buffer, "input_" + std::to_string(index));
-      auto res = buffer.Write<char>(absl::MakeSpan(
-          reinterpret_cast<char*>(t_data.data.get()), t_data.bytes));
-      if (!res.HasValue()) {
-        LITERT_LOG(LITERT_ERROR, "PrepareInputData: %s",
-                   res.Error().Message().c_str());
-        return kTfLiteError;
-      }
-
-      ++index;
-    }
-    return kTfLiteOk;
-  }
+  TfLiteStatus PrepareInputData() override;
 
   TfLiteStatus ResetInputsAndOutputs() override {
     if (profiler_) {
@@ -404,8 +397,23 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "mediatek_nerun_pilot_version", &params_,
         "Which version of the MediaTek NPU SDK to use."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "input_layer_value_range", &params_,
+        "A map-like string representing value range for *integer* and *float* "
+        "input layers. Each item is separated by ':', and the item value "
+        "consists of input layer name and range values (both low and high are "
+        "inclusive) separated by ',', e.g. input1,1.0,2.0:input2,0,254"));
     return flags;
   }
+
+  // Holds the range of values for an integer input tensor.
+  struct ValueRange {
+    float low;
+    float high;
+  };
+
+  // The map from input layer name to the value range.
+  absl::flat_hash_map<std::string, ValueRange> input_layer_value_range_;
 
  protected:
   virtual TfLiteStatus LoadModel();
@@ -422,6 +430,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
 
   // TFLite Interpreter is needed for run_summarizer_
   ::tflite::Interpreter* interpreter_ = nullptr;
+
+  friend class BenchmarkLiteRtModelTest;
 };
 
 }  // namespace benchmark
