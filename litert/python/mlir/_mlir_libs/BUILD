@@ -151,6 +151,7 @@ pybind_extension(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@llvm-project//mlir:MLIRBindingsPythonHeaders",
+        "@llvm-project//mlir:Support",
         "@nanobind",
         "@xla//third_party/python_runtime:headers",
     ] + if_google(

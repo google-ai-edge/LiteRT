@@ -21,7 +21,7 @@ from litert.python.mlir._mlir_libs import converter_api_ext
 
 class ConverterApiExtTest(googletest.TestCase):
 
-  def test_py_chunked_callback_resource_attr(self):
+  def test_dense_resource_elements_attr_to_numpy(self):
     ir_context = ir.Context()
     converter_api_ext.prepare_mlir_context(ir_context)
 
@@ -29,19 +29,14 @@ class ConverterApiExtTest(googletest.TestCase):
       tensor_type = ir.RankedTensorType.get([2, 3], ir.F32Type.get())
       np_array = np.arange(6, dtype=np.float32).reshape(2, 3)
 
-      def chunk_iterator_factory():
-        for i in range(0, np_array.size, 2):
-          yield np_array.flat[i : i + 2].tobytes()
-
-      attr = converter_api_ext.get_py_chunked_callback_resource_attr(
-          tensor_type, chunk_iterator_factory
+      attr = ir.DenseResourceElementsAttr.get_from_buffer(
+          memoryview(np_array), "test", tensor_type
       )
-      self.assertIsNotNone(attr)
 
-      attr_bytes = (
-          converter_api_ext.get_py_chunked_callback_resource_attr_bytes(attr)
+      actual_array = converter_api_ext.dense_resource_elements_attr_to_numpy(
+          attr
       )
-      self.assertEqual(attr_bytes, np_array.tobytes())
+      np.testing.assert_array_equal(np_array, actual_array)
 
 
 if __name__ == "__main__":
