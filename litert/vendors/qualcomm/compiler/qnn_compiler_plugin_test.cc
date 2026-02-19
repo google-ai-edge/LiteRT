@@ -292,7 +292,7 @@ TEST(TestQnnPlugin, ShareContextBinary) {
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
                                                model.Get(), &compiled));
-  uint64_t num_byte_code;
+  LiteRtParamIndex num_byte_code;
   LITERT_ASSERT_OK(
       LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
   ASSERT_EQ(num_byte_code, 1);
@@ -307,7 +307,7 @@ TEST(TestQnnPlugin, NotShareContextBinary) {
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
                                                model.Get(), &compiled));
-  uint64_t num_byte_code;
+  LiteRtParamIndex num_byte_code;
   LITERT_ASSERT_OK(
       LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
   ASSERT_EQ(num_byte_code, 3);
