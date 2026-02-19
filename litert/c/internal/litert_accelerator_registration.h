@@ -23,6 +23,8 @@
 extern "C" {
 #endif
 
+typedef struct LiteRtAcceleratorContext LiteRtAcceleratorContext;
+
 // Creates an empty accelerator handle.
 LiteRtStatus LiteRtCreateAccelerator(LiteRtAccelerator* accelerator);
 
@@ -72,9 +74,10 @@ LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
 // the compiled model.
 LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*CreateDelegate)(LiteRtAccelerator accelerator,
-                                   LiteRtOptions options,
-                                   LiteRtDelegateWrapper* delegate),
+    LiteRtStatus (*CreateDelegate)(
+        LiteRtAcceleratorContext* accelerator_context, LiteRtEnvironment env,
+        LiteRtAccelerator accelerator, LiteRtOptions options,
+        LiteRtDelegateWrapper* delegate),
     void (*DestroyDelegate)(LiteRtDelegateWrapper delegate));
 
 // Sets the function used to surface whether the delegate created by the

@@ -16,6 +16,7 @@
 
 #include <memory>
 
+#include "litert/c/internal/litert_accelerator_context.h"
 #include "litert/c/internal/litert_accelerator_registration.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/litert_common.h"
@@ -53,9 +54,10 @@ class CpuAccelerator final
   // C API
 
   // Creates a Dispatch delegate instance.
-  static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOptions options,
-                                     LiteRtDelegateWrapper* delegate_wrapper) {
+  static LiteRtStatus CreateDelegate(
+      LiteRtAcceleratorContext* accelerator_context, LiteRtEnvironment env,
+      LiteRtAccelerator accelerator, LiteRtOptions options,
+      LiteRtDelegateWrapper* delegate_wrapper) {
     LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
         << "Delegate wrapper pointer is null.";

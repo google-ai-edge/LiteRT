@@ -17,6 +17,7 @@
 
 #include <cstddef>
 
+#include "litert/c/internal/litert_accelerator_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -45,7 +46,9 @@ typedef struct {
   LiteRtStatus (*get_hardware_support)(
       LiteRtAccelerator accelerator,
       LiteRtHwAcceleratorSet* supported_hardware);
-  LiteRtStatus (*create_delegate)(LiteRtAccelerator accelerator,
+  LiteRtStatus (*create_delegate)(LiteRtAcceleratorContext* accelerator_context,
+                                  LiteRtEnvironment env,
+                                  LiteRtAccelerator accelerator,
                                   LiteRtOptions options,
                                   LiteRtDelegateWrapper* delegate_wrapper);
   void (*destroy_delegate)(LiteRtDelegateWrapper delegate_wrapper);

@@ -28,6 +28,7 @@ extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
 
 #include <memory>
 
+#include "litert/c/internal/litert_accelerator_context.h"
 #include "litert/c/internal/litert_accelerator_registration.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_dispatch_delegate.h"
@@ -64,9 +65,10 @@ class NpuAccelerator final
 
   static Expected<Ptr> Create() { return Allocate(); }
 
-  static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOptions options,
-                                     LiteRtDelegateWrapper* delegate_wrapper) {
+  static LiteRtStatus CreateDelegate(
+      LiteRtAcceleratorContext* accelerator_context, LiteRtEnvironment env,
+      LiteRtAccelerator accelerator, LiteRtOptions options,
+      LiteRtDelegateWrapper* delegate_wrapper) {
     LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
         << "Delegate pointer is null.";
