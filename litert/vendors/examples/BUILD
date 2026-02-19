@@ -256,10 +256,7 @@ cc_test(
     deps = [
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_tensor_buffer_requirements",
-        "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/internal:litert_handle",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/test:matchers",
         "//litert/test:simple_buffer_runtimecapi",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -286,9 +283,11 @@ cc_test(
     ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
