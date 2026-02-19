@@ -17,6 +17,7 @@
 #include <memory>
 
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_opaque_options.h"
@@ -54,13 +55,16 @@ class DummyAccelerator {
     return kLiteRtStatusOk;
   }
 
-  static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
+  static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
+                                     LiteRtEnvironment env,
+                                     LiteRtAccelerator accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate) {
     return kLiteRtStatusOk;
   }
 
-  static void DestroyDelegate(LiteRtDelegateWrapper delegate) {}
+  static void DestroyDelegate(LiteRtRuntimeContext* runtime_context,
+                              LiteRtDelegateWrapper delegate) {}
 
   LiteRtHwAccelerators hardware_support_;
 };
