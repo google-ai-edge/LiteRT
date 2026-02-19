@@ -220,9 +220,15 @@ def _IntelOpenVinoSpec():
             libs = [
                 ("//litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so", "LD_LIBRARY_PATH"),
-                ("@intel_openvino//:lib/android_x86_64/libopenvino.so", "LD_LIBRARY_PATH"),
-                ("@intel_openvino//:lib/android_x86_64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
-                ("@intel_openvino//:lib/android_x86_64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_begin(oss openvino)
+                # ("@intel_openvino//:lib/android_x86_64/libopenvino.so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:lib/android_x86_64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:lib/android_x86_64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
+                # copybara:uncomment_end_and_comment_begin
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
+                # copybara:comment_end
             ],
             mh_devices = [{
                 "label": "litert-test-intel-ptl",
