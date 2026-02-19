@@ -61,6 +61,11 @@ load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 
 tf_workspace3()
 
+# Ensure we get the version of LLVM that tensorflow/XLA want.
+load("@xla//third_party/llvm:workspace.bzl", llvm = "repo")
+
+llvm("llvm-raw")
+
 # Initialize hermetic Python
 load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
 
