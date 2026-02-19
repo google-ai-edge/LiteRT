@@ -35,4 +35,13 @@ struct LiteRtRuntimeOptionsT {
   static const char* Identifier() { return "runtime"; }
 };
 
+namespace litert {
+namespace internal {
+
+LiteRtStatus ParseLiteRtRuntimeOptions(const void* data, size_t size,
+                                       LiteRtRuntimeOptionsT* options);
+
+}  // namespace internal
+}  // namespace litert
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_

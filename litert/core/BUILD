@@ -294,3 +294,27 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "litert_toml_parser",
+    srcs = ["litert_toml_parser.cc"],
+    hdrs = ["litert_toml_parser.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_toml_parser_test",
+    srcs = ["litert_toml_parser_test.cc"],
+    deps = [
+        ":litert_toml_parser",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
