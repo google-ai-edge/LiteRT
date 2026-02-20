@@ -110,10 +110,18 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
+// TODO: b/409367666 - Remove this function once the v2 API is fully rolled out.
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
   GT_LOG_RETURN_IF_NULL(device_context);
 
   return LiteRtDispatchDeviceContextT::Create(*device_context);
+}
+
+LiteRtStatus DeviceContextCreateV2(
+    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
+  GT_LOG_RETURN_IF_NULL(device_context);
+
+  return LiteRtDispatchDeviceContextT::Create(options, *device_context);
 }
 
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
@@ -470,6 +478,7 @@ LiteRtDispatchInterface TheInterface = {
         litert::google_tensor::CheckRuntimeCompatibility,
     .invocation_context_set_options =
         litert::google_tensor::InvocationContextSetOptions,
+    .device_context_create_v2 = litert::google_tensor::DeviceContextCreateV2,
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {

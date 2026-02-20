@@ -195,11 +195,15 @@ LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextCreate(
-    LiteRtDispatchDeviceContext* device_context) {
+    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
   if (!device_context) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
+  if (TheApi.interface && TheApi.interface->device_context_create_v2) {
+    INVOKE_FUNC(device_context_create_v2, options, device_context);
+  }
+  // Fallback to v1 if v2 is not available.
   INVOKE_FUNC(device_context_create, device_context);
 }
 

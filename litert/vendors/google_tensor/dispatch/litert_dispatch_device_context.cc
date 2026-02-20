@@ -15,10 +15,13 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
 #include <inttypes.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <utility>
+
+#include "litert/vendors/cc/options_helper.h"
 
 #if __ANDROID__
 #include <android/hardware_buffer.h>
@@ -43,6 +46,11 @@ namespace gt = litert::google_tensor;
 
 LiteRtStatus LiteRtDispatchDeviceContextT::Create(
     LiteRtDispatchDeviceContext& device_context) {
+  return Create(/*options=*/nullptr, device_context);
+}
+
+LiteRtStatus LiteRtDispatchDeviceContextT::Create(
+    LiteRtOptions options, LiteRtDispatchDeviceContext& device_context) {
   ThrContext* thr_context = thrContextCreate();
   if (thr_context == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to create SB context");
@@ -56,11 +64,18 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
                                 thr_context, "edgetpu_use_tpu_tachyon", "1"),
                             "Failed to enable Tachyon SB");
 
+  litert::DarwinnRuntimeOptions* absl_nullable darwinn_options = nullptr;
+  auto [opts, opq_opts, darwinn_opts] =
+      litert::ParseOptions<litert::DarwinnRuntimeOptions>(options);
+  if (darwinn_opts.HasValue()) {
+    darwinn_options = &darwinn_opts.Value();
+    LITERT_LOG(LITERT_INFO, "Found Darwinn runtime options");
+  } else {
+    darwinn_options = gt::GetTheDarwinnOptions();
+  }
   // If provided, store DarwiNN options to be applied to graphs.
   std::optional<DarwinnOptionsData> options_data;
-  if (litert::DarwinnRuntimeOptions* absl_nullable darwinn_options =
-          gt::GetTheDarwinnOptions();
-      darwinn_options != nullptr) {
+  if (darwinn_options != nullptr) {
     options_data.emplace();
 
     if (litert::Expected<uint32_t> inference_power_state =

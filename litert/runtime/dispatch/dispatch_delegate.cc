@@ -209,7 +209,8 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
                         capabilities));
   }
 
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(&device_context_));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtDispatchDeviceContextCreate(options_, &device_context_));
 
   return {};
 }
