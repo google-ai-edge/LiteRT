@@ -15,6 +15,7 @@
 #include "litert/c/options/litert_compiler_options.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 
 #include "litert/c/litert_common.h"
@@ -25,6 +26,8 @@
 struct LiteRtCompilerOptionsT {
   LiteRtCompilerOptionsPartitionStrategy partition_strategy =
       kLiteRtCompilerOptionsPartitionStrategyDefault;
+  // Map from subgraph index to list of operator ids that will not be delegated.
+  std::map<int, std::vector<std::uint32_t>> skip_delegation_ops;
   bool dummy_option = false;
 };
 
@@ -85,6 +88,37 @@ LiteRtStatus LiteRtGetCompilerOptionsPartitionStrategy(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *partition_strategy = options->partition_strategy;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddCompilerOptionsSkipDelegationOps(
+    LiteRtCompilerOptions options, int subgraph_index, const uint32_t* ids,
+    size_t number_of_ids) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& op_ids = options->skip_delegation_ops[subgraph_index];
+  op_ids.reserve(op_ids.size() + number_of_ids);
+  for (size_t i = 0; i < number_of_ids; i++) {
+    op_ids.emplace_back(ids[i]);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerOptionsSkipDelegationOps(
+    LiteRtCompilerOptionsConst options, int subgraph_index,
+    const uint32_t** ids, size_t* number_of_ids) {
+  if (ids == nullptr || number_of_ids == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto it = options->skip_delegation_ops.find(subgraph_index);
+  if (it != options->skip_delegation_ops.end()) {
+    *ids = it->second.data();
+    *number_of_ids = it->second.size();
+  } else {
+    *ids = nullptr;
+    *number_of_ids = 0;
+  }
   return kLiteRtStatusOk;
 }
 

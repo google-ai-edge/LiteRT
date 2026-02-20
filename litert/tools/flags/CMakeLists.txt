@@ -34,27 +34,6 @@ target_link_libraries(litert_tool_flags_common
         absl::strings
 )
 
-# Flag types
-add_library(litert_tool_flags_types STATIC
-    flag_types.cc
-)
-
-target_include_directories(litert_tool_flags_types
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-target_link_libraries(litert_tool_flags_types
-    PUBLIC
-        absl::flags
-        absl::strings
-        absl::string_view
-)
-
 # Apply plugin flags
 add_library(litert_tool_flags_apply_plugin STATIC
     apply_plugin_flags.cc
@@ -71,7 +50,6 @@ target_include_directories(litert_tool_flags_apply_plugin
 
 target_link_libraries(litert_tool_flags_apply_plugin
     PUBLIC
-        litert_tool_flags_types
         absl::flags
         absl::strings
 )
