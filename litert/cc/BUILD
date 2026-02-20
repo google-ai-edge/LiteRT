@@ -1080,6 +1080,7 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_runtime_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
@@ -1281,7 +1282,6 @@ cc_library(
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
         "//litert/cc/dynamic_runtime/options:litert_intel_openvino_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
-        "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         # Other (static) C++ API targets.
         ":litert_any",
         ":litert_tensor_buffer_types",
