@@ -75,7 +75,7 @@ TEST(MediaTek, DispatchApiWithAhwb) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -383,8 +383,9 @@ TEST(MediaTek, DispatchApiWithDmaBuf) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchDeviceContextCreate(/*options=*/nullptr, &device_context),
+      kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
   auto model_file_name =

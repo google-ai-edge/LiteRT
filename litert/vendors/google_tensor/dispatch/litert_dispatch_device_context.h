@@ -39,6 +39,9 @@ class LiteRtDispatchDeviceContextT {
 
   static LiteRtStatus Create(LiteRtDispatchDeviceContext& device_context);
 
+  static LiteRtStatus Create(LiteRtOptions options,
+                             LiteRtDispatchDeviceContext& device_context);
+
   LiteRtStatus Destroy();
 
   LiteRtStatus RegisterTensorBuffer(

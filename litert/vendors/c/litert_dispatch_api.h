@@ -41,6 +41,9 @@ typedef LiteRtStatus (*LiteRtDispatchGetCapabilitiesT)(int* capabilities);
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextCreateT)(
     LiteRtDispatchDeviceContext* device_context);
 
+typedef LiteRtStatus (*LiteRtDispatchDeviceContextCreateV2T)(
+    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context);
+
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextDestroyT)(
     LiteRtDispatchDeviceContext device_context);
 
@@ -147,6 +150,7 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchDestroyMetricsT destroy_metrics;
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
   LiteRtDispatchInvocationContextSetOptionsT invocation_context_set_options;
+  LiteRtDispatchDeviceContextCreateV2T device_context_create_v2;
 } LiteRtDispatchInterface;
 
 // /////////////////////////////////////////////////////////////////////////////
