@@ -521,9 +521,9 @@ TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
 
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
-Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
+Expected<std::vector<TensorBuffer>> CreateInputBuffersInGivenType(
     Environment& env, CompiledModel& compiled_model, size_t signature_index,
-    std::vector<absl::string_view> input_names) {
+    std::vector<absl::string_view> input_names, TensorBufferType buffer_type) {
   std::vector<TensorBuffer> input_buffers;
   input_buffers.reserve(input_names.size());
   for (auto& input_name : input_names) {
@@ -537,8 +537,8 @@ Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
         auto input_buffer,
-        TensorBuffer::CreateManaged(env, TensorBufferType::kGlBuffer,
-                                    ranked_tensor_type, buffer_size));
+        TensorBuffer::CreateManaged(env, buffer_type, ranked_tensor_type,
+                                    buffer_size));
     input_buffers.push_back(std::move(input_buffer));
   }
   return input_buffers;
@@ -618,7 +618,8 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   // Create GL input buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers,
-      CreateGlInputBuffers(env, compiled_model, signature_index, input_names));
+      CreateInputBuffersInGivenType(env, compiled_model, signature_index,
+                                    input_names, TensorBufferType::kGlBuffer));
 
   // Fill model inputs.
   EXPECT_EQ(input_names.size(), 2);
@@ -684,7 +685,8 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   // Create GL input buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers,
-      CreateGlInputBuffers(env, compiled_model, signature_index, input_names));
+      CreateInputBuffersInGivenType(env, compiled_model, signature_index,
+                                    input_names, TensorBufferType::kGlBuffer));
 
   // Fill model inputs.
   EXPECT_EQ(input_names.size(), 2);
@@ -966,6 +968,86 @@ TEST(CompiledModelGpuTest, BasicOpenGlWithProvidedEglEnvironment) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+}
+
+TEST(CompiledModelGpuTest, UseCpuBuffer) {
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  size_t signature_index = 0;  // Default signature.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_names, compiled_model.GetSignatureInputNames(signature_index));
+  // Create CPU input buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              CreateInputBuffersInGivenType(
+                                  *env, compiled_model, signature_index,
+                                  input_names, TensorBufferType::kHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  // Fill model inputs.
+  EXPECT_EQ(input_names.size(), 2);
+  EXPECT_EQ(input_names.at(0), "arg0");
+  EXPECT_EQ(input_names.at(1), "arg1");
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Execute model.
+  compiled_model.Run(input_buffers, output_buffers);
+
+  // Check model output.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_EQ(output_names.size(), 1);
+  EXPECT_EQ(output_names.at(0), "tfl.add");
+  EXPECT_TRUE(output_buffers[0].IsOpenClMemory());
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+
+  // Fill model inputs again.
+  EXPECT_EQ(input_names.size(), 2);
+  EXPECT_EQ(input_names.at(0), "arg0");
+  EXPECT_EQ(input_names.at(1), "arg1");
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor_2, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor_2, kTestInput1Size)));
+
+  // Execute model.
+  compiled_model.Run(input_buffers, output_buffers);
+
+  // Check model output.
+  {
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
+                     << kTestOutputTensor_2[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor_2));
   }
 }
 
