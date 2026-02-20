@@ -31,6 +31,13 @@ Expected<bool> ParseTomlBool(absl::string_view value);
 // Helper to parse an integer value.
 Expected<int64_t> ParseTomlInt(absl::string_view value);
 
+// Helper to parse a string value.
+Expected<std::string> ParseTomlString(absl::string_view value);
+
+// Helper to parse an array of string values.
+Expected<std::vector<std::string>> ParseTomlStringArray(
+    absl::string_view value);
+
 // Callback function type for handling key-value pairs.
 using TomlCallback =
     std::function<LiteRtStatus(absl::string_view key, absl::string_view value)>;

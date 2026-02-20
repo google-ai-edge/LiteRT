@@ -31,10 +31,13 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_cpu_options.h"
+#include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_element_type.h"
@@ -42,9 +45,11 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
@@ -634,8 +639,18 @@ TEST(CompiledModelTest, WithProfiler) {
             kLiteRtStatusOk);
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetEnableProfiling(/*enabled=*/true);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
                                    opaque_runtime_options.Release()),
             kLiteRtStatusOk);
@@ -742,6 +757,58 @@ TEST(CompiledModelTest, WithProfiler) {
   LiteRtDestroyEnvironment(env_ptr);
 }
 
+TEST(CompiledModelTest, WithCpuOptions) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  LITERT_ASSIGN_OR_ABORT(auto cpu_options, CpuOptions::Create());
+  ASSERT_TRUE(cpu_options.SetNumThreads(2));
+  const char* identifier;
+  void* payload;
+  void (*payload_deleter)(void*);
+  ASSERT_EQ(LrtGetOpaqueCpuOptionsData(cpu_options.Get(), &identifier, &payload,
+                                       &payload_deleter),
+            kLiteRtStatusOk);
+
+  LiteRtOpaqueOptions opaque_cpu_options_handle;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_cpu_options_handle),
+            kLiteRtStatusOk);
+
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   opaque_cpu_options_handle),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // We can't easily verify the internal state of the interpreter here without
+  // exposing more internals, but successful creation implies the options were
+  // parsed without error. In a real integration test, we might check
+  // performance or use a mock interpreter if available. For now, we rely on the
+  // fact that `compiled_model.cc` parses the options and would log a warning or
+  // fail if parsing failed (though currently it warns).
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
 TEST(CompiledModelTest, ErrorReporterBufferMode) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
@@ -762,8 +829,18 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
                                    opaque_runtime_options.Release()),
             kLiteRtStatusOk);
@@ -821,8 +898,18 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
                                    opaque_runtime_options.Release()),
             kLiteRtStatusOk);
@@ -868,8 +955,18 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
                                    opaque_runtime_options.Release()),
             kLiteRtStatusOk);
@@ -918,8 +1015,18 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options1, RuntimeOptions::Create());
   runtime_options1.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options1,
-                         runtime_options1.CreateOpaqueOptions());
+  const char* identifier1;
+  void* payload1 = nullptr;
+  void (*payload_deleter1)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options1.Get(), &identifier1,
+                                           &payload1, &payload_deleter1),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts1 = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier1, payload1, payload_deleter1,
+                                      &opaque_opts1),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options1 =
+      litert::OpaqueOptions::WrapCObject(opaque_opts1, litert::OwnHandle::kYes);
   ASSERT_EQ(LiteRtAddOpaqueOptions(options1, opaque_runtime_options1.Release()),
             kLiteRtStatusOk);
 
@@ -940,8 +1047,18 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options2, RuntimeOptions::Create());
   runtime_options2.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options2,
-                         runtime_options2.CreateOpaqueOptions());
+  const char* identifier2;
+  void* payload2 = nullptr;
+  void (*payload_deleter2)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options2.Get(), &identifier2,
+                                           &payload2, &payload_deleter2),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts2 = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier2, payload2, payload_deleter2,
+                                      &opaque_opts2),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options2 =
+      litert::OpaqueOptions::WrapCObject(opaque_opts2, litert::OwnHandle::kYes);
   ASSERT_EQ(LiteRtAddOpaqueOptions(options2, opaque_runtime_options2.Release()),
             kLiteRtStatusOk);
 
@@ -1023,8 +1140,18 @@ TEST(CompiledModelTest, ErrorReporterWithProfilingEnabled) {
   runtime_options.SetEnableProfiling(true);
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   ASSERT_EQ(LiteRtAddOpaqueOptions(options, opaque_runtime_options.Release()),
             kLiteRtStatusOk);
 

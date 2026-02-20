@@ -40,6 +40,33 @@ TEST(LiteRtTomlParserTest, ParseInt) {
   EXPECT_FALSE(ParseTomlInt("invalid").HasValue());
 }
 
+TEST(LiteRtTomlParserTest, ParseString) {
+  EXPECT_THAT(ParseTomlString("\"hello\""), IsOkAndHolds("hello"));
+  EXPECT_THAT(ParseTomlString("'world'"), IsOkAndHolds("world"));
+  EXPECT_THAT(ParseTomlString("\"\""), IsOkAndHolds(""));
+  EXPECT_FALSE(ParseTomlString("invalid").HasValue());
+  EXPECT_FALSE(ParseTomlString("\"invalid").HasValue());
+  EXPECT_FALSE(ParseTomlString("'invalid").HasValue());
+}
+
+TEST(LiteRtTomlParserTest, ParseStringArray) {
+  EXPECT_THAT(ParseTomlStringArray("[\"a\", \"b\", \"c\"]"),
+              IsOkAndHolds(std::vector<std::string>{"a", "b", "c"}));
+  EXPECT_THAT(ParseTomlStringArray("['single']"),
+              IsOkAndHolds(std::vector<std::string>{"single"}));
+  EXPECT_THAT(ParseTomlStringArray("[]"),
+              IsOkAndHolds(std::vector<std::string>{}));
+  EXPECT_THAT(ParseTomlStringArray("[  \"a\"  ,  \"str with space\"  ]"),
+              IsOkAndHolds(std::vector<std::string>{"a", "str with space"}));
+  // Optional trailing comma
+  EXPECT_THAT(ParseTomlStringArray("[\"a\", ]"),
+              IsOkAndHolds(std::vector<std::string>{"a"}));
+
+  EXPECT_FALSE(ParseTomlStringArray("invalid").HasValue());
+  EXPECT_FALSE(ParseTomlStringArray("[\"invalid\"").HasValue());
+  EXPECT_FALSE(ParseTomlStringArray("[\"invalid\", noquotes]").HasValue());
+}
+
 TEST(LiteRtTomlParserTest, ParseTomlKeyValues) {
   std::string toml_str = R"(
     # Comment

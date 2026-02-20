@@ -16,6 +16,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -62,6 +64,55 @@ Expected<int64_t> ParseTomlInt(absl::string_view value) {
     return result;
   }
   return Unexpected(kLiteRtStatusErrorInvalidArgument, "Invalid integer value");
+}
+
+Expected<std::string> ParseTomlString(absl::string_view value) {
+  if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+    // Basic unquoting. Does not handle complex escape sequences yet.
+    return std::string(value.substr(1, value.size() - 2));
+  }
+  if (value.size() >= 2 && value.front() == '\'' && value.back() == '\'') {
+    return std::string(value.substr(1, value.size() - 2));
+  }
+  return Unexpected(kLiteRtStatusErrorInvalidArgument, "Invalid string value");
+}
+
+Expected<std::vector<std::string>> ParseTomlStringArray(
+    absl::string_view value) {
+  if (value.empty() || value.front() != '[' || value.back() != ']') {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid array format");
+  }
+
+  absl::string_view inner = value.substr(1, value.size() - 2);
+  std::vector<std::string> result;
+  // Empty array
+  if (TrimWhitespace(inner).empty()) {
+    return result;
+  }
+
+  size_t start = 0;
+  while (start < inner.size()) {
+    size_t comma_pos = inner.find(',', start);
+    absl::string_view elem = (comma_pos == absl::string_view::npos)
+                                 ? inner.substr(start)
+                                 : inner.substr(start, comma_pos - start);
+    elem = TrimWhitespace(elem);
+    // Ignore trailing commas
+    if (comma_pos == absl::string_view::npos && elem.empty()) {
+      break;
+    }
+
+    auto parsed_str = ParseTomlString(elem);
+    if (!parsed_str.HasValue()) {
+      return parsed_str.Error();
+    }
+    result.push_back(*parsed_str);
+    start =
+        (comma_pos == absl::string_view::npos) ? inner.size() : comma_pos + 1;
+  }
+
+  return result;
 }
 
 LiteRtStatus ParseToml(absl::string_view data, TomlCallback callback) {
