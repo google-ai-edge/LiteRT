@@ -27,6 +27,16 @@ http_archive(
     ],
 )
 
+# Override apple_support to include the LC_UUID fix for macOS Tahoe (26.x).
+http_archive(
+    name = "build_bazel_apple_support",
+    sha256 = "1ae6fcf983cff3edab717636f91ad0efff2e5ba75607fdddddfd6ad0dbdfaf10",
+    urls = [
+        "https://github.com/bazelbuild/apple_support/releases/download/1.24.5/apple_support.1.24.5.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/apple_support/releases/download/1.24.5/apple_support.1.24.5.tar.gz",
+    ],
+)
+
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
 # tensorflow is updated to do the same patchcmd.
 http_archive(
