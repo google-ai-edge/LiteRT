@@ -64,7 +64,10 @@ def _py_wheel_impl(ctx):
 
     if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
         version = version + ".dev" + ctx.attr.nightly_suffix[BuildSettingInfo].value
-        wheel_name = _get_full_wheel_name(project_name + "_nightly", version, ctx.attr.platform_name)
+        project_name_full = project_name
+        if ctx.attr.append_nightly_to_project_name:
+            project_name_full = project_name + "_nightly"
+        wheel_name = _get_full_wheel_name(project_name_full, version, ctx.attr.platform_name)
     else:
         wheel_name = _get_full_wheel_name(project_name, version, ctx.attr.platform_name)
 
@@ -76,7 +79,7 @@ def _py_wheel_impl(ctx):
     args.add("--output", output_file.dirname)
     args.add("--version", version)
 
-    if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
+    if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "" and ctx.attr.append_nightly_to_project_name:
         args.add("--nightly_suffix", "_nightly")
 
     for f in filelist:
@@ -138,5 +141,6 @@ py_wheel = rule(
             cfg = "exec",
         ),
         "nightly_suffix": attr.label(),
+        "append_nightly_to_project_name": attr.bool(default = True),
     },
 )
