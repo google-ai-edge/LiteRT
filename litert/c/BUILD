@@ -705,7 +705,6 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_intel_openvino_options",
-    "//litert/c/options:litert_runtime_options",
 ]
 
 # This test verifies that the C API header files can build via C compiler.
@@ -714,7 +713,10 @@ cc_test(
     srcs = ["litert_c_api_common_test.c"],
     copts = ["--std=c11"],
     linkopts = ["-ldl"],
-    deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
+    deps = LITERT_C_API_COMMON_DEPS + [
+        ":litert_profiler_event",
+        "//litert/c/options:litert_runtime_options",
+    ],
 )
 
 # TODO: b/437381008
