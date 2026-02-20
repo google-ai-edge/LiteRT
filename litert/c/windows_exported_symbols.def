@@ -367,8 +367,10 @@ EXPORTS
   LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints
   LiteRtSetRuntimeOptionsEnableProfiling
   LiteRtSetRuntimeOptionsErrorReporterMode
+  LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints
   LiteRtSetTensorBufferEvent
   LiteRtSignalEvent
+  LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints
   LiteRtStartProfiler
   LiteRtStopProfiler
   LiteRtUnlockTensorBuffer
