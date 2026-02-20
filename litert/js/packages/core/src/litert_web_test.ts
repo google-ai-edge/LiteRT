@@ -103,6 +103,69 @@ describe('LiteRt', () => {
         })).toBeRejectedWithError('JSPI is not supported');
       }
     });
+
+    it('compileModel returns a Promise with JSPI', async () => {
+      if (await supportsFeature('jspi')) {
+        await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
+        const modelData = await fetch('/testdata/add_10x10.tflite')
+                              .then(response => response.arrayBuffer())
+                              .then(buffer => new Uint8Array(buffer));
+
+        const wasmModule = liteRt.liteRtWasm;
+        const ptr = wasmModule._malloc(modelData.byteLength);
+        wasmModule.HEAPU8.set(modelData, ptr);
+
+        const environment = liteRt.getDefaultEnvironment();
+        const wasmModel = wasmModule.loadModel(
+            environment.liteRtEnvironment, ptr, modelData.byteLength);
+
+        const compileOptions = {};
+        const result = wasmModule.compileModel(
+            environment.liteRtEnvironment, wasmModel, compileOptions);
+
+        expect(result).toBeInstanceOf(Promise);
+        const compiledModel = await result;
+        expect(compiledModel).toBeDefined();
+
+        compiledModel.delete();
+        wasmModel.delete();
+        wasmModule._free(ptr);
+      } else {
+        pending('This browser does not support JSPI');
+      }
+    });
+
+    it('compileModel returns a non-Promise without JSPI', async () => {
+      if (await supportsFeature('jspi')) {
+        pending('This test is for non-JSPI environments');
+      }
+
+      await resetLiteRt();
+      const modelData = await fetch('/testdata/add_10x10.tflite')
+                            .then(response => response.arrayBuffer())
+                            .then(buffer => new Uint8Array(buffer));
+
+      const wasmModule = liteRt.liteRtWasm;
+      const ptr = wasmModule._malloc(modelData.byteLength);
+      wasmModule.HEAPU8.set(modelData, ptr);
+
+      const environment = liteRt.getDefaultEnvironment();
+      const wasmModel = wasmModule.loadModel(
+          environment.liteRtEnvironment, ptr, modelData.byteLength);
+
+      const compileOptions = {};
+      const result = wasmModule.compileModel(
+          environment.liteRtEnvironment, wasmModel, compileOptions);
+
+      expect(result).not.toBeInstanceOf(Promise);
+      expect(result).toBeDefined();
+
+      if (result instanceof CompiledModel) {
+        result.delete();
+      }
+      wasmModel.delete();
+      wasmModule._free(ptr);
+    });
   });
   it('setDefaultEnvironment() sets the default environment', async () => {
     await resetLiteRt();
