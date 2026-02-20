@@ -49,6 +49,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "third_party/tomlplusplus/toml.hpp"
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_logging.h"
@@ -291,18 +292,28 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     auto opaque_options = litert::OpaqueOptions::WrapCObject(
         jit_compilation_options->options, litert::OwnHandle::kNo);
 
-    if (auto runtime_options = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
-            opaque_options, LiteRtRuntimeOptionsT::Identifier());
-        runtime_options) {
+    if (auto runtime_options_toml_str = litert::FindOpaqueData<char>(
+            opaque_options, "runtime_toml_payload");
+        runtime_options_toml_str) {
+      std::string_view runtime_options_toml_str_view(*runtime_options_toml_str);
+      LITERT_LOG(LITERT_INFO, "runtime_options_toml_str_view:\n%s\n--------",
+                 runtime_options_toml_str_view.data());
+      toml::parse_result runtime_options_toml =
+          toml::parse(runtime_options_toml_str_view);
+      toml::table runtime_options_toml_table =
+          std::move(runtime_options_toml).table();
       interpreter_options.SetShloCompositeInlining(true);
       interpreter_options.SetCompressQuantizationZeroPoints(
-          (*runtime_options)->compress_quantization_zero_points);
-      if ((*runtime_options)->enable_profiling) {
-        profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
+          runtime_options_toml_table["compress_quantization_zero_points"]
+              .value_or(false));
+      if (runtime_options_toml_table.contains("enable_profiling")) {
+        profiler_ =
+            new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
       }
 
       // Create error reporter based on mode
-      switch ((*runtime_options)->error_reporter_mode) {
+      switch (runtime_options_toml_table["error_reporter_mode"].value_or(
+          LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone)) {
         case kLiteRtErrorReporterModeNone:
           // No error reporter
           break;

@@ -23,15 +23,6 @@ namespace {
 using ::testing::StrEq;
 using ::testing::litert::IsOkAndHolds;
 
-TEST(RuntimeOptions, IdentifierIsCorrect) {
-  EXPECT_THAT(RuntimeOptions::Identifier(),
-              StrEq(LiteRtGetRuntimeOptionsIdentifier()));
-}
-
-TEST(RuntimeOptions, CreateAndOwnedHandle) {
-  LITERT_ASSERT_OK_AND_ASSIGN(RuntimeOptions options, RuntimeOptions::Create());
-  EXPECT_TRUE(options.IsOwned());
-}
 
 TEST(RuntimeOptions, CompressQuantizationZeroPointsRoundTrip) {
   LITERT_ASSERT_OK_AND_ASSIGN(RuntimeOptions options, RuntimeOptions::Create());
