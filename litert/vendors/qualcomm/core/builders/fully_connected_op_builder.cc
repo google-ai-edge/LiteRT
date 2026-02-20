@@ -25,7 +25,8 @@ constexpr int kBiasIdx = 2;
 
 std::vector<OpWrapper> BuildFullyConnectedOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const bool keep_num_dims) {
+    const std::vector<TensorWrapperRef>& outputs, const bool keep_num_dims,
+    const bool use_int64_bias_as_int32) {
   std::vector<OpWrapper> res;
   OpWrapper& fully_connected_op = CreateOpWrapper(res, QNN_OP_FULLY_CONNECTED);
 
@@ -35,7 +36,7 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
   fully_connected_op.AddInputTensor(weight_tensor);
   if (inputs.size() - 1 >= kBiasIdx) {
     TensorWrapper& bias_tensor = inputs[kBiasIdx];
-    if (bias_tensor.IsTensorStatic() &&
+    if (use_int64_bias_as_int32 && bias_tensor.IsTensorStatic() &&
         bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
       const auto original_data = bias_tensor.GetTensorData<int64_t>();
       if (!original_data.has_value()) {
