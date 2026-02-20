@@ -23,9 +23,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/test/matchers.h"
 #include "litert/test/simple_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -127,7 +125,8 @@ TEST_F(ExampleDispatchTest, DeviceContextCreate) {
 
 TEST_F(ExampleDispatchTest, InvocationContext) {
   // clang-format off
-  static constexpr absl::string_view kSchema = R"(version:1
+  static constexpr absl::string_view kSchema = R"(SUBGRAPH partition_0
+version:1
 inputs:0,1
 outputs:2
 tensors:[2x2],[2x2],[2x2]
@@ -235,7 +234,8 @@ TEST_F(ExampleDispatchTest, RegisterBuffer) {
 
 TEST_F(ExampleDispatchTest, UnsupportedVersion) {
   // clang-format off
-  static constexpr absl::string_view kSchema = R"(version:2
+  static constexpr absl::string_view kSchema = R"(SUBGRAPH partition_0
+version:2
 inputs:0,1
 outputs:2
 tensors:[2x2],[2x2],[2x2]
@@ -266,5 +266,76 @@ ops:mul(0,1)(2))";
                                             kNumOutputs, &invocation_context));
   LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
 }
+
+TEST_F(ExampleDispatchTest, SharedWeights) {
+  // Define 2 subgraphs sharing buffer 1.
+  static constexpr absl::string_view kSchema = R"(BUFFER 1
+[2x2]
+DATA:1,2,3,4
+SUBGRAPH partition_0
+version:1
+inputs:0,1
+outputs:2
+const_map:1:1
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2)
+SUBGRAPH partition_1
+version:1
+inputs:0,1
+outputs:2
+const_map:1:1
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2)
+)";
+
+  LiteRtMemBuffer exec_bytecode_buffer;
+  exec_bytecode_buffer.base_addr = kSchema.data();
+  exec_bytecode_buffer.size = kSchema.size();
+  exec_bytecode_buffer.fd = -1;
+  exec_bytecode_buffer.offset = 0;
+
+  LiteRtDispatchDeviceContext device_context;
+  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  auto device_context_ptr = CreateDevicePtr(Api(), device_context);
+
+  auto run_partition = [&](const char* name) {
+    LiteRtDispatchInvocationContext invocation_context;
+    LITERT_ASSERT_OK(Api().invocation_context_create(
+        device_context, kLiteRtDispatchExecutableTypeMlModel,
+        &exec_bytecode_buffer, name, 2, 1, &invocation_context));
+    auto invocation_context_ptr =
+        CreateInvocationContextPtr(Api(), invocation_context);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto input1,
+        SimpleBuffer::Create<float>({2, 2}, {10.0f, 20.0f, 30.0f, 40.0f}));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb1, input1.SpawnTensorBuffer());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output,
+                                SimpleBuffer::Create<float>({2, 2}));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_tb, output.SpawnTensorBuffer());
+
+    LiteRtTensorBufferHandle handle1, handle3;
+    LITERT_ASSERT_OK(Api().register_tensor_buffer(device_context,
+                                                  input_tb1.Get(), &handle1));
+    LITERT_ASSERT_OK(Api().register_tensor_buffer(device_context,
+                                                  output_tb.Get(), &handle3));
+
+    // Input 0 is attached. Input 1 is constant (pre-attached by dispatch).
+    LITERT_ASSERT_OK(Api().attach_input(invocation_context, 0, handle1));
+    LITERT_ASSERT_OK(Api().attach_output(invocation_context, 0, handle3));
+
+    LITERT_ASSERT_OK(Api().invoke(invocation_context));
+
+    std::vector<float> out(4);
+    LITERT_ASSERT_OK(output_tb.Read(absl::MakeSpan(out)));
+    // Input: 10, 20, 30, 40. Constant: 1, 2, 3, 4.
+    // Mul: 10, 40, 90, 160.
+    EXPECT_THAT(out, ElementsAre(10.0f, 40.0f, 90.0f, 160.0f));
+  };
+
+  run_partition("partition_0");
+  run_partition("partition_1");
+}
+
 }  // namespace
 }  // namespace litert::example

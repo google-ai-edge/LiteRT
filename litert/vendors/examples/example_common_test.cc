@@ -34,12 +34,14 @@ using ::testing::Eq;
 static constexpr absl::string_view kSingleOpExampleGraph = R"(version:1
 inputs:0,1
 outputs:2
+const_map:
 tensors:[2x2],[2x2],[2x2]
 ops:mul(0,1)(2))";
 
 static constexpr absl::string_view kMultipleOpsExampleGraph = R"(version:1
 inputs:0,1
 outputs:3
+const_map:
 tensors:[2x2],[2x2],[2x2],[2x2]
 ops:mul(0,1)(2)~sub(2,2)(3))";
 
