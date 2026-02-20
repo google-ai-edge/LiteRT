@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <climits>
 #include <cstdint>
 #include <cstring>
@@ -34,6 +35,8 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -147,12 +150,71 @@ struct DebugMetadata {
   absl::flat_hash_map<int, absl::flat_hash_map<int, int>> operator_location_map;
 };
 
+// Recovers the original operation names from a semicolon-separated string of
+// tensor names that were mangled during graph export.
+//
+// In multi-output operations (e.g., a fused layer or a multi-head attention),
+// exporters often append result indices to the base name (e.g., "Layer2"
+// becoming "Layer2", "Layer21", "Layer22"). This function groups these
+// variations by their common root and selects the shortest variant (the
+// presumed original) while maintaining the original sequence of operations.
+std::string RecoverOriginalNameFromMangledTensorName(
+    absl::string_view mangled_name) {
+  struct OpMetadata {
+    std::string shortest_name;
+    size_t first_seen_index;
+  };
+
+  std::vector<absl::string_view> parts = absl::StrSplit(mangled_name, ';');
+  absl::flat_hash_map<std::string, OpMetadata> groups;
+  std::vector<std::string> order_preserved_roots;
+
+  for (absl::string_view original : parts) {
+    if (original.empty()) {
+      order_preserved_roots.push_back("");
+      continue;
+    }
+
+    // Identify the 'root' by stripping trailing digits and common delimiters.
+    // This allows "Layer2" and "Layer21" to be recognized as the same
+    // operation.
+    absl::string_view stem = original;
+    while (!stem.empty() && std::isdigit(stem.back())) {
+      stem.remove_suffix(1);
+    }
+    if (!stem.empty() && (stem.back() == '.' || stem.back() == '_')) {
+      stem.remove_suffix(1);
+    }
+
+    std::string root(stem);
+    auto it = groups.find(root);
+    if (it == groups.end()) {
+      groups[root] = {std::string(original), order_preserved_roots.size()};
+      order_preserved_roots.push_back(root);
+    } else {
+      // Keep the shortest version found in the group as the canonical name.
+      if (original.size() < it->second.shortest_name.size()) {
+        it->second.shortest_name = std::string(original);
+      }
+    }
+  }
+
+  std::vector<std::string> results;
+  results.reserve(order_preserved_roots.size());
+  for (const auto& root : order_preserved_roots) {
+    results.push_back(groups[root].shortest_name);
+  }
+
+  return absl::StrJoin(results, ";");
+}
+
 // Create the MLIR NamedLoc location corresponding to a given tensor
 Location TensorLoc(const TensorT& tensor, Builder builder, Location base) {
   if (tensor.name.empty()) {
     return base;
   }
-  return mlir::NameLoc::get(builder.getStringAttr(tensor.name), base);
+  std::string name = RecoverOriginalNameFromMangledTensorName(tensor.name);
+  return mlir::NameLoc::get(builder.getStringAttr(name), base);
 }
 
 // Build and return the MLIR location.
@@ -1798,7 +1860,7 @@ OwningOpRef<mlir::ModuleOp> tflite::FlatBufferToMlir(
     const std::vector<std::string>& ordered_input_arrays,
     const std::vector<std::string>& ordered_output_arrays,
     bool experimental_prune_unreachable_nodes_unconditionally,
-    const bool disable_vhlo_to_stablehlo) {
+    bool disable_vhlo_to_stablehlo) {
   mlir::DialectRegistry registry;
   registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
                   mlir::quant::QuantDialect,
