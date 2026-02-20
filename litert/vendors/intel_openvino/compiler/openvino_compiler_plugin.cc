@@ -13,27 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stdio.h>
-
 #include <cstddef>
-#include <cstdlib>
 #include <ios>
 #include <memory>
 #include <ostream>
-#include <sstream>
 #include <streambuf>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
-#include "openvino/core/any.hpp"
-#include "openvino/core/except.hpp"
-#include "openvino/frontend/tensorflow_lite/frontend.hpp"
-#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/openvino.hpp"
-#include "openvino/runtime/core.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -50,14 +38,18 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
+#include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
+#include "openvino/core/any.hpp"
+#include "openvino/core/except.hpp"
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
+#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/openvino.hpp"
+#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/properties.hpp"
 
 namespace {
 
 constexpr char kPluginManufacturer[] = "IntelOpenVINO";
-
-constexpr const char* kPluginSocModels[] = {
-    "NPU2700",
-};  // get the name for plugin soc model
 
 constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflConv2d,
@@ -140,9 +132,6 @@ constexpr LiteRtOpCode kSupportedOps[] = {
 };
 // clang format on
 
-constexpr auto kNumPluginSocModels =
-    sizeof(kPluginSocModels) / sizeof(kPluginSocModels[0]);
-
 // When exporting a model via the OpenVINO NPU plugin, standard string streams
 // might encounter a 32-bit std::streamsize limitation on specific platforms,
 // which restricts model export capacity. This custom output stream buffer
@@ -168,7 +157,6 @@ class CustomOStreamBuf : public std::streambuf {
  private:
   std::string target_;
 };
-
 }  // namespace
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -201,18 +189,19 @@ LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
   if (compiler_plugin == nullptr || num_supported_soc_models == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *num_supported_soc_models = kNumPluginSocModels;
+  *num_supported_soc_models = litert::openvino::GetNumSocModels();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     LiteRtCompilerPlugin compiler_plugin, LiteRtParamIndex soc_model_idx,
     const char** soc_model_name) {
-  if (compiler_plugin == nullptr || soc_model_idx >= kNumPluginSocModels ||
+  if (compiler_plugin == nullptr ||
+      soc_model_idx >= litert::openvino::GetNumSocModels() ||
       soc_model_name == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *soc_model_name = kPluginSocModels[soc_model_idx];
+  *soc_model_name = litert::openvino::GetSocModelName(soc_model_idx);
   return kLiteRtStatusOk;
 }
 
@@ -379,6 +368,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     const auto num_partitions = model.NumSubgraphs();
 
     // Configure device and OpenVINO settings from Intel OpenVINO options
+
     std::string device = "NPU";  // Default device
     ov::AnyMap configs_map;
 
@@ -452,6 +442,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           ov::hint::PerformanceMode::LATENCY;
       LITERT_LOG(LITERT_INFO, "Using default configuration (LATENCY mode)");
     }
+
+    LITERT_RETURN_IF_ERROR(
+        litert::openvino::ConfigureCompilationParams(soc_model, configs_map));
 
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);
