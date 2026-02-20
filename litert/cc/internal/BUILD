@@ -57,7 +57,6 @@ cc_library(
     hdrs = ["litert_dispatch_delegate.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
         "//litert/runtime/dispatch:dispatch_delegate",
         "//tflite/c:c_api",
         "//tflite/c:c_api_opaque",
@@ -109,10 +108,10 @@ cc_library(
     name = "litert_c_types_printing",
     hdrs = ["litert_c_types_printing.h"],
     deps = [
+        ":litert_logging",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "//litert/cc/internal:litert_logging",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
@@ -229,10 +228,10 @@ cc_test(
     name = "litert_rng_test",
     srcs = ["litert_rng_test.cc"],
     deps = [
+        ":litert_numerics",
+        ":litert_rng",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
-        "//litert/cc/internal:litert_numerics",
-        "//litert/cc/internal:litert_rng",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
         "@com_google_absl//absl/strings:str_format",
@@ -245,6 +244,7 @@ cc_test(
 cc_library(
     name = "litert_source_location",
     hdrs = ["litert_source_location.h"],
+    visibility = ["//visibility:public"],
 )
 
 cc_test(
@@ -522,9 +522,7 @@ cc_library(
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -542,7 +540,6 @@ cc_test(
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
