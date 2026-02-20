@@ -72,14 +72,6 @@ LiteRtStatus LiteRtGoogleTensorOptionsSetOutputDir(
 LiteRtStatus LiteRtGoogleTensorOptionsGetOutputDir(
     LiteRtGoogleTensorOptions options, const char** output_dir);
 
-// dump_op_timings -------------------------------------------------------------
-
-LiteRtStatus LiteRtGoogleTensorOptionsSetDumpOpTimings(
-    LiteRtGoogleTensorOptions options, bool dump_op_timings);
-
-LiteRtStatus LiteRtGoogleTensorOptionsGetDumpOpTimings(
-    LiteRtGoogleTensorOptions options, bool* dump_op_timings);
-
 // enable_large_model_support --------------------------------------------------
 
 LiteRtStatus LiteRtGoogleTensorOptionsSetEnableLargeModelSupport(

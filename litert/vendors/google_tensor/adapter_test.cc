@@ -82,7 +82,6 @@ TEST(AdapterTest, CompileSuccess) {
   google_tensor_options.set_float_truncation_type(
       GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_HALF);
   google_tensor_options.set_int64_to_int32_truncation(true);
-  google_tensor_options.set_dump_op_timings(true);
   google_tensor_options.mutable_compiler_config()->set_device(
       DeviceType::DEVICE_TYPE_TENSOR_G5);
   google_tensor_options.set_output_dir("/tmp/");
