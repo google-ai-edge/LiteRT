@@ -25,7 +25,7 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/runtime/litert_runtime_options.h"
 #include "litert/test/matchers.h"
-#include "third_party/tomlplusplus/toml.hpp"
+#include "toml.hpp"  // from @tomlplusplus
 
 namespace {
 

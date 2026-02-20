@@ -254,6 +254,19 @@ http_archive(
     url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
 )
 
+# tomlplusplus
+http_archive(
+    name = "tomlplusplus",
+    build_file = "@//:BUILD.tomlplusplus",
+    patch_cmds = [
+        "echo '#define TOML_IMPLEMENTATION' > toml.cc",
+        "echo '#include \"toml.hpp\"' >> toml.cc",
+    ],
+    sha256 = "8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155",
+    strip_prefix = "tomlplusplus-3.4.0",
+    url = "https://github.com/marzer/tomlplusplus/archive/refs/tags/v3.4.0.tar.gz",
+)
+
 load("@rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")
 
 kotlin_repositories()  # if you want the default. Otherwise see custom kotlinc distribution below

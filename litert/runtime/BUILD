@@ -773,8 +773,8 @@ cc_test(
     deps = [
         ":litert_runtime_options",
         "//litert/c:litert_common",
-        "//third_party/tomlplusplus",
         "@com_google_googletest//:gtest_main",
+        "@tomlplusplus",
     ],
 )
 

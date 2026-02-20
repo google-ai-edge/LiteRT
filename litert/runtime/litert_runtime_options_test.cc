@@ -18,7 +18,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
-#include "third_party/tomlplusplus/toml.hpp"
+#include "toml.hpp"  // from @tomlplusplus
 
 namespace {
 

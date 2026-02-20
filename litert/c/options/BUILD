@@ -232,10 +232,10 @@ cc_test(
         "//litert/cc:litert_macros",
         "//litert/runtime:litert_runtime_options",
         "//litert/test:matchers",
-        "//third_party/tomlplusplus",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
+        "@tomlplusplus",
     ],
 )
 
