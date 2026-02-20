@@ -75,8 +75,15 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
   LITERT_ASSERT_OK(LrtSetRuntimeOptionsCompressQuantizationZeroPoints(
       options, kCompressZeroPoints));
 
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueRuntimeOptionsData(options, &identifier,
+                                                  &payload, &payload_deleter));
+
   LiteRtOpaqueOptions opaque_options = nullptr;
-  LITERT_ASSERT_OK(LrtCreateOpaqueRuntimeOptions(options, &opaque_options));
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_options));
 
   // Verify identifier
   const char* id = nullptr;
@@ -119,8 +126,15 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerializationOptionality) {
   LITERT_ASSERT_OK(
       LrtSetRuntimeOptionsEnableProfiling(options, kEnableProfiling));
 
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueRuntimeOptionsData(options, &identifier,
+                                                  &payload, &payload_deleter));
+
   LiteRtOpaqueOptions opaque_options = nullptr;
-  LITERT_ASSERT_OK(LrtCreateOpaqueRuntimeOptions(options, &opaque_options));
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_options));
 
   // Verify payload
   void* payload_void = nullptr;

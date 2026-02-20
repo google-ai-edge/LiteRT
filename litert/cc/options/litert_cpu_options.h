@@ -16,22 +16,20 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_CPU_OPTIONS_H_
 
 #include <cstdint>
+#include <memory>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
+
+struct LrtCpuOptions;
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT CPU options.
-class CpuOptions : public OpaqueOptions {
+class CpuOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
-  static absl::string_view Identifier();
-
   static Expected<CpuOptions> Create();
-  static Expected<CpuOptions> Create(OpaqueOptions& original);
 
   Expected<void> SetNumThreads(int num_threads);
   Expected<int> GetNumThreads() const;
@@ -44,6 +42,17 @@ class CpuOptions : public OpaqueOptions {
 
   Expected<void> SetXNNPackWeightCacheFileDescriptor(int fd);
   Expected<int> GetXNNPackWeightCacheFileDescriptor() const;
+
+  LrtCpuOptions* Get() { return options_.get(); }
+  const LrtCpuOptions* Get() const { return options_.get(); }
+
+ private:
+  explicit CpuOptions(LrtCpuOptions* options);
+
+  struct Deleter {
+    void operator()(LrtCpuOptions* ptr) const { LrtDestroyCpuOptions(ptr); }
+  };
+  std::unique_ptr<LrtCpuOptions, Deleter> options_;
 };
 
 }  // namespace litert

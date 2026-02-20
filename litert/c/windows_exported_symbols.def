@@ -44,8 +44,9 @@ EXPORTS
   LiteRtCompiledModelStopMetricsCollection
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
-  LiteRtCreateCompilerOptions
-  LiteRtCreateCpuOptions
+  LrtCreateCpuOptions
+  LrtCreateOpaqueCpuOptions
+  LrtDestroyCpuOptions
   LiteRtCreateEnvironment
   LiteRtCreateEventFromEglSyncFence
   LiteRtCreateEventFromOpenClEvent
@@ -88,8 +89,6 @@ EXPORTS
   LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode
   LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
   LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
-  LiteRtFindCompilerOptions
-  LiteRtFindCpuOptions
   LiteRtFindOpaqueOptionsData
   LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
@@ -97,14 +96,11 @@ EXPORTS
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
-  LiteRtGetCompilerOptionsIdentifier
-  LiteRtGetCompilerOptionsPartitionStrategy
-  LiteRtGetCpuOptionsIdentifier
-  LiteRtGetCpuOptionsNumThread
-  LiteRtGetCpuOptionsXNNPackFlags
-  LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor
-  LiteRtGetCpuOptionsXnnPackWeightCachePath
-  LiteRtGetDummyCompilerOptions
+  LrtGetCpuOptionsIdentifier
+  LrtGetCpuOptionsNumThread
+  LrtGetCpuOptionsXNNPackFlags
+  LrtGetCpuOptionsXnnPackWeightCacheFileDescriptor
+  LrtGetCpuOptionsXnnPackWeightCachePath
   LiteRtGetEnvironmentOptions
   LiteRtGetEnvironmentOptionsValue
   LiteRtGetEventCustomNativeEvent
@@ -321,14 +317,12 @@ EXPORTS
   LiteRtSetAcceleratorGetName
   LiteRtSetAcceleratorGetVersion
   LiteRtSetCompiledModelCancellationFunction
-  LiteRtSetCompilerOptionsPartitionStrategy
-  LiteRtSetCpuOptionsNumThread
-  LiteRtSetCpuOptionsXNNPackFlags
-  LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor
-  LiteRtSetCpuOptionsXnnPackWeightCachePath
+  LrtSetCpuOptionsNumThread
+  LrtSetCpuOptionsXNNPackFlags
+  LrtSetCpuOptionsXnnPackWeightCacheFileDescriptor
+  LrtSetCpuOptionsXnnPackWeightCachePath
   LiteRtSetCustomEvent
   LiteRtSetDelegateFunction
-  LiteRtSetDummyCompilerOptions
   LiteRtSetEnvironmentOptionsValue
   LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization

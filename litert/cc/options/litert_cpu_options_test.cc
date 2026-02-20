@@ -45,32 +45,6 @@ struct NotCpuOptions : public OpaqueOptions {
   }
 };
 
-TEST(CpuOptions, IdentifierIsCorrect) {
-  EXPECT_THAT(CpuOptions::Identifier(), StrEq(LiteRtGetCpuOptionsIdentifier()));
-}
-
-TEST(CpuOptions, CreateAndOwnedHandle) {
-  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
-  EXPECT_TRUE(options.IsOwned());
-}
-
-TEST(CpuOptions, CreateFromAnotherCpuOptionsHandleWorks) {
-  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions original_options,
-                              CpuOptions::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options,
-                              CpuOptions::Create(original_options));
-  EXPECT_FALSE(options.IsOwned());
-  EXPECT_EQ(options.Get(), original_options.Get());
-}
-
-TEST(CpuOptions, CreateFromADifferentOptionFails) {
-  LITERT_ASSERT_OK_AND_ASSIGN(NotCpuOptions original_options,
-                              NotCpuOptions::Create());
-  OpaqueOptions& opaque_options = original_options;
-  EXPECT_THAT(CpuOptions::Create(opaque_options),
-              IsError(kLiteRtStatusErrorInvalidArgument));
-}
-
 TEST(CpuOptions, CheckNumThreadsDefaultValue) {
   LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
   EXPECT_THAT(options.GetNumThreads(), IsOkAndHolds(0));
@@ -123,14 +97,6 @@ TEST(CpuOptions, SetAndGetXNNPackFlagsWorks) {
 
   LITERT_EXPECT_OK(options.SetXNNPackFlags(3));
   EXPECT_THAT(options.GetXNNPackFlags(), IsOkAndHolds(3));
-}
-
-TEST(CpuOptions, GetXNNPackFlagsFailsIfErroneousCast) {
-  LITERT_ASSERT_OK_AND_ASSIGN(NotCpuOptions original_options,
-                              NotCpuOptions::Create());
-  OpaqueOptions& opaque_options = original_options;
-  CpuOptions& options = static_cast<CpuOptions&>(opaque_options);
-  EXPECT_THAT(options.GetXNNPackFlags(), IsError());
 }
 
 }  // namespace
