@@ -21,7 +21,11 @@ extern "C" {
 
 typedef struct AHardwareBuffer AHardwareBuffer;
 
+#if defined(__ANDROID__) || defined(__APPLE__)
+#define LITERT_HOST_MEMORY_BUFFER_ALIGNMENT 16
+#else
 #define LITERT_HOST_MEMORY_BUFFER_ALIGNMENT 64
+#endif
 
 typedef void (*LiteRtHostMemoryDeallocator)(void* addr);
 typedef void (*LiteRtAhwbDeallocator)(AHardwareBuffer* ahwb);
