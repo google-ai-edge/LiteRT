@@ -167,6 +167,7 @@ describe('LiteRt', () => {
       wasmModule._free(ptr);
     });
   });
+  
   it('setDefaultEnvironment() sets the default environment', async () => {
     await resetLiteRt();
     const environment = new Environment({webGpuDevice: null});
@@ -310,6 +311,19 @@ describe('LiteRt', () => {
            accelerator: 'unsupported' as any
          })).toBeRejectedWithError(/Invalid accelerator: unsupported/);
        });
+
+    it('loads with compileOptions with webnn accelerator', async () => {
+      // TODO: markoristic - migrate this test to jspi section once webnn
+      // execution is supported. (i.e. run is async)
+      try {
+        const model = await loadAndCompile(modelPath, {accelerator: 'webnn'});
+        expect(model).toBeDefined();
+        model.delete();
+      } catch (e) {
+        const errorMessage = (e as Error).message;
+        expect(errorMessage).not.toContain('Invalid accelerator');
+      }
+    });
   });
 
   describe('input / output details', () => {

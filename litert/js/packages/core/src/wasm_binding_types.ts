@@ -88,7 +88,7 @@ export declare interface LiteRtEnvironment extends Deletable {
  * Options for loading and compiling a LiteRt model.
  */
 export declare interface LiteRtCompileOptions {
-  accelerator?: 'webgpu'|'wasm';
+  accelerator?: 'wasm'|'webgpu'|'webnn';
 }
 
 declare const liteRtModelBrand: unique symbol;
