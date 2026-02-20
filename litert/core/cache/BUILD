@@ -60,6 +60,7 @@ cc_test(
     deps = [
         ":compilation_cache",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c/options:litert_google_tensor_options",

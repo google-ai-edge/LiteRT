@@ -590,14 +590,15 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
   // Test resizing with signature index
   {
+    size_t signature_index = 0;
     const std::vector<int> new_dims = {3, 2, 3};
     LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
-        /*signature_index=*/size_t(0), /*input_index=*/size_t(0),
+        signature_index, /*input_index=*/size_t(0),
         absl::MakeConstSpan(new_dims)));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBufferRequirements requirements,
-        compiled_model.GetInputBufferRequirements(/*signature_index=*/size_t(0),
+        compiled_model.GetInputBufferRequirements(signature_index,
                                                   /*input_index=*/size_t(0)));
     LITERT_ASSERT_OK_AND_ASSIGN(size_t buffer_size, requirements.BufferSize());
     EXPECT_EQ(buffer_size, 3 * 2 * 3 * sizeof(float));

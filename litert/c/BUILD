@@ -622,6 +622,7 @@ cc_test(
     srcs = ["litert_profiler_test.cc"],
     deps = [
         ":litert_common",
+        ":litert_environment",
         ":litert_profiler",
         ":litert_profiler_event",
         "@com_google_googletest//:gtest_main",

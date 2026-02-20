@@ -36,7 +36,6 @@ cc_library(
         "//litert/cc/internal:litert_shared_library",
         "//litert/core:environment",
         "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
-        "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
         "@com_google_absl//absl/strings",
     ],
 )
