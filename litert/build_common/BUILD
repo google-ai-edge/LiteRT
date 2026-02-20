@@ -150,6 +150,7 @@ genrule(
 cc_library(
     name = "build_config",
     hdrs = [":build_config_header"],
+    # copybara:uncomment defines = ["LITERT_ENABLE_DARWINN_OPTIONS=1"],
     include_prefix = "third_party/odml/litert/litert/build_common",
     strip_include_prefix = "",
     visibility = ["//visibility:public"],
