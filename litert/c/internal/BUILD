@@ -76,9 +76,20 @@ cc_library(
     name = "litert_accelerator_def",
     hdrs = ["litert_accelerator_def.h"],
     deps = [
+        ":litert_accelerator_context",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
+cc_library(
+    name = "litert_accelerator_context",
+    hdrs = ["litert_accelerator_context.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_tensor_buffer_types",
+        "//tflite/c:common",
     ],
 )
 
@@ -103,6 +114,7 @@ cc_test(
     name = "litert_accelerator_registration_test",
     srcs = ["litert_accelerator_registration_test.cc"],
     deps = [
+        ":litert_accelerator_context",
         ":litert_accelerator_registration",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
@@ -182,6 +194,7 @@ cc_library(
     hdrs = [
         # Internal C API headers.
         ":litert_accelerator.h",
+        ":litert_accelerator_context.h",
         ":litert_accelerator_registration.h",
         ":litert_dispatch_delegate.h",
         ":litert_external_litert_buffer_context.h",
@@ -350,6 +363,7 @@ cc_library(
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",
+    "litert_accelerator_context.h",
     "litert_accelerator_def.h",
     "litert_accelerator_registration.h",
     "litert_delegate_wrapper.h",

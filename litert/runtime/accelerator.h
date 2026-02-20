@@ -19,6 +19,7 @@
 #include "litert/runtime/metrics.h"
 
 // We need to forward declare this to avoid a dependency loop.
+struct LiteRtAcceleratorContext;
 struct LiteRtCompiledModelT;
 struct LiteRtEnvironmentT;
 
@@ -50,7 +51,9 @@ struct LiteRtAcceleratorT {
       LiteRtHwAcceleratorSet* supported_hardware);
 
   // Creates a delegate for the accelerator.
-  LiteRtStatus (*CreateDelegate)(LiteRtAcceleratorT* accelerator,
+  LiteRtStatus (*CreateDelegate)(LiteRtAcceleratorContext* accelerator_context,
+                                 LiteRtEnvironmentT* env,
+                                 LiteRtAcceleratorT* accelerator,
                                  LiteRtOptions compilation_options,
                                  LiteRtDelegateWrapper* delegate);
 

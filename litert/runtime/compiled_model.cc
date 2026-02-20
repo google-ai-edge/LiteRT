@@ -763,7 +763,8 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
 
     LiteRtDelegateWrapper delegate_wrapper = nullptr;
     LITERT_RETURN_IF_ERROR(accelerator->CreateDelegate(
-        accelerator.get(), jit_compilation_options, &delegate_wrapper));
+        nullptr, env, accelerator.get(), jit_compilation_options,
+        &delegate_wrapper));
 
     TfLiteOpaqueDelegate* delegate_ptr = nullptr;
     LiteRtUnwrapDelegate(delegate_wrapper, &delegate_ptr);
