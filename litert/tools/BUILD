@@ -566,7 +566,7 @@ cc_binary(
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [
+        "@platforms//os:android": [
             # copybara:uncomment_begin(google-only)
             # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
             # copybara:uncomment_end

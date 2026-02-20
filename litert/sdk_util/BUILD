@@ -79,7 +79,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "mtk_sdk_v8_host",
     match_all = [
-        "@org_tensorflow//tensorflow:linux_x86_64",
+        "//litert:linux_x86_64",
         ":mtk_sdk_v8",
     ],
 )
@@ -87,7 +87,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "mtk_sdk_v7_host",
     match_all = [
-        "@org_tensorflow//tensorflow:linux_x86_64",
+        "//litert:linux_x86_64",
         ":mtk_sdk_v7",
     ],
 )
@@ -95,7 +95,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "mtk_sdk_v8_android",
     match_all = [
-        "@org_tensorflow//tensorflow:android",
+        "@platforms//os:android",
         ":mtk_sdk_v8",
     ],
 )
@@ -103,7 +103,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "mtk_sdk_v7_android",
     match_all = [
-        "@org_tensorflow//tensorflow:android",
+        "@platforms//os:android",
         ":mtk_sdk_v7",
     ],
 )
@@ -114,7 +114,7 @@ litert_test(
     name = "check_sdk_deps_test",
     srcs = ["check_sdk_deps_test.cc"],
     data = select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
             "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
             "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
@@ -122,7 +122,7 @@ litert_test(
         "//conditions:default": [],
     }),
     linkopts = ["-ldl"] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             make_rpaths(["@qairt//:lib/x86_64-linux-clang/libQnnHtp.so"]),
             # copybara:uncomment make_rpaths(["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"]),
         ],

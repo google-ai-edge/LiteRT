@@ -275,7 +275,7 @@ cc_library(
     srcs = ["litert_logging.cc"],
     hdrs = ["litert_logging.h"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "@platforms//os:android": ["-llog"],
         "//conditions:default": [],
     }),
     visibility = [
