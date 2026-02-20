@@ -83,6 +83,10 @@ if(LITERT_SYSTEM_PROCESSOR_LOWER MATCHES "^(x86_64|amd64|i[3-6]86)$")
   endif()
 endif()
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  add_compile_options(-Wno-changes-meaning -Wno-invalid-constexpr)
+endif()
+
 # Options
 option(LITERT_BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(LITERT_BUILD_TOOLS "Build LiteRT tools" ON)
@@ -220,6 +224,9 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
                 -DTFLITE_ENABLE_XNNPACK=ON
                 -DTFLITE_ENABLE_GPU=ON
                 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                -DCMAKE_POLICY_VERSION=3.5
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+                -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
                 ${_tflite_extra_args}
             WORKING_DIRECTORY "${TFLITE_BUILD_DIR}"
             RESULT_VARIABLE TFLITE_CONFIGURE_RESULT
@@ -405,6 +412,14 @@ if(NOT TARGET tensorflow-lite)
       INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_SOURCE_DIR};${TFLITE_BUILD_DIR}"
       INTERFACE_LINK_LIBRARIES "${_litert_tflite_interface_libs}"
     )
+    set(_litert_kleidiai_lib "${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a")
+    if(NOT EXISTS "${_litert_kleidiai_lib}")
+      message(WARNING "LiteRT: optional KleidiAI archive not found at ${_litert_kleidiai_lib}; skipping.")
+      get_target_property(_tflite_interface_libs tensorflow-lite INTERFACE_LINK_LIBRARIES)
+      string(REPLACE "${_litert_kleidiai_lib};" "" _tflite_interface_libs "${_tflite_interface_libs}")
+      string(REPLACE ";${_litert_kleidiai_lib}" "" _tflite_interface_libs "${_tflite_interface_libs}")
+      set_target_properties(tensorflow-lite PROPERTIES INTERFACE_LINK_LIBRARIES "${_tflite_interface_libs}")
+    endif()
   endif()
 endif()
 
