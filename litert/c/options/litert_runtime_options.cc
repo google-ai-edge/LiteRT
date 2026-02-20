@@ -14,12 +14,11 @@
 
 #include "litert/c/options/litert_runtime_options.h"
 
-#include <cstring>
+#include <cstdlib>
 #include <optional>
 #include <sstream>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 
 struct LrtRuntimeOptions {
   std::optional<bool> enable_profiling;
@@ -44,9 +43,11 @@ void LrtDestroyRuntimeOptions(LrtRuntimeOptions* options) {
   }
 }
 
-LiteRtStatus LrtCreateOpaqueRuntimeOptions(
-    const LrtRuntimeOptions* options, LiteRtOpaqueOptions* opaque_options) {
-  if (!options || !opaque_options) {
+LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
+                                            const char** identifier,
+                                            void** payload,
+                                            void (**payload_deleter)(void*)) {
+  if (!options || !identifier || !payload || !payload_deleter) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -66,12 +67,13 @@ LiteRtStatus LrtCreateOpaqueRuntimeOptions(
        << "\n";
   }
 
-  char* payload = new char[ss.str().size() + 1];
-  strncpy(payload, ss.str().c_str(), ss.str().size() + 1);
+  char* payload_str = strdup(ss.str().c_str());
 
-  return LiteRtCreateOpaqueOptions(
-      LrtGetRuntimeOptionsIdentifier(), payload,
-      [](void* p) { delete[] static_cast<char*>(p); }, opaque_options);
+  *identifier = LrtGetRuntimeOptionsIdentifier();
+  *payload = payload_str;
+  *payload_deleter = [](void* p) { free(p); };
+
+  return kLiteRtStatusOk;
 }
 
 const char* LrtGetRuntimeOptionsIdentifier() {
