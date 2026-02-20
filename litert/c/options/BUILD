@@ -299,3 +299,11 @@ filegroup(
         "//litert/cc:__pkg__",
     ],
 )
+
+exports_files(
+    [
+        "litert_cpu_options.h",
+        "litert_gpu_options.h",
+    ],
+    visibility = ["//litert/c:__pkg__"],
+)
