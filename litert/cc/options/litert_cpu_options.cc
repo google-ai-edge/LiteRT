@@ -16,100 +16,83 @@
 
 #include <cstdint>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
-absl::string_view CpuOptions::Identifier() {
-  return LiteRtGetCpuOptionsIdentifier();
-}
-
 Expected<CpuOptions> CpuOptions::Create() {
-  LiteRtOpaqueOptions options;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateCpuOptions(&options));
-  return CpuOptions(options, OwnHandle::kYes);
+  LrtCpuOptions* options = nullptr;
+  LITERT_RETURN_IF_ERROR(LrtCreateCpuOptions(&options));
+  return CpuOptions(options);
 }
 
-Expected<CpuOptions> CpuOptions::Create(OpaqueOptions& original_options) {
-  LITERT_ASSIGN_OR_RETURN(absl::string_view original_identifier,
-                          original_options.GetIdentifier());
-  LITERT_RETURN_IF_ERROR(original_identifier == Identifier(),
-                         ErrorStatusBuilder::InvalidArgument())
-      << "Cannot create CPU options from an opaque options object that doesn't "
-         "already hold CPU options.";
-  LiteRtOpaqueOptions options = original_options.Get();
-  return CpuOptions(options, OwnHandle::kNo);
-}
+CpuOptions::CpuOptions(LrtCpuOptions* options) : options_(options) {}
 
 Expected<void> CpuOptions::SetNumThreads(int num_threads) {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetCpuOptionsNumThread(cpu_options, num_threads));
+      LrtSetCpuOptionsNumThread(options_.get(), num_threads));
   return {};
 }
 
 Expected<int> CpuOptions::GetNumThreads() const {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   int num_threads;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetCpuOptionsNumThread(cpu_options, &num_threads));
+  auto s = LrtGetCpuOptionsNumThread(options_.get(), &num_threads);
+  if (s == kLiteRtStatusErrorNotFound) {
+    return 0;
+  }
+  LITERT_RETURN_IF_ERROR(s);
   return num_threads;
 }
 
 Expected<void> CpuOptions::SetXNNPackFlags(uint32_t flags) {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
-  LITERT_RETURN_IF_ERROR(LiteRtSetCpuOptionsXNNPackFlags(cpu_options, flags));
+  LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsXNNPackFlags(options_.get(), flags));
   return {};
 }
 
 Expected<uint32_t> CpuOptions::GetXNNPackFlags() const {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   uint32_t flags;
-  LITERT_RETURN_IF_ERROR(LiteRtGetCpuOptionsXNNPackFlags(cpu_options, &flags));
+  auto s = LrtGetCpuOptionsXNNPackFlags(options_.get(), &flags);
+  if (s == kLiteRtStatusErrorNotFound) {
+    return 0;
+  }
+  LITERT_RETURN_IF_ERROR(s);
   return flags;
 }
 
 Expected<void> CpuOptions::SetXNNPackWeightCachePath(const char* path) {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetCpuOptionsXnnPackWeightCachePath(cpu_options, path));
+      LrtSetCpuOptionsXnnPackWeightCachePath(options_.get(), path));
   return {};
 }
 
 Expected<absl::string_view> CpuOptions::GetXNNPackWeightCachePath() const {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   const char* path;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetCpuOptionsXnnPackWeightCachePath(cpu_options, &path));
+  auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
+  if (s == kLiteRtStatusErrorNotFound) {
+    return absl::string_view();
+  }
+  LITERT_RETURN_IF_ERROR(s);
   return absl::NullSafeStringView(path);
 }
 
 Expected<void> CpuOptions::SetXNNPackWeightCacheFileDescriptor(int fd) {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(cpu_options, fd));
+      LrtSetCpuOptionsXnnPackWeightCacheFileDescriptor(options_.get(), fd));
   return {};
 }
 
 Expected<int> CpuOptions::GetXNNPackWeightCacheFileDescriptor() const {
-  LiteRtCpuOptions cpu_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   int fd;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(cpu_options, &fd));
+  auto s =
+      LrtGetCpuOptionsXnnPackWeightCacheFileDescriptor(options_.get(), &fd);
+  if (s == kLiteRtStatusErrorNotFound) {
+    return -1;
+  }
+  LITERT_RETURN_IF_ERROR(s);
   return fd;
 }
 

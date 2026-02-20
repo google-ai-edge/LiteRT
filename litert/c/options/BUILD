@@ -32,10 +32,9 @@ cc_library(
     hdrs = ["litert_cpu_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
-        "//litert/runtime:litert_cpu_options",
-        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -60,9 +59,6 @@ cc_library(
     hdrs = ["litert_compiler_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_macros",
-        "//litert/core/cache:hash_util",
     ],
 )
 
@@ -74,6 +70,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -206,10 +203,7 @@ cc_library(
     hdrs = ["litert_runtime_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
-        "//litert/core:options",
-        "//litert/runtime:litert_runtime_options",
         "@com_google_absl//absl/strings",
     ],
     # Keep the symbols in libLiteRt.dylib.

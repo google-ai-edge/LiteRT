@@ -627,20 +627,23 @@ cc_test(
         "//litert/c:litert_environment",
         "//litert/c:litert_layout",
         "//litert/c:litert_model",
+        "//litert/c:litert_opaque_options_header",
         "//litert/c:litert_profiler",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_runtime_options",
         "//litert/core:options",
         "//litert/core/model",
@@ -810,8 +813,15 @@ cc_library(
 
 cc_library(
     name = "litert_cpu_options",
+    srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
-    deps = ["//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "@com_google_absl//absl/strings:string_view",
+    ],
 )
 
 cc_library(
