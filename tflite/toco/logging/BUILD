@@ -1,6 +1,3 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library", "py_strict_test")
-
-# Placeholder: load py_proto_library
 load(
     "@org_tensorflow//tensorflow:tensorflow.bzl",
     "tf_cc_test",
@@ -10,6 +7,10 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config.bzl",
     "tf_proto_library",
 )
+
+# Placeholder: load py_proto_library
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_library.bzl", "py_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_test.bzl", "py_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
@@ -66,12 +67,13 @@ filegroup(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "gen_html",
     srcs = ["gen_html.py"],
     data = [
         "html_template",
     ],
+    strict_deps = True,
     visibility = ["//visibility:public"],
     deps = [
         ":toco_conversion_log_proto_py",
@@ -80,7 +82,7 @@ py_strict_library(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "gen_html_test",
     srcs = ["gen_html_test.py"],
     data = [
@@ -91,6 +93,7 @@ py_strict_test(
         "//tflite/toco/logging/testdata:toco_tf_graph.dot",
         "//tflite/toco/logging/testdata:toco_tflite_graph.dot",
     ],
+    strict_deps = True,
     deps = [
         ":gen_html",
         ":toco_conversion_log_proto_py",
