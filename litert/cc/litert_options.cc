@@ -18,10 +18,13 @@
 #include <utility>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -102,10 +105,16 @@ Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), google_tensor_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), intel_openvino_options_));
   if (runtime_options_) {
-    LITERT_ASSIGN_OR_RETURN(auto opaque_options,
-                            runtime_options_->CreateOpaqueOptions());
+    const char* identifier;
+    void* payload = nullptr;
+    void (*payload_deleter)(void*) = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtGetOpaqueRuntimeOptionsData(
+        runtime_options_->Get(), &identifier, &payload, &payload_deleter));
+    LiteRtOpaqueOptions opaque_runtime_options = nullptr;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+        identifier, payload, payload_deleter, &opaque_runtime_options));
     LITERT_RETURN_IF_ERROR(
-        LiteRtAddOpaqueOptions(Get(), opaque_options.Release()));
+        LiteRtAddOpaqueOptions(Get(), opaque_runtime_options));
     runtime_options_.reset();
   }
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), compiler_options_));
