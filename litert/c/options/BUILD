@@ -176,6 +176,7 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.
