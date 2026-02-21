@@ -30,6 +30,8 @@
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_compiler_options.h"
+#include "litert/compiler/plugin/litert_compiler_options.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
@@ -149,7 +151,7 @@ class CompilerPlugin {
       LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
 
   // Returns the compiler options used to create this plugin.
-  Expected<LiteRtCompilerOptions> CompilerOptions() const;
+  Expected<LiteRtCompilerOptionsT> CompilerOptions() const;
 
   // Check if the compiler is compatible with the plugin.
   Expected<bool> CheckCompilerCompatibility(absl::string_view soc_model);

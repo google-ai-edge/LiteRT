@@ -49,10 +49,14 @@ LiteRtStatus LrtCreateRuntimeOptions(LrtRuntimeOptions** options);
 // Destroys a runtime options object.
 void LrtDestroyRuntimeOptions(LrtRuntimeOptions* options);
 
-// Creates an opaque options object from runtime options.
-// The payload is a TOML serialized string.
-LiteRtStatus LrtCreateOpaqueRuntimeOptions(const LrtRuntimeOptions* options,
-                                           LiteRtOpaqueOptions* opaque_options);
+// Serializes runtime options and returns the components needed to create opaque
+// options. The caller is responsible for passing these to
+// `LiteRtCreateOpaqueOptions` and freeing the returned payload using
+// `payload_deleter`.
+LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
+                                            const char** identifier,
+                                            void** payload,
+                                            void (**payload_deleter)(void*));
 
 // Gets the identifier for Runtime options stored in opaque options.
 const char* LrtGetRuntimeOptionsIdentifier();
