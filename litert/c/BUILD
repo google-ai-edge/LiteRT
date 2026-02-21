@@ -45,6 +45,8 @@ load(
 )
 # copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 
+load("//tools/build_defs/swift:swift_interop_hint.bzl", "swift_interop_hint")
+
 LITERT_MIN_IOS_VERSION = "14.0"
 
 LITERT_MIN_MACOS_VERSION = "14.0"
@@ -707,6 +709,55 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_intel_openvino_options",
 ]
+
+cc_library(
+    name = "litert_c_options",
+    hdrs = [
+        "//litert/c/options:litert_cpu_options.h",
+        "//litert/c/options:litert_gpu_options.h",
+    ],
+    aspect_hints = [":litert_c_options_hint"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/c/options:litert_gpu_options",
+    ],
+)
+
+swift_interop_hint(
+    name = "litert_c_options_hint",
+    module_name = "LiteRtCOptions",
+)
+
+cc_library(
+    name = "litert_c_api",
+    hdrs = [
+        "litert_any.h",
+        "litert_common.h",
+        "litert_compiled_model.h",
+        "litert_environment.h",
+        "litert_environment_options.h",
+        "litert_event.h",
+        "litert_layout.h",
+        "litert_model.h",
+        "litert_model_types.h",
+        "litert_op_code.h",
+        "litert_options.h",
+        "litert_tensor_buffer.h",
+        "litert_tensor_buffer_requirements.h",
+        "litert_tensor_buffer_types.h",
+        "//litert/c/options:litert_cpu_options.h",
+        "//litert/c/options:litert_gpu_options.h",
+    ],
+    aspect_hints = [":litert_c_api_hint"],
+    deps = LITERT_C_API_COMMON_DEPS,
+)
+
+swift_interop_hint(
+    name = "litert_c_api_hint",
+    module_name = "LiteRtC",
+)
 
 # This test verifies that the C API header files can build via C compiler.
 cc_test(

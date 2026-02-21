@@ -79,6 +79,7 @@ package_group(
         "//litert/core/model/...",
         "//litert/test/...",
         "//litert/tools/...",
+        "//litert/swift/...",
     ] + litert_cc_users() + litert_friends(),
 )
 
@@ -99,6 +100,7 @@ package_group(
         "//litert/python/...",
         "//litert/runtime/...",
         "//litert/sdk_util/...",
+        "//litert/swift/...",
         "//litert/test/...",
         "//litert/tools/...",
         "//litert/vendors/...",
