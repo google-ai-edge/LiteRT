@@ -135,8 +135,8 @@ py_strict_library(
     deps = [
         "//tflite/python:schema_py",
         "//tflite/python:schema_util",
-        "@flatbuffers//:runtime_py",
         "@org_tensorflow//tensorflow/python/platform:gfile",
+        "@pypi//flatbuffers",
     ],
 )
 
@@ -158,7 +158,7 @@ py_strict_library(
     srcs = ["test_utils.py"],
     deps = [
         "//tflite/python:schema_py",
-        "@flatbuffers//:runtime_py",
+        "@pypi//flatbuffers",
     ],
 )
 
