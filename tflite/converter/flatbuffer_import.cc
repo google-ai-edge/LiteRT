@@ -922,6 +922,19 @@ Status ConvertSubgraphIdxToStablehloRegion(
 
     return absl::OkStatus();
   }
+  if (auto* opts = op.builtin_options_2.AsStablehloCaseOptions()) {
+    llvm::SmallVector<mlir::Attribute, 4> branches;
+    for (int32_t branch_idx : opts->branch_subgraph_indices) {
+      if (branch_idx >= func_names.size()) {
+        return absl::AbortedError("subgraph with index not found: " +
+                                  std::to_string(branch_idx));
+      }
+      branches.push_back(mlir::SymbolRefAttr::get(builder.getContext(),
+                                                  func_names.at(branch_idx)));
+    }
+    op_state.addAttribute("branches", builder.getArrayAttr(branches));
+    return absl::OkStatus();
+  }
   // skip if not supported
   return absl::OkStatus();
 }
@@ -1083,6 +1096,13 @@ StatusOr<Operation*> ConvertOp(
     op_state.addRegion();
     op_state.addRegion();
   }
+  if (op_name == "vhlo.case_v1") {
+    if (auto* opts = op.builtin_options_2.AsStablehloCaseOptions()) {
+      for (int i = 0; i < opts->branch_subgraph_indices.size(); ++i) {
+        op_state.addRegion();
+      }
+    }
+  }
 
   llvm::SmallVector<mlir::NamedAttribute, 2> attrs;
   auto builtin_code = tflite::GetBuiltinCode(&op_code);
@@ -1171,8 +1191,9 @@ StatusOr<std::vector<int>> GetTensorIndices(
 // non-empty name strings.
 bool HasNonEmptyNames(const tflite::SubGraphT& subgraph,
                       ArrayRef<int32_t> indices) {
-  return llvm::any_of(
-      indices, [&](int i) { return !subgraph.tensors.at(i)->name.empty(); });
+  return llvm::any_of(indices, [&](int i) {
+    return i != -1 && !subgraph.tensors.at(i)->name.empty();
+  });
 }
 
 // Given a list of tensor indices, returns a string of concatenated tensor names
@@ -1180,8 +1201,9 @@ bool HasNonEmptyNames(const tflite::SubGraphT& subgraph,
 mlir::NamedAttribute BuildTFEntryFunctionAttribute(
     const tflite::SubGraphT& subgraph, Builder* builder,
     const std::string& name, ArrayRef<int32_t> indices) {
-  auto tensor_names = llvm::map_range(
-      indices, [&](int i) { return subgraph.tensors.at(i)->name; });
+  auto tensor_names = llvm::map_range(indices, [&](int i) {
+    return i == -1 ? "" : subgraph.tensors.at(i)->name;
+  });
   return builder->getNamedAttr(
       name, builder->getStringAttr(llvm::join(tensor_names, ",")));
 }
@@ -1484,6 +1506,10 @@ StatusOr<FuncOp> ConvertSubgraph(
   }
 
   for (int input : func_inputs) {
+    if (input == -1) {
+      input_types.push_back(builder.getNoneType());
+      continue;
+    }
     auto& tensor = *subgraph.tensors.at(input);
     auto type_or_err = tfl::GetTensorType(tensor, builder);
     if (!type_or_err.ok()) {
@@ -1509,6 +1535,10 @@ StatusOr<FuncOp> ConvertSubgraph(
   }
 
   for (auto output : func_outputs) {
+    if (output == -1) {
+      ret_types.push_back(builder.getNoneType());
+      continue;
+    }
     const bool is_func_input = std::find(func_inputs.begin(), func_inputs.end(),
                                          output) != func_inputs.end();
     bool is_constant = !is_op_output[output] && !is_func_input;
@@ -1537,6 +1567,9 @@ StatusOr<FuncOp> ConvertSubgraph(
   // Get or construct MLIR values for each input
   for (int i = 0, e = func_inputs.size(); i < e; i++) {
     auto input_tensor = func_inputs[i];
+    if (input_tensor == -1) {
+      continue;
+    }
     const auto& tensor = *subgraph.tensors.at(input_tensor);
     auto loc = TensorLoc(tensor, builder, base_loc);
     if (vals_map[input_tensor]) {
@@ -1686,6 +1719,17 @@ StatusOr<FuncOp> ConvertSubgraph(
   // Construct return values
   llvm::SmallVector<Value, 4> return_operands;
   for (auto index : func_outputs) {
+    if (index == -1) {
+      if (maybe_optional_arg_marker == nullptr) {
+        maybe_optional_arg_marker =
+            mlir::TFL::NoValueOp::create(op_builder, base_loc,
+                                         builder.getNoneType(),
+                                         builder.getUnitAttr())
+                .getResult();
+      }
+      return_operands.push_back(maybe_optional_arg_marker);
+      continue;
+    }
     if (!vals_map.at(index)) {
       auto& const_tensor = *subgraph.tensors[index];
       auto const_loc = TensorLoc(const_tensor, builder, base_loc);
@@ -1758,26 +1802,20 @@ void AddCallOpInWhileOpRegion(mlir::Region& region, mlir::func::FuncOp func) {
   mlir::TFL::YieldOp::create(op_builder, loc, call_op.getResults());
 }
 
-void InlineStablehloOpRegion(mlir::Region& region, mlir::func::FuncOp func) {
+void InlineVhloOpRegion(mlir::Region& region, mlir::func::FuncOp func,
+                        mlir::IRMapping& mapper) {
   OpBuilder op_builder{region};
-  mlir::IRMapping mapper;
-  func.getBody().cloneInto(&region, mapper);
-  mlir::Operation& return_op = region.back().back();
-  mlir::Location loc = return_op.getLoc();
-  op_builder.setInsertionPointToEnd(&region.back());
-  mlir::stablehlo::ReturnOp::create(op_builder, loc, return_op.getOperands());
-  return_op.erase();
-}
-
-void InlineVhloOpRegion(mlir::Region& region, mlir::func::FuncOp func) {
-  OpBuilder op_builder{region};
-  mlir::IRMapping mapper;
   func.getBody().cloneInto(&region, mapper);
   mlir::Operation& return_op = region.back().back();
   mlir::Location loc = return_op.getLoc();
   op_builder.setInsertionPointToEnd(&region.back());
   mlir::vhlo::ReturnOpV1::create(op_builder, loc, return_op.getOperands());
   return_op.erase();
+}
+
+void InlineVhloOpRegion(mlir::Region& region, mlir::func::FuncOp func) {
+  mlir::IRMapping mapper;
+  InlineVhloOpRegion(region, func, mapper);
 }
 
 // TFL::WhileOp has regions, so we add CallOp to call the FuncOp in the regions
@@ -1833,6 +1871,32 @@ void AddRegionsForStableHLOOp(mlir::ModuleOp module) {
     InlineVhloOpRegion(sort_op.getComparator(), comparator);
     sort_op->removeAttr("comparator");
     to_delete_funcs.push_back(comparator);
+  });
+  module.walk([&](mlir::vhlo::CaseOpV1 case_op) {
+    auto branches = llvm::cast<mlir::ArrayAttr>(case_op->getAttr("branches"));
+    for (int i = 0; i < branches.size(); ++i) {
+      auto branch_func_name =
+          llvm::cast<mlir::SymbolRefAttr>(branches[i]).getLeafReference();
+      auto branch_func =
+          symbol_table.lookup<mlir::func::FuncOp>(branch_func_name);
+
+      mlir::IRMapping mapper;
+      for (int j = 0; j < branch_func.getNumArguments(); ++j) {
+        mapper.map(branch_func.getArgument(j), case_op->getOperand(j + 1));
+      }
+
+      InlineVhloOpRegion(case_op.getRegion(i), branch_func, mapper);
+      if (!case_op.getRegion(i).empty() &&
+          case_op.getRegion(i).front().getNumArguments() > 0) {
+        case_op.getRegion(i).front().eraseArguments(
+            [](mlir::BlockArgument arg) { return true; });
+      }
+      to_delete_funcs.push_back(branch_func);
+    }
+    case_op->removeAttr("branches");
+    while (case_op->getNumOperands() > 1) {
+      case_op->eraseOperand(1);
+    }
   });
   module.walk([&](mlir::vhlo::WhileOpV1 while_op) {
     auto cond = symbol_table.lookup<mlir::func::FuncOp>(
