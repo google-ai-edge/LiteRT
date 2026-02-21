@@ -134,6 +134,8 @@ struct ThrFunctions {
 
   decltype(&thrVendorSetSystemAttributeStr)
       thr_vendor_set_system_attribute_str = nullptr;
+  decltype(&thrVendorSetSystemAttributeStrN)
+      thr_vendor_set_system_attribute_str_n = nullptr;
   decltype(&thrVendorSetSystemAttributeInt64)
       thr_vendor_set_system_attribute_int64 = nullptr;
 
@@ -343,6 +345,8 @@ ThrStatus LoadSouthBoundSyms() {
 
   THR_RESOLVE_SYM(gSouthBoundFns->thr_vendor_set_system_attribute_str,
                   thrVendorSetSystemAttributeStr);
+  THR_RESOLVE_SYM(gSouthBoundFns->thr_vendor_set_system_attribute_str_n,
+                  thrVendorSetSystemAttributeStrN);
   THR_RESOLVE_SYM(gSouthBoundFns->thr_vendor_set_system_attribute_int64,
                   thrVendorSetSystemAttributeInt64);
 
@@ -658,6 +662,12 @@ ThrStatus thrVendorSetSystemAttributeStr(ThrContext* context, const char* key,
                                          const char* value) {
   return THR_CALL_DYN_FN(thr_vendor_set_system_attribute_str, context, key,
                          value);
+}
+
+ThrStatus thrVendorSetSystemAttributeStrN(ThrContext* context, const char* key,
+                                          const char* value, size_t value_len) {
+  return THR_CALL_DYN_FN(thr_vendor_set_system_attribute_str_n, context, key,
+                         value, value_len);
 }
 
 ThrStatus thrVendorSetSystemAttributeInt64(ThrContext* context, const char* key,

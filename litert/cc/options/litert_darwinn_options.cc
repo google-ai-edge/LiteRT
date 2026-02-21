@@ -14,6 +14,7 @@
 
 #include "litert/cc/options/litert_darwinn_options.h"
 
+#include <cstddef>
 #include <cstdint>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -151,5 +152,26 @@ Expected<bool> DarwinnRuntimeOptions::GetPreferCoherent() const {
   LITERT_RETURN_IF_ERROR(
       LiteRtGetDarwinnPreferCoherent(darwinn_options, &prefer_coherent));
   return prefer_coherent;
+}
+
+Expected<void> DarwinnRuntimeOptions::SetInternalOptions(
+    absl::string_view internal_options) {
+  LiteRtDarwinnRuntimeOptions darwinn_options;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtFindDarwinnRuntimeOptions(Get(), &darwinn_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetDarwinnInternalOptions(
+      darwinn_options, internal_options.data(), internal_options.size()));
+  return {};
+}
+
+Expected<absl::string_view> DarwinnRuntimeOptions::GetInternalOptions() const {
+  LiteRtDarwinnRuntimeOptions darwinn_options;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtFindDarwinnRuntimeOptions(Get(), &darwinn_options));
+  const char* internal_options = nullptr;
+  size_t size = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetDarwinnInternalOptions(
+      darwinn_options, &internal_options, &size));
+  return absl::string_view(internal_options, size);
 }
 }  // namespace litert

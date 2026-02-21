@@ -18,6 +18,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <cstddef>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 
@@ -65,6 +67,14 @@ LiteRtStatus LiteRtSetDarwinnPreferCoherent(
     LiteRtDarwinnRuntimeOptions options, bool prefer_coherent);
 LiteRtStatus LiteRtGetDarwinnPreferCoherent(
     LiteRtDarwinnRuntimeOptionsConst options, bool* prefer_coherent);
+
+// Internal options setters/getters
+LiteRtStatus LiteRtSetDarwinnInternalOptions(
+    LiteRtDarwinnRuntimeOptions options, const char* internal_options,
+    size_t size);
+LiteRtStatus LiteRtGetDarwinnInternalOptions(
+    LiteRtDarwinnRuntimeOptionsConst options, const char** internal_options,
+    size_t* size);
 
 #ifdef __cplusplus
 }
