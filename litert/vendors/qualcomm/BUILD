@@ -123,6 +123,7 @@ litert_test(
         "//litert/test:matchers_oss",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/tools:dump",
     ],
 )
