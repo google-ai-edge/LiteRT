@@ -45,8 +45,31 @@ using GenForTest = Unary<SizeC<Rank>, T, OpCodeC<OpCode>, SizeC<64>>;
 
 // clang-format off
 using UnaryTypes = Types<
+    GenForTest<1, float, kLiteRtOpCodeTflFloor>,
+    GenForTest<1, float, kLiteRtOpCodeTflLogistic>,
     GenForTest<1, float, kLiteRtOpCodeTflRelu>,
-    GenForTest<2, int32_t, kLiteRtOpCodeTflRelu>
+    GenForTest<2, int32_t, kLiteRtOpCodeTflRelu>,
+    GenForTest<1, float, kLiteRtOpCodeTflReluN1To1>,
+    GenForTest<1, float, kLiteRtOpCodeTflRelu6>,
+    GenForTest<1, float, kLiteRtOpCodeTflTanh>,
+    GenForTest<1, float, kLiteRtOpCodeTflExp>,
+    GenForTest<1, float, kLiteRtOpCodeTflNeg>,
+    GenForTest<1, float, kLiteRtOpCodeTflSin>,
+    GenForTest<1, float, kLiteRtOpCodeTflLog>,
+    GenForTest<2, float, kLiteRtOpCodeTflSqrt>,
+    GenForTest<2, float, kLiteRtOpCodeTflRsqrt>,
+    GenForTest<1, float, kLiteRtOpCodeTflSquare>,
+    GenForTest<3, int32_t, kLiteRtOpCodeTflZerosLike>,
+    GenForTest<3, float, kLiteRtOpCodeTflZerosLike>,
+    GenForTest<1, float, kLiteRtOpCodeTflAbs>,
+    GenForTest<1, float, kLiteRtOpCodeTflCeil>,
+    GenForTest<1, float, kLiteRtOpCodeTflCos>,
+    GenForTest<2, float, kLiteRtOpCodeTflElu>,
+    GenForTest<1, float, kLiteRtOpCodeTflRound>,
+    GenForTest<1, float, kLiteRtOpCodeTflHardSwish>,
+    GenForTest<3, float, kLiteRtOpCodeTflGelu>,
+    GenForTest<1, float, kLiteRtOpCodeTflRelu0To1>,
+    GenForTest<1, float, kLiteRtOpCodeTflSign>
 >;
 // clang-format on
 
