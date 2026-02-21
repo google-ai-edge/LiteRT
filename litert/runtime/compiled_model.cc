@@ -391,11 +391,16 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+  std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source;
+  auto* options_impl =
+    reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options);
+  if (options_impl != nullptr) {
+    scoped_weight_source = std::move(options_impl->scoped_weight_source);
+  }
   weight_loader_ = weight_loader::CreateLiteRtWeightLoader(
-      fb_model_->GetModel(), model_directory_);
-  if (jit_compilation_options) {
-    reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options)->weight_loader =
-        weight_loader_.get();
+      fb_model_->GetModel(), model_directory_, std::move(scoped_weight_source));
+  if (options_impl != nullptr) {
+    options_impl->weight_loader = weight_loader_.get();
   }
   if (weight_loader_) {
     weight_loader::WeightAccessRequest request;
