@@ -907,6 +907,24 @@ int64_t GetSizeInBytes(Type type) {
   return 0;
 }
 
+template <typename T>
+Attribute ConstFoldUnaryResource(DenseResourceElementsAttr data,
+                                 llvm::function_ref<T(T)> calculate) {
+  ArrayRef<T> input_data = GetValues<T>(data);
+  auto fold_result_blob =
+      mlir::HeapAsmResourceBlob::allocate(GetSizeInBytes(data.getType()),
+                                          /*align=*/64,
+                                          /*dataIsMutable=*/true);
+  ArrayRef<T> new_data = fold_result_blob.getDataAs<T>();
+  llvm::MutableArrayRef<T> result_data = mlir::MutableArrayRef<T>(
+      const_cast<T*>(new_data.data()), new_data.size());
+  for (size_t i = 0; i < input_data.size(); ++i) {
+    result_data[i] = calculate(input_data[i]);
+  }
+  return DenseResourceElementsAttr::get(data.getType(), "unary_fold_result",
+                                        std::move(fold_result_blob));
+}
+
 /// Performs const folding `calculate` with broadcast behavior on the two
 /// attributes `operand1` and `operand2` and returns the result if possible.
 /// This function assumes the both operands are verified to have value
@@ -1086,8 +1104,10 @@ Attribute ConstFoldUnaryOp(Type result_type, Attribute operand,
 
   if (!result_shape_type.hasStaticShape()) return {};
 
-  if (auto dense_elements =
-          mlir::dyn_cast_or_null<DenseElementsAttr>(operand)) {
+  auto elements = mlir::dyn_cast_or_null<ElementsAttr>(operand);
+  if (!elements) return {};
+
+  if (auto dense_elements = mlir::dyn_cast<DenseFPElementsAttr>(elements)) {
     SmallVector<APFloat, 16> new_values;
     const int num_elements = result_shape_type.getNumElements();
     new_values.reserve(num_elements);
@@ -1095,8 +1115,13 @@ Attribute ConstFoldUnaryOp(Type result_type, Attribute operand,
     for (const APFloat& old_value : dense_elements.getValues<APFloat>()) {
       new_values.push_back(calculate(old_value));
     }
-
     return DenseElementsAttr::get(result_shape_type, new_values);
+  } else if (result_shape_type.getElementType().isF32()) {
+    if (auto res_attr = mlir::dyn_cast<DenseResourceElementsAttr>(elements)) {
+      return ConstFoldUnaryResource<float>(res_attr, [&](float f) -> float {
+        return calculate(APFloat(f)).convertToFloat();
+      });
+    }
   }
 
   return {};
@@ -1271,16 +1296,23 @@ OpFoldResult ExpOp::fold(FoldAdaptor adaptor) {
 OpFoldResult LogicalNotOp::fold(FoldAdaptor adaptor) {
   if (!ShouldFoldOperation(this->getOperation())) return {};
 
-  auto data = llvm::dyn_cast_or_null<DenseIntElementsAttr>(adaptor.getLhs());
-  if (!data) {
+  auto elements = mlir::dyn_cast_or_null<ElementsAttr>(adaptor.getLhs());
+  if (!elements) {
     return {};
   }
 
-  auto compute = [](bool value) { return !value; };
-
-  return DenseIntElementsAttr::get(
-      data.getType(),
-      llvm::to_vector(llvm::map_range(data.getValues<bool>(), compute)));
+  if (auto data = llvm::dyn_cast<DenseIntElementsAttr>(elements)) {
+    auto compute = [](bool value) { return !value; };
+    return DenseIntElementsAttr::get(
+        data.getType(),
+        llvm::to_vector(llvm::map_range(data.getValues<bool>(), compute)));
+  } else if (auto data = mlir::dyn_cast<DenseResourceElementsAttr>(elements)) {
+    if (data.getElementType().isInteger(1)) {
+      return ConstFoldUnaryResource<uint8_t>(
+          data, [](uint8_t b) -> uint8_t { return !static_cast<bool>(b); });
+    }
+  }
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -4047,20 +4079,29 @@ T ComputeRelu(T val) {
 OpFoldResult ReluOp::fold(FoldAdaptor adaptor) {
   if (!ShouldFoldOperation(this->getOperation())) return {};
 
-  auto data = mlir::dyn_cast_or_null<DenseElementsAttr>(adaptor.getX());
-  if (!data) {
+  auto elements = mlir::dyn_cast_or_null<ElementsAttr>(adaptor.getX());
+  if (!elements) {
     return {};
   }
 
-  if (getType().getElementType().isSignlessInteger(32)) {
-    return DenseIntElementsAttr::get(
-        data.getType(),
-        llvm::map_to_vector(data.getValues<int32_t>(), ComputeRelu<int32_t>));
-  }
-  if (getType().getElementType().isF32()) {
-    return DenseFPElementsAttr::get(
-        data.getType(),
-        llvm::map_to_vector(data.getValues<float>(), ComputeRelu<float>));
+  if (auto data = llvm::dyn_cast<DenseElementsAttr>(elements)) {
+    if (getType().getElementType().isSignlessInteger(32)) {
+      return DenseIntElementsAttr::get(
+          data.getType(),
+          llvm::map_to_vector(data.getValues<int32_t>(), ComputeRelu<int32_t>));
+    }
+    if (getType().getElementType().isF32()) {
+      return DenseFPElementsAttr::get(
+          data.getType(),
+          llvm::map_to_vector(data.getValues<float>(), ComputeRelu<float>));
+    }
+  } else if (auto data = mlir::dyn_cast<DenseResourceElementsAttr>(elements)) {
+    if (getType().getElementType().isSignlessInteger(32)) {
+      return ConstFoldUnaryResource<int32_t>(data, ComputeRelu<int32_t>);
+    }
+    if (getType().getElementType().isF32()) {
+      return ConstFoldUnaryResource<float>(data, ComputeRelu<float>);
+    }
   }
 
   return {};
