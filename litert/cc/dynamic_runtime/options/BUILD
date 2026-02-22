@@ -191,13 +191,11 @@ cc_library(
     }),
 )
 
-# TODO: b/484095144 - Remove this target once the migration is complete.
 cc_library(
     name = "litert_runtime_options",
     srcs = ["//litert/cc/options:litert_runtime_options.cc"],
     hdrs = ["//litert/cc/options:litert_runtime_options.h"],
     deps = [
-        "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",

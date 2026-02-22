@@ -634,10 +634,8 @@ TEST(CompiledModelTest, WithProfiler) {
             kLiteRtStatusOk);
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetEnableProfiling(/*enabled=*/true);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
-                                   opaque_runtime_options.Release()),
+                                   runtime_options.Release()),
             kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -762,10 +760,8 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
-                                   opaque_runtime_options.Release()),
+                                   runtime_options.Release()),
             kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -821,10 +817,8 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
-                                   opaque_runtime_options.Release()),
+                                   runtime_options.Release()),
             kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -868,10 +862,8 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
   ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
-                                   opaque_runtime_options.Release()),
+                                   runtime_options.Release()),
             kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -918,9 +910,7 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options1, RuntimeOptions::Create());
   runtime_options1.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options1,
-                         runtime_options1.CreateOpaqueOptions());
-  ASSERT_EQ(LiteRtAddOpaqueOptions(options1, opaque_runtime_options1.Release()),
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options1, runtime_options1.Release()),
             kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -940,9 +930,7 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options2, RuntimeOptions::Create());
   runtime_options2.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options2,
-                         runtime_options2.CreateOpaqueOptions());
-  ASSERT_EQ(LiteRtAddOpaqueOptions(options2, opaque_runtime_options2.Release()),
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options2, runtime_options2.Release()),
             kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -1023,9 +1011,7 @@ TEST(CompiledModelTest, ErrorReporterWithProfilingEnabled) {
   runtime_options.SetEnableProfiling(true);
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  LITERT_ASSIGN_OR_ABORT(auto opaque_runtime_options,
-                         runtime_options.CreateOpaqueOptions());
-  ASSERT_EQ(LiteRtAddOpaqueOptions(options, opaque_runtime_options.Release()),
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options, runtime_options.Release()),
             kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(

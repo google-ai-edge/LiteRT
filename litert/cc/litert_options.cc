@@ -101,13 +101,7 @@ Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), mediatek_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), google_tensor_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), intel_openvino_options_));
-  if (runtime_options_) {
-    LITERT_ASSIGN_OR_RETURN(auto opaque_options,
-                            runtime_options_->CreateOpaqueOptions());
-    LITERT_RETURN_IF_ERROR(
-        LiteRtAddOpaqueOptions(Get(), opaque_options.Release()));
-    runtime_options_.reset();
-  }
+  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), runtime_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), compiler_options_));
   return {};
 }

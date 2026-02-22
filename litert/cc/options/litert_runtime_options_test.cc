@@ -16,47 +16,29 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/c/litert_common.h"
-#include "litert/cc/litert_opaque_options.h"
+#include "litert/c/options/litert_runtime_options.h"
 #include "litert/test/matchers.h"
-
 namespace litert {
 namespace {
+using ::testing::StrEq;
+using ::testing::litert::IsOkAndHolds;
 
-using ::testing::litert::IsOk;
-
-TEST(RuntimeOptionsTest, CreateWorks) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
+TEST(RuntimeOptions, IdentifierIsCorrect) {
+  EXPECT_THAT(RuntimeOptions::Identifier(),
+              StrEq(LiteRtGetRuntimeOptionsIdentifier()));
 }
 
-TEST(RuntimeOptionsTest, EnableProfilingWorks) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
-  EXPECT_THAT(options.SetEnableProfiling(true), IsOk());
-  LITERT_ASSERT_OK_AND_ASSIGN(bool enabled, options.GetEnableProfiling());
-  EXPECT_TRUE(enabled);
+TEST(RuntimeOptions, CreateAndOwnedHandle) {
+  LITERT_ASSERT_OK_AND_ASSIGN(RuntimeOptions options, RuntimeOptions::Create());
+  EXPECT_TRUE(options.IsOwned());
 }
 
-TEST(RuntimeOptionsTest, ErrorReporterModeWorks) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
-  EXPECT_THAT(options.SetErrorReporterMode(kLiteRtErrorReporterModeStderr),
-              IsOk());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto mode, options.GetErrorReporterMode());
-  EXPECT_EQ(mode, kLiteRtErrorReporterModeStderr);
-}
-
-TEST(RuntimeOptionsTest, CompressQuantizationZeroPointsWorks) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
-  EXPECT_THAT(options.SetCompressQuantizationZeroPoints(true), IsOk());
+TEST(RuntimeOptions, CompressQuantizationZeroPointsRoundTrip) {
+  LITERT_ASSERT_OK_AND_ASSIGN(RuntimeOptions options, RuntimeOptions::Create());
+  LITERT_ASSERT_OK(options.SetCompressQuantizationZeroPoints(true));
   LITERT_ASSERT_OK_AND_ASSIGN(bool enabled,
                               options.GetCompressQuantizationZeroPoints());
   EXPECT_TRUE(enabled);
-}
-
-TEST(RuntimeOptionsTest, CreateOpaqueOptionsWorks) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
-  EXPECT_THAT(options.SetEnableProfiling(true), IsOk());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto opaque_options,
-                              options.CreateOpaqueOptions());
 }
 
 }  // namespace

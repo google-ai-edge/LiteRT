@@ -14,120 +14,95 @@
 
 #include "litert/c/options/litert_runtime_options.h"
 
-#include <cstring>
-#include <optional>
-#include <sstream>
+#include <memory>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/runtime/litert_runtime_options.h"
 
-struct LrtRuntimeOptions {
-  std::optional<bool> enable_profiling;
-  std::optional<LiteRtErrorReporterMode> error_reporter_mode;
-  std::optional<bool> compress_quantization_zero_points;
-};
-
-LiteRtStatus LrtCreateRuntimeOptions(LrtRuntimeOptions** options) {
-  if (!options) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *options = new LrtRuntimeOptions();
-  if (!*options) {
-    return kLiteRtStatusErrorMemoryAllocationFailure;
-  }
+LiteRtStatus LiteRtCreateRuntimeOptions(LiteRtOpaqueOptions* options) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  auto options_data = std::make_unique<LiteRtRuntimeOptionsT>();
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+      LiteRtGetRuntimeOptionsIdentifier(), options_data.get(),
+      [](void* payload) {
+        delete reinterpret_cast<LiteRtRuntimeOptions>(payload);
+      },
+      options));
+  options_data.release();
   return kLiteRtStatusOk;
 }
 
-void LrtDestroyRuntimeOptions(LrtRuntimeOptions* options) {
-  if (options) {
-    delete options;
-  }
+LiteRtStatus LiteRtFindRuntimeOptions(LiteRtOpaqueOptions opaque_options,
+                                      LiteRtRuntimeOptions* runtime_options) {
+  LITERT_RETURN_IF_ERROR(runtime_options,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "runtime_options is null.";
+  void* options_data = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
+      opaque_options, LiteRtGetRuntimeOptionsIdentifier(), &options_data));
+  *runtime_options = reinterpret_cast<LiteRtRuntimeOptions>(options_data);
+  return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtCreateOpaqueRuntimeOptions(
-    const LrtRuntimeOptions* options, LiteRtOpaqueOptions* opaque_options) {
-  if (!options || !opaque_options) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
+const char* LiteRtGetRuntimeOptionsIdentifier() { return "runtime"; }
 
-  std::stringstream ss;
-  if (options->enable_profiling.has_value()) {
-    ss << "enable_profiling = "
-       << (options->enable_profiling.value() ? "true" : "false") << "\n";
-  }
-  if (options->error_reporter_mode.has_value()) {
-    ss << "error_reporter_mode = "
-       << static_cast<int>(options->error_reporter_mode.value()) << "\n";
-  }
-  if (options->compress_quantization_zero_points.has_value()) {
-    ss << "compress_quantization_zero_points = "
-       << (options->compress_quantization_zero_points.value() ? "true"
-                                                              : "false")
-       << "\n";
-  }
-
-  char* payload = new char[ss.str().size() + 1];
-  strncpy(payload, ss.str().c_str(), ss.str().size() + 1);
-
-  return LiteRtCreateOpaqueOptions(
-      LrtGetRuntimeOptionsIdentifier(), payload,
-      [](void* p) { delete[] static_cast<char*>(p); }, opaque_options);
-}
-
-const char* LrtGetRuntimeOptionsIdentifier() {
-  return "runtime_options_string";
-}
-
-LiteRtStatus LrtSetRuntimeOptionsEnableProfiling(LrtRuntimeOptions* options,
-                                                 bool enable_profiling) {
-  if (!options) return kLiteRtStatusErrorInvalidArgument;
+LiteRtStatus LiteRtSetRuntimeOptionsEnableProfiling(
+    LiteRtRuntimeOptions options, bool enable_profiling) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
   options->enable_profiling = enable_profiling;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtGetRuntimeOptionsEnableProfiling(
-    const LrtRuntimeOptions* options, bool* enable_profiling) {
-  if (!options || !enable_profiling) return kLiteRtStatusErrorInvalidArgument;
-  if (!options->enable_profiling.has_value()) {
-    return kLiteRtStatusErrorNotFound;
-  }
-  *enable_profiling = options->enable_profiling.value();
+LiteRtStatus LiteRtGetRuntimeOptionsEnableProfiling(
+    LiteRtRuntimeOptions options, bool* enable_profiling) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(enable_profiling,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "enable_profiling is null.";
+  *enable_profiling = options->enable_profiling;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtSetRuntimeOptionsErrorReporterMode(
-    LrtRuntimeOptions* options, LiteRtErrorReporterMode error_reporter_mode) {
-  if (!options) return kLiteRtStatusErrorInvalidArgument;
+LiteRtStatus LiteRtSetRuntimeOptionsErrorReporterMode(
+    LiteRtRuntimeOptions options, LiteRtErrorReporterMode error_reporter_mode) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
   options->error_reporter_mode = error_reporter_mode;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtGetRuntimeOptionsErrorReporterMode(
-    const LrtRuntimeOptions* options,
+LiteRtStatus LiteRtGetRuntimeOptionsErrorReporterMode(
+    LiteRtRuntimeOptions options,
     LiteRtErrorReporterMode* error_reporter_mode) {
-  if (!options || !error_reporter_mode)
-    return kLiteRtStatusErrorInvalidArgument;
-  if (!options->error_reporter_mode.has_value()) {
-    return kLiteRtStatusErrorNotFound;
-  }
-  *error_reporter_mode = options->error_reporter_mode.value();
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(error_reporter_mode,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "error_reporter_mode is null.";
+  *error_reporter_mode = options->error_reporter_mode;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtSetRuntimeOptionsCompressQuantizationZeroPoints(
-    LrtRuntimeOptions* options, bool compress_zero_points) {
-  if (!options) return kLiteRtStatusErrorInvalidArgument;
+LiteRtStatus LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
+    LiteRtRuntimeOptions options, bool compress_zero_points) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
   options->compress_quantization_zero_points = compress_zero_points;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
-    const LrtRuntimeOptions* options, bool* compress_zero_points) {
-  if (!options || !compress_zero_points)
-    return kLiteRtStatusErrorInvalidArgument;
-  if (!options->compress_quantization_zero_points.has_value()) {
-    return kLiteRtStatusErrorNotFound;
-  }
-  *compress_zero_points = options->compress_quantization_zero_points.value();
+LiteRtStatus LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
+    LiteRtRuntimeOptions options, bool* compress_zero_points) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(compress_zero_points,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "compress_zero_points is null.";
+  *compress_zero_points = options->compress_quantization_zero_points;
   return kLiteRtStatusOk;
 }

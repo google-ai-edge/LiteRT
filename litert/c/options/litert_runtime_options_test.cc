@@ -14,18 +14,11 @@
 
 #include "litert/c/options/litert_runtime_options.h"
 
-#include <stdlib.h>
-
-#include <string>
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
-#include "litert/runtime/litert_runtime_options.h"
 #include "litert/test/matchers.h"
-#include "toml.hpp"  // from @tomlplusplus
 
 namespace {
 
@@ -33,111 +26,35 @@ using ::testing::StrEq;
 using ::testing::litert::IsError;
 
 TEST(LiteRtRuntimeOptionsTest, CreateErrorsOutWithNullptrParam) {
-  EXPECT_THAT(LrtCreateRuntimeOptions(nullptr),
+  EXPECT_THAT(LiteRtCreateRuntimeOptions(nullptr),
               IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 TEST(LiteRtRuntimeOptionsTest, CreateWorks) {
-  LrtRuntimeOptions* options = nullptr;
-  LITERT_ASSERT_OK(LrtCreateRuntimeOptions(&options));
-  EXPECT_NE(options, nullptr);
+  LiteRtOpaqueOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateRuntimeOptions(&options));
 
-  // Verify defaults
-  bool enable_profiling;
-  EXPECT_EQ(LrtGetRuntimeOptionsEnableProfiling(options, &enable_profiling),
-            kLiteRtStatusErrorNotFound);
+  const char* id;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsIdentifier(options, &id));
+  EXPECT_THAT(id, StrEq(LiteRtGetRuntimeOptionsIdentifier()));
 
-  LiteRtErrorReporterMode error_reporter_mode;
-  EXPECT_EQ(
-      LrtGetRuntimeOptionsErrorReporterMode(options, &error_reporter_mode),
-      kLiteRtStatusErrorNotFound);
-
-  bool compress_quantization_zero_points;
-  EXPECT_EQ(LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
-                options, &compress_quantization_zero_points),
-            kLiteRtStatusErrorNotFound);
-
-  LrtDestroyRuntimeOptions(options);
+  LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
-  LrtRuntimeOptions* options = nullptr;
-  LITERT_ASSERT_OK(LrtCreateRuntimeOptions(&options));
+TEST(LiteRtRuntimeOptionsTest, CompressQuantizationZeroPointsRoundTrip) {
+  LiteRtOpaqueOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateRuntimeOptions(&options));
 
-  const bool kEnableProfiling = true;
-  const auto kErrorReporterMode = kLiteRtErrorReporterModeStderr;
-  const bool kCompressZeroPoints = true;
+  LiteRtRuntimeOptions runtime_options = nullptr;
+  LITERT_ASSERT_OK(LiteRtFindRuntimeOptions(options, &runtime_options));
+  LITERT_ASSERT_OK(LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, true));
+  bool enabled = false;
+  LITERT_ASSERT_OK(LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, &enabled));
+  EXPECT_TRUE(enabled);
 
-  LITERT_ASSERT_OK(
-      LrtSetRuntimeOptionsEnableProfiling(options, kEnableProfiling));
-  LITERT_ASSERT_OK(
-      LrtSetRuntimeOptionsErrorReporterMode(options, kErrorReporterMode));
-  LITERT_ASSERT_OK(LrtSetRuntimeOptionsCompressQuantizationZeroPoints(
-      options, kCompressZeroPoints));
-
-  LiteRtOpaqueOptions opaque_options = nullptr;
-  LITERT_ASSERT_OK(LrtCreateOpaqueRuntimeOptions(options, &opaque_options));
-
-  // Verify identifier
-  const char* id = nullptr;
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsIdentifier(opaque_options, &id));
-  EXPECT_THAT(id, StrEq(LrtGetRuntimeOptionsIdentifier()));
-
-  // Verify payload with Toml parser
-  void* payload_void = nullptr;
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(opaque_options, &payload_void));
-  absl::string_view payload_str(static_cast<char*>(payload_void));
-
-  auto toml_tbl = toml::parse(payload_str);
-  EXPECT_EQ(toml_tbl["enable_profiling"].value<bool>().value(),
-            kEnableProfiling);
-  EXPECT_EQ(toml_tbl["error_reporter_mode"].value<int>().value(),
-            static_cast<int>(kErrorReporterMode));
-  EXPECT_EQ(toml_tbl["compress_quantization_zero_points"].value<bool>().value(),
-            kCompressZeroPoints);
-
-  // Verify payload with our parser
-  LiteRtRuntimeOptionsT runtime_options;
-  EXPECT_EQ(litert::internal::ParseLiteRtRuntimeOptions(
-                payload_str.data(), payload_str.size(), &runtime_options),
-            kLiteRtStatusOk);
-  EXPECT_EQ(runtime_options.enable_profiling, kEnableProfiling);
-  EXPECT_EQ(runtime_options.error_reporter_mode, kErrorReporterMode);
-  EXPECT_EQ(runtime_options.compress_quantization_zero_points,
-            kCompressZeroPoints);
-
-  LiteRtDestroyOpaqueOptions(opaque_options);
-  LrtDestroyRuntimeOptions(options);
-}
-
-TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerializationOptionality) {
-  LrtRuntimeOptions* options = nullptr;
-  LITERT_ASSERT_OK(LrtCreateRuntimeOptions(&options));
-
-  // Only set enable_profiling
-  const bool kEnableProfiling = true;
-  LITERT_ASSERT_OK(
-      LrtSetRuntimeOptionsEnableProfiling(options, kEnableProfiling));
-
-  LiteRtOpaqueOptions opaque_options = nullptr;
-  LITERT_ASSERT_OK(LrtCreateOpaqueRuntimeOptions(options, &opaque_options));
-
-  // Verify payload
-  void* payload_void = nullptr;
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(opaque_options, &payload_void));
-  absl::string_view payload_str(static_cast<char*>(payload_void));
-
-  auto toml_tbl = toml::parse(payload_str);
-  EXPECT_TRUE(toml_tbl["enable_profiling"]);
-  EXPECT_EQ(toml_tbl["enable_profiling"].value<bool>().value(),
-            kEnableProfiling);
-
-  // Verify other options are NOT present
-  EXPECT_FALSE(toml_tbl["error_reporter_mode"]);
-  EXPECT_FALSE(toml_tbl["compress_quantization_zero_points"]);
-
-  LiteRtDestroyOpaqueOptions(opaque_options);
-  LrtDestroyRuntimeOptions(options);
+  LiteRtDestroyOpaqueOptions(options);
 }
 
 }  // namespace

@@ -14,72 +14,76 @@
 
 #include "litert/cc/options/litert_runtime_options.h"
 
-#include <memory>
-
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
+absl::string_view RuntimeOptions::Identifier() {
+  return LiteRtGetRuntimeOptionsIdentifier();
+}
+
 Expected<RuntimeOptions> RuntimeOptions::Create() {
-  LrtRuntimeOptions* options = nullptr;
-  LITERT_RETURN_IF_ERROR(LrtCreateRuntimeOptions(&options));
-  return RuntimeOptions(options);
+  LiteRtOpaqueOptions options;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateRuntimeOptions(&options));
+  return RuntimeOptions(options, OwnHandle::kYes);
 }
 
-RuntimeOptions::RuntimeOptions(LrtRuntimeOptions* options)
-    : options_(options) {}
-
-Expected<OpaqueOptions> RuntimeOptions::CreateOpaqueOptions() const {
-  LiteRtOpaqueOptions opaque_options;
-  LITERT_RETURN_IF_ERROR(
-      LrtCreateOpaqueRuntimeOptions(options_.get(), &opaque_options));
-  return OpaqueOptions(opaque_options, OwnHandle::kYes);
-}
-
-Expected<void> RuntimeOptions::SetEnableProfiling(bool enable_profiling) {
-  LITERT_RETURN_IF_ERROR(
-      LrtSetRuntimeOptionsEnableProfiling(options_.get(), enable_profiling));
-  return {};
+Expected<void> RuntimeOptions::SetEnableProfiling(
+  bool enable_profiling) {
+LiteRtRuntimeOptions runtime_options;
+LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsEnableProfiling(
+    runtime_options, enable_profiling));
+return {};
 }
 
 Expected<bool> RuntimeOptions::GetEnableProfiling() const {
-  bool enable_profiling;
-  LITERT_RETURN_IF_ERROR(
-      LrtGetRuntimeOptionsEnableProfiling(options_.get(), &enable_profiling));
-  return enable_profiling;
+LiteRtRuntimeOptions runtime_options;
+LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+bool enable_profiling;
+LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsEnableProfiling(
+    runtime_options, &enable_profiling));
+return enable_profiling;
 }
 
 Expected<void> RuntimeOptions::SetErrorReporterMode(
     LiteRtErrorReporterMode error_reporter_mode) {
-  LITERT_RETURN_IF_ERROR(LrtSetRuntimeOptionsErrorReporterMode(
-      options_.get(), error_reporter_mode));
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsErrorReporterMode(
+      runtime_options, error_reporter_mode));
   return {};
 }
 
 Expected<LiteRtErrorReporterMode> RuntimeOptions::GetErrorReporterMode() const {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
   LiteRtErrorReporterMode error_reporter_mode;
-  LITERT_RETURN_IF_ERROR(LrtGetRuntimeOptionsErrorReporterMode(
-      options_.get(), &error_reporter_mode));
+  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsErrorReporterMode(
+      runtime_options, &error_reporter_mode));
   return error_reporter_mode;
 }
 
 Expected<void> RuntimeOptions::SetCompressQuantizationZeroPoints(
     bool compress_zero_points) {
-  LITERT_RETURN_IF_ERROR(LrtSetRuntimeOptionsCompressQuantizationZeroPoints(
-      options_.get(), compress_zero_points));
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, compress_zero_points));
   return {};
 }
 
 Expected<bool> RuntimeOptions::GetCompressQuantizationZeroPoints() const {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
   bool compress_zero_points;
-  LITERT_RETURN_IF_ERROR(LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
-      options_.get(), &compress_zero_points));
+  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
+      runtime_options, &compress_zero_points));
   return compress_zero_points;
 }
 

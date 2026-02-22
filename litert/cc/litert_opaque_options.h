@@ -41,7 +41,6 @@ class OpaqueOptions
     : public internal::Handle<LiteRtOpaqueOptions, LiteRtDestroyOpaqueOptions> {
  public:
   using Ref = std::reference_wrapper<OpaqueOptions>;
-  friend class RuntimeOptions;
 
   OpaqueOptions() = default;
 
