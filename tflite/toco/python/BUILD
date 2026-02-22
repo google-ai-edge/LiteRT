@@ -59,6 +59,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//third_party/protobuf",
         "@tsl//tsl/platform:status",
         "@xla//third_party/python_runtime:headers",  # build_cleaner: keep; DNR: b/35864863
     ] + select({
