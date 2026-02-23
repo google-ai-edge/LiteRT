@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <algorithm>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
@@ -65,7 +66,8 @@ size_t GetDenseElementBitWidth(Type elt_type) {
 bool IsValidIntOrFloat(Type type, int64_t data_element_size, bool is_int,
                        bool is_signed) {
   // Make sure that the data element size is the same as the type element width.
-  auto dense_elt_bit_width = GetDenseElementBitWidth(type);
+  auto dense_elt_bit_width =
+      std::max(GetDenseElementBitWidth(type), static_cast<size_t>(CHAR_BIT));
   auto data_size = static_cast<size_t>(data_element_size * CHAR_BIT);
   if (dense_elt_bit_width != data_size) {
     return false;
