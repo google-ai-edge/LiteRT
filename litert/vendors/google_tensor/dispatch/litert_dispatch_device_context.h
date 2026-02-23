@@ -15,29 +15,22 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
-#include <cstdint>
 #include <optional>
-#include <utility>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#include "litert/vendors/google_tensor/dispatch/darwinn_options.h"
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 // This class is thread-compatible.
 class LiteRtDispatchDeviceContextT {
  public:
-  // Stores DarwiNN options for later annotation.
-  struct DarwinnOptionsData {
-    std::optional<uint32_t> inference_power_state;
-    std::optional<uint32_t> inference_memory_power_state;
-    std::optional<int8_t> inference_priority;
-    bool atomic_inference = false;
-    bool prefer_coherent = false;
-  };
-
-  static LiteRtStatus Create(LiteRtDispatchDeviceContext& device_context);
+  static LiteRtStatus Create(LiteRtOptions options,
+                             LiteRtDispatchDeviceContext& device_context);
 
   LiteRtStatus Destroy();
 
@@ -67,22 +60,26 @@ class LiteRtDispatchDeviceContextT {
 
   ThrContext* absl_nonnull thr_context() { return thr_context_; }
 
-  const std::optional<DarwinnOptionsData>& darwinn_options() {
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  std::optional<litert::google_tensor::DarwinnOptionsData>& darwinn_options() {
     return darwinn_options_;
   }
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+
+  LiteRtStatus AnnotateSystemAttribute(const char* absl_nonnull key,
+                                       const char* absl_nonnull value);
 
  private:
-  LiteRtDispatchDeviceContextT(
-      ThrContext* absl_nonnull thr_context,
-      std::optional<DarwinnOptionsData> darwinn_options)
-      : thr_context_(thr_context),
-        darwinn_options_(std::move(darwinn_options)) {}
+  explicit LiteRtDispatchDeviceContextT(ThrContext* absl_nonnull thr_context)
+      : thr_context_(thr_context) {}
 
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchDeviceContextT() = default;
 
   ThrContext* absl_nonnull thr_context_;
-  std::optional<DarwinnOptionsData> darwinn_options_;
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  std::optional<litert::google_tensor::DarwinnOptionsData> darwinn_options_;
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   // A device context cannot be destroyed with any registered graphs.
   absl::flat_hash_set<LiteRtDispatchGraph> registered_graphs_;
 };

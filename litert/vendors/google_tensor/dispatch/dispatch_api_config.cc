@@ -15,8 +15,6 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 
 #include <cstdio>
-#include <memory>
-#include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
@@ -24,9 +22,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
@@ -49,9 +45,6 @@ bool TheDispatchApiConfigIsInitialized = false;
     }                                                         \
   } while (0)
 
-// Optional DarwiNN-specific options provided by the application.
-absl_nullable std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
-
 // Google Tensor Dispatch API build ID.
 char TheBuildId[256];
 
@@ -66,17 +59,6 @@ std::vector<LiteRtTensorBufferType> TheSupportedTensorBufferTypes;
 
 LiteRtStatus InitializeDispatchApiConfig(
     LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
-  auto [opts, opq_opts, darwinn_opts] =
-      litert::ParseOptions<litert::DarwinnRuntimeOptions>(options);
-
-  if (darwinn_opts.HasValue()) {
-    TheDarwinnOptions = std::make_unique<litert::DarwinnRuntimeOptions>(
-        std::move(*darwinn_opts));
-    LITERT_LOG(LITERT_INFO, "Found Darwinn runtime options");
-  } else {
-    LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found, using defaults");
-  }
-
   const char* sb_api_version = thrGetVendorApiVersion();
   const char* sb_vendor_id = thrGetVendorId();
   snprintf(TheBuildId, sizeof(TheBuildId),
@@ -112,11 +94,6 @@ LiteRtStatus InitializeDispatchApiConfig(
 
   TheDispatchApiConfigIsInitialized = true;
   return kLiteRtStatusOk;
-}
-
-DarwinnRuntimeOptions* absl_nullable GetTheDarwinnOptions() {
-  CHECK_DISPATCH_API_CONFIG_INIT();
-  return TheDarwinnOptions.get();
 }
 
 const char* absl_nonnull GetTheBuildId() {

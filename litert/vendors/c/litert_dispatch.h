@@ -94,8 +94,8 @@ LiteRtDispatchGetCapabilities(int* capabilities);
 // the memory associated with the context and should call
 // LiteRtDispatchDeviceContextDestroy() to release it. Return NULL in case of
 // error.
-LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchDeviceContextCreate(LiteRtDispatchDeviceContext* device_context);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextCreate(
+    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context);
 
 // Release a `LiteRtDispatchDeviceContext` object.
 //
