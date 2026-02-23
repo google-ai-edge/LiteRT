@@ -115,7 +115,7 @@ litert_lib(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [":adapter_odc"],
+        "@platforms//os:android": [":adapter_odc"],
         "//conditions:default": [":adapter_aot"],
     }),
 )

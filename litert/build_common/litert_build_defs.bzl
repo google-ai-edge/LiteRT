@@ -145,7 +145,7 @@ _EXPORT_LRT_ONLY_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(locatio
 def symbol_opts():
     """Defines linker flags whether to include symbols or not."""
     return select({
-        "@org_tensorflow//tensorflow:debug": [],
+        "//litert:debug": [],
         "@platforms//os:macos": [],
         "@platforms//os:ios": [],
         "//conditions:default": [

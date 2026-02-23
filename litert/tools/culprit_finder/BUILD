@@ -187,7 +187,7 @@ cc_library(
     ] + select({
         # Metal GPU delegate for iOS has its own setups for kernel tests, so
         # skipping linking w/ the gpu_delegate_provider.
-        "@org_tensorflow//tensorflow:ios": [],
+        "@platforms//os:ios": [],
         "//conditions:default": [
             "//tflite/tools/delegates:gpu_delegate_provider",
         ],

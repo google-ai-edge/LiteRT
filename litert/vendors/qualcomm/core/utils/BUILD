@@ -13,12 +13,12 @@ package(
 cc_library(
     name = "log",
     srcs = select({
-        "@org_tensorflow//tensorflow:android": ["log_android.cc"],
+        "@platforms//os:android": ["log_android.cc"],
         "//conditions:default": ["log_default.cc"],
     }),
     hdrs = ["log.h"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "@platforms//os:android": ["-llog"],
         "//conditions:default": [],
     }),
     deps = [

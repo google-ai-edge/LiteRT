@@ -83,7 +83,7 @@ config_setting(
 selects.config_setting_group(
     name = "linux_x86_64_grte",
     match_all = [
-        "@org_tensorflow//tensorflow:linux_x86_64",
+        "//litert:linux_x86_64",
         ":with_grte",
     ],
 )
@@ -91,7 +91,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "linux_x86_64_ungrte",
     match_all = [
-        "@org_tensorflow//tensorflow:linux_x86_64",
+        "//litert:linux_x86_64",
         ":without_grte",
     ],
 )
@@ -116,7 +116,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "android_gpu_enabled",
     match_all = [
-        "@org_tensorflow//tensorflow:android",
+        "@platforms//os:android",
         ":build_include_gpu_enabled",
     ],
 )
