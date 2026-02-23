@@ -60,10 +60,14 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
       });
 
   if (has_gpu_options) {
+#if !defined(LITERT_DISABLE_GPU)
     LITERT_ASSIGN_OR_RETURN(
         auto gpu_env,
         litert::internal::GpuEnvironment::Create(env->GetOptions()));
     LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
+#else
+    return kLiteRtStatusErrorInvalidArgument;
+#endif  // !defined(LITERT_DISABLE_GPU)
   }
 
   *environment = env.release();
@@ -114,6 +118,7 @@ LiteRtStatus LiteRtAddEnvironmentOptions(LiteRtEnvironment environment,
 LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
                                         int num_options,
                                         const LiteRtEnvOption* options) {
+#if !defined(LITERT_DISABLE_GPU)
   LITERT_RETURN_IF_ERROR(
       environment->AddOptions(absl::MakeSpan(options, num_options)));
   LITERT_ASSIGN_OR_RETURN(
@@ -121,6 +126,9 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
       litert::internal::GpuEnvironment::Create(environment->GetOptions()));
   LITERT_RETURN_IF_ERROR(environment->SetGpuEnvironment(std::move(gpu_env)));
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorInvalidArgument;
+#endif  // !defined(LITERT_DISABLE_GPU)
 }
 
 LiteRtStatus LiteRtEnvironmentSupportsClGlInterop(LiteRtEnvironment environment,

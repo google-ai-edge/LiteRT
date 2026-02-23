@@ -74,4 +74,6 @@ target_include_directories(qnn_builders
 target_link_libraries(qnn_builders
     PUBLIC
         qnn_core
+    PRIVATE
+        qnn_wrappers
 )
