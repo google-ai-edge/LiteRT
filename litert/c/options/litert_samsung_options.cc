@@ -17,8 +17,9 @@
 
 #include <memory>
 
-#include "litert/c/options/litert_samsung_options.h"
+#include "absl/strings/string_view.h"  // from @com_google_absl
 
+#include "litert/c/options/litert_samsung_options.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 
