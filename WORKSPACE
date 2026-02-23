@@ -320,3 +320,8 @@ litert_prebuilts()
 load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 
 openvino_configure()
+
+# SAMSUNG EXYNOS ----------------------------------------------------------------------------------
+load("//third_party/exynos_ai_litecore:workspace.bzl", "exynos_ai_litecore")
+
+exynos_ai_litecore()
