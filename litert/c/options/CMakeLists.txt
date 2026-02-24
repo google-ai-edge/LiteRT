@@ -17,7 +17,6 @@ cmake_minimum_required(VERSION 3.20)
 
 # Options library
 add_library(litert_c_options STATIC
-    litert_darwinn_runtime_options.cc
     litert_cpu_options.cc
     litert_google_tensor_options.cc
     litert_gpu_options.cc
