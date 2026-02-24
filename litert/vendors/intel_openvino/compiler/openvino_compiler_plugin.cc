@@ -292,6 +292,22 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtOpList selected_ops) {
   ::litert::Subgraph graph(subgraph);
 
+  // Check if any subgraph input has dims.size() >= 6.
+  auto subgraph_inputs = graph.Inputs();
+  for (size_t i = 0; i < subgraph_inputs.size(); ++i) {
+    auto ranked_type = subgraph_inputs[i].RankedTensorType();
+    if (ranked_type.HasValue()) {
+      auto dims = ranked_type.Value().Layout().Dimensions();
+      if (dims.size() >= 6) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Model not supported: subgraph input %zu has %zu dimensions "
+                   "(>= 6), skipping partitioning.",
+                   i, dims.size());
+        return kLiteRtStatusErrorUnsupported;
+      }
+    }
+  }
+
   // TODO(rjasuja): Enhance implementation for Partition() call
   for (const auto& op : graph.Ops()) {
     if (!IsOpSupported(op)) {
