@@ -68,7 +68,7 @@ target_sources(common_test
 )
 target_link_libraries(common_test
     PRIVATE
-        qnn_core
+        qnn_common
         GTest::gtest_main
 )
 
@@ -83,7 +83,7 @@ target_sources(tensor_pool_test
 target_link_libraries(tensor_pool_test
     PRIVATE
         qnn_wrappers
-        qnn_core
+        qnn_tensor_pool
         GTest::gtest_main
 )
 
@@ -98,7 +98,6 @@ target_sources(op_wrapper_test
 target_link_libraries(op_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gtest_main
 )
 
@@ -113,7 +112,6 @@ target_sources(tensor_wrapper_test
 target_link_libraries(tensor_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gmock
         GTest::gtest_main
 )
@@ -129,7 +127,6 @@ target_sources(param_wrapper_test
 target_link_libraries(param_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gtest_main
 )
 
@@ -144,7 +141,6 @@ target_sources(quantize_params_wrapper_test
 target_link_libraries(quantize_params_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gtest_main
 )
 
@@ -158,8 +154,10 @@ target_sources(utils_test
 
 target_link_libraries(utils_test
     PRIVATE
+        qnn_common
+        qnn_log
+        qnn_miscs
         qnn_backends
-        qnn_core
         GTest::gtest_main
 )
 
@@ -173,8 +171,8 @@ target_sources(ir_backend_test
 
 target_link_libraries(ir_backend_test
     PRIVATE
-        qnn_backends
-        qnn_core
+        qnn_common
+        qnn_miscs
         GTest::gtest_main
 )
 
@@ -189,7 +187,9 @@ target_sources(htp_backend_test
 target_link_libraries(htp_backend_test
     PRIVATE
         qnn_backends
-        qnn_core
+        qnn_common
+        qnn_soc_table
+        qnn_miscs
         GTest::gtest_main
 )
 
@@ -204,7 +204,8 @@ target_sources(dsp_backend_test
 target_link_libraries(dsp_backend_test
     PRIVATE
         qnn_backends
-        qnn_core
+        qnn_common
+        qnn_miscs
         GTest::gtest_main
 )
 
@@ -219,6 +220,6 @@ target_sources(backend_utils_test
 target_link_libraries(backend_utils_test
     PRIVATE
         qnn_backends
-        qnn_core
+        qnn_soc_table
         GTest::gtest_main
 )

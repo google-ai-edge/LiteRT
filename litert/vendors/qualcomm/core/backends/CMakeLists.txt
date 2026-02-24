@@ -23,7 +23,7 @@ target_include_directories(qnn_backends
 )
 
 target_link_libraries(qnn_backends
-    PRIVATE
+    PUBLIC
         absl::status
         absl::statusor
         absl::strings
