@@ -296,6 +296,7 @@ cc_library(
     # Then, we can remove this visibility.
     visibility = ["//litert:litert_public"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/compiler/plugin:compiler_plugin",
@@ -383,6 +384,7 @@ cc_library(
         "//tflite/tools/benchmark:benchmark_model_lib",
         "//tflite/tools/benchmark:benchmark_params",
         "//tflite/tools/benchmark/proto:benchmark_result_cc",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
@@ -404,9 +406,11 @@ cc_test(
     data = ["//litert/test:testdata/mobilenet_v2_1.0_224.tflite"],
     deps = [
         ":benchmark_litert_model",
+        "//litert/cc:litert_tensor_buffer",
         "//tflite/core/c:private_c_api_types",
         "//tflite/tools/benchmark:benchmark_model_lib",
         "//tflite/tools/benchmark:benchmark_params",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -555,9 +559,11 @@ cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
+        ":tensor_utils",
         "//litert/cc:litert_common",
-        "//litert/tools:tensor_utils",
+        "//litert/cc:litert_environment_options",
         "//litert/tools/flags/vendors:google_tensor_flags",
+        "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
     ] + select({
@@ -592,9 +598,9 @@ cc_binary(
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
-        # "//tflite/c:c_api_types",
-        # "//tflite/tools:utils",
         # copybara:uncomment_end
+        "//tflite/c:c_api_types",
+        "//tflite/tools:utils",
     ],
 )
 
@@ -608,8 +614,10 @@ cc_binary(
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
-        # "//tflite/c:c_api_types",
-        # "//tflite/tools:utils",
+        # copybara:uncomment_end
+        "//tflite/c:c_api_types",
+        "//tflite/tools:utils",
+        # copybara:uncomment_begin(google-only)
         # "//third_party/vulkan_loader",
         # copybara:uncomment_end
     ],
@@ -633,9 +641,9 @@ cc_binary(
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
-        # "//tflite/c:c_api_types",
-        # "//tflite/tools:utils",
         # copybara:uncomment_end
+        "//tflite/c:c_api_types",
+        "//tflite/tools:utils",
     ],
 )
 
@@ -784,6 +792,51 @@ cc_binary(
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
+    name = "dump_ops_util",
+    srcs = ["dump_ops_util.cc"],
+    hdrs = ["dump_ops_util.h"],
+    deps = [
+        ":dump",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "dump_ops_util_test",
+    srcs = ["dump_ops_util_test.cc"],
+    deps = [
+        ":dump_ops_util",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_binary(
+    name = "dump_ops",
+    srcs = ["dump_ops_main.cc"],
+    deps = [
+        ":dump_ops_util",
+        "//litert/core/model:model_load",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
     ],
 )
 

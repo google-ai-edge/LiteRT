@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -48,6 +50,10 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  // Do not check when soc_model_name is not specified.
+  if (!soc_model_name) {
+    return kLiteRtStatusOk;
+  }
   // Example plugin does not depend on any compiler library, so we can
   // return an error to test the error handling.
   if (strcmp(soc_model_name, litert::example::kIncompatiblePluginSocModel) ==
@@ -110,7 +116,7 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
 
 // Simple compiled result def holds byte code and per op data.
 struct LiteRtCompiledResultT {
-  std::vector<std::string> byte_code;
+  std::string global_byte_code;
   std::vector<std::string> per_op_data;
 };
 
@@ -120,8 +126,8 @@ LiteRtStatus LiteRtGetCompiledResultByteCode(
   if (!compiled_result) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *byte_code = compiled_result->byte_code[byte_code_idx].data();
-  *byte_code_size = compiled_result->byte_code[byte_code_idx].size();
+  *byte_code = compiled_result->global_byte_code.data();
+  *byte_code_size = compiled_result->global_byte_code.size();
   return kLiteRtStatusOk;
 }
 
@@ -149,7 +155,7 @@ LiteRtStatus LiteRtGetNumCompiledResultCalls(
 
 LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
-  *num_byte_code = compiled_result->byte_code.size();
+  *num_byte_code = compiled_result->per_op_data.size();
   return kLiteRtStatusOk;
 }
 
@@ -222,11 +228,33 @@ Expected<OpCode> ConvertOpCode(LiteRtOpCode code) {
 
 LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
                                     LiteRtSubgraph subgraph,
-                                    LiteRtCompiledResultT& result,
-                                    int byte_code_idx) {
+                                    ExampleGlobalGraph& global_graph) {
   const litert::Subgraph sg(subgraph);
   ExampleGraph example_graph;
   std::unordered_map<LiteRtTensor, int> tensor_map;  // NOLINT
+
+  auto handle_constant = [&](const litert::Tensor& input,
+                             int example_ind) -> LiteRtStatus {
+    LiteRtWeights weights;
+    LITERT_RETURN_IF_ERROR(LiteRtGetTensorWeights(input.Get(), &weights));
+    int32_t buffer_id;
+    LITERT_RETURN_IF_ERROR(LiteRtGetWeightsBufferId(weights, &buffer_id));
+    const void* addr;
+    size_t size;
+    LITERT_RETURN_IF_ERROR(LiteRtGetWeightsBytes(weights, &addr, &size));
+
+    if (buffer_id > 0) {
+      if (global_graph.buffers_.find(buffer_id) ==
+          global_graph.buffers_.end()) {
+        ExampleTensor tensor(example_graph.Tensors()[example_ind].dims);
+        tensor.data.resize(size / sizeof(float));
+        std::memcpy(tensor.data.data(), addr, size);
+        global_graph.buffers_[buffer_id] = std::move(tensor);
+      }
+      example_graph.AddConstMap(example_ind, buffer_id);
+    }
+    return kLiteRtStatusOk;
+  };
 
   Inds example_graph_inputs;
   for (const auto& input : sg.Inputs()) {
@@ -236,15 +264,29 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
         Dims(litert_dims.cbegin(), litert_dims.cend()));
     tensor_map.emplace(input.Get(), example_ind);
     example_graph_inputs.push_back(example_ind);
+
+    if (input.IsConstant()) {
+      LITERT_RETURN_IF_ERROR(handle_constant(input, example_ind));
+    }
   }
 
   for (const auto& op : sg.Ops()) {
     Inds example_inputs;
     for (const auto& input : op.Inputs()) {
-      if (input.IsConstant()) {
-        LITERT_LOG(LITERT_ERROR,
-                   "Constant inputs not supported in example plugin yet");
-        return kLiteRtStatusErrorUnsupported;
+      if (tensor_map.find(input.Get()) == tensor_map.end()) {
+        if (!input.IsConstant()) {
+          LITERT_LOG(LITERT_ERROR, "Unknown input tensor");
+          return kLiteRtStatusErrorNotFound;
+        }
+        LITERT_ASSIGN_OR_RETURN(auto input_type, input.RankedTensorType());
+        const auto litert_dims = input_type.Layout().Dimensions();
+        const auto example_ind = example_graph.EmplaceTensor(
+            Dims(litert_dims.cbegin(), litert_dims.cend()));
+        tensor_map.emplace(input.Get(), example_ind);
+        LITERT_RETURN_IF_ERROR(handle_constant(input, example_ind));
+        if (input.IsConstant()) {
+          example_graph_inputs.push_back(example_ind);
+        }
       }
       example_inputs.push_back(tensor_map.at(input.Get()));
     }
@@ -273,10 +315,8 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
   example_graph.SetOutputs(std::move(example_graph_outputs));
   example_graph.SetVersion(kExamplePluginVersion);
 
-  LITERT_ASSIGN_OR_RETURN(auto serialized, example_graph.Serialize());
-  result.byte_code[byte_code_idx] = std::string(serialized.StrView());
-  result.per_op_data[partition_index] =
-      absl::StrFormat("partition_%d", partition_index);
+  global_graph.subgraphs_[absl::StrFormat("partition_%d", partition_index)] =
+      std::move(example_graph);
 
   return kLiteRtStatusOk;
 }
@@ -290,13 +330,22 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
   auto result = std::make_unique<LiteRtCompiledResultT>();
-  result->byte_code.resize(num_partitions);
   result->per_op_data.resize(num_partitions);
+
+  ::litert::example::ExampleGlobalGraph global_graph;
+
   for (auto i = 0; i < num_partitions; ++i) {
     LITERT_ASSIGN_OR_RETURN(litert::Subgraph subgraph, model.Subgraph(i));
     LITERT_RETURN_IF_ERROR(::litert::example::CompileSinglePartition(
-        i, subgraph.Get(), *result, i));
+        i, subgraph.Get(), global_graph));
+    result->per_op_data[i] = absl::StrFormat("partition_%d", i);
   }
+
+  LITERT_ASSIGN_OR_RETURN(auto serialized, global_graph.Serialize());
+  result->global_byte_code = std::string(serialized.StrView());
+
+  // print the global graph
+  LITERT_LOG(LITERT_INFO, "global_graph: %s", result->global_byte_code.c_str());
 
   *compiled_result = result.release();
 

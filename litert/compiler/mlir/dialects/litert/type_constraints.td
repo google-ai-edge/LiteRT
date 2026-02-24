@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-include "third_party/llvm/llvm-project/mlir/include/mlir/IR/CommonTypeConstraints.td"
+include "mlir/IR/CommonTypeConstraints.td"
 
 def Shape : TypeOrValueSemanticsContainer<
     1DTensorOf<[I32]>, "shape">;

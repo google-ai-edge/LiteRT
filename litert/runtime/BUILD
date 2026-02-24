@@ -368,6 +368,7 @@ GPU_ENVIRONMENT_DEPS = [
     "//litert/c/internal:litert_logging",
     "//litert/cc:litert_expected",
     "//litert/cc:litert_macros",
+    "//litert/core:environment_options",
     "@opencl_headers",
     "//tflite/delegates/gpu/cl:cl_command_queue",
     "//tflite/delegates/gpu/cl:cl_context",
@@ -401,7 +402,6 @@ cc_library(
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_any",
-        "//litert/core:environment",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ] + litert_metal_deps(),
@@ -466,6 +466,7 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//tflite/c:c_api",
@@ -565,10 +566,12 @@ cc_library(
         "//litert/c/internal:litert_accelerator",
         "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tensor_buffer_utils",
         "//litert/core:buffer_error_reporter",
@@ -578,6 +581,7 @@ cc_library(
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
+        "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
         "//litert/runtime/dispatch:dispatch_opaque_options",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         "//tflite/converter:allocation",
@@ -635,6 +639,7 @@ cc_test(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
+        "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/options:litert_runtime_options",
         "//litert/core:options",
@@ -680,6 +685,7 @@ cc_test(
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
     ] + gtest_main_no_heapcheck_deps() + select({
         "@org_tensorflow//tensorflow:android": [
@@ -749,8 +755,27 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_options",
+    srcs = ["litert_runtime_options.cc"],
     hdrs = ["litert_runtime_options.h"],
-    deps = ["//litert/c:litert_common"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_runtime_options_test",
+    srcs = ["litert_runtime_options_test.cc"],
+    tags = ["no_oss"],
+    deps = [
+        ":litert_runtime_options",
+        "//litert/c:litert_common",
+        "@com_google_googletest//:gtest_main",
+        "@tomlplusplus",
+    ],
 )
 
 cc_library(

@@ -32,7 +32,16 @@ struct LiteRtRuntimeOptionsT {
   // be stored as a single value to reduce memory usage.
   bool compress_quantization_zero_points = false;
 
-  static const char* Identifier() { return "runtime"; }
+  static const char* Identifier() { return "runtime_options_string"; }
 };
+
+namespace litert {
+namespace internal {
+
+LiteRtStatus ParseLiteRtRuntimeOptions(const void* data, size_t size,
+                                       LiteRtRuntimeOptionsT* options);
+
+}  // namespace internal
+}  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_

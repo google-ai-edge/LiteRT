@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "litert/compiler/mlir/converter_api_core.h"
 
+#include <Python.h>
 #include <stdlib.h>
 
 #include <memory>
@@ -38,9 +39,11 @@
 #include "mlir/Dialect/Func/Transforms/Passes.h"
 #include "mlir/Dialect/Quant/IR/Quant.h"
 #include "mlir/Dialect/Transform/IR/Utils.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
@@ -105,9 +108,9 @@ absl::Status ExportFlatbuffer(mlir::ModuleOp module_op,
 
   // Export module to flatbuffer.
   tflite::FlatbufferExportOptions options;
-  options.metadata["keep_stablehlo_constant"] =
-      "true";  // tflite::kModelUseStablehloTensorKey
   options.serialize_stablehlo_ops = true;
+  // tflite::kModelUseStablehloTensorKey
+  options.metadata["keep_stablehlo_constant"] = "true";
 
   return tflite::MlirToFlatBufferTranslateFunction(module_op, options,
                                                    export_stream);

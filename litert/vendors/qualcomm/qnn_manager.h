@@ -22,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -37,6 +38,7 @@
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
@@ -72,6 +74,37 @@ namespace internal {
 std::string Dump(const QnnManager& qnn);
 
 }  // namespace internal
+
+struct SdkVersion {
+  int major, minor, patch;
+
+  friend constexpr bool operator==(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) ==
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator!=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs == rhs);
+  }
+  friend constexpr bool operator<(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return std::tie(lhs.major, lhs.minor, lhs.patch) <
+           std::tie(rhs.major, rhs.minor, rhs.patch);
+  }
+  friend constexpr bool operator>(const SdkVersion& lhs,
+                                  const SdkVersion& rhs) noexcept {
+    return rhs < lhs;
+  }
+  friend constexpr bool operator<=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(rhs < lhs);
+  }
+  friend constexpr bool operator>=(const SdkVersion& lhs,
+                                   const SdkVersion& rhs) noexcept {
+    return !(lhs < rhs);
+  }
+};
 
 class QnnManager {
   friend std::string internal::Dump(const QnnManager& qnn);
@@ -126,15 +159,25 @@ class QnnManager {
   LiteRtStatus GenerateContextBinary(Qnn_ContextHandle_t context_handle,
                                      std::vector<char>& buffer);
 
-  LiteRtStatus ValidateOp(const Qnn_OpConfig_t& op_config);
+  LiteRtStatus ValidateOp(::qnn::OpWrapper& op);
 
-  bool IsLegacySocModel() { return soc_info_.dsp_arch == ::qnn::DspArch::V68; }
+  bool IsFp16Supported() {
+    // TODO(jiunkaiy): Remove this function after upgrading to stricter SDK
+    // restrictions.
+    return soc_info_.dsp_arch != ::qnn::DspArch::V68 &&
+           soc_info_.soc_model != ::qnn::SnapdragonModel::SAR2230P;
+  }
 
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
 
   const ::qnn::Options& GetOptions() const { return options_; }
+
+  // Gets SDK version from build ID.
+  static Expected<SdkVersion> ParseSdkVersion(const char* build_id);
+
+  SdkVersion GetSdkVersion() const { return sdk_version_; }
 
  private:
   QnnManager() = default;
@@ -185,6 +228,7 @@ class QnnManager {
   std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   ::qnn::Options options_;
+  SdkVersion sdk_version_{};
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because

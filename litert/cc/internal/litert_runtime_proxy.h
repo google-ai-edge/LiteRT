@@ -21,6 +21,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_c_api.h"
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
@@ -249,10 +250,6 @@ class RuntimeProxy {
   //
   // LiteRtSignature
   //
-  LiteRtStatus GetDefaultSignatureKey(const char** signature_key) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_default_signature_key, signature_key);
-  }
-
   LiteRtStatus GetSignatureKey(LiteRtSignature signature,
                                const char** signature_key) {
     LITERT_PROXY_METHOD_STATUS(litert_get_signature_key, signature,
@@ -467,6 +464,19 @@ class RuntimeProxy {
         num_input_buffers, input_buffers, num_output_buffers, output_buffers);
   }
 
+  LiteRtStatus RunCompiledModelWithOptions(LiteRtCompiledModel compiled_model,
+                                           LiteRtParamIndex signature_index,
+                                           size_t num_input_buffers,
+                                           LiteRtTensorBuffer* input_buffers,
+                                           size_t num_output_buffers,
+                                           LiteRtTensorBuffer* output_buffers,
+                                           LiteRtOptions options) {
+    LITERT_PROXY_METHOD_STATUS(litert_run_compiled_model_with_options,
+                               compiled_model, signature_index,
+                               num_input_buffers, input_buffers,
+                               num_output_buffers, output_buffers, options);
+  }
+
   LiteRtStatus RunCompiledModelAsync(LiteRtCompiledModel compiled_model,
                                      LiteRtParamIndex signature_index,
                                      size_t num_input_buffers,
@@ -478,6 +488,46 @@ class RuntimeProxy {
                                signature_index, num_input_buffers,
                                input_buffers, num_output_buffers,
                                output_buffers, async);
+  }
+
+  LiteRtStatus RunCompiledModelAsyncWithOptions(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      bool* async, LiteRtOptions options) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_run_compiled_model_async_with_options, compiled_model,
+        signature_index, num_input_buffers, input_buffers, num_output_buffers,
+        output_buffers, async, options);
+  }
+
+  LiteRtStatus CompiledModelSetSchedulingInfo(
+      LiteRtCompiledModel compiled_model,
+      const LiteRtSchedulingInfo* scheduling_info) {
+    LITERT_PROXY_METHOD_STATUS(litert_compiled_model_set_scheduling_info,
+                               compiled_model, scheduling_info);
+  }
+
+  LiteRtStatus RunCompiledModelWithSchedulingInfo(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      const LiteRtSchedulingInfo* scheduling_info) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_run_compiled_model_with_scheduling_info, compiled_model,
+        signature_index, num_input_buffers, input_buffers, num_output_buffers,
+        output_buffers, scheduling_info);
+  }
+
+  LiteRtStatus RunCompiledModelAsyncWithSchedulingInfo(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
+      size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
+      bool* async, const LiteRtSchedulingInfo* scheduling_info) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_run_compiled_model_async_with_scheduling_info, compiled_model,
+        signature_index, num_input_buffers, input_buffers, num_output_buffers,
+        output_buffers, async, scheduling_info);
   }
 
   LiteRtStatus SetCompiledModelCancellationFunction(

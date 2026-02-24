@@ -469,12 +469,12 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
         DispatchOpOptions dispatch_opts =
             GetDispatchOpOptions(op->CustomOptions());
         if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {
-          OwningBufferRef<uint8_t> owned_byte_code(
+          BufferRef<uint8_t> byte_code(
               GetTflFlatbuffer(*model).AllocBase() +
                   dispatch_opts.bytecode_offset,
               dispatch_opts.bytecode_size);
           const BufferManager::BufferId buf_id =
-              model->Buffers()->RegisterOwnedBuffer(std::move(owned_byte_code));
+              model->Buffers()->RegisterNonOwnedBuffer(byte_code);
           buffer_id_map.insert({dispatch_opts.bytecode_offset, buf_id});
         }
 

@@ -62,6 +62,7 @@ litert_dynamic_lib(
         "//litert/core/util:tensor_type_util",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/vendors/c:litert_dispatch_c_api",

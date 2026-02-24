@@ -122,6 +122,9 @@ ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
           kLiteRtGoogleTensorShardingIntensityMinimal,
           "Sharding intensity for Google Tensor.");
 
+ABSL_FLAG(bool, google_tensor_enable_dynamic_range_quantization, false,
+          "Whether to enable dynamic range quantization.");
+
 ABSL_FLAG(std::string, google_tensor_testing_flags, "",
           "Testing flags for Google Tensor. Flag1=value1,Flag2=value2");
 
@@ -142,6 +145,8 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_enable_4bit_compilation));
   options.SetShardingIntensity(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
+  options.SetEnableDynamicRangeQuantization(
+      absl::GetFlag(FLAGS_google_tensor_enable_dynamic_range_quantization));
   options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
   return {};
 }

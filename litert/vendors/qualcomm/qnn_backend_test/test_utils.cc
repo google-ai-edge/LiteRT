@@ -65,5 +65,6 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
                       qnn_manager_ptr_->Api(), context_handle_.get());
 
   std::swap(qnn_model_, qnn_model);
+  is_fp16_supported_ = qnn_manager_ptr_->IsFp16Supported();
 }
 }  // namespace litert::qnn

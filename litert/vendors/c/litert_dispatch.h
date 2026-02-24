@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
@@ -148,6 +149,28 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreate(
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextDestroy(
     LiteRtDispatchInvocationContext invocation_context);
+
+// Provides per-invocation options to the runtime associated with a
+// `LiteRtDispatchInvocationContext`.
+//
+// `options` is optional and may be null. The dispatch runtime may ignore some
+// or all options, or return an error if it cannot apply them for the next
+// invocation. If the loaded dispatch runtime does not implement this hook,
+// LiteRT returns `kLiteRtStatusErrorUnsupported`.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options);
+
+// Sets scheduling information for subsequent invocations of the given
+// invocation context.
+//
+// If `scheduling_info` is null, the implementation should clear any previously
+// applied override and reset to the backend's default scheduling behavior.
+// If the backend (for example, an NPU runtime) does not support scheduling
+// controls, it should return `kLiteRtStatusErrorUnsupported`.
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchInvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info);
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,

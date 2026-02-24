@@ -92,6 +92,7 @@ cc_library(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
@@ -142,10 +143,35 @@ cc_test(
     ],
     deps = [
         "//litert/cc:litert_common",
-        "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_compiled_model_next",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dispatch_delegate_scheduling_info_test",
+    srcs = ["dispatch_delegate_scheduling_info_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_compiled_model_next",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -174,6 +200,7 @@ cc_library(
         "//litert/c:litert_metrics",
         "//litert/c/internal:litert_dispatch_headers",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -201,6 +228,18 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "litert_dispatch_dummy",
+    srcs = ["litert_dispatch_dummy.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_model_types",
+        "//litert/c/internal:litert_scheduling_info",
+        "//litert/vendors/c:litert_dispatch_c_api",
     ],
 )
 
@@ -366,6 +405,7 @@ litert_device_test(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_options",
@@ -472,6 +512,7 @@ litert_device_test(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_options",

@@ -63,39 +63,6 @@ TEST(TensorBufferRequirements, Owned) {
   ASSERT_EQ(*size, kBufferSize);
 }
 
-TEST(TensorBufferRequirements, NotOwned) {
-  LiteRtTensorBufferRequirements litert_requirements;
-  std::vector<LiteRtTensorBufferType> litert_buffer_types;
-  litert_buffer_types.reserve(kNumSupportedTensorBufferTypes);
-  for (const auto& buffer_type : kSupportedTensorBufferTypes) {
-    litert_buffer_types.push_back(
-        static_cast<LiteRtTensorBufferType>(buffer_type));
-  }
-  ASSERT_EQ(
-      LiteRtCreateTensorBufferRequirements(
-          litert_buffer_types.size(), litert_buffer_types.data(), kBufferSize,
-          /*num_strides=*/0, /*strides=*/nullptr, &litert_requirements),
-      kLiteRtStatusOk);
-
-  auto requirements = litert::TensorBufferRequirements::WrapCObject(
-      litert_requirements, litert::OwnHandle::kNo);
-
-  auto supported_types = requirements.SupportedTypes();
-  ASSERT_TRUE(supported_types);
-  ASSERT_EQ(supported_types->size(), kNumSupportedTensorBufferTypes);
-  for (auto i = 0; i < supported_types->size(); ++i) {
-    ASSERT_EQ((*supported_types)[i], kSupportedTensorBufferTypes[i]);
-  }
-
-  auto size = requirements.BufferSize();
-  ASSERT_TRUE(size);
-  ASSERT_EQ(*size, kBufferSize);
-
-  ASSERT_EQ(requirements.Get(), litert_requirements);
-
-  LiteRtDestroyTensorBufferRequirements(litert_requirements);
-}
-
 TEST(TensorBufferRequirements, WithStrides) {
   constexpr std::array<uint32_t, 3> kStrides = {1, 2, 3};
 

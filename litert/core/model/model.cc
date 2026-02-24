@@ -32,6 +32,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -121,7 +122,7 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
     output_tensors.push_back(tensor);
   }
 
-  std::string name(LiteRtSignatureT::kDefaultSignatureKey);
+  std::string name(litert::kDefaultSignatureKey);
   return LiteRtSignatureT(subgraph, std::move(input_names),
                           std::move(input_tensors), std::move(output_names),
                           std::move(output_tensors), std::move(name));

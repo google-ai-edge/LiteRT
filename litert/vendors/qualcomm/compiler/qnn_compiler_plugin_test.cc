@@ -33,6 +33,7 @@
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace litert {
 namespace {
@@ -189,7 +190,7 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 13);
+  ASSERT_EQ(num_supported_soc_models, ::qnn::kNumSocInfos);
 
   const char* config_id;
   LITERT_ASSERT_OK(
@@ -291,7 +292,7 @@ TEST(TestQnnPlugin, ShareContextBinary) {
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
                                                model.Get(), &compiled));
-  uint64_t num_byte_code;
+  LiteRtParamIndex num_byte_code;
   LITERT_ASSERT_OK(
       LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
   ASSERT_EQ(num_byte_code, 1);
@@ -306,12 +307,49 @@ TEST(TestQnnPlugin, NotShareContextBinary) {
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
                                                model.Get(), &compiled));
-  uint64_t num_byte_code;
+  LiteRtParamIndex num_byte_code;
   LITERT_ASSERT_OK(
       LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
   ASSERT_EQ(num_byte_code, 3);
 
   LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestQnnPlugin, Compatibility) {
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  auto plugin = CreatePlugin();
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, nullptr));
+
+  // Check SoC model.
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "SM8750"));
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "unsupported_soc"));
+
+  // Check LiteRt API vserion backward compatibility.
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor, kApiVersion.patch - 1},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor - 1, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major - 1, kApiVersion.minor, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
+
+  // Compiler plugin doesn't support forward compatibility.
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor, kApiVersion.patch + 1},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major, kApiVersion.minor + 1, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
+      {kApiVersion.major + 1, kApiVersion.minor, kApiVersion.patch},
+      plugin.get(), nullptr, nullptr, nullptr));
 }
 
 class QnnPlyginSupportedSocCompilationTest

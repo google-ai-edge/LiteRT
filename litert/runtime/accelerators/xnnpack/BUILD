@@ -27,7 +27,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
-        "//litert/c/internal:litert_accelerator_registration",
+        "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
@@ -37,4 +37,5 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
     ],
+    alwayslink = 1,  # Keep the symbols in Windows and macOS.
 )

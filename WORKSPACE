@@ -46,9 +46,9 @@ load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
 tensorflow_source_repo(
     name = "org_tensorflow",
-    sha256 = "6e78f0d1503b3e70913512cb7c5fdafd1b69dfd45563924ee6ee9f768c8c283a",
-    strip_prefix = "tensorflow-777924f5575e7e6e22e4f47be211c2a94f59c4f5",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/777924f5575e7e6e22e4f47be211c2a94f59c4f5.tar.gz"],
+    sha256 = "3a26196b1a9cee6e56a17f2334b0be32c23c4a7367648cae942b217091728a98",
+    strip_prefix = "tensorflow-f2d8e35dc5369fb4002f57d95303eb551e85f138",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/f2d8e35dc5369fb4002f57d95303eb551e85f138.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -252,6 +252,19 @@ http_archive(
     sha256 = "4a562824ec2fbb0ef7bd0058d9f73300173d20757b33bb69baa7e50349f65820",
     strip_prefix = "darts-clone-e40ce4627526985a7767444b6ed6893ab6ff8983",
     url = "https://github.com/s-yata/darts-clone/archive/e40ce4627526985a7767444b6ed6893ab6ff8983.tar.gz",
+)
+
+# tomlplusplus
+http_archive(
+    name = "tomlplusplus",
+    build_file = "@//:BUILD.tomlplusplus",
+    patch_cmds = [
+        "echo '#define TOML_IMPLEMENTATION' > toml.cc",
+        "echo '#include \"toml.hpp\"' >> toml.cc",
+    ],
+    sha256 = "8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155",
+    strip_prefix = "tomlplusplus-3.4.0",
+    url = "https://github.com/marzer/tomlplusplus/archive/refs/tags/v3.4.0.tar.gz",
 )
 
 load("@rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")

@@ -32,19 +32,25 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
-#include "litert/runtime/accelerators/xnnpack/xnnpack_accelerator.h"
-
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
 
+extern "C" {
+
+// Define a data pointer to an accelerator definition. This pointer is updated
+// by statically linked CPU (XNNPack) accelerator.
+LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef = nullptr;
+
 // Define a data pointer to an accelerator definition. This pointer is updated
 // by statically linked GPU accelerator.
-extern "C" LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
+LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 
 // Define a function pointer for the WebNN accelerator.
-extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
+LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
     LiteRtEnvironmentT& environment) = nullptr;
+
+}  // extern "C"
 
 namespace litert {
 namespace {
@@ -270,13 +276,16 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #endif
 
   // Register the CPU accelerator.
-  if (auto cpu_registration = LiteRtRegisterCpuAccelerator(&environment);
-      cpu_registration == kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
-  } else {
-    LITERT_LOG(LITERT_WARNING,
-               "CPU accelerator could not be loaded and registered: %s.",
-               LiteRtGetStatusString(cpu_registration));
+  if (LiteRtStaticLinkedAcceleratorCpuDef != nullptr) {
+    if (auto status = RegisterAccelerator(&environment,
+                                          LiteRtStaticLinkedAcceleratorCpuDef);
+        status == kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "CPU accelerator could not be loaded and registered: %s.",
+                 LiteRtGetStatusString(status));
+    }
   }
 
   return {};

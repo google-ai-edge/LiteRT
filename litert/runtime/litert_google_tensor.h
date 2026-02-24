@@ -30,6 +30,7 @@ struct LiteRtGoogleTensorOptionsT {
   bool enable_4bit_compilation = false;
   LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity =
       kLiteRtGoogleTensorShardingIntensityMinimal;
+  bool enable_dynamic_range_quantization = false;
   std::vector<std::vector<std::string>> testing_flags = {};
 };
 

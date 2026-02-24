@@ -14,9 +14,7 @@
 
 #include "litert/runtime/accelerators/xnnpack/xnnpack_accelerator.h"
 
-#include <memory>
-
-#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
@@ -135,31 +133,41 @@ class CpuAccelerator final
 
 extern "C" {
 
-LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment) {
-  LITERT_RETURN_IF_ERROR(environment != nullptr,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "environment handle is null";
+// Discovery C object for the CPU (Xnnpack) accelerator by LiteRT.
+// This object is used by the LiteRT environment constructor and the
+// object name is looked up by dlsym().
+LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
+    .version = 1,  // LiteRtAcceleratorDefV1
+    .get_name = litert::CpuAccelerator::GetName,
+    .get_version = litert::CpuAccelerator::GetVersion,
+    .get_hardware_support = litert::CpuAccelerator::GetHardwareSupport,
+    .create_delegate = litert::CpuAccelerator::CreateDelegate,
+    .destroy_delegate = litert::CpuAccelerator::DestroyDelegate,
+    .is_tflite_delegate_responsible_for_jit_compilation =
+        litert::CpuAccelerator::IsTfLiteDelegateResponsibleForJitCompilation,
+    .create_func = nullptr,
+    .destroy_func = nullptr,
+    .lock_func = nullptr,
+    .unlock_func = nullptr,
+    .clear_func = nullptr,
+    .import_func = nullptr,
+    .num_supported_buffer_types = 0,
+};
 
-  LiteRtAccelerator accelerator_handle;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));
-  litert::internal::AcceleratorGuard accelerator(accelerator_handle);
-
-  LITERT_RETURN_IF_ERROR(litert::internal::SetAcceleratorBoilerplateFunctions<
-                         litert::CpuAccelerator>(accelerator));
-
-  LITERT_ASSIGN_OR_RETURN(auto accelerator_impl,
-                          litert::CpuAccelerator::Create());
-
-  LITERT_RETURN_IF_ERROR(
-      LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
-          accelerator.get(), litert::CpuAccelerator::
-                                 IsTfLiteDelegateResponsibleForJitCompilation));
-
-  LITERT_RETURN_IF_ERROR(LiteRtRegisterAccelerator(
-      environment, accelerator.release(), accelerator_impl.release(),
-      litert::CpuAccelerator::Destroy));
-
-  return kLiteRtStatusOk;
-}
+// Accelerator definition pointer defined in auto_registration.cc.
+extern LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
 
 }  // extern "C"
+
+namespace {
+
+class StaticCpuAcceleratorInitializer {
+ public:
+  StaticCpuAcceleratorInitializer() {
+    LiteRtStaticLinkedAcceleratorCpuDef = &LiteRtCpuAcceleratorImpl;
+  }
+};
+
+StaticCpuAcceleratorInitializer g_cpu_accelerator_initializer;
+
+}  // namespace

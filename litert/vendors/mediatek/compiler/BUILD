@@ -35,6 +35,7 @@ litert_dynamic_lib(
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
+        "//litert:litert_friends",
     ],
     deps = [
         ":compile_model",

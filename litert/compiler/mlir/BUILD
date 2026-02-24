@@ -76,6 +76,7 @@ cc_library(
         "@stablehlo//:stablehlo_passes",
         "@stablehlo//:stablehlo_passes_optimization",
         "@stablehlo//:vhlo_ops",
+        "@xla//third_party/python_runtime:headers",
     ],
 )
 

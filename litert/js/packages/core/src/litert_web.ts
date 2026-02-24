@@ -163,7 +163,7 @@ export class LiteRt {
     const wasmModel = this.liteRtWasm.loadModel(
         filledCompileOptions.environment.liteRtEnvironment, ptr,
         modelData.byteLength);
-    const wasmCompiledModel = this.liteRtWasm.compileModel(
+    const wasmCompiledModel = await this.liteRtWasm.compileModel(
         filledCompileOptions.environment.liteRtEnvironment, wasmModel,
         filledCompileOptions);
     const loadedModel = new Model(wasmModel, () => {

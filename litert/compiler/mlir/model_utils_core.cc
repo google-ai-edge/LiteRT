@@ -74,6 +74,10 @@ void RegisterPasses() {
       []() { return mlir::TFL::CreatePrepareQuantizePass(); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
       []() { return mlir::TFL::CreatePropagateQsvPass(); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
+      []() { return mlir::TFL::CreatePostQuantizePass(true); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
+      []() { return mlir::TFL::CreateFuseQDQPass(); });
 }
 
 mlir::OwningOpRef<mlir::ModuleOp> FlatbufferToMlir(mlir::MLIRContext* context,

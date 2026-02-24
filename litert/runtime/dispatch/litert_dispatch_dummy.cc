@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/vendors/c/litert_dispatch.h"
-
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/vendors/c/litert_dispatch.h"
 
 LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
                                       LiteRtOptions options) {
@@ -86,6 +87,17 @@ LiteRtStatus LiteRtDispatchInvocationContextCreate(
 
 LiteRtStatus LiteRtDispatchInvocationContextDestroy(
     LiteRtDispatchInvocationContext invocation_context) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
   return kLiteRtStatusErrorUnsupported;
 }
 

@@ -136,10 +136,8 @@ TEST(TestApplyPluginTool, TestCompile) {
   run->outs.push_back(out);
   LITERT_ASSERT_OK(ApplyPlugin(std::move(run)));
   EXPECT_FALSE(out.str().empty());
-  EXPECT_THAT(
-      out.str(),
-      HasSubstr(
-          "inputs:0,1\noutputs:2\ntensors:[2x2],[2x2],[2x2]\nops:mul(0,1)(2)"));
+  EXPECT_THAT(out.str(), HasSubstr("inputs:0,1\noutputs:2\nconst_map:\ntensors:"
+                                   "[2x2],[2x2],[2x2]\nops:mul(0,1)(2)"));
 }
 
 TEST(TestApplyPluginTool, TestApplyBadConfig) {
@@ -177,10 +175,9 @@ TEST(TestApplyPluginTool, TestApply) {
   EXPECT_EQ(name, "partition_0");
   ASSERT_LE(offset + size, serialized.Size());
 
-  EXPECT_THAT(
-      serialized.StrView().substr(offset, size),
-      HasSubstr(
-          "inputs:0,1\noutputs:2\ntensors:[2x2],[2x2],[2x2]\nops:mul(0,1)(2)"));
+  EXPECT_THAT(serialized.StrView().substr(offset, size),
+              HasSubstr("inputs:0,1\noutputs:2\nconst_map:\ntensors:[2x2],[2x2]"
+                        ",[2x2]\nops:mul(0,1)(2)"));
 }
 
 TEST(TestApplyPluginTool, TestCompileToMultiByteCode) {
@@ -194,14 +191,12 @@ TEST(TestApplyPluginTool, TestCompileToMultiByteCode) {
   LITERT_ASSERT_OK(ApplyPlugin(std::move(run)));
   EXPECT_FALSE(out_0.str().empty());
   EXPECT_FALSE(out_1.str().empty());
-  EXPECT_THAT(
-      out_0.str(),
-      HasSubstr(
-          "inputs:0,1\noutputs:2\ntensors:[2x2],[2x2],[2x2]\nops:mul(0,1)(2)"));
-  EXPECT_THAT(
-      out_1.str(),
-      HasSubstr(
-          "inputs:0,1\noutputs:2\ntensors:[4x4],[4x4],[4x4]\nops:mul(0,1)(2)"));
+  EXPECT_THAT(out_0.str(),
+              HasSubstr("inputs:0,1\noutputs:2\nconst_map:\ntensors:[2x2],[2x2]"
+                        ",[2x2]\nops:mul(0,1)(2)"));
+  EXPECT_THAT(out_1.str(),
+              HasSubstr("inputs:0,1\noutputs:2\nconst_map:\ntensors:[4x4],[4x4]"
+                        ",[4x4]\nops:mul(0,1)(2)"));
 }
 
 }  // namespace

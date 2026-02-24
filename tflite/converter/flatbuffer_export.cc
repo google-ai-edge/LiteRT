@@ -1161,25 +1161,34 @@ std::optional<BufferOffset<tflite::Buffer>> Translator::BuildBuffer(
   if (tflite_element_type == tflite::TensorType_INT4 ||
       tflite_element_type == tflite::TensorType_UINT4 ||
       tflite_element_type == tflite::TensorType_INT2) {
-    int bit_width = tflite_element_type == tflite::TensorType_INT4 ||
-                            tflite_element_type == tflite::TensorType_UINT4
-                        ? 4
-                        : 2;
     applier =
-        [bit_width](
+        [tflite_element_type](
             const std::pair<mlir::Attribute, mlir::Operation*>& attr_and_inst,
             auto apply) {
-          auto [attr_, _] = attr_and_inst;
-          auto attr = mlir::cast<ElementsAttr>(attr_);
+          auto attr = mlir::cast<mlir::DenseElementsAttr>(attr_and_inst.first);
+          bool is_8bit_raw_data =
+              !attr.isSplat() &&
+              attr.getNumElements() == attr.getRawData().size();
+          bool is_4bit_data = tflite_element_type == tflite::TensorType_INT4 ||
+                              tflite_element_type == tflite::TensorType_UINT4;
 
-          std::vector<uint8_t> data;
-          for (mlir::APInt v : attr.getValues<mlir::APInt>()) {
-            data.emplace_back(static_cast<uint8_t>(*(v.getRawData())));
+          if (is_8bit_raw_data) {
+            if (is_4bit_data) {
+              return tflite::StreamPackLowBitValues8Bit</*kBitWidth=*/4>(
+                  attr.getRawData(), apply);
+            } else {
+              return tflite::StreamPackLowBitValues8Bit</*kBitWidth=*/2>(
+                  attr.getRawData(), apply);
+            }
+          } else {
+            if (is_4bit_data) {
+              return tflite::StreamPackLowBitValues</*kBitWidth=*/4>(
+                  attr.getValues<mlir::APInt>(), apply);
+            } else {
+              return tflite::StreamPackLowBitValues</*kBitWidth=*/2>(
+                  attr.getValues<mlir::APInt>(), apply);
+            }
           }
-          auto packed_buffer = tflite::PackLowBitValuesDensely(data, bit_width);
-          return apply(
-              absl::string_view(reinterpret_cast<char*>(packed_buffer.data()),
-                                packed_buffer.size()));
         };
   } else {
     applier =

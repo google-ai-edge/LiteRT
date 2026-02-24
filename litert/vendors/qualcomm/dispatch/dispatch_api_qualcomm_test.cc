@@ -1179,4 +1179,32 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
             kLiteRtStatusOk);
 }
+
+TEST(Qualcomm, DispatchApiCompatibility) {
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  LITERT_EXPECT_OK(
+      LiteRtDispatchCheckRuntimeCompatibility(kApiVersion, nullptr, nullptr));
+  // Check LiteRt API vserion backward compatibility.
+  LITERT_EXPECT_OK(LiteRtDispatchCheckRuntimeCompatibility(
+      {kApiVersion.major, kApiVersion.minor, kApiVersion.patch - 1}, nullptr,
+      nullptr));
+  LITERT_EXPECT_OK(LiteRtDispatchCheckRuntimeCompatibility(
+      {kApiVersion.major, kApiVersion.minor - 1, kApiVersion.patch}, nullptr,
+      nullptr));
+  LITERT_EXPECT_OK(LiteRtDispatchCheckRuntimeCompatibility(
+      {kApiVersion.major - 1, kApiVersion.minor, kApiVersion.patch}, nullptr,
+      nullptr));
+  // Dispatch api doesn't support forward compatibility.
+  LITERT_EXPECT_ERROR(LiteRtDispatchCheckRuntimeCompatibility(
+      {kApiVersion.major, kApiVersion.minor, kApiVersion.patch + 1}, nullptr,
+      nullptr));
+  LITERT_EXPECT_ERROR(LiteRtDispatchCheckRuntimeCompatibility(
+      {kApiVersion.major, kApiVersion.minor + 1, kApiVersion.patch}, nullptr,
+      nullptr));
+  LITERT_EXPECT_ERROR(LiteRtDispatchCheckRuntimeCompatibility(
+      {kApiVersion.major + 1, kApiVersion.minor, kApiVersion.patch}, nullptr,
+      nullptr));
+}
 }  // namespace

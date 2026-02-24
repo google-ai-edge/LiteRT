@@ -744,9 +744,6 @@ class LiteRtSignatureT {
   using Ref = std::reference_wrapper<LiteRtSignatureT>;
   using Alloc = ::litert::internal::IrAllocator<LiteRtSignatureT>;
 
-  static constexpr absl::string_view kDefaultSignatureKey =
-      "<placeholder signature>";
-
   LiteRtSignatureT(LiteRtSubgraph subgraph, StrVec input_names,
                    std::vector<LiteRtTensor> input_tensors, StrVec output_names,
                    std::vector<LiteRtTensor> output_tensors, std::string key)

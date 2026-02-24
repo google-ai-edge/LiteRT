@@ -227,8 +227,7 @@ def _IntelOpenVinoSpec():
                 # copybara:uncomment_end_and_comment_begin
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
-                # Enable this once the plugin is available in OSS.
-                #("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
                 # copybara:comment_end
             ],
             mh_devices = [{

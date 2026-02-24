@@ -317,9 +317,11 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any(tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation)));
       } else if (name == "group") {
-        // This information(depth_multiplier) is marked as redundant in litert.
-        // TODO: Need to check what is the correct value to be returned.
-        return ov::Any(0);
+        int32_t group = 0;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthwiseConv2dDepthMultiplierOption(litert_op_, &group),
+            ERROR_LOG_STR("group", op_name_.c_str()));
+        return ov::Any(group);
       } else if (name == "data_format") {
         return ov::Any("NHWC");
       }

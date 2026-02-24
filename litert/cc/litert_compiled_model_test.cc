@@ -34,7 +34,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
@@ -340,6 +339,71 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   }
 }
 
+// Tests Compiled Model signature accessors.
+TEST(CompiledModelTest, SignatureAccessors) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Check signature keys.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signature_keys,
+                              compiled_model.GetSignatureKeys());
+  EXPECT_THAT(signature_keys,
+              ElementsAre(compiled_model.DefaultSignatureKey()));
+
+  // Check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, compiled_model.GetSignatures());
+  ASSERT_EQ(signatures.size(), 1);
+  EXPECT_EQ(signatures[0].Key(), compiled_model.DefaultSignatureKey());
+  EXPECT_THAT(signatures[0].InputNames(), ElementsAre("arg0", "arg1"));
+  EXPECT_THAT(signatures[0].OutputNames(), ElementsAre("tfl.add"));
+
+  // Check GetSignature by index.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signature, compiled_model.GetSignature(0));
+  EXPECT_EQ(signature.Key(), compiled_model.DefaultSignatureKey());
+
+  // Check signature input names by key.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames(
+                                  compiled_model.DefaultSignatureKey()));
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  // Check signature output names by key.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames(
+                                  compiled_model.DefaultSignatureKey()));
+  EXPECT_THAT(output_names, ElementsAre("tfl.add"));
+}
+
+TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Check GetSignature with invalid index.
+  EXPECT_FALSE(compiled_model.GetSignature(100).HasValue());
+
+  // Check GetSignatureIndex with invalid key.
+  EXPECT_FALSE(compiled_model.GetSignatureIndex("invalid_key").HasValue());
+
+  // Check GetSignatureInputNames with invalid key.
+  EXPECT_FALSE(compiled_model.GetSignatureInputNames("invalid_key").HasValue());
+
+  // Check GetSignatureOutputNames with invalid key.
+  EXPECT_FALSE(
+      compiled_model.GetSignatureOutputNames("invalid_key").HasValue());
+}
+
 // Tests Compiled Model async API on CPU. In the CPU case, the async API should
 // always return false.
 TEST(CompiledModelTest, RunAsyncReturnsFalse) {
@@ -526,14 +590,15 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
   // Test resizing with signature index
   {
+    size_t signature_index = 0;
     const std::vector<int> new_dims = {3, 2, 3};
     LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
-        /*signature_index=*/size_t(0), /*input_index=*/size_t(0),
+        signature_index, /*input_index=*/size_t(0),
         absl::MakeConstSpan(new_dims)));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBufferRequirements requirements,
-        compiled_model.GetInputBufferRequirements(/*signature_index=*/size_t(0),
+        compiled_model.GetInputBufferRequirements(signature_index,
                                                   /*input_index=*/size_t(0)));
     LITERT_ASSERT_OK_AND_ASSIGN(size_t buffer_size, requirements.BufferSize());
     EXPECT_EQ(buffer_size, 3 * 2 * 3 * sizeof(float));
@@ -981,6 +1046,60 @@ TEST(CompiledModelTest, ResizeInputTensorNonStrictAllowsStaticShapes) {
       /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
   LITERT_ASSERT_OK(compiled_model.ResizeInputTensorNonStrict(
       /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
+}
+
+TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // Check input buffer requirements.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements input_requirements,
+      compiled_model.GetInputBufferRequirements(/*input_name=*/"arg0"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> input_types,
+                              input_requirements.SupportedTypes());
+  EXPECT_THAT(input_types, ElementsAre(TensorBufferType::kHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_size,
+                              input_requirements.BufferSize());
+  EXPECT_EQ(input_size, kTestInput0Size * sizeof(float));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t input_alignment,
+                              input_requirements.Alignment());
+  EXPECT_GE(input_alignment, 0);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_strides, input_requirements.Strides());
+  EXPECT_EQ(input_strides.size(), 1);
+  EXPECT_EQ(input_strides[0], 0);
+
+  // Check output buffer requirements.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements output_requirements,
+      compiled_model.GetOutputBufferRequirements(/*output_name=*/"tfl.add"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_types,
+                              output_requirements.SupportedTypes());
+  EXPECT_THAT(output_types, ElementsAre(TensorBufferType::kHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t output_size,
+                              output_requirements.BufferSize());
+  EXPECT_EQ(output_size, kTestOutputSize * sizeof(float));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(size_t output_alignment,
+                              output_requirements.Alignment());
+  EXPECT_GE(output_alignment, 0);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_strides,
+                              output_requirements.Strides());
+  EXPECT_EQ(output_strides.size(), 1);
+  EXPECT_EQ(output_strides[0], 0);
 }
 
 }  // namespace

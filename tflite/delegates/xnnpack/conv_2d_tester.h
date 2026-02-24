@@ -21,13 +21,14 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "tflite/core/c/common.h"
+#include "tflite/delegates/xnnpack/test_util.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace tflite {
 namespace xnnpack {
 
-class Conv2DTester {
+class Conv2DTester : public ModelCache<Conv2DTester> {
  public:
   enum class WeightsType {
     kFP32,
@@ -241,9 +242,9 @@ class Conv2DTester {
     return *this;
   }
 
-  void Test(TfLiteDelegate* delegate) const;
+  void Test(TfLiteDelegate* delegate);
 
-  std::vector<char> CreateTfLiteModel() const;
+  std::vector<char> CreateTfLiteModel() const override;
 
  private:
   inline WeightsType WeightsType() const { return weights_type_; }

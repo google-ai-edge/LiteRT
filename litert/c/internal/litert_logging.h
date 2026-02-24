@@ -36,11 +36,7 @@ typedef enum : int8_t {
   kLiteRtLogSeveritySilent = 4,
 } LiteRtLogSeverity;
 
-#ifdef NDEBUG
 #define LITERT_DEBUG kLiteRtLogSeverityDebug
-#else
-#define LITERT_DEBUG kLiteRtLogSeverityInfo
-#endif
 #define LITERT_VERBOSE kLiteRtLogSeverityVerbose
 #define LITERT_INFO kLiteRtLogSeverityInfo
 #define LITERT_WARNING kLiteRtLogSeverityWarning

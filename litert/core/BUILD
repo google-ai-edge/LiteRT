@@ -141,7 +141,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
-        "//litert/runtime:gpu_environment_header",
+        "//litert/runtime:gpu_environment",
         "//litert/runtime:tensor_buffer_registry_header",
         "//tflite/core/api:error_reporter",
         "@com_google_absl//absl/types:span",
@@ -292,5 +292,31 @@ cc_test(
         ":buffer_error_reporter",
         ":error_reporter",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_toml_parser",
+    srcs = ["litert_toml_parser.cc"],
+    hdrs = ["litert_toml_parser.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_toml_parser_test",
+    srcs = ["litert_toml_parser_test.cc"],
+    deps = [
+        ":litert_toml_parser",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@tomlplusplus",
     ],
 )

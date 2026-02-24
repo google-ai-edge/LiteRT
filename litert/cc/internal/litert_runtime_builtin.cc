@@ -69,7 +69,6 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
     .litert_get_num_subgraph_ops = LiteRtGetNumSubgraphOps,
     .litert_get_subgraph_op = LiteRtGetSubgraphOp,
     // LiteRtSignature
-    .litert_get_default_signature_key = LiteRtGetDefaultSignatureKey,
     .litert_get_signature_key = LiteRtGetSignatureKey,
     .litert_get_signature_subgraph = LiteRtGetSignatureSubgraph,
     .litert_get_num_signature_inputs = LiteRtGetNumSignatureInputs,
@@ -109,7 +108,10 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
         LiteRtGetCompiledModelOutputTensorLayouts,
     .litert_get_compiled_model_environment = LiteRtGetCompiledModelEnvironment,
     .litert_run_compiled_model = LiteRtRunCompiledModel,
+    .litert_run_compiled_model_with_options = LiteRtRunCompiledModelWithOptions,
     .litert_run_compiled_model_async = LiteRtRunCompiledModelAsync,
+    .litert_run_compiled_model_async_with_options =
+        LiteRtRunCompiledModelAsyncWithOptions,
     .litert_set_compiled_model_cancellation_function =
         LiteRtSetCompiledModelCancellationFunction,
     .litert_destroy_compiled_model = LiteRtDestroyCompiledModel,
@@ -282,4 +284,11 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
     .litert_get_num_profiler_events = LiteRtGetNumProfilerEvents,
     .litert_get_profiler_events = LiteRtGetProfilerEvents,
     .litert_get_profile_summary = LiteRtGetProfileSummary,
+    // Scheduling info APIs
+    .litert_compiled_model_set_scheduling_info =
+        LiteRtCompiledModelSetSchedulingInfo,
+    .litert_run_compiled_model_with_scheduling_info =
+        LiteRtRunCompiledModelWithSchedulingInfo,
+    .litert_run_compiled_model_async_with_scheduling_info =
+        LiteRtRunCompiledModelAsyncWithSchedulingInfo,
 };

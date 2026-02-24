@@ -941,8 +941,12 @@ Expected<bool> CompilerPlugin::CheckCompilerCompatibility(
   if (!plugin_api_version) {
     return plugin_api_version.Error();
   }
+  const char* soc_model_name = nullptr;
+  if (!soc_model.empty()) {
+    soc_model_name = soc_model.data();
+  }
   LITERT_RETURN_IF_ERROR(plugin_api_.check_compiler_compatibility(
-      *plugin_api_version, plugin_handle_, env_, options_, soc_model.data()));
+      *plugin_api_version, plugin_handle_, env_, options_, soc_model_name));
   return true;
 }
 

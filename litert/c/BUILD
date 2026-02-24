@@ -496,6 +496,7 @@ cc_library(
         ":litert_options",
         ":litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
         "//tflite/c:c_api_types",
@@ -562,6 +563,12 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "litert_opaque_options_header",
+    hdrs = ["litert_opaque_options.h"],
+    deps = [":litert_common"],
+)
+
 cc_test(
     name = "litert_opaque_options_test",
     srcs = ["litert_opaque_options_test.cc"],
@@ -615,6 +622,7 @@ cc_test(
     srcs = ["litert_profiler_test.cc"],
     deps = [
         ":litert_common",
+        ":litert_environment",
         ":litert_profiler",
         ":litert_profiler_event",
         "@com_google_googletest//:gtest_main",
@@ -698,7 +706,6 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_intel_openvino_options",
-    "//litert/c/options:litert_runtime_options",
 ]
 
 # This test verifies that the C API header files can build via C compiler.
@@ -707,7 +714,10 @@ cc_test(
     srcs = ["litert_c_api_common_test.c"],
     copts = ["--std=c11"],
     linkopts = ["-ldl"],
-    deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
+    deps = LITERT_C_API_COMMON_DEPS + [
+        ":litert_profiler_event",
+        "//litert/c/options:litert_runtime_options",
+    ],
 )
 
 # TODO: b/437381008
@@ -898,6 +908,7 @@ cc_library(
         ":litert_webgpu_types",
         # only depend on headers
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_scheduling_info",
         "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/core/api",

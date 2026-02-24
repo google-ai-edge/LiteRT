@@ -17,7 +17,9 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
@@ -70,6 +72,13 @@ typedef LiteRtStatus (*LiteRtDispatchInvocationContextCreateT)(
 
 typedef LiteRtStatus (*LiteRtDispatchInvocationContextDestroyT)(
     LiteRtDispatchInvocationContext invocation_context);
+
+typedef LiteRtStatus (*LiteRtDispatchInvocationContextSetOptionsT)(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options);
+
+typedef LiteRtStatus (*LiteRtDispatchInvocationContextSetSchedulingInfoT)(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info);
 
 typedef LiteRtStatus (*LiteRtDispatchAttachInputT)(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
@@ -124,6 +133,8 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchUnregisterTensorBufferT unregister_tensor_buffer;
   LiteRtDispatchInvocationContextCreateT invocation_context_create;
   LiteRtDispatchInvocationContextDestroyT invocation_context_destroy;
+  LiteRtDispatchInvocationContextSetSchedulingInfoT
+      invocation_context_set_scheduling_info;
   LiteRtDispatchAttachInputT attach_input;
   LiteRtDispatchAttachOutputT attach_output;
   LiteRtDispatchDetachInputT detach_input;
@@ -135,6 +146,7 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchGetMetricT get_metric;
   LiteRtDispatchDestroyMetricsT destroy_metrics;
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
+  LiteRtDispatchInvocationContextSetOptionsT invocation_context_set_options;
 } LiteRtDispatchInterface;
 
 // /////////////////////////////////////////////////////////////////////////////

@@ -88,7 +88,7 @@ export declare interface LiteRtEnvironment extends Deletable {
  * Options for loading and compiling a LiteRt model.
  */
 export declare interface LiteRtCompileOptions {
-  accelerator?: 'webgpu'|'wasm';
+  accelerator?: 'wasm'|'webgpu'|'webnn';
 }
 
 declare const liteRtModelBrand: unique symbol;
@@ -374,7 +374,7 @@ export declare interface LiteRtWasm extends WasmModule {
       environment: LiteRtEnvironment,
       model: LiteRtModel,
       options?: LiteRtCompileOptions,
-      ): LiteRtCompiledModel;
+      ): LiteRtCompiledModel|Promise<LiteRtCompiledModel>;
   wgpuBufferRelease(bufferPtr: number): void;
   LiteRtTensorBuffer: LiteRtTensorBufferConstructor;
   LiteRtTensorBufferType: LiteRtTensorBufferTypeEnum;

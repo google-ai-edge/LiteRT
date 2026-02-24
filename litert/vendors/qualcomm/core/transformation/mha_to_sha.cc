@@ -468,12 +468,10 @@ size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
   std::move(sha_ops.begin(), sha_ops.end(), std::back_inserter(new_ops));
 
   // Validate new graph.
-  // TODO(jiunkaiy): Disable bypassing Split int16 op validator.
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
-                    return op_wrapper.IsOpCode(QnnOpCode::kSplit) ||
-                           validate_op_config(op_wrapper);
+                    return validate_op_config(op_wrapper);
                   });
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.
@@ -534,12 +532,10 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
   std::move(sha_ops.begin(), sha_ops.end(), std::back_inserter(new_ops));
 
   // Validate new graph.
-  // TODO(jiunkaiy): Disable bypassing Split int16 op validator.
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
-                    return op_wrapper.IsOpCode(QnnOpCode::kSplit) ||
-                           validate_op_config(op_wrapper);
+                    return validate_op_config(op_wrapper);
                   });
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.
@@ -969,8 +965,7 @@ size_t OptimizeMHATinyGemmaPrefillPatternWithGlobalMask(
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](OpWrapper& op_wrapper) -> bool {
-                    return op_wrapper.IsOpCode(QnnOpCode::kSplit) ||
-                           validate_op_config(op_wrapper);
+                    return validate_op_config(op_wrapper);
                   });
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.
@@ -1044,8 +1039,7 @@ size_t OptimizeMHATinyGemmaPrefillPattern(
   const bool is_valid =
       std::all_of(new_ops.begin(), new_ops.end(),
                   [validate_op_config](OpWrapper& op_wrapper) -> bool {
-                    return op_wrapper.IsOpCode(QnnOpCode::kSplit) ||
-                           validate_op_config(op_wrapper);
+                    return validate_op_config(op_wrapper);
                   });
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.

@@ -33,6 +33,9 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * <NOTES SHOULD BE GROUPED PER AREA>
 -->
 
+* Fixed a bug that given CPU Buffers are not always synced with GPU Accelerator
+  from the second inference.
+
 * Removed methods from `litert::Event` which uses C type `LiteRtEnvironment`.
   All C++ API should uses C++ `litert::Environment` instead.
   Also removed method `CreateFromSyncFenceFd()` that doesn't accept

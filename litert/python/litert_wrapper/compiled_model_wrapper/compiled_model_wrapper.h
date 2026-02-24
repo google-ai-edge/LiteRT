@@ -46,7 +46,6 @@ class CompiledModelWrapper {
    *        These are bit flags that can be combined with bitwise OR:
    *        1 (kCpu)  - CPU acceleration (always works)
    *        2 (kGpu)  - GPU acceleration (WebGPU/OpenCL/Metal)
-   *        4 (kNpu)  - NPU/TPU acceleration (if available)
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param out_error String to store error message if creation fails
@@ -71,7 +70,6 @@ class CompiledModelWrapper {
    *        These are bit flags that can be combined with bitwise OR:
    *        1 (kCpu)  - CPU acceleration (always works)
    *        2 (kGpu)  - GPU acceleration (WebGPU/OpenCL/Metal)
-   *        4 (kNpu)  - NPU/TPU acceleration (if available)
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param out_error String to store error message if creation fails

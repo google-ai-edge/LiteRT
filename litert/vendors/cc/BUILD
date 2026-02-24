@@ -60,6 +60,7 @@ cc_test(
     deps = [
         ":options_helper",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",

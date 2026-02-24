@@ -26,6 +26,7 @@ add_library(litert_core STATIC
     environment.cc
     environment_options.cc
     filesystem.cc
+    litert_toml_parser.cc
     util/flatbuffer_tools.cc
     util/tensor_type_util.cc
 )

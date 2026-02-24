@@ -149,7 +149,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
-      env, model, static_cast<HwAccelerators>(hardware_accel));
+      env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;
@@ -218,7 +218,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
-      env, model, static_cast<HwAccelerators>(hardware_accel));
+      env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;

@@ -16,8 +16,10 @@
 #include <exception>
 
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_environment_options.h"
@@ -285,6 +287,16 @@ LiteRtStatus DispatchInvocationContextDestroy(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus DispatchInvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (invocation_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  invocation_context->SetSchedulingInfo(scheduling_info);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus DispatchAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
@@ -391,6 +403,8 @@ LiteRtDispatchInterface TheInterface = {
         litert::openvino::DispatchInvocationContextCreate,
     .invocation_context_destroy =
         litert::openvino::DispatchInvocationContextDestroy,
+    .invocation_context_set_scheduling_info =
+        litert::openvino::DispatchInvocationContextSetSchedulingInfo,
     .attach_input = litert::openvino::DispatchAttachInput,
     .attach_output = litert::openvino::DispatchAttachOutput,
     .detach_input = litert::openvino::DispatchDetachInput,

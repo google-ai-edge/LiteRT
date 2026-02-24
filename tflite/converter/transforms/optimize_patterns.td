@@ -2303,3 +2303,27 @@ def BMMMoveConstantInputToRHS : Pat<
    (HasRankN<2> $filter),
    (IsLastDimensionEqualOne $const_input),
    (SameElementType $const_input, $filter)]>;
+
+def EliminateAddZerosLikeRHS : Pat<
+  (TFL_AddOp:$output $lhs, (TFL_ZerosLikeOp $ignored), $act_fn),
+  (replaceWithValue $lhs),
+  [(IsNoneType $act_fn), (HaveSameType $lhs, $output)]
+>;
+
+def EliminateAddZerosLikeLHS : Pat<
+  (TFL_AddOp:$output (TFL_ZerosLikeOp $ignored), $rhs, $act_fn),
+  (replaceWithValue $rhs),
+  [(IsNoneType $act_fn), (HaveSameType $rhs, $output)]
+>;
+
+def EliminateSubZerosLikeRHS : Pat<
+  (TFL_SubOp:$output $lhs, (TFL_ZerosLikeOp $ignored), $act_fn),
+  (replaceWithValue $lhs),
+  [(IsNoneType $act_fn), (HaveSameType $lhs, $output)]
+>;
+
+def ConvertSubZerosLikeToNeg : Pat<
+  (TFL_SubOp:$output (TFL_ZerosLikeOp $ignored), $rhs, $act_fn),
+  (TFL_NegOp $rhs),
+  [(IsNoneType $act_fn), (HaveSameType $rhs, $output)]
+>;
