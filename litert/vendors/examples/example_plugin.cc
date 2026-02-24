@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
@@ -56,8 +57,8 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
   }
   // Example plugin does not depend on any compiler library, so we can
   // return an error to test the error handling.
-  if (strcmp(soc_model_name, litert::example::kIncompatiblePluginSocModel) ==
-      0) {
+  if (absl::string_view(soc_model_name) ==
+      litert::example::kIncompatiblePluginSocModel) {
     LITERT_LOG(LITERT_ERROR, "Incompatible compiler version.");
     return kLiteRtStatusErrorUnsupportedCompilerVersion;
   }
