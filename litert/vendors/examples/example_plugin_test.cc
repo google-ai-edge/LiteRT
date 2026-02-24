@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -78,10 +79,13 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
-  ASSERT_EQ(byte_code_string,
-            "version:1\ninputs:0,1\noutputs:3\ntensors:[2x2],[2x2],[2x2],[2x2]"
-            "\nops:mul(0,"
-            "0)(2)~mul(2,1)(3)");
+  ASSERT_EQ(
+      byte_code_string,
+      "SUBGRAPH "
+      "partition_0\nversion:1\ninputs:0,1\noutputs:3\nconst_map:\ntensors:["
+      "2x2],[2x2],[2x2],[2x2]"
+      "\nops:mul(0,"
+      "0)(2)~mul(2,1)(3)\n");
 
   LiteRtParamIndex byte_code_idx;
   const void* op_data;
@@ -120,6 +124,30 @@ TEST(TestCallDummyPlugin, CheckCompilerCompatibility) {
       kLiteRtStatusErrorUnsupportedCompilerVersion,
       LiteRtCompilerPluginCheckCompilerCompatibility(
           api_version, plugin.get(), env, options, "UnsupportedSocModel"));
+}
+
+TEST(TestCallDummyPlugin, CompileMultiSubgraphWithSharedWeights) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("cst_multi_subgraph.tflite");
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(
+      plugin.get(), /*soc_model=*/nullptr, model.Get(), &compiled));
+
+  const void* byte_code;
+  size_t byte_code_size;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+      compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
+
+  absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
+                                     byte_code_size);
+
+  EXPECT_THAT(byte_code_string, ::testing::HasSubstr("BUFFER "));
+  EXPECT_THAT(byte_code_string, ::testing::HasSubstr("SUBGRAPH partition_0"));
+  EXPECT_THAT(byte_code_string, ::testing::HasSubstr("SUBGRAPH partition_1"));
+  EXPECT_THAT(byte_code_string, ::testing::HasSubstr("const_map:"));
+
+  LiteRtDestroyCompiledResult(compiled);
 }
 
 }  // namespace

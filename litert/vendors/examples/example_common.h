@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -106,9 +107,11 @@ struct ExampleTensor {
 
   Dims dims;
   Data data = {};
-  const Type type = Type::kFloat32;
+  Type type = Type::kFloat32;
 
-  ExampleTensor(Dims dims, Data data = {})
+  ExampleTensor() = default;
+
+  explicit ExampleTensor(Dims dims, Data data = {})
       : dims(std::move(dims)), data(std::move(data)) {}
 
   template <typename Sink>
@@ -160,6 +163,7 @@ class ExampleGraph {
 static constexpr absl::string_view kSchema = R"(version:%s
 inputs:%s
 outputs:%s
+const_map:%s
 tensors:%s
 ops:%s)";
   // clang-format on
@@ -178,9 +182,15 @@ ops:%s)";
   // Serialize IR (compilation).
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const ExampleGraph& g) {
+    std::vector<std::string> const_map_strs;
+    const_map_strs.reserve(g.const_map_.size());
+    for (const auto& [idx, buf_id] : g.const_map_) {
+      const_map_strs.push_back(absl::StrFormat("%d:%d", idx, buf_id));
+    }
     absl::Format(&sink, kSchema, g.version_,
                  absl::StrJoin(g.inputs_, kFirstDelim),
                  absl::StrJoin(g.outputs_, kFirstDelim),
+                 absl::StrJoin(const_map_strs, kFirstDelim),
                  absl::StrJoin(g.tensors_, kFirstDelim),
                  absl::StrJoin(g.ops_, kSecondDelim));
   }
@@ -193,9 +203,11 @@ ops:%s)";
   // Read IR (execution).
   const std::string& version() const { return version_; }
   const std::vector<ExampleTensor>& Tensors() const { return tensors_; }
+  std::vector<ExampleTensor>& MutableTensors() { return tensors_; }
   const std::vector<ExampleOp>& Ops() const { return ops_; }
   const Inds& Inputs() const { return inputs_; }
   const Inds& Outputs() const { return outputs_; }
+  const std::map<Index, uint32_t>& ConstMap() const { return const_map_; }
 
   template <class... Is>
   void SetInputs(Is&&... is) {
@@ -207,10 +219,15 @@ ops:%s)";
     outputs_ = Inds{std::forward<Os>(os)...};
   }
 
+  void AddConstMap(Index tensor_idx, uint32_t buf_id) {
+    const_map_[tensor_idx] = buf_id;
+  }
+
   void SetVersion(std::string version) { version_ = std::move(version); }
 
   // Parse IR (execution).
   static Expected<ExampleGraph> Parse(BufferRef<uint8_t> serialized);
+  static Expected<ExampleGraph> Parse(absl::string_view serialized);
 
  private:
   std::string version_;
@@ -218,6 +235,31 @@ ops:%s)";
   std::vector<ExampleOp> ops_;
   Inds inputs_;
   Inds outputs_;
+  std::map<Index, uint32_t> const_map_;
+};
+
+class ExampleGlobalGraph {
+ public:
+  std::map<std::string, ExampleGraph> subgraphs_;
+  std::map<uint32_t, ExampleTensor> buffers_;
+
+  static Expected<ExampleGlobalGraph> Parse(BufferRef<uint8_t> serialized);
+
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const ExampleGlobalGraph& g) {
+    for (const auto& [id, buffer] : g.buffers_) {
+      absl::Format(&sink, "BUFFER %d\n%v\nDATA:%s\n", id, buffer,
+                   absl::StrJoin(buffer.data, ","));
+    }
+    for (const auto& [name, subgraph] : g.subgraphs_) {
+      absl::Format(&sink, "SUBGRAPH %s\n%v\n", name, subgraph);
+    }
+  }
+
+  Expected<OwningBufferRef<uint8_t>> Serialize() const {
+    const auto serialized = absl::StrFormat("%v", *this);
+    return OwningBufferRef<uint8_t>(absl::string_view(serialized));
+  }
 };
 
 // Executes the graph, returning output tensors.

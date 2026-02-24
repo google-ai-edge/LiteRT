@@ -18,11 +18,9 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -42,12 +40,10 @@ TEST(ExampleEndToEndTest, JIT) {
       Environment::Option{
           Environment::OptionTag::CompilerPluginLibraryDir,
           libs_path,
-
       },
       Environment::Option{
           Environment::OptionTag::DispatchLibraryDir,
           libs_path,
-
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(

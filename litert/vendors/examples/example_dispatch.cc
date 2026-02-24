@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <array>
 #include <cstdint>
 #include <list>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -28,14 +28,13 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
@@ -95,20 +94,60 @@ class LiteRtDispatchInvocationContextT {
                              "Inputs are null");
     }
     LITERT_ASSIGN_OR_RETURN(
-        auto example_graph,
-        ::litert::example::ExampleGraph::Parse(::litert::BufferRef<uint8_t>(
-            exec_bytecode_buffer->base_addr,
-            exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
-            exec_bytecode_buffer->offset)));
+        auto global_graph,
+        ::litert::example::ExampleGlobalGraph::Parse(
+            ::litert::BufferRef<uint8_t>(
+                exec_bytecode_buffer->base_addr,
+                exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
+                exec_bytecode_buffer->offset)));
+
+    // Find the subgraph.
+    if (global_graph.subgraphs_.find(function_name) ==
+        global_graph.subgraphs_.end()) {
+      return litert::Error(kLiteRtStatusErrorNotFound, "Subgraph not found");
+    }
+    auto& example_graph = global_graph.subgraphs_.at(function_name);
 
     if (example_graph.version() != "1") {
       return litert::Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
                            "Bytecode version is not compatible");
     }
 
-    return Ptr(new LiteRtDispatchInvocationContextT(
+    auto context = Ptr(new LiteRtDispatchInvocationContextT(
         device_context, exec_type, absl::string_view(function_name),
-        std::move(example_graph)));
+        std::move(global_graph)));
+    context->Initialize();
+    return context;
+  }
+
+  void Initialize() {
+    auto& example_graph =
+        global_graph_.subgraphs_.at(std::string(function_name_));
+    example_graph_ptr_ = &example_graph;
+    // Build map from Tensor Index to Input Index
+    absl::flat_hash_map<int, int> tensor_to_input_idx;
+    const auto& graph_inputs = example_graph_ptr_->Inputs();
+    for (int i = 0; i < graph_inputs.size(); ++i) {
+      tensor_to_input_idx[graph_inputs[i]] = i;
+    }
+
+    // Pre-load constants.
+    for (const auto& [tensor_idx, buf_id] : example_graph_ptr_->ConstMap()) {
+      if (global_graph_.buffers_.count(buf_id)) {
+        const auto& buffer_tensor = global_graph_.buffers_[buf_id];
+        if (tensor_to_input_idx.contains(tensor_idx)) {
+          int input_idx = tensor_to_input_idx[tensor_idx];
+          constant_buffers_.push_back(buffer_tensor.data);
+          inputs_[input_idx] = &constant_buffers_.back();
+        } else {
+          // Internal constant, populate data in ExampleGraph tensor
+          if (tensor_idx < example_graph.MutableTensors().size()) {
+            example_graph.MutableTensors()[tensor_idx].data =
+                buffer_tensor.data;
+          }
+        }
+      }
+    }
   }
 
   absl::string_view FunctionName() const { return function_name_; }
@@ -136,7 +175,13 @@ class LiteRtDispatchInvocationContextT {
   }
 
   void Setup() {
-    for (auto* input : inputs_) {
+    const auto& const_map = example_graph_ptr_->ConstMap();
+    const auto& graph_inputs = example_graph_ptr_->Inputs();
+    for (int i = 0; i < inputs_.size(); ++i) {
+      if (const_map.count(graph_inputs[i])) {
+        continue;
+      }
+      auto* input = inputs_[i];
       ::litert::TensorBuffer buffer = device_context_->Lookup(input);
       std::vector<float> input_data(4);
       buffer.Read(absl::MakeSpan(input_data));
@@ -178,7 +223,7 @@ class LiteRtDispatchInvocationContextT {
   }
 
   const ::litert::example::ExampleGraph& ExampleGraph() const {
-    return example_graph_;
+    return *example_graph_ptr_;
   }
 
   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
@@ -201,19 +246,28 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchInvocationContextT(
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type, absl::string_view function_name,
-      ::litert::example::ExampleGraph example_graph)
+      ::litert::example::ExampleGlobalGraph global_graph)
       : device_context_(device_context),
         exec_type_(exec_type),
         function_name_(function_name),
-        inputs_(example_graph.Inputs().size()),
-        outputs_(example_graph.Outputs().size()),
-        example_graph_(std::move(example_graph)) {}
+        global_graph_(std::move(global_graph)) {
+    // We cannot access example_graph_ptr_ yet as it points into global_graph_.
+    // Initialize() sets it up.
+    // Use the subgraph from global_graph_ to size inputs/outputs.
+    const auto& example_graph =
+        global_graph_.subgraphs_.at(std::string(function_name_));
+    inputs_.resize(example_graph.Inputs().size());
+    outputs_.resize(example_graph.Outputs().size());
+  }
+
   LiteRtDispatchDeviceContext device_context_;
   LiteRtDispatchExecutableType exec_type_;
   absl::string_view function_name_;
   std::vector<BufferHandle> inputs_;
   std::vector<BufferHandle> outputs_;
-  ::litert::example::ExampleGraph example_graph_;
+  ::litert::example::ExampleGlobalGraph global_graph_;
+  const ::litert::example::ExampleGraph* example_graph_ptr_ = nullptr;
+  std::list<Buffer> constant_buffers_;
 
   bool has_scheduling_info_ = false;
   LiteRtSchedulingInfo scheduling_info_{};
