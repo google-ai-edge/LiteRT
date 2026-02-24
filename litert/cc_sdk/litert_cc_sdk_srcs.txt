@@ -12,7 +12,6 @@ litert/cc/litert_options.cc
 litert/cc/litert_tensor_buffer.cc
 litert/cc/options/litert_compiler_options.cc
 litert/cc/options/litert_cpu_options.cc
-litert/cc/options/litert_darwinn_options.cc
 litert/cc/options/litert_google_tensor_options.cc
 litert/cc/options/litert_gpu_options.cc
 litert/cc/options/litert_intel_openvino_options.cc
