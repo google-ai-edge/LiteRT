@@ -59,6 +59,57 @@ target_link_libraries(qnn_manager_test
         GTest::gtest_main
 )
 
+# QNN backend model test
+add_executable(qnn_model_test)
+
+target_sources(qnn_model_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/qnn_model_test.cc
+)
+
+target_link_libraries(qnn_model_test
+    PRIVATE
+        qnn_test_utils
+        GTest::gmock
+        GTest::gtest_main
+)
+
+# QNN backend builder tests
+add_executable(builder_test)
+
+target_sources(builder_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/elementwise_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/fully_connected_int2_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/relu_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/topk_test.cc
+)
+
+target_link_libraries(builder_test
+    PRIVATE
+        qnn_test_utils
+        qnn_builders
+        GTest::gmock
+        GTest::gtest_main
+)
+
+# LiteRT dump tool test
+add_executable(dump_graph_test)
+
+target_sources(dump_graph_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/dump/dump_graph_test.cc
+)
+
+target_link_libraries(dump_graph_test
+    PRIVATE
+        qnn_dump_graph
+        qnn_builders
+        qnn_tensor_pool
+        qnn_wrappers
+        GTest::gtest_main
+)
+
 # Core common test
 add_executable(common_test)
 
@@ -68,7 +119,7 @@ target_sources(common_test
 )
 target_link_libraries(common_test
     PRIVATE
-        qnn_core
+        qnn_common
         GTest::gtest_main
 )
 
@@ -83,7 +134,7 @@ target_sources(tensor_pool_test
 target_link_libraries(tensor_pool_test
     PRIVATE
         qnn_wrappers
-        qnn_core
+        qnn_tensor_pool
         GTest::gtest_main
 )
 
@@ -98,7 +149,6 @@ target_sources(op_wrapper_test
 target_link_libraries(op_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gtest_main
 )
 
@@ -113,7 +163,6 @@ target_sources(tensor_wrapper_test
 target_link_libraries(tensor_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gmock
         GTest::gtest_main
 )
@@ -129,7 +178,6 @@ target_sources(param_wrapper_test
 target_link_libraries(param_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gtest_main
 )
 
@@ -144,7 +192,6 @@ target_sources(quantize_params_wrapper_test
 target_link_libraries(quantize_params_wrapper_test
     PRIVATE
         qnn_wrappers
-        qnn_core
         GTest::gtest_main
 )
 
@@ -158,8 +205,10 @@ target_sources(utils_test
 
 target_link_libraries(utils_test
     PRIVATE
+        qnn_common
+        qnn_log
+        qnn_miscs
         qnn_backends
-        qnn_core
         GTest::gtest_main
 )
 
@@ -174,7 +223,8 @@ target_sources(ir_backend_test
 target_link_libraries(ir_backend_test
     PRIVATE
         qnn_backends
-        qnn_core
+        qnn_common
+        qnn_miscs
         GTest::gtest_main
 )
 
@@ -189,7 +239,9 @@ target_sources(htp_backend_test
 target_link_libraries(htp_backend_test
     PRIVATE
         qnn_backends
-        qnn_core
+        qnn_common
+        qnn_soc_table
+        qnn_miscs
         GTest::gtest_main
 )
 
@@ -204,7 +256,8 @@ target_sources(dsp_backend_test
 target_link_libraries(dsp_backend_test
     PRIVATE
         qnn_backends
-        qnn_core
+        qnn_common
+        qnn_miscs
         GTest::gtest_main
 )
 
@@ -219,11 +272,27 @@ target_sources(backend_utils_test
 target_link_libraries(backend_utils_test
     PRIVATE
         qnn_backends
-        qnn_core
+        qnn_soc_table
         GTest::gtest_main
 )
 
 # Transformation test
+add_executable(embedding_gemma_test)
+
+target_sources(embedding_gemma_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/transformation/embedding_gemma_test.cc
+)
+
+target_link_libraries(embedding_gemma_test
+    PRIVATE
+        qnn_transformation
+        qnn_builders
+        qnn_tensor_pool
+        qnn_wrappers
+        GTest::gtest_main
+)
+
 add_executable(graph_to_graph_test)
 
 target_sources(graph_to_graph_test
@@ -234,7 +303,9 @@ target_sources(graph_to_graph_test
 target_link_libraries(graph_to_graph_test
     PRIVATE
         qnn_transformation
-        qnn_core
+        qnn_builders
+        qnn_tensor_pool
+        qnn_wrappers
         GTest::gtest_main
 )
 
@@ -248,6 +319,8 @@ target_sources(kv_swapped_attn_test
 target_link_libraries(kv_swapped_attn_test
     PRIVATE
         qnn_transformation
-        qnn_core
+        qnn_builders
+        qnn_tensor_pool
+        qnn_wrappers
         GTest::gtest_main
 )
