@@ -185,11 +185,9 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, GetterTest) {
   std::vector<float> scales = {1.5f, 2.5f};
   std::vector<std::int32_t> zero_points = {10, 20};
   AxisScaleOffsetQuantizeParamsWrapper wrapper(axis, scales, zero_points);
-  std::vector<float> scales_out;
-  wrapper.GetScales(scales_out);
+  const auto scales_out = wrapper.GetScales();
   EXPECT_EQ(scales, scales_out);
-  std::vector<std::int32_t> zero_points_out;
-  wrapper.GetZeroPoints(zero_points_out);
+  const auto zero_points_out = wrapper.GetZeroPoints();
   EXPECT_EQ(zero_points, zero_points_out);
 }
 
