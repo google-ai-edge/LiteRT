@@ -30,6 +30,7 @@
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
+#define INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
@@ -47,6 +48,7 @@
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
 #include "litert/tools/tensor_utils.h"  // IWYU pragma: keep
 
 // NPU and CPU models must have the same input signature
@@ -74,6 +76,7 @@ namespace {
 using ::litert::google_tensor::UpdateGoogleTensorOptionsFromFlags;
 using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
 using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
+using ::litert::intel_openvino::UpdateIntelOpenVinoOptionsFromFlags;
 
 Expected<Environment> GetEnvironment() {
   std::vector<EnvironmentOptions::Option> env_options;
@@ -97,6 +100,10 @@ Expected<Options> GetOptions() {
       UpdateGoogleTensorOptionsFromFlags(google_tensor_opts));
   LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
   LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
+  LITERT_ASSIGN_OR_RETURN(auto& intel_openvino_opts,
+                          options.GetIntelOpenVinoOptions());
+  LITERT_RETURN_IF_ERROR(
+      UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts));
   return options;
 }
 

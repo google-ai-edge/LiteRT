@@ -563,6 +563,7 @@ cc_binary(
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment_options",
         "//litert/tools/flags/vendors:google_tensor_flags",
+        "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
     ] + select({
