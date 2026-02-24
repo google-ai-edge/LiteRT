@@ -13,7 +13,8 @@
 # limitations under the License.
 # copybara:uncomment load("INTERNAL_ACCEL_RUNTIME/common:build_defs.bzl", "compile_model")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
@@ -51,6 +52,7 @@ package(
 litert_dynamic_lib(
     name = "dispatch_api",
     srcs = [
+        # copybara:uncomment "darwinn_options.cc",
         "dispatch_api.cc",
         "dispatch_api_config.cc",
         "dispatch_api_utils.cc",
@@ -60,6 +62,7 @@ litert_dynamic_lib(
         "sb_api_late_binding.cc",
     ],
     hdrs = [
+        # copybara:uncomment "darwinn_options.h",
         "dispatch_api.h",
         "dispatch_api_config.h",
         "dispatch_api_macros.h",
@@ -70,7 +73,7 @@ litert_dynamic_lib(
         "litert_dispatch_metrics.h",
         "sb_api.h",
         "sb_api_features.h",
-        "sb_dispatch_annotations.h",
+        # copybara:uncomment "sb_dispatch_annotations.h",
     ],
     copts = [
         "-Os",
@@ -114,7 +117,7 @@ litert_dynamic_lib(
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
+        # copybara:uncomment "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
         "//litert/vendors/cc:options_helper",
     ],
 )
@@ -201,16 +204,18 @@ litert_device_test(
     ],
 )
 
-cc_test(
-    name = "darwinn_options_test",
-    srcs = ["darwinn_options_test.cc"],
-    deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "darwinn_options_test",
+#     srcs = ["darwinn_options_test.cc"],
+#     deps = [
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc/dynamic_runtime:litert_opaque_options",
+#         "//litert/cc/dynamic_runtime:litert_options",
+#         "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
+#         "//litert/cc/internal:litert_handle",
+#     ],
+# )
+# copybara:uncomment_end
