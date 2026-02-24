@@ -200,6 +200,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
+        "//third_party/tomlplusplus",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,

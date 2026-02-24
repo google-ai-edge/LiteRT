@@ -15,30 +15,53 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
-  /// @brief Defines the C++ wrapper for LiteRT runtime options.
-class RuntimeOptions : public OpaqueOptions {
+/// @brief Defines the C++ wrapper for LiteRT runtime options.
+class RuntimeOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
-  static absl::string_view Identifier();
-
   static Expected<RuntimeOptions> Create();
-  static Expected<RuntimeOptions> Create(OpaqueOptions& original);
 
-  Expected<void> SetEnableProfiling(bool enable_profiling);
-  Expected<bool> GetEnableProfiling() const;
+  Expected<void> SetEnableProfiling(bool enable_profiling) {
+    enable_profiling_ = enable_profiling;
+    return {};
+  }
+  Expected<bool> GetEnableProfiling() const {
+    return enable_profiling_;
+  }
   Expected<void> SetErrorReporterMode(
-      LiteRtErrorReporterMode error_reporter_mode);
-  Expected<LiteRtErrorReporterMode> GetErrorReporterMode() const;
-  Expected<void> SetCompressQuantizationZeroPoints(bool compress_zero_points);
-  Expected<bool> GetCompressQuantizationZeroPoints() const;
+      LiteRtErrorReporterMode error_reporter_mode) {
+    error_reporter_mode_ = error_reporter_mode;
+    return {};
+  }
+  Expected<LiteRtErrorReporterMode> GetErrorReporterMode() const {
+    return error_reporter_mode_;
+  }
+  Expected<void> SetCompressQuantizationZeroPoints(bool compress_zero_points) {
+    compress_quantization_zero_points_ = compress_zero_points;
+    return {};
+  }
+  Expected<bool> GetCompressQuantizationZeroPoints() const {
+    return compress_quantization_zero_points_;
+  }
+
+  Expected<OpaqueOptions> GetOpaqueOptions();
+
+ private:
+   static constexpr const absl::string_view kPayloadIdentifier = "runtime_toml_payload";
+
+  // If true, the interpreter will enable profiling.
+  bool enable_profiling_ = false;
+  // Error reporter mode to use for this model
+  LiteRtErrorReporterMode error_reporter_mode_ =
+      LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone;
+  // If true, per-channel quantization zero-points that are all identical will
+  // be stored as a single value to reduce memory usage.
+  bool compress_quantization_zero_points_ = false;
 };
 
 }  // namespace litert

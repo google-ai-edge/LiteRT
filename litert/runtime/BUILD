@@ -596,6 +596,7 @@ cc_library(
         "//tflite/core/api",
         "//tflite/delegates/utils:simple_opaque_delegate",
         "//tflite/schema:schema_fbs",
+        "//third_party/tomlplusplus",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
             "//litert/compiler/plugin:compiler_plugin",
