@@ -15,30 +15,60 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 
+#include <memory>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
-  /// @brief Defines the C++ wrapper for LiteRT runtime options.
-class RuntimeOptions : public OpaqueOptions {
+/// @brief Defines the C++ wrapper for LiteRT runtime options.
+class RuntimeOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
-  static absl::string_view Identifier();
-
+  /// @brief Creates a new `RuntimeOptions` instance with default values.
   static Expected<RuntimeOptions> Create();
-  static Expected<RuntimeOptions> Create(OpaqueOptions& original);
 
+  /// @brief Sets the profiling enablement flag.
+  /// @param enable_profiling If true, profiling will be enabled.
   Expected<void> SetEnableProfiling(bool enable_profiling);
+
+  /// @brief Gets the current profiling enablement flag.
   Expected<bool> GetEnableProfiling() const;
+
+  /// @brief Sets the error reporter mode.
+  /// @param error_reporter_mode The mode for error reporting (e.g., stderr,
+  /// buffer).
   Expected<void> SetErrorReporterMode(
       LiteRtErrorReporterMode error_reporter_mode);
+
+  /// @brief Gets the current error reporter mode.
   Expected<LiteRtErrorReporterMode> GetErrorReporterMode() const;
+
+  /// @brief Sets the flag for compressing quantization zero points.
+  /// @param compress_zero_points If true, identical per-channel quantization
+  /// zero-points will be compressed.
   Expected<void> SetCompressQuantizationZeroPoints(bool compress_zero_points);
+
+  /// @brief Gets the current flag for compressing quantization zero points.
   Expected<bool> GetCompressQuantizationZeroPoints() const;
+
+  /// @brief Creates an OpaqueOptions object containing the serialized runtime
+  /// options.
+  /// @return A new OpaqueOptions instance holding the TOML-serialized options.
+  Expected<OpaqueOptions> CreateOpaqueOptions() const;
+
+ private:
+  explicit RuntimeOptions(LrtRuntimeOptions* options);
+
+  struct Deleter {
+    void operator()(LrtRuntimeOptions* ptr) const {
+      LrtDestroyRuntimeOptions(ptr);
+    }
+  };
+  std::unique_ptr<LrtRuntimeOptions, Deleter> options_;
 };
 
 }  // namespace litert

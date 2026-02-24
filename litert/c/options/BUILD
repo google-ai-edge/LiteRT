@@ -210,6 +210,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:options",
         "//litert/runtime:litert_runtime_options",
+        "@com_google_absl//absl/strings",
     ],
     # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
@@ -223,15 +224,18 @@ cc_library(
 cc_test(
     name = "litert_runtime_options_test",
     srcs = ["litert_runtime_options_test.cc"],
+    tags = ["no_oss"],  # TOML is not available in OSS yet.
     deps = [
         ":litert_runtime_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
+        "//litert/runtime:litert_runtime_options",
         "//litert/test:matchers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
+        "@tomlplusplus",
     ],
 )
 

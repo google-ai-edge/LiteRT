@@ -14,17 +14,22 @@
 
 // This file defines the C API for LiteRt runtime options.
 // It contains the following methods:
-//   - LiteRtCreateRuntimeOptions: Creates an opaque options object holding
+//   - LrtCreateRuntimeOptions: Creates a concrete options object holding
 //     runtime options.
-//   - LiteRtFindRuntimeOptions: Gets the underlying runtime options from an
-//     opaque options handle.
-//   - LiteRtGetRuntimeOptionsIdentifier: Gets the identifier for Runtime
+//   - LrtDestroyRuntimeOptions: Destroys a created runtime options object.
+//   - LrtCreateOpaqueRuntimeOptions: Creates an opaque options object
+//   holding
+//     serialized options.
+//   - LrtGetRuntimeOptionsIdentifier: Gets the identifier for Runtime
 //     options stored in opaque options.
 // Example usage:
-//   LiteRtOpaqueOptions options = nullptr;
-//   LITERT_ASSERT_OK(LiteRtCreateRuntimeOptions(&options));
-//   LiteRtRuntimeOptions runtime_options = nullptr;
-//   LITERT_ASSERT_OK(LiteRtFindRuntimeOptions(options, &runtime_options));
+//   LrtRuntimeOptions* options = nullptr;
+//   LITERT_ASSERT_OK(LrtCreateRuntimeOptions(&options));
+//   LITERT_ASSERT_OK(LrtSetRuntimeOptionsEnableProfiling(options, true);
+//   LiteRtOpaqueOptions opaque_options = nullptr;
+//   LITERT_ASSERT_OK(LrtCreateOpaqueRuntimeOptions(options,
+//   &opaque_options));
+//   LrtDestroyRuntimeOptions(options);
 
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
@@ -34,46 +39,49 @@
 extern "C" {
 #endif
 
-LITERT_DEFINE_HANDLE(LiteRtRuntimeOptions);
+typedef struct LrtRuntimeOptions LrtRuntimeOptions;
 
-// Creates an opaque options object holding CPU options.
-LiteRtStatus LiteRtCreateRuntimeOptions(LiteRtOpaqueOptions* options);
+// Creates a runtime options object.
+// The caller is responsible for freeing the returned options using
+// `LrtDestroyRuntimeOptions`.
+LiteRtStatus LrtCreateRuntimeOptions(LrtRuntimeOptions** options);
 
-// Gets the underlying CPU options from an opaque options handle.
-LiteRtStatus LiteRtFindRuntimeOptions(LiteRtOpaqueOptions opaque_options,
-                                      LiteRtRuntimeOptions* runtime_options);
+// Destroys a runtime options object.
+void LrtDestroyRuntimeOptions(LrtRuntimeOptions* options);
+
+// Creates an opaque options object from runtime options.
+// The payload is a TOML serialized string.
+LiteRtStatus LrtCreateOpaqueRuntimeOptions(const LrtRuntimeOptions* options,
+                                           LiteRtOpaqueOptions* opaque_options);
 
 // Gets the identifier for Runtime options stored in opaque options.
-const char* LiteRtGetRuntimeOptionsIdentifier();
+const char* LrtGetRuntimeOptionsIdentifier();
 
-// Sets the profiling flag in runtime options. The options is
-// being modified in the this setter method.
-LiteRtStatus LiteRtSetRuntimeOptionsEnableProfiling(
-  LiteRtRuntimeOptions options, bool enable_profiling);
+// Sets the profiling flag in runtime options.
+LiteRtStatus LrtSetRuntimeOptionsEnableProfiling(LrtRuntimeOptions* options,
+                                                 bool enable_profiling);
 
-// Gets the profiling flag from runtime options. Reads the
-// value from the options and writes it to the pointer.
-LiteRtStatus LiteRtGetRuntimeOptionsEnableProfiling(
-  LiteRtRuntimeOptions options, bool* enable_profiling);
+// Gets the profiling flag from runtime options.
+LiteRtStatus LrtGetRuntimeOptionsEnableProfiling(
+    const LrtRuntimeOptions* options, bool* enable_profiling);
 
-// Sets the error reporter mode in runtime options. The options is
-// being modified in the this setter method.
-LiteRtStatus LiteRtSetRuntimeOptionsErrorReporterMode(
-    LiteRtRuntimeOptions options, LiteRtErrorReporterMode error_reporter_mode);
+// Sets the error reporter mode in runtime options.
+LiteRtStatus LrtSetRuntimeOptionsErrorReporterMode(
+    LrtRuntimeOptions* options, LiteRtErrorReporterMode error_reporter_mode);
 
-// Gets the error reporter mode from runtime options. Reads the
-// value from the options and writes it to the pointer.
-LiteRtStatus LiteRtGetRuntimeOptionsErrorReporterMode(
-    LiteRtRuntimeOptions options, LiteRtErrorReporterMode* error_reporter_mode);
+// Gets the error reporter mode from runtime options.
+LiteRtStatus LrtGetRuntimeOptionsErrorReporterMode(
+    const LrtRuntimeOptions* options,
+    LiteRtErrorReporterMode* error_reporter_mode);
 
 // Sets whether to compress per-channel quantization zero-points when all
 // zero-points are identical.
-LiteRtStatus LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints(
-    LiteRtRuntimeOptions options, bool compress_zero_points);
+LiteRtStatus LrtSetRuntimeOptionsCompressQuantizationZeroPoints(
+    LrtRuntimeOptions* options, bool compress_zero_points);
 
 // Gets whether per-channel quantization zero-points compression is enabled.
-LiteRtStatus LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints(
-    LiteRtRuntimeOptions options, bool* compress_zero_points);
+LiteRtStatus LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
+    const LrtRuntimeOptions* options, bool* compress_zero_points);
 
 #ifdef __cplusplus
 }  // extern "C"

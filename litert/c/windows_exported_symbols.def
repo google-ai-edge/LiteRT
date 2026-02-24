@@ -60,7 +60,6 @@ EXPORTS
   LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
   LiteRtCreateProfiler
-  LiteRtCreateRuntimeOptions
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
@@ -92,7 +91,6 @@ EXPORTS
   LiteRtFindCompilerOptions
   LiteRtFindCpuOptions
   LiteRtFindOpaqueOptionsData
-  LiteRtFindRuntimeOptions
   LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
@@ -176,10 +174,6 @@ EXPORTS
   LiteRtGetProfilerEvents
   LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
-  LiteRtGetRuntimeOptionsCompressQuantizationZeroPoints
-  LiteRtGetRuntimeOptionsEnableProfiling
-  LiteRtGetRuntimeOptionsErrorReporterMode
-  LiteRtGetRuntimeOptionsIdentifier
   LiteRtGetSignatureInputName
   LiteRtGetSignatureInputTensor
   LiteRtGetSignatureInputTensorByIndex
@@ -364,9 +358,6 @@ EXPORTS
   LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetProfilerCurrentEventSource
-  LiteRtSetRuntimeOptionsCompressQuantizationZeroPoints
-  LiteRtSetRuntimeOptionsEnableProfiling
-  LiteRtSetRuntimeOptionsErrorReporterMode
   LiteRtSetTensorBufferEvent
   LiteRtSignalEvent
   LiteRtStartProfiler

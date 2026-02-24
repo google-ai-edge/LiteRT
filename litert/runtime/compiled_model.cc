@@ -117,6 +117,7 @@ using litert::internal::GetTensorIdentifier;
 #if !defined(LITERT_DISABLE_NPU)
 using litert::internal::SerializeModel;
 #endif  // !defined(LITERT_DISABLE_NPU)
+using litert::internal::ParseLiteRtRuntimeOptions;
 using litert::internal::TfLiteTensorIdentifier;
 
 namespace {
@@ -291,27 +292,35 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     auto opaque_options = litert::OpaqueOptions::WrapCObject(
         jit_compilation_options->options, litert::OwnHandle::kNo);
 
-    if (auto runtime_options = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
+    if (auto runtime_options_data = litert::FindOpaqueData<const char>(
             opaque_options, LiteRtRuntimeOptionsT::Identifier());
-        runtime_options) {
-      interpreter_options.SetShloCompositeInlining(true);
-      interpreter_options.SetCompressQuantizationZeroPoints(
-          (*runtime_options)->compress_quantization_zero_points);
-      if ((*runtime_options)->enable_profiling) {
-        profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
-      }
+        runtime_options_data) {
+      LiteRtRuntimeOptionsT runtime_options;
+      absl::string_view data_str(*runtime_options_data);
+      if (ParseLiteRtRuntimeOptions(data_str.data(), data_str.size(),
+                                    &runtime_options) != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_WARNING, "Failed to parse runtime options");
+      } else {
+        interpreter_options.SetShloCompositeInlining(true);
+        interpreter_options.SetCompressQuantizationZeroPoints(
+            runtime_options.compress_quantization_zero_points);
+        if (runtime_options.enable_profiling) {
+          profiler_ =
+              new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
+        }
 
-      // Create error reporter based on mode
-      switch ((*runtime_options)->error_reporter_mode) {
-        case kLiteRtErrorReporterModeNone:
-          // No error reporter
-          break;
-        case kLiteRtErrorReporterModeStderr:
-          error_reporter_ = std::make_unique<litert::StderrReporter>();
-          break;
-        case kLiteRtErrorReporterModeBuffer:
-          error_reporter_ = std::make_unique<litert::BufferErrorReporter>();
-          break;
+        // Create error reporter based on mode
+        switch (runtime_options.error_reporter_mode) {
+          case kLiteRtErrorReporterModeNone:
+            // No error reporter
+            break;
+          case kLiteRtErrorReporterModeStderr:
+            error_reporter_ = std::make_unique<litert::StderrReporter>();
+            break;
+          case kLiteRtErrorReporterModeBuffer:
+            error_reporter_ = std::make_unique<litert::BufferErrorReporter>();
+            break;
+        }
       }
     }
 

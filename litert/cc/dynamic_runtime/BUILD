@@ -670,6 +670,7 @@ cc_library(
     deps = [
         ":litert_custom_op_kernel",
         ":litert_opaque_options",
+        "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
