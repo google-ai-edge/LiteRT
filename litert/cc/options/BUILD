@@ -266,33 +266,35 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "litert_darwinn_options",
-    srcs = ["litert_darwinn_options.cc"],
-    hdrs = ["litert_darwinn_options.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c/options:litert_darwinn_runtime_options",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "litert_darwinn_options_test",
-    srcs = ["litert_darwinn_options_test.cc"],
-    deps = [
-        ":litert_darwinn_options",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/test:matchers",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "litert_darwinn_options",
+#     srcs = ["litert_darwinn_options.cc"],
+#     hdrs = ["litert_darwinn_options.h"],
+#     deps = [
+#         "@com_google_absl//absl/strings:string_view",
+#         "//litert/c:litert_common",
+#         "//litert/c/options:litert_darwinn_runtime_options",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_opaque_options",
+#         "//litert/cc/internal:litert_handle",
+#     ],
+# )
+#
+# cc_test(
+#     name = "litert_darwinn_options_test",
+#     srcs = ["litert_darwinn_options_test.cc"],
+#     deps = [
+#         ":litert_darwinn_options",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_opaque_options",
+#         "//litert/test:matchers",
+#     ],
+# )
+# copybara:uncomment_end
 
 exports_files(glob([
     "*.h",
