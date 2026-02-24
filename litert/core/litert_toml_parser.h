@@ -31,6 +31,18 @@ Expected<bool> ParseTomlBool(absl::string_view value);
 // Helper to parse an integer value.
 Expected<int64_t> ParseTomlInt(absl::string_view value);
 
+// Helper to parse a string value.
+// Note: Basic unquoting is supported for either "" or '' quotes.
+// Escape sequences are currently not supported.
+Expected<std::string> ParseTomlString(absl::string_view value);
+
+// Helper to parse an array of string values.
+// Supports comma-separated strings within brackets (e.g., `["a", "b"]`).
+// Commas inside quoted strings (e.g., `["a,b"]`) are correctly preserved,
+// matching strictly on either `"` or `'` quotation characters.
+Expected<std::vector<std::string>> ParseTomlStringArray(
+    absl::string_view value);
+
 // Callback function type for handling key-value pairs.
 using TomlCallback =
     std::function<LiteRtStatus(absl::string_view key, absl::string_view value)>;

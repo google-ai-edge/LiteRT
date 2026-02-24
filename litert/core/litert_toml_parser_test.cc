@@ -15,11 +15,16 @@
 #include "litert/core/litert_toml_parser.h"
 
 #include <string>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/test/matchers.h"
+#define TOML_IMPLEMENTATION  // Include the TOML implementation in this file.
+#define TOML_EXCEPTIONS 0    // Don't use exceptions for TOML parsing.
+#include "toml.hpp"  // from @tomlplusplus
 
 namespace litert {
 namespace internal {
@@ -40,31 +45,90 @@ TEST(LiteRtTomlParserTest, ParseInt) {
   EXPECT_FALSE(ParseTomlInt("invalid").HasValue());
 }
 
+TEST(LiteRtTomlParserTest, ParseString) {
+  EXPECT_THAT(ParseTomlString("\"hello\""), IsOkAndHolds("hello"));
+  EXPECT_THAT(ParseTomlString("'world'"), IsOkAndHolds("world"));
+  EXPECT_THAT(ParseTomlString("\"\""), IsOkAndHolds(""));
+  EXPECT_FALSE(ParseTomlString("invalid").HasValue());
+  EXPECT_FALSE(ParseTomlString("\"invalid").HasValue());
+  EXPECT_FALSE(ParseTomlString("'invalid").HasValue());
+}
+
+TEST(LiteRtTomlParserTest, ParseStringArray) {
+  EXPECT_THAT(ParseTomlStringArray("[\"a\", \"b\", \"c\"]"),
+              IsOkAndHolds(std::vector<std::string>{"a", "b", "c"}));
+  EXPECT_THAT(ParseTomlStringArray("['single']"),
+              IsOkAndHolds(std::vector<std::string>{"single"}));
+  EXPECT_THAT(ParseTomlStringArray("[]"),
+              IsOkAndHolds(std::vector<std::string>{}));
+  EXPECT_THAT(ParseTomlStringArray("[  \"a\"  ,  \"str with space\"  ]"),
+              IsOkAndHolds(std::vector<std::string>{"a", "str with space"}));
+  EXPECT_THAT(ParseTomlStringArray("[\"1,2\", \"3\"]"),
+              IsOkAndHolds(std::vector<std::string>{"1,2", "3"}));
+  EXPECT_THAT(ParseTomlStringArray("['1,2', '3']"),
+              IsOkAndHolds(std::vector<std::string>{"1,2", "3"}));
+  // Optional trailing comma
+  EXPECT_THAT(ParseTomlStringArray("[\"a\", ]"),
+              IsOkAndHolds(std::vector<std::string>{"a"}));
+
+  EXPECT_FALSE(ParseTomlStringArray("invalid").HasValue());
+  EXPECT_FALSE(ParseTomlStringArray("[\"invalid\"").HasValue());
+  EXPECT_FALSE(ParseTomlStringArray("[\"invalid\", noquotes]").HasValue());
+}
+
 TEST(LiteRtTomlParserTest, ParseTomlKeyValues) {
   std::string toml_str = R"(
     # Comment
-    key1 = value1
-    key2 = value2
-    key3  =  value3
+    key1 = 1234
+    key2 = true
+    key3  =  "value3"
+    key4 = "value4"
+    key5 = ["item1" ,"item2", "item3"]
   )";
+
+  auto tbl = toml::parse(toml_str);
+  if (tbl.failed()) {
+    ADD_FAILURE() << "tomlplusplus parse failed: " << tbl.error().description();
+  }
 
   int call_count = 0;
   EXPECT_THAT(ParseToml(toml_str,
                         [&](absl::string_view key, absl::string_view value) {
                           call_count++;
                           if (key == "key1") {
-                            EXPECT_EQ(value, "value1");
+                            EXPECT_THAT(ParseTomlInt(value),
+                                        IsOkAndHolds(1234));
                           } else if (key == "key2") {
-                            EXPECT_EQ(value, "value2");
+                            EXPECT_THAT(ParseTomlBool(value),
+                                        IsOkAndHolds(true));
                           } else if (key == "key3") {
                             EXPECT_EQ(value, "value3");
+                          } else if (key == "key4") {
+                            EXPECT_EQ(value, "value4");
+                          } else if (key == "key5") {
+                            EXPECT_EQ(value,
+                                      "[\"item1\" ,\"item2\", \"item3\"]");
+
+                            auto parsed_array = ParseTomlStringArray(value);
+                            EXPECT_TRUE(parsed_array.HasValue());
+                            auto toml_array = tbl["key5"].as_array();
+                            EXPECT_NE(toml_array, nullptr);
+                            if (parsed_array.HasValue() &&
+                                toml_array != nullptr) {
+                              std::vector<std::string> expected_array;
+                              for (const auto& item : *toml_array) {
+                                expected_array.push_back(
+                                    item.value<std::string>().value_or(""));
+                              }
+                              EXPECT_EQ(*parsed_array, expected_array);
+                            }
                           } else {
                             ADD_FAILURE() << "Unexpected key: " << key;
                           }
                           return kLiteRtStatusOk;
                         }),
               IsOk());
-  EXPECT_EQ(call_count, 3);
+  EXPECT_EQ(call_count, 5);
 }
 
 TEST(LiteRtTomlParserTest, ParseTomlEmpty) {

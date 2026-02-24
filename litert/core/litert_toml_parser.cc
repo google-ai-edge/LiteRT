@@ -16,6 +16,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -64,6 +66,74 @@ Expected<int64_t> ParseTomlInt(absl::string_view value) {
   return Unexpected(kLiteRtStatusErrorInvalidArgument, "Invalid integer value");
 }
 
+Expected<std::string> ParseTomlString(absl::string_view value) {
+  if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+    // Basic unquoting. Does not handle complex escape sequences yet.
+    return std::string(value.substr(1, value.size() - 2));
+  }
+  if (value.size() >= 2 && value.front() == '\'' && value.back() == '\'') {
+    return std::string(value.substr(1, value.size() - 2));
+  }
+  return Unexpected(kLiteRtStatusErrorInvalidArgument, "Invalid string value");
+}
+
+std::vector<absl::string_view> SplitTomlArrayElements(absl::string_view inner) {
+  std::vector<absl::string_view> elements;
+  size_t start = 0;
+  bool in_quotes = false;
+  char quote_char = '\0';
+
+  for (size_t i = 0; i <= inner.size(); ++i) {
+    bool is_end = (i == inner.size());
+    if (!is_end) {
+      char c = inner[i];
+      if (c == '"' || c == '\'') {
+        if (!in_quotes) {
+          in_quotes = true;
+          quote_char = c;
+        } else if (c == quote_char) {
+          in_quotes = false;
+        }
+      }
+    }
+
+    if (is_end || (inner[i] == ',' && !in_quotes)) {
+      absl::string_view elem = inner.substr(start, i - start);
+      elem = TrimWhitespace(elem);
+      if (!elem.empty()) {
+        elements.push_back(elem);
+      }
+      start = i + 1;
+    }
+  }
+  return elements;
+}
+
+Expected<std::vector<std::string>> ParseTomlStringArray(
+    absl::string_view value) {
+  if (value.empty() || value.front() != '[' || value.back() != ']') {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid array format");
+  }
+
+  absl::string_view inner = value.substr(1, value.size() - 2);
+  std::vector<std::string> result;
+  // Empty array
+  if (TrimWhitespace(inner).empty()) {
+    return result;
+  }
+
+  for (absl::string_view elem : SplitTomlArrayElements(inner)) {
+    auto parsed_str = ParseTomlString(elem);
+    if (!parsed_str.HasValue()) {
+      return parsed_str.Error();
+    }
+    result.push_back(*parsed_str);
+  }
+
+  return result;
+}
+
 LiteRtStatus ParseToml(absl::string_view data, TomlCallback callback) {
   size_t pos = 0;
   while (pos < data.size()) {
@@ -85,6 +155,13 @@ LiteRtStatus ParseToml(absl::string_view data, TomlCallback callback) {
 
     absl::string_view key = TrimWhitespace(trimmed_line.substr(0, eq_pos));
     absl::string_view value = TrimWhitespace(trimmed_line.substr(eq_pos + 1));
+
+    // Remove quotes from string values.
+    if (value.size() >= 2 &&
+        ((value.front() == '"' && value.back() == '"') ||
+         (value.front() == '\'' && value.back() == '\''))) {
+      value = value.substr(1, value.size() - 2);
+    }
 
     LITERT_RETURN_IF_ERROR(callback(key, value));
   }
