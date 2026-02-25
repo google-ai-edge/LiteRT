@@ -90,12 +90,14 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
     so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
   }
   so_paths.push_back("libneuron_adapter_mgvi.so");
+  // Some platforms have non-usdk non-mgvi build.
+  so_paths.push_back(kLibNeuronAdapterLib);
 
   // Add the library from the provided shared lib directory if available.
-  shared_library_dir.has_value()
-      ? so_paths.push_back(
-            absl::StrCat(*shared_library_dir, "/", kLibNeuronAdapterLib))
-      : so_paths.push_back(kLibNeuronAdapterLib);
+  if (shared_library_dir.has_value()) {
+    so_paths.push_back(
+        absl::StrCat(*shared_library_dir, "/", kLibNeuronAdapterLib));
+  }
 
 #if !defined(__ANDROID__)
   // Add SDK specific paths for Linux.
