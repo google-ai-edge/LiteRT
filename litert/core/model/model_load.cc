@@ -285,11 +285,25 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   const auto num_inputs = tfl_subgraph.inputs()->size();
   for (auto i = 0; i < num_inputs; ++i) {
     const auto tfl_input_ind = tfl_subgraph.inputs()->Get(i);
+    if (tfl_input_ind < 0 ||
+        static_cast<size_t>(tfl_input_ind) >= num_tensors) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid input index in subgraph: %d",
+                 tfl_input_ind);
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     litert_subgraph.Inputs().push_back(&litert_subgraph.Tensor(tfl_input_ind));
   }
   const auto num_outputs = tfl_subgraph.outputs()->size();
   for (auto i = 0; i < num_outputs; ++i) {
     const auto tfl_output_ind = tfl_subgraph.outputs()->Get(i);
+    if (tfl_output_ind < 0 ||
+        static_cast<size_t>(tfl_output_ind) >= num_tensors) {
+      LITERT_LOG(LITERT_ERROR,
+                 "flatbuffer model has invalid output index in subgraph: %d",
+                 tfl_output_ind);
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     litert_subgraph.Outputs().push_back(
         &litert_subgraph.Tensor(tfl_output_ind));
   }
