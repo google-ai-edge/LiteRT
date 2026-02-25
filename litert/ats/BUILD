@@ -145,6 +145,7 @@ litert_define_ats(
         ".*6d.*",
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
+        "qai_hub_real_esrgan_x4plus",
     ],
     jit_suffix = "",
 )
