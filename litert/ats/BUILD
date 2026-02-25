@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
-load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 
@@ -160,7 +160,7 @@ litert_test(
     tags = [
         "notap",
     ],
-    ungrte = True,
+    ungrte = if_oss(True, False),
     use_sys_malloc = True,
     deps = [
         ":compile_fixture",

@@ -82,7 +82,31 @@ void RegisterUnary(const AtsConf& options, size_t& test_id, size_t iters,
       Unary,
       SizeListC<1, 2, 3, 4, 5, 6>,
       TypeList<float>,
-      OpCodeListC<kLiteRtOpCodeTflRelu>>
+      OpCodeListC<
+          kLiteRtOpCodeTflFloor,
+          kLiteRtOpCodeTflLogistic,
+          kLiteRtOpCodeTflRelu,
+          kLiteRtOpCodeTflReluN1To1,
+          kLiteRtOpCodeTflRelu6,
+          kLiteRtOpCodeTflTanh,
+          kLiteRtOpCodeTflExp,
+          kLiteRtOpCodeTflNeg,
+          kLiteRtOpCodeTflSin,
+          kLiteRtOpCodeTflLog,
+          kLiteRtOpCodeTflSqrt,
+          kLiteRtOpCodeTflRsqrt,
+          kLiteRtOpCodeTflSquare,
+          kLiteRtOpCodeTflZerosLike,
+          kLiteRtOpCodeTflAbs,
+          kLiteRtOpCodeTflCeil,
+          kLiteRtOpCodeTflCos,
+          kLiteRtOpCodeTflElu,
+          kLiteRtOpCodeTflRound,
+          kLiteRtOpCodeTflHardSwish,
+          kLiteRtOpCodeTflGelu,
+          kLiteRtOpCodeTflRelu0To1,
+          kLiteRtOpCodeTflSign
+      >>
     (iters, test_id, options, cap);
   // clang-format on
 }

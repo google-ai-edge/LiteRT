@@ -587,6 +587,10 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
+  bool IsFloatDummy() const {
+    return std::holds_alternative<Dummy>(float_config_);
+  }
+
   template <typename D>
   std::pair<double, double> Bounds() const {
     if constexpr (std::is_same_v<D, int32_t>) {
