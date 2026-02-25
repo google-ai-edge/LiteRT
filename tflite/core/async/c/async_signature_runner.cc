@@ -14,6 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/async/c/async_signature_runner.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include "tflite/c/c_api_internal.h"
 #include "tflite/core/async/async_signature_runner.h"
 #include "tflite/core/async/c/internal.h"
