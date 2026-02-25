@@ -366,6 +366,7 @@ cc_library(
         "//litert/cc:litert_options",
         "//litert/cc:litert_profiler",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_compiled_model_next",
         "//litert/cc/internal:litert_tflite_error_status_builder",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",

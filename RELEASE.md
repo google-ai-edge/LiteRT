@@ -33,6 +33,8 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * <NOTES SHOULD BE GROUPED PER AREA>
 -->
 
+* Move the experimental API `GetProfiler()` out of `litert::CompiledModel`.
+
 * Fixed a bug that given CPU Buffers are not always synced with GPU Accelerator
   from the second inference.
 
