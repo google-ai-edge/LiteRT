@@ -24,6 +24,7 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -58,7 +59,6 @@
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 
 namespace litert::internal {
-
 //
 // CompiledResult
 //
@@ -576,6 +576,12 @@ Expected<PartitionResult> PartitionModel(
       continue;
     }
     auto* subgraph = model.Subgraphs()[i];
+    // Store mapping for skipping delegation.
+    std::unordered_map<std::uint32_t, LiteRtOp> op_id_map;
+    auto ops = subgraph->Ops();
+    for (size_t id = 0; id < ops.size(); ++id) {
+      op_id_map[id] = ops.at(id);
+    }
     auto selected_ops = compiler_plugin.Partition(subgraph, soc_model);
     // TODO ensure selected ops don't contain npu_calls.
     if (!selected_ops) {
@@ -618,6 +624,37 @@ Expected<PartitionResult> PartitionModel(
       selected_ops = compiler_plugin.Partition(subgraph, soc_model);
     }
 
+    // Skip op delegation.
+    auto compiler_options = compiler_plugin.CompilerOptions();
+    const std::uint32_t* skip_ids;
+    size_t number_of_ids;
+    if (compiler_options.HasValue()) {
+      auto status = LiteRtGetCompilerOptionsSkipDelegationOps(
+          *compiler_options, i, &skip_ids, &number_of_ids);
+      if (status != kLiteRtStatusOk) {
+        return Unexpected(
+            status,
+            "Failed to get skip delegation op ids from compiler options.");
+      }
+    }
+
+    for (size_t j = 0; j < number_of_ids; ++j) {
+      std::uint32_t skip_id = skip_ids[j];
+      if (op_id_map.count(skip_id)) {
+        auto op_to_skip = op_id_map[skip_id];
+        LITERT_LOG(LITERT_INFO,
+                   "Skipping op id: %d, code: %d when compiling the model. It "
+                   "will not delegate to any vendor.",
+                   skip_id, op_to_skip->OpCode());
+        selected_ops->erase(
+            std::remove_if(selected_ops->begin(), selected_ops->end(),
+                           [&op_to_skip](const auto& selected_op) {
+                             return selected_op.first == op_to_skip;
+                           }),
+            selected_ops->end());
+      }
+    }
+
     // Record all decomposition subgraph indexes, where its compositie op will
     // be compiled without relying on the decomposition body.
     for (auto& op : *selected_ops) {
@@ -635,7 +672,6 @@ Expected<PartitionResult> PartitionModel(
 
     auto num_partitions = dispatch_ops.size();
     // Get partition strategy from compiler options.
-    auto compiler_options = compiler_plugin.CompilerOptions();
     LiteRtCompilerOptionsPartitionStrategy strategy =
         kLiteRtCompilerOptionsPartitionStrategyDefault;
     if (compiler_options.HasValue()) {

@@ -14,32 +14,83 @@
 
 #include "litert/tools/flags/flag_types.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
-#include "absl/flags/marshalling.h"  // from @com_google_absl
-#include "absl/strings/str_join.h"  // from @com_google_absl
-#include "absl/strings/str_split.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
+#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 
 namespace litert::tools {
 
-std::string AbslUnparseFlag(const IntList& list) {
-  return absl::StrJoin(list.elements, ",", [](std::string* out, int element) {
-    out->append(absl::UnparseFlag(element));
-  });
+std::string AbslUnparseFlag(const IntListMap& list) {
+  std::vector<std::string> parts;
+  for (const auto& [index, elements] : list.elements) {
+    if (elements.empty()) {
+      continue;
+    }
+    std::string part = absl::StrCat(index, "|");
+    absl::StrAppend(&part, absl::StrJoin(elements, ","));
+    parts.push_back(part);
+  }
+  return absl::StrJoin(parts, ";");
 }
 
-bool AbslParseFlag(absl::string_view text, IntList* list, std::string* error) {
+bool AbslParseFlag(absl::string_view text, IntListMap* list,
+                   std::string* error) {
+  // text will have format like 0|1,2,3;1|2-5;2|1,2,6-10
   list->elements.clear();
   if (text.empty()) {
     return true;
   }
-  for (const auto& part : absl::StrSplit(text, ',')) {
-    int element;
-    if (!absl::ParseFlag(part, &element, error)) {
+  for (const auto& part : absl::StrSplit(text, ';')) {
+    std::vector<std::string> chunks = absl::StrSplit(part, '|');
+    if (chunks.size() != 2) {
+      *error = absl::StrCat("Invalid format: ", part);
       return false;
     }
-    list->elements.push_back(element);
+    int index;
+    if (!absl::SimpleAtoi(chunks[0], &index)) {
+      *error = absl::StrCat("Invalid index: ", chunks[0]);
+      return false;
+    }
+
+    if (index < 0) {
+      *error = absl::StrCat("Index must be non-negative: ", index);
+      return false;
+    }
+
+    for (const auto& value_part : absl::StrSplit(chunks[1], ',')) {
+      std::vector<std::string> range_chunks = absl::StrSplit(value_part, '-');
+      if (range_chunks.size() == 1) {
+        int value;
+        if (!absl::SimpleAtoi(range_chunks[0], &value)) {
+          *error = absl::StrCat("Invalid value: ", range_chunks[0]);
+          return false;
+        }
+        list->elements[index].push_back(value);
+      } else if (range_chunks.size() == 2) {
+        int start, end;
+        if (!absl::SimpleAtoi(range_chunks[0], &start) ||
+            !absl::SimpleAtoi(range_chunks[1], &end)) {
+          *error = absl::StrCat("Invalid range: ", value_part);
+          return false;
+        }
+        if (start > end) {
+          *error = absl::StrCat("Invalid range (start > end): ", value_part);
+          return false;
+        }
+        for (int i = start; i <= end; ++i) {
+          list->elements[index].push_back(i);
+        }
+      } else {
+        *error = absl::StrCat("Invalid value part: ", value_part);
+        return false;
+      }
+    }
   }
   return true;
 }

@@ -14,6 +14,7 @@
 
 #include "litert/tools/flags/apply_plugin_flags.h"
 
+#include <cstdint>
 #include <string>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
@@ -27,13 +28,20 @@
 ABSL_FLAG(std::string, cmd, "partition",
           "Routine to run (apply, partition, compile, info, noop).");
 
-ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
+ABSL_FLAG(::litert::tools::IntList<int>, subgraphs,
+          ::litert::tools::IntList<int>{},
           "If provides, only the subgraphs with the given indices "
           "are applied with the plugin.");
 
 ABSL_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy,
           kLiteRtCompilerOptionsPartitionStrategyDefault,
           "Partition strategy for the compiler.");
+
+ABSL_FLAG(::litert::tools::IntListMap, skip_delegation_ops_by_subgraph,
+          ::litert::tools::IntListMap{},
+          "Operator ids to skip delegation to any vendors. "
+          "A map of subgraph index to a comma-separated list of op ids. "
+          "Format: index|id1,id2;index|id3-id5");
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -72,6 +80,18 @@ Expected<void> UpdateCompilerOptionsFromFlags(CompilerOptions& options) {
   LITERT_RETURN_IF_ERROR(
       options.SetPartitionStrategy(absl::GetFlag(FLAGS_partition_strategy)));
 
+  // Parse skip delegation ids.
+  for (const auto& [subgraph_index, op_ids] :
+       absl::GetFlag(FLAGS_skip_delegation_ops_by_subgraph).elements) {
+    // Cast int to uint32_t.
+    std::vector<std::uint32_t> uint_op_ids;
+    uint_op_ids.reserve(op_ids.size());
+    for (const auto& op_id : op_ids) {
+      uint_op_ids.push_back(static_cast<std::uint32_t>(op_id));
+    }
+    LITERT_RETURN_IF_ERROR(
+        options.AddSkipDelegationOps(subgraph_index, uint_op_ids));
+  }
   return {};
 }
 }  // namespace litert
