@@ -134,6 +134,16 @@ class GpuOptions : public litert::OpaqueOptions {
 
   /// @brief Sets whether to disable Vulkan kernel shader optimization.
   LiteRtStatus DisableShaderOptimization(bool disable);
+
+  /// @brief Wait for weights conversion on GPU complete.
+  /// @note This is an experimental feature and should only be used when
+  /// converting weights on GPU.
+  LiteRtStatus WaitForWeightsConversionComplete(bool wait);
+
+  /// @brief Cache only the compiled programs. If true, only the compiled
+  /// programs will be cached. If false, gpu graph info including work group
+  /// sizes (and all compiled programs depending on backend) will be cached.
+  LiteRtStatus CacheCompiledProgramsOnly(bool only);
 };
 
 }  // namespace litert

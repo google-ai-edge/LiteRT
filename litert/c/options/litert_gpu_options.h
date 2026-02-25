@@ -139,6 +139,13 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
     LiteRtOpaqueOptions gpu_accelerator_options, bool serialize_program_cache);
 
+// If true, only the compiled programs will be cached.
+// If false, gpu graph info including work group sizes (and all compiled
+// programs depending on backend) will be cached.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool cache_only_compiled_programs);
+
 // Set to true to serialize immutable external tensors. By default only the
 // non-external tensors are serialized.
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
@@ -187,6 +194,13 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
 // Sets whether to convert weights on GPU. It's an experimental feature.
 LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
     LiteRtOpaqueOptions gpu_accelerator_options, bool convert_weights_on_gpu);
+
+// Sets whether to wait for weights conversion on GPU complete.
+// It's an experimental feature and should only be used when converting
+// weights on GPU.
+LiteRtStatus
+LiteRtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+    LiteRtOpaqueOptions gpu_accelerator_options, bool wait);
 
 // Sets the hint to fully delegate to single delegate.
 // This is an ADVANCED option and should only be set if every subgraph is
@@ -248,6 +262,9 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
     bool* serialize_program_cache, LiteRtGpuOptionsPayload payload);
 
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
+    bool* cache_only_compiled_programs, LiteRtGpuOptionsPayload payload);
+
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
     bool* serialize_external_tensors, LiteRtGpuOptionsPayload payload);
 
@@ -299,6 +316,10 @@ LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
 
 LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
     bool* convert_weights_on_gpu, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+    bool* wait, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
     bool* hint_fully_delegated_to_single_delegate,

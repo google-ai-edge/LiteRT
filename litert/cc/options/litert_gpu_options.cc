@@ -177,4 +177,14 @@ LiteRtStatus GpuOptions::DisableShaderOptimization(bool disable) {
       Get(), disable);
 }
 
+LiteRtStatus GpuOptions::WaitForWeightsConversionComplete(bool wait) {
+  return LiteRtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+      Get(), wait);
+}
+
+LiteRtStatus GpuOptions::CacheCompiledProgramsOnly(bool only) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
+      Get(), only);
+}
+
 }  // namespace litert

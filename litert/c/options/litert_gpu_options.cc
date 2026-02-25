@@ -99,11 +99,21 @@ struct LiteRtGpuOptionsPayloadT {
   // non-OpenCL and non-WebGPU backends.
   bool convert_weights_on_gpu = false;
   // Added in version 2.1.0.
+  // Whether to wait for weights conversion on GPU complete.
+  // It is not supported by the all backends so this flag is ignored when using
+  // non-OpenCL and non-WebGPU backends.
+  bool wait_for_weights_conversion_complete = false;
+  // Added in version 2.1.0.
   // Whether to disable Vulkan kernel shader optimization to reduce init time.
   bool disable_shader_optimization = false;
   // The file descriptor to use for program caching. If set, it overrides the
   // serialization_dir.
   int program_cache_fd = -1;
+  // Added in version 2.1.0.
+  // If true, only the compiled programs will be cached. If false, gpu graph
+  // info including work group sizes (and all compiled programs depending on
+  // backend) will be cached.
+  bool cache_only_compiled_programs = false;
   // Added in version 2.1.0.
   // List of prefix patterns of the tensor name that is used for buffer storage
   // type. When it matches, those tensors will use buffer storage type.
@@ -296,6 +306,15 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool cache_only_compiled_programs) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->cache_only_compiled_programs = cache_only_compiled_programs;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
     LiteRtOpaqueOptions gpu_accelerator_options,
     bool serialize_external_tensors) {
@@ -381,6 +400,17 @@ LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->convert_weights_on_gpu = convert_weights_on_gpu;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool wait_for_weights_conversion_complete) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->wait_for_weights_conversion_complete =
+      wait_for_weights_conversion_complete;
   return kLiteRtStatusOk;
 }
 
@@ -545,6 +575,17 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
+    bool* cache_only_compiled_programs, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(cache_only_compiled_programs,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`cache_only_compiled_programs` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *cache_only_compiled_programs = payload->cache_only_compiled_programs;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
     bool* serialize_external_tensors, LiteRtGpuOptionsPayload payload) {
   LITERT_RETURN_IF_ERROR(serialize_external_tensors,
@@ -703,6 +744,19 @@ LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *convert_weights_on_gpu = payload->convert_weights_on_gpu;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+    bool* wait_for_weights_conversion_complete, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(wait_for_weights_conversion_complete,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`wait_for_weights_conversion_complete` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *wait_for_weights_conversion_complete =
+      payload->wait_for_weights_conversion_complete;
   return kLiteRtStatusOk;
 }
 
