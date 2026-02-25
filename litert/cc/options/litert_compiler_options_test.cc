@@ -17,7 +17,11 @@
 #include "litert/cc/options/litert_compiler_options.h"
 
 #include <gtest/gtest.h>
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_compiler_options.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/test/matchers.h"
 
 namespace litert {
@@ -27,7 +31,28 @@ TEST(CompilerOptionsTest, CreateSetAndGetDummyOptionWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(::litert::CompilerOptions options,
                               ::litert::CompilerOptions::Create());
   LITERT_EXPECT_OK(options.SetDummyOption(true));
-  EXPECT_TRUE(options.GetDummyOption());
+  LITERT_ASSERT_OK_AND_ASSIGN(bool dummy_option, options.GetDummyOption());
+  EXPECT_TRUE(dummy_option);
+}
+
+TEST(CompilerOptionsTest, CreateOpaqueOptionsWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+  LITERT_EXPECT_OK(options.SetDummyOption(true));
+
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueCompilerOptionsData(options.Get(), &identifier,
+                                            &payload, &payload_deleter),
+            kLiteRtStatusOk);
+
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+
+  litert::OpaqueOptions cpp_opaque_opts =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
 }
 
 TEST(CompilerOptionsTest, SetAndGetPartitionStrategyReturnsSetValue) {

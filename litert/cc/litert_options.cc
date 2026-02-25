@@ -20,6 +20,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_expected.h"
@@ -117,7 +118,19 @@ Expected<void> Options::Build() {
         LiteRtAddOpaqueOptions(Get(), opaque_runtime_options));
     runtime_options_.reset();
   }
-  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), compiler_options_));
+  if (compiler_options_) {
+    const char* identifier;
+    void* payload = nullptr;
+    void (*payload_deleter)(void*) = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtGetOpaqueCompilerOptionsData(
+        compiler_options_->Get(), &identifier, &payload, &payload_deleter));
+    LiteRtOpaqueOptions opaque_compiler_options = nullptr;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+        identifier, payload, payload_deleter, &opaque_compiler_options));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtAddOpaqueOptions(Get(), opaque_compiler_options));
+    compiler_options_.reset();
+  }
   return {};
 }
 

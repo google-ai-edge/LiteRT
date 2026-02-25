@@ -1079,6 +1079,7 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:scoped_file",
@@ -1228,6 +1229,7 @@ cc_library(
         "litert_ranked_tensor_type.h",
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
+        "//litert/cc/options:litert_compiler_options.h",
         "//litert/cc/options:litert_cpu_options.h",
         "//litert/cc/options:litert_google_tensor_options.h",
         "//litert/cc/options:litert_gpu_options.h",
@@ -1278,11 +1280,11 @@ cc_library(
         # C++ Common Options API targets.
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_compiler_options",
         "//litert/cc/dynamic_runtime/options:litert_cpu_options",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
         "//litert/cc/dynamic_runtime/options:litert_intel_openvino_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_compiler_options",
         # Other (static) C++ API targets.
         ":litert_any",
         ":litert_tensor_buffer_types",

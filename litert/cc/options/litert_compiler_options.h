@@ -15,32 +15,47 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include <memory>
+
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT compiler options.
-class CompilerOptions : public OpaqueOptions {
+class CompilerOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
-  static absl::string_view Discriminator() {
-    return LiteRtGetCompilerOptionsIdentifier();
-  };
-
+  /// @brief Creates a new `CompilerOptions` instance with default values.
   static Expected<CompilerOptions> Create();
-  static Expected<CompilerOptions> Create(OpaqueOptions& original);
 
+  /// @brief Sets the partition strategy.
   Expected<void> SetPartitionStrategy(
       LiteRtCompilerOptionsPartitionStrategy partition_strategy);
+
+  /// @brief Gets the partition strategy.
   Expected<LiteRtCompilerOptionsPartitionStrategy> GetPartitionStrategy() const;
 
+  /// @brief Sets the dummy option for testing.
   Expected<void> SetDummyOption(bool dummy_option);
+
+  /// @brief Gets the dummy option.
   Expected<bool> GetDummyOption() const;
+
+  /// @brief Returns the underlying C handle.
+  LrtCompilerOptions* Get() { return options_.get(); }
+  const LrtCompilerOptions* Get() const { return options_.get(); }
+
+ private:
+  explicit CompilerOptions(LrtCompilerOptions* options);
+
+  struct Deleter {
+    void operator()(LrtCompilerOptions* ptr) const {
+      LrtDestroyCompilerOptions(ptr);
+    }
+  };
+  std::unique_ptr<LrtCompilerOptions, Deleter> options_;
 };
+
 }  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_

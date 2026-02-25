@@ -15,16 +15,13 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
-#include <stdint.h>
-
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-LITERT_DEFINE_HANDLE(LiteRtCompilerOptions);
+typedef struct LrtCompilerOptions LrtCompilerOptions;
 
 // Partition strategy for the compiler.
 //
@@ -42,30 +39,43 @@ typedef enum LiteRtCompilerOptionsPartitionStrategy {
   kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected = 1,
 } LiteRtCompilerOptionsPartitionStrategy;
 
-// Creates an opaque options object holding Compiler options.
-LiteRtStatus LiteRtCreateCompilerOptions(LiteRtOpaqueOptions* options);
+// Creates a compiler options object.
+// The caller is responsible for freeing the returned options using
+// `LrtDestroyCompilerOptions`.
+LiteRtStatus LrtCreateCompilerOptions(LrtCompilerOptions** options);
 
-// Gets the underlying Compiler options from an opaque options handle.
-LiteRtStatus LiteRtFindCompilerOptions(LiteRtOpaqueOptions opaque_options,
-                                       LiteRtCompilerOptions* compiler_options);
+// Destroys a compiler options object.
+void LrtDestroyCompilerOptions(LrtCompilerOptions* options);
+
+// Serializes compiler options and returns the components needed to create
+// opaque options. The caller is responsible for passing these to
+// `LiteRtCreateOpaqueOptions`.
+LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
+                                             const char** identifier,
+                                             void** payload,
+                                             void (**payload_deleter)(void*));
 
 // Gets the identifier for Compiler options stored in opaque options.
-const char* LiteRtGetCompilerOptionsIdentifier();
+const char* LrtGetCompilerOptionsIdentifier();
 
 // Sets the partition strategy for the compiler.
-LiteRtStatus LiteRtSetCompilerOptionsPartitionStrategy(
-    LiteRtCompilerOptions options,
+LiteRtStatus LrtSetCompilerOptionsPartitionStrategy(
+    LrtCompilerOptions* options,
     LiteRtCompilerOptionsPartitionStrategy partition_strategy);
 
-LiteRtStatus LiteRtGetCompilerOptionsPartitionStrategy(
-    LiteRtCompilerOptionsConst options,
+// Gets the partition strategy from compiler options.
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetCompilerOptionsPartitionStrategy(
+    const LrtCompilerOptions* options,
     LiteRtCompilerOptionsPartitionStrategy* partition_strategy);
 
-// Dummy options for testing.
-LiteRtStatus LiteRtSetDummyCompilerOptions(LiteRtCompilerOptions options,
-                                           bool dummy_option);
-LiteRtStatus LiteRtGetDummyCompilerOptions(LiteRtCompilerOptionsConst options,
-                                           bool* dummy_option);
+// Sets the dummy option for testing.
+LiteRtStatus LrtSetCompilerOptionsDummyOption(LrtCompilerOptions* options,
+                                              bool dummy_option);
+
+// Gets the dummy option from compiler options.
+LiteRtStatus LrtGetCompilerOptionsDummyOption(const LrtCompilerOptions* options,
+                                              bool* dummy_option);
 
 #ifdef __cplusplus
 }  // extern "C"

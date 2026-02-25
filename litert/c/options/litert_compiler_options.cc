@@ -14,94 +14,97 @@
 
 #include "litert/c/options/litert_compiler_options.h"
 
-#include <cstdint>
-#include <memory>
+#include <string.h>  // NOLINT: To use strdup in some environments.
+
+#include <cstdlib>
+#include <optional>
+#include <sstream>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/core/cache/hash_util.h"
 
-struct LiteRtCompilerOptionsT {
-  LiteRtCompilerOptionsPartitionStrategy partition_strategy =
-      kLiteRtCompilerOptionsPartitionStrategyDefault;
-  bool dummy_option = false;
+struct LrtCompilerOptions {
+  std::optional<LiteRtCompilerOptionsPartitionStrategy> partition_strategy;
+  std::optional<bool> dummy_option;
 };
 
-LiteRtStatus LiteRtCreateCompilerOptions(LiteRtOpaqueOptions* options) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  auto options_data = std::make_unique<LiteRtCompilerOptionsT>();
-  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      LiteRtGetCompilerOptionsIdentifier(), options_data.get(),
-      [](void* payload) {
-        delete reinterpret_cast<LiteRtCompilerOptions>(payload);
-      },
-      options));
-
-  // Hashable options for JIT cache.
-  auto compiler_hash = [](const void* payload) -> uint64_t {
-    const LiteRtCompilerOptionsT* options =
-        reinterpret_cast<const LiteRtCompilerOptionsT*>(payload);
-    uint64_t ans = 0;
-    litert::HashCombine(ans, options->dummy_option);
-    return ans;
-  };
-  LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, compiler_hash));
-
-  options_data.release();
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtFindCompilerOptions(
-    LiteRtOpaqueOptions opaque_options,
-    LiteRtCompilerOptions* compiler_options) {
-  LITERT_RETURN_IF_ERROR(compiler_options,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "compiler_options is null.";
-  void* options_data = nullptr;
-  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
-      opaque_options, LiteRtGetCompilerOptionsIdentifier(), &options_data));
-  *compiler_options = reinterpret_cast<LiteRtCompilerOptions>(options_data);
-  return kLiteRtStatusOk;
-}
-
-const char* LiteRtGetCompilerOptionsIdentifier() { return "litert_compiler"; }
-
-LiteRtStatus LiteRtSetCompilerOptionsPartitionStrategy(
-    LiteRtCompilerOptions options,
-    LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
-  if (options == nullptr) {
+LiteRtStatus LrtCreateCompilerOptions(LrtCompilerOptions** options) {
+  if (!options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  *options = new LrtCompilerOptions();
+  if (!*options) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  return kLiteRtStatusOk;
+}
+
+void LrtDestroyCompilerOptions(LrtCompilerOptions* options) {
+  if (options) {
+    delete options;
+  }
+}
+
+LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
+                                             const char** identifier,
+                                             void** payload,
+                                             void (**payload_deleter)(void*)) {
+  if (!options || !identifier || !payload || !payload_deleter) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  std::stringstream ss;
+  if (options->partition_strategy.has_value()) {
+    ss << "partition_strategy = "
+       << static_cast<int>(options->partition_strategy.value()) << "\n";
+  }
+  if (options->dummy_option.has_value()) {
+    ss << "dummy_option = "
+       << (options->dummy_option.value() ? "true" : "false") << "\n";
+  }
+
+  *identifier = LrtGetCompilerOptionsIdentifier();
+  *payload = strdup(ss.str().c_str());
+  *payload_deleter = [](void* p) { free(p); };
+
+  return kLiteRtStatusOk;
+}
+
+const char* LrtGetCompilerOptionsIdentifier() {
+  return "compiler_options_string";
+}
+
+LiteRtStatus LrtSetCompilerOptionsPartitionStrategy(
+    LrtCompilerOptions* options,
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
   options->partition_strategy = partition_strategy;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCompilerOptionsPartitionStrategy(
-    LiteRtCompilerOptionsConst options,
+LiteRtStatus LrtGetCompilerOptionsPartitionStrategy(
+    const LrtCompilerOptions* options,
     LiteRtCompilerOptionsPartitionStrategy* partition_strategy) {
-  if (options == nullptr || partition_strategy == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
+  if (!options || !partition_strategy) return kLiteRtStatusErrorInvalidArgument;
+  if (!options->partition_strategy.has_value()) {
+    return kLiteRtStatusErrorNotFound;
   }
-  *partition_strategy = options->partition_strategy;
+  *partition_strategy = options->partition_strategy.value();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetDummyCompilerOptions(LiteRtCompilerOptions options,
-                                           bool dummy_option) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
+LiteRtStatus LrtSetCompilerOptionsDummyOption(LrtCompilerOptions* options,
+                                              bool dummy_option) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
   options->dummy_option = dummy_option;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetDummyCompilerOptions(LiteRtCompilerOptionsConst options,
-                                           bool* dummy_option) {
-  if (options == nullptr || dummy_option == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
+LiteRtStatus LrtGetCompilerOptionsDummyOption(const LrtCompilerOptions* options,
+                                              bool* dummy_option) {
+  if (!options || !dummy_option) return kLiteRtStatusErrorInvalidArgument;
+  if (!options->dummy_option.has_value()) {
+    return kLiteRtStatusErrorNotFound;
   }
-  *dummy_option = options->dummy_option;
+  *dummy_option = options->dummy_option.value();
   return kLiteRtStatusOk;
 }

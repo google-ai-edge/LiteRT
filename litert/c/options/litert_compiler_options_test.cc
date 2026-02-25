@@ -14,9 +14,8 @@
 
 #include "litert/c/options/litert_compiler_options.h"
 
-#include <cstdint>
-
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/test/matchers.h"
@@ -25,93 +24,68 @@ namespace litert::compiler {
 namespace {
 
 TEST(LiteRtCompilerOptionsTest, CreateAndGet) {
-  EXPECT_NE(LiteRtCreateCompilerOptions(nullptr), kLiteRtStatusOk);
+  EXPECT_NE(LrtCreateCompilerOptions(nullptr), kLiteRtStatusOk);
 
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
 
   const char* id;
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsIdentifier(options, &id));
-  EXPECT_STREQ(id, "litert_compiler");
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(options, &id, &payload,
+                                                   &payload_deleter));
+  LiteRtOpaqueOptions opaque_options = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtCreateOpaqueOptions(id, payload, payload_deleter, &opaque_options));
+  auto opaque_options_cleanup = absl::MakeCleanup(
+      [opaque_options] { LiteRtDestroyOpaqueOptions(opaque_options); });
 
-  LiteRtCompilerOptions compiler_options;
-  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
-
-  LiteRtDestroyOpaqueOptions(options);
+  const char* get_id;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsIdentifier(opaque_options, &get_id));
+  EXPECT_STREQ(get_id, LrtGetCompilerOptionsIdentifier());
 }
 
 TEST(LiteRtCompilerOptionsTest, DummyOptions) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
 
-  LiteRtCompilerOptions compiler_options;
-  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
-
-  LITERT_ASSERT_OK(LiteRtSetDummyCompilerOptions(compiler_options, true));
+  LITERT_ASSERT_OK(LrtSetCompilerOptionsDummyOption(options, true));
 
   bool dummy_option;
-  LITERT_ASSERT_OK(
-      LiteRtGetDummyCompilerOptions(compiler_options, &dummy_option));
+  LITERT_ASSERT_OK(LrtGetCompilerOptionsDummyOption(options, &dummy_option));
   EXPECT_TRUE(dummy_option);
-
-  LiteRtDestroyOpaqueOptions(options);
 }
 
 TEST(LiteRtCompilerOptionsTest, GetDefaultPartitionStrategy) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
-  LiteRtCompilerOptions compiler_options;
-  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
 
   LiteRtCompilerOptionsPartitionStrategy partition_strategy;
-  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsPartitionStrategy(
-      compiler_options, &partition_strategy));
-  EXPECT_EQ(partition_strategy, kLiteRtCompilerOptionsPartitionStrategyDefault);
-
-  LiteRtDestroyOpaqueOptions(options);
+  EXPECT_EQ(
+      LrtGetCompilerOptionsPartitionStrategy(options, &partition_strategy),
+      kLiteRtStatusErrorNotFound);
 }
 
 TEST(LiteRtCompilerOptionsTest, SetAndGetWCPartitionStrategy) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
-  LiteRtCompilerOptions compiler_options;
-  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
 
   LiteRtCompilerOptionsPartitionStrategy partition_strategy;
-  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsPartitionStrategy(
-      compiler_options,
-      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
-  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsPartitionStrategy(
-      compiler_options, &partition_strategy));
+  LITERT_ASSERT_OK(LrtSetCompilerOptionsPartitionStrategy(
+      options, kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
+  LITERT_ASSERT_OK(
+      LrtGetCompilerOptionsPartitionStrategy(options, &partition_strategy));
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
-
-  LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtCompilerOptionsTest, Hash) {
-  LiteRtOpaqueOptions options1;
-  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options1));
-  LiteRtOpaqueOptions options2;
-  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options2));
-
-  uint64_t hash1, hash2;
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
-  EXPECT_EQ(hash1, hash2);
-
-  LiteRtCompilerOptions compiler_options;
-  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options1, &compiler_options));
-  LITERT_ASSERT_OK(LiteRtSetDummyCompilerOptions(compiler_options, true));
-  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsPartitionStrategy(
-      compiler_options,
-      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
-  EXPECT_NE(hash1, hash2);
-
-  LiteRtDestroyOpaqueOptions(options1);
-  LiteRtDestroyOpaqueOptions(options2);
-}
 }  // namespace
 }  // namespace litert::compiler
