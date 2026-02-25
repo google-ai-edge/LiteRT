@@ -16,13 +16,9 @@
 
 #include <memory>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/options/litert_runtime_options.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
@@ -34,13 +30,6 @@ Expected<RuntimeOptions> RuntimeOptions::Create() {
 
 RuntimeOptions::RuntimeOptions(LrtRuntimeOptions* options)
     : options_(options) {}
-
-Expected<OpaqueOptions> RuntimeOptions::CreateOpaqueOptions() const {
-  LiteRtOpaqueOptions opaque_options;
-  LITERT_RETURN_IF_ERROR(
-      LrtCreateOpaqueRuntimeOptions(options_.get(), &opaque_options));
-  return OpaqueOptions(opaque_options, OwnHandle::kYes);
-}
 
 Expected<void> RuntimeOptions::SetEnableProfiling(bool enable_profiling) {
   LITERT_RETURN_IF_ERROR(

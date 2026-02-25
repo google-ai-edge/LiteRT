@@ -231,8 +231,6 @@ cc_library(
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

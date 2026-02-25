@@ -17,11 +17,9 @@
 
 #include <memory>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
@@ -55,10 +53,11 @@ class RuntimeOptions {
   /// @brief Gets the current flag for compressing quantization zero points.
   Expected<bool> GetCompressQuantizationZeroPoints() const;
 
-  /// @brief Creates an OpaqueOptions object containing the serialized runtime
-  /// options.
-  /// @return A new OpaqueOptions instance holding the TOML-serialized options.
-  Expected<OpaqueOptions> CreateOpaqueOptions() const;
+  /// @brief Gets the underlying C options object.
+  LrtRuntimeOptions* Get() { return options_.get(); }
+
+  /// @brief Gets the underlying C options object.
+  const LrtRuntimeOptions* Get() const { return options_.get(); }
 
  private:
   explicit RuntimeOptions(LrtRuntimeOptions* options);

@@ -17,6 +17,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/options/litert_runtime_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/test/matchers.h"
 
@@ -55,8 +58,18 @@ TEST(RuntimeOptionsTest, CompressQuantizationZeroPointsWorks) {
 TEST(RuntimeOptionsTest, CreateOpaqueOptionsWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
   EXPECT_THAT(options.SetEnableProfiling(true), IsOk());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto opaque_options,
-                              options.CreateOpaqueOptions());
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(options.Get(), &identifier, &payload,
+                                           &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions cpp_opaque_opts =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
 }
 
 }  // namespace
