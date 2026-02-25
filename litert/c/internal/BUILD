@@ -368,3 +368,11 @@ filegroup(
         "//litert/cc:__pkg__",
     ],
 )
+
+exports_files(
+    ["litert_scheduling_info.h"],
+    visibility = [
+        "//litert/c:__pkg__",
+        "//litert/swift:__pkg__",
+    ],
+)

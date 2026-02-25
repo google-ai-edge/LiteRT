@@ -206,7 +206,10 @@ cc_library(
     hdrs = ["litert_runtime_options.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
+        "//litert/core:options",
+        "//litert/runtime:litert_runtime_options",
         "@com_google_absl//absl/strings",
     ],
     # Keep the symbols in libLiteRt.dylib.
@@ -294,5 +297,16 @@ filegroup(
     visibility = [
         "//litert/c:__pkg__",
         "//litert/cc:__pkg__",
+    ],
+)
+
+exports_files(
+    [
+        "litert_cpu_options.h",
+        "litert_gpu_options.h",
+    ],
+    visibility = [
+        "//litert/c:__pkg__",
+        "//litert/swift:__pkg__",
     ],
 )
