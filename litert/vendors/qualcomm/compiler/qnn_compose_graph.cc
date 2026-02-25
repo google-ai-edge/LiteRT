@@ -326,7 +326,7 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus ConvertOp(const bool use_htp_preferences,
+LiteRtStatus ConvertOp(bool use_htp_preferences, bool use_int64_bias_as_int32,
                        const litert::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -517,7 +517,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       }
       if (op_wrappers.empty()) {
         op_wrappers = ::qnn::BuildFullyConnectedOp(
-            tensor_pool, input_tensors, {activation_input}, keep_num_dims);
+            tensor_pool, input_tensors, {activation_input}, keep_num_dims,
+            use_int64_bias_as_int32);
       }
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
                                     activation_input, output_tensors[0]);
@@ -792,7 +793,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildConv2dOp(
           tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-          dilation_h_factor, dilation_w_factor, qnn_padding);
+          dilation_h_factor, dilation_w_factor, qnn_padding,
+          use_int64_bias_as_int32);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
                                     activation_input, output_tensors[0]);
       break;
@@ -1293,9 +1295,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     }
 
     std::vector<::qnn::OpWrapper> op_wrappers;
-    LITERT_RETURN_IF_ERROR(ConvertOp(options.GetUseHtpPreference(), op,
-                                     tensor_pool, input_tensors, output_tensors,
-                                     op_wrappers));
+    LITERT_RETURN_IF_ERROR(ConvertOp(
+        options.GetUseHtpPreference(), options.GetUseInt64BiasAsInt32(), op,
+        tensor_pool, input_tensors, output_tensors, op_wrappers));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
