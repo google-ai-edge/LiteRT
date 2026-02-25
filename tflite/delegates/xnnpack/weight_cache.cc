@@ -74,6 +74,12 @@ size_t Align(size_t offset, const size_t alignment) {
   return offset + (misalign ? alignment - misalign : 0);
 }
 
+template <class T>
+T* Align(T* offset, const size_t alignment) {
+  return reinterpret_cast<T*>(
+      Align(reinterpret_cast<uintptr_t>(offset), alignment));
+}
+
 // Returns true if the given path exists.
 [[nodiscard]]
 bool FileExists(const char* path) {
@@ -193,8 +199,7 @@ void* WeightCacheBuilder::Reserve(size_t size) {
     data_ = std::make_unique<uint8_t[]>(size + kMinAlignment);
     capacity_ = size;
   }
-  return reinterpret_cast<void*>(
-      Align(reinterpret_cast<size_t>(data_.get()), kMinAlignment));
+  return Align(data_.get(), kMinAlignment);
 }
 
 BufferLocation WeightCacheBuilder::Append(PackIdentifier pack_id,
