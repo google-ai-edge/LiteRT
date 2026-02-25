@@ -61,6 +61,7 @@
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/group_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/layer_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
@@ -756,6 +757,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
         float epsilon = attributes_map["epsilon"].AsFloat();
         op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
                                            output_tensors, epsilon);
+      }
+      if (info->name == CompositeOptions::kLayerNorm) {
+        auto attributes_map = info->attributes_map.value();
+        float epsilon = attributes_map["epsilon"].AsFloat();
+        op_wrappers = ::qnn::BuildLayerNormOp(
+            tensor_pool, input_tensors, output_tensors, epsilon);
       }
       break;
     }

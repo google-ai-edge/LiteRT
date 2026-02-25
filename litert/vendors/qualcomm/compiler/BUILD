@@ -178,6 +178,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:gelu_op_builder",
         "//litert/vendors/qualcomm/core/builders:group_norm_op_builder",
         "//litert/vendors/qualcomm/core/builders:l2_norm_op_builder",
+        "//litert/vendors/qualcomm/core/builders:layer_norm_op_builder",
         "//litert/vendors/qualcomm/core/builders:leaky_relu_op_builder",
         "//litert/vendors/qualcomm/core/builders:log_softmax_op_builder",
         "//litert/vendors/qualcomm/core/builders:logistic_op_builder",
