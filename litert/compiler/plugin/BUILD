@@ -96,6 +96,7 @@ cc_test(
         "//litert/cc/options:litert_compiler_options",
         "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_op_options",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_options_testonly",
         "//litert/core:build_stamp",
         "//litert/core:filesystem",

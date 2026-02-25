@@ -32,6 +32,7 @@ limitations under the License.
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -176,21 +177,22 @@ litert::Expected<Environment> CreateDefaultEnvironment(
   LITERT_LOG(LITERT_INFO, "compiler_cache_path: %s",
              compiler_cache_path.c_str());
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           dispatch_library_path.c_str(),
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerPluginLibraryDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           compiler_plugin_library_path.c_str(),
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerCacheDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerCacheDir,
           compiler_cache_path.c_str(),
       },
   };
-  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  return litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 }  // namespace
 

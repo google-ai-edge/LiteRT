@@ -39,6 +39,7 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -104,30 +105,31 @@ litert::HwAcceleratorSet GetAccelerator() {
 }
 
 Expected<Environment> GetEnvironment() {
-  std::vector<litert::Environment::Option> environment_options = {};
+  std::vector<litert::EnvironmentOptions::Option> environment_options = {};
 
   const auto dispatch_library_dir = absl::GetFlag(FLAGS_dispatch_library_dir);
   if (!dispatch_library_dir.empty()) {
-    environment_options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::DispatchLibraryDir,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
         absl::string_view(dispatch_library_dir)});
   }
 
   const auto compiler_plugin_library_dir =
       absl::GetFlag(FLAGS_compiler_plugin_library_dir);
   if (!compiler_plugin_library_dir.empty()) {
-    environment_options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::CompilerPluginLibraryDir,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
         absl::string_view(compiler_plugin_library_dir)});
     const auto compiler_cache_dir = absl::GetFlag(FLAGS_compiler_cache_dir);
     if (!compiler_cache_dir.empty()) {
-      environment_options.push_back(litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerCacheDir,
+      environment_options.push_back(litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerCacheDir,
           absl::string_view(compiler_cache_dir)});
     }
   }
 
-  return Environment::Create(absl::MakeConstSpan(environment_options));
+  return Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 
 Expected<Options> GetOptions() {

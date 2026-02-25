@@ -26,6 +26,7 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
@@ -36,13 +37,14 @@
 using ::testing::Pointwise;
 
 litert::Expected<litert::Environment> CreateDefaultEnvironment() {
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           "/data/local/tmp",
       },
   };
-  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  return litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 
 TEST(MediaTek, DispatchApiWithAhwb) {

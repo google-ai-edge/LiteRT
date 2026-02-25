@@ -53,13 +53,14 @@ static constexpr const float kTol = 5e-2;
 constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
 
 litert::Expected<Environment> CreateDefaultEnvironment() {
-  const std::vector<litert::Environment::Option> environment_options = {
-      Environment::Option{
-          Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
-  return Environment::Create(absl::MakeConstSpan(environment_options));
+  return litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 
 TEST(Qualcomm, DispatchApiWithFastRpc) {

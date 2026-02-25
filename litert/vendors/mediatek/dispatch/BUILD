@@ -81,9 +81,9 @@ litert_device_test(
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
     deps = [
-        ":dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_environment_testonly",
         "//litert/cc:litert_options_testonly",
         "//litert/core:filesystem_testonly",
@@ -95,6 +95,5 @@ litert_device_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

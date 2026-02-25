@@ -223,6 +223,7 @@ cc_library(
         ":inference_capture",
         "//litert/c:litert_common",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",

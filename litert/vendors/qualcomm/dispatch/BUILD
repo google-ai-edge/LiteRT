@@ -91,7 +91,6 @@ litert_device_test(
         "//litert/test:testdata/simple_model_qualcomm.bin",
     ],
     deps = [
-        ":dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
@@ -103,7 +102,6 @@ litert_device_test(
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/qualcomm/core/utils:miscs",
-        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",

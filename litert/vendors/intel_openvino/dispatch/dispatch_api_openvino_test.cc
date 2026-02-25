@@ -13,18 +13,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstring>
+#include <vector>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/log.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
 #include "litert/core/filesystem.h"
@@ -32,19 +37,18 @@
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/c/litert_dispatch_api.h"
-#include "litert/vendors/intel_openvino/dispatch/device_context.h"
 
 constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
 
 litert::Expected<litert::Environment> CreateDefaultEnvironment() {
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
-  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  return litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 
 TEST(OpenVino, DispatchApi) {

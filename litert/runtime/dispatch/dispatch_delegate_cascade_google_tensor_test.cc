@@ -36,6 +36,7 @@
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/model/model_buffer.h"
@@ -81,15 +82,15 @@ TEST(DispatchDelegate, CompiledModel) {
                   "Google Tensor TPU";
 #endif
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto env,
-      litert::Environment::Create(absl::MakeConstSpan(environment_options)));
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
@@ -282,15 +283,15 @@ TEST(DispatchDelegate, CompiledModelAsync) {
                   "Google Tensor TPU";
 #endif
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto env,
-      litert::Environment::Create(absl::MakeConstSpan(environment_options)));
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,

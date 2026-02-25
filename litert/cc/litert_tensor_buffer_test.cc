@@ -34,6 +34,7 @@
 #include "litert/cc/internal/litert_platform_support.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -66,7 +67,7 @@ namespace {
 using ::testing::Eq;
 using ::testing::Ne;
 using ::testing::litert::IsError;
-using OptionTag = litert::Environment::OptionTag;
+using OptionTag = litert::EnvironmentOptions::Tag;
 
 constexpr const float kTensorData[] = {10, 20, 30, 40};
 
@@ -100,14 +101,14 @@ class GlEnvironment {
     return nullptr;
   }
 
-  std::vector<litert::Environment::Option> GetEnvironmentOptions() {
-    std::vector<litert::Environment::Option> environment_options;
-    environment_options.push_back(litert::Environment::Option{
-        OptionTag::EglDisplay,
+  std::vector<litert::EnvironmentOptions::Option> GetEnvironmentOptions() {
+    std::vector<litert::EnvironmentOptions::Option> environment_options;
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        OptionTag::kEglDisplay,
         reinterpret_cast<int64_t>(egl_env_->display()),
     });
-    environment_options.push_back(litert::Environment::Option{
-        OptionTag::EglContext,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        OptionTag::kEglContext,
         reinterpret_cast<int64_t>(egl_env_->context().context()),
     });
     return environment_options;
@@ -121,7 +122,7 @@ class GlEnvironment {
 class GlEnvironment {
  public:
   static std::unique_ptr<GlEnvironment> Create() { return nullptr; }
-  std::vector<litert::Environment::Option> GetEnvironmentOptions() {
+  std::vector<litert::EnvironmentOptions::Option> GetEnvironmentOptions() {
     return {};
   }
 };
@@ -153,22 +154,22 @@ class ClEnvironment {
     return nullptr;
   }
 
-  std::vector<litert::Environment::Option> GetEnvironmentOptions() {
-    std::vector<litert::Environment::Option> environment_options;
-    environment_options.push_back(litert::Environment::Option{
-        OptionTag::ClDeviceId,
+  std::vector<litert::EnvironmentOptions::Option> GetEnvironmentOptions() {
+    std::vector<litert::EnvironmentOptions::Option> environment_options;
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        OptionTag::kOpenClDeviceId,
         reinterpret_cast<int64_t>(device_->id()),
     });
-    environment_options.push_back(litert::Environment::Option{
-        OptionTag::ClPlatformId,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        OptionTag::kOpenClPlatformId,
         reinterpret_cast<int64_t>(device_->platform()),
     });
-    environment_options.push_back(litert::Environment::Option{
-        OptionTag::ClContext,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        OptionTag::kOpenClContext,
         reinterpret_cast<int64_t>(context_->context()),
     });
-    environment_options.push_back(litert::Environment::Option{
-        OptionTag::ClCommandQueue,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        OptionTag::kOpenClCommandQueue,
         reinterpret_cast<int64_t>(command_queue_->queue()),
     });
     return environment_options;
@@ -222,7 +223,7 @@ class ClEnvironment {
   static std::unique_ptr<ClEnvironment> Create(GlEnvironment* gl_env) {
     return nullptr;
   }
-  std::vector<litert::Environment::Option> GetEnvironmentOptions() {
+  std::vector<litert::EnvironmentOptions::Option> GetEnvironmentOptions() {
     return {};
   }
 };
@@ -238,7 +239,7 @@ class UserGpuEnvironment {
         env_(std::move(env)) {}
 
   static std::unique_ptr<UserGpuEnvironment> Create(bool create_gl_env = true) {
-    std::vector<litert::Environment::Option> environment_options;
+    std::vector<litert::EnvironmentOptions::Option> environment_options;
 
     std::unique_ptr<GlEnvironment> gl_env =
         create_gl_env ? GlEnvironment::Create() : nullptr;
@@ -256,8 +257,9 @@ class UserGpuEnvironment {
     }
 
     // Create LiteRt environment from GL and CL options.
-    LITERT_ASSIGN_OR_ABORT(auto env,
-                           litert::Environment::Create(environment_options));
+    LITERT_ASSIGN_OR_ABORT(
+        auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                      absl::MakeConstSpan(environment_options))));
     return std::make_unique<UserGpuEnvironment>(
         std::move(gl_env), std::move(cl_env), std::move(env));
   }

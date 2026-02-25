@@ -29,6 +29,7 @@
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_compiler_options.h"
 #include "litert/core/build_stamp.h"
@@ -437,12 +438,13 @@ TEST(ApplyTest, ApplyPlugins) {
 
   const std::string plugin_search_path = GetLiteRtPath(kTestPluginSearchPath);
   const std::array environment_options = {
-      litert::Environment::Option{
-          /*.tag=*/litert::Environment::OptionTag::CompilerPluginLibraryDir,
+      litert::EnvironmentOptions::Option{
+          /*.tag=*/litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           /*.value=*/plugin_search_path.c_str(),
       },
   };
-  auto env = litert::Environment::Create(environment_options);
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(environment_options));
   ASSERT_TRUE(env);
 
   LiteRtHwAccelerators compilation_options = static_cast<LiteRtHwAccelerators>(

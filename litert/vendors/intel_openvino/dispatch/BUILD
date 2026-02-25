@@ -164,10 +164,9 @@ cc_test(
         "notap",
     ],
     deps = [
-        ":dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_environment",
         "//litert/cc/dynamic_runtime:litert_options",
@@ -178,8 +177,8 @@ cc_test(
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@intel_openvino//:openvino",
     ],
 )

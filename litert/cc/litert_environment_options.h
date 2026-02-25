@@ -82,6 +82,8 @@ class EnvironmentOptions {
     /// Dawn procedure table pointer. This allows shared libraries to use the
     /// shared procedures instead of their own.
     kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
+    /// Directory for the runtime library.
+    kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
   };
 
   struct Option {

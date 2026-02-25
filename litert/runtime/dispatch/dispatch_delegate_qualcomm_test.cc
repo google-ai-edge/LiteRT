@@ -31,6 +31,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -66,13 +67,14 @@ constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
 constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
 
 litert::Expected<Environment> CreateDefaultEnvironment() {
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
-  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  return litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 
 litert::Expected<Options> CreateDispatchOptions(const uint8_t* base) {
@@ -336,9 +338,8 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(TensorBufferType::kFastRpc,
-                          TensorBufferType::kDmaBuf));
+  EXPECT_THAT(input_buffer_types_arg0, ElementsAre(TensorBufferType::kFastRpc,
+                                                   TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
@@ -347,17 +348,15 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(TensorBufferType::kFastRpc,
-                          TensorBufferType::kDmaBuf));
+  EXPECT_THAT(input_buffer_types_arg1, ElementsAre(TensorBufferType::kFastRpc,
+                                                   TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
   EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kFastRpc,
                                                TensorBufferType::kDmaBuf));
 

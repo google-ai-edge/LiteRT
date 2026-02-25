@@ -41,6 +41,7 @@ cc_test(
         ":gen_device_test_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers",

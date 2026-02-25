@@ -27,6 +27,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 
 namespace {
@@ -64,21 +65,22 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
 
   auto num_tags = env->GetArrayLength(tags);
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, values);
-  std::vector<Environment::Option> options;
+  std::vector<litert::EnvironmentOptions::Option> options;
   if (num_tags > 0) {
     options.reserve(num_tags);
 
     AUTO_CLEANUP_JNI_INT_ARRAY(env, tags);
     for (int i = 0; i < num_tags; ++i) {
       auto value = values_vector[i];
-      auto option = Environment::Option{
-          static_cast<Environment::OptionTag>(tags_array[i]),
+      auto option = litert::EnvironmentOptions::Option{
+          static_cast<litert::EnvironmentOptions::Tag>(tags_array[i]),
           litert::LiteRtVariant(value)};
       options.push_back(option);
     }
   }
 
-  auto litert_env = Environment::Create(absl::MakeConstSpan(options));
+  auto litert_env = Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(options)));
   if (!litert_env) {
     LITERT_LOG(LITERT_ERROR, "Failed to create environment: %s.",
                litert_env.Error().Message().c_str());
