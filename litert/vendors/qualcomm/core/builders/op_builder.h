@@ -5,6 +5,7 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_OP_BUILDER_H_
 
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -57,6 +58,16 @@ void AddFusedActivationNode(std::vector<OpWrapper>& res,
                             const uint32_t fused_activation_function,
                             const TensorWrapper& input_tensor,
                             const TensorWrapper& output_tensor);
+
+template <typename... Args>
+auto MakeVector(Args&&... args) {
+  using T = std::decay_t<std::common_type_t<Args...>>;
+  std::vector<T> v;
+  v.reserve(sizeof...(args));
+  (v.emplace_back(std::forward<Args>(args)), ...);
+  return v;
+}
+
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_OP_BUILDER_H_

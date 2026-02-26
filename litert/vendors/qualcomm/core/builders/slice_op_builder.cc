@@ -28,27 +28,25 @@ constexpr int kRangeNumElements = 3;
 std::vector<OpWrapper> BuildSliceOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
-  std::vector<OpWrapper> res;
-
-  TensorWrapper& input_tensor = inputs[0];
-  TensorWrapper& begin_tensor = inputs[1];
-  TensorWrapper& size_tensor = inputs[2];
+  const TensorWrapper& input_tensor = inputs[0];
+  const TensorWrapper& begin_tensor = inputs[1];
+  const TensorWrapper& size_tensor = inputs[2];
   if (!begin_tensor.IsTensorStatic() || !size_tensor.IsTensorStatic()) {
     QNN_LOG_ERROR(
         "The begin tensor and size tensor of Slice OP is not static.");
-    return res;
+    return {};
   }
 
   const auto input_rank = input_tensor.GetRank();
-  auto begin_data = begin_tensor.GetTensorData<int32_t>();
+  const auto begin_data = begin_tensor.GetTensorData<int32_t>();
   if (!begin_data.has_value()) {
     QNN_LOG_ERROR("Get begin_data failed.");
-    return res;
+    return {};
   }
-  auto size_data = size_tensor.GetTensorData<int32_t>();
+  const auto size_data = size_tensor.GetTensorData<int32_t>();
   if (!size_data.has_value()) {
     QNN_LOG_ERROR("Get size_data failed.");
-    return res;
+    return {};
   }
   std::vector<std::int32_t> range_data;
   range_data.reserve(input_rank * kRangeNumElements);
@@ -61,24 +59,22 @@ std::vector<OpWrapper> BuildSliceOp(
     }
     range_data.emplace_back(kDefaultStrideValue);
   }
-  TensorWrapper& range_tensor = tensor_pool.CreateStaticTensor(
+  const auto& range_tensor = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_INT_32, begin_tensor.GetQuantParams(),
       {input_rank, kRangeNumElements}, sizeof(std::int32_t) * range_data.size(),
       range_data.data());
 
-  BuildSliceOp(res.emplace_back(), input_tensor, outputs[0], range_tensor);
-  return res;
+  return MakeVector(CreateSliceOp(input_tensor, outputs[0], range_tensor));
 }
 
-bool BuildSliceOp(OpWrapper& op, const TensorWrapper& input,
-                  const TensorWrapper& output, const TensorWrapper& ranges) {
-  auto name = GetUniqueOpName(QNN_OP_STRIDED_SLICE);
-  op.SetName(std::move(name));
-  op.SetType(QNN_OP_STRIDED_SLICE, QnnOpCode::kStridedSlice);
+OpWrapper CreateSliceOp(const TensorWrapper& input, const TensorWrapper& output,
+                        const TensorWrapper& ranges) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_STRIDED_SLICE), QNN_OP_STRIDED_SLICE,
+               QnnOpCode::kStridedSlice);
   op.AddInputTensor(input);
   op.AddOutputTensor(output);
   op.AddTensorParam(QNN_OP_STRIDED_SLICE_PARAM_RANGES, ranges);
-  return true;
+  return op;
 }
 
 }  // namespace qnn
