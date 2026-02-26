@@ -36,6 +36,7 @@ symlink_inputs(
 
 py_library(
     name = "mlir",
+    strict_deps = False,
     deps = [
         ":mlir_libs",
         "//tflite/converter/integrations/python/mlir/_mlir_libs:_mlir",
