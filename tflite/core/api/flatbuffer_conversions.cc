@@ -1882,9 +1882,7 @@ TfLiteStatus ParseMul(const Operator* op, ErrorReporter* error_reporter,
     params->activation =
         ConvertActivation(schema_params->fused_activation_function());
   } else {
-    // TODO(b/157480169): We should either return kTfLiteError or fill in some
-    // reasonable defaults in the params struct. We are not doing so until we
-    // better understand the ramifications of changing the legacy behavior.
+    // Default activation is none.
   }
 
   *builtin_data = params.release();
