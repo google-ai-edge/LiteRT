@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <exception>
+#include "openvino/core/except.hpp"
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_scheduling_info.h"
@@ -150,7 +150,7 @@ LiteRtStatus DispatchDeviceContextCreate(
                  context.Error().Message().c_str());
       return context.Error().Status();
     }
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR, "Exception in Dispatch device_context_create: %s",
                e.what());
     return kLiteRtStatusErrorRuntimeFailure;
@@ -221,7 +221,7 @@ LiteRtStatus DispatchRegisterTensorBuffer(
       *tensor_buffer_handle = *status;
       return kLiteRtStatusOk;
     }
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR, "Exception in Dispatch register_tensor_buffer: %s",
                e.what());
     return kLiteRtStatusErrorRuntimeFailure;
@@ -246,7 +246,7 @@ LiteRtStatus DispatchUnregisterTensorBuffer(
     } else {
       return kLiteRtStatusOk;
     }
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR,
                "Exception in Dispatch unregister_tensor_buffer: %s", e.what());
     return kLiteRtStatusErrorRuntimeFailure;
@@ -274,7 +274,7 @@ LiteRtStatus DispatchInvocationContextCreate(
     }
     *invocation_context = context->release();
     return kLiteRtStatusOk;
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR,
                "Exception in Dispatch invocation_context_create: %s", e.what());
     return kLiteRtStatusErrorRuntimeFailure;
@@ -309,7 +309,7 @@ LiteRtStatus DispatchAttachInput(
       return status.Error().Status();
     }
     return kLiteRtStatusOk;
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR, "Exception in Dispatch attach_input: %s",
                e.what());
     return kLiteRtStatusErrorRuntimeFailure;
@@ -328,7 +328,7 @@ LiteRtStatus DispatchAttachOutput(
       return status.Error().Status();
     }
     return kLiteRtStatusOk;
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR, "Exception in Dispatch attach_output: %s",
                e.what());
     return kLiteRtStatusErrorRuntimeFailure;
@@ -370,7 +370,7 @@ LiteRtStatus DispatchInvoke(
       return status.Error().Status();
     }
     return kLiteRtStatusOk;
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR, "Exception in Dispatch invoke: %s", e.what());
     return kLiteRtStatusErrorRuntimeFailure;
   }

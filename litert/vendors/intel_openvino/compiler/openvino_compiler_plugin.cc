@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <cstdlib>
-#include <exception>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -25,6 +24,7 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/core/except.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
 #include "openvino/openvino.hpp"
@@ -442,7 +442,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     *compiled_result = result.release();
     // TODO: Add support for caching
     return kLiteRtStatusOk;
-  } catch (const std::exception& e) {
+  } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_ERROR, "Exception in compilation: %s", e.what());
     return kLiteRtStatusErrorCompilation;
   }
