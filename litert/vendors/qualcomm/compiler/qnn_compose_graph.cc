@@ -18,6 +18,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -330,11 +331,11 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
 
 namespace {
 
-using OpBuilder = std::function<LiteRtStatus(
+using OpBuilder = LiteRtStatus (*)(
     const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences)>;
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences);
 
 #define REGISTER_SIMPLE_OP_BUILDER(OpName, BuildFunc)                         \
   LiteRtStatus OpName(                                                        \
@@ -1175,113 +1176,111 @@ LiteRtStatus BuildLogSoftmaxOp(
   return kLiteRtStatusOk;
 }
 
-}  // namespace
-
-const absl::flat_hash_map<LiteRtOpCode, OpBuilder>& GetOpBuilders() {
-  static const absl::NoDestructor<absl::flat_hash_map<LiteRtOpCode, OpBuilder>>
-      builders({
-          {LiteRtOpCode::kLiteRtOpCodeTflCast, BuildCastOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflConcatenation, BuildConcatenationOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflAdd, BuildAddOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLogicalAnd, BuildLogicalAndOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflBroadcastTo, BuildBroadcastToOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflCeil, BuildCeilOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflCos, BuildCosOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflDiv, BuildDivOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflGreater, BuildGreaterOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLess, BuildLessOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflMul, BuildMulOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflRsqrt, BuildRsqrtOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSqrt, BuildSqrtOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSin, BuildSinOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSquaredDifference,
-           BuildSquaredDifferenceOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSquare, BuildSquareOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSub, BuildSubOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflMinimum, BuildMinimumOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflMaximum, BuildMaximumOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflElu, BuildEluOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflFloor, BuildFloorOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflFloorDiv, BuildFloorDivOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflNotEqual, BuildNotEqualOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLogicalOr, BuildLogicalOrOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflEmbeddingLookup,
-           BuildEmbeddingLookupOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflFullyConnected, BuildFullyConnectedOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflGather, BuildGatherOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflGelu, BuildGeluOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflRelu, BuildReluOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflReluN1To1, BuildReluN1To1Op},
-          {LiteRtOpCode::kLiteRtOpCodeTflRelu0To1, BuildRelu0To1Op},
-          {LiteRtOpCode::kLiteRtOpCodeTflRelu6, BuildRelu6Op},
-          {LiteRtOpCode::kLiteRtOpCodeTflPrelu, BuildPreluOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLogistic, BuildLogisticOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflBatchMatmul, BuildBatchMatmulOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflQuantize, BuildQuantizeOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflDequantize, BuildDequantizeOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSum, BuildSumOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflMean, BuildMeanOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflReduceMax, BuildReduceMaxOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflReduceMin, BuildReduceMinOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflReduceAll, BuildReduceAllOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflReduceAny, BuildReduceAnyOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflReshape, BuildReshapeOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSelect, BuildSelectOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSelectV2, BuildSelectOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSlice, BuildSliceOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSoftmax, BuildSoftmaxOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSplit, BuildSplitOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflTanh, BuildTanhOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflTranspose, BuildTransposeOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflTile, BuildTileOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflTopkV2, BuildTopkV2Op},
-          {LiteRtOpCode::kLiteRtOpCodeTflPack, BuildPackOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflUnpack, BuildUnpackOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflDynamicUpdateSlice,
-           BuildDynamicUpdateSliceOp},
-          {LiteRtOpCode::kLiteRtOpCodeShloComposite, BuildShloCompositeOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflL2Normalization,
-           BuildL2NormalizationOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflConv2d, BuildConv2dOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflConv3d, BuildConv3dOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflTransposeConv, BuildTransposeConvOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d,
-           BuildDepthwiseConv2dOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d, BuildAveragePool2dOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflMaxPool2d, BuildMaxPool2dOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflL2Pool2d, BuildL2Pool2dOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflDepthToSpace, BuildDepthToSpaceOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSpaceToDepth, BuildSpaceToDepthOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflHardSwish, BuildHardSwishOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLeakyRelu, BuildLeakyReluOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflResizeBilinear, BuildResizeBilinearOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflResizeNearestNeighbor,
-           BuildResizeNearestNeighborOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflPad, BuildConstantPadOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflPadv2, BuildConstantPadOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflMirrorPad, BuildMirrorPadOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflCumsum, BuildCumsumOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflGatherNd, BuildGatherNdOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflPow, BuildPowOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLessEqual, BuildLessEqualOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLogicalNot, BuildLogicalNotOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflGreaterEqual, BuildGreaterEqualOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflExp, BuildExpOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflEqual, BuildEqualOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLog, BuildLogOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflAbs, BuildAbsOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflReverseV2, BuildReverseV2Op},
-          {LiteRtOpCode::kLiteRtOpCodeTflArgMax, BuildArgMaxOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflArgMin, BuildArgMinOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflStridedSlice, BuildStridedSliceOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflNeg, BuildNegOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflRound, BuildRoundOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflSign, BuildSignOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflLogSoftmax, BuildLogSoftmaxOp},
-          {LiteRtOpCode::kLiteRtOpCodeTflScatterNd, BuildScatterNdOp},
-      });
-  return *builders;
+constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1>
+GetOpBuilders() {
+  std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> builders{};
+  builders[kLiteRtOpCodeTflAdd] = BuildAddOp;
+  builders[kLiteRtOpCodeTflAveragePool2d] = BuildAveragePool2dOp;
+  builders[kLiteRtOpCodeTflConcatenation] = BuildConcatenationOp;
+  builders[kLiteRtOpCodeTflConv2d] = BuildConv2dOp;
+  builders[kLiteRtOpCodeTflDepthwiseConv2d] = BuildDepthwiseConv2dOp;
+  builders[kLiteRtOpCodeTflDepthToSpace] = BuildDepthToSpaceOp;
+  builders[kLiteRtOpCodeTflDequantize] = BuildDequantizeOp;
+  builders[kLiteRtOpCodeTflEmbeddingLookup] = BuildEmbeddingLookupOp;
+  builders[kLiteRtOpCodeTflFloor] = BuildFloorOp;
+  builders[kLiteRtOpCodeTflFullyConnected] = BuildFullyConnectedOp;
+  builders[kLiteRtOpCodeTflL2Normalization] = BuildL2NormalizationOp;
+  builders[kLiteRtOpCodeTflL2Pool2d] = BuildL2Pool2dOp;
+  builders[kLiteRtOpCodeTflLogistic] = BuildLogisticOp;
+  builders[kLiteRtOpCodeTflMaxPool2d] = BuildMaxPool2dOp;
+  builders[kLiteRtOpCodeTflMul] = BuildMulOp;
+  builders[kLiteRtOpCodeTflRelu] = BuildReluOp;
+  builders[kLiteRtOpCodeTflReluN1To1] = BuildReluN1To1Op;
+  builders[kLiteRtOpCodeTflRelu6] = BuildRelu6Op;
+  builders[kLiteRtOpCodeTflReshape] = BuildReshapeOp;
+  builders[kLiteRtOpCodeTflResizeBilinear] = BuildResizeBilinearOp;
+  builders[kLiteRtOpCodeTflSoftmax] = BuildSoftmaxOp;
+  builders[kLiteRtOpCodeTflSpaceToDepth] = BuildSpaceToDepthOp;
+  builders[kLiteRtOpCodeTflTanh] = BuildTanhOp;
+  builders[kLiteRtOpCodeTflPad] = BuildConstantPadOp;
+  builders[kLiteRtOpCodeTflGather] = BuildGatherOp;
+  builders[kLiteRtOpCodeTflTranspose] = BuildTransposeOp;
+  builders[kLiteRtOpCodeTflMean] = BuildMeanOp;
+  builders[kLiteRtOpCodeTflSub] = BuildSubOp;
+  builders[kLiteRtOpCodeTflDiv] = BuildDivOp;
+  builders[kLiteRtOpCodeTflStridedSlice] = BuildStridedSliceOp;
+  builders[kLiteRtOpCodeTflExp] = BuildExpOp;
+  builders[kLiteRtOpCodeTflTopkV2] = BuildTopkV2Op;
+  builders[kLiteRtOpCodeTflSplit] = BuildSplitOp;
+  builders[kLiteRtOpCodeTflLogSoftmax] = BuildLogSoftmaxOp;
+  builders[kLiteRtOpCodeTflCast] = BuildCastOp;
+  builders[kLiteRtOpCodeTflPrelu] = BuildPreluOp;
+  builders[kLiteRtOpCodeTflMaximum] = BuildMaximumOp;
+  builders[kLiteRtOpCodeTflArgMax] = BuildArgMaxOp;
+  builders[kLiteRtOpCodeTflMinimum] = BuildMinimumOp;
+  builders[kLiteRtOpCodeTflLess] = BuildLessOp;
+  builders[kLiteRtOpCodeTflNeg] = BuildNegOp;
+  builders[kLiteRtOpCodeTflPadv2] = BuildConstantPadOp;
+  builders[kLiteRtOpCodeTflGreater] = BuildGreaterOp;
+  builders[kLiteRtOpCodeTflGreaterEqual] = BuildGreaterEqualOp;
+  builders[kLiteRtOpCodeTflLessEqual] = BuildLessEqualOp;
+  builders[kLiteRtOpCodeTflSelect] = BuildSelectOp;
+  builders[kLiteRtOpCodeTflSlice] = BuildSliceOp;
+  builders[kLiteRtOpCodeTflSin] = BuildSinOp;
+  builders[kLiteRtOpCodeTflTransposeConv] = BuildTransposeConvOp;
+  builders[kLiteRtOpCodeTflTile] = BuildTileOp;
+  builders[kLiteRtOpCodeTflEqual] = BuildEqualOp;
+  builders[kLiteRtOpCodeTflNotEqual] = BuildNotEqualOp;
+  builders[kLiteRtOpCodeTflLog] = BuildLogOp;
+  builders[kLiteRtOpCodeTflSum] = BuildSumOp;
+  builders[kLiteRtOpCodeTflSqrt] = BuildSqrtOp;
+  builders[kLiteRtOpCodeTflRsqrt] = BuildRsqrtOp;
+  builders[kLiteRtOpCodeTflPow] = BuildPowOp;
+  builders[kLiteRtOpCodeTflArgMin] = BuildArgMinOp;
+  builders[kLiteRtOpCodeTflReduceMax] = BuildReduceMaxOp;
+  builders[kLiteRtOpCodeTflPack] = BuildPackOp;
+  builders[kLiteRtOpCodeTflLogicalOr] = BuildLogicalOrOp;
+  builders[kLiteRtOpCodeTflLogicalAnd] = BuildLogicalAndOp;
+  builders[kLiteRtOpCodeTflLogicalNot] = BuildLogicalNotOp;
+  builders[kLiteRtOpCodeTflUnpack] = BuildUnpackOp;
+  builders[kLiteRtOpCodeTflReduceMin] = BuildReduceMinOp;
+  builders[kLiteRtOpCodeTflFloorDiv] = BuildFloorDivOp;
+  builders[kLiteRtOpCodeTflReduceAny] = BuildReduceAnyOp;
+  builders[kLiteRtOpCodeTflSquare] = BuildSquareOp;
+  builders[kLiteRtOpCodeTflResizeNearestNeighbor] =
+      BuildResizeNearestNeighborOp;
+  builders[kLiteRtOpCodeTflLeakyRelu] = BuildLeakyReluOp;
+  builders[kLiteRtOpCodeTflSquaredDifference] = BuildSquaredDifferenceOp;
+  builders[kLiteRtOpCodeTflMirrorPad] = BuildMirrorPadOp;
+  builders[kLiteRtOpCodeTflAbs] = BuildAbsOp;
+  builders[kLiteRtOpCodeTflCeil] = BuildCeilOp;
+  builders[kLiteRtOpCodeTflReverseV2] = BuildReverseV2Op;
+  builders[kLiteRtOpCodeTflGatherNd] = BuildGatherNdOp;
+  builders[kLiteRtOpCodeTflCos] = BuildCosOp;
+  builders[kLiteRtOpCodeTflElu] = BuildEluOp;
+  builders[kLiteRtOpCodeTflQuantize] = BuildQuantizeOp;
+  builders[kLiteRtOpCodeTflRound] = BuildRoundOp;
+  builders[kLiteRtOpCodeTflHardSwish] = BuildHardSwishOp;
+  builders[kLiteRtOpCodeTflScatterNd] = BuildScatterNdOp;
+  builders[kLiteRtOpCodeTflSelectV2] = BuildSelectOp;
+  builders[kLiteRtOpCodeTflBatchMatmul] = BuildBatchMatmulOp;
+  builders[kLiteRtOpCodeTflCumsum] = BuildCumsumOp;
+  builders[kLiteRtOpCodeTflBroadcastTo] = BuildBroadcastToOp;
+  builders[kLiteRtOpCodeTflConv3d] = BuildConv3dOp;
+  builders[kLiteRtOpCodeTflReduceAll] = BuildReduceAllOp;
+  builders[kLiteRtOpCodeTflGelu] = BuildGeluOp;
+  builders[kLiteRtOpCodeTflDynamicUpdateSlice] = BuildDynamicUpdateSliceOp;
+  builders[kLiteRtOpCodeTflRelu0To1] = BuildRelu0To1Op;
+  builders[kLiteRtOpCodeTflSign] = BuildSignOp;
+  builders[kLiteRtOpCodeShloComposite] = BuildShloCompositeOp;
+  return builders;
 }
+
+constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> kOpBuilders =
+    GetOpBuilders();
+static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
+
+}  // namespace
 
 LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        const litert::Op& litert_op,
@@ -1290,9 +1289,10 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
                        std::vector<::qnn::OpWrapper>& op_wrappers) {
   const auto& builders = GetOpBuilders();
-  if (auto it = builders.find(litert_op.Code()); it != builders.end()) {
-    return it->second(litert_op, tensor_pool, input_tensors, output_tensors,
-                      op_wrappers, use_htp_preferences);
+  const auto op_code = litert_op.Code();
+  if (op_code < builders.size() && builders[op_code]) {
+    return builders[op_code](litert_op, tensor_pool, input_tensors,
+                             output_tensors, op_wrappers, use_htp_preferences);
   }
   LITERT_LOG(LITERT_ERROR,
              "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
