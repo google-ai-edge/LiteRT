@@ -22,8 +22,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/test/matchers.h"
-#define TOML_IMPLEMENTATION  // Include the TOML implementation in this file.
-#define TOML_EXCEPTIONS 0    // Don't use exceptions for TOML parsing.
 #include "toml.hpp"  // from @tomlplusplus
 
 namespace litert {
