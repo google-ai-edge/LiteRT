@@ -15,13 +15,15 @@
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
-#include "litert/cc/options/litert_darwinn_options.h"
+#include "litert/cc/options/google/litert_darwinn_options.h"
+#include "litert/vendors/google_tensor/dispatch/litert_darwinn_options.h"
 
 namespace litert {
 namespace google_tensor {
@@ -47,27 +49,33 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   Options cc_options(litert_options, OwnHandle::kNo);
 
   // Add the Darwinn options to the LiteRT options
-  EXPECT_TRUE(cc_options.AddOpaqueOptions(std::move(*darwinn_options)));
+  const char* identifier;
+  void* payload;
+  void (*payload_deleter)(void*);
+  EXPECT_TRUE(darwinn_options->GetOpaqueDarwinnRuntimeOptionsData(
+      &identifier, &payload, &payload_deleter));
+
+  auto darwinn_opaque_options =
+      ::litert::OpaqueOptions::Create(identifier, payload, payload_deleter);
+  ASSERT_TRUE(darwinn_opaque_options);
+  EXPECT_TRUE(cc_options.AddOpaqueOptions(std::move(*darwinn_opaque_options)));
 
   // Verify we can find the Darwinn options in the chain
   auto opaque_options = cc_options.GetOpaqueOptions();
   ASSERT_TRUE(opaque_options);
-  auto found_darwinn =
-      FindOpaqueOptions<DarwinnRuntimeOptions>(*opaque_options);
-  ASSERT_TRUE(found_darwinn);
+  auto darwinn_options_data = litert::FindOpaqueData<const char>(
+      *opaque_options, litert::LiteRtDarwinnRuntimeOptionsT::Identifier());
+  ASSERT_TRUE(darwinn_options_data);
+  litert::LiteRtDarwinnRuntimeOptionsT found_darwinn;
+  absl::string_view data_str(*darwinn_options_data);
+  EXPECT_EQ(litert::internal::ParseLiteRtDarwinnRuntimeOptions(
+                data_str.data(), data_str.size(), &found_darwinn),
+            kLiteRtStatusOk);
 
   // Verify the values are preserved
-  auto power_state = found_darwinn->GetInferencePowerState();
-  ASSERT_TRUE(power_state);
-  EXPECT_EQ(*power_state, 3);
-
-  auto priority = found_darwinn->GetInferencePriority();
-  ASSERT_TRUE(priority);
-  EXPECT_EQ(*priority, 10);
-
-  auto prefer_coherent = found_darwinn->GetPreferCoherent();
-  ASSERT_TRUE(prefer_coherent);
-  EXPECT_EQ(*prefer_coherent, false);
+  EXPECT_EQ(found_darwinn.inference_power_state, 3);
+  EXPECT_EQ(found_darwinn.inference_priority, 10);
+  EXPECT_EQ(found_darwinn.prefer_coherent, false);
 
   // Clean up
   LiteRtDestroyOptions(litert_options);

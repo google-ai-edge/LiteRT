@@ -33,10 +33,10 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/options/litert_darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
+#include "litert/vendors/google_tensor/dispatch/litert_darwinn_options.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace gt = litert::google_tensor;
@@ -58,37 +58,23 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
 
   // If provided, store DarwiNN options to be applied to graphs.
   std::optional<DarwinnOptionsData> options_data;
-  if (litert::DarwinnRuntimeOptions* absl_nullable darwinn_options =
+  if (litert::LiteRtDarwinnRuntimeOptionsT* absl_nullable darwinn_options =
           gt::GetTheDarwinnOptions();
       darwinn_options != nullptr) {
     options_data.emplace();
 
-    if (litert::Expected<uint32_t> inference_power_state =
-            darwinn_options->GetInferencePowerState();
-        inference_power_state.HasValue()) {
-      options_data->inference_power_state = *inference_power_state;
+    options_data->inference_power_state =
+        darwinn_options->inference_power_state;
+    options_data->inference_memory_power_state =
+        darwinn_options->inference_memory_power_state;
+
+    // Use default values if explicitly set to -1
+    if (darwinn_options->inference_priority != -1) {
+      options_data->inference_priority = darwinn_options->inference_priority;
     }
 
-    if (litert::Expected<uint32_t> mem_power_state =
-            darwinn_options->GetInferenceMemoryPowerState();
-        mem_power_state.HasValue()) {
-      options_data->inference_memory_power_state = *mem_power_state;
-    }
-
-    if (litert::Expected<int8_t> priority =
-            darwinn_options->GetInferencePriority(); priority.HasValue()) {
-      options_data->inference_priority = *priority;
-    }
-
-    if (litert::Expected<bool> atomic = darwinn_options->GetAtomicInference();
-        atomic.HasValue()) {
-      options_data->atomic_inference = *atomic;
-    }
-
-    if (litert::Expected<bool> prefer_coherent =
-            darwinn_options->GetPreferCoherent(); prefer_coherent.HasValue()) {
-      options_data->prefer_coherent = *prefer_coherent;
-    }
+    options_data->atomic_inference = darwinn_options->atomic_inference;
+    options_data->prefer_coherent = darwinn_options->prefer_coherent;
 
     LITERT_LOG(LITERT_INFO,
                "DarwiNN runtime options will be applied to graphs");

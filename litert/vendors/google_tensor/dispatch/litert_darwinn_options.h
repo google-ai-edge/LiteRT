@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_RUNTIME_LITERT_DARWINN_OPTIONS_H_
-#define ODML_LITERT_LITERT_RUNTIME_LITERT_DARWINN_OPTIONS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DARWINN_OPTIONS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DARWINN_OPTIONS_H_
 
 #include <cstdint>
+
+#include "litert/c/litert_common.h"
 
 namespace litert {
 
@@ -44,4 +46,14 @@ struct LiteRtDarwinnRuntimeOptionsT {
 
 }  // namespace litert
 
-#endif  // ODML_LITERT_LITERT_RUNTIME_LITERT_DARWINN_OPTIONS_H_
+namespace litert {
+namespace internal {
+
+// Parses the serialized DarwiNN runtime options into the internal struct.
+LiteRtStatus ParseLiteRtDarwinnRuntimeOptions(
+    const void* data, size_t size, LiteRtDarwinnRuntimeOptionsT* options);
+
+}  // namespace internal
+}  // namespace litert
+
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DARWINN_OPTIONS_H_
