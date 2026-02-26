@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <sstream>
@@ -24,12 +25,6 @@
 #include <tuple>
 #include <vector>
 
-#include "openvino/core/any.hpp"
-#include "openvino/frontend/tensorflow_lite/frontend.hpp"
-#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/openvino.hpp"
-#include "openvino/runtime/core.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -46,14 +41,25 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
+#include "openvino/core/any.hpp"
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
+#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/openvino.hpp"
+#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/properties.hpp"
 
 namespace {
 
 constexpr char kPluginManufacturer[] = "IntelOpenVINO";
 
 constexpr const char* kPluginSocModels[] = {
-    "NPU2700",
-};  // get the name for plugin soc model
+    "NPU27xx",  // Intel NPU for Intel Core Ultra processors codename Meteor
+                // Lake
+    "NPU40xx",  // Intel NPU for Intel Core Ultra processors (Series 2) codename
+                // Lunar Lake
+    "NPU50xx",  // Intel NPU for Intel Core Ultra processors (Series 2) codename
+                // Panther Lake
+};              // get the name for plugin soc model
 
 constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflConv2d,
@@ -283,6 +289,18 @@ bool IsOpSupported(const ::litert::Op& op) {
   return false;
 }
 
+bool IsSocModelSupported(const char* soc_model) {
+  if (soc_model == nullptr) {
+    return false;
+  }
+  for (const auto& model : kPluginSocModels) {
+    if (std::strcmp(soc_model, model) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -315,6 +333,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     const auto num_partitions = model.NumSubgraphs();
 
     // Configure device and OpenVINO settings from Intel OpenVINO options
+
     std::string device = "NPU";  // Default device
     ov::AnyMap configs_map;
 
@@ -324,6 +343,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
       // Configure device type
       auto device_type = intel_opts.GetDeviceType();
+      if (device_type == kLiteRtIntelOpenVinoDeviceTypeNPU) {
+        if (!IsSocModelSupported(soc_model)) {
+          LITERT_LOG(LITERT_ERROR, "Unsupported Intel NPU SoC model: %s",
+                     soc_model ? soc_model : "(null)");
+          return kLiteRtStatusErrorInvalidArgument;
+        }
+      }
       switch (device_type) {
         case kLiteRtIntelOpenVinoDeviceTypeCPU:
           device = "CPU";
@@ -383,6 +409,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           break;
       }
     } else {
+      if (!IsSocModelSupported(soc_model)) {
+        LITERT_LOG(LITERT_INFO,
+                   "Unsupported Intel NPU SoC model: %s Compile will proceed "
+                   "with default device and configuration",
+                   soc_model ? soc_model : "(null)");
+      }
       // Default configuration if no options provided
       configs_map[ov::hint::performance_mode.name()] =
           ov::hint::PerformanceMode::LATENCY;
