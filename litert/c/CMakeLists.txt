@@ -69,7 +69,7 @@ target_include_directories(litert_c_api
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${TFLITE_BUILD_DIR}/opencl_headers>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -142,7 +142,7 @@ target_include_directories(litert_runtime_c_api_shared_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${TFLITE_BUILD_DIR}/opencl_headers>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/opencl_headers>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -172,44 +172,6 @@ set(_litert_runtime_c_api_private_archives
     litert_runtime
     tensorflow-lite
     Threads::Threads
-    "${TFLITE_BUILD_DIR}/pthreadpool/libpthreadpool.a"
-    "${TFLITE_BUILD_DIR}/_deps/farmhash-build/libfarmhash.a"
-    "${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg2d.a"
-    "${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg.a"
-    "${TFLITE_BUILD_DIR}/_deps/cpuinfo-build/libcpuinfo.a"
-    "${TFLITE_BUILD_DIR}/libxnnpack-delegate.a"
-    "${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libXNNPACK.a"
-    "${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libxnnpack-microkernels-prod.a"
-    $<$<NOT:$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},x86_64>>:${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a>
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_allocator.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_apply_multiplier.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_block_map.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_blocking_counter.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context_get_ctx.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_cpuinfo.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_ctx.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_denormal.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_frontend.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx2_fma.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx512.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_arm.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx2_fma.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx512.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_arm.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx2_fma.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx512.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepare_packed_matrices.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepacked_cache.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_system_aligned_alloc.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_thread_pool.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_trmul.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/profiler/libruy_profiler_instrumentation.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_tune.a"
-    "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a"
 )
 
 # Provide missing TensorFlow Lite GPU GL core objects for Android builds.
