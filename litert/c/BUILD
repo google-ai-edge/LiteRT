@@ -175,8 +175,8 @@ cc_library(
     deps = [
         ":litert_any",
         ":litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
+        ":litert_custom_tensor_buffer",
+        ":litert_tensor_buffer_types",
         "//litert/cc:litert_macros",
         "//litert/core:environment_options",
     ],
@@ -190,8 +190,8 @@ cc_library(
     deps = [
         ":litert_any",
         ":litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
+        ":litert_custom_tensor_buffer",
+        ":litert_tensor_buffer_types",
     ],
 )
 
@@ -921,6 +921,11 @@ cc_library(
         "@platforms//os:windows": [":litert_runtime_c_api_import"],
         "//conditions:default": [],
     }),
+)
+
+cc_library(
+    name = "empty",
+    srcs = ["empty.cc"],
 )
 
 # copybara:uncomment_begin(google-only)
