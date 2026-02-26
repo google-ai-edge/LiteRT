@@ -30,9 +30,14 @@ cc_library(
     name = "miscs",
     srcs = ["miscs.cc"],
     hdrs = ["miscs.h"],
+    visibility = [
+        "//litert/cc:__subpackages__",
+        "//litert/vendors/qualcomm:__subpackages__",
+    ],
     deps = [
         ":log",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],

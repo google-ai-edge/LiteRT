@@ -32,6 +32,9 @@ class QnnModelTest : public testing::TestWithParam<
 
   void SetUp() override {
     const auto& [options, soc_model_name] = GetParam();
+    if (!::qnn::IsHtpBackend()) {
+      GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+    }
     SetUpQnnModel(options, soc_model_name);
   }
 

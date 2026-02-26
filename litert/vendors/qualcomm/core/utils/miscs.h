@@ -104,5 +104,8 @@ inline const QNN_INTERFACE_VER_TYPE* ResolveQnnApi(
 #endif  // !defined(_WIN32)
 
 std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name);
+
+bool IsHtpBackend();
+
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
