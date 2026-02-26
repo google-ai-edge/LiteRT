@@ -20,11 +20,13 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -326,866 +328,975 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
   return kLiteRtStatusOk;
 }
 
+namespace {
+
+using OpBuilder = std::function<LiteRtStatus(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences)>;
+
+#define REGISTER_SIMPLE_OP_BUILDER(OpName, BuildFunc)                         \
+  LiteRtStatus OpName(                                                        \
+      const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,            \
+      std::vector<::qnn::TensorWrapperRef>& input_tensors,                    \
+      std::vector<::qnn::TensorWrapperRef>& output_tensors,                   \
+      std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) { \
+    op_wrappers =                                                             \
+        ::qnn::BuildFunc(tensor_pool, input_tensors, output_tensors);         \
+    return kLiteRtStatusOk;                                                   \
+  }
+
+REGISTER_SIMPLE_OP_BUILDER(BuildCastOp, BuildCastOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildLogicalAndOp, BuildElementwiseAndOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildBroadcastToOp, BuildBroadcastToOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildCeilOp, BuildElementwiseCeilOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildCosOp, BuildElementwiseCosOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildGreaterOp, BuildElementwiseGreaterOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildLessOp, BuildElementwiseLessOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildRsqrtOp, BuildElementwiseRsqrtOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSqrtOp, BuildElementwiseSqrtOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSinOp, BuildElementwiseSinOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSquaredDifferenceOp,
+                           BuildElementwiseSquaredDifferenceOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSquareOp, BuildElementwiseSquareOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildMinimumOp, BuildElementwiseMinimumOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildMaximumOp, BuildElementwiseMaximumOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildEluOp, BuildElementwiseEluOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildFloorOp, BuildElementwiseFloorOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildFloorDivOp, BuildElementwiseFloorDivOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildNotEqualOp, BuildElementwiseNotEqualOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildLogicalOrOp, BuildElementwiseOrOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildEmbeddingLookupOp, BuildEmbeddingLookupOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildGeluOp, BuildGeluOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildReluOp, BuildReluOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildReluN1To1Op, BuildReluN1To1Op)
+REGISTER_SIMPLE_OP_BUILDER(BuildRelu0To1Op, BuildRelu0To1Op)
+REGISTER_SIMPLE_OP_BUILDER(BuildRelu6Op, BuildRelu6Op)
+REGISTER_SIMPLE_OP_BUILDER(BuildPreluOp, BuildPreluOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildLogisticOp, BuildLogisticOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildQuantizeOp, BuildQuantizeOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildDequantizeOp, BuildDequantizeOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildReshapeOp, BuildReshapeOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSelectOp, BuildSelectOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSliceOp, BuildSliceOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildTanhOp, BuildTanhOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildTransposeOp, BuildTransposeOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildTileOp, BuildTileOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildDynamicUpdateSliceOp, BuildDynamicUpdateSliceOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildHardSwishOp, BuildElementwiseHardSwishOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildConstantPadOp, BuildConstantPadOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildGatherNdOp, BuildGatherNdOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildPowOp, BuildElementwisePowerOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildLessEqualOp, BuildElementwiseLessEqualOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildLogicalNotOp, BuildElementwiseNotOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildGreaterEqualOp, BuildElementwiseGreaterEqualOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildExpOp, BuildElementwiseExpOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildEqualOp, BuildElementwiseEqualOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildLogOp, BuildElementwiseLogOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildAbsOp, BuildElementwiseAbsOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildReverseV2Op, BuildReverseOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildArgMaxOp, BuildArgMaxOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildArgMinOp, BuildArgMinOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildNegOp, BuildElementwiseNegOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildRoundOp, BuildElementwiseRoundOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildSignOp, BuildElementwiseSignOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildScatterNdOp, BuildScatterNdOp)
+
+#undef REGISTER_SIMPLE_OP_BUILDER
+
+LiteRtStatus BuildConcatenationOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  int32_t axis{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConcatenationAxisOption(litert_op.Get(), &axis));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(LiteRtGetConcatenationFusedActivationOption(
+      litert_op.Get(), &fused_activation));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildConcatenationOp(tensor_pool, input_tensors,
+                                            {activation_input}, axis);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildAddOp(const litert::Op& litert_op,
+                        ::qnn::TensorPool& tensor_pool,
+                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                        std::vector<::qnn::OpWrapper>& op_wrappers,
+                        bool use_htp_preferences) {
+  uint32_t fused_activation{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAddFusedActivationOption(litert_op.Get(), &fused_activation));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildElementwiseAddOp(tensor_pool, input_tensors,
+                                             {activation_input});
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildDivOp(const litert::Op& litert_op,
+                        ::qnn::TensorPool& tensor_pool,
+                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                        std::vector<::qnn::OpWrapper>& op_wrappers,
+                        bool use_htp_preferences) {
+  uint32_t fused_activation{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDivFusedActivationOption(litert_op.Get(), &fused_activation));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildElementwiseDivOp(tensor_pool, input_tensors,
+                                             {activation_input});
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildMulOp(const litert::Op& litert_op,
+                        ::qnn::TensorPool& tensor_pool,
+                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                        std::vector<::qnn::OpWrapper>& op_wrappers,
+                        bool use_htp_preferences) {
+  uint32_t fused_activation{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMulFusedActivationOption(litert_op.Get(), &fused_activation));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildElementwiseMulOp(tensor_pool, input_tensors,
+                                             {activation_input});
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildSubOp(const litert::Op& litert_op,
+                        ::qnn::TensorPool& tensor_pool,
+                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                        std::vector<::qnn::OpWrapper>& op_wrappers,
+                        bool use_htp_preferences) {
+  uint32_t fused_activation{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSubFusedActivationOption(litert_op.Get(), &fused_activation));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildElementwiseSubOp(tensor_pool, input_tensors,
+                                             {activation_input});
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildFullyConnectedOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  uint32_t fused_activation{};
+  LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedFusedActivationOption(
+      litert_op.Get(), &fused_activation));
+  bool keep_num_dims{};
+  LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedKeepNumDimsOption(
+      litert_op.Get(), &keep_num_dims));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  if (use_htp_preferences) {
+    op_wrappers = ::qnn::BuildFullyConnectedOpHtp(
+        tensor_pool, input_tensors, {activation_input}, keep_num_dims);
+  }
+  if (op_wrappers.empty()) {
+    op_wrappers = ::qnn::BuildFullyConnectedOp(
+        tensor_pool, input_tensors, {activation_input}, keep_num_dims);
+  }
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildGatherOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  int32_t axis{};
+  LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(litert_op.Get(), &axis));
+  int32_t batch_dims{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetGatherBatchDimsOption(litert_op.Get(), &batch_dims));
+  op_wrappers = ::qnn::BuildGatherOp(tensor_pool, input_tensors, output_tensors,
+                                     axis, batch_dims);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildBatchMatmulOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  bool adj_x{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetBatchMatmulAdjXOption(litert_op.Get(), &adj_x));
+  bool adj_y{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetBatchMatmulAdjYOption(litert_op.Get(), &adj_y));
+  op_wrappers = ::qnn::BuildMatmulOp(tensor_pool, input_tensors, output_tensors,
+                                     adj_x, adj_y);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildSumOp(const litert::Op& litert_op,
+                        ::qnn::TensorPool& tensor_pool,
+                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                        std::vector<::qnn::OpWrapper>& op_wrappers,
+                        bool use_htp_preferences) {
+  bool keep_dims{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSumKeepDimsOption(litert_op.Get(), &keep_dims));
+  op_wrappers = ::qnn::BuildReduceSumOp(tensor_pool, input_tensors,
+                                        output_tensors, keep_dims);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildMeanOp(const litert::Op& litert_op,
+                         ::qnn::TensorPool& tensor_pool,
+                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                         std::vector<::qnn::OpWrapper>& op_wrappers,
+                         bool use_htp_preferences) {
+  bool keep_dims{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMeanKeepDimsOption(litert_op.Get(), &keep_dims));
+  op_wrappers = ::qnn::BuildReduceMeanOp(tensor_pool, input_tensors,
+                                         output_tensors, keep_dims);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildReduceMaxOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  bool keep_dims{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetReduceMaxKeepDimsOption(litert_op.Get(), &keep_dims));
+  op_wrappers = ::qnn::BuildReduceMaxOp(tensor_pool, input_tensors,
+                                        output_tensors, keep_dims);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildReduceMinOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  bool keep_dims{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetReduceMinKeepDimsOption(litert_op.Get(), &keep_dims));
+  op_wrappers = ::qnn::BuildReduceMinOp(tensor_pool, input_tensors,
+                                        output_tensors, keep_dims);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildReduceAllOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  bool keep_dims{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetReduceAllKeepDimsOption(litert_op.Get(), &keep_dims));
+  op_wrappers = ::qnn::BuildReduceAllOp(tensor_pool, input_tensors,
+                                        output_tensors, keep_dims);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildReduceAnyOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  bool keep_dims{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetReduceAnyKeepDimsOption(litert_op.Get(), &keep_dims));
+  op_wrappers = ::qnn::BuildReduceAnyOp(tensor_pool, input_tensors,
+                                        output_tensors, keep_dims);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildSoftmaxOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  float beta{};
+  LITERT_RETURN_IF_ERROR(LiteRtGetSoftmaxBetaOption(litert_op.Get(), &beta));
+  op_wrappers =
+      ::qnn::BuildSoftmaxOp(tensor_pool, input_tensors, output_tensors, beta);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildSplitOp(const litert::Op& litert_op,
+                          ::qnn::TensorPool& tensor_pool,
+                          std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                          std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                          std::vector<::qnn::OpWrapper>& op_wrappers,
+                          bool use_htp_preferences) {
+  int32_t num_splits{};
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSplitNumSplitsOption(litert_op.Get(), &num_splits));
+  op_wrappers = ::qnn::BuildSplitOp(tensor_pool, input_tensors, output_tensors,
+                                    num_splits);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildTopkV2Op(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  // TODO (Graham): Refactor all OpBuilder to follow QNN master definition
+  ::qnn::TensorWrapper k_tensor = input_tensors[1].get();
+  if (!k_tensor.IsTensorStatic() || k_tensor.GetTensorNumElements() != 1) {
+    QNN_LOG_ERROR("The param 'k' of TopK OP is not static or not 1 element");
+    return kLiteRtStatusOk;
+  }
+
+  std::uint32_t k_data = 0;
+  switch (k_tensor.GetDataType()) {
+    case QNN_DATATYPE_UINT_32:
+      if (auto k = k_tensor.GetTensorData<std::uint32_t>(); k.has_value()) {
+        k_data = k.value()[0];
+      }
+      break;
+    case QNN_DATATYPE_INT_32:
+      if (auto k = k_tensor.GetTensorData<std::int32_t>(); k.has_value()) {
+        k_data = static_cast<std::uint32_t>(k.value()[0]);
+      }
+      break;
+    default:
+      QNN_LOG_ERROR("Unsupported data type: %d for k in TopK OP",
+                    k_tensor.GetDataType());
+      return kLiteRtStatusOk;
+  }
+  op_wrappers =
+      ::qnn::BuildTopKOp(tensor_pool, input_tensors, output_tensors, k_data);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildPackOp(const litert::Op& litert_op,
+                         ::qnn::TensorPool& tensor_pool,
+                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                         std::vector<::qnn::OpWrapper>& op_wrappers,
+                         bool use_htp_preferences) {
+  int32_t axis{};
+  LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(litert_op.Get(), &axis));
+  op_wrappers =
+      ::qnn::BuildPackOp(tensor_pool, input_tensors, output_tensors, axis);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildUnpackOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  int32_t axis{};
+  LITERT_RETURN_IF_ERROR(LiteRtGetUnpackAxisOption(litert_op.Get(), &axis));
+  op_wrappers =
+      ::qnn::BuildUnpackOp(tensor_pool, input_tensors, output_tensors, axis);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildShloCompositeOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  auto info = GetOptionsAs<CompositeOptions>(litert_op.Get());
+  if (!info) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (info->name == CompositeOptions::kRmsNorm) {
+    auto attributes_map = info->attributes_map.value();
+    float epsilon = attributes_map["epsilon"].AsFloat();
+    op_wrappers = ::qnn::BuildRmsNormOp(tensor_pool, input_tensors,
+                                        output_tensors, epsilon);
+  }
+  if (info->name == CompositeOptions::kGroupNorm) {
+    auto attributes_map = info->attributes_map.value();
+    float epsilon = attributes_map["epsilon"].AsFloat();
+    int num_groups = attributes_map["num_groups"].AsInt32();
+    op_wrappers = ::qnn::BuildGroupNormOp(tensor_pool, input_tensors,
+                                          output_tensors, epsilon, num_groups);
+  }
+  if (info->name == CompositeOptions::kL2Norm) {
+    auto attributes_map = info->attributes_map.value();
+    float epsilon = attributes_map["epsilon"].AsFloat();
+    op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
+                                       output_tensors, epsilon);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildL2NormalizationOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  // TODO(yunandrew): Support custom epsilon for L2 Norm.
+  op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors, output_tensors,
+                                     9.99999997E-7);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildConv2dOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  uint32_t padding;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dPaddingOption(litert_op.Get(), &padding));
+  int32_t stride_w;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dStrideWOption(litert_op.Get(), &stride_w));
+  int32_t stride_h;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dStrideHOption(litert_op.Get(), &stride_h));
+  int32_t dilation_w_factor;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationWOption(litert_op.Get(), &dilation_w_factor));
+  int32_t dilation_h_factor;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationHOption(litert_op.Get(), &dilation_h_factor));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dFusedActivationOption(litert_op.Get(), &fused_activation));
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildConv2dOp(
+      tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
+      dilation_h_factor, dilation_w_factor, qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildConv3dOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  uint32_t padding;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dPaddingOption(litert_op.Get(), &padding));
+  int32_t stride_d;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dStrideDOption(litert_op.Get(), &stride_d));
+  int32_t stride_w;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dStrideWOption(litert_op.Get(), &stride_w));
+  int32_t stride_h;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dStrideHOption(litert_op.Get(), &stride_h));
+  int32_t dilation_d_factor;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationDOption(litert_op.Get(), &dilation_d_factor));
+  int32_t dilation_w_factor;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationWOption(litert_op.Get(), &dilation_w_factor));
+  int32_t dilation_h_factor;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationHOption(litert_op.Get(), &dilation_h_factor));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dFusedActivationOption(litert_op.Get(), &fused_activation));
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers =
+      ::qnn::BuildConv3dOp(tensor_pool, input_tensors, {activation_input},
+                           stride_d, stride_h, stride_w, dilation_d_factor,
+                           dilation_h_factor, dilation_w_factor, qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildTransposeConvOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  uint32_t padding;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTransposeConvPaddingOption(litert_op.Get(), &padding));
+  int32_t stride_w;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTransposeConvStrideWOption(litert_op.Get(), &stride_w));
+  int32_t stride_h;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTransposeConvStrideHOption(litert_op.Get(), &stride_h));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(LiteRtGetTransposeConvFusedActivationOption(
+      litert_op.Get(), &fused_activation));
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildTransposeConvOp(tensor_pool, input_tensors,
+                                            {activation_input}, stride_h,
+                                            stride_w, qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildDepthwiseConv2dOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  uint32_t padding;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dPaddingOption(litert_op.Get(), &padding));
+  int32_t stride_w;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dStrideWOption(litert_op.Get(), &stride_w));
+  int32_t stride_h;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dStrideHOption(litert_op.Get(), &stride_h));
+  int32_t dilation_w_factor;
+  LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationWOption(
+      litert_op.Get(), &dilation_w_factor));
+  int32_t dilation_h_factor;
+  LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationHOption(
+      litert_op.Get(), &dilation_h_factor));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dFusedActivationOption(
+      litert_op.Get(), &fused_activation));
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildDepthwiseConv2dOp(
+      tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
+      dilation_h_factor, dilation_w_factor, qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildAveragePool2dOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  uint32_t padding;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dPaddingOption(litert_op.Get(), &padding));
+  int32_t stride_w;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dStrideWOption(litert_op.Get(), &stride_w));
+  int32_t stride_h;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dStrideHOption(litert_op.Get(), &stride_h));
+  int32_t filter_width;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterWidthOption(litert_op.Get(), &filter_width));
+  int32_t filter_height;
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFilterHeightOption(
+      litert_op.Get(), &filter_height));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFusedActivationOption(
+      litert_op.Get(), &fused_activation));
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildAveragePoolOp(
+      tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
+      filter_height, filter_width, qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildMaxPool2dOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  uint32_t padding;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dPaddingOption(litert_op.Get(), &padding));
+  int32_t stride_w;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dStrideWOption(litert_op.Get(), &stride_w));
+  int32_t stride_h;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dStrideHOption(litert_op.Get(), &stride_h));
+  int32_t filter_width;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterWidthOption(litert_op.Get(), &filter_width));
+  int32_t filter_height;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterHeightOption(litert_op.Get(), &filter_height));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dFusedActivationOption(
+      litert_op.Get(), &fused_activation));
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildMaxPoolOp(tensor_pool, input_tensors,
+                                      {activation_input}, stride_h, stride_w,
+                                      filter_height, filter_width, qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildL2Pool2dOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  uint32_t padding;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetL2Pool2dPaddingOption(litert_op.Get(), &padding));
+  int32_t stride_w;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetL2Pool2dStrideWOption(litert_op.Get(), &stride_w));
+  int32_t stride_h;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetL2Pool2dStrideHOption(litert_op.Get(), &stride_h));
+  int32_t filter_width;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetL2Pool2dFilterWidthOption(litert_op.Get(), &filter_width));
+  int32_t filter_height;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetL2Pool2dFilterHeightOption(litert_op.Get(), &filter_height));
+  uint32_t fused_activation;
+  LITERT_RETURN_IF_ERROR(LiteRtGetL2Pool2dFusedActivationOption(
+      litert_op.Get(), &fused_activation));
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildL2PoolOp(tensor_pool, input_tensors,
+                                     {activation_input}, stride_h, stride_w,
+                                     filter_height, filter_width, qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildDepthToSpaceOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  int32_t block_size;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthToSpaceBlockSizeOption(litert_op.Get(), &block_size));
+  op_wrappers = ::qnn::BuildDepthToSpaceOp(tensor_pool, input_tensors,
+                                           output_tensors, block_size);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildSpaceToDepthOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  int32_t block_size;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSpaceToDepthBlockSizeOption(litert_op.Get(), &block_size));
+  op_wrappers = ::qnn::BuildSpaceToDepthOp(tensor_pool, input_tensors,
+                                           output_tensors, block_size);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildLeakyReluOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  float alpha;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetLeakyReluAlphaOption(litert_op.Get(), &alpha));
+  op_wrappers = ::qnn::BuildLeakyReluOp(tensor_pool, input_tensors,
+                                        output_tensors, alpha);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildResizeBilinearOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  bool align_corners;
+  LITERT_RETURN_IF_ERROR(LiteRtGetResizeBilinearAlignCornersOption(
+      litert_op.Get(), &align_corners));
+  bool half_pixel_centers;
+  LITERT_RETURN_IF_ERROR(LiteRtGetResizeBilinearHalfPixelCenterOption(
+      litert_op.Get(), &half_pixel_centers));
+  op_wrappers =
+      ::qnn::BuildResizeBilinearOp(tensor_pool, input_tensors, output_tensors,
+                                   align_corners, half_pixel_centers);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildResizeNearestNeighborOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  bool align_corners;
+  LITERT_RETURN_IF_ERROR(LiteRtGetResizeNearestNeighborAlignCornersOption(
+      litert_op.Get(), &align_corners));
+  bool half_pixel_centers;
+  LITERT_RETURN_IF_ERROR(LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
+      litert_op.Get(), &half_pixel_centers));
+  op_wrappers =
+      ::qnn::BuildResizeNearestOp(tensor_pool, input_tensors, output_tensors,
+                                  align_corners, half_pixel_centers);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildMirrorPadOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  uint32_t mode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetMirrorPadModeOption(litert_op.Get(), &mode));
+  op_wrappers =
+      ::qnn::BuildMirrorPadOp(tensor_pool, input_tensors, output_tensors, mode);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildCumsumOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  bool exclusive;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetCumsumExclusiveOption(litert_op.Get(), &exclusive));
+  bool reverse;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetCumsumReverseOption(litert_op.Get(), &reverse));
+  op_wrappers = ::qnn::BuildCumsumOp(tensor_pool, input_tensors, output_tensors,
+                                     exclusive, reverse);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildStridedSliceOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  std::int32_t begin_mask;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceBeginMaskOption(litert_op.Get(), &begin_mask));
+  std::int32_t end_mask;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceEndMaskOption(litert_op.Get(), &end_mask));
+  std::int32_t ellipsis_mask;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceEllipsisMaskOption(litert_op.Get(), &ellipsis_mask));
+  std::int32_t shrink_axis_mask;
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceShrinkAxisMaskOption(
+      litert_op.Get(), &shrink_axis_mask));
+  std::int32_t new_axis_mask;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceNewAxisMaskOption(litert_op.Get(), &new_axis_mask));
+  bool offset;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceOffsetOption(litert_op.Get(), &offset));
+  op_wrappers = ::qnn::BuildStridedSliceOp(
+      tensor_pool, input_tensors, output_tensors, begin_mask, end_mask,
+      ellipsis_mask, shrink_axis_mask, new_axis_mask, offset);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildLogSoftmaxOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  std::uint32_t axis = input_tensors[0].get().GetRank() - 1;
+  float beta{1.0};
+  op_wrappers = ::qnn::BuildLogSoftmaxOp(tensor_pool, input_tensors,
+                                         output_tensors, axis, beta);
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
+
+const absl::flat_hash_map<LiteRtOpCode, OpBuilder>& GetOpBuilders() {
+  static const absl::NoDestructor<absl::flat_hash_map<LiteRtOpCode, OpBuilder>>
+      builders({
+          {LiteRtOpCode::kLiteRtOpCodeTflCast, BuildCastOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflConcatenation, BuildConcatenationOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflAdd, BuildAddOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLogicalAnd, BuildLogicalAndOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflBroadcastTo, BuildBroadcastToOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflCeil, BuildCeilOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflCos, BuildCosOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflDiv, BuildDivOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflGreater, BuildGreaterOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLess, BuildLessOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflMul, BuildMulOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflRsqrt, BuildRsqrtOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSqrt, BuildSqrtOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSin, BuildSinOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSquaredDifference,
+           BuildSquaredDifferenceOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSquare, BuildSquareOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSub, BuildSubOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflMinimum, BuildMinimumOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflMaximum, BuildMaximumOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflElu, BuildEluOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflFloor, BuildFloorOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflFloorDiv, BuildFloorDivOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflNotEqual, BuildNotEqualOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLogicalOr, BuildLogicalOrOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflEmbeddingLookup,
+           BuildEmbeddingLookupOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflFullyConnected, BuildFullyConnectedOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflGather, BuildGatherOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflGelu, BuildGeluOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflRelu, BuildReluOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflReluN1To1, BuildReluN1To1Op},
+          {LiteRtOpCode::kLiteRtOpCodeTflRelu0To1, BuildRelu0To1Op},
+          {LiteRtOpCode::kLiteRtOpCodeTflRelu6, BuildRelu6Op},
+          {LiteRtOpCode::kLiteRtOpCodeTflPrelu, BuildPreluOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLogistic, BuildLogisticOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflBatchMatmul, BuildBatchMatmulOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflQuantize, BuildQuantizeOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflDequantize, BuildDequantizeOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSum, BuildSumOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflMean, BuildMeanOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflReduceMax, BuildReduceMaxOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflReduceMin, BuildReduceMinOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflReduceAll, BuildReduceAllOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflReduceAny, BuildReduceAnyOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflReshape, BuildReshapeOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSelect, BuildSelectOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSelectV2, BuildSelectOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSlice, BuildSliceOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSoftmax, BuildSoftmaxOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSplit, BuildSplitOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflTanh, BuildTanhOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflTranspose, BuildTransposeOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflTile, BuildTileOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflTopkV2, BuildTopkV2Op},
+          {LiteRtOpCode::kLiteRtOpCodeTflPack, BuildPackOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflUnpack, BuildUnpackOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflDynamicUpdateSlice,
+           BuildDynamicUpdateSliceOp},
+          {LiteRtOpCode::kLiteRtOpCodeShloComposite, BuildShloCompositeOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflL2Normalization,
+           BuildL2NormalizationOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflConv2d, BuildConv2dOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflConv3d, BuildConv3dOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflTransposeConv, BuildTransposeConvOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d,
+           BuildDepthwiseConv2dOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d, BuildAveragePool2dOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflMaxPool2d, BuildMaxPool2dOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflL2Pool2d, BuildL2Pool2dOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflDepthToSpace, BuildDepthToSpaceOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSpaceToDepth, BuildSpaceToDepthOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflHardSwish, BuildHardSwishOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLeakyRelu, BuildLeakyReluOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflResizeBilinear, BuildResizeBilinearOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflResizeNearestNeighbor,
+           BuildResizeNearestNeighborOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflPad, BuildConstantPadOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflPadv2, BuildConstantPadOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflMirrorPad, BuildMirrorPadOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflCumsum, BuildCumsumOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflGatherNd, BuildGatherNdOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflPow, BuildPowOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLessEqual, BuildLessEqualOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLogicalNot, BuildLogicalNotOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflGreaterEqual, BuildGreaterEqualOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflExp, BuildExpOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflEqual, BuildEqualOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLog, BuildLogOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflAbs, BuildAbsOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflReverseV2, BuildReverseV2Op},
+          {LiteRtOpCode::kLiteRtOpCodeTflArgMax, BuildArgMaxOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflArgMin, BuildArgMinOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflStridedSlice, BuildStridedSliceOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflNeg, BuildNegOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflRound, BuildRoundOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflSign, BuildSignOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflLogSoftmax, BuildLogSoftmaxOp},
+          {LiteRtOpCode::kLiteRtOpCodeTflScatterNd, BuildScatterNdOp},
+      });
+  return *builders;
+}
+
 LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        const litert::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
                        std::vector<::qnn::OpWrapper>& op_wrappers) {
-  switch (litert_op.Code()) {
-    case LiteRtOpCode::kLiteRtOpCodeTflCast: {
-      op_wrappers =
-          ::qnn::BuildCastOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflConcatenation: {
-      int32_t axis{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConcatenationAxisOption(litert_op.Get(), &axis));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetConcatenationFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildConcatenationOp(tensor_pool, input_tensors,
-                                                {activation_input}, axis);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflAdd: {
-      uint32_t fused_activation{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetAddFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildElementwiseAddOp(tensor_pool, input_tensors,
-                                                 {activation_input});
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLogicalAnd: {
-      op_wrappers = ::qnn::BuildElementwiseAndOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflBroadcastTo: {
-      op_wrappers =
-          ::qnn::BuildBroadcastToOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflCeil: {
-      op_wrappers = ::qnn::BuildElementwiseCeilOp(tensor_pool, input_tensors,
-                                                  output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflCos: {
-      op_wrappers = ::qnn::BuildElementwiseCosOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflDiv: {
-      uint32_t fused_activation{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetDivFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildElementwiseDivOp(tensor_pool, input_tensors,
-                                                 {activation_input});
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflGreater: {
-      op_wrappers = ::qnn::BuildElementwiseGreaterOp(tensor_pool, input_tensors,
-                                                     output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLess: {
-      op_wrappers = ::qnn::BuildElementwiseLessOp(tensor_pool, input_tensors,
-                                                  output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflMul: {
-      uint32_t fused_activation{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetMulFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildElementwiseMulOp(tensor_pool, input_tensors,
-                                                 {activation_input});
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflRsqrt: {
-      op_wrappers = ::qnn::BuildElementwiseRsqrtOp(tensor_pool, input_tensors,
-                                                   output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSqrt: {
-      op_wrappers = ::qnn::BuildElementwiseSqrtOp(tensor_pool, input_tensors,
-                                                  output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSin: {
-      op_wrappers = ::qnn::BuildElementwiseSinOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSquaredDifference: {
-      op_wrappers = ::qnn::BuildElementwiseSquaredDifferenceOp(
-          tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSquare: {
-      op_wrappers = ::qnn::BuildElementwiseSquareOp(tensor_pool, input_tensors,
-                                                    output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSub: {
-      uint32_t fused_activation{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetSubFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildElementwiseSubOp(tensor_pool, input_tensors,
-                                                 {activation_input});
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflMinimum: {
-      op_wrappers = ::qnn::BuildElementwiseMinimumOp(tensor_pool, input_tensors,
-                                                     output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflMaximum: {
-      op_wrappers = ::qnn::BuildElementwiseMaximumOp(tensor_pool, input_tensors,
-                                                     output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflElu: {
-      op_wrappers = ::qnn::BuildElementwiseEluOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflFloor: {
-      op_wrappers = ::qnn::BuildElementwiseFloorOp(tensor_pool, input_tensors,
-                                                   output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflFloorDiv: {
-      op_wrappers = ::qnn::BuildElementwiseFloorDivOp(
-          tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflNotEqual: {
-      op_wrappers = ::qnn::BuildElementwiseNotEqualOp(
-          tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLogicalOr: {
-      op_wrappers = ::qnn::BuildElementwiseOrOp(tensor_pool, input_tensors,
-                                                output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflEmbeddingLookup: {
-      op_wrappers = ::qnn::BuildEmbeddingLookupOp(tensor_pool, input_tensors,
-                                                  output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflFullyConnected: {
-      uint32_t fused_activation{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-      bool keep_num_dims{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedKeepNumDimsOption(
-          litert_op.Get(), &keep_num_dims));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      if (use_htp_preferences) {
-        op_wrappers = ::qnn::BuildFullyConnectedOpHtp(
-            tensor_pool, input_tensors, {activation_input}, keep_num_dims);
-      }
-      if (op_wrappers.empty()) {
-        op_wrappers = ::qnn::BuildFullyConnectedOp(
-            tensor_pool, input_tensors, {activation_input}, keep_num_dims);
-      }
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflGather: {
-      int32_t axis{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(litert_op.Get(), &axis));
-      int32_t batch_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetGatherBatchDimsOption(litert_op.Get(), &batch_dims));
-      op_wrappers = ::qnn::BuildGatherOp(tensor_pool, input_tensors,
-                                         output_tensors, axis, batch_dims);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflGelu: {
-      op_wrappers =
-          ::qnn::BuildGeluOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflRelu: {
-      op_wrappers =
-          ::qnn::BuildReluOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflReluN1To1: {
-      op_wrappers =
-          ::qnn::BuildReluN1To1Op(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflRelu0To1: {
-      op_wrappers =
-          ::qnn::BuildRelu0To1Op(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflRelu6: {
-      op_wrappers =
-          ::qnn::BuildRelu6Op(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflPrelu: {
-      op_wrappers =
-          ::qnn::BuildPreluOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLogistic: {
-      op_wrappers =
-          ::qnn::BuildLogisticOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflBatchMatmul: {
-      bool adj_x{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetBatchMatmulAdjXOption(litert_op.Get(), &adj_x));
-      bool adj_y{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetBatchMatmulAdjYOption(litert_op.Get(), &adj_y));
-      op_wrappers = ::qnn::BuildMatmulOp(tensor_pool, input_tensors,
-                                         output_tensors, adj_x, adj_y);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflQuantize: {
-      op_wrappers =
-          ::qnn::BuildQuantizeOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflDequantize: {
-      op_wrappers =
-          ::qnn::BuildDequantizeOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSum: {
-      bool keep_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetSumKeepDimsOption(litert_op.Get(), &keep_dims));
-      op_wrappers = ::qnn::BuildReduceSumOp(tensor_pool, input_tensors,
-                                            output_tensors, keep_dims);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflMean: {
-      bool keep_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetMeanKeepDimsOption(litert_op.Get(), &keep_dims));
-      op_wrappers = ::qnn::BuildReduceMeanOp(tensor_pool, input_tensors,
-                                             output_tensors, keep_dims);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflReduceMax: {
-      bool keep_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetReduceMaxKeepDimsOption(litert_op.Get(), &keep_dims));
-      op_wrappers = ::qnn::BuildReduceMaxOp(tensor_pool, input_tensors,
-                                            output_tensors, keep_dims);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflReduceMin: {
-      bool keep_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetReduceMinKeepDimsOption(litert_op.Get(), &keep_dims));
-      op_wrappers = ::qnn::BuildReduceMinOp(tensor_pool, input_tensors,
-                                            output_tensors, keep_dims);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflReduceAll: {
-      bool keep_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetReduceAllKeepDimsOption(litert_op.Get(), &keep_dims));
-      op_wrappers = ::qnn::BuildReduceAllOp(tensor_pool, input_tensors,
-                                            output_tensors, keep_dims);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflReduceAny: {
-      bool keep_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetReduceAnyKeepDimsOption(litert_op.Get(), &keep_dims));
-      op_wrappers = ::qnn::BuildReduceAnyOp(tensor_pool, input_tensors,
-                                            output_tensors, keep_dims);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflReshape: {
-      op_wrappers =
-          ::qnn::BuildReshapeOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSelect:
-    case LiteRtOpCode::kLiteRtOpCodeTflSelectV2: {
-      op_wrappers =
-          ::qnn::BuildSelectOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSlice: {
-      op_wrappers =
-          ::qnn::BuildSliceOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSoftmax: {
-      float beta{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetSoftmaxBetaOption(litert_op.Get(), &beta));
-      op_wrappers = ::qnn::BuildSoftmaxOp(tensor_pool, input_tensors,
-                                          output_tensors, beta);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSplit: {
-      int32_t num_splits{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetSplitNumSplitsOption(litert_op.Get(), &num_splits));
-      op_wrappers = ::qnn::BuildSplitOp(tensor_pool, input_tensors,
-                                        output_tensors, num_splits);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflTanh: {
-      op_wrappers =
-          ::qnn::BuildTanhOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflTranspose: {
-      op_wrappers =
-          ::qnn::BuildTransposeOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflTile: {
-      op_wrappers =
-          ::qnn::BuildTileOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflTopkV2: {
-      // TODO (Graham): Refactor all OpBuilder to follow QNN master definition
-      ::qnn::TensorWrapper k_tensor = input_tensors[1].get();
-      if (!k_tensor.IsTensorStatic() || k_tensor.GetTensorNumElements() != 1) {
-        QNN_LOG_ERROR(
-            "The param 'k' of TopK OP is not static or not 1 element");
-        return {};
-      }
-
-      std::uint32_t k_data = 0;
-      switch (k_tensor.GetDataType()) {
-        case QNN_DATATYPE_UINT_32:
-          if (auto k = k_tensor.GetTensorData<std::uint32_t>(); k.has_value()) {
-            k_data = k.value()[0];
-          }
-          break;
-        case QNN_DATATYPE_INT_32:
-          if (auto k = k_tensor.GetTensorData<std::int32_t>(); k.has_value()) {
-            k_data = static_cast<std::uint32_t>(k.value()[0]);
-          }
-          break;
-        default:
-          QNN_LOG_ERROR("Unsupported data type: %d for k in TopK OP",
-                        k_tensor.GetDataType());
-          return {};
-      }
-      op_wrappers = ::qnn::BuildTopKOp(tensor_pool, input_tensors,
-                                       output_tensors, k_data);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflPack: {
-      int32_t axis{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(litert_op.Get(), &axis));
-      op_wrappers =
-          ::qnn::BuildPackOp(tensor_pool, input_tensors, output_tensors, axis);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflUnpack: {
-      int32_t axis{};
-      LITERT_RETURN_IF_ERROR(LiteRtGetUnpackAxisOption(litert_op.Get(), &axis));
-      op_wrappers = ::qnn::BuildUnpackOp(tensor_pool, input_tensors,
-                                         output_tensors, axis);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflDynamicUpdateSlice: {
-      op_wrappers = ::qnn::BuildDynamicUpdateSliceOp(tensor_pool, input_tensors,
-                                                     output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeShloComposite: {
-      auto info = GetOptionsAs<CompositeOptions>(litert_op.Get());
-      if (!info) {
-        return kLiteRtStatusErrorInvalidArgument;
-      }
-      if (info->name == CompositeOptions::kRmsNorm) {
-        auto attributes_map = info->attributes_map.value();
-        float epsilon = attributes_map["epsilon"].AsFloat();
-        op_wrappers = ::qnn::BuildRmsNormOp(tensor_pool, input_tensors,
-                                            output_tensors, epsilon);
-      }
-      if (info->name == CompositeOptions::kGroupNorm) {
-        auto attributes_map = info->attributes_map.value();
-        float epsilon = attributes_map["epsilon"].AsFloat();
-        int num_groups = attributes_map["num_groups"].AsInt32();
-        op_wrappers = ::qnn::BuildGroupNormOp(
-            tensor_pool, input_tensors, output_tensors, epsilon, num_groups);
-      }
-      if (info->name == CompositeOptions::kL2Norm) {
-        auto attributes_map = info->attributes_map.value();
-        float epsilon = attributes_map["epsilon"].AsFloat();
-        op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
-                                           output_tensors, epsilon);
-      }
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflL2Normalization: {
-      // TODO(yunandrew): Support custom epsilon for L2 Norm.
-      op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
-                                         output_tensors, 9.99999997E-7);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflConv2d: {
-      uint32_t padding;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv2dPaddingOption(litert_op.Get(), &padding));
-      int32_t stride_w;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv2dStrideWOption(litert_op.Get(), &stride_w));
-      int32_t stride_h;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv2dStrideHOption(litert_op.Get(), &stride_h));
-      int32_t dilation_w_factor;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv2dDilationWOption(litert_op.Get(), &dilation_w_factor));
-      int32_t dilation_h_factor;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv2dDilationHOption(litert_op.Get(), &dilation_h_factor));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetConv2dFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      ::qnn::PaddingType qnn_padding;
-      LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildConv2dOp(
-          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-          dilation_h_factor, dilation_w_factor, qnn_padding);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflConv3d: {
-      uint32_t padding;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv3dPaddingOption(litert_op.Get(), &padding));
-      int32_t stride_d;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv3dStrideDOption(litert_op.Get(), &stride_d));
-      int32_t stride_w;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv3dStrideWOption(litert_op.Get(), &stride_w));
-      int32_t stride_h;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv3dStrideHOption(litert_op.Get(), &stride_h));
-      int32_t dilation_d_factor;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv3dDilationDOption(litert_op.Get(), &dilation_d_factor));
-      int32_t dilation_w_factor;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv3dDilationWOption(litert_op.Get(), &dilation_w_factor));
-      int32_t dilation_h_factor;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetConv3dDilationHOption(litert_op.Get(), &dilation_h_factor));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetConv3dFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      ::qnn::PaddingType qnn_padding;
-      LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildConv3dOp(
-          tensor_pool, input_tensors, {activation_input}, stride_d, stride_h,
-          stride_w, dilation_d_factor, dilation_h_factor, dilation_w_factor,
-          qnn_padding);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflTransposeConv: {
-      uint32_t padding;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetTransposeConvPaddingOption(litert_op.Get(), &padding));
-      int32_t stride_w;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetTransposeConvStrideWOption(litert_op.Get(), &stride_w));
-      int32_t stride_h;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetTransposeConvStrideHOption(litert_op.Get(), &stride_h));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetTransposeConvFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      ::qnn::PaddingType qnn_padding;
-      LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildTransposeConvOp(tensor_pool, input_tensors,
-                                                {activation_input}, stride_h,
-                                                stride_w, qnn_padding);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d: {
-      uint32_t padding;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetDepthwiseConv2dPaddingOption(litert_op.Get(), &padding));
-      int32_t stride_w;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetDepthwiseConv2dStrideWOption(litert_op.Get(), &stride_w));
-      int32_t stride_h;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetDepthwiseConv2dStrideHOption(litert_op.Get(), &stride_h));
-      int32_t dilation_w_factor;
-      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationWOption(
-          litert_op.Get(), &dilation_w_factor));
-      int32_t dilation_h_factor;
-      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationHOption(
-          litert_op.Get(), &dilation_h_factor));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      ::qnn::PaddingType qnn_padding;
-      LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildDepthwiseConv2dOp(
-          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-          dilation_h_factor, dilation_w_factor, qnn_padding);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d: {
-      uint32_t padding;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetAveragePool2dPaddingOption(litert_op.Get(), &padding));
-      int32_t stride_w;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetAveragePool2dStrideWOption(litert_op.Get(), &stride_w));
-      int32_t stride_h;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetAveragePool2dStrideHOption(litert_op.Get(), &stride_h));
-      int32_t filter_width;
-      LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFilterWidthOption(
-          litert_op.Get(), &filter_width));
-      int32_t filter_height;
-      LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFilterHeightOption(
-          litert_op.Get(), &filter_height));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      ::qnn::PaddingType qnn_padding;
-      LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildAveragePoolOp(
-          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-          filter_height, filter_width, qnn_padding);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflMaxPool2d: {
-      uint32_t padding;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetMaxPool2dPaddingOption(litert_op.Get(), &padding));
-      int32_t stride_w;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetMaxPool2dStrideWOption(litert_op.Get(), &stride_w));
-      int32_t stride_h;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetMaxPool2dStrideHOption(litert_op.Get(), &stride_h));
-      int32_t filter_width;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetMaxPool2dFilterWidthOption(litert_op.Get(), &filter_width));
-      int32_t filter_height;
-      LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dFilterHeightOption(
-          litert_op.Get(), &filter_height));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      ::qnn::PaddingType qnn_padding;
-      LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildMaxPoolOp(
-          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-          filter_height, filter_width, qnn_padding);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflL2Pool2d: {
-      uint32_t padding;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetL2Pool2dPaddingOption(litert_op.Get(), &padding));
-      int32_t stride_w;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetL2Pool2dStrideWOption(litert_op.Get(), &stride_w));
-      int32_t stride_h;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetL2Pool2dStrideHOption(litert_op.Get(), &stride_h));
-      int32_t filter_width;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetL2Pool2dFilterWidthOption(litert_op.Get(), &filter_width));
-      int32_t filter_height;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetL2Pool2dFilterHeightOption(litert_op.Get(), &filter_height));
-      uint32_t fused_activation;
-      LITERT_RETURN_IF_ERROR(LiteRtGetL2Pool2dFusedActivationOption(
-          litert_op.Get(), &fused_activation));
-
-      ::qnn::PaddingType qnn_padding;
-      LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
-
-      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
-          tensor_pool, fused_activation, output_tensors);
-      op_wrappers = ::qnn::BuildL2PoolOp(
-          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-          filter_height, filter_width, qnn_padding);
-      ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    activation_input, output_tensors[0]);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflDepthToSpace: {
-      int32_t block_size;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetDepthToSpaceBlockSizeOption(litert_op.Get(), &block_size));
-      op_wrappers = ::qnn::BuildDepthToSpaceOp(tensor_pool, input_tensors,
-                                               output_tensors, block_size);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSpaceToDepth: {
-      int32_t block_size;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetSpaceToDepthBlockSizeOption(litert_op.Get(), &block_size));
-      op_wrappers = ::qnn::BuildSpaceToDepthOp(tensor_pool, input_tensors,
-                                               output_tensors, block_size);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflHardSwish: {
-      op_wrappers = ::qnn::BuildElementwiseHardSwishOp(
-          tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLeakyRelu: {
-      float alpha;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetLeakyReluAlphaOption(litert_op.Get(), &alpha));
-      op_wrappers = ::qnn::BuildLeakyReluOp(tensor_pool, input_tensors,
-                                            output_tensors, alpha);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflResizeBilinear: {
-      bool align_corners;
-      LITERT_RETURN_IF_ERROR(LiteRtGetResizeBilinearAlignCornersOption(
-          litert_op.Get(), &align_corners));
-      bool half_pixel_centers;
-      LITERT_RETURN_IF_ERROR(LiteRtGetResizeBilinearHalfPixelCenterOption(
-          litert_op.Get(), &half_pixel_centers));
-      op_wrappers = ::qnn::BuildResizeBilinearOp(tensor_pool, input_tensors,
-                                                 output_tensors, align_corners,
-                                                 half_pixel_centers);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflResizeNearestNeighbor: {
-      bool align_corners;
-      LITERT_RETURN_IF_ERROR(LiteRtGetResizeNearestNeighborAlignCornersOption(
-          litert_op.Get(), &align_corners));
-      bool half_pixel_centers;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
-              litert_op.Get(), &half_pixel_centers));
-      op_wrappers = ::qnn::BuildResizeNearestOp(tensor_pool, input_tensors,
-                                                output_tensors, align_corners,
-                                                half_pixel_centers);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflPad:
-    case LiteRtOpCode::kLiteRtOpCodeTflPadv2: {
-      op_wrappers =
-          ::qnn::BuildConstantPadOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflMirrorPad: {
-      uint32_t mode;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetMirrorPadModeOption(litert_op.Get(), &mode));
-      op_wrappers = ::qnn::BuildMirrorPadOp(tensor_pool, input_tensors,
-                                            output_tensors, mode);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflCumsum: {
-      bool exclusive;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetCumsumExclusiveOption(litert_op.Get(), &exclusive));
-      bool reverse;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetCumsumReverseOption(litert_op.Get(), &reverse));
-      op_wrappers = ::qnn::BuildCumsumOp(tensor_pool, input_tensors,
-                                         output_tensors, exclusive, reverse);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflGatherNd: {
-      op_wrappers =
-          ::qnn::BuildGatherNdOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflPow: {
-      op_wrappers = ::qnn::BuildElementwisePowerOp(tensor_pool, input_tensors,
-                                                   output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLessEqual: {
-      op_wrappers = ::qnn::BuildElementwiseLessEqualOp(
-          tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLogicalNot: {
-      op_wrappers = ::qnn::BuildElementwiseNotOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflGreaterEqual: {
-      op_wrappers = ::qnn::BuildElementwiseGreaterEqualOp(
-          tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflExp: {
-      op_wrappers = ::qnn::BuildElementwiseExpOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflEqual: {
-      op_wrappers = ::qnn::BuildElementwiseEqualOp(tensor_pool, input_tensors,
-                                                   output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLog: {
-      op_wrappers = ::qnn::BuildElementwiseLogOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflAbs: {
-      op_wrappers = ::qnn::BuildElementwiseAbsOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflReverseV2: {
-      op_wrappers =
-          ::qnn::BuildReverseOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflArgMax: {
-      op_wrappers =
-          ::qnn::BuildArgMaxOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflArgMin: {
-      op_wrappers =
-          ::qnn::BuildArgMinOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflStridedSlice: {
-      std::int32_t begin_mask;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetStridedSliceBeginMaskOption(litert_op.Get(), &begin_mask));
-      std::int32_t end_mask;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetStridedSliceEndMaskOption(litert_op.Get(), &end_mask));
-      std::int32_t ellipsis_mask;
-      LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceEllipsisMaskOption(
-          litert_op.Get(), &ellipsis_mask));
-      std::int32_t shrink_axis_mask;
-      LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceShrinkAxisMaskOption(
-          litert_op.Get(), &shrink_axis_mask));
-      std::int32_t new_axis_mask;
-      LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceNewAxisMaskOption(
-          litert_op.Get(), &new_axis_mask));
-      bool offset;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetStridedSliceOffsetOption(litert_op.Get(), &offset));
-      op_wrappers = ::qnn::BuildStridedSliceOp(
-          tensor_pool, input_tensors, output_tensors, begin_mask, end_mask,
-          ellipsis_mask, shrink_axis_mask, new_axis_mask, offset);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflNeg: {
-      op_wrappers = ::qnn::BuildElementwiseNegOp(tensor_pool, input_tensors,
-                                                 output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflRound: {
-      op_wrappers = ::qnn::BuildElementwiseRoundOp(tensor_pool, input_tensors,
-                                                   output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflSign: {
-      op_wrappers = ::qnn::BuildElementwiseSignOp(tensor_pool, input_tensors,
-                                                  output_tensors);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflLogSoftmax: {
-      std::uint32_t axis = input_tensors[0].get().GetRank() - 1;
-      float beta{1.0};
-      op_wrappers = ::qnn::BuildLogSoftmaxOp(tensor_pool, input_tensors,
-                                             output_tensors, axis, beta);
-      break;
-    }
-    case LiteRtOpCode::kLiteRtOpCodeTflScatterNd: {
-      op_wrappers =
-          ::qnn::BuildScatterNdOp(tensor_pool, input_tensors, output_tensors);
-      break;
-    }
-    default: {
-      LITERT_LOG(LITERT_ERROR,
-                 "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
-                 litert_op.Code());
-    }
+  const auto& builders = GetOpBuilders();
+  if (auto it = builders.find(litert_op.Code()); it != builders.end()) {
+    return it->second(litert_op, tensor_pool, input_tensors, output_tensors,
+                      op_wrappers, use_htp_preferences);
   }
+  LITERT_LOG(LITERT_ERROR,
+             "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
+             litert_op.Code());
   return kLiteRtStatusOk;
 }
 
