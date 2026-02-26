@@ -334,7 +334,25 @@ using OpBuilder = LiteRtStatus (*)(
     const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences);
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences,
+    bool use_int64_bias_as_int32);
+
+// Wrapper to call the op builder with or without the bias parameter.
+template <auto F>
+LiteRtStatus Adapt(const litert::Op& op, ::qnn::TensorPool& tp,
+                   std::vector<::qnn::TensorWrapperRef>& in,
+                   std::vector<::qnn::TensorWrapperRef>& out,
+                   std::vector<::qnn::OpWrapper>& ow, bool htp, bool bias) {
+  if constexpr (std::is_invocable_v<
+                    decltype(F), const litert::Op&, ::qnn::TensorPool&,
+                    std::vector<::qnn::TensorWrapperRef>&,
+                    std::vector<::qnn::TensorWrapperRef>&,
+                    std::vector<::qnn::OpWrapper>&, bool, bool>) {
+    return F(op, tp, in, out, ow, htp, bias);
+  } else {
+    return F(op, tp, in, out, ow, htp);
+  }
+}
 
 #define REGISTER_SIMPLE_OP_BUILDER(OpName, BuildFunc)                         \
   LiteRtStatus OpName(                                                        \
@@ -506,7 +524,8 @@ LiteRtStatus BuildFullyConnectedOp(
     const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences,
+    bool use_int64_bias_as_int32) {
   uint32_t fused_activation{};
   LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedFusedActivationOption(
       litert_op.Get(), &fused_activation));
@@ -522,7 +541,8 @@ LiteRtStatus BuildFullyConnectedOp(
   }
   if (op_wrappers.empty()) {
     op_wrappers = ::qnn::BuildFullyConnectedOp(
-        tensor_pool, input_tensors, {activation_input}, keep_num_dims);
+        tensor_pool, input_tensors, {activation_input}, keep_num_dims,
+        use_int64_bias_as_int32);
   }
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
@@ -775,7 +795,8 @@ LiteRtStatus BuildConv2dOp(const litert::Op& litert_op,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
                            std::vector<::qnn::OpWrapper>& op_wrappers,
-                           bool use_htp_preferences) {
+                           bool use_htp_preferences,
+                           bool use_int64_bias_as_int32) {
   uint32_t padding;
   LITERT_RETURN_IF_ERROR(
       LiteRtGetConv2dPaddingOption(litert_op.Get(), &padding));
@@ -802,7 +823,8 @@ LiteRtStatus BuildConv2dOp(const litert::Op& litert_op,
       tensor_pool, fused_activation, output_tensors);
   op_wrappers = ::qnn::BuildConv2dOp(
       tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-      dilation_h_factor, dilation_w_factor, qnn_padding);
+      dilation_h_factor, dilation_w_factor, qnn_padding,
+      use_int64_bias_as_int32);
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
@@ -1178,100 +1200,101 @@ LiteRtStatus BuildLogSoftmaxOp(
 constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1>
 GetOpBuilders() {
   std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> builders{};
-  builders[kLiteRtOpCodeTflAdd] = BuildAddOp;
-  builders[kLiteRtOpCodeTflAveragePool2d] = BuildAveragePool2dOp;
-  builders[kLiteRtOpCodeTflConcatenation] = BuildConcatenationOp;
-  builders[kLiteRtOpCodeTflConv2d] = BuildConv2dOp;
-  builders[kLiteRtOpCodeTflDepthwiseConv2d] = BuildDepthwiseConv2dOp;
-  builders[kLiteRtOpCodeTflDepthToSpace] = BuildDepthToSpaceOp;
-  builders[kLiteRtOpCodeTflDequantize] = BuildDequantizeOp;
-  builders[kLiteRtOpCodeTflEmbeddingLookup] = BuildEmbeddingLookupOp;
-  builders[kLiteRtOpCodeTflFloor] = BuildFloorOp;
-  builders[kLiteRtOpCodeTflFullyConnected] = BuildFullyConnectedOp;
-  builders[kLiteRtOpCodeTflL2Normalization] = BuildL2NormalizationOp;
-  builders[kLiteRtOpCodeTflL2Pool2d] = BuildL2Pool2dOp;
-  builders[kLiteRtOpCodeTflLogistic] = BuildLogisticOp;
-  builders[kLiteRtOpCodeTflMaxPool2d] = BuildMaxPool2dOp;
-  builders[kLiteRtOpCodeTflMul] = BuildMulOp;
-  builders[kLiteRtOpCodeTflRelu] = BuildReluOp;
-  builders[kLiteRtOpCodeTflReluN1To1] = BuildReluN1To1Op;
-  builders[kLiteRtOpCodeTflRelu6] = BuildRelu6Op;
-  builders[kLiteRtOpCodeTflReshape] = BuildReshapeOp;
-  builders[kLiteRtOpCodeTflResizeBilinear] = BuildResizeBilinearOp;
-  builders[kLiteRtOpCodeTflSoftmax] = BuildSoftmaxOp;
-  builders[kLiteRtOpCodeTflSpaceToDepth] = BuildSpaceToDepthOp;
-  builders[kLiteRtOpCodeTflTanh] = BuildTanhOp;
-  builders[kLiteRtOpCodeTflPad] = BuildConstantPadOp;
-  builders[kLiteRtOpCodeTflGather] = BuildGatherOp;
-  builders[kLiteRtOpCodeTflTranspose] = BuildTransposeOp;
-  builders[kLiteRtOpCodeTflMean] = BuildMeanOp;
-  builders[kLiteRtOpCodeTflSub] = BuildSubOp;
-  builders[kLiteRtOpCodeTflDiv] = BuildDivOp;
-  builders[kLiteRtOpCodeTflStridedSlice] = BuildStridedSliceOp;
-  builders[kLiteRtOpCodeTflExp] = BuildExpOp;
-  builders[kLiteRtOpCodeTflTopkV2] = BuildTopkV2Op;
-  builders[kLiteRtOpCodeTflSplit] = BuildSplitOp;
-  builders[kLiteRtOpCodeTflLogSoftmax] = BuildLogSoftmaxOp;
-  builders[kLiteRtOpCodeTflCast] = BuildCastOp;
-  builders[kLiteRtOpCodeTflPrelu] = BuildPreluOp;
-  builders[kLiteRtOpCodeTflMaximum] = BuildMaximumOp;
-  builders[kLiteRtOpCodeTflArgMax] = BuildArgMaxOp;
-  builders[kLiteRtOpCodeTflMinimum] = BuildMinimumOp;
-  builders[kLiteRtOpCodeTflLess] = BuildLessOp;
-  builders[kLiteRtOpCodeTflNeg] = BuildNegOp;
-  builders[kLiteRtOpCodeTflPadv2] = BuildConstantPadOp;
-  builders[kLiteRtOpCodeTflGreater] = BuildGreaterOp;
-  builders[kLiteRtOpCodeTflGreaterEqual] = BuildGreaterEqualOp;
-  builders[kLiteRtOpCodeTflLessEqual] = BuildLessEqualOp;
-  builders[kLiteRtOpCodeTflSelect] = BuildSelectOp;
-  builders[kLiteRtOpCodeTflSlice] = BuildSliceOp;
-  builders[kLiteRtOpCodeTflSin] = BuildSinOp;
-  builders[kLiteRtOpCodeTflTransposeConv] = BuildTransposeConvOp;
-  builders[kLiteRtOpCodeTflTile] = BuildTileOp;
-  builders[kLiteRtOpCodeTflEqual] = BuildEqualOp;
-  builders[kLiteRtOpCodeTflNotEqual] = BuildNotEqualOp;
-  builders[kLiteRtOpCodeTflLog] = BuildLogOp;
-  builders[kLiteRtOpCodeTflSum] = BuildSumOp;
-  builders[kLiteRtOpCodeTflSqrt] = BuildSqrtOp;
-  builders[kLiteRtOpCodeTflRsqrt] = BuildRsqrtOp;
-  builders[kLiteRtOpCodeTflPow] = BuildPowOp;
-  builders[kLiteRtOpCodeTflArgMin] = BuildArgMinOp;
-  builders[kLiteRtOpCodeTflReduceMax] = BuildReduceMaxOp;
-  builders[kLiteRtOpCodeTflPack] = BuildPackOp;
-  builders[kLiteRtOpCodeTflLogicalOr] = BuildLogicalOrOp;
-  builders[kLiteRtOpCodeTflLogicalAnd] = BuildLogicalAndOp;
-  builders[kLiteRtOpCodeTflLogicalNot] = BuildLogicalNotOp;
-  builders[kLiteRtOpCodeTflUnpack] = BuildUnpackOp;
-  builders[kLiteRtOpCodeTflReduceMin] = BuildReduceMinOp;
-  builders[kLiteRtOpCodeTflFloorDiv] = BuildFloorDivOp;
-  builders[kLiteRtOpCodeTflReduceAny] = BuildReduceAnyOp;
-  builders[kLiteRtOpCodeTflSquare] = BuildSquareOp;
+  builders[kLiteRtOpCodeTflAdd] = Adapt<BuildAddOp>;
+  builders[kLiteRtOpCodeTflAveragePool2d] = Adapt<BuildAveragePool2dOp>;
+  builders[kLiteRtOpCodeTflConcatenation] = Adapt<BuildConcatenationOp>;
+  builders[kLiteRtOpCodeTflConv2d] = Adapt<BuildConv2dOp>;
+  builders[kLiteRtOpCodeTflDepthwiseConv2d] = Adapt<BuildDepthwiseConv2dOp>;
+  builders[kLiteRtOpCodeTflDepthToSpace] = Adapt<BuildDepthToSpaceOp>;
+  builders[kLiteRtOpCodeTflDequantize] = Adapt<BuildDequantizeOp>;
+  builders[kLiteRtOpCodeTflEmbeddingLookup] = Adapt<BuildEmbeddingLookupOp>;
+  builders[kLiteRtOpCodeTflFloor] = Adapt<BuildFloorOp>;
+  builders[kLiteRtOpCodeTflFullyConnected] = Adapt<BuildFullyConnectedOp>;
+  builders[kLiteRtOpCodeTflL2Normalization] = Adapt<BuildL2NormalizationOp>;
+  builders[kLiteRtOpCodeTflL2Pool2d] = Adapt<BuildL2Pool2dOp>;
+  builders[kLiteRtOpCodeTflLogistic] = Adapt<BuildLogisticOp>;
+  builders[kLiteRtOpCodeTflMaxPool2d] = Adapt<BuildMaxPool2dOp>;
+  builders[kLiteRtOpCodeTflMul] = Adapt<BuildMulOp>;
+  builders[kLiteRtOpCodeTflRelu] = Adapt<BuildReluOp>;
+  builders[kLiteRtOpCodeTflReluN1To1] = Adapt<BuildReluN1To1Op>;
+  builders[kLiteRtOpCodeTflRelu6] = Adapt<BuildRelu6Op>;
+  builders[kLiteRtOpCodeTflReshape] = Adapt<BuildReshapeOp>;
+  builders[kLiteRtOpCodeTflResizeBilinear] = Adapt<BuildResizeBilinearOp>;
+  builders[kLiteRtOpCodeTflSoftmax] = Adapt<BuildSoftmaxOp>;
+  builders[kLiteRtOpCodeTflSpaceToDepth] = Adapt<BuildSpaceToDepthOp>;
+  builders[kLiteRtOpCodeTflTanh] = Adapt<BuildTanhOp>;
+  builders[kLiteRtOpCodeTflPad] = Adapt<BuildConstantPadOp>;
+  builders[kLiteRtOpCodeTflGather] = Adapt<BuildGatherOp>;
+  builders[kLiteRtOpCodeTflTranspose] = Adapt<BuildTransposeOp>;
+  builders[kLiteRtOpCodeTflMean] = Adapt<BuildMeanOp>;
+  builders[kLiteRtOpCodeTflSub] = Adapt<BuildSubOp>;
+  builders[kLiteRtOpCodeTflDiv] = Adapt<BuildDivOp>;
+  builders[kLiteRtOpCodeTflStridedSlice] = Adapt<BuildStridedSliceOp>;
+  builders[kLiteRtOpCodeTflExp] = Adapt<BuildExpOp>;
+  builders[kLiteRtOpCodeTflTopkV2] = Adapt<BuildTopkV2Op>;
+  builders[kLiteRtOpCodeTflSplit] = Adapt<BuildSplitOp>;
+  builders[kLiteRtOpCodeTflLogSoftmax] = Adapt<BuildLogSoftmaxOp>;
+  builders[kLiteRtOpCodeTflCast] = Adapt<BuildCastOp>;
+  builders[kLiteRtOpCodeTflPrelu] = Adapt<BuildPreluOp>;
+  builders[kLiteRtOpCodeTflMaximum] = Adapt<BuildMaximumOp>;
+  builders[kLiteRtOpCodeTflArgMax] = Adapt<BuildArgMaxOp>;
+  builders[kLiteRtOpCodeTflMinimum] = Adapt<BuildMinimumOp>;
+  builders[kLiteRtOpCodeTflLess] = Adapt<BuildLessOp>;
+  builders[kLiteRtOpCodeTflNeg] = Adapt<BuildNegOp>;
+  builders[kLiteRtOpCodeTflPadv2] = Adapt<BuildConstantPadOp>;
+  builders[kLiteRtOpCodeTflGreater] = Adapt<BuildGreaterOp>;
+  builders[kLiteRtOpCodeTflGreaterEqual] = Adapt<BuildGreaterEqualOp>;
+  builders[kLiteRtOpCodeTflLessEqual] = Adapt<BuildLessEqualOp>;
+  builders[kLiteRtOpCodeTflSelect] = Adapt<BuildSelectOp>;
+  builders[kLiteRtOpCodeTflSlice] = Adapt<BuildSliceOp>;
+  builders[kLiteRtOpCodeTflSin] = Adapt<BuildSinOp>;
+  builders[kLiteRtOpCodeTflTransposeConv] = Adapt<BuildTransposeConvOp>;
+  builders[kLiteRtOpCodeTflTile] = Adapt<BuildTileOp>;
+  builders[kLiteRtOpCodeTflEqual] = Adapt<BuildEqualOp>;
+  builders[kLiteRtOpCodeTflNotEqual] = Adapt<BuildNotEqualOp>;
+  builders[kLiteRtOpCodeTflLog] = Adapt<BuildLogOp>;
+  builders[kLiteRtOpCodeTflSum] = Adapt<BuildSumOp>;
+  builders[kLiteRtOpCodeTflSqrt] = Adapt<BuildSqrtOp>;
+  builders[kLiteRtOpCodeTflRsqrt] = Adapt<BuildRsqrtOp>;
+  builders[kLiteRtOpCodeTflPow] = Adapt<BuildPowOp>;
+  builders[kLiteRtOpCodeTflArgMin] = Adapt<BuildArgMinOp>;
+  builders[kLiteRtOpCodeTflReduceMax] = Adapt<BuildReduceMaxOp>;
+  builders[kLiteRtOpCodeTflPack] = Adapt<BuildPackOp>;
+  builders[kLiteRtOpCodeTflLogicalOr] = Adapt<BuildLogicalOrOp>;
+  builders[kLiteRtOpCodeTflLogicalAnd] = Adapt<BuildLogicalAndOp>;
+  builders[kLiteRtOpCodeTflLogicalNot] = Adapt<BuildLogicalNotOp>;
+  builders[kLiteRtOpCodeTflUnpack] = Adapt<BuildUnpackOp>;
+  builders[kLiteRtOpCodeTflReduceMin] = Adapt<BuildReduceMinOp>;
+  builders[kLiteRtOpCodeTflFloorDiv] = Adapt<BuildFloorDivOp>;
+  builders[kLiteRtOpCodeTflReduceAny] = Adapt<BuildReduceAnyOp>;
+  builders[kLiteRtOpCodeTflSquare] = Adapt<BuildSquareOp>;
   builders[kLiteRtOpCodeTflResizeNearestNeighbor] =
-      BuildResizeNearestNeighborOp;
-  builders[kLiteRtOpCodeTflLeakyRelu] = BuildLeakyReluOp;
-  builders[kLiteRtOpCodeTflSquaredDifference] = BuildSquaredDifferenceOp;
-  builders[kLiteRtOpCodeTflMirrorPad] = BuildMirrorPadOp;
-  builders[kLiteRtOpCodeTflAbs] = BuildAbsOp;
-  builders[kLiteRtOpCodeTflCeil] = BuildCeilOp;
-  builders[kLiteRtOpCodeTflReverseV2] = BuildReverseV2Op;
-  builders[kLiteRtOpCodeTflGatherNd] = BuildGatherNdOp;
-  builders[kLiteRtOpCodeTflCos] = BuildCosOp;
-  builders[kLiteRtOpCodeTflElu] = BuildEluOp;
-  builders[kLiteRtOpCodeTflQuantize] = BuildQuantizeOp;
-  builders[kLiteRtOpCodeTflRound] = BuildRoundOp;
-  builders[kLiteRtOpCodeTflHardSwish] = BuildHardSwishOp;
-  builders[kLiteRtOpCodeTflScatterNd] = BuildScatterNdOp;
-  builders[kLiteRtOpCodeTflSelectV2] = BuildSelectOp;
-  builders[kLiteRtOpCodeTflBatchMatmul] = BuildBatchMatmulOp;
-  builders[kLiteRtOpCodeTflCumsum] = BuildCumsumOp;
-  builders[kLiteRtOpCodeTflBroadcastTo] = BuildBroadcastToOp;
-  builders[kLiteRtOpCodeTflConv3d] = BuildConv3dOp;
-  builders[kLiteRtOpCodeTflReduceAll] = BuildReduceAllOp;
-  builders[kLiteRtOpCodeTflGelu] = BuildGeluOp;
-  builders[kLiteRtOpCodeTflDynamicUpdateSlice] = BuildDynamicUpdateSliceOp;
-  builders[kLiteRtOpCodeTflRelu0To1] = BuildRelu0To1Op;
-  builders[kLiteRtOpCodeTflSign] = BuildSignOp;
-  builders[kLiteRtOpCodeShloComposite] = BuildShloCompositeOp;
+      Adapt<BuildResizeNearestNeighborOp>;
+  builders[kLiteRtOpCodeTflLeakyRelu] = Adapt<BuildLeakyReluOp>;
+  builders[kLiteRtOpCodeTflSquaredDifference] = Adapt<BuildSquaredDifferenceOp>;
+  builders[kLiteRtOpCodeTflMirrorPad] = Adapt<BuildMirrorPadOp>;
+  builders[kLiteRtOpCodeTflAbs] = Adapt<BuildAbsOp>;
+  builders[kLiteRtOpCodeTflCeil] = Adapt<BuildCeilOp>;
+  builders[kLiteRtOpCodeTflReverseV2] = Adapt<BuildReverseV2Op>;
+  builders[kLiteRtOpCodeTflGatherNd] = Adapt<BuildGatherNdOp>;
+  builders[kLiteRtOpCodeTflCos] = Adapt<BuildCosOp>;
+  builders[kLiteRtOpCodeTflElu] = Adapt<BuildEluOp>;
+  builders[kLiteRtOpCodeTflQuantize] = Adapt<BuildQuantizeOp>;
+  builders[kLiteRtOpCodeTflRound] = Adapt<BuildRoundOp>;
+  builders[kLiteRtOpCodeTflHardSwish] = Adapt<BuildHardSwishOp>;
+  builders[kLiteRtOpCodeTflScatterNd] = Adapt<BuildScatterNdOp>;
+  builders[kLiteRtOpCodeTflSelectV2] = Adapt<BuildSelectOp>;
+  builders[kLiteRtOpCodeTflBatchMatmul] = Adapt<BuildBatchMatmulOp>;
+  builders[kLiteRtOpCodeTflCumsum] = Adapt<BuildCumsumOp>;
+  builders[kLiteRtOpCodeTflBroadcastTo] = Adapt<BuildBroadcastToOp>;
+  builders[kLiteRtOpCodeTflConv3d] = Adapt<BuildConv3dOp>;
+  builders[kLiteRtOpCodeTflReduceAll] = Adapt<BuildReduceAllOp>;
+  builders[kLiteRtOpCodeTflGelu] = Adapt<BuildGeluOp>;
+  builders[kLiteRtOpCodeTflDynamicUpdateSlice] =
+      Adapt<BuildDynamicUpdateSliceOp>;
+  builders[kLiteRtOpCodeTflRelu0To1] = Adapt<BuildRelu0To1Op>;
+  builders[kLiteRtOpCodeTflSign] = Adapt<BuildSignOp>;
+  builders[kLiteRtOpCodeShloComposite] = Adapt<BuildShloCompositeOp>;
   return builders;
 }
 
@@ -1282,6 +1305,7 @@ static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
 }  // namespace
 
 LiteRtStatus ConvertOp(const bool use_htp_preferences,
+                       bool use_int64_bias_as_int32,
                        const litert::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1291,7 +1315,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
   const auto op_code = litert_op.Code();
   if (op_code < builders.size() && builders[op_code]) {
     return builders[op_code](litert_op, tensor_pool, input_tensors,
-                             output_tensors, op_wrappers, use_htp_preferences);
+                             output_tensors, op_wrappers, use_htp_preferences,
+                             use_int64_bias_as_int32);
   }
   LITERT_LOG(LITERT_ERROR,
              "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
@@ -1403,9 +1428,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     }
 
     std::vector<::qnn::OpWrapper> op_wrappers;
-    LITERT_RETURN_IF_ERROR(ConvertOp(options.GetUseHtpPreference(), op,
-                                     tensor_pool, input_tensors, output_tensors,
-                                     op_wrappers));
+    LITERT_RETURN_IF_ERROR(ConvertOp(
+        options.GetUseHtpPreference(), options.GetUseInt64BiasAsInt32(), op,
+        tensor_pool, input_tensors, output_tensors, op_wrappers));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
