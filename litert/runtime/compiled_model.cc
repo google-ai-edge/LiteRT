@@ -976,16 +976,38 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   if (cached_req != cpu_buffer_requirements_.end()) {
     return cached_req->second.get();
   }
-  LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
+  // LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
+  // LiteRtTensorBufferType cpu_buffer_type[] = {
+  //     kLiteRtTensorBufferTypeHostMemory};
+  // uint32_t cpu_buffer_strides[] = {0};
+  // LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
+  //     /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type,
+  //     tensor->bytes,
+  //     /*num_strides=*/1, cpu_buffer_strides,
+  //     &litert_cpu_buffer_requirements));
+  // cpu_buffer_requirements_[tensor_id] =
+  //     LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
+  // return litert_cpu_buffer_requirements;
+  LiteRtTensorBufferRequirements litert_cpu_buffer_requirements_ptr;
   LiteRtTensorBufferType cpu_buffer_type[] = {
       kLiteRtTensorBufferTypeHostMemory};
   uint32_t cpu_buffer_strides[] = {0};
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
       /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, tensor->bytes,
-      /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements));
-  cpu_buffer_requirements_[tensor_id] =
-      LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
-  return litert_cpu_buffer_requirements;
+      /*num_strides=*/1, cpu_buffer_strides,
+      &litert_cpu_buffer_requirements_ptr));
+
+  // Create a unique_ptr to manage the lifetime
+  auto unique_req =
+      LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements_ptr);
+  // Get the raw pointer to return
+  const LiteRtTensorBufferRequirementsT* raw_ptr = unique_req.get();
+
+  // Store the unique_ptr in the map
+  cpu_buffer_requirements_[tensor_id] = std::move(unique_req);
+
+  // Return the raw pointer wrapped in Expected
+  return raw_ptr;
 }
 
 Expected<const LiteRtTensorBufferRequirementsT*>

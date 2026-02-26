@@ -42,6 +42,7 @@ target_include_directories(litert_cc_options
 target_link_libraries(litert_cc_options
     PUBLIC
         litert_cc_api
+        litert_cc_internal
         litert_c_options
         absl::status
         absl::statusor

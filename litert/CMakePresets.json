@@ -2,53 +2,70 @@
   "version": 4,
   "configurePresets": [
     {
-      "name": "default",
-      "displayName": "Default (host) Release",
+      "name": "base",
+      "hidden": true,
+      "description": "Base settings for all builds",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/cmake_build",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "ninja-mixin",
+      "hidden": true,
+      "description": "Mixin to switch any build to Ninja",
+      "generator": "Ninja"
+    },
+    {
+      "name": "host-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
         "CMAKE_CXX_FLAGS": "-fpermissive"
       }
+    },
+    {
+      "name": "android-base",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Android",
+        "ANDROID_PLATFORM": "26",
+        "LITERT_AUTO_BUILD_TFLITE": "ON"
+      }
+    },
+    {
+      "name": "default",
+      "displayName": "Host Release (Make)",
+      "inherits": "host-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "default-ninja",
+      "displayName": "Host Release (Ninja)",
+      "inherits": ["default", "ninja-mixin"]
     },
     {
       "name": "default-debug",
-      "displayName": "Default (host) Debug",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/cmake_build_debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fpermissive"
-      }
+      "displayName": "Host Debug (Make)",
+      "inherits": "host-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     },
     {
       "name": "android-arm64",
-      "displayName": "Android arm64-v8a Release",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/cmake_build_android_arm64",
-      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "displayName": "Android Release (Make)",
+      "inherits": "android-base",
       "cacheVariables": {
-        "CMAKE_SYSTEM_NAME": "Android",
         "ANDROID_ABI": "arm64-v8a",
-        "ANDROID_PLATFORM": "26",
-        "CMAKE_BUILD_TYPE": "Release",
-        "LITERT_AUTO_BUILD_TFLITE": "ON"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "android-arm64-debug",
-      "displayName": "Android arm64-v8a Debug",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/cmake_build_android_arm64_debug",
-      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
-      "cacheVariables": {
-        "CMAKE_SYSTEM_NAME": "Android",
-        "ANDROID_ABI": "arm64-v8a",
-        "ANDROID_PLATFORM": "26",
-        "CMAKE_BUILD_TYPE": "Debug",
-        "LITERT_AUTO_BUILD_TFLITE": "ON"
-      }
+      "name": "android-arm64-ninja",
+      "displayName": "Android Release (Ninja)",
+      "inherits": ["android-arm64", "ninja-mixin"]
     }
   ]
 }
-
