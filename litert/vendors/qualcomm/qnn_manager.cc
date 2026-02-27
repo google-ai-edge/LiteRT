@@ -336,6 +336,13 @@ LiteRtStatus QnnManager::GenerateContextBinary(
 }
 
 LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
+  // TODO: Unblock QNN validation for RMSNorm
+  if (absl::StrContains(op.GetName(), "HadamardTransform")) {
+    LITERT_LOG(LITERT_WARNING,
+               "Bypass HadamardTransform op validation");
+    return kLiteRtStatusOk;
+  }
+
   // TODO(jiunkaiy): Remove version check and break backward compatibility when
   // acceptable.
   const auto sdk_version = GetSdkVersion();
@@ -387,7 +394,6 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
 
   return kLiteRtStatusOk;
 }
-
 
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
