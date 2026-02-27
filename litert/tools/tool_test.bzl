@@ -23,7 +23,11 @@ def tool_test(
         name,
         tool,
         data = [],
-        tool_args = []):
+        tool_args = [],
+        tags = [
+            "no-remote-exec",
+            "notap",
+        ]):
     """Generates a test that runs a binary tool.
 
     Args:
@@ -31,6 +35,7 @@ def tool_test(
       tool: The binary tool to run.
       data: Data dependencies of the tool.
       tool_args: Arguments to pass to the tool.
+      tags: Tags to pass to the test.
     """
     args = " ".join(tool_args)
     cmd = """
@@ -48,9 +53,6 @@ def tool_test(
     sh_test(
         name = name,
         srcs = [exec_name + ".sh"],
-        tags = [
-            "no-remote-exec",
-            "notap",
-        ],
+        tags = tags,
         data = [tool] + data,
     )
