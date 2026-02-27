@@ -1,0 +1,59 @@
+name: "android nightly python wheel"
+
+on:
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 2 * * *"  # Runs at 2:00 UTC every day
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-nightly
+  cancel-in-progress: true
+
+jobs:
+  build_android_wheels:
+    name: "Build Android Wheels - Python ${{ matrix.python-version }} - ${{ matrix.android-arch }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        android-arch: ["arm64-v8a", "armeabi-v7a", "x86_64"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Build Android Python wheel
+        env:
+          DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
+          ANDROID_TARGET_ARCHS: ${{ matrix.android-arch }}
+          ANDROID_API_LEVEL: "21"
+          CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
+          USE_LOCAL_TF: "false"
+        run: |
+          export NIGHTLY_RELEASE_DATE=$(date +%Y%m%d)
+          if [[ -f "ci/build_android_python_wheel_with_docker.sh" ]]; then
+            chmod +x ci/build_android_python_wheel_with_docker.sh
+            echo "INFO: Running build_android_python_wheel_with_docker.sh"
+            ./ci/build_android_python_wheel_with_docker.sh
+          else
+            echo "Error: ci/build_android_python_wheel_with_docker.sh not found!"
+            exit 1
+          fi
+
+      - name: List generated files
+        run: |
+          echo "Generated Android Python wheels in dist/:"
+          find $(pwd)/dist -type f -name "*.whl" 2>/dev/null || echo "No wheels found"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: litert-android-wheels-py${{ matrix.python-version }}-${{ matrix.android-arch }}-${{ github.run_id }}
+          path: dist/*.whl
+          if-no-files-found: warn
