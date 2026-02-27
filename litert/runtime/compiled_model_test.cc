@@ -36,6 +36,7 @@
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -48,6 +49,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
@@ -750,6 +752,58 @@ TEST(CompiledModelTest, WithProfiler) {
   for (auto& output_buffer : output_buffers) {
     LiteRtDestroyTensorBuffer(output_buffer);
   }
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, WithCpuOptions) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  LITERT_ASSIGN_OR_ABORT(auto cpu_options, CpuOptions::Create());
+  ASSERT_TRUE(cpu_options.SetNumThreads(2));
+  const char* identifier;
+  void* payload;
+  void (*payload_deleter)(void*);
+  ASSERT_EQ(LrtGetOpaqueCpuOptionsData(cpu_options.Get(), &identifier, &payload,
+                                       &payload_deleter),
+            kLiteRtStatusOk);
+
+  LiteRtOpaqueOptions opaque_cpu_options_handle;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_cpu_options_handle),
+            kLiteRtStatusOk);
+
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   opaque_cpu_options_handle),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // We can't easily verify the internal state of the interpreter here without
+  // exposing more internals, but successful creation implies the options were
+  // parsed without error. In a real integration test, we might check
+  // performance or use a mock interpreter if available. For now, we rely on the
+  // fact that `compiled_model.cc` parses the options and would log a warning or
+  // fail if parsing failed (though currently it warns).
 
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);

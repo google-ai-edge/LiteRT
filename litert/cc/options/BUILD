@@ -31,11 +31,10 @@ cc_library(
     srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
     deps = [
-        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_common",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],

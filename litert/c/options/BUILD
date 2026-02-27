@@ -32,10 +32,9 @@ cc_library(
     hdrs = ["litert_cpu_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
-        "//litert/runtime:litert_cpu_options",
-        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 

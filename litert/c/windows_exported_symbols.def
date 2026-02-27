@@ -44,7 +44,6 @@ EXPORTS
   LiteRtCompiledModelStopMetricsCollection
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
-  LiteRtCreateCpuOptions
   LiteRtCreateEnvironment
   LiteRtCreateEventFromEglSyncFence
   LiteRtCreateEventFromOpenClEvent
@@ -87,7 +86,6 @@ EXPORTS
   LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode
   LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
   LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
-  LiteRtFindCpuOptions
   LiteRtFindOpaqueOptionsData
   LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
@@ -95,11 +93,6 @@ EXPORTS
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
-  LiteRtGetCpuOptionsIdentifier
-  LiteRtGetCpuOptionsNumThread
-  LiteRtGetCpuOptionsXNNPackFlags
-  LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor
-  LiteRtGetCpuOptionsXnnPackWeightCachePath
   LiteRtGetEnvironmentOptions
   LiteRtGetEnvironmentOptionsValue
   LiteRtGetEventCustomNativeEvent
@@ -318,10 +311,6 @@ EXPORTS
   LiteRtSetAcceleratorGetName
   LiteRtSetAcceleratorGetVersion
   LiteRtSetCompiledModelCancellationFunction
-  LiteRtSetCpuOptionsNumThread
-  LiteRtSetCpuOptionsXNNPackFlags
-  LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor
-  LiteRtSetCpuOptionsXnnPackWeightCachePath
   LiteRtSetCustomEvent
   LiteRtSetDelegateFunction
   LiteRtSetEnvironmentOptionsValue

@@ -21,6 +21,7 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/options/litert_compiler_options.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_expected.h"
@@ -62,6 +63,26 @@ LiteRtStatus AppendAndReset(LiteRtOptions options,
   return LiteRtAddOpaqueOptions(options, opaque);
 }
 
+template <typename OptionType, typename GetDataFunc>
+LiteRtStatus AppendAndResetOpaqueData(LiteRtOptions options,
+                                      std::optional<OptionType>& slot,
+                                      GetDataFunc get_data_func) {
+  if (!slot) {
+    return kLiteRtStatusOk;
+  }
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      get_data_func(slot->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+      identifier, payload, payload_deleter, &opaque_opts));
+  LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(options, opaque_opts));
+  slot.reset();
+  return kLiteRtStatusOk;
+}
+
 }  // namespace
 
 Expected<GpuOptions&> Options::GetGpuOptions() {
@@ -100,37 +121,16 @@ Expected<CompilerOptions&> Options::GetCompilerOptions() {
 
 Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), gpu_options_));
-  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), cpu_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(Get(), cpu_options_,
+                                                  LrtGetOpaqueCpuOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), qualcomm_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), mediatek_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), google_tensor_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), intel_openvino_options_));
-  if (runtime_options_) {
-    const char* identifier;
-    void* payload = nullptr;
-    void (*payload_deleter)(void*) = nullptr;
-    LITERT_RETURN_IF_ERROR(LrtGetOpaqueRuntimeOptionsData(
-        runtime_options_->Get(), &identifier, &payload, &payload_deleter));
-    LiteRtOpaqueOptions opaque_runtime_options = nullptr;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-        identifier, payload, payload_deleter, &opaque_runtime_options));
-    LITERT_RETURN_IF_ERROR(
-        LiteRtAddOpaqueOptions(Get(), opaque_runtime_options));
-    runtime_options_.reset();
-  }
-  if (compiler_options_) {
-    const char* identifier;
-    void* payload = nullptr;
-    void (*payload_deleter)(void*) = nullptr;
-    LITERT_RETURN_IF_ERROR(LrtGetOpaqueCompilerOptionsData(
-        compiler_options_->Get(), &identifier, &payload, &payload_deleter));
-    LiteRtOpaqueOptions opaque_compiler_options = nullptr;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-        identifier, payload, payload_deleter, &opaque_compiler_options));
-    LITERT_RETURN_IF_ERROR(
-        LiteRtAddOpaqueOptions(Get(), opaque_compiler_options));
-    compiler_options_.reset();
-  }
+  LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+      Get(), runtime_options_, LrtGetOpaqueRuntimeOptionsData));
+  LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+      Get(), compiler_options_, LrtGetOpaqueCompilerOptionsData));
   return {};
 }
 

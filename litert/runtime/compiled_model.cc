@@ -324,10 +324,18 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       }
     }
 
-    if (auto cpu_options = litert::FindOpaqueData<LiteRtCpuOptionsT>(
+    if (auto cpu_options_data = litert::FindOpaqueData<const char>(
             opaque_options, LiteRtCpuOptionsT::Identifier());
-        cpu_options) {
-      num_threads = (*cpu_options)->xnn.num_threads;
+        cpu_options_data) {
+      LiteRtCpuOptionsT cpu_options;
+      absl::string_view data_str(*cpu_options_data);
+      if (litert::internal::ParseLiteRtCpuOptions(
+              data_str.data(), data_str.size(), &cpu_options) !=
+          kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_WARNING, "Failed to parse CPU options");
+      } else {
+        num_threads = cpu_options.xnn.num_threads;
+      }
     }
   }
 

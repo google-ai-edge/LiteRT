@@ -16,34 +16,58 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_CPU_OPTIONS_H_
 
 #include <cstdint>
+#include <memory>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
+
+struct LrtCpuOptions;
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT CPU options.
-class CpuOptions : public OpaqueOptions {
+class CpuOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
-  static absl::string_view Identifier();
-
+  /// @brief Creates a new CPU options instance.
   static Expected<CpuOptions> Create();
-  static Expected<CpuOptions> Create(OpaqueOptions& original);
 
+  /// @brief Sets the number of threads for the CPU backend.
   Expected<void> SetNumThreads(int num_threads);
+
+  /// @brief Gets the number of threads for the CPU backend that was set.
   Expected<int> GetNumThreads() const;
 
+  /// @brief Sets the XNNPack flags.
   Expected<void> SetXNNPackFlags(uint32_t flags);
+
+  /// @brief Gets the XNNPack flags that were set.
+  ///
+  /// To get a default XNNPack flags, use `TfLiteXNNPackDelegateOptionsDefault`.
   Expected<uint32_t> GetXNNPackFlags() const;
 
+  /// @brief Sets the XNNPack weight cache file path.
   Expected<void> SetXNNPackWeightCachePath(const char* path);
+
+  /// @brief Gets the XNNPack weight cache file path.
   Expected<absl::string_view> GetXNNPackWeightCachePath() const;
 
+  /// @brief Sets the XNNPack weight cache file descriptor.
   Expected<void> SetXNNPackWeightCacheFileDescriptor(int fd);
+
+  /// @brief Gets the XNNPack weight cache file descriptor.
   Expected<int> GetXNNPackWeightCacheFileDescriptor() const;
+
+  LrtCpuOptions* Get() { return options_.get(); }
+  const LrtCpuOptions* Get() const { return options_.get(); }
+
+ private:
+  explicit CpuOptions(LrtCpuOptions* options);
+
+  struct Deleter {
+    void operator()(LrtCpuOptions* ptr) const { LrtDestroyCpuOptions(ptr); }
+  };
+  std::unique_ptr<LrtCpuOptions, Deleter> options_;
 };
 
 }  // namespace litert

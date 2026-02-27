@@ -14,6 +14,8 @@
 
 #include "litert/runtime/accelerators/xnnpack/xnnpack_accelerator.h"
 
+#include <cstring>
+
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/litert_common.h"
@@ -24,6 +26,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
+#include "litert/runtime/litert_cpu_options.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 
@@ -66,16 +69,21 @@ class CpuAccelerator final
 
     LiteRtOpaqueOptions opaque_options;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options, &opaque_options));
-    LiteRtCpuOptions cpu_options;
+    const void* cpu_options_data = nullptr;
     const auto options_data_status = LiteRtFindOpaqueOptionsData(
-        opaque_options, LiteRtGetCpuOptionsIdentifier(),
-        reinterpret_cast<void**>(&cpu_options));
+        opaque_options, LrtGetCpuOptionsIdentifier(),
+        const_cast<void**>(&cpu_options_data));
 
+    LiteRtCpuOptionsT parsed_options;
     switch (options_data_status) {
       case kLiteRtStatusOk:
+        if (cpu_options_data) {
+          const char* toml_str = static_cast<const char*>(cpu_options_data);
+          LITERT_RETURN_IF_ERROR(litert::internal::ParseLiteRtCpuOptions(
+              toml_str, strlen(toml_str), &parsed_options));
+        }
         break;
       case kLiteRtStatusErrorNotFound:
-        cpu_options = nullptr;
         break;
       default:
         return options_data_status;
@@ -83,16 +91,7 @@ class CpuAccelerator final
 
     // TODO: b/403547017 - Make the CPU accelerator configurable using the
     // compilation options.
-    auto xnn_options = TfLiteXNNPackDelegateOptionsDefault();
-    if (cpu_options != nullptr) {
-      LiteRtGetCpuOptionsNumThread(cpu_options, &xnn_options.num_threads);
-      LiteRtGetCpuOptionsXNNPackFlags(cpu_options, &xnn_options.flags);
-      LITERT_RETURN_IF_ERROR(LiteRtGetCpuOptionsXnnPackWeightCachePath(
-          cpu_options, &xnn_options.weight_cache_file_path));
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
-              cpu_options, &xnn_options.weight_cache_file_descriptor));
-    }
+    auto xnn_options = parsed_options.xnn;
     TfLiteOpaqueDelegate* xnnpack_delegate =
         TfLiteXNNPackDelegateCreate(&xnn_options);
     LITERT_RETURN_IF_ERROR(xnnpack_delegate != nullptr,

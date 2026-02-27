@@ -18,62 +18,66 @@
 #include <stdint.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-LITERT_DEFINE_HANDLE(LiteRtCpuOptions);
+typedef struct LrtCpuOptions LrtCpuOptions;
 
-// Creates an opaque options object holding CPU options.
-LiteRtStatus LiteRtCreateCpuOptions(LiteRtOpaqueOptions* options);
+// Creates a cpu options object.
+// The caller is responsible for freeing the returned options using
+// `LrtDestroyCpuOptions`.
+LiteRtStatus LrtCreateCpuOptions(LrtCpuOptions** options);
 
-// Gets the underlying CPU options from an opaque options handle.
-LiteRtStatus LiteRtFindCpuOptions(LiteRtOpaqueOptions opaque_options,
-                                  LiteRtCpuOptions* cpu_options);
+// Destroys a cpu options object.
+void LrtDestroyCpuOptions(LrtCpuOptions* options);
+
+// Serializes cpu options and returns the components needed to create opaque
+// options. The caller is responsible for passing these to
+// `LiteRtCreateOpaqueOptions`.
+LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
+                                        const char** identifier, void** payload,
+                                        void (**payload_deleter)(void*));
 
 // Gets the identifier for CPU options stored in opaque options.
-const char* LiteRtGetCpuOptionsIdentifier();
+const char* LrtGetCpuOptionsIdentifier();
 
 // Sets the number of CPU threads used by the CPU accelerator.
-LiteRtStatus LiteRtSetCpuOptionsNumThread(LiteRtCpuOptions options,
-                                          int num_threads);
+LiteRtStatus LrtSetCpuOptionsNumThread(LrtCpuOptions* options, int num_threads);
 
 // Gets the number of CPU threads used by the CPU accelerator.
-LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptionsConst options,
-                                          int* num_threads);
+LiteRtStatus LrtGetCpuOptionsNumThread(const LrtCpuOptions* options,
+                                       int* num_threads);
 
 // Sets the XNNPack flags used by the CPU accelerator.
-LiteRtStatus LiteRtSetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
-                                             uint32_t flags);
+LiteRtStatus LrtSetCpuOptionsXNNPackFlags(LrtCpuOptions* options,
+                                          uint32_t flags);
 
 // Gets the XNNPack flags used by the CPU accelerator.
-LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptionsConst options,
-                                             uint32_t* flags);
+LiteRtStatus LrtGetCpuOptionsXNNPackFlags(const LrtCpuOptions* options,
+                                          uint32_t* flags);
 
 // Sets the XNNPack weight cache file path used by the CPU accelerator.
 // Weight cache file path and descriptor must not both be set.
-// The `path` string is owned by the caller and must outlive the `options`
-// object.
-LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
-                                                       const char* path);
+// The `path` string is copied into the options object.
+LiteRtStatus LrtSetCpuOptionsXnnPackWeightCachePath(LrtCpuOptions* options,
+                                                    const char* path);
 
 // Gets the XNNPack weight cache file path used by the CPU accelerator.
-// The returned string pointer is owned by the user of
-// LiteRtSetCpuOptionsXnnPackWeightCachePath() API.
-LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCachePath(
-    LiteRtCpuOptionsConst options, const char** path);
+// The returned string pointer is owned by the options object and is valid
+// as long as the options object is valid and the path is not modified.
+LiteRtStatus LrtGetCpuOptionsXnnPackWeightCachePath(
+    const LrtCpuOptions* options, const char** path);
 
 // Sets the XNNPack weight cache file descriptor used by the CPU accelerator.
 // Weight cache file path and descriptor must not both be set.
-LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
-    LiteRtCpuOptions options, int fd);
+LiteRtStatus LrtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    LrtCpuOptions* options, int fd);
 
 // Gets the XNNPack weight cache file descriptor used by the CPU accelerator.
-LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
-    LiteRtCpuOptionsConst options, int* fd);
-
+LiteRtStatus LrtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    const LrtCpuOptions* options, int* fd);
 
 #ifdef __cplusplus
 }  // extern "C"

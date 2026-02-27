@@ -126,7 +126,6 @@ jobs:
             //litert/cc:litert_model_test `
             //litert/cc:litert_opaque_options_test `
             //litert/cc:litert_tensor_buffer_requirements_test `
-            //litert/cc/dynamic_runtime/options:litert_cpu_options_test `
             //litert/cc/dynamic_runtime/options:litert_gpu_options_test `
             //litert/cc/internal:litert_c_types_printing_test `
             //litert/cc/internal:litert_handle_test `
