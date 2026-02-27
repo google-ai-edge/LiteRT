@@ -25,7 +25,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
-#include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 
@@ -273,17 +272,6 @@ const LiteRtRuntimeCApiStruct kLiteRtRuntimeBuiltin = {
     .litert_get_opaque_options = LiteRtGetOpaqueOptions,
     .litert_add_custom_op_kernel_option = LiteRtAddCustomOpKernelOption,
     .litert_add_external_tensor_binding = LiteRtAddExternalTensorBinding,
-    // LiteRtProfiler
-    .litert_create_profiler = LiteRtCreateProfiler,
-    .litert_destroy_profiler = LiteRtDestroyProfiler,
-    .litert_start_profiler = LiteRtStartProfiler,
-    .litert_stop_profiler = LiteRtStopProfiler,
-    .litert_reset_profiler = LiteRtResetProfiler,
-    .litert_set_profiler_current_event_source =
-        LiteRtSetProfilerCurrentEventSource,
-    .litert_get_num_profiler_events = LiteRtGetNumProfilerEvents,
-    .litert_get_profiler_events = LiteRtGetProfilerEvents,
-    .litert_get_profile_summary = LiteRtGetProfileSummary,
     // Scheduling info APIs
     .litert_compiled_model_set_scheduling_info =
         LiteRtCompiledModelSetSchedulingInfo,

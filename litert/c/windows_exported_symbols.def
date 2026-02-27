@@ -58,7 +58,6 @@ EXPORTS
   LiteRtCreateModelFromFile
   LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
-  LiteRtCreateProfiler
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
@@ -73,7 +72,6 @@ EXPORTS
   LiteRtDestroyModel
   LiteRtDestroyOpaqueOptions
   LiteRtDestroyOptions
-  LiteRtDestroyProfiler
   LiteRtDestroyTensorBuffer
   LiteRtDestroyTensorBufferRequirements
   LiteRtDupFdEvent
@@ -149,7 +147,6 @@ EXPORTS
   LiteRtGetNumModelSubgraphs
   LiteRtGetNumOpInputs
   LiteRtGetNumOpOutputs
-  LiteRtGetNumProfilerEvents
   LiteRtGetNumSignatureInputs
   LiteRtGetNumSignatureOutputs
   LiteRtGetNumSubgraphInputs
@@ -167,8 +164,6 @@ EXPORTS
   LiteRtGetOptionsHardwareAccelerators
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
-  LiteRtGetProfileSummary
-  LiteRtGetProfilerEvents
   LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
   LiteRtGetSignatureInputName
@@ -305,7 +300,6 @@ EXPORTS
   LiteRtQualcommOptionsSetVtcmSize
   LiteRtRegisterAccelerator
   LiteRtRegisterTensorBufferHandlers
-  LiteRtResetProfiler
   LiteRtRunCompiledModel
   LiteRtRunCompiledModelAsync
   LiteRtRunCompiledModelAsyncWithOptions
@@ -354,11 +348,8 @@ EXPORTS
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators
-  LiteRtSetProfilerCurrentEventSource
   LiteRtSetTensorBufferEvent
   LiteRtSignalEvent
-  LiteRtStartProfiler
-  LiteRtStopProfiler
   LiteRtUnlockTensorBuffer
   LiteRtUnwrapDelegate
   LiteRtWaitEvent

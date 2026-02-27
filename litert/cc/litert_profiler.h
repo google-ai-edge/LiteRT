@@ -19,9 +19,9 @@
 #include <vector>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -30,30 +30,23 @@
 
 namespace litert {
 
-class Profiler : public internal::BaseHandle<LiteRtProfiler> {
+class Profiler
+    : public internal::Handle<LiteRtProfiler, LiteRtDestroyProfiler> {
  public:
-  Profiler() = delete;
+  Profiler() = default;
 
   /// @brief Constructs a `Profiler` object.
-  /// @param env The `EnvironmentHolder` object used to create the profiler.
   /// @param profiler The `LiteRtProfiler` handle.
   /// @param owned Indicates if the created `Profiler` object should take
   /// ownership of the provided `profiler` handle.
-  explicit Profiler(internal::EnvironmentHolder& env, LiteRtProfiler profiler,
-                    OwnHandle owned)
-      : internal::BaseHandle<LiteRtProfiler>(
-            profiler,
-            [runtime = env.runtime](LiteRtProfiler profiler) {
-              runtime->DestroyProfiler(profiler);
-            },
-            owned),
-        env_(env) {}
+  explicit Profiler(LiteRtProfiler profiler, OwnHandle owned)
+      : internal::Handle<LiteRtProfiler, LiteRtDestroyProfiler>(profiler,
+                                                                owned) {}
 
   /// @brief Get the number of events.
   Expected<int> GetNumEvents() const {
     int num_events = -1;
-    LITERT_RETURN_IF_ERROR(
-        env_.runtime->GetNumProfilerEvents(Get(), &num_events));
+    LITERT_RETURN_IF_ERROR(LiteRtGetNumProfilerEvents(Get(), &num_events));
     return num_events;
   };
 
@@ -70,25 +63,25 @@ class Profiler : public internal::BaseHandle<LiteRtProfiler> {
 
     std::vector<ProfiledEventData> events(num_events);
     LITERT_RETURN_IF_ERROR(
-        env_.runtime->GetProfilerEvents(Get(), num_events, events.data()));
+        LiteRtGetProfilerEvents(Get(), num_events, events.data()));
     return events;
   }
 
   /// @brief Reset the profiler.
   Expected<void> Reset() {
-    LITERT_RETURN_IF_ERROR(env_.runtime->ResetProfiler(Get()));
+    LITERT_RETURN_IF_ERROR(LiteRtResetProfiler(Get()));
     return {};
   }
 
   /// @brief Start profiling.
   Expected<void> StartProfiling() {
-    LITERT_RETURN_IF_ERROR(env_.runtime->StartProfiler(Get()));
+    LITERT_RETURN_IF_ERROR(LiteRtStartProfiler(Get()));
     return {};
   }
 
   /// @brief Stop profiling.
   Expected<void> StopProfiling() {
-    LITERT_RETURN_IF_ERROR(env_.runtime->StopProfiler(Get()));
+    LITERT_RETURN_IF_ERROR(LiteRtStopProfiler(Get()));
     return {};
   }
 
@@ -96,7 +89,7 @@ class Profiler : public internal::BaseHandle<LiteRtProfiler> {
   Expected<std::string> GetProfileSummary(LiteRtCompiledModel compiled_model) {
     const char* summary = nullptr;
     LITERT_RETURN_IF_ERROR(
-        env_.runtime->GetProfileSummary(Get(), compiled_model, &summary));
+        LiteRtGetProfileSummary(Get(), compiled_model, &summary));
     std::string result(summary);
     free(const_cast<char*>(summary));
     return result;
@@ -108,12 +101,9 @@ class Profiler : public internal::BaseHandle<LiteRtProfiler> {
   /// (e.g., LiteRT, TFLite delegate, TFLite interpreter).
   Expected<void> SetCurrentEventSource(ProfiledEventSource event_source) {
     LITERT_RETURN_IF_ERROR(
-        env_.runtime->SetProfilerCurrentEventSource(Get(), event_source));
+        LiteRtSetProfilerCurrentEventSource(Get(), event_source));
     return {};
   }
-
- private:
-  internal::EnvironmentHolder env_;
 };
 }  // namespace litert
 

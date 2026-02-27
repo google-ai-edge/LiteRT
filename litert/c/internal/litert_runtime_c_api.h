@@ -31,7 +31,6 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_opencl_types.h"
-#include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 
@@ -714,33 +713,6 @@ typedef struct LiteRtRuntimeCApiStruct {
                                                      void* data,
                                                      int size_bytes);
 
-  //
-  // LiteRtProfiler
-  //
-  // litert_profiler.h: LiteRtCreateProfiler
-  LiteRtStatus (*litert_create_profiler)(int size, LiteRtProfiler* profiler);
-  // litert_profiler.h: LiteRtDestroyProfiler
-  void (*litert_destroy_profiler)(LiteRtProfiler profiler);
-  // litert_profiler.h: LiteRtStartProfiler
-  LiteRtStatus (*litert_start_profiler)(LiteRtProfiler profiler);
-  // litert_profiler.h: LiteRtStopProfiler
-  LiteRtStatus (*litert_stop_profiler)(LiteRtProfiler profiler);
-  // litert_profiler.h: LiteRtResetProfiler
-  LiteRtStatus (*litert_reset_profiler)(LiteRtProfiler profiler);
-  // litert_profiler.h: LiteRtSetProfilerCurrentEventSource
-  LiteRtStatus (*litert_set_profiler_current_event_source)(
-      LiteRtProfiler profiler, ProfiledEventSource event_source);
-  // litert_profiler.h: LiteRtGetNumProfilerEvents
-  LiteRtStatus (*litert_get_num_profiler_events)(LiteRtProfiler profiler,
-                                                 int* num_events);
-  // litert_profiler.h: LiteRtGetProfilerEvents
-  LiteRtStatus (*litert_get_profiler_events)(LiteRtProfiler profiler,
-                                             int num_events,
-                                             ProfiledEventData* events);
-  // litert_profiler.h: LiteRtGetProfileSummary
-  LiteRtStatus (*litert_get_profile_summary)(LiteRtProfiler profiler,
-                                             LiteRtCompiledModel compiled_model,
-                                             const char** summary);
   //
   // Scheduling info APIs (litert_compiled_model.h)
   //
