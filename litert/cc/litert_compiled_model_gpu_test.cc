@@ -145,13 +145,30 @@ TEST_P(CompiledModelGpuTest, Basic2nd) {
 }
 
 TEST(CompiledModelGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
+  std::vector<litert::EnvironmentOptions::Option> env_options;
+// LiteRT currently does not support multiple EGL environments, so in the case
+// that OpenGL support is available, we need to create the EGL environment
+// outside of the LiteRT environment.
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  env_options.push_back(
+      {litert::EnvironmentOptions::Tag::kEglContext,
+       reinterpret_cast<int64_t>(egl_env->context().context())});
+  env_options.push_back({litert::EnvironmentOptions::Tag::kEglDisplay,
+                         reinterpret_cast<int64_t>(egl_env->display())});
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
   // Objects for the second model, which will outlive the first.
   std::unique_ptr<litert::Environment> env2;
   std::optional<CompiledModel> compiled_model2;
 
   {
     // Create the first environment and model and run it.
-    LITERT_ASSERT_OK_AND_ASSIGN(auto env1, litert::Environment::Create({}));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto env1,
+        litert::Environment::Create(litert::EnvironmentOptions(env_options)));
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto options1, CreateGpuOptions(/*external_tensors_mode=*/false));
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -169,7 +186,9 @@ TEST(CompiledModelGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
     compiled_model1.Run(input_buffers, output_buffers);
 
     // Create the second environment and model.
-    LITERT_ASSERT_OK_AND_ASSIGN(auto env2_val, litert::Environment::Create({}));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto env2_val,
+        litert::Environment::Create(litert::EnvironmentOptions(env_options)));
     env2 = std::make_unique<litert::Environment>(std::move(env2_val));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
