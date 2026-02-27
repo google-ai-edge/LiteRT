@@ -311,6 +311,11 @@ cc_library(
 cc_test(
     name = "litert_toml_parser_test",
     srcs = ["litert_toml_parser_test.cc"],
+    tags = [
+        # TOML provides no exception APIs only for Linux.
+        "nomacos",
+        "nowindows",
+    ],
     deps = [
         ":litert_toml_parser",
         "//litert/c:litert_common",

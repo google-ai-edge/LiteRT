@@ -18,6 +18,9 @@ cc_library(
     name = "tomlplusplus",
     srcs = ["toml.cc"],
     hdrs = ["toml.hpp"],
-    defines = ["TOML_HEADER_ONLY=0"],
+    defines = [
+        "TOML_HEADER_ONLY=0",
+        "TOML_EXCEPTIONS=0",
+    ],
     visibility = ["//visibility:public"],
 )
