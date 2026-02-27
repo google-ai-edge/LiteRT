@@ -127,6 +127,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflGreaterEqual,
     kLiteRtOpCodeTflLessEqual,
     kLiteRtOpCodeTflLogicalAnd,
+    kLiteRtOpCodeTflLogicalNot,
     kLiteRtOpCodeTflL2Normalization,
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflRelu0To1,
