@@ -521,6 +521,41 @@ tool_test(
     ],
 )
 
+tool_test(
+    name = "run_external_cpu_test_single_weight",
+    data = [
+        "//litert/test:extern_weight_model_file_single_weight",
+        "//litert/test:extern_weight_test_data_single_weight",
+    ],
+    tags = [
+        "notap",
+    ],
+    tool = ":run_model",
+    tool_args = [
+        "--graph=$(location //litert/test:extern_weight_model_file_single_weight)",
+        "--accelerator=cpu",
+        "--compare_numerical=true",
+    ],
+)
+
+tool_test(
+    name = "run_external_gpu_test_single_weight",
+    data = [
+        "//litert/test:extern_weight_model_file_single_weight",
+        "//litert/test:extern_weight_test_data_single_weight",
+    ],
+    tags = [
+        "notap",
+        "requires-gpu-nvidia",
+    ],
+    tool = ":run_model",
+    tool_args = [
+        "--graph=$(location //litert/test:extern_weight_model_file_single_weight)",
+        "--accelerator=gpu,cpu",
+        "--compare_numerical=true",
+    ],
+)
+
 [
     litert_device_exec(
         name = "run_model_device_{}".format(backend),

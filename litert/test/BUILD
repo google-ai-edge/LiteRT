@@ -86,6 +86,18 @@ filegroup(
     srcs = ["testdata/sample_output/model.tflite"],
 )
 
+filegroup(
+    name = "extern_weight_test_data_single_weight",
+    srcs = [
+        "testdata/sample_output_single_weight/weights.bin",
+    ],
+)
+
+filegroup(
+    name = "extern_weight_model_file_single_weight",
+    srcs = ["testdata/sample_output_single_weight/model.tflite"],
+)
+
 cc_library(
     name = "common",
     testonly = 1,
