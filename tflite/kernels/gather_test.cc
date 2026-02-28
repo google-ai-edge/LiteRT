@@ -20,11 +20,9 @@ limitations under the License.
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "Eigen/Core"  // from @eigen_archive
 #include "tflite/kernels/internal/portable_tensor_utils.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
-#include "tflite/types/half.h"
 
 namespace tflite {
 namespace {
@@ -254,7 +252,7 @@ TEST_P(GatherOpTest, LastAxis0DIndex) {
 }
 
 using TestTypes = testing::Types<int8_t, uint8_t, int16_t, int32_t, int64_t,
-                                 float, half, Eigen::bfloat16>;
+                                 float, Eigen::half, Eigen::bfloat16>;
 
 template <typename T>
 struct TypedGatherOpTest : public testing::Test {};
