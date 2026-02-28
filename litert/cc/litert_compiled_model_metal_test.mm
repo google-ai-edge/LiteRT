@@ -254,51 +254,105 @@ const float kTolerance = 1e-5;
 @implementation LitertCompiledModelMetalTest
 
 - (void)testCompiledModelGpuBasic {
-  [BasicMetalTest testBasicMetalTest:false externalTensorsMode:false];
-}
+  NSArray *testCases = @[
+    @{
+      @"testName" : @"GpuBasic",
+      @"asyncMode" : @NO,
+      @"externalTensorsMode" : @NO
+    },
+    @{
+      @"testName" : @"GpuBasicAsync",
+      @"asyncMode" : @YES,
+      @"externalTensorsMode" : @NO
+    },
+    @{
+      @"testName" : @"GpuBasicExternalTensorsMode",
+      @"asyncMode" : @NO,
+      @"externalTensorsMode" : @YES
+    },
+    @{
+      @"testName" : @"GpuExternalTensorsModeAsync",
+      @"asyncMode" : @YES,
+      @"externalTensorsMode" : @YES
+    }
+  ];
 
-- (void)testCompiledModelGpuBasicAsync {
-  [BasicMetalTest testBasicMetalTest:true externalTensorsMode:false];
-}
+  for (NSDictionary *caseData in testCases) {
+    NSString *testName = caseData[@"testName"];
+    NSLog(@"Running a test: %@", testName);
 
-- (void)testCompiledModelGpuExternalTensorsMode {
-  [BasicMetalTest testBasicMetalTest:false externalTensorsMode:true];
-}
+    BOOL asyncMode = [caseData[@"asyncMode"] boolValue];
+    BOOL externalTensorsMode = [caseData[@"externalTensorsMode"] boolValue];
 
-- (void)testCompiledModelGpuExternalTensorsModeAsync {
-  [BasicMetalTest testBasicMetalTest:true externalTensorsMode:true];
+    [BasicMetalTest testBasicMetalTest:asyncMode
+                   externalTensorsMode:externalTensorsMode];
+  }
 }
 
 - (void)testCompiledModelGpuPipeline {
-  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:false externalTensorsMode:false];
-}
+  NSArray *testCases = @[
+    @{
+      @"testName" : @"GpuPipeline",
+      @"asyncMode1stModel" : @NO,
+      @"asyncMode2ndModel" : @NO,
+      @"externalTensorsMode" : @NO
+    },
+    @{
+      @"testName" : @"GpuPipelineAsync1stModel",
+      @"asyncMode1stModel" : @YES,
+      @"asyncMode2ndModel" : @NO,
+      @"externalTensorsMode" : @NO
+    },
+    @{
+      @"testName" : @"GpuPipelineAsync2ndModel",
+      @"asyncMode1stModel" : @NO,
+      @"asyncMode2ndModel" : @YES,
+      @"externalTensorsMode" : @NO
+    },
+    @{
+      @"testName" : @"GpuPipelineAsyncBothModels",
+      @"asyncMode1stModel" : @YES,
+      @"asyncMode2ndModel" : @YES,
+      @"externalTensorsMode" : @NO
+    },
+    @{
+      @"testName" : @"GpuPipelineExternalTensorsMode",
+      @"asyncMode1stModel" : @NO,
+      @"asyncMode2ndModel" : @NO,
+      @"externalTensorsMode" : @YES
+    },
+    @{
+      @"testName" : @"GpuPipelineExternalTensorsModeAsync1stModel",
+      @"asyncMode1stModel" : @YES,
+      @"asyncMode2ndModel" : @NO,
+      @"externalTensorsMode" : @YES
+    },
+    @{
+      @"testName" : @"GpuPipelineExternalTensorsModeAsync2ndModel",
+      @"asyncMode1stModel" : @NO,
+      @"asyncMode2ndModel" : @YES,
+      @"externalTensorsMode" : @YES
+    },
+    @{
+      @"testName" : @"GpuPipelineExternalTensorsModeAsyncBothModels",
+      @"asyncMode1stModel" : @YES,
+      @"asyncMode2ndModel" : @YES,
+      @"externalTensorsMode" : @YES
+    }
+  ];
 
-- (void)testCompiledModelGpuPipelineAsync1stModel {
-  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:false externalTensorsMode:false];
-}
+  for (NSDictionary *caseData in testCases) {
+    NSString *testName = caseData[@"testName"];
+    NSLog(@"Running a test: %@", testName);
 
-- (void)testCompiledModelGpuPipelineAsync2ndModel {
-  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:true externalTensorsMode:false];
-}
+    BOOL asyncMode1stModel = [caseData[@"asyncMode1stModel"] boolValue];
+    BOOL asyncMode2ndModel = [caseData[@"asyncMode2ndModel"] boolValue];
+    BOOL externalTensorsMode = [caseData[@"externalTensorsMode"] boolValue];
 
-- (void)testCompiledModelGpuPipelineAsyncBothModels {
-  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:true externalTensorsMode:false];
-}
-
-- (void)testCompiledModelGpuPipelineExternalTensorsMode {
-  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:false externalTensorsMode:true];
-}
-
-- (void)testCompiledModelGpuPipelineExternalTensorsModeAsync1stModel {
-  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:false externalTensorsMode:true];
-}
-
-- (void)testCompiledModelGpuPipelineExternalTensorsModeAsync2ndModel {
-  [MetalPipelineTest testMetalPipelineTest:false asyncMode2ndModel:true externalTensorsMode:true];
-}
-
-- (void)testCompiledModelGpuPipelineExternalTensorsModeAsyncBothModels {
-  [MetalPipelineTest testMetalPipelineTest:true asyncMode2ndModel:true externalTensorsMode:true];
+    [MetalPipelineTest testMetalPipelineTest:asyncMode1stModel
+                           asyncMode2ndModel:asyncMode2ndModel
+                         externalTensorsMode:externalTensorsMode];
+  }
 }
 
 - (void)testCompiledModelGpuEnvironment {
