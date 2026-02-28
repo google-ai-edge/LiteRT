@@ -83,7 +83,7 @@
 
 /// @brief Works like `LITERT_RETURN_IF_ERROR` but aborts the process on error.
 #define LITERT_ABORT_IF_ERROR(EXPR)                                        \
-  if (auto status = (EXPR); ::litert::ErrorStatusBuilder::IsError(status)) \
+  if (auto   status = (EXPR); ::litert::ErrorStatusBuilder::IsError(status)) \
   ::litert::LogBeforeAbort(::litert::ErrorStatusBuilder(status))
 
 /// @brief Works like `LITERT_ASSIGN_OR` but aborts the process on error.
