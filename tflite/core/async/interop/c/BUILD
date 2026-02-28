@@ -15,6 +15,7 @@ cc_library(
     name = "types",
     srcs = ["types.cc"],
     hdrs = ["types.h"],
+    aspect_hints = ["//tools/build_defs/swift:auto_module"],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
 )
@@ -23,6 +24,7 @@ cc_library(
     name = "attribute_map",
     srcs = ["attribute_map.cc"],
     hdrs = ["attribute_map.h"],
+    aspect_hints = ["//tools/build_defs/swift:auto_module"],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     deps = [
