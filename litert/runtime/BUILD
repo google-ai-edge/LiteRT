@@ -584,6 +584,7 @@ cc_library(
         "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
         "//litert/runtime/dispatch:dispatch_opaque_options",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
+        # "//weight_loader:external_weight_loader",  # copybara:uncomment
         "//tflite/converter:allocation",
         "//tflite:builtin_ops",
         "//tflite:framework",
