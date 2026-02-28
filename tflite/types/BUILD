@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
@@ -22,14 +23,28 @@ package(
 )
 
 cc_library(
+    name = "fp16",
+    hdrs = ["fp16.h"],
+    compatible_with = get_compatible_with_portable(),
+)
+
+cc_library(
+    name = "bit_cast",
+    hdrs = ["bit_cast.h"],
+    compatible_with = get_compatible_with_portable(),
+)
+
+cc_library(
     name = "half",
     hdrs = [
-        "bit_cast.h",
-        "fp16.h",
         "half.h",
     ],
     # copybara:uncomment_begin(google-only)
-    # compatible_with = ["//buildenv/target:non_prod"],
+    # compatible_with = get_compatible_with_portable(),
     # copybara:uncomment_end
-    deps = ["@FP16"],
+    deps = [
+        ":bit_cast",
+        ":fp16",
+        "@FP16",
+    ],
 )
