@@ -84,6 +84,8 @@ class EnvironmentOptions {
     kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
     /// Directory for the runtime library.
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
+    /// @warning This is for internal use only.
+    kSystemRuntimeHandle = kLiteRtEnvOptionTagSystemRuntimeHandle,
   };
 
   struct Option {

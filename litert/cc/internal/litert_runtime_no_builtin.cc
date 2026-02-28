@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_BUILTIN_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_BUILTIN_H_
-
 #include "litert/c/internal/litert_runtime_c_api.h"
+#include "litert/cc/internal/litert_runtime_builtin.h"
 
-// The implementation of the LiteRtRuntimeCApiStruct with the builtin runtime.
-extern const LiteRtRuntimeCApiStruct* kLiteRtRuntimeBuiltin;
-
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_BUILTIN_H_
+const LiteRtRuntimeCApiStruct* kLiteRtRuntimeBuiltin = nullptr;

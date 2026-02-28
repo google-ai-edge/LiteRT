@@ -16,11 +16,13 @@
 
 #include <jni.h>
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_logging.h"
@@ -72,10 +74,17 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
     AUTO_CLEANUP_JNI_INT_ARRAY(env, tags);
     for (int i = 0; i < num_tags; ++i) {
       auto value = values_vector[i];
-      auto option = litert::EnvironmentOptions::Option{
-          static_cast<litert::EnvironmentOptions::Tag>(tags_array[i]),
-          litert::LiteRtVariant(value)};
-      options.push_back(option);
+      auto tag = static_cast<litert::EnvironmentOptions::Tag>(tags_array[i]);
+      if (tag == litert::EnvironmentOptions::Tag::kSystemRuntimeHandle) {
+        int64_t handle;
+        ABSL_CHECK(absl::SimpleAtoi(value, &handle))
+            << "Failed to parse system runtime handle: " << value;
+        options.push_back(litert::EnvironmentOptions::Option{
+            tag, litert::LiteRtVariant(handle)});
+      } else {
+        options.push_back(litert::EnvironmentOptions::Option{
+            tag, litert::LiteRtVariant(value)});
+      }
     }
   }
 

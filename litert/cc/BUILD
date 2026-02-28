@@ -743,13 +743,12 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
-        ":litert_common",
+        ":litert_any",
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_environment_options",
         ":litert_expected",
-        ":litert_model",
-        "//litert/c:litert_common",
+        "//litert/cc/internal:litert_runtime_builtin",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -1267,6 +1266,7 @@ cc_library(
         # C++ API targets.
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/functional:any_invocable",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_custom_op_kernel",

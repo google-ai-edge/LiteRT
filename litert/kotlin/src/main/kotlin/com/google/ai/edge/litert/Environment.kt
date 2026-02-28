@@ -23,6 +23,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
   enum class Option private constructor(val value: Int) {
     CompilerPluginLibraryDir(0),
     DispatchLibraryDir(1),
+    SystemRuntimeHandle(23),
   }
 
   override protected fun destroy() {
