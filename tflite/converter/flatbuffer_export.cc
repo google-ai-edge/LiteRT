@@ -232,12 +232,8 @@ static StatusOr<tflite::TensorType> GetTFLiteType(Type type,
           return tflite::TensorType_INT2;
         }
       case 4:
-        if (itype.isUnsigned()) {
-          return Status(absl::StatusCode::kInvalidArgument,
-                        "Unsupported 4bit unsigned int type");
-        } else {
-          return tflite::TensorType_INT4;
-        }
+        return itype.isUnsigned() ? tflite::TensorType_UINT4
+                                  : tflite::TensorType_INT4;
       case 8:
         return itype.isUnsigned() ? tflite::TensorType_UINT8
                                   : tflite::TensorType_INT8;
