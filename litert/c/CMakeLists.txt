@@ -158,6 +158,7 @@ set(_litert_runtime_c_api_public_deps
     absl::log_internal_globals
     absl::log_internal_message
     absl::log_sink
+    absl::die_if_null
     absl::span
     absl::flat_hash_map
     flatbuffers::flatbuffers
