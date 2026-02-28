@@ -35,6 +35,7 @@ cc_library(
         "//litert/c:litert_options.h",
     ],
     deps = [
+        ":scoped_weight_source",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/cc/internal:scoped_weight_source",
@@ -305,6 +306,15 @@ cc_library(
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "scoped_weight_source",
+    hdrs = ["scoped_weight_source.h"],
+    deps = [
+        ":scoped_file",
+        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 
