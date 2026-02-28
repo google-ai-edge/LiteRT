@@ -17,6 +17,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 
