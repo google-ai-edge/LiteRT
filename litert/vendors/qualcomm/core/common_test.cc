@@ -171,6 +171,14 @@ TEST(QnnOptionTest, UseQint16AsQuint16) {
   EXPECT_EQ(options.GetUseQint16AsQuint16(), false);
 }
 
+TEST(QnnOptionTest, UseInt64BiasAsInt32) {
+  Options options;
+  options.SetUseInt64BiasAsInt32(true);
+  EXPECT_EQ(options.GetUseInt64BiasAsInt32(), true);
+  options.SetUseInt64BiasAsInt32(false);
+  EXPECT_EQ(options.GetUseInt64BiasAsInt32(), false);
+}
+
 TEST(QnnOptionTest, EnableWeightSharing) {
   Options options;
   options.SetEnableWeightSharing(true);
@@ -259,6 +267,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetProfiling(), Profiling::kOff);
   EXPECT_FALSE(options.GetUseHtpPreference());
   EXPECT_FALSE(options.GetUseQint16AsQuint16());
+  EXPECT_TRUE(options.GetUseInt64BiasAsInt32());
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());

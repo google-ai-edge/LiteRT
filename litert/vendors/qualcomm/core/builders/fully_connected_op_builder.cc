@@ -25,7 +25,8 @@ constexpr int kBiasIdx = 2;
 
 std::vector<OpWrapper> BuildFullyConnectedOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const bool keep_num_dims) {
+    const std::vector<TensorWrapperRef>& outputs, const bool keep_num_dims,
+    bool use_int64_bias_as_int32) {
   std::vector<OpWrapper> res;
   OpWrapper& fully_connected_op = CreateOpWrapper(res, QNN_OP_FULLY_CONNECTED);
 
@@ -35,27 +36,14 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
   fully_connected_op.AddInputTensor(weight_tensor);
   if (inputs.size() - 1 >= kBiasIdx) {
     TensorWrapper& bias_tensor = inputs[kBiasIdx];
-    if (bias_tensor.IsTensorStatic() &&
+    if (use_int64_bias_as_int32 && bias_tensor.IsTensorStatic() &&
         bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
-      const auto original_data = bias_tensor.GetTensorData<int64_t>();
-      if (!original_data.has_value()) {
-        QNN_LOG_ERROR(
-            "Failed to get static tensor data when convert bias tensor from "
-            "int64 to int32.");
+      auto* converted_bias_tensor =
+          tensor_pool.ConvertStaticTensorFrom<std::int32_t>(bias_tensor);
+      if (converted_bias_tensor == nullptr) {
         return {};
       }
-      const auto num_elements = bias_tensor.GetTensorNumElements();
-      std::vector<int32_t> converted_data(num_elements);
-      for (size_t i = 0; i < num_elements; ++i) {
-        converted_data[i] = static_cast<int32_t>((*original_data)[i]);
-      }
-      auto& converted_bias_tensor = tensor_pool.CreateStaticTensor(
-          QNN_DATATYPE_SFIXED_POINT_32, bias_tensor.GetQuantParams(),
-          bias_tensor.GetDimensions(),
-          num_elements * sizeof(decltype(converted_data)::value_type),
-          converted_data.data());
-
-      fully_connected_op.AddInputTensor(converted_bias_tensor);
+      fully_connected_op.AddInputTensor(*converted_bias_tensor);
       QNN_LOG_WARNING(
           "Convert bias tensor in fully connected op from int64 to int32.");
     } else {

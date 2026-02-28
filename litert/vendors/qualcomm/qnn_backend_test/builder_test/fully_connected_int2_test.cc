@@ -44,7 +44,7 @@ TEST_P(QnnModelTest, FullyConnectedInt2Sanity) {
       int2_weight_data.size(), int2_weight_data.data());
 
   auto ops = ::qnn::BuildFullyConnectedOp(
-      tensor_pool_, {input_0, weight_tensor}, {output_0}, true);
+      tensor_pool_, {input_0, weight_tensor}, {output_0}, true, false);
   ASSERT_FALSE(ops.empty());
 
   qnn_model_.MoveOpsToGraph(std::move(ops));

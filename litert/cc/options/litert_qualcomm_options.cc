@@ -121,6 +121,18 @@ bool QualcommOptions::GetUseQint16AsQuint16() {
   return use_qin16_as_quint16;
 }
 
+void QualcommOptions::SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32) {
+  internal::AssertOk(LiteRtQualcommOptionsSetUseInt64BiasAsInt32, Data(),
+                     use_int64_bias_as_int32);
+}
+
+bool QualcommOptions::GetUseInt64BiasAsInt32() {
+  bool use_int64_bias_as_int32;
+  internal::AssertOk(LiteRtQualcommOptionsGetUseInt64BiasAsInt32, Data(),
+                     &use_int64_bias_as_int32);
+  return use_int64_bias_as_int32;
+}
+
 void QualcommOptions::SetProfiling(QualcommOptions::Profiling profiling) {
   internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(),
                      static_cast<LiteRtQualcommOptionsProfiling>(profiling));

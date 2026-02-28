@@ -64,6 +64,8 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_htp_preference);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_qint16_as_quint16);
 
+ABSL_DECLARE_FLAG(bool, qualcomm_use_int64_bias_as_int32);
+
 ABSL_DECLARE_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_ir_json_dir);

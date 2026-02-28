@@ -97,6 +97,9 @@ class Options {
   void SetUseQint16AsQuint16(bool use_qint16_as_quint16);
   bool GetUseQint16AsQuint16() const;
 
+  void SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32);
+  bool GetUseInt64BiasAsInt32() const;
+
   void SetEnableWeightSharing(bool enable_weight_sharing);
   bool GetEnableWeightSharing() const;
 
@@ -145,6 +148,7 @@ class Options {
   Profiling profiling_ = Profiling::kOff;
   bool use_htp_preference_ = false;
   bool use_qint16_as_quint16_ = false;
+  bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;

@@ -92,6 +92,17 @@ LiteRtStatus LiteRtQualcommOptionsSetUseQint16AsQuint16(
 LiteRtStatus LiteRtQualcommOptionsGetUseQint16AsQuint16(
     LiteRtQualcommOptions options, bool* use_qint16_as_quint16);
 
+// use_int64_bias_as_int32
+
+// This option controls whether to convert bias tensors of FullyConnected
+// and Conv2D Ops from int64 to int32 . Defaults to true.
+
+LiteRtStatus LiteRtQualcommOptionsSetUseInt64BiasAsInt32(
+    LiteRtQualcommOptions options, bool use_int64_bias_as_int32);
+
+LiteRtStatus LiteRtQualcommOptionsGetUseInt64BiasAsInt32(
+    LiteRtQualcommOptions options, bool* use_int64_bias_as_int32);
+
 // enable_weight_sharing
 
 // Weight sharing indicates whether different subgraphs may share weight
