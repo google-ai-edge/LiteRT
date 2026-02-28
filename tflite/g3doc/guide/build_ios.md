@@ -55,11 +55,11 @@ Once Bazel is properly configured with iOS support, you can build the
 
 ```sh
 bazel build --config=ios_fat -c opt --cxxopt=--std=c++17 \
-  //tensorflow/lite/ios:TensorFlowLiteC_framework
+  //tflite/ios:TensorFlowLiteC_framework
 ```
 
 This command will generate the `TensorFlowLiteC_framework.zip` file under
-`bazel-bin/tensorflow/lite/ios/` directory under your TensorFlow root directory.
+`bazel-bin/tflite/ios/` directory under your TensorFlow root directory.
 By default, the generated framework contains a "fat" binary, containing armv7,
 arm64, and x86_64 (but no i386). To see the full list of build flags used when
 you specify `--config=ios_fat`, please refer to the iOS configs section in the
@@ -73,11 +73,11 @@ framework with the following command:
 
 ```
 bazel build --config=ios_fat -c opt --cxxopt=--std=c++17 \
-  //tensorflow/lite/ios:TensorFlowLiteC_static_framework
+  //tflite/ios:TensorFlowLiteC_static_framework
 ```
 
 The command will generate a file named `TensorFlowLiteC_static_framework.zip`
-under `bazel-bin/tensorflow/lite/ios/` directory under your TensorFlow root
+under `bazel-bin/tflite/ios/` directory under your TensorFlow root
 directory. This static framework can be used in the exact same way as the
 dynamic one.
 
@@ -94,9 +94,9 @@ bash tensorflow/lite/ios/build_frameworks.sh \
 ```
 
 The above command will generate the static framework
-`bazel-bin/tensorflow/lite/ios/tmp/TensorFlowLiteC_framework.zip` for TensorFlow
+`bazel-bin/tflite/ios/tmp/TensorFlowLiteC_framework.zip` for TensorFlow
 Lite built-in and custom ops; and optionally, generates the static framework
-`bazel-bin/tensorflow/lite/ios/tmp/TensorFlowLiteSelectTfOps_framework.zip` if
+`bazel-bin/tflite/ios/tmp/TensorFlowLiteSelectTfOps_framework.zip` if
 your models contain Select TensorFlow ops. Note that the `--target_archs` flag
 can be used to specify your deployment architectures.
 
@@ -184,7 +184,7 @@ For Swift:
 ```python
 swift_library(
   deps = [
-      "//tensorflow/lite/swift:TensorFlowLite",
+      "//tflite/swift:TensorFlowLite",
   ],
 )
 ```
@@ -194,7 +194,7 @@ For Objective-C:
 ```python
 objc_library(
   deps = [
-      "//tensorflow/lite/objc:TensorFlowLite",
+      "//tflite/objc:TensorFlowLite",
   ],
 )
 ```
