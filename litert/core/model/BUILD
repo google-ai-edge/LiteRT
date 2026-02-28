@@ -375,3 +375,88 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "shape_inference_types",
+    hdrs = ["shape_inference_types.h"],
+    deps = [
+        ":model",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_simple_binary",
+    hdrs = ["ops/simple_binary.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_simple_unary",
+    hdrs = ["ops/simple_unary.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_broadcast_to",
+    hdrs = ["ops/broadcast_to.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_broadcast_to_test",
+    srcs = ["ops/broadcast_to_test.cc"],
+    deps = [
+        ":model",
+        ":ops_broadcast_to",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_simple_binary_test",
+    srcs = ["ops/simple_binary_test.cc"],
+    deps = [
+        ":model",
+        ":ops_simple_binary",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_simple_unary_test",
+    srcs = ["ops/simple_unary_test.cc"],
+    deps = [
+        ":model",
+        ":ops_simple_unary",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

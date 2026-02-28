@@ -286,6 +286,10 @@ typedef enum {
   kLiteRtStatusErrorUnsupportedRuntimeVersion = 4000,
   kLiteRtStatusErrorUnsupportedCompilerVersion = 4001,
   kLiteRtStatusErrorIncompatibleByteCodeVersion = 4002,
+
+  // Shape inference related errors.
+  kLiteRtStatusErrorUnsupportedOpShapeInferer = 5000,
+  kLiteRtStatusErrorShapeInferenceFailed = 5001,
 } LiteRtStatus;
 // LINT.ThenChange(
 //   ../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes,
