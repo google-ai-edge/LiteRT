@@ -30,8 +30,8 @@ RUN apt-get update && apt-get install -y \
     unzip \
     wget \
     zip \
-    llvm-18 \
-    clang-18 \
+    llvm-19 \
+    clang-19 \
     libc++-dev \
     libc++abi-dev \
     && apt-get clean && \
