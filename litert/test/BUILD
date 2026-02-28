@@ -74,6 +74,18 @@ filegroup(
     ]) + [":mlir_test_data"],
 )
 
+filegroup(
+    name = "extern_weight_test_data",
+    srcs = glob([
+        "testdata/sample_output/*",
+    ]),
+)
+
+filegroup(
+    name = "extern_weight_model_file",
+    srcs = ["testdata/sample_output/model.tflite"],
+)
+
 cc_library(
     name = "common",
     testonly = 1,
