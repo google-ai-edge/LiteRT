@@ -994,6 +994,160 @@ TEST(CompiledModelGpuTest, BasicOpenGlWithProvidedEglEnvironment) {
   }
 }
 
+TEST(CompiledModelGpuTest, GlBufferIdRecyclingRaceCondition) {
+#if LITERT_HAS_OPENGL_SUPPORT
+  if (!IsGlClInteropSupported()) {
+    GTEST_SKIP() << "GPU tests are not supported in this configuration";
+  }
+
+  // Setup environment.
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+
+  std::vector<litert::Environment::Option> env_options;
+  env_options.push_back(
+      {litert::Environment::OptionTag::EglContext,
+       reinterpret_cast<int64_t>(egl_env->context().context())});
+  env_options.push_back({litert::Environment::OptionTag::EglDisplay,
+                         reinterpret_cast<int64_t>(egl_env->display())});
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env,
+                              litert::Environment::Create(env_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type0,
+                              compiled_model.GetInputTensorType(0, "arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type1,
+                              compiled_model.GetInputTensorType(0, "arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto type_out,
+                              compiled_model.GetOutputTensorType(0, "tfl.add"));
+
+  // === Prime the cache (Run 1) ===
+  GLuint in_ids_1[2];
+  glGenBuffers(2, in_ids_1);
+  GLuint out_id_1;
+  glGenBuffers(1, &out_id_1);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_1[0]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput0Size * sizeof(float),
+               kTestInput0Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_1[1]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput1Size * sizeof(float),
+               kTestInput1Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, out_id_1);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestOutputSize * sizeof(float),
+               nullptr, GL_STREAM_READ);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+  // Run 1.
+  {
+    std::vector<TensorBuffer> inputs;
+    std::vector<TensorBuffer> outputs;
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb0, TensorBuffer::CreateFromGlBuffer(
+                      env, type0, GL_SHADER_STORAGE_BUFFER, in_ids_1[0],
+                      kTestInput0Size * sizeof(float), 0));
+    inputs.push_back(std::move(tb0));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb1, TensorBuffer::CreateFromGlBuffer(
+                      env, type1, GL_SHADER_STORAGE_BUFFER, in_ids_1[1],
+                      kTestInput1Size * sizeof(float), 0));
+    inputs.push_back(std::move(tb1));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tbOut, TensorBuffer::CreateFromGlBuffer(
+                        env, type_out, GL_SHADER_STORAGE_BUFFER, out_id_1,
+                        kTestOutputSize * sizeof(float), 0));
+    outputs.push_back(std::move(tbOut));
+
+    LITERT_ASSERT_OK(compiled_model.Run(inputs, outputs));
+  }
+  // TensorBuffer objects are destroyed, so we expect the GL buffers to be
+  // released (and not held by the buffer context).
+
+  // === Test against race condition ===
+
+  // Deleting and immediately re-creating GL buffers should not affect LiteRT
+  // execution.
+  glDeleteBuffers(2, in_ids_1);
+  glDeleteBuffers(1, &out_id_1);
+  GLuint in_ids_2[2];
+  glGenBuffers(2, in_ids_2);
+  GLuint out_id_2;
+  glGenBuffers(1, &out_id_2);
+  // Force GPU synchronization.
+  // glFinish();
+
+  // Verify that GL buffer ID recycling is detected.
+  ASSERT_EQ(in_ids_1[0], in_ids_2[0])
+      << "Test Inconclusive: Driver did not recycle the GL ID. Cannot "
+         "reproduce race.";
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_2[0]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput0Size * sizeof(float),
+               kTestInput0Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, in_ids_2[1]);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestInput1Size * sizeof(float),
+               kTestInput1Tensor, GL_STATIC_DRAW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, out_id_2);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, kTestOutputSize * sizeof(float),
+               nullptr, GL_STREAM_READ);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+  {
+    std::vector<TensorBuffer> inputs_2;
+    std::vector<TensorBuffer> outputs_2;
+
+    // Create wrappers for the RECYCLED IDs
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb0, TensorBuffer::CreateFromGlBuffer(
+                      env, type0, GL_SHADER_STORAGE_BUFFER, in_ids_2[0],
+                      kTestInput0Size * sizeof(float), 0));
+    inputs_2.push_back(std::move(tb0));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tb1, TensorBuffer::CreateFromGlBuffer(
+                      env, type1, GL_SHADER_STORAGE_BUFFER, in_ids_2[1],
+                      kTestInput1Size * sizeof(float), 0));
+    inputs_2.push_back(std::move(tb1));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto tbOut, TensorBuffer::CreateFromGlBuffer(
+                        env, type_out, GL_SHADER_STORAGE_BUFFER, out_id_2,
+                        kTestOutputSize * sizeof(float), 0));
+    outputs_2.push_back(std::move(tbOut));
+
+    // Run 2. We expect LiteRT to run successfully with recycled GL IDs.
+    // External LiteRT Buffer Context should not cache old GL IDs.
+    LITERT_ASSERT_OK(compiled_model.Run(inputs_2, outputs_2));
+    {
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          auto lock_and_addr,
+          litert::TensorBufferScopedLock::Create<const float>(
+              outputs_2[0], TensorBuffer::LockMode::kRead));
+      auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+      EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    }
+  }
+
+  // Clean up.
+  glDeleteBuffers(2, in_ids_2);
+  glDeleteBuffers(1, &out_id_2);
+
+#else
+  GTEST_SKIP() << "OpenGL not supported.";
+#endif
+}
+
 TEST(CompiledModelGpuTest, UseCpuBuffer) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
