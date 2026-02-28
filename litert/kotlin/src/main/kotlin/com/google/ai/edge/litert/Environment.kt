@@ -69,7 +69,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
       val mutableOptions = options.toMutableMap()
       if (npuAcceleratorProvider.isDeviceSupported() && npuAcceleratorProvider.isLibraryReady()) {
         mutableOptions[Option.DispatchLibraryDir] = npuAcceleratorProvider.getLibraryDir()
-        mutableOptions[Option.CompilerPluginLibraryDir] = npuAcceleratorProvider.getLibraryDir()
+        // mutableOptions[Option.CompilerPluginLibraryDir] = npuAcceleratorProvider.getLibraryDir()
       }
 
       return Environment(
