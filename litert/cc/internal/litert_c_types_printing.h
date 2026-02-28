@@ -69,6 +69,12 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
     case kLiteRtElementTypeUInt64:
       dtype_str = "u64";
       break;
+    case kLiteRtElementTypeInt4:
+      dtype_str = "i4";
+      break;
+    case kLiteRtElementTypeInt2:
+      dtype_str = "i2";
+      break;
     case kLiteRtElementTypeBool:
       dtype_str = "i1";
       break;

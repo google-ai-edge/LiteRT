@@ -28,6 +28,10 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
@@ -52,6 +56,24 @@ std::string OpSignature(const LiteRtOpT& op) {
   std::ostringstream oss;
   litert::internal::Dump(op, oss);
   return oss.str();
+}
+
+std::string GetTensorStr(const LiteRtTensorT& tensor) {
+  std::string dims_str;
+  std::string type_str;
+
+  if (tensor.Type().first == kLiteRtRankedTensorType) {
+    const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+    dims_str =
+        absl::StrJoin(absl::MakeConstSpan(layout.dimensions, layout.rank), "x");
+    type_str = absl::StrFormat(
+        "%v", tensor.Type().second.ranked_tensor_type.element_type);
+  } else {
+    dims_str = "unranked";
+    type_str = absl::StrFormat(
+        "%v", tensor.Type().second.unranked_tensor_type.element_type);
+  }
+  return absl::StrFormat("[%s_%s]", dims_str, type_str);
 }
 
 }  // namespace
@@ -171,8 +193,23 @@ absl::Status DumpOps(LiteRtModelT& model, const DumpOptions& options,
           options.filename_prefix.empty()
               ? ""
               : absl::StrCat(options.filename_prefix, "_");
-      std::string filename = absl::StrCat(filename_prefix, "op_", op_counter,
-                                          "_", opcode_str, ".tflite");
+
+      std::string inputs_str;
+      for (int i = 0; i < op->Inputs().size(); ++i) {
+        if (i > 0) absl::StrAppend(&inputs_str, "_");
+        absl::StrAppend(&inputs_str, "In_", i, GetTensorStr(*op->Inputs()[i]));
+      }
+
+      std::string outputs_str;
+      for (int i = 0; i < op->Outputs().size(); ++i) {
+        if (i > 0) absl::StrAppend(&outputs_str, "_");
+        absl::StrAppend(&outputs_str, "Out_", i,
+                        GetTensorStr(*op->Outputs()[i]));
+      }
+
+      std::string filename =
+          absl::StrCat(filename_prefix, inputs_str, "_", outputs_str, "_",
+                       opcode_str, "_", op_counter, ".tflite");
       std::string path =
           (std::filesystem::path(options.output_dir) / filename).string();
 
