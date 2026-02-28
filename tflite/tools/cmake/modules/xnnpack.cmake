@@ -44,6 +44,11 @@ set(XNNPACK_BUILD_BENCHMARKS OFF CACHE BOOL "Disable XNNPACK benchmarks.")
 # for details.
 add_subdirectory(${TFLITE_SOURCE_DIR}/tools/cmake/modules/xnnpack)
 
+# Newer XNNPACK headers (for example src/operators/fingerprint_id.h) live under
+# the source tree rather than include/. Make sure consumers see that path.
+set_property(TARGET XNNPACK APPEND PROPERTY
+  INTERFACE_INCLUDE_DIRECTORIES "${XNNPACK_SOURCE_DIR}")
+
 include_directories(
   AFTER
    "${PTHREADPOOL_SOURCE_DIR}/include"
