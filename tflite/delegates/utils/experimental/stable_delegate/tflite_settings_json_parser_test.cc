@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/utils/experimental/stable_delegate/tflite_settings_json_parser.h"
 
+#include <cstdint>
+
 #include <gtest/gtest.h>
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "tflite/acceleration/configuration/configuration_generated.h"
