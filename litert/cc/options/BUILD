@@ -19,7 +19,7 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_cc_users_static_link",
+        # "//litert:litert_public",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -120,11 +120,9 @@ cc_library(
     hdrs = ["litert_gpu_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_gpu_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
     ],
 )
@@ -261,34 +259,6 @@ cc_test(
         "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_darwinn_options",
-    srcs = ["litert_darwinn_options.cc"],
-    hdrs = ["litert_darwinn_options.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c/options:litert_darwinn_runtime_options",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "litert_darwinn_options_test",
-    srcs = ["litert_darwinn_options_test.cc"],
-    deps = [
-        ":litert_darwinn_options",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -14,761 +14,1055 @@
 
 #include "litert/c/options/litert_gpu_options.h"
 
+#include <string.h>  // NOLINT: To use strdup in some environments.
+
 #include <cstdlib>
-#include <memory>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_toml_parser.h"
 
 using ::litert::ErrorStatusBuilder;
+using ::litert::internal::ParseToml;
+using ::litert::internal::ParseTomlBool;
+using ::litert::internal::ParseTomlInt;
+using ::litert::internal::ParseTomlString;
+using ::litert::internal::ParseTomlStringArray;
 
-struct LiteRtGpuOptionsPayloadT {
+struct LrtGpuOptions {
   // Increment the minor version every time a field is added.
-  static constexpr const absl::string_view kIdentifier = "gpu_payload";
+  static constexpr const absl::string_view kIdentifier = "gpu_options";
 
-  bool enable_constant_tensor_sharing = false;
-  bool enable_infinite_float_capping = false;
-  bool benchmark_mode = false;
+  std::optional<bool> enable_constant_tensors_sharing;
+  std::optional<bool> enable_infinite_float_capping;
+  std::optional<bool> benchmark_mode;
+
   // Added in version 1.2.0.
-  bool allow_src_quantized_fc_conv_ops = false;
-  LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionDefault;
-  LiteRtDelegateBufferStorageType buffer_storage_type =
-      kLiteRtDelegateBufferStorageTypeDefault;
+  std::optional<bool> allow_src_quantized_fc_conv_ops;
+  std::optional<LiteRtDelegatePrecision> precision;
+  std::optional<LiteRtDelegateBufferStorageType> buffer_storage_type;
+
   // If true, the delegate will prefer to use textures rather than buffers for
   // weights. Use option when weights in texture has better performance.
-  bool prefer_texture_weights = false;
+  std::optional<bool> prefer_texture_weights;
+
   // The null-terminated directory to use for serialization.
   // If program_cache_fd is set, this field is ignored for the program cache.
-  char* serialization_dir = nullptr;
+  std::optional<std::string> serialization_dir;
+
   // The unique null-terminated token string that acts as a 'namespace' for
   // all serialization entries.
-  char* model_cache_key = nullptr;
+  std::optional<std::string> model_cache_key;
+
   // When set to true AND the serialization_dir and model_cache_key are also
   // set, the delegate will serialize the program cache.
-  bool serialize_program_cache = true;
+  std::optional<bool> serialize_program_cache;
+
   // Set to true to serialize immutable external tensors. By default only the
   // non-external tensors are serialized.
-  bool serialize_external_tensors = false;
+  std::optional<bool> serialize_external_tensors;
+
   // Set to true to run in no external tensors mode. This enables GPU
   // Accelerator using external tensors (PHWC4 format) directly as inputs and
   // outputs.
-  bool experimental_external_tensors_mode = false;
+  std::optional<bool> external_tensors_mode;
+
   // List of external tensor patterns which are not affected by the no immutable
   // external tensors mode.
   std::vector<std::string> external_tensor_patterns;
+
   // Added in version 1.4.0.
   // GPU backend to use.
-  LiteRtGpuBackend gpu_backend = kLiteRtGpuBackendAutomatic;
+  std::optional<LiteRtGpuBackend> backend;
+
   // Added in version 2.0.2a1.
   // GPU priority to use.
-  LiteRtGpuPriority gpu_priority = kLiteRtGpuPriorityNormal;
+  std::optional<LiteRtGpuPriority> priority;
+
   // Added in version 2.0.2a1.
   // Set to true to madvise the original shared tensors after use.
-  bool madvise_original_shared_tensors = false;
+  std::optional<bool> madvise_original_shared_tensors;
+
   // Added in version 2.0.2a1.
   // Number of steps to prepare WebGPU or Vulkan command buffers in advance.
-  int num_steps_of_command_buffer_preparations = 0;
+  std::optional<int> num_steps_of_command_buffer_preparations;
+
   // Set to true to use Metal argument buffers.
-  bool use_metal_argument_buffers = false;
+  std::optional<bool> use_metal_argument_buffers;
+
   // Added in version 2.0.2a1.
-  LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
+  std::optional<LiteRtGpuWaitType> wait_type;
+
   // Added in version 2.0.2a1.
   // Preferred WebGPU device name substring, case-insensitive.
   // If not empty, the adapter which the device name contains the substring will
   // be chosen.
   // If empty, the device will be determined by other factors.
-  std::string preferred_device_substr;
+  std::optional<std::string> preferred_device_substr;
+
   // Added in version 2.0.2a1.
   // Set to true to hint that the delegate is fully delegated to a single
   // delegate.
-  bool hint_fully_delegated_to_single_delegate = false;
+  std::optional<bool> hint_fully_delegated_to_single_delegate;
+
   // Added in version 2.0.2a1.
   // Number of threads for WebGPU upload.
-  int num_threads_to_upload = 0;
+  std::optional<int> num_threads_to_upload;
+
   // Added in version 2.0.2a1.
   // Number of threads for WebGPU kernel shader compilation.
-  int num_threads_to_compile = 0;
+  std::optional<int> num_threads_to_compile;
+
   // Added in version 2.0.2a1.
   // Whether to convert weights on GPU.
   // It is not supported by the all backends so this flag is ignored when using
   // non-OpenCL and non-WebGPU backends.
-  bool convert_weights_on_gpu = false;
+  std::optional<bool> convert_weights_on_gpu;
+
   // Added in version 2.1.0.
   // Whether to wait for weights conversion on GPU complete.
   // It is not supported by the all backends so this flag is ignored when using
   // non-OpenCL and non-WebGPU backends.
-  bool wait_for_weights_conversion_complete = false;
+  std::optional<bool> wait_for_weights_conversion_complete;
+
   // Added in version 2.1.0.
   // Whether to disable Vulkan kernel shader optimization to reduce init time.
-  bool disable_shader_optimization = false;
+  std::optional<bool> disable_shader_optimization;
+
   // The file descriptor to use for program caching. If set, it overrides the
   // serialization_dir.
-  int program_cache_fd = -1;
+  std::optional<int> program_cache_fd;
+
   // Added in version 2.1.0.
   // If true, only the compiled programs will be cached. If false, gpu graph
   // info including work group sizes (and all compiled programs depending on
   // backend) will be cached.
-  bool cache_only_compiled_programs = false;
+  std::optional<bool> cache_only_compiled_programs;
+
   // Added in version 2.1.0.
   // List of prefix patterns of the tensor name that is used for buffer storage
   // type. When it matches, those tensors will use buffer storage type.
   //
   // WARNING: This option is experimental and subject to change.
   std::vector<std::string> buffer_storage_tensor_patterns;
-
-  ~LiteRtGpuOptionsPayloadT() {
-    std::free(serialization_dir);
-    std::free(model_cache_key);
-  }
 };
 
-namespace litert {
-namespace {
-
-litert::Expected<LiteRtGpuOptionsPayloadT*> GetPayload(
-    LiteRtOpaqueOptions options) {
-  const char* identifier = nullptr;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetOpaqueOptionsIdentifier(options, &identifier));
-  LITERT_RETURN_IF_ERROR(identifier == LiteRtGpuOptionsPayloadT::kIdentifier,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "Payload stored in accelerator options is incompatible. Got "
-      << identifier << ", expected " << LiteRtGpuOptionsPayloadT::kIdentifier
-      << ".";
-
-  LiteRtGpuOptionsPayloadT* payload;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetOpaqueOptionsData(options, reinterpret_cast<void**>(&payload)));
-  return payload;
-}
-
-}  // namespace
-}  // namespace litert
-
-LiteRtStatus LiteRtCreateGpuOptions(LiteRtOpaqueOptions* options) {
-  auto payload = std::make_unique<LiteRtGpuOptionsPayloadT>();
-  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      LiteRtGpuOptionsPayloadT::kIdentifier.data(), payload.get(),
-      [](void* payload) {
-        delete reinterpret_cast<LiteRtGpuOptionsPayloadT*>(payload);
-      },
-      options));
-  payload.release();
+LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
+  *options = new LrtGpuOptions();
+  if (!*options) return kLiteRtStatusErrorMemoryAllocationFailure;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsConstantTensorSharing(
-    LiteRtOpaqueOptions gpu_options, bool enable) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->enable_constant_tensor_sharing = enable;
+void LrtDestroyGpuOptions(LrtGpuOptions* options) {
+  if (options) delete options;
+}
+
+const char* LrtGetGpuOptionsIdentifier() { return "gpu_options"; }
+
+LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
+                                        const char** identifier, void** payload,
+                                        void (**payload_deleter)(void*)) {
+  if (!options || !identifier || !payload || !payload_deleter) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  std::stringstream ss;
+  if (options->enable_constant_tensors_sharing.has_value()) {
+    ss << "enable_constant_tensors_sharing = "
+       << (options->enable_constant_tensors_sharing.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->enable_infinite_float_capping.has_value()) {
+    ss << "enable_infinite_float_capping = "
+       << (options->enable_infinite_float_capping.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->benchmark_mode.has_value()) {
+    ss << "benchmark_mode = "
+       << (options->benchmark_mode.value() ? "true" : "false") << "\n";
+  }
+  if (options->allow_src_quantized_fc_conv_ops.has_value()) {
+    ss << "allow_src_quantized_fc_conv_ops = "
+       << (options->allow_src_quantized_fc_conv_ops.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->precision.has_value()) {
+    ss << "precision = " << static_cast<int>(options->precision.value())
+       << "\n";
+  }
+  if (options->buffer_storage_type.has_value()) {
+    ss << "buffer_storage_type = "
+       << static_cast<int>(options->buffer_storage_type.value()) << "\n";
+  }
+  if (options->prefer_texture_weights.has_value()) {
+    ss << "prefer_texture_weights = "
+       << (options->prefer_texture_weights.value() ? "true" : "false") << "\n";
+  }
+  if (options->serialization_dir.has_value()) {
+    ss << "serialization_dir = \"" << options->serialization_dir.value()
+       << "\"\n";
+  }
+  if (options->model_cache_key.has_value()) {
+    ss << "model_cache_key = \"" << options->model_cache_key.value() << "\"\n";
+  }
+  if (options->serialize_program_cache.has_value()) {
+    ss << "serialize_program_cache = "
+       << (options->serialize_program_cache.value() ? "true" : "false") << "\n";
+  }
+  if (options->serialize_external_tensors.has_value()) {
+    ss << "serialize_external_tensors = "
+       << (options->serialize_external_tensors.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->external_tensors_mode.has_value()) {
+    ss << "external_tensors_mode = "
+       << (options->external_tensors_mode.value() ? "true" : "false") << "\n";
+  }
+  if (!options->external_tensor_patterns.empty()) {
+    ss << "external_tensor_patterns = [";
+    for (size_t i = 0; i < options->external_tensor_patterns.size(); ++i) {
+      ss << "\"" << options->external_tensor_patterns[i] << "\"";
+      if (i != options->external_tensor_patterns.size() - 1) ss << ", ";
+    }
+    ss << "]\n";
+  }
+  if (options->backend.has_value()) {
+    ss << "backend = " << static_cast<int>(options->backend.value()) << "\n";
+  }
+  if (options->priority.has_value()) {
+    ss << "priority = " << static_cast<int>(options->priority.value()) << "\n";
+  }
+  if (options->madvise_original_shared_tensors.has_value()) {
+    ss << "madvise_original_shared_tensors = "
+       << (options->madvise_original_shared_tensors.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->num_steps_of_command_buffer_preparations.has_value()) {
+    ss << "num_steps_of_command_buffer_preparations = "
+       << static_cast<int>(
+              options->num_steps_of_command_buffer_preparations.value())
+       << "\n";
+  }
+  if (options->use_metal_argument_buffers.has_value()) {
+    ss << "use_metal_argument_buffers = "
+       << (options->use_metal_argument_buffers.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->wait_type.has_value()) {
+    ss << "wait_type = " << static_cast<int>(options->wait_type.value())
+       << "\n";
+  }
+  if (options->preferred_device_substr.has_value()) {
+    ss << "preferred_device_substr = \""
+       << options->preferred_device_substr.value() << "\"\n";
+  }
+  if (options->hint_fully_delegated_to_single_delegate.has_value()) {
+    ss << "hint_fully_delegated_to_single_delegate = "
+       << (options->hint_fully_delegated_to_single_delegate.value() ? "true"
+                                                                    : "false")
+       << "\n";
+  }
+  if (options->num_threads_to_upload.has_value()) {
+    ss << "num_threads_to_upload = "
+       << static_cast<int>(options->num_threads_to_upload.value()) << "\n";
+  }
+  if (options->num_threads_to_compile.has_value()) {
+    ss << "num_threads_to_compile = "
+       << static_cast<int>(options->num_threads_to_compile.value()) << "\n";
+  }
+  if (options->convert_weights_on_gpu.has_value()) {
+    ss << "convert_weights_on_gpu = "
+       << (options->convert_weights_on_gpu.value() ? "true" : "false") << "\n";
+  }
+  if (options->wait_for_weights_conversion_complete.has_value()) {
+    ss << "wait_for_weights_conversion_complete = "
+       << (options->wait_for_weights_conversion_complete.value() ? "true"
+                                                                 : "false")
+       << "\n";
+  }
+  if (options->disable_shader_optimization.has_value()) {
+    ss << "disable_shader_optimization = "
+       << (options->disable_shader_optimization.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->program_cache_fd.has_value()) {
+    ss << "program_cache_fd = "
+       << static_cast<int>(options->program_cache_fd.value()) << "\n";
+  }
+  if (options->cache_only_compiled_programs.has_value()) {
+    ss << "cache_only_compiled_programs = "
+       << (options->cache_only_compiled_programs.value() ? "true" : "false")
+       << "\n";
+  }
+  if (!options->buffer_storage_tensor_patterns.empty()) {
+    ss << "buffer_storage_tensor_patterns = [";
+    for (size_t i = 0; i < options->buffer_storage_tensor_patterns.size();
+         ++i) {
+      ss << "\"" << options->buffer_storage_tensor_patterns[i] << "\"";
+      if (i != options->buffer_storage_tensor_patterns.size() - 1) ss << ", ";
+    }
+    ss << "]\n";
+  }
+  *identifier = LrtGetGpuOptionsIdentifier();
+  *payload = strdup(ss.str().c_str());
+  *payload_deleter = [](void* p) { free(p); };
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsInfiniteFloatCapping(
-    LiteRtOpaqueOptions gpu_options, bool enable) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->enable_infinite_float_capping = enable;
+LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
+                                         LrtGpuOptions** options) {
+  if (!toml_string || !options) return kLiteRtStatusErrorInvalidArgument;
+  *options = new LrtGpuOptions();
+  if (!*options) return kLiteRtStatusErrorMemoryAllocationFailure;
+  absl::string_view toml_view(toml_string);
+  if (toml_view.empty()) return kLiteRtStatusOk;
+  auto status = ParseToml(
+      toml_view,
+      [&](absl::string_view key, absl::string_view value) -> LiteRtStatus {
+        if (key == "enable_constant_tensors_sharing") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->enable_constant_tensors_sharing = *res;
+        } else if (key == "enable_infinite_float_capping") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->enable_infinite_float_capping = *res;
+        } else if (key == "benchmark_mode") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->benchmark_mode = *res;
+        } else if (key == "allow_src_quantized_fc_conv_ops") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->allow_src_quantized_fc_conv_ops = *res;
+        } else if (key == "precision") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->precision = static_cast<LiteRtDelegatePrecision>(*res);
+        } else if (key == "buffer_storage_type") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->buffer_storage_type =
+              static_cast<LiteRtDelegateBufferStorageType>(*res);
+        } else if (key == "prefer_texture_weights") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->prefer_texture_weights = *res;
+        } else if (key == "serialization_dir") {
+          auto res = ParseTomlString(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->serialization_dir = *res;
+        } else if (key == "model_cache_key") {
+          auto res = ParseTomlString(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->model_cache_key = *res;
+        } else if (key == "serialize_program_cache") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->serialize_program_cache = *res;
+        } else if (key == "serialize_external_tensors") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->serialize_external_tensors = *res;
+        } else if (key == "external_tensors_mode") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->external_tensors_mode = *res;
+        } else if (key == "external_tensor_patterns") {
+          auto res = ParseTomlStringArray(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->external_tensor_patterns = *res;
+        } else if (key == "backend") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->backend = static_cast<LiteRtGpuBackend>(*res);
+        } else if (key == "priority") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->priority = static_cast<LiteRtGpuPriority>(*res);
+        } else if (key == "madvise_original_shared_tensors") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->madvise_original_shared_tensors = *res;
+        } else if (key == "num_steps_of_command_buffer_preparations") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->num_steps_of_command_buffer_preparations = *res;
+        } else if (key == "use_metal_argument_buffers") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->use_metal_argument_buffers = *res;
+        } else if (key == "wait_type") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->wait_type = static_cast<LiteRtGpuWaitType>(*res);
+        } else if (key == "preferred_device_substr") {
+          auto res = ParseTomlString(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->preferred_device_substr = *res;
+        } else if (key == "hint_fully_delegated_to_single_delegate") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->hint_fully_delegated_to_single_delegate = *res;
+        } else if (key == "num_threads_to_upload") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->num_threads_to_upload = *res;
+        } else if (key == "num_threads_to_compile") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->num_threads_to_compile = *res;
+        } else if (key == "convert_weights_on_gpu") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->convert_weights_on_gpu = *res;
+        } else if (key == "wait_for_weights_conversion_complete") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->wait_for_weights_conversion_complete = *res;
+        } else if (key == "disable_shader_optimization") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->disable_shader_optimization = *res;
+        } else if (key == "program_cache_fd") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->program_cache_fd = *res;
+        } else if (key == "cache_only_compiled_programs") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->cache_only_compiled_programs = *res;
+        } else if (key == "buffer_storage_tensor_patterns") {
+          auto res = ParseTomlStringArray(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->buffer_storage_tensor_patterns = *res;
+        }
+        return kLiteRtStatusOk;
+      });
+
+  if (status != kLiteRtStatusOk) {
+    delete *options;
+    *options = nullptr;
+    return status;
+  }
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
-                                              bool enable) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->benchmark_mode = enable;
+LiteRtStatus LrtSetGpuOptionsConstantTensorsSharing(LrtGpuOptions* gpu_options,
+                                                    bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->enable_constant_tensors_sharing = enable;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
-                                           LiteRtGpuBackend backend) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->gpu_backend = backend;
+LiteRtStatus LrtSetGpuOptionsInfiniteFloatCapping(LrtGpuOptions* gpu_options,
+                                                  bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->enable_infinite_float_capping = enable;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsExternalTensorsMode(
-    LiteRtOpaqueOptions gpu_options, bool enable) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->experimental_external_tensors_mode = enable;
+LiteRtStatus LrtSetGpuOptionsBenchmarkMode(LrtGpuOptions* gpu_options,
+                                           bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->benchmark_mode = enable;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
-    LiteRtOpaqueOptions gpu_options, const char* pattern) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->external_tensor_patterns.push_back(std::string(pattern));
+LiteRtStatus LrtSetGpuOptionsGpuBackend(LrtGpuOptions* gpu_options,
+                                        LiteRtGpuBackend backend) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->backend = backend;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtAddGpuOptionsBufferStorageTensorPattern(
-    LiteRtOpaqueOptions gpu_options, const char* pattern) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->buffer_storage_tensor_patterns.push_back(std::string(pattern));
+LiteRtStatus LrtSetGpuOptionsExternalTensorsMode(LrtGpuOptions* gpu_options,
+                                                 bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->external_tensors_mode = enable;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsGpuPriority(LiteRtOpaqueOptions gpu_options,
-                                            LiteRtGpuPriority priority) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->gpu_priority = priority;
+LiteRtStatus LrtAddGpuOptionsExternalTensorPattern(LrtGpuOptions* gpu_options,
+                                                   const char* pattern) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->external_tensor_patterns.push_back(std::string(pattern));
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
-    LiteRtOpaqueOptions gpu_accelerator_options, bool enable) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->allow_src_quantized_fc_conv_ops = enable;
+LiteRtStatus LrtAddGpuOptionsBufferStorageTensorPattern(
+    LrtGpuOptions* gpu_options, const char* pattern) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->buffer_storage_tensor_patterns.push_back(std::string(pattern));
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsPrecision(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    LiteRtDelegatePrecision precision) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->precision = precision;
+LiteRtStatus LrtSetGpuOptionsGpuPriority(LrtGpuOptions* gpu_options,
+                                         LiteRtGpuPriority priority) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->priority = priority;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(
-    LiteRtOpaqueOptions gpu_accelerator_options,
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
+    LrtGpuOptions* gpu_options, bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->allow_src_quantized_fc_conv_ops = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPrecision(
+    LrtGpuOptions* gpu_options, LiteRtDelegatePrecision precision) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->precision = precision;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(
+    LrtGpuOptions* gpu_options,
     LiteRtDelegateBufferStorageType buffer_storage_type) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->buffer_storage_type = buffer_storage_type;
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->buffer_storage_type = buffer_storage_type;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-    LiteRtOpaqueOptions gpu_accelerator_options, bool prefer_texture_weights) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->prefer_texture_weights = prefer_texture_weights;
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+    LrtGpuOptions* gpu_options, bool prefer_texture_weights) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->prefer_texture_weights = prefer_texture_weights;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    const char* serialization_dir) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  if (payload->serialization_dir) {
-    std::free(payload->serialization_dir);
-    payload->serialization_dir = nullptr;
-  }
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSerializationDir(
+    LrtGpuOptions* gpu_options, const char* serialization_dir) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
   if (serialization_dir) {
-    payload->serialization_dir = strdup(serialization_dir);
+    gpu_options->serialization_dir = std::string(serialization_dir);
+  } else {
+    gpu_options->serialization_dir = std::nullopt;
   }
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
-    LiteRtOpaqueOptions gpu_accelerator_options, const char* model_cache_key) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  if (payload->model_cache_key) {
-    std::free(payload->model_cache_key);
-    payload->model_cache_key = nullptr;
-  }
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsModelCacheKey(
+    LrtGpuOptions* gpu_options, const char* model_cache_key) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
   if (model_cache_key) {
-    payload->model_cache_key = strdup(model_cache_key);
+    gpu_options->model_cache_key = std::string(model_cache_key);
+  } else {
+    gpu_options->model_cache_key = std::nullopt;
   }
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
-    LiteRtOpaqueOptions gpu_accelerator_options, int program_cache_fd) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->program_cache_fd = program_cache_fd;
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
+    LrtGpuOptions* gpu_options, int program_cache_fd) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->program_cache_fd = program_cache_fd;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-    LiteRtOpaqueOptions gpu_accelerator_options, bool serialize_program_cache) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->serialize_program_cache = serialize_program_cache;
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+    LrtGpuOptions* gpu_options, bool serialize_program_cache) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->serialize_program_cache = serialize_program_cache;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    bool cache_only_compiled_programs) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->cache_only_compiled_programs = cache_only_compiled_programs;
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
+    LrtGpuOptions* gpu_options, bool cache_only_compiled_programs) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->cache_only_compiled_programs = cache_only_compiled_programs;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    bool serialize_external_tensors) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->serialize_external_tensors = serialize_external_tensors;
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+    LrtGpuOptions* gpu_options, bool serialize_external_tensors) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->serialize_external_tensors = serialize_external_tensors;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    bool madvise_original_shared_tensors) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->madvise_original_shared_tensors = madvise_original_shared_tensors;
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    LrtGpuOptions* gpu_options, bool madvise_original_shared_tensors) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->madvise_original_shared_tensors =
+      madvise_original_shared_tensors;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    bool disable_shader_optimization) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->disable_shader_optimization = disable_shader_optimization;
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+    LrtGpuOptions* gpu_options, bool disable_shader_optimization) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->disable_shader_optimization = disable_shader_optimization;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus
-LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    int num_steps_of_command_buffer_preparations) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->num_steps_of_command_buffer_preparations =
+LrtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    LrtGpuOptions* gpu_options, int num_steps_of_command_buffer_preparations) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->num_steps_of_command_buffer_preparations =
       num_steps_of_command_buffer_preparations;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsUseMetalArgumentBuffers(
-    LiteRtOpaqueOptions gpu_options, bool use_metal_argument_buffers) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->use_metal_argument_buffers = use_metal_argument_buffers;
+LiteRtStatus LrtSetGpuOptionsUseMetalArgumentBuffers(
+    LrtGpuOptions* gpu_options, bool use_metal_argument_buffers) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->use_metal_argument_buffers = use_metal_argument_buffers;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsWaitType(
-    LiteRtOpaqueOptions gpu_accelerator_options, LiteRtGpuWaitType wait_type) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->wait_type = wait_type;
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitType(
+    LrtGpuOptions* gpu_options, LiteRtGpuWaitType wait_type) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->wait_type = wait_type;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    const char* preferred_device_substr) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->preferred_device_substr = preferred_device_substr;
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    LrtGpuOptions* gpu_options, const char* preferred_device_substr) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  if (preferred_device_substr) {
+    gpu_options->preferred_device_substr = std::string(preferred_device_substr);
+  } else {
+    gpu_options->preferred_device_substr = std::nullopt;
+  }
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
-    LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_upload) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->num_threads_to_upload = num_threads_to_upload;
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
+    LrtGpuOptions* gpu_options, int num_threads_to_upload) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->num_threads_to_upload = num_threads_to_upload;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
-    LiteRtOpaqueOptions gpu_accelerator_options, int num_threads_to_compile) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->num_threads_to_compile = num_threads_to_compile;
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
+    LrtGpuOptions* gpu_options, int num_threads_to_compile) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->num_threads_to_compile = num_threads_to_compile;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-    LiteRtOpaqueOptions gpu_accelerator_options, bool convert_weights_on_gpu) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->convert_weights_on_gpu = convert_weights_on_gpu;
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+    LrtGpuOptions* gpu_options, bool convert_weights_on_gpu) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->convert_weights_on_gpu = convert_weights_on_gpu;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
-    LiteRtOpaqueOptions gpu_accelerator_options,
-    bool wait_for_weights_conversion_complete) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_accelerator_options));
-  payload->wait_for_weights_conversion_complete =
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+    LrtGpuOptions* gpu_options, bool wait_for_weights_conversion_complete) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->wait_for_weights_conversion_complete =
       wait_for_weights_conversion_complete;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
-    LiteRtOpaqueOptions gpu_options,
-    bool hint_fully_delegated_to_single_delegate) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
-                          litert::GetPayload(gpu_options));
-  payload->hint_fully_delegated_to_single_delegate =
+LiteRtStatus LrtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
+    LrtGpuOptions* gpu_options, bool hint_fully_delegated_to_single_delegate) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->hint_fully_delegated_to_single_delegate =
       hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }
 
-const char* LiteRtGetGpuOptionsPayloadIdentifier() {
-  return LiteRtGpuOptionsPayloadT::kIdentifier.data();
+const char* LrtGetGpuOptionsPayloadIdentifier() {
+  return LrtGpuOptions::kIdentifier.data();
 }
 
-LiteRtStatus LiteRtGetGpuOptionsConstantTensorSharing(
-    bool* enabled, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuOptionsConstantTensorsSharing(
+    bool* enabled, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *enabled = payload->enable_constant_tensor_sharing;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->enable_constant_tensors_sharing.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsInfiniteFloatCapping(
-    bool* enabled, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuOptionsInfiniteFloatCapping(
+    bool* enabled, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *enabled = payload->enable_infinite_float_capping;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->enable_infinite_float_capping.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
-                                           LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
+                                        const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(backend, ErrorStatusBuilder::InvalidArgument())
       << "`backend` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *backend = payload->gpu_backend;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *backend = options->backend.value_or(kLiteRtGpuBackendAutomatic);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
-                                              LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuOptionsBenchmarkMode(bool* enabled,
+                                           const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *enabled = payload->benchmark_mode;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->benchmark_mode.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsExternalTensorsMode(
-    bool* enabled, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuOptionsExternalTensorsMode(bool* enabled,
+                                                 const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *enabled = payload->experimental_external_tensors_mode;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->external_tensors_mode.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
-                                            LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
+                                         const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(priority, ErrorStatusBuilder::InvalidArgument())
       << "`priority` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *priority = payload->gpu_priority;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *priority = options->priority.value_or(kLiteRtGpuPriorityDefault);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
-    bool* enabled, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
+    bool* enabled, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *enabled = payload->allow_src_quantized_fc_conv_ops;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->allow_src_quantized_fc_conv_ops.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsPrecision(
-    LiteRtDelegatePrecision* precision, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
+    LiteRtDelegatePrecision* precision, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(precision, ErrorStatusBuilder::InvalidArgument())
       << "`precision` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *precision = payload->precision;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *precision = options->precision.value_or(kLiteRtDelegatePrecisionDefault);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType(
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageType(
     LiteRtDelegateBufferStorageType* buffer_storage_type,
-    LiteRtGpuOptionsPayload payload) {
+    const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(buffer_storage_type,
                          ErrorStatusBuilder::InvalidArgument())
       << "`use_buffer_storage_type` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *buffer_storage_type = payload->buffer_storage_type;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *buffer_storage_type = options->buffer_storage_type.value_or(
+      kLiteRtDelegateBufferStorageTypeDefault);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-    bool* prefer_texture_weights, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+    bool* prefer_texture_weights, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(prefer_texture_weights,
                          ErrorStatusBuilder::InvalidArgument())
       << "`prefer_texture_weights` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *prefer_texture_weights = payload->prefer_texture_weights;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *prefer_texture_weights = options->prefer_texture_weights.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
-    const char** serialization_dir, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
+    const char** serialization_dir, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(serialization_dir,
                          ErrorStatusBuilder::InvalidArgument())
       << "`serialization_dir` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *serialization_dir = payload->serialization_dir;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *serialization_dir = options->serialization_dir.has_value()
+                           ? options->serialization_dir->c_str()
+                           : nullptr;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
-    const char** model_cache_key, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
+    const char** model_cache_key, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(model_cache_key, ErrorStatusBuilder::InvalidArgument())
       << "`model_cache_key` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *model_cache_key = payload->model_cache_key;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *model_cache_key = options->model_cache_key.has_value()
+                         ? options->model_cache_key->c_str()
+                         : nullptr;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
-    int* program_cache_fd, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+    int* program_cache_fd, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(program_cache_fd,
                          ErrorStatusBuilder::InvalidArgument())
       << "`program_cache_fd` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *program_cache_fd = payload->program_cache_fd;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *program_cache_fd = options->program_cache_fd.value_or(-1);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-    bool* serialize_program_cache, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+    bool* serialize_program_cache, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(serialize_program_cache,
                          ErrorStatusBuilder::InvalidArgument())
       << "`serialize_program_cache` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *serialize_program_cache = payload->serialize_program_cache;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *serialize_program_cache = options->serialize_program_cache.value_or(true);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
-    bool* cache_only_compiled_programs, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
+    bool* cache_only_compiled_programs, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(cache_only_compiled_programs,
                          ErrorStatusBuilder::InvalidArgument())
       << "`cache_only_compiled_programs` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *cache_only_compiled_programs = payload->cache_only_compiled_programs;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *cache_only_compiled_programs =
+      options->cache_only_compiled_programs.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-    bool* serialize_external_tensors, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+    bool* serialize_external_tensors, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(serialize_external_tensors,
                          ErrorStatusBuilder::InvalidArgument())
       << "`serialize_external_tensors` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *serialize_external_tensors = payload->serialize_external_tensors;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *serialize_external_tensors =
+      options->serialize_external_tensors.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
-    int* num_patterns, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
+    int* num_patterns, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(num_patterns, ErrorStatusBuilder::InvalidArgument())
       << "`num_patterns` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *num_patterns = payload->external_tensor_patterns.size();
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *num_patterns = options->external_tensor_patterns.size();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
     const char** external_tensor_pattern, int pattern_index,
-    LiteRtGpuOptionsPayload payload) {
+    const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(external_tensor_pattern,
                          ErrorStatusBuilder::InvalidArgument())
       << "`external_tensor_pattern` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (pattern_index >= options->external_tensor_patterns.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
   *external_tensor_pattern =
-      payload->external_tensor_patterns[pattern_index].c_str();
+      options->external_tensor_patterns[pattern_index].c_str();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus
-LiteRtGetNumGpuAcceleratorCompilationOptionsBufferStorageTensorPatterns(
-    int* num_patterns, LiteRtGpuOptionsPayload payload) {
+LrtGetNumGpuAcceleratorCompilationOptionsBufferStorageTensorPatterns(
+    int* num_patterns, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(num_patterns, ErrorStatusBuilder::InvalidArgument())
       << "`num_patterns` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *num_patterns = payload->buffer_storage_tensor_patterns.size();
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *num_patterns = options->buffer_storage_tensor_patterns.size();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern(
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern(
     const char** buffer_storage_tensor_pattern, int pattern_index,
-    LiteRtGpuOptionsPayload payload) {
+    const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(buffer_storage_tensor_pattern,
                          ErrorStatusBuilder::InvalidArgument())
       << "`buffer_storage_tensor_pattern` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (pattern_index >= options->buffer_storage_tensor_patterns.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
   *buffer_storage_tensor_pattern =
-      payload->buffer_storage_tensor_patterns[pattern_index].c_str();
+      options->buffer_storage_tensor_patterns[pattern_index].c_str();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
-    bool* madvise_original_shared_tensors, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    bool* madvise_original_shared_tensors, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(madvise_original_shared_tensors,
                          ErrorStatusBuilder::InvalidArgument())
       << "`madvise_original_shared_tensors` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *madvise_original_shared_tensors = payload->madvise_original_shared_tensors;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *madvise_original_shared_tensors =
+      options->madvise_original_shared_tensors.value_or(0);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
-    bool* disable_shader_optimization, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
+    bool* disable_shader_optimization, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(disable_shader_optimization,
                          ErrorStatusBuilder::InvalidArgument())
       << "`disable_shader_compilation_optimization` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *disable_shader_optimization = payload->disable_shader_optimization;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *disable_shader_optimization =
+      options->disable_shader_optimization.value_or(0);
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus
-LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     int* num_steps_of_command_buffer_preparations,
-    LiteRtGpuOptionsPayload payload) {
+    const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(num_steps_of_command_buffer_preparations,
                          ErrorStatusBuilder::InvalidArgument())
       << "`num_steps_of_command_buffer_preparations` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
   *num_steps_of_command_buffer_preparations =
-      payload->num_steps_of_command_buffer_preparations;
+      options->num_steps_of_command_buffer_preparations.value_or(0);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsUseMetalArgumentBuffers(
-    LiteRtGpuOptionsPayload payload, bool* use_metal_argument_buffers) {
+LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
+    const LrtGpuOptions* options, bool* use_metal_argument_buffers) {
   LITERT_RETURN_IF_ERROR(use_metal_argument_buffers,
                          ErrorStatusBuilder::InvalidArgument())
       << "`use_metal_argument_buffers` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *use_metal_argument_buffers = payload->use_metal_argument_buffers;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *use_metal_argument_buffers =
+      options->use_metal_argument_buffers.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsWaitType(
-    LiteRtGpuWaitType* wait_type, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitType(
+    LiteRtGpuWaitType* wait_type, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(wait_type, ErrorStatusBuilder::InvalidArgument())
       << "`wait_type` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *wait_type = payload->wait_type;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *wait_type = options->wait_type.value_or(kLiteRtGpuWaitTypeDefault);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
-    const char** preferred_device_substr, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+    const char** preferred_device_substr, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(preferred_device_substr,
                          ErrorStatusBuilder::InvalidArgument())
       << "`preferred_device_substr` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *preferred_device_substr = payload->preferred_device_substr.c_str();
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *preferred_device_substr = options->preferred_device_substr.has_value()
+                                 ? options->preferred_device_substr->c_str()
+                                 : "";
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
-    int* num_threads_to_upload, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
+    int* num_threads_to_upload, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(num_threads_to_upload,
                          ErrorStatusBuilder::InvalidArgument())
       << "`num_threads_to_upload` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *num_threads_to_upload = payload->num_threads_to_upload;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *num_threads_to_upload = options->num_threads_to_upload.value_or(0);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
-    int* num_threads_to_compile, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
+    int* num_threads_to_compile, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(num_threads_to_compile,
                          ErrorStatusBuilder::InvalidArgument())
       << "`num_threads_to_compile` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *num_threads_to_compile = payload->num_threads_to_compile;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *num_threads_to_compile = options->num_threads_to_compile.value_or(0);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-    bool* convert_weights_on_gpu, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+    bool* convert_weights_on_gpu, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(convert_weights_on_gpu,
                          ErrorStatusBuilder::InvalidArgument())
       << "`convert_weights_on_gpu` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *convert_weights_on_gpu = payload->convert_weights_on_gpu;
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *convert_weights_on_gpu = options->convert_weights_on_gpu.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
-    bool* wait_for_weights_conversion_complete, LiteRtGpuOptionsPayload payload) {
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+    bool* wait_for_weights_conversion_complete, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(wait_for_weights_conversion_complete,
                          ErrorStatusBuilder::InvalidArgument())
       << "`wait_for_weights_conversion_complete` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
   *wait_for_weights_conversion_complete =
-      payload->wait_for_weights_conversion_complete;
+      options->wait_for_weights_conversion_complete.value_or(false);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
     bool* hint_fully_delegated_to_single_delegate,
-    LiteRtGpuOptionsPayload payload) {
+    const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(hint_fully_delegated_to_single_delegate,
                          ErrorStatusBuilder::InvalidArgument())
       << "`hint_fully_delegated_to_single_delegate` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
   *hint_fully_delegated_to_single_delegate =
-      payload->hint_fully_delegated_to_single_delegate;
+      options->hint_fully_delegated_to_single_delegate.value_or(false);
   return kLiteRtStatusOk;
 }

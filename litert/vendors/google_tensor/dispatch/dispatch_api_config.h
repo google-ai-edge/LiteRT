@@ -20,7 +20,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/options/litert_darwinn_options.h"
+#include "litert/vendors/google_tensor/dispatch/litert_darwinn_options.h"
 
 namespace litert::google_tensor {
 
@@ -48,7 +48,7 @@ LiteRtStatus InitializeDispatchApiConfig(
 // when initializing the LiteRT Dispatch API.
 //
 // If no DarwiNN-specific options were provided, nullptr is returned.
-DarwinnRuntimeOptions* absl_nullable GetTheDarwinnOptions();
+litert::LiteRtDarwinnRuntimeOptionsT* absl_nullable GetTheDarwinnOptions();
 
 // Returns the Google Tensor Dispatch API build ID.
 const char* absl_nonnull GetTheBuildId();
