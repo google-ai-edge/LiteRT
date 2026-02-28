@@ -966,3 +966,49 @@ cc_binary(
         "@com_google_absl//absl/flags:parse",
     ],
 )
+
+cc_library(
+    name = "batch_utils_cc",
+    srcs = ["batch_utils.cc"],
+    hdrs = ["batch_utils.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_binary(
+    name = "fix_batch_main",
+    srcs = ["fix_batch_main.cc"],
+    deps = [
+        ":batch_utils_cc",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_model",
+        "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/flags:usage",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+    ],
+)
+
+cc_test(
+    name = "fix_batch_main_test",
+    srcs = ["fix_batch_main_test.cc"],
+    deps = [
+        ":batch_utils_cc",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
