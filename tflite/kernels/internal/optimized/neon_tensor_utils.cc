@@ -1520,8 +1520,8 @@ void NeonApplyLayerNorm(const int16_t* input, const int16_t* layer_norm_weights,
                         const int32_t* bias, int32_t layer_norm_scale_a,
                         int32_t layer_norm_scale_b, int32_t variance_limit,
                         int n_batch, int n_input, int16_t* output) {
-  const int32 int16_max = std::numeric_limits<int16>::max();
-  const int32 int16_min = std::numeric_limits<int16>::min();
+  const int32 int16_max = std::numeric_limits<int16_t>::max();
+  const int32 int16_min = std::numeric_limits<int16_t>::min();
   const int32 temp = 1048576 / n_input;
 
   for (int i = 0; i < n_batch; ++i) {
@@ -1837,8 +1837,8 @@ void NeonCwiseMul(const int16_t* input_1, const int16_t* input_2,
 
 void NeonCwiseAdd(const int16_t* input_1, const int16_t* input_2, int n_batch,
                   int n_input, int16_t* output) {
-  const int32 int16_max = std::numeric_limits<int16>::max();
-  const int32 int16_min = std::numeric_limits<int16>::min();
+  const int32 int16_max = std::numeric_limits<int16_t>::max();
+  const int32 int16_min = std::numeric_limits<int16_t>::min();
   for (int batch = 0; batch < n_batch; ++batch) {
     int i = 0;
     for (; i <= n_input - 8; i += 8) {
