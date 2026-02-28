@@ -19,6 +19,7 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -32,6 +33,8 @@
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+
+struct LiteRtRuntimeCApiStruct;
 
 namespace litert {
 using internal::RuntimeProxy;
@@ -117,7 +120,15 @@ class Environment {
     if (!c_options) {
       return c_options.Error();
     }
-    auto runtime = GetBuiltinRuntime();
+    const struct LiteRtRuntimeCApiStruct* handle = nullptr;
+    Expected<const LiteRtVariant> system_runtime_handle =
+        options.GetOption(EnvironmentOptions::Tag::kSystemRuntimeHandle);
+    if (system_runtime_handle &&
+        std::holds_alternative<const void*>(*system_runtime_handle)) {
+      handle = reinterpret_cast<const struct LiteRtRuntimeCApiStruct*>(
+          std::get<const void*>(*system_runtime_handle));
+    }
+    auto runtime = CreateRuntime(handle);
     LiteRtEnvironment env;
     if (auto status = runtime->CreateEnvironment(c_options->size(),
                                                  c_options->data(), &env);
@@ -198,7 +209,7 @@ class Environment {
   /// object, with the builtin runtime.
   /// @warning This is for internal use only.
   static Environment WrapCObject(LiteRtEnvironment env, OwnHandle owned) {
-    auto runtime = GetBuiltinRuntime();
+    auto runtime = CreateRuntime();
     return Environment(env, std::move(runtime), owned);
   }
 
@@ -278,7 +289,16 @@ class Environment {
     return EnvironmentOptions(env_options);
   }
 
-  static std::unique_ptr<RuntimeProxy> GetBuiltinRuntime() {
+  /// @brief Creates a runtime proxy with the externally provided system runtime
+  /// handle.
+  ///
+  /// If the system runtime handle is not provided, the builtin runtime will be
+  /// used.
+  static std::unique_ptr<RuntimeProxy> CreateRuntime(
+      const struct LiteRtRuntimeCApiStruct* system_runtime_handle = nullptr) {
+    if (system_runtime_handle != nullptr) {
+      return std::make_unique<RuntimeProxy>(system_runtime_handle);
+    }
     return std::make_unique<RuntimeProxy>(kLiteRtRuntimeBuiltin);
   }
 };

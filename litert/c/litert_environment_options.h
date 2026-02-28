@@ -55,6 +55,8 @@ typedef enum {
   kLiteRtEnvOptionTagWebGpuProcs = 20,
   kLiteRtEnvOptionTagCustomTensorBufferHandlers_deprecated = 21,  // Deprecated.
   kLiteRtEnvOptionTagRuntimeLibraryDir = 22,
+  /// \internal This is for internal use only, for a custom runtime.
+  kLiteRtEnvOptionTagSystemRuntimeHandle = 23,
 } LiteRtEnvOptionTag;
 
 /// An object that holds option data for the LiteRtEnvironment.
