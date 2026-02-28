@@ -24,20 +24,21 @@
 #include <vector>
 
 #include "absl/strings/str_format.h" // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/samsung/compiler/compile_model.h"
 #include "litert/vendors/samsung/compiler/create_model.h"
+#include "litert/vendors/samsung/soc_model.h"
 
 class LiteRtCompilerPluginT {
   // Plugins can hold state.
@@ -67,10 +68,6 @@ private:
 };
 
 constexpr char kPluginManufacturer[] = "Samsung";
-
-constexpr const char *kPluginSocModelsName[] = {
-    "Exynos2600",
-};
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion *api_version) {
   if (!api_version) {
@@ -102,8 +99,7 @@ LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
   if (!compiler_plugin || !num_supported_soc_models) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LiteRtParamIndex total_num_of_soc_models = 1;
-  *num_supported_soc_models = total_num_of_soc_models;
+  *num_supported_soc_models = litert::samsung::kNumOfSocModels;
   return kLiteRtStatusOk;
 }
 
@@ -121,7 +117,7 @@ LiteRtGetCompilerPluginSupportedSocModel(LiteRtCompilerPlugin compiler_plugin,
   if (soc_model_idx < 0 || soc_model_idx >= num_supported_soc_models) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *soc_model_name = kPluginSocModelsName[soc_model_idx];
+  *soc_model_name = litert::samsung::kSocModels[soc_model_idx].soc_name;
   return kLiteRtStatusOk;
 }
 
@@ -235,9 +231,12 @@ LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
         ::litert::samsung::CreateModel(ai_lite_core.get(), subgraph));
 
     // Compile graph and return binary
+    LITERT_ASSIGN_OR_RETURN(auto soc_model_id,
+                            litert::samsung::GetSocModelID(soc_model));
     LITERT_ASSIGN_OR_RETURN(
         auto compiled_binary,
-        ::litert::samsung::Compile(ai_lite_core.get(), graph_buffer));
+        ::litert::samsung::Compile(ai_lite_core.get(), graph_buffer,
+                                   soc_model_id));
 
     result->byte_code[i] = std::move(compiled_binary);
     LITERT_LOG(LITERT_INFO, "Compile output: %ld bytes",

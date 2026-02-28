@@ -22,7 +22,8 @@
 namespace litert::samsung {
 
 Expected<std::vector<char>> Compile(AiLiteCoreManager::Ptr ai_lite_core,
-                                    const std::vector<char> &g_buffer) {
+                                    const std::vector<char> &g_buffer,
+                                    int soc_model_id) {
   auto expected_backend_handler = ai_lite_core->CreateBackendHandler();
   if (!expected_backend_handler.HasValue()) {
     return expected_backend_handler.Error();
@@ -31,7 +32,7 @@ Expected<std::vector<char>> Compile(AiLiteCoreManager::Ptr ai_lite_core,
   auto backend_handler = std::move(expected_backend_handler.Value());
 
   if (auto init_result = ai_lite_core->Api().InitializeBackendContext(
-          backend_handler.get(), 9955);
+          backend_handler.get(), soc_model_id);
       init_result != ::GraphGenResult::SUCCESS) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Samsung Backend initialize failed.");

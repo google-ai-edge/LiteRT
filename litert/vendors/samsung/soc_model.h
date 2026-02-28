@@ -12,18 +12,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_COMPILE_MODEL_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_COMPILE_MODEL_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_SOC_MODEL_H_
+#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_SOC_MODEL_H_
 
-#include <vector>
+#include <string_view>
+#include <cstdint>
 
-#include "litert/vendors/samsung/ai_litecore_manager.h"
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
 
 namespace litert::samsung {
 
-Expected<std::vector<char>> Compile(AiLiteCoreManager::Ptr ai_lite_core,
-                                    const std::vector<char> &g_buffer,
-                                    int soc_model_id);
+struct SocModel {
+  const char *soc_name;
+  int32_t id;
 
-}
-#endif
+  constexpr SocModel(const char *p_soc_name, int32_t p_id)
+      : soc_name(p_soc_name), id(p_id) {}
+};
+
+extern const SocModel kSocModels[];
+extern const LiteRtParamIndex kNumOfSocModels;
+
+Expected<int32_t> GetSocModelID(std::string_view soc_model);
+
+} // namespace litert::samsung
+
+#endif // ODML_LITERT_LITERT_VENDORS_SAMSUNG_SOC_MODEL_H_
