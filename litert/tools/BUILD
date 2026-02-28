@@ -495,7 +495,6 @@ tool_test(
         "//litert/test:extern_weight_test_data",
     ],
     tags = [
-        "notap",
     ],
     tool = ":run_model",
     tool_args = [
@@ -512,7 +511,6 @@ tool_test(
         "//litert/test:extern_weight_test_data",
     ],
     tags = [
-        "notap",
         "requires-gpu-nvidia",
     ],
     tool = ":run_model",
@@ -530,7 +528,6 @@ tool_test(
         "//litert/test:extern_weight_test_data_single_weight",
     ],
     tags = [
-        "notap",
     ],
     tool = ":run_model",
     tool_args = [
@@ -547,7 +544,6 @@ tool_test(
         "//litert/test:extern_weight_test_data_single_weight",
     ],
     tags = [
-        "notap",
         "requires-gpu-nvidia",
     ],
     tool = ":run_model",
@@ -565,7 +561,6 @@ tool_test(
         "//litert/test:extern_weight_test_data_single_weight",
     ],
     tags = [
-        "notap",
     ],
     tool = ":run_model",
     tool_args = [
@@ -586,7 +581,6 @@ tool_test(
         "//litert/test:extern_weight_test_data_single_weight",
     ],
     tags = [
-        "notap",
         "requires-gpu-nvidia",
     ],
     tool = ":run_model",
