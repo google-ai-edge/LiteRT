@@ -40,6 +40,7 @@
 #include "litert/core/model/model.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
+#include "litert/test/generators/reference.h"
 #include "litert/test/simple_buffer.h"
 
 namespace litert {
@@ -387,10 +388,10 @@ class Unary : public TestGraph {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "input and output must have the same dimensions");
     }
-    for (auto i = 0; i < input.NumElements(); ++i) {
-      output.data[i] = ReferenceOperator()(input.data[i]);
-    }
-    return {};
+    ElementWiseComputation ref;
+    return ref.InShape(input.dimensions.begin(), input.dimensions.end())
+        .OutShape(input.dimensions.begin(), input.dimensions.end())
+        .Compute(ReferenceOperator(), output.data.data(), input.data.data());
   }
 
   Params params_;
