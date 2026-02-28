@@ -58,6 +58,12 @@ class RuntimeProxy {
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
       : runtime_c_api_(ABSL_DIE_IF_NULL(runtime_c_api)) {};
 
+  // This constructor is used to create a RuntimeProxy with a runtime handle.
+  // It's mainly for avoiding exposing the LiteRtRuntimeCApiStruct too much.
+  explicit RuntimeProxy(int64_t runtime_handle)
+      : runtime_c_api_(
+            reinterpret_cast<LiteRtRuntimeCApiStruct*>(runtime_handle)) {}
+
   ~RuntimeProxy() = default;
 
   //

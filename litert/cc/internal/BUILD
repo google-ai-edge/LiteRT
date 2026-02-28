@@ -620,6 +620,19 @@ cc_library(
 
 # Do not use this target directly. It should only be used by Environment.
 cc_library(
+    name = "litert_runtime_no_builtin",
+    srcs = ["litert_runtime_no_builtin.cc"],
+    hdrs = ["litert_runtime_builtin.h"],
+    visibility = [
+        "//litert/cc:__pkg__",
+    ],
+    deps = [
+        "//litert/c/internal:litert_runtime_c_api",
+    ],
+)
+
+# Do not use this target directly. It should only be used by Environment.
+cc_library(
     name = "litert_runtime_builtin_runtimecapi",
     srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],

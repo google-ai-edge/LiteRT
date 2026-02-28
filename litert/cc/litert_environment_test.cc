@@ -14,18 +14,18 @@
 
 #include "litert/cc/litert_environment.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
-#include "litert/cc/litert_common.h"
+#include "litert/cc/internal/litert_runtime_builtin.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -35,6 +35,25 @@ namespace {
 
 TEST(EnvironmentTest, Default) {
   auto env = litert::Environment::Create({});
+  EXPECT_TRUE(env);
+}
+
+TEST(EnvironmentTest, HasRuntimeProxy) {
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  EXPECT_NE(env->GetHolder().runtime, nullptr);
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntime) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(kLiteRtRuntimeBuiltin)),
+      },
+  };
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   EXPECT_TRUE(env);
 }
 

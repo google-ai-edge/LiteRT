@@ -15,10 +15,12 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 #define ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -117,7 +119,14 @@ class Environment {
     if (!c_options) {
       return c_options.Error();
     }
-    auto runtime = GetBuiltinRuntime();
+    int64_t handle = 0;
+    auto system_runtime_handle =
+        options.GetOption(EnvironmentOptions::Tag::kSystemRuntimeHandle);
+    if (system_runtime_handle &&
+        std::holds_alternative<int64_t>(*system_runtime_handle)) {
+      handle = std::get<int64_t>(*system_runtime_handle);
+    }
+    auto runtime = CreateRuntime(handle);
     LiteRtEnvironment env;
     if (auto status = runtime->CreateEnvironment(c_options->size(),
                                                  c_options->data(), &env);
@@ -198,7 +207,7 @@ class Environment {
   /// object, with the builtin runtime.
   /// @warning This is for internal use only.
   static Environment WrapCObject(LiteRtEnvironment env, OwnHandle owned) {
-    auto runtime = GetBuiltinRuntime();
+    auto runtime = CreateRuntime();
     return Environment(env, std::move(runtime), owned);
   }
 
@@ -278,8 +287,12 @@ class Environment {
     return EnvironmentOptions(env_options);
   }
 
-  static std::unique_ptr<RuntimeProxy> GetBuiltinRuntime() {
-    return std::make_unique<RuntimeProxy>(&kLiteRtRuntimeBuiltin);
+  static std::unique_ptr<RuntimeProxy> CreateRuntime(
+      int64_t system_runtime = 0) {
+    if (system_runtime != 0) {
+      return std::make_unique<RuntimeProxy>(system_runtime);
+    }
+    return std::make_unique<RuntimeProxy>(kLiteRtRuntimeBuiltin);
   }
 };
 
