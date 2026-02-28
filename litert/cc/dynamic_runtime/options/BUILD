@@ -33,45 +33,11 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_opaque_options",
     "//litert/c/options:litert_darwinn_runtime_options",
     "//litert/c/options:litert_google_tensor_options",
-    "//litert/c/options:litert_gpu_options",
     "//litert/c/options:litert_intel_openvino_options",
     "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_runtime_options",
 ]
-
-cc_library(
-    name = "litert_gpu_options",
-    srcs = ["//litert/cc/options:litert_gpu_options.cc"],
-    hdrs = ["//litert/cc/options:litert_gpu_options.h"],
-    deps = [
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/internal:litert_handle",
-    ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
-
-cc_test(
-    name = "litert_gpu_options_test",
-    srcs = ["//litert/cc/options:litert_gpu_options_test.cc"],
-    deps = [
-        ":litert_gpu_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/c/options:litert_gpu_options",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/test:matchers",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
 
 cc_library(
     name = "litert_qualcomm_options",
