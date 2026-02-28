@@ -49,6 +49,7 @@ litert_dynamic_lib(
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime/options:litert_samsung_options",
         "//litert/vendors/cc:options_helper",
+        "//litert/vendors/samsung:soc_model",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",

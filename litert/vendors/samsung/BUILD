@@ -35,3 +35,13 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "soc_model",
+    hdrs = ["soc_model.h"],
+    srcs = ["soc_model.cc"],
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+    ]
+)
+
