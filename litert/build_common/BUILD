@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -153,4 +154,33 @@ cc_library(
     include_prefix = "third_party/odml/litert/litert/build_common",
     strip_include_prefix = "",
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "special_rule_bzl",
+    srcs = ["special_rule.bzl"],
+    visibility = ["//visibility:private"],
+)
+
+bzl_library(
+    name = "symlink_files_bzl",
+    srcs = ["symlink_files.bzl"],
+    visibility = ["//visibility:private"],
+)
+
+bzl_library(
+    name = "litert_build_defs_bzl",
+    srcs = ["litert_build_defs.bzl"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//devtools/build_cleaner/skylark:build_defs_lib",
+        "@bazel_skylib//lib:selects",
+        "@rules_cc//cc:core_rules",
+    ],
+)
+
+bzl_library(
+    name = "tfl_model_gen_bzl",
+    srcs = ["tfl_model_gen.bzl"],
+    visibility = ["//visibility:private"],
 )
