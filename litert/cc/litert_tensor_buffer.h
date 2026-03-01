@@ -50,7 +50,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   // TODO(b/479340050): Remove the default constructor.
   [[deprecated("Do NOT use the default constructor.")]]
   TensorBuffer()
-      : TensorBuffer(GetDefaultEnvironment()->GetHolder(), nullptr,
+      : TensorBuffer(Environment::GetDefault()->GetHolder(), nullptr,
                      OwnHandle::kNo) {}
 
   /// @brief Creates a managed `TensorBuffer` of a given buffer type and size.
@@ -437,7 +437,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   [[deprecated("Use the other WrapCObject method instead.")]]
   static TensorBuffer WrapCObject(LiteRtTensorBuffer tensor_buffer,
                                   OwnHandle owned) {
-    return TensorBuffer(GetDefaultEnvironment()->GetHolder(), tensor_buffer,
+    return TensorBuffer(Environment::GetDefault()->GetHolder(), tensor_buffer,
                         owned);
   }
 
@@ -464,14 +464,6 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
             owned),
         env_(env) {}
 
-  // This is only used for managing the lifetime of ad-hoc environment for
-  // legacy cases.
-  [[deprecated("Do not use this field.")]]
-  static const Expected<Environment>& GetDefaultEnvironment() {
-    static const Expected<Environment> kDefaultEnvironment =
-        Environment::Create({});
-    return kDefaultEnvironment;
-  }
 
   internal::EnvironmentHolder env_;
 
