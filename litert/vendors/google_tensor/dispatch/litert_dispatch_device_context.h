@@ -37,7 +37,8 @@ class LiteRtDispatchDeviceContextT {
     bool prefer_coherent = false;
   };
 
-  static LiteRtStatus Create(LiteRtDispatchDeviceContext& device_context);
+  static LiteRtStatus Create(LiteRtOptions options,
+                             LiteRtDispatchDeviceContext& device_context);
 
   LiteRtStatus Destroy();
 

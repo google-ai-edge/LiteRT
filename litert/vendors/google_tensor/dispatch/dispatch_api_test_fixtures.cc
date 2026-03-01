@@ -58,7 +58,6 @@ void DispatchApiTest::SetUp() {
   LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
 
   LITERT_ASSERT_OK(LiteRtDispatchInitialize(env_, options));
-  LiteRtDestroyOptions(options);
 
   const char* vendor_id;
   LITERT_ASSERT_OK(LiteRtDispatchGetVendorId(&vendor_id));
@@ -73,7 +72,9 @@ void DispatchApiTest::SetUp() {
   LITERT_LOG(LITERT_INFO, "API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
 
-  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(&device_context_));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchDeviceContextCreate(options, &device_context_));
+  LiteRtDestroyOptions(options);
 }
 
 void DispatchApiTest::TearDown() {
