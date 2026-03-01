@@ -13,8 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library")
+load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_library.bzl", "py_library")
 
 # Building blocks for generating accuracy validation metric graphs.
 load("//tflite/experimental/acceleration/mini_benchmark:build_defs.bzl", "validation_model", "validation_test")
@@ -31,11 +32,12 @@ package(
     licenses = ["notice"],
 )
 
-py_strict_library(
+py_library(
     name = "kl_divergence",
     srcs = [
         "kl_divergence.py",
     ],
+    strict_deps = True,
     visibility = ["//visibility:public"],
     deps = [
         "@org_tensorflow//tensorflow:tensorflow_py",
