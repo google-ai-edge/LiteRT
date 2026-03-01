@@ -120,7 +120,7 @@ TensorWrapper& BuildSingleSHA(
   EmplaceOpWithIO(new_ops, softmax, {add_1_output}, {softmax_output});
 
   // Slice 1
-  auto slice_1_ranges = slice_1.GetTensorPararm(0).GetTensor();
+  auto slice_1_ranges = slice_1.GetTensorParam(0).GetTensor();
   auto slice_1_rangs_data = slice_1_ranges.GetTensorData<int32_t>();
   std::vector<int32_t> sha_slice_1_ranges_data(
       slice_1_rangs_data.value().begin(), slice_1_rangs_data.value().end());
@@ -133,11 +133,11 @@ TensorWrapper& BuildSingleSHA(
   slice_1_output_dims[2] /= num_heads;
   auto& slice_1_output = tensor_pool.CloneNativeTensorFrom(
       slice_1.GetOutputTensor(0), slice_1_output_dims);
-  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice_1_output,
-               sha_slice_1_ranges);
+  new_ops.emplace_back(
+      CreateSliceOp(softmax_output, slice_1_output, sha_slice_1_ranges));
 
   // Slice 2
-  auto slice_2_ranges = slice_2.GetTensorPararm(0).GetTensor();
+  auto slice_2_ranges = slice_2.GetTensorParam(0).GetTensor();
   auto slice_2_ranges_data = slice_2_ranges.GetTensorData<int32_t>();
   std::vector<int32_t> sha_slice_2_ranges_data(
       slice_2_ranges_data.value().begin(), slice_2_ranges_data.value().end());
@@ -150,8 +150,8 @@ TensorWrapper& BuildSingleSHA(
   slice_2_output_dims[2] /= num_heads;
   auto& slice_2_output = tensor_pool.CloneNativeTensorFrom(
       slice_2.GetOutputTensor(0), slice_2_output_dims);
-  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice_2_output,
-               sha_slice_2_ranges);
+  new_ops.emplace_back(
+      CreateSliceOp(softmax_output, slice_2_output, sha_slice_2_ranges));
 
   // MatMul 1
   std::vector<uint32_t> matmul_v1_output_dims =
@@ -260,7 +260,7 @@ TensorWrapper& BuildSingleSHA(
   EmplaceOpWithIO(new_ops, softmax, {reshape_3_output}, {softmax_output});
 
   // Slice 1
-  auto slice_1_param = slice_1.GetTensorPararm(0).GetTensor();
+  auto slice_1_param = slice_1.GetTensorParam(0).GetTensor();
   auto slice_1_param_data = slice_1_param.GetTensorData<int32_t>();
   std::vector<int32_t> slice_1_ranges(slice_1_param_data.value().begin(),
                                       slice_1_param_data.value().end());
@@ -277,11 +277,11 @@ TensorWrapper& BuildSingleSHA(
   slice_1_output_dims[1] /= num_attn_per_kv_heads;
   auto& slice_1_output = tensor_pool.CloneNativeTensorFrom(
       slice_1.GetOutputTensor(0), slice_1_output_dims);
-  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice_1_output,
-               slice_1_param_tensor);
+  new_ops.emplace_back(
+      CreateSliceOp(softmax_output, slice_1_output, slice_1_param_tensor));
 
   // Slice 2
-  auto slice_2_param = slice_2.GetTensorPararm(0).GetTensor();
+  auto slice_2_param = slice_2.GetTensorParam(0).GetTensor();
   auto slice_2_param_data = slice_2_param.GetTensorData<int32_t>();
   std::vector<int32_t> slice_2_ranges(slice_2_param_data.value().begin(),
                                       slice_2_param_data.value().end());
@@ -298,8 +298,8 @@ TensorWrapper& BuildSingleSHA(
   slice_2_output_dims[1] /= num_attn_per_kv_heads;
   auto& slice_2_output = tensor_pool.CloneNativeTensorFrom(
       slice_2.GetOutputTensor(0), slice_2_output_dims);
-  BuildSliceOp(new_ops.emplace_back(), softmax_output, slice_2_output,
-               slice_2_param_tensor);
+  new_ops.emplace_back(
+      CreateSliceOp(softmax_output, slice_2_output, slice_2_param_tensor));
 
   // Matmul v1
   auto matmul_v1_output_dims = matmul_v1.GetOutputTensor(0).GetDimensions();
@@ -1196,7 +1196,7 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
     const auto& transpose_v_in =
         ops[select_index + kAttnTransposeIn].GetInputTensor(0);
     auto transpose_v_perm =
-        ops[select_index + kAttnTransposeIn].GetTensorPararm(0).GetTensor();
+        ops[select_index + kAttnTransposeIn].GetTensorParam(0).GetTensor();
     std::vector<uint32_t> perm_data = {0, 2, 1};
     auto perm_tensor = tensor_pool.CreateStaticTensor(
         transpose_v_perm.GetDataType(), transpose_v_perm.GetQuantParams(), {3},
