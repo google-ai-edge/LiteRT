@@ -478,6 +478,16 @@ LiteRtStatus LiteRtGetGpuOptionsExternalTensorsMode(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetGpuOptionsNoExternalTensorsMode(
+    bool* enabled, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *enabled = payload->experimental_external_tensors_mode;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
                                             LiteRtGpuOptionsPayload payload) {
   LITERT_RETURN_IF_ERROR(priority, ErrorStatusBuilder::InvalidArgument())

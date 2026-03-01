@@ -231,6 +231,9 @@ LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
 LiteRtStatus LiteRtGetGpuOptionsExternalTensorsMode(
     bool* enabled, LiteRtGpuOptionsPayload payload);
 
+  LiteRtStatus LiteRtGetGpuOptionsNoExternalTensorsMode(
+    bool* enabled, LiteRtGpuOptionsPayload payload);
+
 LiteRtStatus
 LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     bool* enabled, LiteRtGpuOptionsPayload payload);
