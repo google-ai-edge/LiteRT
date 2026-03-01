@@ -119,12 +119,10 @@ pywrap_library(
     common_lib_version_scripts = {
         "litert/python/pywrap_litert_with_converter_common": PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS,
     },
-    pywrap_count = 15,
+    pywrap_count = 4,
     visibility = ["//visibility:public"],
     deps = [
-        ":litert_pywrap_deps",
         "//litert/python/mlir",
-        "//tflite/python:tflite_pywrap_deps",
     ],
 )
 

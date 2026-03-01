@@ -126,8 +126,11 @@ build --incompatible_enforce_config_setting_visibility
 # TODO: also enable this flag after fixing the visibility violations
 # build --incompatible_config_setting_private_default_visibility
 
+# LiteRT Converter build options
+build:litert_converter --copt=-Wno-macro-redefined --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=litert_converter.mlir.
+
 # Compiler MLIR Builds
-common --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=ai_edge_litert.mlir.
+build --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=ai_edge_litert.mlir.
 common --copt=-DNB_DOMAIN=litert
 
 # Use GitHub mirror for BCR to work around bcr.bazel.build outages
