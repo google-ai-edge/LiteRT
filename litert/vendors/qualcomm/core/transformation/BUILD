@@ -50,6 +50,7 @@ cc_library(
     ],
     deps = [
         ":embedding_gemma",
+        ":kv_swapped_attn",
         ":mask",
         ":matmul_convert",
         ":mha_to_sha",
@@ -160,6 +161,53 @@ cc_test(
         "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
         "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
+        "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "kv_swapped_attn",
+    srcs = ["kv_swapped_attn.cc"],
+    hdrs = ["kv_swapped_attn.h"],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        ":mha_to_sha",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
+        "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+    ],
+)
+
+cc_test(
+    name = "kv_swapped_attn_test",
+    srcs = [
+        "kv_swapped_attn_test.cc",
+    ],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        ":graph_to_graph",
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
+        "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
+        "//litert/vendors/qualcomm/core/builders:matmul_op_builder",
+        "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//litert/vendors/qualcomm/core/builders:slice_op_builder",
+        "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",

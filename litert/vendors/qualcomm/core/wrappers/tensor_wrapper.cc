@@ -175,12 +175,13 @@ Qnn_DataType_t TensorWrapper::GetDataType() const {
 }
 
 bool TensorWrapper::operator==(const TensorWrapper& other) const {
-  // Compare the address
+  // Compare the address.
   if (this == &other) {
     return true;
   }
-
-  // Compare the value
+  // Compare the name.
+  if (!miscs::IsStrEq(qnn_tensor_.v2.name, other.qnn_tensor_.v2.name)) return false;
+  // Compare the value.
   if (qnn_tensor_.version != other.qnn_tensor_.version) return false;
   if (qnn_tensor_.v2.type != other.qnn_tensor_.v2.type) return false;
   if (qnn_tensor_.v2.dataFormat != other.qnn_tensor_.v2.dataFormat)
