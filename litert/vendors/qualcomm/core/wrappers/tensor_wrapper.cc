@@ -325,15 +325,11 @@ void TensorWrapper::ConvertQint16ToQuint16() {
   } else if (IsPerChannelQuant()) {
     const auto& q_param =
         std::get<AxisScaleOffsetQuantizeParamsWrapper>(GetQuantParams());
-    std::int32_t axis = q_param.GetAxis();
-    std::vector<float> scales;
-    q_param.GetScales(scales);
-    std::vector<std::int32_t> zero_points;
-    q_param.GetZeroPoints(zero_points);
+    std::vector<int32_t> zero_points = q_param.GetZeroPoints();
     std::for_each(zero_points.begin(), zero_points.end(),
                   [](std::int32_t& val) { val += kUint16ZeroPoint; });
     quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
-        axis, absl::MakeSpan(scales), absl::MakeSpan(zero_points));
+        q_param.GetAxis(), q_param.GetScales(), zero_points);
   }
 
   UpdateQnnQuantParams();
