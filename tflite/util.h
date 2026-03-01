@@ -39,7 +39,11 @@ namespace tflite {
 // Clients (such as delegates) might look at this to ensure interop between
 // TFLite memory & hardware buffers.
 // NOTE: This only holds for tensors allocated on the arena.
+#if defined(__ANDROID__) || defined(__APPLE__)
+constexpr int kDefaultTensorAlignment = 16;
+#else
 constexpr int kDefaultTensorAlignment = 64;
+#endif  // defined(__ANDROID__) || defined(__APPLE__)
 
 // The prefix of Flex op custom code.
 // This will be matched agains the `custom_code` field in `OperatorCode`
