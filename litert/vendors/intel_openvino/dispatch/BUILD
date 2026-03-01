@@ -18,7 +18,6 @@ load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_internal_users"],
 )
 
 litert_dynamic_lib(
@@ -98,7 +97,7 @@ litert_bin(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts(),
     linkshared = 1,
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
