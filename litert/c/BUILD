@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
 # copybara:uncomment_begin(google-only)
 # load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib", "macos_unit_test")
 # copybara:uncomment_end_and_comment_begin
@@ -24,8 +27,6 @@ load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-
-# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load(
     "//litert/build_common:litert_build_defs.bzl",
     "copy_file",
@@ -175,8 +176,8 @@ cc_library(
     deps = [
         ":litert_any",
         ":litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
+        ":litert_custom_tensor_buffer",
+        ":litert_tensor_buffer_types",
         "//litert/cc:litert_macros",
         "//litert/core:environment_options",
     ],
@@ -190,8 +191,8 @@ cc_library(
     deps = [
         ":litert_any",
         ":litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
+        ":litert_custom_tensor_buffer",
+        ":litert_tensor_buffer_types",
     ],
 )
 
@@ -868,10 +869,24 @@ filegroup(
 )
 
 # Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
-# resolve the symbols, not from libLiteRt.so.
 config_setting(
-    name = "resolve_symbols_in_exec",
+    name = "resolve_symbols_in_exec_define",
     define_values = {"resolve_symbols_in_exec": "true"},
+)
+
+config_setting(
+    name = "resolve_symbols_in_exec_flag",
+    flag_values = {"//litert/build_common:resolve_symbols_in_exec": "true"},
+)
+
+# Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
+# resolve the symbols, not from libLiteRt.so.
+selects.config_setting_group(
+    name = "resolve_symbols_in_exec",
+    match_any = [
+        ":resolve_symbols_in_exec_define",
+        ":resolve_symbols_in_exec_flag",
+    ],
 )
 
 config_setting(
@@ -921,6 +936,11 @@ cc_library(
         "@platforms//os:windows": [":litert_runtime_c_api_import"],
         "//conditions:default": [],
     }),
+)
+
+cc_library(
+    name = "empty",
+    srcs = ["empty.cc"],
 )
 
 # copybara:uncomment_begin(google-only)
