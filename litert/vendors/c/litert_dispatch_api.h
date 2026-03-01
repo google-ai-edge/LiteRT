@@ -32,6 +32,8 @@ extern "C" {
 typedef LiteRtStatus (*LiteRtDispatchInitializeT)(LiteRtEnvironment environment,
                                                   LiteRtOptions options);
 
+typedef LiteRtStatus (*LiteRtDispatchDestroyT)();
+
 typedef LiteRtStatus (*LiteRtDispatchGetVendorIdT)(const char** vendor_id);
 
 typedef LiteRtStatus (*LiteRtDispatchGetBuildIdT)(const char** build_id);
@@ -122,6 +124,7 @@ typedef LiteRtStatus (*LiteRtDispatchCheckRuntimeCompatibilityT)(
 
 typedef struct LiteRtDispatchInterface {
   LiteRtDispatchInitializeT initialize;
+  LiteRtDispatchDestroyT destroy;
   LiteRtDispatchGetVendorIdT get_vendor_id;
   LiteRtDispatchGetBuildIdT get_build_id;
   LiteRtDispatchGetCapabilitiesT get_capabilities;

@@ -48,7 +48,15 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
  public:
   ~DispatchDelegate() override {
     if (device_context_) {
-      (void)LiteRtDispatchDeviceContextDestroy(device_context_);
+      if (LiteRtDispatchDeviceContextDestroy(device_context_) !=
+          kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR, "Failed to destroy dispatch device context.");
+      }
+    }
+    if (has_dispatch_runtime_) {
+      if (LiteRtDispatchDestroy() != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR, "Failed to destroy dispatch runtime.");
+      }
     }
   }
 
