@@ -64,7 +64,10 @@ target_link_libraries(qnn_manager
         absl::statusor
         absl::strings
         absl::str_format
+    PRIVATE
         qnn_saver_utils
+        qnn_backends
+        qnn_wrappers
 )
 
 # Context Binary Info library

@@ -54,7 +54,7 @@ target_sources(qnn_manager_test
 target_link_libraries(qnn_manager_test
     PRIVATE
         absl::log_internal_message
-        qnn_compiler_plugin
+        qnn_manager
         litert_test_common
         GTest::gtest_main
 )
