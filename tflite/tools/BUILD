@@ -1,6 +1,3 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library", "py_strict_test")
-
-# Placeholder: load py_proto_library
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_cc_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load(
@@ -10,6 +7,11 @@ load(
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# Placeholder: load py_proto_library
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 load("//tflite:build_def.bzl", "tflite_copts", "tflite_copts_warnings")
 load("//tflite:special_rules.bzl", "tflite_portable_test_suite")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")
@@ -26,27 +28,30 @@ exports_files([
     "logging.h",
 ])
 
-py_strict_binary(
+py_binary(
     name = "visualize",
     srcs = ["visualize.py"],
+    strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
         "@org_tensorflow//third_party/py/numpy",
     ],
 )
 
-py_strict_library(
+py_library(
     name = "visualize_lib",
     srcs = ["visualize.py"],
+    strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
         "@org_tensorflow//third_party/py/numpy",
     ],
 )
 
-py_strict_test(
+py_test(
     name = "visualize_test",
     srcs = ["visualize_test.py"],
+    strict_deps = True,
     deps = [
         ":test_utils",
         ":visualize_lib",
@@ -56,9 +61,10 @@ py_strict_test(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "convert_image_to_csv",
     srcs = ["convert_image_to_csv.py"],
+    strict_deps = True,
     deps = [
         "@absl_py//absl:app",
         "@absl_py//absl/flags",
@@ -70,9 +76,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "convert_image_to_csv_lib",
     srcs = ["convert_image_to_csv.py"],
+    strict_deps = True,
     deps = [
         "@absl_py//absl:app",
         "@absl_py//absl/flags",
@@ -84,10 +91,11 @@ py_strict_library(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "convert_image_to_csv_test",
     srcs = ["convert_image_to_csv_test.py"],
     data = ["@org_tensorflow//tensorflow/core:image_testdata"],
+    strict_deps = True,
     deps = [
         ":convert_image_to_csv_lib",
         #internal proto upb dep
@@ -99,9 +107,10 @@ py_strict_test(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "strip_strings",
     srcs = ["strip_strings.py"],
+    strict_deps = True,
     deps = [
         ":flatbuffer_utils",
         "@absl_py//absl:app",
@@ -109,9 +118,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "reverse_xxd_dump_from_cc",
     srcs = ["reverse_xxd_dump_from_cc.py"],
+    strict_deps = True,
     deps = [
         ":flatbuffer_utils",
         "@absl_py//absl:app",
@@ -119,9 +129,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "randomize_weights",
     srcs = ["randomize_weights.py"],
+    strict_deps = True,
     deps = [
         ":flatbuffer_utils",
         "@absl_py//absl:app",
@@ -129,9 +140,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "flatbuffer_utils",
     srcs = ["flatbuffer_utils.py"],
+    strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
         "//tflite/python:schema_util",
@@ -140,9 +152,10 @@ py_strict_library(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "flatbuffer_utils_test",
     srcs = ["flatbuffer_utils_test.py"],
+    strict_deps = True,
     deps = [
         ":flatbuffer_utils",
         ":test_utils",
@@ -153,9 +166,10 @@ py_strict_test(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "test_utils",
     srcs = ["test_utils.py"],
+    strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
         "@flatbuffers//:runtime_py",
@@ -379,9 +393,10 @@ tf_cc_test(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "zip_files",
     srcs = ["zip_files.py"],
+    strict_deps = True,
     visibility = ["//visibility:public"],
     deps = [
         "@absl_py//absl:app",
