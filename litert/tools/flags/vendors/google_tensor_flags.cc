@@ -108,9 +108,6 @@ ABSL_FLAG(LiteRtGoogleTensorOptionsTruncationType,
 ABSL_FLAG(bool, google_tensor_int64_to_int32, false,
           "Whether to truncate int64 to int32.");
 
-ABSL_FLAG(bool, google_tensor_dump_op_timings, false,
-          "Whether to dump op timings.");
-
 ABSL_FLAG(bool, google_tensor_enable_large_model_support, false,
           "Whether to enable large model support.");
 
@@ -138,7 +135,6 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_truncation_type));
   options.SetInt64ToInt32Truncation(
       absl::GetFlag(FLAGS_google_tensor_int64_to_int32));
-  options.SetDumpOpTimings(absl::GetFlag(FLAGS_google_tensor_dump_op_timings));
   options.SetEnableLargeModelSupport(
       absl::GetFlag(FLAGS_google_tensor_enable_large_model_support));
   options.SetEnable4BitCompilation(

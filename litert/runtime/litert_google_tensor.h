@@ -25,7 +25,6 @@ struct LiteRtGoogleTensorOptionsT {
       kLiteRtGoogleTensorFloatTruncationTypeAuto;
   bool int64_to_int32_truncation = false;
   std::string output_dir = "";
-  bool dump_op_timings = false;
   bool enable_large_model_support = false;
   bool enable_4bit_compilation = false;
   LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity =
