@@ -60,6 +60,10 @@ class DarwinnRuntimeOptions : public OpaqueOptions {
   /// @brief Sets/gets the memory coherency preference.
   Expected<void> SetPreferCoherent(bool prefer_coherent);
   Expected<bool> GetPreferCoherent() const;
+
+  /// @brief Sets/gets the runtime internal options.
+  Expected<void> SetInternalOptions(absl::string_view internal_options);
+  Expected<absl::string_view> GetInternalOptions() const;
 };
 
 /// @note `FindOpaqueOptions` template specializations are not needed.

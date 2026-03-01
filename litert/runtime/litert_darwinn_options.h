@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_RUNTIME_LITERT_DARWINN_OPTIONS_H_
 
 #include <cstdint>
+#include <string>
 
 namespace litert {
 
@@ -38,6 +39,8 @@ struct LiteRtDarwinnRuntimeOptionsT {
 
   // Memory coherency preference
   bool prefer_coherent = false;  // Whether to prefer coherent memory allocation
+
+  std::string internal_options;
 
   static const char* Identifier() { return "darwinn_runtime_options"; }
 };

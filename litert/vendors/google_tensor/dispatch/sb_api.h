@@ -843,6 +843,13 @@ ThrStatus thrInvocationContextStopMetricsCollection(
 ThrStatus thrVendorSetSystemAttributeStr(ThrContext* context, const char* key,
                                          const char* value);
 
+// Same as above, but allows for specifying the length of the value string.
+// This is useful for cases where the value string contains null characters.
+//
+// WARNING: This API is experimental and subject to change.
+ThrStatus thrVendorSetSystemAttributeStrN(ThrContext* context, const char* key,
+                                          const char* value, size_t value_len);
+
 // Sets the given int64_t `key` attribute of the vendor SouthBound
 // implementation associated with the given `context`
 //

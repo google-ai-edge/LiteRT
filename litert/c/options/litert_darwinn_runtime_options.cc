@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_darwinn_runtime_options.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -179,5 +180,38 @@ LiteRtStatus LiteRtGetDarwinnPreferCoherent(
   auto* opts =
       reinterpret_cast<const litert::LiteRtDarwinnRuntimeOptionsT*>(options);
   *prefer_coherent = opts->prefer_coherent;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetDarwinnInternalOptions(
+    LiteRtDarwinnRuntimeOptions options, const char* internal_options,
+    size_t size) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+
+  auto* opts = reinterpret_cast<litert::LiteRtDarwinnRuntimeOptionsT*>(options);
+  if (internal_options == nullptr) {
+    opts->internal_options.clear();
+  } else {
+    opts->internal_options.assign(internal_options, size);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetDarwinnInternalOptions(
+    LiteRtDarwinnRuntimeOptionsConst options, const char** internal_options,
+    size_t* size) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(internal_options,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "internal_options is null.";
+  LITERT_RETURN_IF_ERROR(size, litert::ErrorStatusBuilder::InvalidArgument())
+      << "size is null.";
+
+  auto* opts =
+      reinterpret_cast<const litert::LiteRtDarwinnRuntimeOptionsT*>(options);
+  *internal_options = opts->internal_options.c_str();
+  *size = opts->internal_options.length();
   return kLiteRtStatusOk;
 }

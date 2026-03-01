@@ -15,10 +15,13 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
 #include <inttypes.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <utility>
+
+#include "absl/strings/string_view.h"  // from @com_google_absl
 
 #if __ANDROID__
 #include <android/hardware_buffer.h>
@@ -76,7 +79,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
     }
 
     if (litert::Expected<int8_t> priority =
-            darwinn_options->GetInferencePriority(); priority.HasValue()) {
+            darwinn_options->GetInferencePriority();
+        priority.HasValue()) {
       options_data->inference_priority = *priority;
     }
 
@@ -86,8 +90,21 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
     }
 
     if (litert::Expected<bool> prefer_coherent =
-            darwinn_options->GetPreferCoherent(); prefer_coherent.HasValue()) {
+            darwinn_options->GetPreferCoherent();
+        prefer_coherent.HasValue()) {
       options_data->prefer_coherent = *prefer_coherent;
+    }
+
+    if (litert::Expected<absl::string_view> internal_options =
+            darwinn_options->GetInternalOptions();
+        (internal_options.HasValue() && !internal_options->empty())) {
+      LITERT_LOG(LITERT_INFO, "------- Internal options: (%zu) %s",
+                 internal_options->size(), internal_options->data());
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrVendorSetSystemAttributeStrN(thr_context, "internal_options",
+                                          internal_options->data(),
+                                          internal_options->size()),
+          "Failed to set internal options");
     }
 
     LITERT_LOG(LITERT_INFO,
