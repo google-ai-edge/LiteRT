@@ -154,6 +154,26 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_samsung_options",
+    srcs = ["//litert/cc/options:litert_samsung_options.cc"],
+    hdrs = ["//litert/cc/options:litert_samsung_options.h"],
+    deps = [
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_library(
     name = "litert_darwinn_options",
     srcs = ["//litert/cc/options:litert_darwinn_options.cc"],
     hdrs = ["//litert/cc/options:litert_darwinn_options.h"],

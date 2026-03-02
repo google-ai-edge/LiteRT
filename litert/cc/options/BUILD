@@ -224,6 +224,24 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_samsung_options",
+    srcs = ["litert_samsung_options.cc"],
+    hdrs = ["litert_samsung_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_samsung_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
     name = "litert_runtime_options",
     srcs = ["litert_runtime_options.cc"],
     hdrs = ["litert_runtime_options.h"],
