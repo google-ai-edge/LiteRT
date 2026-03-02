@@ -114,6 +114,20 @@ litert::Expected<std::string> GetSharedLibraryPath(
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
+#if !defined(_WIN32)
+#if defined(__APPLE__) || defined(__clang__) || defined(__GNUC__)
+__attribute__((weak)) LiteRtStatus LiteRtDispatchGetApi(
+    LiteRtDispatchApi* api) {
+  return kLiteRtStatusErrorNotFound;
+}
+#else
+// Unsupported compiler for weak symbols.
+LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
+  return kLiteRtStatusErrorNotFound;
+}
+#endif
+#endif
+
 LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
                                       LiteRtOptions options) {
   if (IsTheApiInitialized) {
@@ -122,31 +136,42 @@ LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
   LiteRtEnvironmentOptions env_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetEnvironmentOptions(env, &env_options));
 
-  // TODO(piyu): support Android systems where libraries are not unpacked in the
-  // system directory.
-  LITERT_ASSIGN_OR_RETURN(auto shared_lib_path,
-                          GetSharedLibraryPath(env_options));
+  LiteRtStatus api_status = kLiteRtStatusErrorNotFound;
+#if !defined(_WIN32)
+  api_status = LiteRtDispatchGetApi(&TheApi);
+#endif
 
-  LITERT_LOG(LITERT_INFO, "Loading shared library: %s",
-             shared_lib_path.c_str());
+  if (api_status == kLiteRtStatusErrorNotFound) {
+    // TODO(piyu): support Android systems where libraries are not unpacked in
+    // the system directory.
+    LITERT_ASSIGN_OR_RETURN(auto shared_lib_path,
+                            GetSharedLibraryPath(env_options));
 
-  if (!DispatchSharedLibrary) {
-    DispatchSharedLibrary = new litert::SharedLibrary();
-  }
+    LITERT_LOG(LITERT_INFO, "Loading shared library: %s",
+               shared_lib_path.c_str());
 
-  LITERT_ASSIGN_OR_RETURN(
-      *DispatchSharedLibrary,
-      litert::SharedLibrary::Load(shared_lib_path,
-                                  litert::RtldFlags::Now().Local()));
+    if (!DispatchSharedLibrary) {
+      DispatchSharedLibrary = new litert::SharedLibrary();
+    }
 
-  using LiteRtDispatchGetApi_t = LiteRtStatus (*)(LiteRtDispatchApi*);
-  LITERT_ASSIGN_OR_RETURN(
-      auto LiteRtDispatchGetApi,
-      DispatchSharedLibrary->LookupSymbol<LiteRtDispatchGetApi_t>(
-          "LiteRtDispatchGetApi"));
+    LITERT_ASSIGN_OR_RETURN(
+        *DispatchSharedLibrary,
+        litert::SharedLibrary::Load(shared_lib_path,
+                                    litert::RtldFlags::Now().Local()));
 
-  if (auto status = LiteRtDispatchGetApi(&TheApi); status != kLiteRtStatusOk) {
-    return status;
+    using LiteRtDispatchGetApi_t = LiteRtStatus (*)(LiteRtDispatchApi*);
+    LITERT_ASSIGN_OR_RETURN(
+        auto dynamic_get_api,
+        DispatchSharedLibrary->LookupSymbol<LiteRtDispatchGetApi_t>(
+            "LiteRtDispatchGetApi"));
+
+    if (auto status = dynamic_get_api(&TheApi); status != kLiteRtStatusOk) {
+      return status;
+    }
+  } else if (api_status != kLiteRtStatusOk) {
+    return api_status;
+  } else {
+    LITERT_LOG(LITERT_INFO, "Using statically linked dispatch_api");
   }
 
   if (!litert::internal::IsSameVersionAsRuntime(TheApi.version)) {

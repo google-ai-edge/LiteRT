@@ -152,6 +152,79 @@ litert_dynamic_lib(
     ],
 )
 
+#  Statically linked version of the Google Tensor Dispatch API. Only meant to be used in
+# :google_tensor_accelerator.
+cc_library(
+    name = "dispatch_api_static",
+    srcs = [
+        "dispatch_api.cc",
+        "dispatch_api_config.cc",
+        "dispatch_api_utils.cc",
+        "litert_dispatch_device_context.cc",
+        "litert_dispatch_graph.cc",
+        "litert_dispatch_invocation_context.cc",
+        "sb_api_late_binding.cc",
+    ],
+    hdrs = [
+        "dispatch_api.h",
+        "dispatch_api_config.h",
+        "dispatch_api_macros.h",
+        "dispatch_api_utils.h",
+        "litert_dispatch_device_context.h",
+        "litert_dispatch_graph.h",
+        "litert_dispatch_invocation_context.h",
+        "litert_dispatch_metrics.h",
+        "sb_api.h",
+        "sb_api_features.h",
+    ],
+    copts = [
+        "-Os",
+        "-fno-exceptions",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+        "-ffunction-sections",
+        "-fdata-sections",
+    ],
+    tags = [
+        # Don't build/test in OSS until Southbound is available.
+        "nobuilder",
+    ],
+    visibility = [
+        "//litert:litert_public",
+        "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
+    ],
+    deps = [
+        "@com_google_absl//absl/algorithm:container",
+        "//litert/c/internal:litert_scheduling_info",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        # TODO: Remove this dependency.
+        "//litert/core/util:tensor_type_util",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "//litert/vendors/cc:options_helper_static",
+        "//litert/c:litert_any",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_event",
+        "//litert/c:litert_environment",
+    ],
+)
+
 cc_library(
     name = "dispatch_api_test_fixtures",
     testonly = True,
@@ -235,4 +308,41 @@ cc_library(
 #         "INTERNAL_THREAD_PKG",
 #     ],
 # )
+#
+# # Statically linked version of the Google Tensor Accelerator. Use this if you don't want to depend
+# # on libLiteRtDispatch_GoogleTensor.so.
+# cc_library(
+#     name = "google_tensor_accelerator",
+#     srcs = ["google_tensor_accelerator.cc"],
+#     defines = ["LITERT_USE_STATIC_LINKED_NPU_ACCELERATOR"],
+#     deps = [
+#         ":dispatch_api_static",
+#         "//litert/vendors/c:litert_dispatch_c_api",
+#     ],
+#     alwayslink = 1,
+# )
+#
+# cc_test(
+#     name = "google_tensor_accelerator_test",
+#     srcs = ["google_tensor_accelerator_test.cc"],
+#     data = [
+#         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
+#         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
+#     ],
+#     deps = [
+#         ":google_tensor_accelerator",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_compiled_model",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options",
+#         "//litert/c:litert_model",
+#         "//litert/c:litert_model_types",
+#         "//litert/c:litert_options",
+#         "//litert/c:litert_tensor_buffer",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/test:common",
+#     ],
+# )
+#
 # copybara:uncomment_end
