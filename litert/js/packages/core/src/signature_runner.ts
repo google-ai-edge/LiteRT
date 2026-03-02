@@ -141,7 +141,7 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
 
     let outputArray: Tensor[]|undefined;
     try {
-      outputArray = this.runWithArray(inputsOnAccelerator);
+      outputArray = await this.runWithArray(inputsOnAccelerator);
     } finally {
       cleanup();
     }
@@ -242,7 +242,7 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
     };
   }
 
-  private runWithArray(input: Tensor[]): Tensor[] {
+  private async runWithArray(input: Tensor[]): Promise<Tensor[]> {
     // b/458345985: When on WebGPU, will need to check stride & alignment
     for (let i = 0; i < input.length; i++) {
       const inputTensor = input[i];
@@ -259,7 +259,7 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
       inputRequirements.delete();
     }
 
-    const outputTensorBuffers = this.liteRtCompiledModel.run(
+    const outputTensorBuffers = await this.liteRtCompiledModel.run(
         this.signatureIndex, input.map((tensor) => tensor.liteRtTensorBuffer));
     return outputTensorBuffers.map(
         (tensorBuffer) => new Tensor(tensorBuffer, this.options.environment));

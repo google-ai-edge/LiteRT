@@ -60,13 +60,32 @@ declare interface WasmFeatureValues {
   relaxedSimd: Promise<SupportStatus>|undefined;
   threads: Promise<SupportStatus>|undefined;
   jspi: Promise<SupportStatus>|undefined;
+  webnn: Promise<SupportStatus>|undefined;
 }
 
 const WASM_FEATURE_VALUES: WasmFeatureValues = {
   'relaxedSimd': undefined,
   'threads': undefined,
   'jspi': undefined,
+  'webnn': undefined,
 };
+
+/** Returns true is JSPI is supported in the browser. */
+export function isJspiSupported() {
+  try {
+    return (
+        // tslint:disable-next-line:ban-unsafe-reflection
+        'Suspending' in WebAssembly);
+  } catch (e) {
+    return false;
+  }
+}
+
+/** Returns true if WebNN is supported in the browser. */
+export function isWebNnSupported(): boolean {
+  // tslint:disable-next-line:no-any
+  return typeof navigator !== 'undefined' && !!(navigator as any).ml;
+}
 
 async function tryWasm(wasm: Uint8Array): Promise<SupportStatus> {
   try {
@@ -101,15 +120,23 @@ const WASM_FEATURE_CHECKS:
       },
       'jspi': () => {
         if (WASM_FEATURE_VALUES.jspi === undefined) {
-          const supported =
-              typeof (WebAssembly as unknown as {Suspender: unknown}).Suspender
-              !== 'undefined';
+          const supported = isJspiSupported();
           WASM_FEATURE_VALUES.jspi = Promise.resolve({
             supported,
             error: supported ? undefined : new Error('JSPI is not supported')
           });
         }
         return WASM_FEATURE_VALUES.jspi!;
+      },
+      'webnn': () => {
+        if (WASM_FEATURE_VALUES.webnn === undefined) {
+          const supported = isWebNnSupported();
+          WASM_FEATURE_VALUES.webnn = Promise.resolve({
+            supported,
+            error: supported ? undefined : new Error('WebNN is not supported')
+          });
+        }
+        return WASM_FEATURE_VALUES.webnn!;
       },
     };
 

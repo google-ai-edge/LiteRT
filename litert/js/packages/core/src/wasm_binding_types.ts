@@ -170,8 +170,8 @@ export declare interface LiteRtCompiledModel extends Deletable {
       LiteRtTensorBufferRequirements;
   getOutputBufferRequirements(signatureIndex: number, outputIndex: number):
       LiteRtTensorBufferRequirements;
-  run(signatureIndex: number,
-      inputTensors: LiteRtTensorBuffer[]): LiteRtTensorBuffer[];
+  run(signatureIndex: number, inputTensors: LiteRtTensorBuffer[]):
+      LiteRtTensorBuffer[]|Promise<LiteRtTensorBuffer[]>;
 }
 
 /**
