@@ -327,6 +327,40 @@ TEST(TensorWrapperTest, ConvertQint16ToQuint16Test) {
     EXPECT_NEAR(data[i], deq_data[i], 1e-3);
   }
 }
+
+TEST(TensorWrapperTest, UpdateBitWidthTest) {
+  BwScaleOffsetQuantizeParamsWrapper q_param(2, 0.0001f, 0);
+  TensorWrapper tensor_wrapper{"",
+                               QNN_TENSOR_TYPE_STATIC,
+                               QNN_DATATYPE_SFIXED_POINT_8,
+                               q_param,
+                               {1, 1, 4}};
+  EXPECT_TRUE(tensor_wrapper.IsQuantBitwidth(2));
+
+  tensor_wrapper.SetQuantBitwidth(4);
+  EXPECT_TRUE(tensor_wrapper.IsQuantBitwidth(4));
+  EXPECT_EQ(tensor_wrapper.GetQnnTensor()
+                .v2.quantizeParams.bwScaleOffsetEncoding.bitwidth,
+            4);
+
+  tensor_wrapper.SetQuantBitwidth(8);
+  EXPECT_TRUE(tensor_wrapper.IsQuantBitwidth(8));
+  EXPECT_EQ(tensor_wrapper.GetQnnTensor()
+                .v2.quantizeParams.bwScaleOffsetEncoding.bitwidth,
+            8);
+}
+
+TEST(TensorWrapperTest, UpdateBitWidthOnUnsupportedQuantTypeTest) {
+  ScaleOffsetQuantizeParamsWrapper q_param(0.0001f, 0);
+  TensorWrapper tensor_wrapper{"",
+                               QNN_TENSOR_TYPE_STATIC,
+                               QNN_DATATYPE_SFIXED_POINT_8,
+                               q_param,
+                               {1, 1, 4}};
+  tensor_wrapper.SetQuantBitwidth(4);
+  EXPECT_FALSE(tensor_wrapper.IsQuantBitwidth(4));
+}
+
 TEST(TensorWrapperTest, QnnTensorPerTensorQuantConstructTest) {
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
   TensorWrapper tensor_wrapper{"",

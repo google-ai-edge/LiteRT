@@ -104,6 +104,10 @@ class BwScaleOffsetQuantizeParamsWrapper final {
     return qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth;
   }
 
+  void SetBitwidth(std::uint32_t bitwidth) {
+    qnn_quantize_param_.bwScaleOffsetEncoding.bitwidth = bitwidth;
+  }
+
  private:
   Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
 };
@@ -137,6 +141,10 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   std::uint32_t GetBitwidth() const {
     return qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth;
+  }
+
+  void SetBitwidth(std::uint32_t bitwidth) {
+    qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth = bitwidth;
   }
 
  private:
