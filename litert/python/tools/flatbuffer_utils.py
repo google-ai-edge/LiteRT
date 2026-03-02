@@ -17,22 +17,73 @@
 All functions that are commonly used to work with FlatBuffers.
 """
 
+from collections.abc import Mapping
 import copy
+import logging
+import mmap
+import os
+import pathlib
 import random
 import re
 import struct
 import sys
-from typing import Optional, Type, TypeVar, Union
+from typing import Literal, Protocol, Type, TypeVar, overload
 
 import flatbuffers
+import numpy as np
 
 import os # import gfile
 from litert.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
 
+# Types imported from `schema_py_generated`.
+Buffer = schema_fb.Buffer
+BufferT = schema_fb.BufferT
+BuiltinOperator = schema_fb.BuiltinOperator
+BuiltinOptions = schema_fb.BuiltinOptions
+BuiltinOptions2 = schema_fb.BuiltinOptions2
+Model = schema_fb.Model
+ModelT = schema_fb.ModelT
+Operator = schema_fb.Operator
+OperatorCode = schema_fb.OperatorCode
+OperatorCodeT = schema_fb.OperatorCodeT
+OperatorT = schema_fb.OperatorT
+StableHLOCompositeOptions = schema_fb.StableHLOCompositeOptions
+StableHLOCompositeOptionsT = schema_fb.StableHLOCompositeOptionsT
+SubGraph = schema_fb.SubGraph
+SubGraphT = schema_fb.SubGraphT
+Tensor = schema_fb.Tensor
+TensorT = schema_fb.TensorT
+TensorType = schema_fb.TensorType
+
+# Local convenience types.
+Path = str | pathlib.Path
+BufferType = bytes | bytearray | memoryview | mmap.mmap
+Endiness = Literal['little', 'big']
+
+
+class Packed(Protocol):
+
+  @classmethod
+  def GetRootAs(cls, buf: BufferType, offset: int = 0):  # pylint: disable=invalid-name
+    ...
+
+
+class Packable(Protocol):
+
+  def Pack(self, builder: flatbuffers.Builder):  # pylint: disable=invalid-name
+    ...
+
+  @classmethod
+  def InitFromObj(cls, operatorCode: Packed):  # pylint: disable=invalid-name
+    ...
+
+
 _TFLITE_FILE_IDENTIFIER = b'TFL3'
 
 
-def get_builtin_code_from_operator_code(opcode):
+def get_builtin_code_from_operator_code(
+    opcode: OperatorCode | OperatorCodeT,
+) -> int:
   """Return the builtin code of the given operator code.
 
   The following method is introduced to resolve op builtin code shortage
@@ -47,23 +98,22 @@ def get_builtin_code_from_operator_code(opcode):
     The builtin code of the given operator code.
   """
   # Access BuiltinCode() method first if available.
-  if hasattr(opcode, 'BuiltinCode') and callable(opcode.BuiltinCode):
+  if isinstance(opcode, OperatorCode):
     return max(opcode.BuiltinCode(), opcode.DeprecatedBuiltinCode())
-
   return max(opcode.builtinCode, opcode.deprecatedBuiltinCode)
 
 
-def convert_bytearray_to_object(model_bytearray):
-  """Converts a tflite model from a bytearray to an object for parsing."""
-  model_object = schema_fb.Model.GetRootAsModel(model_bytearray, 0)
-  return schema_fb.ModelT.InitFromObj(model_object)
+def convert_bytearray_to_object(model_bytearray: BufferType) -> ModelT:
+  """Converts a packed TFLite model from a buffer to a `ModelT` object."""
+  model_object = Model.GetRootAs(model_bytearray, 0)
+  return ModelT.InitFromObj(model_object)
 
 
-def read_model(input_tflite_file):
+def read_model(input_tflite_file: Path) -> ModelT:
   """Reads a tflite model as a python object.
 
   Args:
-    input_tflite_file: Full path name to the input tflite file
+    input_tflite_file: Full path name to the input tflite file.
 
   Raises:
     RuntimeError: If input_tflite_file path is invalid.
@@ -72,15 +122,70 @@ def read_model(input_tflite_file):
   Returns:
     A python object corresponding to the input tflite file.
   """
-  if not os.path.exists(input_tflite_file):
-    raise RuntimeError('Input file not found at %r\n' % input_tflite_file)
-  with open(input_tflite_file, 'rb') as input_file_handle:
-    model_bytearray = bytearray(input_file_handle.read())
+
+  model_bytearray = None
+
+  # Try to mmap the file first if it is local.
+  if (fd := os.open(input_tflite_file, os.O_RDONLY)) >= 0:
+    try:
+      model_bytearray = mmap.mmap(
+          fd, 0, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ
+      )
+    except IOError as e:
+      logging.info(
+          'Mapping model file "%s" failed with exception: %s.',
+          input_tflite_file,
+          e,
+      )
+    os.close(fd)
+
+  if not model_bytearray:
+    if not os.path.exists(input_tflite_file):
+      raise RuntimeError('Input file not found at %r\n' % input_tflite_file)
+    with open(input_tflite_file, 'rb') as input_file_handle:
+      model_bytearray = bytearray(input_file_handle.read())
+
   return read_model_from_bytearray(model_bytearray)
 
 
-def read_model_from_bytearray(model_bytearray):
+@overload
+def _ndarrays_to_lists(value: np.ndarray) -> np.ndarray | list[int]:
+  ...
+
+
+def _ndarrays_to_lists[T](value: T) -> T:
+  """Recursively convert `np.ndarray`s of `np.int32` to `list`.
+
+  If the input is a `list`, this function recurses over its elements. If the
+  input has a `__dict__` attribute, this function recurses over its non-`None`
+  entries.
+
+  Args:
+    value: The object in which to replace `np.ndarray`s with `list`s.
+
+  Returns:
+    The modified value.
+  """
+  if isinstance(value, np.ndarray):
+    return value.tolist() if value.dtype == np.int32 else value
+  if isinstance(value, list):
+    return [_ndarrays_to_lists(v) for v in value]
+  if hasattr(value, '__dict__'):
+    for k, v in value.__dict__.items():
+      if v is not None:
+        value.__dict__[k] = _ndarrays_to_lists(v)
+  return value
+
+
+def read_model_from_bytearray(model_bytearray: BufferType) -> ModelT:
   """Reads a tflite model as a python object.
+
+  This function also does the following:
+   * Resolves `Buffer`s specified by their offset/size,
+   * Resolves `Operator.CustomOptions` specified by their offset/size,
+   * Converts non-`Buffer` `np.ndarray` objects (things like `op.inputs`) to
+     `list` since if the underlying buffer is not mutable, neither will the
+     `np.ndarray`s.
 
   Args:
     model_bytearray: TFLite model in bytearray format.
@@ -92,12 +197,14 @@ def read_model_from_bytearray(model_bytearray):
   if sys.byteorder == 'big':
     byte_swap_tflite_model_obj(model, 'little', 'big')
 
-  # Offset handling for models > 2GB
+  # Offset handling for buffers.
   for buffer in model.buffers:
     if buffer.offset:
       buffer.data = model_bytearray[buffer.offset : buffer.offset + buffer.size]
       buffer.offset = 0
       buffer.size = 0
+
+  # Offset handling for `Operator.CustomOptions`.
   for subgraph in model.subgraphs:
     for op in subgraph.operators:
       if op.largeCustomOptionsOffset:
@@ -108,10 +215,18 @@ def read_model_from_bytearray(model_bytearray):
         op.largeCustomOptionsOffset = 0
         op.largeCustomOptionsSize = 0
 
+  # Convert any non-buffer `np.ndarray`s to `list` to ensure they are mutable.
+  buffers = model.buffers
+  model.buffers = None
+  model = _ndarrays_to_lists(model)
+  model.buffers = buffers
+
   return model
 
 
-def read_model_with_mutable_tensors(input_tflite_file):
+def read_model_with_mutable_tensors(
+    input_tflite_file: Path,
+) -> ModelT:
   """Reads a tflite model as a python object with mutable tensors.
 
   Similar to read_model() with the addition that the returned object has
@@ -133,18 +248,20 @@ def read_model_with_mutable_tensors(input_tflite_file):
   return copy.deepcopy(read_model(input_tflite_file))
 
 
-def convert_object_to_bytearray(model_object, extra_buffer=b''):
+def convert_object_to_bytearray(
+    model_object: Packable, extra_buffer: BufferType = b''
+) -> bytearray:
   """Converts a tflite model from an object to a immutable bytearray."""
   # Initial size of the buffer, which will grow automatically if needed
   builder = flatbuffers.Builder(1024)
   model_offset = model_object.Pack(builder)
   builder.Finish(model_offset, file_identifier=_TFLITE_FILE_IDENTIFIER)
-  model_bytearray = bytes(builder.Output())
+  model_bytearray = bytearray(builder.Output())
   model_bytearray = model_bytearray + extra_buffer
   return model_bytearray
 
 
-def write_model(model_object, output_tflite_file):
+def write_model(model_object: ModelT, output_tflite_file: Path):
   """Writes the tflite model, a python object, into the output file.
 
   NOTE: This API only works for TFLite generated with
@@ -165,7 +282,7 @@ def write_model(model_object, output_tflite_file):
     output_file_handle.write(model_bytearray)
 
 
-def strip_strings(model):
+def strip_strings(model: ModelT):
   """Strips all nonessential strings from the model to reduce model size.
 
   We remove the following strings:
@@ -188,15 +305,19 @@ def strip_strings(model):
   model.signatureDefs = None
 
 
-def type_to_name(tensor_type):
+def type_to_name(tensor_type: int) -> str | None:
   """Converts a numerical enum to a readable tensor type."""
-  for name, value in schema_fb.TensorType.__dict__.items():
+  for name, value in TensorType.__dict__.items():
     if value == tensor_type:
       return name
   return None
 
 
-def randomize_weights(model, random_seed=0, buffers_to_skip=None):
+def randomize_weights(
+    model: ModelT,
+    random_seed: int = 0,
+    buffers_to_skip: list[int] | None = None,
+):
   """Randomize weights in a model.
 
   Args:
@@ -247,7 +368,7 @@ def randomize_weights(model, random_seed=0, buffers_to_skip=None):
         buffer_i_data[j] = random.randint(0, 255)
 
 
-def rename_custom_ops(model, map_custom_op_renames):
+def rename_custom_ops(model: ModelT, map_custom_op_renames: Mapping[str, str]):
   """Rename custom ops so they use the same naming style as builtin ops.
 
   Args:
@@ -261,7 +382,7 @@ def rename_custom_ops(model, map_custom_op_renames):
         op_code.customCode = map_custom_op_renames[op_code_str].encode('ascii')
 
 
-def opcode_to_name(model, op_code):
+def opcode_to_name(model: ModelT, op_code: int) -> str | None:
   """Converts a TFLite op_code to the human readable name.
 
   Args:
@@ -271,15 +392,15 @@ def opcode_to_name(model, op_code):
   Returns:
     A string containing the human readable op name, or None if not resolvable.
   """
-  op = model.operatorCodes[op_code]
-  code = max(op.builtinCode, op.deprecatedBuiltinCode)
-  for name, value in vars(schema_fb.BuiltinOperator).items():
+  op: OperatorCodeT = model.operatorCodes[op_code]
+  code = get_builtin_code_from_operator_code(op)
+  for name, value in vars(BuiltinOperator).items():
     if value == code:
       return name
   return None
 
 
-def xxd_output_to_bytes(input_cc_file):
+def xxd_output_to_bytes(input_cc_file: Path) -> bytes:
   """Converts xxd output C++ source file to bytes (immutable).
 
   Args:
@@ -318,7 +439,7 @@ def xxd_output_to_bytes(input_cc_file):
   return bytes(model_bytearray)
 
 
-def xxd_output_to_object(input_cc_file):
+def xxd_output_to_object(input_cc_file: Path) -> ModelT:
   """Converts xxd output C++ source file to object.
 
   Args:
@@ -335,7 +456,12 @@ def xxd_output_to_object(input_cc_file):
   return convert_bytearray_to_object(model_bytes)
 
 
-def byte_swap_buffer_content(buffer, chunksize, from_endiness, to_endiness):
+def byte_swap_buffer_content(
+    buffer: BufferT,
+    chunksize: int,
+    from_endiness: Endiness,
+    to_endiness: Endiness,
+):
   """Helper function for byte-swapping the buffers field."""
   to_swap = [
       buffer.data[i : i + chunksize]
@@ -347,7 +473,11 @@ def byte_swap_buffer_content(buffer, chunksize, from_endiness, to_endiness):
   ])
 
 
-def byte_swap_string_content(buffer, from_endiness, to_endiness):
+def byte_swap_string_content(
+    buffer: BufferT,
+    from_endiness: Endiness,
+    to_endiness: Endiness,
+):
   """Helper function for byte-swapping the string buffer.
 
   Args:
@@ -366,7 +496,9 @@ def byte_swap_string_content(buffer, from_endiness, to_endiness):
   buffer.data = prefix_data + string_content
 
 
-def byte_swap_tflite_model_obj(model, from_endiness, to_endiness):
+def byte_swap_tflite_model_obj(
+    model: ModelT, from_endiness: Endiness, to_endiness: Endiness
+):
   """Byte swaps the buffers field in a TFLite model.
 
   Args:
@@ -377,23 +509,23 @@ def byte_swap_tflite_model_obj(model, from_endiness, to_endiness):
   if model is None:
     return
   # Get all the constant buffers, byte swapping them as per their data types
-  buffer_swapped = []
+  buffer_swapped = set()
   types_of_16_bits = [
-      schema_fb.TensorType.FLOAT16,
-      schema_fb.TensorType.INT16,
-      schema_fb.TensorType.UINT16,
+      TensorType.FLOAT16,
+      TensorType.INT16,
+      TensorType.UINT16,
   ]
   types_of_32_bits = [
-      schema_fb.TensorType.FLOAT32,
-      schema_fb.TensorType.INT32,
-      schema_fb.TensorType.COMPLEX64,
-      schema_fb.TensorType.UINT32,
+      TensorType.FLOAT32,
+      TensorType.INT32,
+      TensorType.COMPLEX64,
+      TensorType.UINT32,
   ]
   types_of_64_bits = [
-      schema_fb.TensorType.INT64,
-      schema_fb.TensorType.FLOAT64,
-      schema_fb.TensorType.COMPLEX128,
-      schema_fb.TensorType.UINT64,
+      TensorType.INT64,
+      TensorType.FLOAT64,
+      TensorType.COMPLEX128,
+      TensorType.UINT64,
   ]
   for subgraph in model.subgraphs:
     for tensor in subgraph.tensors:
@@ -403,7 +535,7 @@ def byte_swap_tflite_model_obj(model, from_endiness, to_endiness):
           and tensor.buffer not in buffer_swapped
           and model.buffers[tensor.buffer].data is not None
       ):
-        if tensor.type == schema_fb.TensorType.STRING:
+        if tensor.type == TensorType.STRING:
           byte_swap_string_content(
               model.buffers[tensor.buffer], from_endiness, to_endiness
           )
@@ -421,10 +553,12 @@ def byte_swap_tflite_model_obj(model, from_endiness, to_endiness):
           )
         else:
           continue
-        buffer_swapped.append(tensor.buffer)
+        buffer_swapped.add(tensor.buffer)
 
 
-def byte_swap_tflite_buffer(tflite_model, from_endiness, to_endiness):
+def byte_swap_tflite_buffer(
+    tflite_model: BufferType, from_endiness: Endiness, to_endiness: Endiness
+):
   """Generates a new model byte array after byte swapping its buffers field.
 
   Args:
@@ -449,7 +583,7 @@ def byte_swap_tflite_buffer(tflite_model, from_endiness, to_endiness):
   return convert_object_to_bytearray(model)
 
 
-def count_resource_variables(model):
+def count_resource_variables(model: ModelT | BufferType) -> int:
   """Calculates the number of unique resource variables in a model.
 
   Args:
@@ -458,7 +592,7 @@ def count_resource_variables(model):
   Returns:
     An integer number representing the number of unique resource variables.
   """
-  if not isinstance(model, schema_fb.ModelT):
+  if not isinstance(model, ModelT):
     model = convert_bytearray_to_object(model)
   unique_shared_names = set()
   for subgraph in model.subgraphs:
@@ -468,7 +602,7 @@ def count_resource_variables(model):
       builtin_code = get_builtin_code_from_operator_code(
           model.operatorCodes[op.opcodeIndex]
       )
-      if builtin_code == schema_fb.BuiltinOperator.VAR_HANDLE:
+      if builtin_code == BuiltinOperator.VAR_HANDLE:
         unique_shared_names.add(op.builtinOptions.sharedName)
   return len(unique_shared_names)
 
@@ -477,8 +611,8 @@ OptsT = TypeVar('OptsT')
 
 
 def get_options_as(
-    op: Union[schema_fb.Operator, schema_fb.OperatorT], opts_type: Type[OptsT]
-) -> Optional[OptsT]:
+    op: Operator | OperatorT, opts_type: Type[OptsT]
+) -> OptsT | None:
   """Get the options of an operator as the specified type.
 
   Requested type must be an object-api type (ends in 'T').
@@ -500,20 +634,18 @@ def get_options_as(
   if not type_name.endswith('T'):
     raise err
   base_type_name = type_name.removesuffix('T')
-  is_opt_1_type = hasattr(schema_fb.BuiltinOptions, base_type_name)
-  if not is_opt_1_type and not hasattr(
-      schema_fb.BuiltinOptions2, base_type_name
-  ):
+  is_opt_1_type = hasattr(BuiltinOptions, base_type_name)
+  if not is_opt_1_type and not hasattr(BuiltinOptions2, base_type_name):
     raise err
 
-  if isinstance(op, schema_fb.Operator):
+  if isinstance(op, Operator):
     if not is_opt_1_type:
-      enum_val = getattr(schema_fb.BuiltinOptions2, base_type_name)
+      enum_val = getattr(BuiltinOptions2, base_type_name)
       opts_creator = schema_fb.BuiltinOptions2Creator
       raw_ops = op.BuiltinOptions2()
       actual_enum_val = op.BuiltinOptions2Type()
     else:
-      enum_val = getattr(schema_fb.BuiltinOptions, base_type_name)
+      enum_val = getattr(BuiltinOptions, base_type_name)
       opts_creator = schema_fb.BuiltinOptionsCreator
       raw_ops = op.BuiltinOptions()
       actual_enum_val = op.BuiltinOptionsType()
@@ -521,7 +653,7 @@ def get_options_as(
       return None
     return opts_creator(enum_val, raw_ops)
 
-  elif isinstance(op, schema_fb.OperatorT):
+  elif isinstance(op, OperatorT):
     if is_opt_1_type:
       raw_ops_t = op.builtinOptions
     else:
