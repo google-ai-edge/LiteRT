@@ -15,6 +15,7 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 
 namespace qnn {
 namespace {
@@ -153,11 +154,25 @@ TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
 }
 
 TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
+  if (!::qnn::IsTestTargetHtp()) {
+    GTEST_SKIP()
+        << "Skipping LoadHtpBackendApiTest because TARGET_BACKEND is not HTP";
+  }
+
   DLHandle handle = ::qnn::CreateDLHandle(::qnn::HtpBackend::GetLibraryName());
   auto api = ::qnn::ResolveQnnApi(
       handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());
 
   ASSERT_TRUE(api);
+}
+
+TEST(MiscTests, IsTestTargetHtpTest) {
+  // Test SetTestBackend
+  qnn::SetTestBackend("htp");
+  EXPECT_TRUE(qnn::IsTestTargetHtp());
+
+  qnn::SetTestBackend("dsp");
+  EXPECT_FALSE(qnn::IsTestTargetHtp());
 }
 
 }  // namespace qnn

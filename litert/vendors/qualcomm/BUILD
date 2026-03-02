@@ -104,6 +104,7 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
         "no-remote-exec",
         "nosan",
@@ -123,6 +124,8 @@ litert_test(
         "//litert/test:matchers_oss",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:test_utils",
+        "//litert/vendors/qualcomm/core/utils:qualcomm_test_main",
         "//litert/vendors/qualcomm/tools:dump",
     ],
 )

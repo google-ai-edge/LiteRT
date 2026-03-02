@@ -340,8 +340,9 @@ litert_device_test(
         "//litert/c/internal:litert_logging",
         "//litert/test:common",
         "//litert/test:matchers",
+        "//litert/vendors/qualcomm/core/utils:test_utils",
+        "//litert/vendors/qualcomm/core/utils:qualcomm_test_main",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 

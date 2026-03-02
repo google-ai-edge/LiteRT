@@ -22,6 +22,7 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
         # Don't build/test in OS until qnn is available.
         "no-remote-exec",
@@ -35,6 +36,7 @@ litert_test(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:relu_op_builder",
+        "//litert/vendors/qualcomm/core/utils:qualcomm_test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
@@ -55,6 +57,7 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
         # Don't build/test in OS until qnn is available.
         "no-remote-exec",
@@ -68,6 +71,7 @@ litert_test(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:topk_op_builder",
+        "//litert/vendors/qualcomm/core/utils:qualcomm_test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
@@ -88,6 +92,7 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
         # Don't build/test in OS until qnn is available.
         "no-remote-exec",
@@ -101,6 +106,7 @@ litert_test(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
+        "//litert/vendors/qualcomm/core/utils:qualcomm_test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
@@ -121,6 +127,7 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
         # Don't build/test in OS until qnn is available.
         "no-remote-exec",
@@ -135,6 +142,7 @@ litert_test(
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:fully_connected_op_builder",
         "//litert/vendors/qualcomm/core/utils:miscs",
+        "//litert/vendors/qualcomm/core/utils:qualcomm_test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
         "@qairt//:qnn_lib_headers",
