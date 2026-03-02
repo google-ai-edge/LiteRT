@@ -160,4 +160,116 @@ TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
   ASSERT_TRUE(api);
 }
 
+TEST(MiscTests, UnpackIntData_Int2) {
+  // Single byte: 0xE4 (binary: 11 10 01 00), LSB-first unpacking.
+  // bits 0-1: 00 -> 0
+  // bits 2-3: 01 -> 1
+  // bits 4-5: 10 -> -2
+  // bits 6-7: 11 -> -1
+  {
+    const uint8_t src[] = {0xE4};
+    auto dst = UnpackIntData(src, 1, kQuantBitWidth2);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 1);
+    EXPECT_EQ(dst[2], -2);
+    EXPECT_EQ(dst[3], -1);
+  }
+
+  // All zeros: 0x00 -> {0, 0, 0, 0}
+  {
+    const uint8_t src[] = {0x00};
+    auto dst = UnpackIntData(src, 1, kQuantBitWidth2);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 0);
+    EXPECT_EQ(dst[2], 0);
+    EXPECT_EQ(dst[3], 0);
+  }
+
+  // All ones: 0xFF (binary: 11 11 11 11) -> {-1, -1, -1, -1}
+  {
+    const uint8_t src[] = {0xFF};
+    auto dst = UnpackIntData(src, 1, kQuantBitWidth2);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], -1);
+    EXPECT_EQ(dst[1], -1);
+    EXPECT_EQ(dst[2], -1);
+    EXPECT_EQ(dst[3], -1);
+  }
+
+  // Multiple bytes: {0xE4, 0x1B}
+  // 0x1B (binary: 00 01 10 11):
+  //   bits 0-1: 11 -> -1
+  //   bits 2-3: 10 -> -2
+  //   bits 4-5: 01 ->  1
+  //   bits 6-7: 00 ->  0
+  {
+    const uint8_t src[] = {0xE4, 0x1B};
+    auto dst = UnpackIntData(src, 2, kQuantBitWidth2);
+    ASSERT_EQ(dst.size(), 8);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 1);
+    EXPECT_EQ(dst[2], -2);
+    EXPECT_EQ(dst[3], -1);
+    EXPECT_EQ(dst[4], -1);
+    EXPECT_EQ(dst[5], -2);
+    EXPECT_EQ(dst[6], 1);
+    EXPECT_EQ(dst[7], 0);
+  }
+}
+
+TEST(MiscTests, UnpackIntData_Int4) {
+  // Single byte: 0xE4 (binary: 1110 0100), LSB-first unpacking.
+  // lower nibble: 0100 = 4
+  // upper nibble: 1110 = -2 (sign extended)
+  {
+    const uint8_t src[] = {0xE4};
+    auto dst = UnpackIntData(src, 1, kQuantBitWidth4);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], 4);
+    EXPECT_EQ(dst[1], -2);
+  }
+
+  // All zeros: 0x00 -> {0, 0}
+  {
+    const uint8_t src[] = {0x00};
+    auto dst = UnpackIntData(src, 1, kQuantBitWidth4);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], 0);
+    EXPECT_EQ(dst[1], 0);
+  }
+
+  // All ones: 0xFF (binary: 1111 1111) -> {-1, -1}
+  {
+    const uint8_t src[] = {0xFF};
+    auto dst = UnpackIntData(src, 1, kQuantBitWidth4);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], -1);
+    EXPECT_EQ(dst[1], -1);
+  }
+
+  // Min/max: 0x87 (binary: 1000 0111)
+  // lower nibble: 0111 = 7 (max positive int4)
+  // upper nibble: 1000 = -8 (min negative int4)
+  {
+    const uint8_t src[] = {0x87};
+    auto dst = UnpackIntData(src, 1, kQuantBitWidth4);
+    ASSERT_EQ(dst.size(), 2);
+    EXPECT_EQ(dst[0], 7);
+    EXPECT_EQ(dst[1], -8);
+  }
+
+  // Multiple bytes: {0xE4, 0x87}
+  {
+    const uint8_t src[] = {0xE4, 0x87};
+    auto dst = UnpackIntData(src, 2, kQuantBitWidth4);
+    ASSERT_EQ(dst.size(), 4);
+    EXPECT_EQ(dst[0], 4);
+    EXPECT_EQ(dst[1], -2);
+    EXPECT_EQ(dst[2], 7);
+    EXPECT_EQ(dst[3], -8);
+  }
+}
+
 }  // namespace qnn

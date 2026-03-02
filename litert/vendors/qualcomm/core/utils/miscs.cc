@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <string_view>
@@ -43,46 +44,6 @@ void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
   dst.reserve(src.size());
   for (const auto& data : src) {
     dst.emplace_back(data - kUint16ZeroPoint);
-  }
-}
-
-void ConvertDataFromInt4ToInt8(const void* src, size_t num_bytes,
-                               std::vector<std::int8_t>& dst) {
-  dst.clear();
-  dst.reserve(num_bytes * 2);
-  const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
-  for (size_t i = 0; i < num_bytes; i++) {
-    std::uint8_t byte = byte_data[i];
-    std::int8_t lower = byte & 0x0F;
-    std::int8_t upper = (byte >> 4) & 0x0F;
-    if (lower & 0x08) lower |= 0xF0;
-    if (upper & 0x08) upper |= 0xF0;
-    dst.emplace_back(lower);
-    dst.emplace_back(upper);
-  }
-}
-
-void ConvertDataFromInt2ToInt8(const void* src, size_t num_bytes,
-                               std::vector<std::int8_t>& dst) {
-  dst.clear();
-  dst.reserve(num_bytes * 4);
-  const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
-  for (size_t i = 0; i < num_bytes; i++) {
-    std::uint8_t byte = byte_data[i];
-
-    for (size_t j = 0; j < 4; j++) {
-      // Mask: 0000 0011
-      std::int8_t num = byte & 0x03;
-
-      // Perform sign extension on all four numbers
-      // The sign bit for a 2-bit number is the 2nd bit (mask 0x02)
-      // The sign extension mask is 0xFC (binary 1111 1100)
-      if (num & 0x02) num |= 0xFC;
-
-      dst.emplace_back(num);
-
-      byte >>= 2;
-    }
   }
 }
 
@@ -221,5 +182,23 @@ std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name) {
     }
   }
   return soc_model;
+}
+
+std::vector<std::int8_t> UnpackIntData(const void* src, size_t src_bytes,
+                                       uint32_t bit_width) {
+  const uint32_t values_per_byte = 8 / bit_width;
+  std::vector<std::int8_t> dst;
+  dst.reserve(src_bytes * values_per_byte);
+  const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
+  for (size_t i = 0; i < src_bytes; i++) {
+    const int8_t* lut_entry;
+    if (bit_width == kQuantBitWidth2) {
+      lut_entry = &kInt2LUT[byte_data[i] * values_per_byte];
+    } else if (bit_width == kQuantBitWidth4) {
+      lut_entry = &kInt4LUT[byte_data[i] * values_per_byte];
+    }
+    dst.insert(dst.end(), lut_entry, lut_entry + values_per_byte);
+  }
+  return dst;
 }
 }  // namespace qnn
