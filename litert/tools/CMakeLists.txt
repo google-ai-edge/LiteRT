@@ -150,8 +150,6 @@ set(LITERT_TOOL_COMMON_LIBS
 )
 
 set(ABSEIL_TOOL_LIBS
-    absl::check
-    absl::die_if_null
     absl::flags
     absl::flags_parse
     absl::log
@@ -319,3 +317,4 @@ endif()
 install(TARGETS run_model analyze_model apply_plugin_main
     RUNTIME DESTINATION bin
 )
+

@@ -51,8 +51,7 @@ if(NOT TENSORFLOW_SOURCE_DIR)
   FetchContent_Declare(
     tensorflow
     GIT_REPOSITORY https://github.com/tensorflow/tensorflow.git
-    # v2.21.0-rc0 has updated schema_generated.h file.
-    GIT_TAG v2.21.0-rc0
+    GIT_TAG v2.19.0
     GIT_SHALLOW TRUE
     GIT_PROGRESS TRUE
     SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/tensorflow-src

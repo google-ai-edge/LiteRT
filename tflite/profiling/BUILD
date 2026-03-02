@@ -67,8 +67,8 @@ cc_test(
 objc_library(
     name = "signpost_profiler",
     hdrs = ["signpost_profiler.h"],
-    copts = common_copts,
-    non_arc_srcs = ["signpost_profiler.mm"],
+    copts = common_copts + ["-fno-objc-arc"],
+    srcs = ["signpost_profiler.mm"],
     tags = ["apple"],
     deps = [
         "//tflite/core/api",
