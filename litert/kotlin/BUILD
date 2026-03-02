@@ -220,6 +220,7 @@ kt_android_library(
         "src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt",
         "src/main/kotlin/com/google/ai/edge/litert/deployment/AiPackModelProvider.kt",
     ] + TFLITE_JAVA_SRCS_COPIED + TFLITE_JAVA_SRCS_COPIED_WITH_CHANGES,
+    # copybara:uncomment(google-only) custom_kotlincopts = ["//tools/build_defs/kotlin/opts/jvm_target:17"],
     exports_manifest = 1,
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
