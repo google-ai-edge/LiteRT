@@ -535,15 +535,13 @@ void RunQnnTensorImplicitCopyTest(Qnn_DataType_t datatype) {
   tensor_wrapper.CloneTo(cloned_tensor);
   Qnn_Tensor_t& ref_tensor = tensor_wrapper.GetQnnTensor();
   if constexpr (bitwidth == kQuantBitWidth4) {
-    std::vector<std::int8_t> int8_data;
-    ConvertDataFromInt4ToInt8(data.data(), data.size(), int8_data);
+    auto int8_data = UnpackIntData(data.data(), data.size(), kQuantBitWidth4);
     ValidateTensor<int8_t, true>(cloned_tensor, QNN_DATATYPE_SFIXED_POINT_8,
                                  kDims, int8_data);
     ValidateTensor<int8_t, true>(ref_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims,
                                  int8_data);
   } else if constexpr (bitwidth == kQuantBitWidth2) {
-    std::vector<std::int8_t> int8_data;
-    ConvertDataFromInt2ToInt8(data.data(), data.size(), int8_data);
+    auto int8_data = UnpackIntData(data.data(), data.size(), kQuantBitWidth2);
     ValidateTensor<int8_t, true>(cloned_tensor, QNN_DATATYPE_SFIXED_POINT_8,
                                  kDims, int8_data);
     ValidateTensor<int8_t, true>(ref_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims,
