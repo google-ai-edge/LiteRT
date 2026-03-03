@@ -18,7 +18,8 @@ std::vector<OpWrapper> BuildConv2dOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs, const std::uint32_t stride_h,
     const std::uint32_t stride_w, const std::uint32_t dilation_h,
-    const std::uint32_t dilation_w, const PaddingType padding_type);
+    const std::uint32_t dilation_w, const PaddingType padding_type,
+    bool use_int64_bias_as_int32);
 
 }  // namespace qnn
 
