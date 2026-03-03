@@ -170,6 +170,7 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
     converter_flags.set_qdq_conversion_mode(config.qdq_conversion_mode);
     converter_flags.set_unsafe_fuse_dynamic_shaped_broadcast(
         config.unsafe_fuse_dynamic_shaped_broadcast);
+    converter_flags.set_enable_x64(config.enable_x64);
 
     if (config.model_origin_framework == "UNSET") {
       converter_flags.set_model_origin_framework(tflite::ConverterFlags::UNSET);
