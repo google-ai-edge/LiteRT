@@ -2743,6 +2743,7 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )
