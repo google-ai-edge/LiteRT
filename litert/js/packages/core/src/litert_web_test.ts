@@ -202,7 +202,7 @@ describe('LiteRt', () => {
       wasmModule._free(ptr);
     });
   });
-  
+
   it('setDefaultEnvironment() sets the default environment', async () => {
     await resetLiteRt();
     const environment = new Environment({webGpuDevice: null});
@@ -347,6 +347,73 @@ describe('LiteRt', () => {
          })).toBeRejectedWithError(/Invalid accelerator: unsupported/);
        });
 
+    it('loads with compileOptions with webgpu accelerator and fp16 precision',
+       async () => {
+         const adapter = await navigator.gpu.requestAdapter();
+         if (!adapter) {
+           throw new Error('No GPU adapter found.');
+         }
+         const device = await adapter.requestDevice();
+         liteRt.setWebGpuDevice(device);
+         const model = await loadAndCompile(modelPath, {
+           environment: new Environment({webGpuDevice: device}),
+           accelerator: 'webgpu',
+           gpuOptions: {precision: 'fp16'},
+         });
+         expect(model).toBeDefined();
+         expect(model.options.accelerator).toBe('webgpu');
+         expect(model.options.gpuOptions).toBeDefined();
+         expect(model.options.gpuOptions!.precision).toBe('fp16');
+         model.delete();
+       });
+
+    it('loads with compileOptions with webgpu accelerator and fp32 precision',
+       async () => {
+         const adapter = await navigator.gpu.requestAdapter();
+         if (!adapter) {
+           throw new Error('No GPU adapter found.');
+         }
+         const device = await adapter.requestDevice();
+         liteRt.setWebGpuDevice(device);
+         const model = await loadAndCompile(modelPath, {
+           environment: new Environment({webGpuDevice: device}),
+           accelerator: 'webgpu',
+           gpuOptions: {precision: 'fp32'},
+         });
+         expect(model).toBeDefined();
+         expect(model.options.accelerator).toBe('webgpu');
+         expect(model.options.gpuOptions).toBeDefined();
+         expect(model.options.gpuOptions!.precision).toBe('fp32');
+         model.delete();
+       });
+
+    it('throws with invalid webgpu precision', async () => {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        throw new Error('No GPU adapter found.');
+      }
+      const device = await adapter.requestDevice();
+      liteRt.setWebGpuDevice(device);
+      await expectAsync(loadAndCompile(modelPath, {
+        environment: new Environment({webGpuDevice: device}),
+        accelerator: 'webgpu',
+        // tslint:disable-next-line:no-any
+        gpuOptions: {precision: 'invalid' as any},
+      })).toBeRejectedWithError(/Invalid WebGPU precision: invalid/);
+    });
+
+    it('loads with compileOptions with webnn accelerator', async () => {
+      // TODO: markoristic - migrate this test to jspi section once webnn
+      // execution is supported. (i.e. run is async)
+      try {
+        const model = await loadAndCompile(modelPath, {accelerator: 'webnn'});
+        expect(model).toBeDefined();
+        model.delete();
+      } catch (e) {
+        const errorMessage = (e as Error).message;
+        expect(errorMessage).not.toContain('Invalid accelerator');
+      }
+    });
   });
 
   describe('input / output details', () => {

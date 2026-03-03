@@ -16,7 +16,7 @@
 
 import {Environment} from './environment';
 import {Tensor} from './tensor';
-import {LiteRtCompileOptions} from './wasm_binding_types';
+import {LiteRtCompileOptions, LiteRtGpuOptions} from './wasm_binding_types';
 
 /**
  * Options for compiling a LiteRt model on CPU.
@@ -31,6 +31,7 @@ export interface CpuOptions {
 export interface CompileOptions extends LiteRtCompileOptions {
   environment?: Environment;
   cpuOptions?: CpuOptions;
+  gpuOptions?: LiteRtGpuOptions;
 }
 
 /**

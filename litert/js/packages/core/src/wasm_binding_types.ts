@@ -85,10 +85,18 @@ export declare interface LiteRtEnvironment extends Deletable {
 }
 
 /**
+ * Options for configuring the WebGPU delegate.
+ */
+export declare interface LiteRtGpuOptions {
+  precision?: 'fp16'|'fp32';
+}
+
+/**
  * Options for loading and compiling a LiteRt model.
  */
 export declare interface LiteRtCompileOptions {
   accelerator?: 'wasm'|'webgpu'|'webnn';
+  gpuOptions?: LiteRtGpuOptions;
 }
 
 declare const liteRtModelBrand: unique symbol;
