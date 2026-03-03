@@ -429,6 +429,7 @@ Expected<void> RunModel() {
       LITERT_RETURN_IF_ERROR(PrintTensorBuffer(input_buffers[i], "Input", i));
     }
   }
+
   ABSL_LOG(INFO) << "Prepare output buffers";
 
   LITERT_ASSIGN_OR_RETURN(auto output_buffers,
