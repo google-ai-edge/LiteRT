@@ -29,6 +29,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -109,7 +110,25 @@
 namespace litert::qnn {
 namespace {
 static const char* kLiteRtStr = "litert";
+
+std::string SanitizeName(std::string_view name) {
+  std::string out;
+  out.reserve(name.size());
+  bool underscore_added = false;
+
+  // This does the same as python re.sub(r"[^a-zA-Z0-9_]+", "_", name).
+  for (char c : name) {
+    if (absl::ascii_isalnum(c) || c == '_') {
+      out.push_back(c);
+      underscore_added = false;
+    } else if (!underscore_added) {
+      out.push_back('_');
+      underscore_added = true;
+    }
+  }
+  return out;
 }
+}  // namespace
 
 LiteRtStatus ConvertPaddingType(const uint32_t litert_padding,
                                 ::qnn::PaddingType& qnn_padding) {
@@ -296,12 +315,14 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
   auto litert_suffix =
       "_" + std::string(kLiteRtStr) + "_" + std::to_string(tensor_index);
   if (litert_tensor.IsSubgraphInput()) {
-    auto& res = tensor_pool.CreateInputTensorWithSuffix(
-        qnn_data_type, quantize_params, dimensions, litert_suffix);
+    auto& res = tensor_pool.CreateInputTensorWithName(
+        SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
+        dimensions);
     tensor_wrapper = &res;
   } else if (litert_tensor.Uses().empty() || is_tensor_read_and_write) {
-    auto& res = tensor_pool.CreateOutpuTensorWithSuffix(
-        qnn_data_type, quantize_params, dimensions, litert_suffix);
+    auto& res = tensor_pool.CreateOutputTensorWithName(
+        SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
+        dimensions);
     tensor_wrapper = &res;
   } else if (litert_tensor.IsConstant()) {
     LITERT_RETURN_IF_ERROR(
