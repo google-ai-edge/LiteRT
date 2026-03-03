@@ -94,6 +94,10 @@ ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
           "Whether to automatically convert a quantized int16 model into a "
           "quantized uin16 model.");
 
+ABSL_FLAG(bool, qualcomm_use_int64_bias_as_int32, true,
+          "Whether to convert bias tensors of FullyConnected "
+          "and Conv2D Ops from int64 to int32. Defaults to true.");
+
 // Default should be
 // litert::qualcomm::QualcommOptions::HtpPerformanceMode::kDefault since we need
 // default performance model during compilation.
@@ -491,6 +495,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto use_qint16_as_quint16 =
       absl::GetFlag(FLAGS_qualcomm_use_qint16_as_quint16);
   opts.SetUseQint16AsQuint16(use_qint16_as_quint16);
+
+  const auto use_int64_bias_as_int32 =
+      absl::GetFlag(FLAGS_qualcomm_use_int64_bias_as_int32);
+  opts.SetUseInt64BiasAsInt32(use_int64_bias_as_int32);
 
   const auto htp_performance_mode =
       absl::GetFlag(FLAGS_qualcomm_htp_performance_mode);

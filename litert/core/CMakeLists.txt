@@ -37,6 +37,7 @@ target_include_directories(litert_core
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
