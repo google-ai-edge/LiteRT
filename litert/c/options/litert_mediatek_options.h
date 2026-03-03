@@ -13,26 +13,35 @@
 // limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
+
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
-// Create a mediatek options object that is type erased. The actual option
-// data can be accessed from the payload.
-LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options);
-LITERT_DEFINE_HANDLE(LiteRtMediatekOptions);
+typedef struct LrtMediatekOptions LrtMediatekOptions;
 
-// The a string identifier that discriminates mediatek options within
-// type erased options.
-const char* LiteRtMediatekOptionsGetIdentifier();
+// Creates a mediatek options object.
+// The caller is responsible for freeing the returned options using
+// `LrtDestroyMediatekOptions`.
+LiteRtStatus LrtCreateMediatekOptions(LrtMediatekOptions** options);
 
-// Attempt to retrieve mediatek options from the opaque options. Fails
-// unless the opaque options are of another type.
-LiteRtStatus LiteRtMediatekOptionsGet(LiteRtOpaqueOptions options,
-                                      LiteRtMediatekOptions* options_data);
+// Creates a mediatek options object from a TOML payload.
+LiteRtStatus LrtCreateMediatekOptionsFromToml(const char* toml_payload,
+                                              LrtMediatekOptions** options);
+
+// Destroys a mediatek options object.
+void LrtDestroyMediatekOptions(LrtMediatekOptions* options);
+
+// Serializes mediatek options and returns the components needed to create
+// opaque options. The caller is responsible for passing these to
+// `LiteRtCreateOpaqueOptions` and freeing the returned payload using
+// `payload_deleter`.
+LiteRtStatus LrtGetOpaqueMediatekOptionsData(const LrtMediatekOptions* options,
+                                             const char** identifier,
+                                             void** payload,
+                                             void (**payload_deleter)(void*));
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
@@ -43,20 +52,20 @@ typedef enum LiteRtMediatekOptionsNeronSDKVersionType {
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9 = 2,
 } LiteRtMediatekOptionsNeronSDKVersion;
 
-LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(
-    LiteRtMediatekOptions options,
+LiteRtStatus LrtSetMediatekOptionsNeronSDKVersionType(
+    LrtMediatekOptions* options,
     enum LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
 
-LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
-    LiteRtMediatekOptions options,
+LiteRtStatus LrtGetMediatekOptionsNeronSDKVersionType(
+    const LrtMediatekOptions* options,
     enum LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type);
 
 // gemma_compiler_optimizations ----------------------------------------------
-LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
-    LiteRtMediatekOptions options, bool gemma_compiler_optimizations);
+LiteRtStatus LrtSetMediatekOptionsGemmaCompilerOptimizations(
+    LrtMediatekOptions* options, bool gemma_compiler_optimizations);
 
-LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
-    LiteRtMediatekOptions options, bool* gemma_compiler_optimizations);
+LiteRtStatus LrtGetMediatekOptionsGemmaCompilerOptimizations(
+    const LrtMediatekOptions* options, bool* gemma_compiler_optimizations);
 
 // neuron_adapter_peformance_mode --------------------------------------------
 
@@ -75,20 +84,20 @@ typedef enum LiteRtMediatekNeuronAdapterPerformanceMode {
   kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost = 3,
 } LiteRtMediatekNeuronAdapterPerformanceMode;
 
-LiteRtStatus LiteRtMediatekOptionsSetPerformanceMode(
-    LiteRtMediatekOptions options,
+LiteRtStatus LrtSetMediatekOptionsPerformanceMode(
+    LrtMediatekOptions* options,
     LiteRtMediatekNeuronAdapterPerformanceMode performance_mode);
 
-LiteRtStatus LiteRtMediatekOptionsGetPerformanceMode(
-    LiteRtMediatekOptions options,
+LiteRtStatus LrtGetMediatekOptionsPerformanceMode(
+    const LrtMediatekOptions* options,
     LiteRtMediatekNeuronAdapterPerformanceMode* performance_mode);
 
 // l1_cache_optimizations ----------------------------------------------------
-LiteRtStatus LiteRtMediatekOptionsSetL1CacheOptimizations(
-    LiteRtMediatekOptions options, bool l1_cache_optimizations);
+LiteRtStatus LrtSetMediatekOptionsL1CacheOptimizations(
+    LrtMediatekOptions* options, bool l1_cache_optimizations);
 
-LiteRtStatus LiteRtMediatekOptionsGetL1CacheOptimizations(
-    LiteRtMediatekOptions options, bool* l1_cache_optimizations);
+LiteRtStatus LrtGetMediatekOptionsL1CacheOptimizations(
+    const LrtMediatekOptions* options, bool* l1_cache_optimizations);
 
 // neuron_optimization_hints -------------------------------------------------
 
@@ -107,35 +116,35 @@ typedef enum LiteRtMediatekNeuronAdapterOptimizationHint {
   kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing = 1 << 2,
 } LiteRtMediatekNeuronAdapterOptimizationHint;
 
-LiteRtStatus LiteRtMediatekOptionsSetOptimizationHint(
-    LiteRtMediatekOptions options,
+LiteRtStatus LrtSetMediatekOptionsOptimizationHint(
+    LrtMediatekOptions* options,
     LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint);
 
-LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
-    LiteRtMediatekOptions options,
+LiteRtStatus LrtGetMediatekOptionsOptimizationHint(
+    const LrtMediatekOptions* options,
     LiteRtMediatekNeuronAdapterOptimizationHint* optimization_hint);
 
 // disable_dla_dir_removal ---------------------------------------------------
-LiteRtStatus LiteRtMediatekOptionsSetDisableDlaDirRemoval(
-    LiteRtMediatekOptions options, bool disable_dla_dir_removal);
+LiteRtStatus LrtSetMediatekOptionsDisableDlaDirRemoval(
+    LrtMediatekOptions* options, bool disable_dla_dir_removal);
 
-LiteRtStatus LiteRtMediatekOptionsGetDisableDlaDirRemoval(
-    LiteRtMediatekOptions options, bool* disable_dla_dir_removal);
+LiteRtStatus LrtGetMediatekOptionsDisableDlaDirRemoval(
+    const LrtMediatekOptions* options, bool* disable_dla_dir_removal);
 
 // mediatek_dla_dir ----------------------------------------------------------
 
-LiteRtStatus LiteRtMediatekOptionsSetMediatekDlaDir(
-    LiteRtMediatekOptions options, const char* mediatek_dla_dir);
+LiteRtStatus LrtSetMediatekOptionsMediatekDlaDir(LrtMediatekOptions* options,
+                                                 const char* mediatek_dla_dir);
 
-LiteRtStatus LiteRtMediatekOptionsGetMediatekDlaDir(
-    LiteRtMediatekOptions options, const char** mediatek_dla_dir);
+LiteRtStatus LrtGetMediatekOptionsMediatekDlaDir(
+    const LrtMediatekOptions* options, const char** mediatek_dla_dir);
 
 // AoT compilation options --------------------------------------------
-LiteRtStatus LiteRtMediatekOptionsSetAotCompilationOptions(
-    LiteRtMediatekOptions options, const char* aot_compilation_options);
+LiteRtStatus LrtSetMediatekOptionsAotCompilationOptions(
+    LrtMediatekOptions* options, const char* aot_compilation_options);
 
-LiteRtStatus LiteRtMediatekOptionsGetAotCompilationOptions(
-    LiteRtMediatekOptions options, const char** aot_compilation_options);
+LiteRtStatus LrtGetMediatekOptionsAotCompilationOptions(
+    const LrtMediatekOptions* options, const char** aot_compilation_options);
 
 #ifdef __cplusplus
 

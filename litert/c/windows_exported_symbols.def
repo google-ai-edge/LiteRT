@@ -199,25 +199,6 @@ EXPORTS
   LiteRtIsEventSignaled
   LiteRtJoinTensorBufferRequirements
   LiteRtLockTensorBuffer
-  LiteRtMediatekOptionsCreate
-  LiteRtMediatekOptionsGet
-  LiteRtMediatekOptionsGetAotCompilationOptions
-  LiteRtMediatekOptionsGetDisableDlaDirRemoval
-  LiteRtMediatekOptionsGetGemmaCompilerOptimizations
-  LiteRtMediatekOptionsGetIdentifier
-  LiteRtMediatekOptionsGetL1CacheOptimizations
-  LiteRtMediatekOptionsGetMediatekDlaDir
-  LiteRtMediatekOptionsGetNeronSDKVersionType
-  LiteRtMediatekOptionsGetOptimizationHint
-  LiteRtMediatekOptionsGetPerformanceMode
-  LiteRtMediatekOptionsSetAotCompilationOptions
-  LiteRtMediatekOptionsSetDisableDlaDirRemoval
-  LiteRtMediatekOptionsSetGemmaCompilerOptimizations
-  LiteRtMediatekOptionsSetL1CacheOptimizations
-  LiteRtMediatekOptionsSetMediatekDlaDir
-  LiteRtMediatekOptionsSetNeronSDKVersionType
-  LiteRtMediatekOptionsSetOptimizationHint
-  LiteRtMediatekOptionsSetPerformanceMode
   LiteRtPopOpaqueOptions
   LiteRtPushOp
   LiteRtRegisterAccelerator
