@@ -17,10 +17,10 @@ jobs:
     name: "Build Android Wheels - Python ${{ matrix.python-version }} - ${{ matrix.android-arch }}"
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
+      fail-fast: false # Allow other matrix jobs to continue if one fails
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-        android-arch: ["arm64-v8a", "armeabi-v7a", "x86_64"]
+        android-arch: ["x86_64"]
 
     steps:
       - name: Checkout code
@@ -33,7 +33,7 @@ jobs:
           DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
           ANDROID_TARGET_ARCHS: ${{ matrix.android-arch }}
           ANDROID_API_LEVEL: "21"
-          CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
+         # CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
           USE_LOCAL_TF: "false"
         run: |
           export NIGHTLY_RELEASE_DATE=$(date +%Y%m%d)

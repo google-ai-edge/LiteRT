@@ -89,18 +89,11 @@ else
     
     # Map architecture to Bazel config
     case $arch in
-      arm64-v8a)
-        bazel_config="android_arm64"
-        ;;
-      armeabi-v7a)
-        bazel_config="android_armv7"
-        ;;
       x86_64)
         bazel_config="android_x86_64"
         ;;
       x86)
-        bazel_config="android_x86"
-        ;;
+
       *)
         echo "Unknown architecture: $arch"
         exit 1
