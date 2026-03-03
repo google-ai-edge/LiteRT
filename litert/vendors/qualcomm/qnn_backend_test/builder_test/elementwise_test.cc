@@ -34,12 +34,12 @@ TEST_P(QnnModelTest, SingleElementWiseDivide) {
       std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.000030f,
       0};
 
-  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param_0, kDims, "");
-  auto& input_1 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param_1, kDims, "");
-  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param_2, kDims, "");
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_SFIXED_POINT_16, quant_param_0, kDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_SFIXED_POINT_16, quant_param_1, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_SFIXED_POINT_16, quant_param_2, kDims);
   auto ops = ::qnn::BuildElementwiseDivOp(tensor_pool_, {input_0, input_1},
                                           {output_0});
   ASSERT_FALSE(ops.empty());
@@ -85,12 +85,12 @@ TEST_P(QnnModelTest, SingleElementWiseMax) {
       std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.00015f, 0};
 
   const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
-  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
-  auto& input_1 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
-  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims);
   auto ops = ::qnn::BuildElementwiseMaximumOp(tensor_pool_, {input_0, input_1},
                                               {output_0});
   ASSERT_FALSE(ops.empty());

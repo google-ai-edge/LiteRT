@@ -22,19 +22,22 @@ namespace qnn {
 static const char* kQnnSuffix = "_qnn";
 class TensorPool {
  public:
-  TensorPool();
   // id: Number of tensors in TensorPool, used for ensure uniqueness of tensor
-  // name Tensors directly converted from framework: <id>_suffix_from_framework
-  // Tensors created by builder: <id>_qnn
-  TensorWrapper& CreateInputTensorWithSuffix(
-      Qnn_DataType_t data_type,
-      const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimensions, std::string_view suffix);
+  // name. I/O tensors will use the exact same name as provided. Tensors
+  // directly converted from framework: `<id>_suffix_from_framework`. Tensors
+  // created by QNN: `<id>_qnn`.
 
-  TensorWrapper& CreateOutpuTensorWithSuffix(
-      Qnn_DataType_t data_type,
+  TensorPool();
+
+  TensorWrapper& CreateInputTensorWithName(
+      std::string_view name, Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimensions, std::string_view suffix);
+      const std::vector<std::uint32_t>& dimensions);
+
+  TensorWrapper& CreateOutputTensorWithName(
+      std::string_view name, Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimensions);
 
   TensorWrapper& CreateNativeTensor(
       Qnn_DataType_t data_type,
