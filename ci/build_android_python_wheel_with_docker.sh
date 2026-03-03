@@ -92,8 +92,6 @@ else
       x86_64)
         bazel_config="android_x86_64"
         ;;
-      x86)
-
       *)
         echo "Unknown architecture: $arch"
         exit 1
