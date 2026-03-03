@@ -106,9 +106,9 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor &t) {
   }
 
   TENSOR_ID_T tensor_id;
-  ai_lite_core_->Api().DefineTensor(handler_, &tensor_id, t.Name().data(),
-                                    tensor_shape.data(), tensor_shape.size(),
-                                    element_type_mapping.Value(), "UNDEFINED");
+  LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().DefineTensor(
+      handler_, &tensor_id, t.Name().data(), tensor_shape.data(),
+      tensor_shape.size(), element_type_mapping.Value(), "UNDEFINED"));
   tensors_map_[t.Get()] = tensor_id;
 
   if (t.HasQuantization()) {
@@ -116,8 +116,9 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor &t) {
   }
   if (t.HasWeights()) {
     auto weight = t.Weights().Bytes();
-    ai_lite_core_->Api().SetTensorData(handler_, tensor_id, weight.data(),
-                                       weight.size());
+    LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(
+        ai_lite_core_->Api().SetTensorData(handler_, tensor_id, weight.data(),
+                                           weight.size()));
   }
 
   return kLiteRtStatusOk;
@@ -137,15 +138,15 @@ LiteRtStatus GraphCreator::CreateOpNode(const OpWrapper &op_wrapper) {
     LITERT_RETURN_IF_ERROR(CreateTensor(output));
     output_indices.push_back(tensors_map_.at(output.Get()));
   }
-  ai_lite_core_->Api().DefineOp(handler_, &op_id, op_wrapper.GetCName(),
-                                op_wrapper.GetCType(), input_indices.data(),
-                                input_indices.size(), output_indices.data(),
-                                output_indices.size());
+  LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().DefineOp(
+      handler_, &op_id, op_wrapper.GetCName(), op_wrapper.GetCType(),
+      input_indices.data(), input_indices.size(), output_indices.data(),
+      output_indices.size()));
 
   for (int32_t index = 0; index < op_wrapper.GetNumOfParams(); index++) {
     const auto &param = op_wrapper.GetParamWithIndex(index);
-    ai_lite_core_->Api().AddOpParam(handler_, op_id, param.GetKey().c_str(),
-                                    param.GetValue());
+    LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().AddOpParam(
+        handler_, op_id, param.GetKey().c_str(), param.GetValue()));
   }
 
   return kLiteRtStatusOk;
@@ -170,11 +171,14 @@ LiteRtStatus GraphCreator::AddOutput(const Tensor &t_output) {
 }
 
 LiteRtStatus GraphCreator::Finish() const {
-  ai_lite_core_->Api().SetGraphInputs(handler_, input_indices_.data(),
-                                      input_indices_.size());
-  ai_lite_core_->Api().SetGraphOutputs(handler_, output_indices_.data(),
-                                       output_indices_.size());
-  ai_lite_core_->Api().FinishGraphBuild(handler_);
+  LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(
+      ai_lite_core_->Api().SetGraphInputs(handler_, input_indices_.data(),
+                                          input_indices_.size()));
+  LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(
+      ai_lite_core_->Api().SetGraphOutputs(handler_, output_indices_.data(),
+                                           output_indices_.size()));
+  LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(
+      ai_lite_core_->Api().FinishGraphBuild(handler_));
 
   return kLiteRtStatusOk;
 }
@@ -182,7 +186,10 @@ LiteRtStatus GraphCreator::Finish() const {
 Expected<std::vector<char>> GraphCreator::Release() const {
   uint8_t *graph_ptr;
   uint64_t num_bytes;
-  ai_lite_core_->Api().Serialize(handler_, &graph_ptr, &num_bytes);
+  if (ai_lite_core_->Api().Serialize(handler_, &graph_ptr, &num_bytes) !=
+      GraphWrapperReturn::SUCCESS) {
+    return Error(kLiteRtStatusErrorRuntimeFailure, "Fail to serialize graph");
+  }
 
   auto g_buffer = std::vector<char>(num_bytes / sizeof(char));
   memcpy(g_buffer.data(), graph_ptr, num_bytes);
@@ -213,7 +220,7 @@ LiteRtStatus GraphCreator::CreateQParam(const Tensor &t) {
                static_cast<int>(t.QTypeId()));
   }
 
-  if (!scales.empty() && !zero_points.empty()) {
+  if (scales.empty() || zero_points.empty()) {
     LITERT_LOG(LITERT_INFO, "Fail to get scale and zero point.");
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -229,12 +236,10 @@ LiteRtStatus GraphCreator::CreateQParam(const Tensor &t) {
 
   auto ranked_tensor_type = t.RankedTensorType();
   auto element_type = ranked_tensor_type->ElementType();
-  auto res = ai_lite_core_->Api().SetTensorQParam(
-      handler_, tensors_map_.at(t.Get()), MapToQuantTypeStr(element_type),
-      scale_info, zero_point_info);
-  if (res != GraphWrapperReturn::SUCCESS) {
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
+  LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(
+      ai_lite_core_->Api().SetTensorQParam(handler_, tensors_map_.at(t.Get()),
+                                           MapToQuantTypeStr(element_type),
+                                           scale_info, zero_point_info));
 
   return kLiteRtStatusOk;
 }

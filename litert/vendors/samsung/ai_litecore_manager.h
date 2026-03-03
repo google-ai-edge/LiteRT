@@ -25,6 +25,11 @@ namespace {
 #include "litert/cc/litert_expected.h"
 #include <functional>
 
+#define LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(expr)                       \
+  if (auto err_code = static_cast<int>((expr)); err_code) {                    \
+    return kLiteRtStatusErrorRuntimeFailure;                                   \
+  }
+
 namespace litert::samsung {
 
 typedef void *backend_handler_t;

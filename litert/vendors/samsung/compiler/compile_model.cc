@@ -51,7 +51,11 @@ Expected<std::vector<char>> Compile(AiLiteCoreManager::Ptr ai_lite_core,
 
   std::vector<char> compile_binary(nnc_buffer->size);
   memcpy(compile_binary.data(), nnc_buffer->addr, nnc_buffer->size);
-  ai_lite_core->Api().ReleaseBuffer(backend_handler.get(), nnc_buffer);
+  if (auto release_result =
+          ai_lite_core->Api().ReleaseBuffer(backend_handler.get(), nnc_buffer);
+      release_result != ::GraphGenResult::SUCCESS) {
+    return Error(kLiteRtStatusErrorRuntimeFailure, "Fail to release buffer.");
+  }
 
   return compile_binary;
 }
