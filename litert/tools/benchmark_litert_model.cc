@@ -28,6 +28,7 @@ limitations under the License.
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -52,7 +53,7 @@ limitations under the License.
 
 namespace litert::benchmark {
 namespace {
-using ::litert::CompiledModel;
+using ::litert::CompiledModelNext;
 using ::litert::Options;
 using ::litert::RuntimeOptions;
 using ::litert::TensorBuffer;
@@ -256,14 +257,13 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   environment_ = std::make_unique<litert::Environment>(std::move(env_result));
 
   auto compilation_options = CreateCompiledModelOptions(params_);
-  LITERT_ASSIGN_OR_RETURN(
-      auto compiled_model_result,
-      litert::CompiledModel::Create(*environment_, model_->Get(),
-                                    compilation_options),
-      AsTfLiteStatus(_ << "Failed to compile model."));
+  LITERT_ASSIGN_OR_RETURN(auto compiled_model_result,
+                          litert::CompiledModelNext::Create(
+                              *environment_, *model_, compilation_options),
+                          AsTfLiteStatus(_ << "Failed to compile model."));
 
-  compiled_model_ =
-      std::make_unique<litert::CompiledModel>(std::move(compiled_model_result));
+  compiled_model_ = std::make_unique<litert::CompiledModelNext>(
+      std::move(compiled_model_result));
 
   LiteRtCompiledModelT* compiled_model_ptr = compiled_model_->Get();
   if (compiled_model_ptr == nullptr) {

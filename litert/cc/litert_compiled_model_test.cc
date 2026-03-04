@@ -33,9 +33,7 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
-#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
@@ -460,95 +458,7 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
 }
-TEST(CompiledModelTest, WithProfiler) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  LITERT_ASSIGN_OR_ABORT(Options compilation_options,
-                         litert::Options::Create());
-  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
-  LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
-                         compilation_options.GetRuntimeOptions());
-  runtime_options.SetEnableProfiling(/*enabled=*/true);
-
-  // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
-                            compilation_options));
-
-  // Check fully accelerated.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto fullyAccelerated,
-                              compiled_model.IsFullyAccelerated());
-  ASSERT_TRUE(fullyAccelerated);
-
-  // Create profiler.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
-  ASSERT_TRUE(profiler);
-  ASSERT_TRUE(profiler.StartProfiling());
-
-  // Check CompiledModel buffer requirements.
-  // input and output expect host memory.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBufferRequirements input_buffer_requirements_arg0,
-      compiled_model.GetInputBufferRequirements(/*input_name=*/"arg0"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBufferType> input_buffer_types_arg0,
-      input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(TensorBufferType::kHostMemory));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBufferRequirements input_buffer_requirements_arg1,
-      compiled_model.GetInputBufferRequirements(/*input_name=*/"arg1"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBufferType> input_buffer_types_arg1,
-      input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(TensorBufferType::kHostMemory));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBufferRequirements output_buffer_requirements,
-      compiled_model.GetOutputBufferRequirements(/*output_name=*/"tfl.add"));
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
-                              output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kHostMemory));
-
-  // Create and fill input and output buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
-                              compiled_model.CreateInputBuffers());
-
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
-                              compiled_model.CreateOutputBuffers());
-
-  ASSERT_TRUE(input_buffers[0].Write<float>(
-      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  ASSERT_TRUE(input_buffers[1].Write<float>(
-      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
-
-  // Execute model with input and output buffers.
-  compiled_model.Run(input_buffers, output_buffers);
-
-  // Check profiler events.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto events, profiler.GetEvents());
-  EXPECT_GT(events.size(), 2);
-  ASSERT_TRUE(profiler.Reset());
-  LITERT_ASSERT_OK_AND_ASSIGN(events, profiler.GetEvents());
-  EXPECT_EQ(events.size(), 0);
-
-  // Check model output.
-  {
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(
-            output_buffers[0], TensorBuffer::LockMode::kRead));
-    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
-    for (auto i = 0; i < kTestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
-    }
-    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
-  }
-}
 TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));

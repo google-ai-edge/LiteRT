@@ -43,6 +43,8 @@ next_library_visibility = [
     # "//litert/ats:__subpackages__",
     # "//litert/integration_test:__subpackages__",
     # "//litert/js/packages:__subpackages__",  # TODO: b/459587509 - Remove this with CompiledModel migration.
+    # "//litert/cc:__pkg__",
+    # "//litert/tools:__pkg__",
     # copybara:uncomment_end_and_comment_begin
     "//visibility:public",
     # copybara:comment_end
@@ -520,6 +522,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
+        "//litert/cc:litert_profiler",
         "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
@@ -539,7 +542,10 @@ cc_test(
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_profiler",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
@@ -550,6 +556,42 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "litert_compiled_model_next_gpu_test",
+    srcs = ["litert_compiled_model_next_gpu_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    tags = [
+        "no_oss",
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":litert_compiled_model_next",
+        "//litert/c:litert_event",
+        "//litert/c:litert_profiler_event",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_profiler",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_runtime_options",
+        "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",

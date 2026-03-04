@@ -31,6 +31,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -210,7 +211,7 @@ class ModelRuntimeInfoListener : public ::tflite::benchmark::BenchmarkListener {
  private:
   ::tflite::Interpreter* interpreter_ = nullptr;
 };
-using ::litert::CompiledModel;
+using ::litert::CompiledModelNext;
 using ::litert::Environment;
 using ::litert::Model;
 using ::litert::TensorBuffer;
@@ -421,7 +422,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
 
  private:
   std::unique_ptr<litert::Environment> environment_;
-  std::unique_ptr<litert::CompiledModel> compiled_model_;
+  std::unique_ptr<litert::CompiledModelNext> compiled_model_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
   std::unique_ptr<litert::Profiler> profiler_;
