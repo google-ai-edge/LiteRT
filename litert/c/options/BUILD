@@ -165,12 +165,22 @@ cc_library(
     hdrs = ["litert_intel_openvino_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
-        "//litert/core/cache:hash_util",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_intel_openvino_options_test",
+    srcs = ["litert_intel_openvino_options_test.cc"],
+    deps = [
+        ":litert_intel_openvino_options",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

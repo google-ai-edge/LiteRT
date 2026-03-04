@@ -20,13 +20,29 @@
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 
 using litert::intel_openvino::IntelOpenVinoOptions;
 
 namespace {
+
+void SerializeAndParse(LrtIntelOpenVinoOptions payload,
+                       LrtIntelOpenVinoOptions* payload_from_toml) {
+  const char* identifier;
+  void* data;
+  void (*payload_deleter)(void*);
+  ASSERT_EQ(LrtGetOpaqueIntelOpenVinoOptionsData(payload, &identifier, &data,
+                                                 &payload_deleter),
+            kLiteRtStatusOk);
+
+  ASSERT_EQ(LrtCreateIntelOpenVinoOptionsFromToml(
+                static_cast<const char*>(data), payload_from_toml),
+            kLiteRtStatusOk);
+
+  payload_deleter(data);
+}
 
 class IntelOpenVinoOptionsTest : public ::testing::Test {
  protected:
@@ -41,179 +57,172 @@ class IntelOpenVinoOptionsTest : public ::testing::Test {
 };
 
 TEST_F(IntelOpenVinoOptionsTest, DefaultValues) {
-  EXPECT_EQ(options_->GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeNPU);
-  EXPECT_EQ(options_->GetPerformanceMode(),
-            kLiteRtIntelOpenVinoPerformanceModeLatency);
+  LrtIntelOpenVinoOptions parsed = nullptr;
+  SerializeAndParse(options_->Get(), &parsed);
+
+  LiteRtIntelOpenVinoDeviceType dev_type;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed, &dev_type),
+            kLiteRtStatusOk);
+  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeNPU);
+
+  LiteRtIntelOpenVinoPerformanceMode perf_mode;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetPerformanceMode(parsed, &perf_mode),
+            kLiteRtStatusOk);
+  EXPECT_EQ(perf_mode, kLiteRtIntelOpenVinoPerformanceModeLatency);
+
+  int num_configs;
+  ASSERT_EQ(
+      LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(parsed, &num_configs),
+      kLiteRtStatusOk);
+  EXPECT_EQ(num_configs, 0);
+
+  LrtDestroyIntelOpenVinoOptions(parsed);
 }
 
 TEST_F(IntelOpenVinoOptionsTest, SetAndGetDeviceType) {
   options_->SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeCPU);
-  EXPECT_EQ(options_->GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeCPU);
+  LrtIntelOpenVinoOptions parsed = nullptr;
+  SerializeAndParse(options_->Get(), &parsed);
+
+  LiteRtIntelOpenVinoDeviceType dev_type;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed, &dev_type),
+            kLiteRtStatusOk);
+  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeCPU);
+  LrtDestroyIntelOpenVinoOptions(parsed);
 
   options_->SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeGPU);
-  EXPECT_EQ(options_->GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeGPU);
+  LrtIntelOpenVinoOptions parsed2 = nullptr;
+  SerializeAndParse(options_->Get(), &parsed2);
 
-  options_->SetDeviceType(kLiteRtIntelOpenVinoDeviceTypeAUTO);
-  EXPECT_EQ(options_->GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeAUTO);
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed2, &dev_type),
+            kLiteRtStatusOk);
+  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeGPU);
+  LrtDestroyIntelOpenVinoOptions(parsed2);
 }
 
 TEST_F(IntelOpenVinoOptionsTest, SetAndGetPerformanceMode) {
   options_->SetPerformanceMode(kLiteRtIntelOpenVinoPerformanceModeThroughput);
-  EXPECT_EQ(options_->GetPerformanceMode(),
-            kLiteRtIntelOpenVinoPerformanceModeThroughput);
+  LrtIntelOpenVinoOptions parsed = nullptr;
+  SerializeAndParse(options_->Get(), &parsed);
+
+  LiteRtIntelOpenVinoPerformanceMode perf_mode;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetPerformanceMode(parsed, &perf_mode),
+            kLiteRtStatusOk);
+  EXPECT_EQ(perf_mode, kLiteRtIntelOpenVinoPerformanceModeThroughput);
+  LrtDestroyIntelOpenVinoOptions(parsed);
 
   options_->SetPerformanceMode(
       kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput);
-  EXPECT_EQ(options_->GetPerformanceMode(),
-            kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput);
+  LrtIntelOpenVinoOptions parsed2 = nullptr;
+  SerializeAndParse(options_->Get(), &parsed2);
+
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetPerformanceMode(parsed2, &perf_mode),
+            kLiteRtStatusOk);
+  EXPECT_EQ(perf_mode, kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput);
+  LrtDestroyIntelOpenVinoOptions(parsed2);
 }
 
 TEST_F(IntelOpenVinoOptionsTest, SetAndGetConfigsMapOption) {
-  // Define expected config options
-  std::map<std::string, std::string> expected_configs = {
-      {"INFERENCE_PRECISION_HINT", "f16"},
-      {"NPU_COMPILATION_MODE_PARAMS",
-       "compute-layers-with-higher-precision=Sigmoid"},
-      {"CACHE_DIR", "/tmp/ov_cache"}};
+  options_->SetConfigsMapOption("INFERENCE_PRECISION_HINT", "f16");
+  options_->SetConfigsMapOption("NPU_COMPILATION_MODE_PARAMS",
+                                "compute-layers-with-higher-precision=Sigmoid");
 
-  // Set config options from the map
-  for (const auto& [key, value] : expected_configs) {
-    options_->SetConfigsMapOption(key.c_str(), value.c_str());
+  LrtIntelOpenVinoOptions parsed = nullptr;
+  SerializeAndParse(options_->Get(), &parsed);
+
+  int num_configs;
+  ASSERT_EQ(
+      LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(parsed, &num_configs),
+      kLiteRtStatusOk);
+  EXPECT_EQ(num_configs, 2);
+
+  std::map<std::string, std::string> parsed_map;
+  for (int i = 0; i < num_configs; i++) {
+    const char* key;
+    const char* val;
+    ASSERT_EQ(LrtIntelOpenVinoOptionsGetConfigsMapOption(parsed, i, &key, &val),
+              kLiteRtStatusOk);
+    parsed_map[key] = val;
   }
 
-  // Verify the number of options set
-  EXPECT_EQ(options_->GetNumConfigsMapOptions(), 3);
+  EXPECT_EQ(parsed_map["INFERENCE_PRECISION_HINT"], "f16");
+  EXPECT_EQ(parsed_map["NPU_COMPILATION_MODE_PARAMS"],
+            "compute-layers-with-higher-precision=Sigmoid");
 
-  // Retrieve and verify each config option
-  std::map<std::string, std::string> actual_configs;
-  for (int i = 0; i < options_->GetNumConfigsMapOptions(); ++i) {
-    auto [key, value] = options_->GetConfigsMapOption(i);
-    if (!key.empty() && !value.empty()) {  // Skip empty pairs (error case)
-      actual_configs[key] = value;
-    }
-  }
-
-  // Verify all expected configs were set correctly
-  EXPECT_EQ(actual_configs, expected_configs);
-}
-
-TEST_F(IntelOpenVinoOptionsTest, ConfigsMapMultipleOptions) {
-  // Define expected configuration properties
-  std::map<std::string, std::string> expected_configs = {
-      {"PERFORMANCE_HINT", "LATENCY"},
-      {"NUM_STREAMS", "4"},
-      {"INFERENCE_PRECISION_HINT", "f16"}};
-
-  // Set config options from the map
-  for (const auto& [key, value] : expected_configs) {
-    options_->SetConfigsMapOption(key.c_str(), value.c_str());
-  }
-
-  // Verify the number of options
-  EXPECT_EQ(options_->GetNumConfigsMapOptions(), 3);
-
-  // Verify the options object is still valid after multiple sets
-  EXPECT_EQ(options_->GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeNPU);
-
-  // Retrieve and verify the values
-  std::map<std::string, std::string> actual_configs;
-  for (int i = 0; i < options_->GetNumConfigsMapOptions(); ++i) {
-    auto [key, value] = options_->GetConfigsMapOption(i);
-    if (!key.empty() && !value.empty()) {  // Skip empty pairs (error case)
-      actual_configs[key] = value;
-    }
-  }
-
-  EXPECT_EQ(actual_configs, expected_configs);
-}
-
-TEST_F(IntelOpenVinoOptionsTest, OptionsIdentifier) {
-  EXPECT_EQ(std::string(IntelOpenVinoOptions::Discriminator()),
-            "intel_openvino");
+  LrtDestroyIntelOpenVinoOptions(parsed);
 }
 
 // Test C API
 TEST(IntelOpenVinoOptionsCApiTest, CreateAndDestroy) {
-  LiteRtOpaqueOptions opaque_options;
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsCreate(&opaque_options), kLiteRtStatusOk);
+  LrtIntelOpenVinoOptions options;
+  EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(&options), kLiteRtStatusOk);
 
-  LiteRtIntelOpenVinoOptions options;
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsGet(opaque_options, &options),
-            kLiteRtStatusOk);
-
-  // Test setting and getting values through C API
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsSetDeviceType(
+  EXPECT_EQ(LrtIntelOpenVinoOptionsSetDeviceType(
                 options, kLiteRtIntelOpenVinoDeviceTypeCPU),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LrtIntelOpenVinoOptionsSetPerformanceMode(
+                options, kLiteRtIntelOpenVinoPerformanceModeThroughput),
             kLiteRtStatusOk);
 
   LiteRtIntelOpenVinoDeviceType device_type;
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsGetDeviceType(options, &device_type),
+  EXPECT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(options, &device_type),
             kLiteRtStatusOk);
   EXPECT_EQ(device_type, kLiteRtIntelOpenVinoDeviceTypeCPU);
 
-  // Cleanup
-  LiteRtDestroyOpaqueOptions(opaque_options);
+  LrtDestroyIntelOpenVinoOptions(options);
 }
 
 TEST(IntelOpenVinoOptionsCApiTest, InvalidArguments) {
-  // Test null pointer handling
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsCreate(nullptr),
+  EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(nullptr),
             kLiteRtStatusErrorInvalidArgument);
 
-  LiteRtOpaqueOptions opaque_options;
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsCreate(&opaque_options), kLiteRtStatusOk);
+  LrtIntelOpenVinoOptions options;
+  EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(&options), kLiteRtStatusOk);
 
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsGet(nullptr, nullptr),
-            kLiteRtStatusErrorInvalidArgument);
-
-  LiteRtIntelOpenVinoOptions options;
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsGet(opaque_options, &options),
-            kLiteRtStatusOk);
-
-  // Test setting with null options
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsSetDeviceType(
+  EXPECT_EQ(LrtIntelOpenVinoOptionsSetDeviceType(
                 nullptr, kLiteRtIntelOpenVinoDeviceTypeCPU),
             kLiteRtStatusErrorInvalidArgument);
 
-  // Test getting with null output parameter
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsGetDeviceType(options, nullptr),
+  EXPECT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(options, nullptr),
             kLiteRtStatusErrorInvalidArgument);
 
-  LiteRtDestroyOpaqueOptions(opaque_options);
+  LrtDestroyIntelOpenVinoOptions(options);
 }
 
-TEST(IntelOpenVinoOptionsCApiTest, ConfigsMapOptions) {
-  LiteRtOpaqueOptions opaque_options;
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsCreate(&opaque_options), kLiteRtStatusOk);
+TEST(IntelOpenVinoOptionsCApiTest, RoundTripSerialization) {
+  LrtIntelOpenVinoOptions options;
+  EXPECT_EQ(LrtIntelOpenVinoOptionsCreate(&options), kLiteRtStatusOk);
 
-  LiteRtIntelOpenVinoOptions options;
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsGet(opaque_options, &options),
+  EXPECT_EQ(LrtIntelOpenVinoOptionsSetDeviceType(
+                options, kLiteRtIntelOpenVinoDeviceTypeAUTO),
             kLiteRtStatusOk);
-
-  // Set various configuration properties
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsSetConfigsMapOption(
-                options, "INFERENCE_PRECISION_HINT", "f16"),
-            kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsSetConfigsMapOption(
-                options, "NPU_COMPILATION_MODE_PARAMS",
-                "compute-layers-with-higher-precision=Sigmoid"),
-            kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtIntelOpenVinoOptionsSetConfigsMapOption(options, "CACHE_DIR",
-                                                          "/tmp/cache"),
-            kLiteRtStatusOk);
-
-  // Test null pointer handling for configs_map
   EXPECT_EQ(
-      LiteRtIntelOpenVinoOptionsSetConfigsMapOption(nullptr, "KEY", "VALUE"),
-      kLiteRtStatusErrorInvalidArgument);
-  EXPECT_EQ(
-      LiteRtIntelOpenVinoOptionsSetConfigsMapOption(options, nullptr, "VALUE"),
-      kLiteRtStatusErrorInvalidArgument);
-  EXPECT_EQ(
-      LiteRtIntelOpenVinoOptionsSetConfigsMapOption(options, "KEY", nullptr),
-      kLiteRtStatusErrorInvalidArgument);
+      LrtIntelOpenVinoOptionsSetConfigsMapOption(options, "key1", "value1"),
+      kLiteRtStatusOk);
 
-  LiteRtDestroyOpaqueOptions(opaque_options);
+  LrtIntelOpenVinoOptions parsed = nullptr;
+  SerializeAndParse(options, &parsed);
+
+  LiteRtIntelOpenVinoDeviceType dev_type;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetDeviceType(parsed, &dev_type),
+            kLiteRtStatusOk);
+  EXPECT_EQ(dev_type, kLiteRtIntelOpenVinoDeviceTypeAUTO);
+
+  int num_configs;
+  ASSERT_EQ(
+      LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(parsed, &num_configs),
+      kLiteRtStatusOk);
+  EXPECT_EQ(num_configs, 1);
+
+  const char* key;
+  const char* val;
+  ASSERT_EQ(LrtIntelOpenVinoOptionsGetConfigsMapOption(parsed, 0, &key, &val),
+            kLiteRtStatusOk);
+  EXPECT_EQ(std::string(key), "key1");
+  EXPECT_EQ(std::string(val), "value1");
+
+  LrtDestroyIntelOpenVinoOptions(parsed);
+  LrtDestroyIntelOpenVinoOptions(options);
 }
 
 }  // namespace

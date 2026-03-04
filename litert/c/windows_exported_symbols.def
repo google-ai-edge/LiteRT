@@ -185,16 +185,7 @@ EXPORTS
   LiteRtGoogleTensorOptionsSetTestingFlags
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent
-  LiteRtIntelOpenVinoOptionsCreate
-  LiteRtIntelOpenVinoOptionsGet
-  LiteRtIntelOpenVinoOptionsGetConfigsMapOption
-  LiteRtIntelOpenVinoOptionsGetDeviceType
-  LiteRtIntelOpenVinoOptionsGetIdentifier
-  LiteRtIntelOpenVinoOptionsGetNumConfigsMapOptions
-  LiteRtIntelOpenVinoOptionsGetPerformanceMode
-  LiteRtIntelOpenVinoOptionsSetConfigsMapOption
-  LiteRtIntelOpenVinoOptionsSetDeviceType
-  LiteRtIntelOpenVinoOptionsSetPerformanceMode
+
   LiteRtIsEventSignaled
   LiteRtJoinTensorBufferRequirements
   LiteRtLockTensorBuffer
