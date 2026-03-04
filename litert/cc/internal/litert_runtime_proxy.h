@@ -34,7 +34,6 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_opencl_types.h"
-#include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 
@@ -1222,53 +1221,6 @@ class RuntimeProxy {
                                         int size_bytes) {
     LITERT_PROXY_METHOD_STATUS(litert_add_external_tensor_binding, options,
                                signature_name, tensor_name, data, size_bytes);
-  }
-
-  //
-  // LiteRtProfiler
-  //
-  LiteRtStatus CreateProfiler(int size, LiteRtProfiler* profiler) {
-    LITERT_PROXY_METHOD_STATUS(litert_create_profiler, size, profiler);
-  }
-
-  void DestroyProfiler(LiteRtProfiler profiler) {
-    LITERT_PROXY_METHOD_VOID(litert_destroy_profiler, profiler);
-  }
-
-  LiteRtStatus StartProfiler(LiteRtProfiler profiler) {
-    LITERT_PROXY_METHOD_STATUS(litert_start_profiler, profiler);
-  }
-
-  LiteRtStatus StopProfiler(LiteRtProfiler profiler) {
-    LITERT_PROXY_METHOD_STATUS(litert_stop_profiler, profiler);
-  }
-
-  LiteRtStatus ResetProfiler(LiteRtProfiler profiler) {
-    LITERT_PROXY_METHOD_STATUS(litert_reset_profiler, profiler);
-  }
-
-  LiteRtStatus SetProfilerCurrentEventSource(LiteRtProfiler profiler,
-                                             ProfiledEventSource event_source) {
-    LITERT_PROXY_METHOD_STATUS(litert_set_profiler_current_event_source,
-                               profiler, event_source);
-  }
-
-  LiteRtStatus GetNumProfilerEvents(LiteRtProfiler profiler, int* num_events) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_num_profiler_events, profiler,
-                               num_events);
-  }
-
-  LiteRtStatus GetProfilerEvents(LiteRtProfiler profiler, int num_events,
-                                 ProfiledEventData* events) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_profiler_events, profiler, num_events,
-                               events);
-  }
-
-  LiteRtStatus GetProfileSummary(LiteRtProfiler profiler,
-                                 LiteRtCompiledModel compiled_model,
-                                 const char** summary) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_profile_summary, profiler,
-                               compiled_model, summary);
   }
 
  protected:

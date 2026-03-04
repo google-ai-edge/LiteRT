@@ -92,7 +92,7 @@ class CompiledModelNext : public CompiledModel {
     LiteRtProfiler profiler = nullptr;
     LITERT_RETURN_IF_ERROR(
         env_.runtime->CompiledModelGetProfiler(Get(), &profiler));
-    return Profiler(env_, profiler, OwnHandle::kNo);
+    return Profiler(profiler, OwnHandle::kNo);
   }
 
   /// @brief Starts the collection of hardware-specific metrics at a given
