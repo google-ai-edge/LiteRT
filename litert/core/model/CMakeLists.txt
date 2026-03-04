@@ -61,12 +61,21 @@ if(NOT EXISTS "${_tflite_schema_dir}/schema.fbs")
   message(FATAL_ERROR "TFLite converter schema.fbs not found at ${_tflite_schema_dir}")
 endif()
 
-set(FLATC_EXECUTABLE "")
+# Respect caller-provided path; earlier versions unconditionally wiped any
+# pre‑set value which prevented a parent project from injecting a host flatc
+# when cross‑compiling.  Only clear if the variable is undefined.
+if(NOT FLATC_EXECUTABLE)
+  set(FLATC_EXECUTABLE "")
+endif()
 
-if(TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
-  set(FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
-elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
-  set(FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+# Only attempt to look for a host tool when we are cross-compiling.  Native
+# builds will simply locate flatc in PATH later.
+if(CMAKE_CROSSCOMPILING)
+  if(TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
+    set(FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
+  elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+    set(FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+  endif()
 endif()
 
 if(NOT FLATC_EXECUTABLE)

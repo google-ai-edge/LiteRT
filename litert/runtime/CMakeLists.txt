@@ -65,7 +65,9 @@ set(LITERT_PTHREADPOOL_INCLUDE_DIR "${CMAKE_BINARY_DIR}/pthreadpool-source/inclu
 if(APPLE)
   target_sources(litert_runtime PRIVATE metal_info.cc)
 endif()
-target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
+if(LITERT_HAS_OPENCL_SUPPORT)
+  target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
+endif()
 
 # Link Apple frameworks for Metal and OpenGL interop
 if(APPLE)
@@ -80,7 +82,12 @@ target_include_directories(litert_runtime
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${LITERT_XNNPACK_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${LITERT_PTHREADPOOL_INCLUDE_DIR}>
-        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
+    # opencl headers are only required when we actually compile the OpenCL
+    # sources.  the directory may not exist on a platform without GPU support.
+    if(LITERT_HAS_OPENCL_SUPPORT)
+        target_include_directories(litert_runtime PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>)
+    endif()
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )

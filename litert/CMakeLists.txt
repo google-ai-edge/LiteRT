@@ -50,6 +50,11 @@ option(LITERT_AUTO_BUILD_TFLITE "Automatically build TFLite if not found" ON)
 option(LITERT_ENABLE_GPU "Enable GPU acceleration support" ON)
 option(LITERT_ENABLE_NPU "Enable NPU acceleration support" ON)
 option(LITERT_DISABLE_KLEIDIAI "Disable KleidiAI delegate when bundling host TFLite (default ON for Linux/macOS x86_64 hosts)" ${_litert_disable_kleidiai_default})
+# When cross-compiling for a platform that doesn't require the built-in
+# vendor delegates, the configuration step downloads third-party SDKs.  These
+# downloads not only waste time but can fail on hermetic build systems.  A
+# user can opt-out with -DLITERT_SKIP_VENDORS=ON.
+option(LITERT_SKIP_VENDORS "Skip fetching and building the vendor delegate SDKs" OFF)
 
 set(LITERT_HOST_C_COMPILER "" CACHE FILEPATH "Host C compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
 set(LITERT_HOST_CXX_COMPILER "" CACHE FILEPATH "Host C++ compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
@@ -85,7 +90,12 @@ if(LITERT_DISABLE_KLEIDIAI)
   set(XNNPACK_ENABLE_KLEIDIAI OFF CACHE BOOL "Disable KleidiAI in XNNPACK")
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+# Host flatc is only needed when cross-compiling (we generate
+# FlatBuffers headers on the host).  Historically this block was limited to
+# Android targets, which meant cross‑compiling for other systems would fall
+# back to using the target compiler and often produce an unusable binary.
+# Decode the generic cross‑compile flag and handle all cases.
+if(CMAKE_CROSSCOMPILING)
   # Build or reuse host flatc for cross compilation.
   if(NOT TFLITE_HOST_TOOLS_DIR)
     set(_root_host_flatc_dir "${CMAKE_CURRENT_SOURCE_DIR}/../host_flatc_build")
@@ -223,7 +233,9 @@ add_subdirectory(cc)
 add_subdirectory(core)
 add_subdirectory(runtime)
 add_subdirectory(compiler)
-add_subdirectory(vendors)
+if(NOT LITERT_SKIP_VENDORS)
+  add_subdirectory(vendors)
+endif()
 if(LITERT_BUILD_TOOLS)
   add_subdirectory(tools)
 endif()
