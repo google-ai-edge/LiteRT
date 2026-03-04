@@ -104,7 +104,10 @@ NB_MODULE(converter_api_ext, m) {
 
       .def_rw("unsafe_fuse_dynamic_shaped_broadcast",
               &litert::ConvertToTFLConfig::unsafe_fuse_dynamic_shaped_broadcast,
-              "Allows fusion of dynamic shaped broadcast ops");
+              "Allows fusion of dynamic shaped broadcast ops")
+
+      .def_rw("enable_x64", &litert::ConvertToTFLConfig::enable_x64,
+              "Allows x64 types in the model");
 
   m.def(
       "prepare_mlir_context",
