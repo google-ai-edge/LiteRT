@@ -44,6 +44,7 @@
 #include "tflite/converter/ir/tfl_ops.h"
 #include "tflite/converter/quantization/ir/QuantOps.h"
 #include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
+#include "tflite/converter/transforms/optimize_broadcast_like_pass.h"
 #include "tflite/converter/transforms/optimize_pass.h"
 #include "tflite/converter/transforms/passes.h"
 
@@ -70,6 +71,7 @@ void RegisterPasses() {
   mlir::odml::registerLegalizeStablehloToVhloPass();
   mlir::PassRegistration<mlir::TFL::OptimizePass>(
       []() { return mlir::TFL::CreateOptimizePass(); });
+  mlir::PassRegistration<mlir::TFL::OptimizeBroadcastLikePass>();
   mlir::PassRegistration<mlir::OperationPass<mlir::func::FuncOp>>(
       []() { return mlir::TFL::CreatePrepareQuantizePass(); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
