@@ -1593,7 +1593,7 @@ Expected<void> LiteRtCompiledModelT::RunCApi(
   return result;
 }
 
-Expected<void> LiteRtCompiledModelT::StartMetricsCollection(int detail_level) {
+Expected<void> LiteRtCompiledModelT::StartMetricsCollection(int detail_level) const {
   if (detail_level < 0) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Detail level must be >= 0");
@@ -1607,7 +1607,7 @@ Expected<void> LiteRtCompiledModelT::StartMetricsCollection(int detail_level) {
   return {};
 }
 
-Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() {
+Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() const {
   std::vector<LiteRtMetricsT::Metric> metrics;
   for (auto& delegate : delegates_) {
     if (delegate.StopMetricsCollection) {
@@ -1847,7 +1847,7 @@ void LiteRtCompiledModelT::ReportError(const char* format, ...) {
   va_end(args);
 }
 
-Expected<void> LiteRtCompiledModelT::ClearErrors() {
+Expected<void> LiteRtCompiledModelT::ClearErrors() const {
   if (!error_reporter_) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "No error reporter configured");
@@ -1865,7 +1865,7 @@ Expected<void> LiteRtCompiledModelT::ClearErrors() {
   return {};
 }
 
-Expected<std::string> LiteRtCompiledModelT::GetErrorMessages() {
+Expected<std::string> LiteRtCompiledModelT::GetErrorMessages() const {
   if (!error_reporter_) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "No error reporter configured");

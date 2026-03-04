@@ -190,9 +190,9 @@ class LiteRtCompiledModelT {
                                  bool* async, LiteRtOptions run_options,
                                  const LiteRtSchedulingInfo* scheduling_info);
 
-  litert::Expected<void> StartMetricsCollection(int detail_level);
+  litert::Expected<void> StartMetricsCollection(int detail_level) const;
 
-  litert::Expected<LiteRtMetricsT> StopMetricsCollection();
+  litert::Expected<LiteRtMetricsT> StopMetricsCollection() const;
 
   // Returns true if a non delegated operation is found in the interpreter.
   litert::Expected<bool> HasNonDelegatedOps();
@@ -229,10 +229,10 @@ class LiteRtCompiledModelT {
   void ReportError(const char* format, ...);
 
   // Clears all errors (only available in buffer mode)
-  litert::Expected<void> ClearErrors();
+  litert::Expected<void> ClearErrors() const;
 
   // Gets all error messages (only available in buffer mode)
-  litert::Expected<std::string> GetErrorMessages();
+  litert::Expected<std::string> GetErrorMessages() const;
 
   // Returns the TFLite interpreter associated with the compiled model.
   friend litert::Expected<::tflite::Interpreter*> GetInterpreter(
