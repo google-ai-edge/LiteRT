@@ -27,6 +27,12 @@ bool_flag(
     visibility = ["//visibility:public"],
 )
 
+bool_flag(
+    name = "resolve_symbols_in_exec",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 string_flag(
     name = "build_include",
     # LINT.IfChange(string_flag_default)
