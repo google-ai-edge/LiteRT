@@ -20,8 +20,9 @@
 #include "pybind11/pybind11.h"  // from @pybind11
 
 PYBIND11_MODULE(_litert_wrapper_utils_test_helper, m) {
-  m.def("make_capsule", [](pybind11::object model_wrapper) {
-    std::vector<int32_t> dims = {1};
+  m.def("make_testing_tensor_buffer_capsule", [](pybind11::object
+                                                     model_wrapper) {
+    std::vector dims = {1};
     litert::RankedTensorType tensor_type =
         litert::MakeRankedTensorType<float>(dims);
     size_t buffer_size = sizeof(float);

@@ -39,8 +39,8 @@ void DestroyTensorBufferFromCapsule(PyObject* capsule) {
   // This ensures the model is not garbage collected before its buffers,
   // fixing the use-after-free crash during Python cleanup.
   if (Py_IsInitialized()) {
-    PyObject* model = static_cast<PyObject*>(PyCapsule_GetContext(capsule));
-    if (model) {
+    if (PyObject* model =
+            static_cast<PyObject*>(PyCapsule_GetContext(capsule))) {
       Py_DECREF(model);
       PyCapsule_SetContext(capsule, nullptr);
     }
