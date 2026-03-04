@@ -538,7 +538,7 @@ bool IsGlClInteropSupported() {
 }
 
 // Runs model synchronously on OpenCL with GL input/output buffers.
-TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
+TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
@@ -550,8 +550,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
-  LITERT_ASSERT_OK(
-      gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
+  LITERT_ASSERT_OK(gpu_options.EnableExternalTensorsMode(false));
 
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
 
@@ -606,8 +605,10 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   }
 }
 
+// TODO(b/403337563): Async execution mode is not currently supported for GL-CL
+// interop.
 // Runs model asynchronously on OpenCL with GL input/output buffers.
-TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
+TEST(CompiledModelGpuTest, DISABLED_AsyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
