@@ -16,15 +16,44 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_GPU_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT GPU options.
-class GpuOptions : public litert::OpaqueOptions {
+class GpuOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
+  GpuOptions() : options_(nullptr) {}
+  explicit GpuOptions(LrtGpuOptions* options) : options_(options) {}
+  ~GpuOptions() {
+    if (options_) {
+      LrtDestroyGpuOptions(options_);
+    }
+  }
+
+  GpuOptions(GpuOptions&& other) noexcept : options_(other.options_) {
+    other.options_ = nullptr;
+  }
+  GpuOptions& operator=(GpuOptions&& other) noexcept {
+    if (this != &other) {
+      if (options_) LrtDestroyGpuOptions(options_);
+      options_ = other.options_;
+      other.options_ = nullptr;
+    }
+    return *this;
+  }
+
+  // Delete copy constructor and assignment
+  GpuOptions(const GpuOptions&) = delete;
+  GpuOptions& operator=(const GpuOptions&) = delete;
+
+  LrtGpuOptions* Get() const { return options_; }
+  LrtGpuOptions* Release() {
+    auto* res = options_;
+    options_ = nullptr;
+    return res;
+  }
 
   static Expected<GpuOptions> Create();
   static const char* GetPayloadIdentifier();
@@ -144,6 +173,9 @@ class GpuOptions : public litert::OpaqueOptions {
   /// programs will be cached. If false, gpu graph info including work group
   /// sizes (and all compiled programs depending on backend) will be cached.
   LiteRtStatus CacheCompiledProgramsOnly(bool only);
+
+ private:
+  LrtGpuOptions* options_;
 };
 
 }  // namespace litert

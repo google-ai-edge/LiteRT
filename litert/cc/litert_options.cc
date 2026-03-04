@@ -22,6 +22,7 @@
 #include "litert/c/litert_options.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/c/options/litert_cpu_options.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_expected.h"
@@ -120,7 +121,8 @@ Expected<CompilerOptions&> Options::GetCompilerOptions() {
 }
 
 Expected<void> Options::Build() {
-  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), gpu_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(Get(), gpu_options_,
+                                                  LrtGetOpaqueGpuOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(Get(), cpu_options_,
                                                   LrtGetOpaqueCpuOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), qualcomm_options_));
