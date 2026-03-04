@@ -206,6 +206,7 @@ class TensorWrapper final {
 };
 
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
+using ConstTensorWrapperRef = std::reference_wrapper<const TensorWrapper>;
 
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>
