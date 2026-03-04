@@ -45,6 +45,7 @@ _DEVICE_SELECTOR_TEMPLATE = """        <config:device-selector>
 
 
 def _is_mobile_device_backend(backend: types.Backend):
+  """Returns True if the backend is a mobile device backend."""
   target = backend.target
   if backend.id() == qualcomm_backend.QualcommBackend.id():
     target = cast(qnn_target.Target, target)
@@ -52,6 +53,15 @@ def _is_mobile_device_backend(backend: types.Backend):
     if target.soc_model in (
         qnn_target.SocModel.SA8255,
         qnn_target.SocModel.SA8295,
+    ):
+      return False
+  if backend.id() == mediatek_backend.MediaTekBackend.id():
+    target = cast(mtk_target.Target, target)
+    # Non Android Phone MTK targets.
+    if target.soc_model in (
+        mtk_target.SocModel.MT8188,
+        mtk_target.SocModel.MT8189,
+        mtk_target.SocModel.MT8171,
     ):
       return False
   return True
@@ -259,6 +269,7 @@ def export(
     ai_pack_dir: pathlib.Path | str,
     ai_pack_name: str,
     litert_model_name: str,
+    separate_mtk_ai_pack: bool = False,
 ) -> None:
   """Exports the compiled models to AI pack format.
 
@@ -283,6 +294,7 @@ def export(
     ai_pack_dir: The directory to export the AI pack to.
     ai_pack_name: The name of the AI pack.
     litert_model_name: The name of the model in the litert format.
+    separate_mtk_ai_pack: Whether to separate the MTK AI pack.
   """
   if isinstance(ai_pack_dir, str):
     ai_pack_dir = pathlib.Path(ai_pack_dir)
@@ -294,6 +306,7 @@ def export(
       ai_pack_dir=ai_pack_dir,
       ai_pack_name=ai_pack_name,
       litert_model_name=litert_model_name,
+      separate_mtk_ai_pack=separate_mtk_ai_pack,
   )
   _write_targeting_config(
       compiled_models=compiled_models, ai_pack_dir=ai_pack_dir
