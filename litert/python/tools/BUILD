@@ -25,6 +25,7 @@ pytype_strict_library(
     deps = [
         # Dependency placeholder: gfile,
         # copybara:uncomment "//third_party/py/flatbuffers",
+        "@org_tensorflow//third_party/py/numpy:headers",
         "//tflite/python:schema_py",
     ],
 )
