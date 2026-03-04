@@ -205,7 +205,24 @@ if(TFLITE_ENABLE_XNNPACK)
   elseif(NOT DEFINED PTHREADPOOL_SOURCE_DIR)
       message(STATUS "Downloading pthreadpool to ${CMAKE_BINARY_DIR}/pthreadpool-source (define SYSTEM_PTHREADPOOL or PTHREADPOOL_SOURCE_DIR to avoid it)")
       configure_file(cmake/DownloadPThreadPool.cmake "${CMAKE_BINARY_DIR}/pthreadpool-download/CMakeLists.txt")
-      execute_process(COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .
+      # when cross-compiling we must forward the toolchain and any compiler
+      # settings so that the external project builds for the target instead of
+      # the host.  Prior to this change only Android builds propagated the
+      # toolchain file, so generic cross‑compiles produced x86 libraries that
+      # later failed at link-time.
+      set(_litert_dep_cmake_args -G "${CMAKE_GENERATOR}")
+      if(CMAKE_CROSSCOMPILING)
+        if(DEFINED CMAKE_TOOLCHAIN_FILE)
+          list(APPEND _litert_dep_cmake_args -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
+        endif()
+        if(DEFINED CMAKE_C_COMPILER)
+          list(APPEND _litert_dep_cmake_args -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER})
+        endif()
+        if(DEFINED CMAKE_CXX_COMPILER)
+          list(APPEND _litert_dep_cmake_args -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
+        endif()
+      endif()
+      execute_process(COMMAND "${CMAKE_COMMAND}" ${_litert_dep_cmake_args} .
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/pthreadpool-download")
       execute_process(COMMAND "${CMAKE_COMMAND}" --build .
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/pthreadpool-download")
@@ -225,7 +242,19 @@ if(TFLITE_ENABLE_XNNPACK)
   IF(NOT DEFINED FP16_SOURCE_DIR)
     MESSAGE(STATUS "Downloading FP16 to ${CMAKE_BINARY_DIR}/FP16-source (define FP16_SOURCE_DIR to avoid it)")
     CONFIGURE_FILE(cmake/DownloadFP16.cmake "${CMAKE_BINARY_DIR}/FP16-download/CMakeLists.txt")
-    EXECUTE_PROCESS(COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .
+    set(_litert_dep_cmake_args -G "${CMAKE_GENERATOR}")
+    if(CMAKE_CROSSCOMPILING)
+      if(DEFINED CMAKE_TOOLCHAIN_FILE)
+        list(APPEND _litert_dep_cmake_args -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
+      endif()
+      if(DEFINED CMAKE_C_COMPILER)
+        list(APPEND _litert_dep_cmake_args -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER})
+      endif()
+      if(DEFINED CMAKE_CXX_COMPILER)
+        list(APPEND _litert_dep_cmake_args -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
+      endif()
+    endif()
+    EXECUTE_PROCESS(COMMAND "${CMAKE_COMMAND}" ${_litert_dep_cmake_args} .
       WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/FP16-download")
     EXECUTE_PROCESS(COMMAND "${CMAKE_COMMAND}" --build .
       WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/FP16-download")
