@@ -782,6 +782,164 @@ size_t OptimizeMHAFastVlmPrefill(
       "[G2G] Validation failed. Rolling back to the original graph.");
   return 1;
 }
+
+size_t OptimizeMHAFastVlmDecode(
+    std::function<bool(OpWrapper&)> validate_op_config,
+    std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
+    size_t pattern_size) {
+  QNN_LOG_INFO("[G2G] MHA optimization (fast vlm decode)");
+
+  constexpr size_t kQScaleMulIdx = 0;
+  constexpr size_t kQScaleReshapeIdx = 1;
+  constexpr size_t kQKCacheMatmulIdx = 2;
+  constexpr size_t kQKSliceMatmulIdx = 3;
+  constexpr size_t kQKConcatIdx = 4;
+  constexpr size_t kPreMaskReshapeIdx = 5;
+  constexpr size_t kMaskAddIdx = 6;
+  constexpr size_t kPostMaskReshapeIdx = 7;
+  constexpr size_t kSoftmaxIdx = 8;
+  constexpr size_t kQKVCacheSliceIdx = 9;
+  constexpr size_t kQKVSliceSliceIdx = 10;
+  constexpr size_t kQKVCacheMatmulIdx = 11;
+  constexpr size_t kQKVSliceMatmulIdx = 12;
+  constexpr size_t kQKVAddIdx = 13;
+  constexpr size_t kQKVReshapeIdx = 14;
+  const auto& q_scale_mul = ops[start_index + kQScaleMulIdx];
+  const auto& q_scale_reshape = ops[start_index + kQScaleReshapeIdx];
+  const auto& q_kcache_matmul = ops[start_index + kQKCacheMatmulIdx];
+  const auto& q_kslice_matmul = ops[start_index + kQKSliceMatmulIdx];
+  const auto& qk_concat = ops[start_index + kQKConcatIdx];
+  const auto& pre_mask_reshape = ops[start_index + kPreMaskReshapeIdx];
+  const auto& mask_add = ops[start_index + kMaskAddIdx];
+  const auto& post_mask_reshape = ops[start_index + kPostMaskReshapeIdx];
+  const auto& softmax = ops[start_index + kSoftmaxIdx];
+  const auto& qk_vcache_slice = ops[start_index + kQKVCacheSliceIdx];
+  const auto& qk_vslice_slice = ops[start_index + kQKVSliceSliceIdx];
+  const auto& qk_vcache_matmul = ops[start_index + kQKVCacheMatmulIdx];
+  const auto& qk_vslice_matmul = ops[start_index + kQKVSliceMatmulIdx];
+  const auto& qkv_add = ops[start_index + kQKVAddIdx];
+  const auto& qkv_reshape = ops[start_index + kQKVReshapeIdx];
+
+  const auto is_connected =
+      [](const OpWrapper& output, size_t output_tensor_index,
+         const OpWrapper& input, size_t input_tensor_index) -> bool {
+    return output.GetOutputTensor(output_tensor_index) ==
+           input.GetInputTensor(input_tensor_index);
+  };
+  if (!(is_connected(q_scale_mul, 0, q_scale_reshape, 0) &&
+        is_connected(q_scale_reshape, 0, q_kcache_matmul, 0) &&
+        is_connected(q_scale_reshape, 0, q_kslice_matmul, 0) &&
+        is_connected(q_kcache_matmul, 0, qk_concat, 0) &&
+        is_connected(q_kslice_matmul, 0, qk_concat, 1) &&
+        is_connected(qk_concat, 0, pre_mask_reshape, 0) &&
+        is_connected(pre_mask_reshape, 0, mask_add, 0) &&
+        is_connected(mask_add, 0, post_mask_reshape, 0) &&
+        is_connected(post_mask_reshape, 0, softmax, 0) &&
+        is_connected(softmax, 0, qk_vcache_slice, 0) &&
+        is_connected(softmax, 0, qk_vslice_slice, 0) &&
+        is_connected(qk_vcache_slice, 0, qk_vcache_matmul, 0) &&
+        is_connected(qk_vslice_slice, 0, qk_vslice_matmul, 0) &&
+        is_connected(qk_vcache_matmul, 0, qkv_add, 0) &&
+        is_connected(qk_vslice_matmul, 0, qkv_add, 1) &&
+        is_connected(qkv_add, 0, qkv_reshape, 0))) {
+    QNN_LOG_WARNING(
+        "[G2G] Failed to check connectivity when doing MHA-SHA transformation "
+        "for FastVLM decode.");
+    return 1;
+  }
+
+  constexpr size_t kSupportedRank = 4;
+  constexpr size_t kUnpackAxis = 1;
+  if (q_scale_mul.GetInputTensor(0).GetRank() != kSupportedRank ||
+      q_kcache_matmul.GetInputTensor(1).GetRank() != kSupportedRank ||
+      q_kslice_matmul.GetInputTensor(1).GetRank() != kSupportedRank ||
+      qk_vcache_matmul.GetInputTensor(1).GetRank() != kSupportedRank ||
+      qk_vslice_matmul.GetInputTensor(1).GetRank() != kSupportedRank ||
+      mask_add.GetInputTensor(1).GetRank() != kSupportedRank ||
+      mask_add.GetInputTensor(1).GetDimension(0) != 1 ||
+      mask_add.GetInputTensor(1).GetDimension(1) != 1) {
+    QNN_LOG_WARNING(
+        "[G2G] Failed to check dimensions when doing MHA-SHA transformation "
+        "for FastVLM decode.");
+    return 1;
+  }
+
+  std::vector<OpWrapper> new_ops;
+
+  auto scale_mul_unpack_outputs = UnpackTensor(
+      tensor_pool, new_ops, q_scale_mul.GetInputTensor(0), kUnpackAxis);
+
+  auto k_slice_unpack_outputs = UnpackTensor(
+      tensor_pool, new_ops, q_kslice_matmul.GetInputTensor(1), kUnpackAxis);
+
+  auto k_cache_unpack_outputs = UnpackTensor(
+      tensor_pool, new_ops, q_kcache_matmul.GetInputTensor(1), kUnpackAxis);
+
+  auto v_cache_unpack_outputs = UnpackTensor(
+      tensor_pool, new_ops, qk_vcache_matmul.GetInputTensor(1), kUnpackAxis);
+
+  auto v_slice_unpack_outputs = UnpackTensor(
+      tensor_pool, new_ops, qk_vslice_matmul.GetInputTensor(1), kUnpackAxis);
+
+  // Build SHA
+  const auto num_attn_head = scale_mul_unpack_outputs.size();
+  const auto num_kv_head = k_slice_unpack_outputs.size();
+  const auto num_attn_per_kv_head = num_attn_head / num_kv_head;
+  std::vector<ConstTensorWrapperRef> sha_outputs;
+  for (size_t i = 0; i < num_kv_head; ++i) {
+    for (size_t j = 0; j < num_attn_per_kv_head; ++j) {
+      const auto& sha_output = BuildSingleSHAByUnpackAxis1(
+          new_ops, tensor_pool, num_attn_per_kv_head,
+          scale_mul_unpack_outputs[i * num_attn_per_kv_head + j],
+          k_cache_unpack_outputs[i], k_slice_unpack_outputs[i],
+          v_cache_unpack_outputs[i], v_slice_unpack_outputs[i], q_scale_mul,
+          q_kcache_matmul, q_kslice_matmul, qk_concat, mask_add,
+          post_mask_reshape, softmax, qk_vcache_slice, qk_vslice_slice,
+          qk_vcache_matmul, qk_vslice_matmul, qkv_add);
+      sha_outputs.emplace_back(sha_output);
+    }
+  }
+
+  // Concat SHA outputs by the second-to-last dimension.
+  const auto concat_axis = sha_outputs[0].get().GetRank() - 2;
+  auto concat_sha_dims = sha_outputs[0].get().GetDimensions();
+  concat_sha_dims[concat_axis] = 0;
+  for (const auto& sha_output : sha_outputs) {
+    concat_sha_dims[concat_axis] += sha_output.get().GetDimension(concat_axis);
+  }
+  const auto& concat_sha_output = tensor_pool.CloneNativeTensorFrom(
+      qkv_reshape.GetInputTensor(0), concat_sha_dims);
+  new_ops.emplace_back(
+      CreateConcatenationOp(sha_outputs, concat_sha_output, concat_axis));
+  new_ops.emplace_back(
+      CreateReshapeOp(concat_sha_output, qkv_reshape.GetOutputTensor(0)));
+
+  // Validate new graph.
+  const bool is_valid =
+      std::all_of(new_ops.begin(), new_ops.end(),
+                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                    return validate_op_config(op_wrapper);
+                  });
+  if (is_valid) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+    }
+    // Replace the matched pattern with a newly generated subgraph.
+    size_t step_size = new_ops.size();
+    ops.insert(ops.begin() + start_index + pattern_size,
+               std::make_move_iterator(new_ops.begin()),
+               std::make_move_iterator(new_ops.end()));
+    ops.erase(ops.begin() + start_index,
+              ops.begin() + start_index + pattern_size);
+    QNN_LOG_INFO("[G2G] FastVLM decode optimization done.");
+    return step_size;
+  }
+  QNN_LOG_WARNING(
+      "[G2G] Validation failed. Rolling back to the original graph.");
+  return 1;
+}
+
 namespace {
 
 bool OptimizeMHATinyGemmaPrefill(

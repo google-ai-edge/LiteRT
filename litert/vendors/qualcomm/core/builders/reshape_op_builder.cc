@@ -25,4 +25,15 @@ std::vector<OpWrapper> BuildReshapeOp(
   return res;
 }
 
+OpWrapper CreateReshapeOp(const TensorWrapper& input_0,
+                          const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_RESHAPE);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_RESHAPE, QnnOpCode::kReshape);
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
+  return op;
+}
+
 }  // namespace qnn
