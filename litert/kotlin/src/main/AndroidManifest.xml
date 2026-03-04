@@ -49,12 +49,35 @@
         <uses-native-library android:name="libedgetpu_util.so" android:required="false" />
         <uses-native-library android:name="libedgetpu_litert.so" android:required="false" />
         <!-- MTK NPU -->
+        <!-- Utils -->
+        <uses-native-library android:name="libneuron_sys_util.mtk.so" android:required="false"/>
+        <!-- Libs needed if using the runtime from the system. -->
         <uses-native-library android:name="libneuronusdk_adapter.mtk.so" android:required="false" />
-        <uses-native-library android:name="libneuron_adapter_mgvi.so" android:required="false" />
-        <uses-native-library android:name="libneuron_sys_util.mtk.so" android:required="false" />
-        <!-- MTK devices requiring version 9 SDK. -->
         <uses-native-library android:name="libneuronusdk_adapter.9.mtk.so" android:required="false" />
-
+        <uses-native-library android:name="libneuron_adapter_mgvi.so" android:required="false" />
+        <!-- Libs needed if bundling the runtime with the app. -->
+        <!-- AIDL Service -->
+        <uses-native-library android:name="libapuwareutils_v2.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareutils.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareapusys_v2.mtk.so" android:required="false"/>
+        <!-- DSP -->
+        <uses-native-library android:name="libmvpuop_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop25_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop25_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_config.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpup30_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpup30_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop30_mtk_nn.mtk.so" android:required="false"/>
     </application>
 
 </manifest>
