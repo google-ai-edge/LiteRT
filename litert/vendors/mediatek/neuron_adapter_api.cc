@@ -88,6 +88,7 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   auto magic_number = GetNeuroPilotMagicNumber();
   if (magic_number && magic_number.Value() >= kMinMagicNumberForNeuronService) {
     so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
+    so_paths.push_back("libneuronusdk_adapter.so");
   }
   so_paths.push_back("libneuron_adapter_mgvi.so");
   // Some platforms have non-usdk non-mgvi build.

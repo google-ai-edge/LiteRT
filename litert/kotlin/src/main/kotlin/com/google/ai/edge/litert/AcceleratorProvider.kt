@@ -52,16 +52,18 @@ interface NpuCompatibilityChecker {
         }
       }
 
-    // Each Medatek SOC only have one supported API level for now.
     internal val SUPPORTED_MEDIATEK_SOCS =
       setOf(
-        Triple("Mediatek", "MT6878", 35),
-        Triple("Mediatek", "MT6897", 35),
-        Triple("Mediatek", "MT6983", 35),
-        Triple("Mediatek", "MT6985", 35),
-        Triple("Mediatek", "MT6989", 35),
-        Triple("Mediatek", "MT6991", 35),
-        Triple("Mediatek", "MT6993", 36),
+        Pair("Mediatek", "MT6877"),
+        Pair("Mediatek", "MT6878"),
+        Pair("Mediatek", "MT6879"),
+        Pair("Mediatek", "MT6893"),
+        Pair("Mediatek", "MT6897"),
+        Pair("Mediatek", "MT6983"),
+        Pair("Mediatek", "MT6985"),
+        Pair("Mediatek", "MT6989"),
+        Pair("Mediatek", "MT6991"),
+        Pair("Mediatek", "MT6993"),
       )
 
     /** Mediatek NPU compatibility checker. */
@@ -69,14 +71,8 @@ interface NpuCompatibilityChecker {
       object : NpuCompatibilityChecker {
         override fun isDeviceSupported(): Boolean {
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val model =
-              if (Build.SOC_MODEL.endsWith("(ENG)")) {
-                Build.SOC_MODEL.substring(0, Build.SOC_MODEL.length - 5)
-              } else {
-                Build.SOC_MODEL
-              }
             return SUPPORTED_MEDIATEK_SOCS.contains(
-              Triple(Build.SOC_MANUFACTURER, model, Build.VERSION.SDK_INT)
+              Pair(Build.SOC_MANUFACTURER, Build.SOC_MODEL.removeSuffix("(ENG)"))
             )
           }
           return false
