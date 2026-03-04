@@ -25,7 +25,11 @@
 #include <utility>
 #include <vector>
 
+#ifndef LITERT_DISABLE_CPU
 #include "xnnpack.h"  // from @XNNPACK
+#else
+#define XNN_EXTRA_BYTES 16
+#endif
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"

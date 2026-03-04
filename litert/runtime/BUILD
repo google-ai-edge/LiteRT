@@ -231,7 +231,10 @@ cc_library(
         "//litert/c:litert_tensor_buffer.h",
         "//litert/c:litert_tensor_buffer_requirements.h",
     ],
-    copts = litert_metal_opts(),
+    copts = litert_metal_opts() + select({
+        "//litert/build_common:litert_disable_cpu": ["-DLITERT_DISABLE_CPU"],
+        "//conditions:default": [],
+    }),
     linkopts = litert_metal_linkopts(),
     deps = [
         ":event",
@@ -254,7 +257,6 @@ cc_library(
         "//litert/core:environment",
         "//litert/core/util:tensor_type_util",
         "//litert/core/util:to_string",
-        "@XNNPACK",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -282,6 +284,9 @@ cc_library(
             ":open_cl_sync",
         ],
         "//conditions:default": [],
+    }) + select({
+        "//litert/build_common:litert_disable_cpu": [],
+        "//conditions:default": ["@XNNPACK"],
     }) + select({
         "//litert/build_common:build_include_npu_enabled": [
             ":dmabuf_buffer",
@@ -529,7 +534,14 @@ cc_library(
         "stub_op_resolver.h",
     ],
     copts = litert_metal_opts() + select({
-        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//litert:without_builtin_ops": [
+            # No builtin ops. Xnnpack is used for CPU backend.
+            "-DLITERT_NO_BUILTIN_OPS",
+        ],
+        "//litert/build_common:litert_disable_cpu": [
+            # No support for CPU backend. Builtin ops are still needed for GPU.
+            "-DLITERT_DISABLE_CPU",
+        ],
         "//conditions:default": [],
     }),
     linkopts = litert_metal_linkopts(),
@@ -537,7 +549,6 @@ cc_library(
         ":accelerator",
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
-        ":litert_cpu_options",
         ":litert_runtime_options",
         ":magic_number_utils",
         ":metrics",
@@ -581,7 +592,6 @@ cc_library(
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
-        "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
         "//litert/runtime/dispatch:dispatch_opaque_options",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
         # "//weight_loader:external_weight_loader",  # copybara:uncomment
@@ -605,8 +615,20 @@ cc_library(
         ],
         "//conditions:default": [],
     }) + select({
-        "//litert:without_builtin_ops": [],
-        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+        "//litert:without_builtin_ops": [
+            # No builtin ops. Xnnpack is used for CPU backend.
+            ":litert_cpu_options",
+            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
+        ],
+        "//litert/build_common:litert_disable_cpu": [
+            # No support for CPU backend. Builtin ops are still needed for GPU.
+            "//tflite/kernels:builtin_ops",
+        ],
+        "//conditions:default": [
+            ":litert_cpu_options",
+            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
+            "//tflite/kernels:builtin_ops",
+        ],
     }),
 )
 

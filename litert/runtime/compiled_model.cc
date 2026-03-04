@@ -84,7 +84,9 @@
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#if !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_cpu_options.h"
+#endif  // !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_runtime_options.h"
 #include "litert/runtime/magic_number_utils.h"
 #include "litert/runtime/metrics.h"
@@ -324,6 +326,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       }
     }
 
+#if !defined(LITERT_DISABLE_CPU)
     if (auto cpu_options_data = litert::FindOpaqueData<const char>(
             opaque_options, LiteRtCpuOptionsT::Identifier());
         cpu_options_data) {
@@ -337,6 +340,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         num_threads = cpu_options.xnn.num_threads;
       }
     }
+#endif  // !defined(LITERT_DISABLE_CPU)
   }
 
   tflite::InterpreterBuilder builder(

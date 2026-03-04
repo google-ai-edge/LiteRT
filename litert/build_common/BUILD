@@ -62,6 +62,12 @@ config_setting(
 )
 
 config_setting(
+    name = "litert_disable_cpu",
+    # Relies on the same definition with TFLite to disable CPU backend on TFLite Interpreter.
+    define_values = {"tflite_with_xnnpack": "false"},
+)
+
+config_setting(
     name = "build_include_gpu",
     flag_values = {":build_include": "gpu"},
 )
