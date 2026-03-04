@@ -122,5 +122,54 @@ TEST_P(QnnModelTest, SingleElementWiseMax) {
   // Only check quant value in this test since this op is only a data mover.
   ASSERT_THAT(output_data.value(), ElementsAre(-17204, 0, 10000, 20000));
 }
+
+TEST_P(QnnModelTest, SingleElementWiseBinaryMulAsymmetricQuant) {
+  const std::vector<std::uint32_t> kDims{1, 1, 1, 4};
+  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_8,
+      ::qnn::QuantizeParamsWrapperVariant{
+          std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.005f,
+          -97},
+      kDims, "");
+  auto& input_1 = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_8,
+      ::qnn::QuantizeParamsWrapperVariant{
+          std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.09f,
+          8},
+      kDims, "");
+  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_8,
+      ::qnn::QuantizeParamsWrapperVariant{
+          std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.06f,
+          -68},
+      kDims, "");
+  auto ops = ::qnn::BuildElementwiseMulOp(tensor_pool_, {input_0, input_1},
+                                          {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+
+  ASSERT_TRUE(qnn_model_.ValidateOpConfig());
+  ASSERT_TRUE(qnn_model_.Finalize());
+
+#if !defined(__ANDROID__)
+  GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
+                  "Qualcomm HTP";
+#endif
+
+  auto input_idx_0 = qnn_model_.AddInputTensor(input_0);
+  auto input_idx_1 = qnn_model_.AddInputTensor(input_1);
+  auto output_idx = qnn_model_.AddOutputTensor(output_0);
+
+  qnn_model_.SetInputData<int8_t>(input_idx_0, {-100, -50, 0, 50});
+  qnn_model_.SetInputData<int8_t>(input_idx_1, {-100, -50, 0, 50});
+
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  auto output_data = qnn_model_.GetOutputData<int8_t>(output_idx);
+  ASSERT_TRUE(output_data);
+  ASSERT_EQ(output_data->size(), 4);
+  ASSERT_THAT(output_data.value(), ElementsAre(-66, -88, -74, -22));
+}
 }  // namespace
 }  // namespace litert::qnn
