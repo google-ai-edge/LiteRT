@@ -1,0 +1,128 @@
+name: "android nightly bazel"
+
+on:
+  schedule:
+    - cron: "0 2 * * *"  # Runs at 2am UTC every day (6pm PST previous day)
+  workflow_dispatch:
+    inputs:
+      BUILD_LITERT_KOTLIN_API:
+        description: 'Build LiteRT Kotlin API'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-nightly
+  cancel-in-progress: true
+
+jobs:
+  build_android:
+    name: "Build Android AAR - Bazel"
+    runs-on: LiteRT_Linux_x64
+    env:
+      ANDROID_API_LEVEL: 23
+      ANDROID_BUILD_TOOLS_VERSION: "35.0.0"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Setup environment variables
+        id: setup-env
+        run: |
+          echo "Building LiteRT Android artifacts with Bazel"
+          echo "RELEASE_VERSION=0.0.0-nightly-$(date +%Y%m%d)" >> "$GITHUB_ENV"
+          echo "BUILD_LITERT_KOTLIN_API=${{ github.event.inputs.BUILD_LITERT_KOTLIN_API || 'true' }}" >> "$GITHUB_ENV"
+          echo "build_date=$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Check Bazel installation
+        run: |
+          bazel --version
+          bazel info
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+
+      - name: Export Android environment variables
+        run: |
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager \
+            "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
+            "platform-tools" \
+            "platforms;android-${ANDROID_API_LEVEL}"
+
+      - name: Build Android artifacts with Bazel
+        env:
+          TF_SET_ANDROID_WORKSPACE: 1
+          BAZEL_CONFIG_FLAGS: "--config=release_android_arm64"
+          USE_LOCAL_TF: "false"
+        run: |
+          cd ${GITHUB_WORKSPACE}
+          chmod +x ci/build_android_package.sh
+          
+          # Set build flags for Bazel
+          export BAZEL_CONFIG_FLAGS="--config=release_android_arm64 ${BAZEL_CONFIG_FLAGS}"
+          
+          # Run the build script
+          ci/build_android_package.sh
+
+      - name: List generated artifacts
+        run: |
+          echo "Generated artifacts:"
+          if [ -d "ci/gen" ]; then
+            find ci/gen -type f -name "*.aar" -o -name "*.pom" | head -20
+          else
+            echo "No artifacts directory found"
+          fi
+
+      - name: Upload AAR artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: litert-android-aar-${{ steps.setup-env.outputs.build_date }}
+          path: |
+            ci/gen/**/*.aar
+            ci/gen/**/*.pom
+          if-no-files-found: warn
+
+      - name: Generate build summary
+        run: |
+          echo "## Android Nightly Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Date:** $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" >> $GITHUB_STEP_SUMMARY
+          echo "**Release Version:** ${RELEASE_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "**NDK Version:** r27" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Type:** Nightly AAR" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -d "ci/gen" ]; then
+            echo "**Generated Artifacts:**" >> $GITHUB_STEP_SUMMARY
+            find ci/gen -type f -name "*.aar" | while read f; do
+              echo "- $(basename $f)" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Android nightly Bazel build failed for release ${RELEASE_VERSION}"
