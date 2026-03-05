@@ -757,6 +757,11 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
 }
 
 Expected<void> LiteRtTensorBufferT::IsValid() {
+  // Bypass validation for special temporary scalar buffer.
+  if (tensor_type_.layout.rank == 1 && tensor_type_.layout.dimensions[0] == 0) {
+    return {};
+  }
+
   // Check for static dimensions.
   for (auto i = 0; i < tensor_type_.layout.rank; ++i) {
     if (tensor_type_.layout.dimensions[i] <= 0) {
