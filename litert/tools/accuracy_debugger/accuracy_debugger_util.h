@@ -48,6 +48,12 @@ struct ComparisonResult {
   int diff_count = 0;
   bool failed = false;
   std::vector<std::string> failing_metrics;
+
+  bool has_nan_accel = false;
+  float min_ref = 0;
+  float max_ref = 0;
+  float min_accel = 0;
+  float max_accel = 0;
 };
 
 namespace internal {
@@ -65,8 +71,8 @@ litert::Expected<ComparisonResult> CompareBuffers(
     TensorBuffer& cpu_buffer, TensorBuffer& accel_buffer,
     const AccuracyThresholds& thresholds, const std::string& op_info);
 
-litert::Expected<std::vector<float>> GetFloats(TensorBuffer& buffer,
-                                               size_t num_elements);
+litert::Expected<std::vector<double>> GetFloats(TensorBuffer& buffer,
+                                                size_t num_elements);
 
 }  // namespace internal
 
@@ -81,6 +87,8 @@ struct AccuracyDebuggerOptions {
   bool skip_unsupported_npu_ops = true;
   int summary_max_rows = -1;
   std::string sort_by = "index";
+  std::vector<std::string> boundary_tensors;
+  bool use_gpu_ref = false;
   AccuracyThresholds thresholds;
 };
 
