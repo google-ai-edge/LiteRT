@@ -1,6 +1,9 @@
 name: "android nightly bazel"
 
 on:
+  pull_request:
+    branches:
+    - main  
   schedule:
     - cron: "0 2 * * *"  # Runs at 2am UTC every day (6pm PST previous day)
   workflow_dispatch:
