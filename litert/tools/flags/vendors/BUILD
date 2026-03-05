@@ -52,9 +52,8 @@ cc_library(
         "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
     ],
     deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/tools/flags:flag_types",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
@@ -109,9 +108,10 @@ cc_library(
         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
     ],
     deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_google_tensor_options",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -163,9 +163,9 @@ cc_library(
         "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
     ],
     deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -224,7 +224,7 @@ cc_library(
     ],
     deps = [
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_intel_openvino_options",

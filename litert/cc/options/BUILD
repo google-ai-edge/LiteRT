@@ -78,7 +78,7 @@ cc_test(
     deps = [
         ":litert_compiler_options",
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",

@@ -27,7 +27,9 @@ cc_library(
     srcs = ["litert_wrapper_utils.cc"],
     hdrs = ["litert_wrapper_utils.h"],
     deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c:litert_common",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/strings:string_view",
         "@xla//third_party/python_runtime:headers",
     ],
@@ -40,9 +42,9 @@ cc_library(
 #     srcs = ["litert_wrapper_utils_test_helper.cc"],
 #     deps = [
 #         ":litert_wrapper_utils",
-#         "//litert/cc:litert_api_with_dynamic_runtime",
+#         "//litert/cc:litert_ranked_tensor_type",
+#         "//litert/cc:litert_tensor_buffer",
 #         "@pybind11",
-#         "@xla//third_party/python_runtime:headers",
 #     ],
 # )
 #

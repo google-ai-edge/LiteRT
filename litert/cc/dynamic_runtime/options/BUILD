@@ -85,7 +85,7 @@ cc_library(
     deps = [
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",

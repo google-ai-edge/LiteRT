@@ -151,9 +151,8 @@ litert_device_test(
     srcs = ["smoketests/mediatek_smoketest.cc"],
     backend_id = "mediatek",
     deps = [
-        "//litert/c/internal:litert_logging",
-        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/internal:litert_shared_library",
+        "//litert/cc/options:litert_mediatek_options",
         "//litert/test:matchers",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_googletest//:gtest_main",
@@ -232,7 +231,6 @@ litert_integration_test(
 #     # "//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test",
 #     # "//litert/vendors/google_tensor/dispatch:dispatch_api_async_google_tensor_test",
 #     # "//litert/runtime:gl_buffer_device_test",
-#     # "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 # ]
 #
 # guitar_workflow_test(
@@ -275,7 +273,6 @@ litert_integration_test(
 #     "//litert/runtime:gl_buffer_device_test",
 #     # TODO: b/466050076 - Reenable once pthread issue is resolved.
 #     # "//litert/cc:litert_compiled_model_qualcomm_test",
-#     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 #     "//litert/cc:litert_compiled_model_gpu_device_test",
 # ]
 #
