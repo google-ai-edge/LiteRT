@@ -150,6 +150,11 @@ struct LrtGpuOptions {
   //
   // WARNING: This option is experimental and subject to change.
   std::vector<std::string> buffer_storage_tensor_patterns;
+
+  // Added in version 2.2.0.
+  // If true, the delegate will force sync opencl invoke. This is to wait for
+  // all the enqueued commands to be completed after each invoke.
+  std::optional<bool> force_sync_opencl_invoke;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -189,6 +194,11 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
   if (options->allow_src_quantized_fc_conv_ops.has_value()) {
     ss << "allow_src_quantized_fc_conv_ops = "
        << (options->allow_src_quantized_fc_conv_ops.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->force_sync_opencl_invoke.has_value()) {
+    ss << "force_sync_opencl_invoke = "
+       << (options->force_sync_opencl_invoke.value() ? "true" : "false")
        << "\n";
   }
   if (options->precision.has_value()) {
@@ -340,6 +350,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->allow_src_quantized_fc_conv_ops = *res;
+        } else if (key == "force_sync_opencl_invoke") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->force_sync_opencl_invoke = *res;
         } else if (key == "precision") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -514,8 +528,14 @@ LiteRtStatus LrtSetGpuOptionsGpuPriority(LrtGpuOptions* gpu_options,
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     LrtGpuOptions* gpu_options, bool enable) {
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
-
   gpu_options->allow_src_quantized_fc_conv_ops = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsForceSyncOpenclInvoke(
+    LrtGpuOptions* gpu_options, bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+  gpu_options->force_sync_opencl_invoke = enable;
   return kLiteRtStatusOk;
 }
 
@@ -768,6 +788,16 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
   *enabled = options->allow_src_quantized_fc_conv_ops.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsForceSyncOpenclInvoke(
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->force_sync_opencl_invoke.value_or(false);
   return kLiteRtStatusOk;
 }
 
