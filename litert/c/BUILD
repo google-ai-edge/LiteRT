@@ -920,6 +920,8 @@ cc_library(
         "//conditions:default": [],
     }),
     linkstatic = 1,
+    # Make the target public to allow clients to bundle libLiteRt.so
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_opencl_types",
         ":litert_webgpu_types",
