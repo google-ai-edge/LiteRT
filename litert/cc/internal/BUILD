@@ -80,7 +80,7 @@ cc_library(
         ":litert_handle",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_event",
+        "//litert/c:litert_event_api",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_model_types",
         "//litert/c:litert_opencl_types",
@@ -348,6 +348,7 @@ cc_test(
     deps = [
         ":litert_extended_model",
         ":litert_model_predicates",
+        "//litert/c:litert_model",  # buildcleaner: keep
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
         "//litert/test:common",
@@ -366,10 +367,10 @@ cc_library(
     deps = [
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_api",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
+        "//litert/c:litert_op_options_api",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
@@ -455,7 +456,7 @@ cc_library(
         ":litert_detail",
         ":litert_handle",
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_api",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
@@ -646,13 +647,13 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model",
-        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_event",
         "//litert/c:litert_layout",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model",
-        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_runtime_c_api",
@@ -668,21 +669,6 @@ cc_library(
         "//litert/cc:__pkg__",
     ],
     deps = [
-        "//litert/c/internal:litert_runtime_c_api",
-    ],
-)
-
-# Do not use this target directly. It should only be used by Environment.
-cc_library(
-    name = "litert_runtime_builtin_runtimecapi",
-    srcs = ["litert_runtime_builtin.cc"],
-    hdrs = ["litert_runtime_builtin.h"],
-    visibility = [
-        "//litert/cc:__subpackages__",
-    ],
-    deps = [
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )
@@ -728,13 +714,13 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_environment_options_api",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_metrics_api",
         "//litert/c:litert_model_types",
-        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_opaque_options_api",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",

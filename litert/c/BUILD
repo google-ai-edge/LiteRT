@@ -117,7 +117,16 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_metrics",
+    name = "litert_metrics_api",
+    hdrs = ["litert_metrics.h"],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+    ],
+)
+
+cc_library(
+    name = "litert_metrics_impl",
     srcs = ["litert_metrics.cc"],
     hdrs = ["litert_metrics.h"],
     deps = [
@@ -129,17 +138,16 @@ cc_library(
     alwayslink = 1,
 )
 
-cc_library(
-    name = "litert_metrics_header",
-    hdrs = ["litert_metrics.h"],
-    deps = [
-        ":litert_any",
-        ":litert_common",
-    ],
+alias(
+    name = "litert_metrics",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_metrics_api",
+        "//conditions:default": ":litert_metrics_impl",
+    }),
 )
 
 cc_library(
-    name = "litert_environment_header",
+    name = "litert_environment_api",
     hdrs = ["litert_environment.h"],
     deps = [
         ":litert_common",
@@ -148,7 +156,7 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_environment",
+    name = "litert_environment_impl",
     srcs = ["litert_environment.cc"],
     hdrs = ["litert_environment.h"],
     deps = [
@@ -168,16 +176,23 @@ cc_library(
     alwayslink = 1,
 )
 
+alias(
+    name = "litert_environment",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_environment_api",
+        "//conditions:default": ":litert_environment_impl",
+    }),
+)
+
 # This target has C API implementation. Shouldn't be used for runtime implementation.
 cc_library(
-    name = "litert_environment_options",
+    name = "litert_environment_options_impl",
     srcs = ["litert_environment_options.cc"],
     hdrs = ["litert_environment_options.h"],
     deps = [
         ":litert_any",
         ":litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
+        ":litert_custom_tensor_buffer",
         "//litert/cc:litert_macros",
         "//litert/core:environment_options",
     ],
@@ -185,15 +200,22 @@ cc_library(
 
 # The header only taget. It's used for runtime implementation.
 cc_library(
-    name = "litert_environment_options_header",
+    name = "litert_environment_options_api",
     hdrs = ["litert_environment_options.h"],
     tags = ["avoid_dep"],
     deps = [
         ":litert_any",
         ":litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
+        ":litert_custom_tensor_buffer",
     ],
+)
+
+alias(
+    name = "litert_environment_options",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_environment_options_api",
+        "//conditions:default": ":litert_environment_options_impl",
+    }),
 )
 
 cc_test(
@@ -203,7 +225,6 @@ cc_test(
         ":litert_any",
         ":litert_common",
         ":litert_environment",
-        ":litert_environment_header",
         ":litert_environment_options",
         "//litert/core:environment_options",
         "//litert/test:matchers",
@@ -229,7 +250,17 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_model",
+    name = "litert_model_api",
+    hdrs = ["litert_model.h"],
+    deps = [
+        ":litert_common",
+        ":litert_model_types",
+        ":litert_op_code",
+    ],
+)
+
+cc_library(
+    name = "litert_model_impl",
     srcs = ["litert_model.cc"],
     hdrs = ["litert_model.h"],
     deps = [
@@ -251,6 +282,14 @@ cc_library(
             "//litert/core/model:model_serialize",
         ],
         "//conditions:default": [],
+    }),
+)
+
+alias(
+    name = "litert_model",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_model_api",
+        "//conditions:default": ":litert_model_impl",
     }),
 )
 
@@ -278,7 +317,15 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_op_options",
+    name = "litert_op_options_api",
+    hdrs = ["litert_op_options.h"],
+    deps = [
+        ":litert_common",
+    ],
+)
+
+cc_library(
+    name = "litert_op_options_impl",
     srcs = ["litert_op_options.cc"],
     hdrs = ["litert_op_options.h"],
     deps = [
@@ -292,6 +339,14 @@ cc_library(
         "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
     ],
+)
+
+alias(
+    name = "litert_op_options",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_op_options_api",
+        "//conditions:default": ":litert_op_options_impl",
+    }),
 )
 
 cc_test(
@@ -323,7 +378,18 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_event",
+    name = "litert_event_api",
+    hdrs = ["litert_event.h"],
+    deps = [
+        ":litert_common",
+        ":litert_event_type",
+        ":litert_gl_types",
+        ":litert_opencl_types",
+    ],
+)
+
+cc_library(
+    name = "litert_event_impl",
     srcs = ["litert_event.cc"],
     hdrs = ["litert_event.h"],
     deps = [
@@ -337,6 +403,14 @@ cc_library(
         "//tflite/delegates/gpu/cl:opencl_wrapper",
     ],
     alwayslink = 1,
+)
+
+alias(
+    name = "litert_event",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_event_api",
+        "//conditions:default": ":litert_event_impl",
+    }),
 )
 
 cc_library(
@@ -361,7 +435,24 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_tensor_buffer",
+    name = "litert_tensor_buffer_api",
+    hdrs = [
+        "litert_tensor_buffer.h",
+        "litert_tensor_buffer_requirements.h",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_custom_tensor_buffer",
+        ":litert_gl_types",
+        ":litert_model_types",
+        ":litert_opencl_types",
+        ":litert_tensor_buffer_types",
+        ":litert_webgpu_types",
+    ],
+)
+
+cc_library(
+    name = "litert_tensor_buffer_impl",
     srcs = [
         "litert_tensor_buffer.cc",
         "litert_tensor_buffer_requirements.cc",
@@ -390,6 +481,14 @@ cc_library(
         "@opencl_headers",
     ] + gles_deps(),
     alwayslink = 1,
+)
+
+alias(
+    name = "litert_tensor_buffer",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_tensor_buffer_api",
+        "//conditions:default": ":litert_tensor_buffer_impl",
+    }),
 )
 
 cc_test(
@@ -458,7 +557,16 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_options",
+    name = "litert_options_api",
+    hdrs = ["litert_options.h"],
+    deps = [
+        ":litert_common",
+        ":litert_custom_op_kernel",
+    ],
+)
+
+cc_library(
+    name = "litert_options_impl",
     srcs = ["litert_options.cc"],
     hdrs = ["litert_options.h"],
     deps = [
@@ -466,9 +574,16 @@ cc_library(
         ":litert_opaque_options",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_handle",
         "//litert/core:options",
     ],
+)
+
+alias(
+    name = "litert_options",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_options_api",
+        "//conditions:default": ":litert_options_impl",
+    }),
 )
 
 cc_test(
@@ -485,7 +600,21 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_compiled_model",
+    name = "litert_compiled_model_api",
+    hdrs = ["litert_compiled_model.h"],
+    deps = [
+        ":litert_common",
+        ":litert_environment",
+        ":litert_layout",
+        ":litert_metrics",
+        ":litert_tensor_buffer",
+        "//litert/c/internal:litert_scheduling_info",
+        "//tflite/c:c_api_types",
+    ],
+)
+
+cc_library(
+    name = "litert_compiled_model_impl",
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
     deps = [
@@ -505,6 +634,14 @@ cc_library(
     ],
     # Keep symbols in libLiteRt.dylib.
     alwayslink = 1,
+)
+
+alias(
+    name = "litert_compiled_model",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_compiled_model_api",
+        "//conditions:default": ":litert_compiled_model_impl",
+    }),
 )
 
 cc_test(
@@ -557,7 +694,7 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_opaque_options",
+    name = "litert_opaque_options_impl",
     srcs = ["litert_opaque_options.cc"],
     hdrs = ["litert_opaque_options.h"],
     deps = [":litert_common"],
@@ -565,9 +702,17 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_opaque_options_header",
+    name = "litert_opaque_options_api",
     hdrs = ["litert_opaque_options.h"],
     deps = [":litert_common"],
+)
+
+alias(
+    name = "litert_opaque_options",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_opaque_options_api",
+        "//conditions:default": ":litert_opaque_options_impl",
+    }),
 )
 
 cc_test(
@@ -601,7 +746,16 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_profiler",
+    name = "litert_profiler_api",
+    hdrs = ["litert_profiler.h"],
+    deps = [
+        ":litert_common",
+        ":litert_profiler_event",
+    ],
+)
+
+cc_library(
+    name = "litert_profiler_impl",
     srcs = ["litert_profiler.cc"],
     hdrs = ["litert_profiler.h"],
     deps = [
@@ -611,6 +765,14 @@ cc_library(
         "//litert/runtime:compiled_model",
         "//litert/runtime:profiler",
     ],
+)
+
+alias(
+    name = "litert_profiler",
+    actual = select({
+        "//litert:litert_link_capi_so": ":litert_profiler_api",
+        "//conditions:default": ":litert_profiler_impl",
+    }),
 )
 
 cc_library(
@@ -678,21 +840,21 @@ filegroup(
 LITERT_C_API_COMMON_DEPS = [
     ":litert_any",
     ":litert_common",
-    ":litert_compiled_model",
+    ":litert_compiled_model_impl",
     ":litert_custom_tensor_buffer",
-    ":litert_options",
-    ":litert_event",
-    ":litert_environment",
+    ":litert_options_impl",
+    ":litert_event_impl",
+    ":litert_environment_impl",
     ":litert_layout",
-    ":litert_metrics",
-    ":litert_model",
+    ":litert_metrics_impl",
+    ":litert_model_impl",
     ":litert_model_types",
     ":litert_op_code",
     ":litert_op_options",
-    ":litert_opaque_options",
-    ":litert_profiler",
+    ":litert_opaque_options_impl",
+    ":litert_profiler_impl",
     ":litert_builder",
-    ":litert_tensor_buffer",
+    ":litert_tensor_buffer_impl",
     "//litert/c/internal:litert_accelerator_registration",
     "//litert/c/internal:litert_accelerator",
     "//litert/c/internal:litert_dispatch_delegate",

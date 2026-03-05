@@ -36,8 +36,8 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
         "//litert/cc/internal:litert_handle",
     ],
 )
@@ -63,8 +63,8 @@ cc_test(
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
         "//litert/cc/internal:litert_handle",
         "@com_google_googletest//:gtest_main",
     ],

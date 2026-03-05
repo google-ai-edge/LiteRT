@@ -39,8 +39,16 @@ cc_library(
         ":dump_runtimecapi",
         ":outstream",
         ":tool_display",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_api",
+        "//litert/c:litert_model_api",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
@@ -72,7 +80,10 @@ cc_test(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_model",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/core/model",
@@ -121,7 +132,9 @@ litert_bin(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_options",
         "//litert/core:build_stamp",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
@@ -168,7 +181,9 @@ litert_bin(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_options",
         "//litert/core:build_stamp",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
@@ -252,7 +267,9 @@ cc_binary(
     deps = [
         ":apply_plugin_runtimecapi",
         ":outstream",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_options",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
@@ -316,7 +333,8 @@ cc_library(
     # Then, we can remove this visibility.
     visibility = ["//litert:litert_public"],
     deps = [
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model",
         "@com_google_absl//absl/strings:str_format",
@@ -694,7 +712,9 @@ litert_bin(
     data = litert_gpu_accelerator_prebuilts(),
     export_litert_only = True,
     ungrte = True,
-    deps = [":benchmark_model_main"] + litert_gpu_accelerator_deps(),
+    deps = [
+        ":benchmark_model_main",
+    ] + litert_gpu_accelerator_deps(),
 )
 
 cc_binary(
@@ -771,12 +791,6 @@ litert_device_test(
     ],
     deps = [
         ":benchmark_litert_model",
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/test:common",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

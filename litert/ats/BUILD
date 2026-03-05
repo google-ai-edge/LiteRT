@@ -365,6 +365,7 @@ cc_test(
         ":register",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
