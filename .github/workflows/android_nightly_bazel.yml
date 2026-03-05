@@ -78,6 +78,7 @@ jobs:
       - name: Build Android artifacts with Bazel
         env:
           TF_SET_ANDROID_WORKSPACE: 1
+          BAZEL_CONFIG_FLAGS: "--toolchain_resolution_debug='@@bazel_tools//tools/android:sdk_toolchain_type'"
           USE_LOCAL_TF: "false"
         run: |
           cd ${GITHUB_WORKSPACE}
