@@ -15,33 +15,24 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_WEBNN_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_WEBNN_OPTIONS_H_
 
-#include <memory>
-
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_webnn_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_opaque_options.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for WebNN-specific LiteRT options.
-class WebNnOptions {
+class WebNnOptions : public litert::OpaqueOptions {
  public:
+  using OpaqueOptions::OpaqueOptions;
+
   static Expected<WebNnOptions> Create();
+  static const char* GetPayloadIdentifier();
 
   LiteRtStatus SetDevicePreference(LiteRtWebNnDeviceType device_type);
   LiteRtStatus SetPowerPreference(LiteRtWebNnPowerPreference power_preference);
   LiteRtStatus SetPrecision(LiteRtWebNnPrecision precision);
-
-  LrtWebNnOptions* Get() { return options_.get(); }
-  const LrtWebNnOptions* Get() const { return options_.get(); }
-
- private:
-  explicit WebNnOptions(LrtWebNnOptions* options);
-
-  struct Deleter {
-    void operator()(LrtWebNnOptions* ptr) const { LrtDestroyWebNnOptions(ptr); }
-  };
-  std::unique_ptr<LrtWebNnOptions, Deleter> options_;
 };
 
 }  // namespace litert

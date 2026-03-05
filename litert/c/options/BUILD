@@ -188,25 +188,13 @@ cc_library(
     hdrs = ["litert_webnn_options.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,
-)
-
-cc_test(
-    name = "litert_webnn_options_test",
-    srcs = ["litert_webnn_options_test.cc"],
-    deps = [
-        ":litert_webnn_options",
-        "//litert/c:litert_common",
-        "//litert/test:matchers",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
 )
 
 cc_library(
@@ -263,6 +251,18 @@ cc_test(
     srcs = ["litert_gpu_options_test.cc"],
     deps = [
         ":litert_gpu_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "litert_webnn_options_test",
+    srcs = ["litert_webnn_options_test.cc"],
+    deps = [
+        ":litert_webnn_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/test:matchers",
