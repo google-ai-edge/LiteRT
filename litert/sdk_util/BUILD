@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
 """
 BUILD file for LiteRt SDK release artifacts.
 """
@@ -172,3 +174,11 @@ litert_test(
 # )
 #
 # copybara:uncomment_end
+
+bzl_library(
+    name = "repo_bzl",
+    srcs = ["repo.bzl"],
+    parse_tests = False,
+    tags = ["notap"],
+    visibility = ["//third_party/odml/litert/opensource_only/third_party:__subpackages__"],
+)
