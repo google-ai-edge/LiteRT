@@ -209,6 +209,8 @@ UBUNTU_EXCLUDED_TARGETS=(
   "-//tflite/tools/benchmark/experimental/firebase/android/..."
   # Note: dont need to exclude ios as ios starts with BAZEL.apple
   "-//litert/vendors/intel_openvino/..."
+  # Exclude converter tests which are not related to LiteRt runtime.
+  "-//tflite/converter/..."
 )
 
 UBUNTU_EXCLUDED_EXPERIMENTAL_TARGETS=(
