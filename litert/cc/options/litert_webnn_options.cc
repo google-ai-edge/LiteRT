@@ -16,34 +16,31 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_webnn_options.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
 
-const char* WebNnOptions::GetPayloadIdentifier() {
-  return LiteRtGetWebNnOptionsPayloadIdentifier();
-}
+WebNnOptions::WebNnOptions(LrtWebNnOptions* options) : options_(options) {}
 
 Expected<WebNnOptions> WebNnOptions::Create() {
-  LiteRtOpaqueOptions options;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateWebNnOptions(&options));
-  return WebNnOptions(options, OwnHandle::kYes);
+  LrtWebNnOptions* options = nullptr;
+  LITERT_RETURN_IF_ERROR(LrtCreateWebNnOptions(&options));
+  return WebNnOptions(options);
 }
 
 LiteRtStatus WebNnOptions::SetDevicePreference(
     LiteRtWebNnDeviceType device_type) {
-  return LiteRtSetWebNnOptionsDevicePreference(Get(), device_type);
+  return LrtSetWebNnOptionsDevicePreference(Get(), device_type);
 }
 
 LiteRtStatus WebNnOptions::SetPowerPreference(
     LiteRtWebNnPowerPreference power_preference) {
-  return LiteRtSetWebNnOptionsPowerPreference(Get(), power_preference);
+  return LrtSetWebNnOptionsPowerPreference(Get(), power_preference);
 }
 
 LiteRtStatus WebNnOptions::SetPrecision(LiteRtWebNnPrecision precision) {
-  return LiteRtSetWebNnOptionsPrecision(Get(), precision);
+  return LrtSetWebNnOptionsPrecision(Get(), precision);
 }
 
 }  // namespace litert

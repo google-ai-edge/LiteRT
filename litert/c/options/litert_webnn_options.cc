@@ -14,119 +14,141 @@
 
 #include "litert/c/options/litert_webnn_options.h"
 
-#include <memory>
+#include <string.h>  // NOLINT: To use strdup in some environments.
+
+#include <cstdlib>
+#include <sstream>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_toml_parser.h"
 
 using ::litert::ErrorStatusBuilder;
-
-struct LiteRtWebNnOptionsPayloadT {
-  static constexpr const absl::string_view kIdentifier = "webnn_payload";
-
-  LiteRtWebNnDeviceType device_type =
-      LiteRtWebNnDeviceType::kLiteRtWebNnDeviceTypeCpu;
+using ::litert::internal::ParseToml;
+using ::litert::internal::ParseTomlInt;
+struct LrtWebNnOptions {
+  LiteRtWebNnDeviceType device_type = kLiteRtWebNnDeviceTypeCpu;
   LiteRtWebNnPowerPreference power_preference =
-      LiteRtWebNnPowerPreference::kLiteRtWebNnPowerPreferenceDefault;
-  LiteRtWebNnPrecision precision =
-      LiteRtWebNnPrecision::kLiteRtWebNnPrecisionFp32;
+      kLiteRtWebNnPowerPreferenceDefault;
+  LiteRtWebNnPrecision precision = kLiteRtWebNnPrecisionFp32;
 };
 
-namespace litert {
-namespace {
-
-litert::Expected<LiteRtWebNnOptionsPayloadT*> GetPayload(
-    LiteRtOpaqueOptions options) {
-  const char* identifier = nullptr;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetOpaqueOptionsIdentifier(options, &identifier));
-  LITERT_RETURN_IF_ERROR(identifier == LiteRtWebNnOptionsPayloadT::kIdentifier,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "Payload stored in accelerator options is incompatible. Got "
-      << identifier << ", expected " << LiteRtWebNnOptionsPayloadT::kIdentifier
-      << ".";
-
-  LiteRtWebNnOptionsPayloadT* payload;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetOpaqueOptionsData(options, reinterpret_cast<void**>(&payload)));
-  return payload;
-}
-
-}  // namespace
-}  // namespace litert
-
-LiteRtStatus LiteRtCreateWebNnOptions(LiteRtOpaqueOptions* options) {
-  auto payload = std::make_unique<LiteRtWebNnOptionsPayloadT>();
-  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      LiteRtWebNnOptionsPayloadT::kIdentifier.data(), payload.get(),
-      [](void* payload) {
-        delete reinterpret_cast<LiteRtWebNnOptionsPayloadT*>(payload);
-      },
-      options));
-  payload.release();
+LiteRtStatus LrtCreateWebNnOptions(LrtWebNnOptions** options) {
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *options = new LrtWebNnOptions();
+  if (!*options) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetWebNnOptionsDevicePreference(
-    LiteRtOpaqueOptions webnn_options, LiteRtWebNnDeviceType device_type) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtWebNnOptionsPayloadT * payload,
-                          litert::GetPayload(webnn_options));
-  payload->device_type = device_type;
+void LrtDestroyWebNnOptions(LrtWebNnOptions* options) {
+  if (options) {
+    delete options;
+  }
+}
+
+LiteRtStatus LrtGetOpaqueWebNnOptionsData(const LrtWebNnOptions* options,
+                                          const char** identifier,
+                                          void** payload,
+                                          void (**payload_deleter)(void*)) {
+  if (!options || !identifier || !payload || !payload_deleter) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  std::stringstream ss;
+  ss << "device_type = " << static_cast<int>(options->device_type) << "\n";
+  ss << "power_preference = " << static_cast<int>(options->power_preference)
+     << "\n";
+  ss << "precision = " << static_cast<int>(options->precision) << "\n";
+
+  char* payload_str = strdup(ss.str().c_str());
+
+  *identifier = "webnn_options_string";
+  *payload = payload_str;
+  *payload_deleter = [](void* p) { free(p); };
+
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetWebNnOptionsPowerPreference(
-    LiteRtOpaqueOptions webnn_options,
-    LiteRtWebNnPowerPreference power_preference) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtWebNnOptionsPayloadT * payload,
-                          litert::GetPayload(webnn_options));
-  payload->power_preference = power_preference;
+LiteRtStatus LrtCreateWebNnOptionsFromToml(const char* toml_string,
+                                           LrtWebNnOptions** options) {
+  if (!toml_string || !options) return kLiteRtStatusErrorInvalidArgument;
+  *options = new LrtWebNnOptions();
+  if (!*options) return kLiteRtStatusErrorMemoryAllocationFailure;
+  absl::string_view toml_view(toml_string);
+  if (toml_view.empty()) return kLiteRtStatusOk;
+
+  auto status = ParseToml(
+      toml_view,
+      [&](absl::string_view key, absl::string_view value) -> LiteRtStatus {
+        if (key == "device_type") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->device_type = static_cast<LiteRtWebNnDeviceType>(*res);
+        } else if (key == "power_preference") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->power_preference =
+              static_cast<LiteRtWebNnPowerPreference>(*res);
+        } else if (key == "precision") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->precision = static_cast<LiteRtWebNnPrecision>(*res);
+        }
+        return kLiteRtStatusOk;
+      });
+
+  if (status != kLiteRtStatusOk) {
+    delete *options;
+    *options = nullptr;
+    return status;
+  }
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetWebNnOptionsPrecision(
-    LiteRtOpaqueOptions webnn_options, LiteRtWebNnPrecision precision) {
-  LITERT_ASSIGN_OR_RETURN(LiteRtWebNnOptionsPayloadT * payload,
-                          litert::GetPayload(webnn_options));
-  payload->precision = precision;
+LiteRtStatus LrtSetWebNnOptionsDevicePreference(
+    LrtWebNnOptions* options, LiteRtWebNnDeviceType device_type) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
+  options->device_type = device_type;
   return kLiteRtStatusOk;
 }
 
-const char* LiteRtGetWebNnOptionsPayloadIdentifier() {
-  return LiteRtWebNnOptionsPayloadT::kIdentifier.data();
-}
-
-LiteRtStatus LiteRtGetWebNnOptionsDevicePreference(
-    LiteRtWebNnDeviceType* device_type, LiteRtWebNnOptionsPayload payload) {
-  LITERT_RETURN_IF_ERROR(device_type, ErrorStatusBuilder::InvalidArgument())
-      << "`device_type` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *device_type = payload->device_type;
+LiteRtStatus LrtGetWebNnOptionsDevicePreference(
+    const LrtWebNnOptions* options, LiteRtWebNnDeviceType* device_type) {
+  if (!options || !device_type) return kLiteRtStatusErrorInvalidArgument;
+  *device_type = options->device_type;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetWebNnOptionsPowerPreference(
-    LiteRtWebNnPowerPreference* power_preference,
-    LiteRtWebNnOptionsPayload payload) {
-  LITERT_RETURN_IF_ERROR(power_preference,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`power_preference` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *power_preference = payload->power_preference;
+LiteRtStatus LrtSetWebNnOptionsPowerPreference(
+    LrtWebNnOptions* options, LiteRtWebNnPowerPreference power_preference) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
+  options->power_preference = power_preference;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetWebNnOptionsPrecision(
-    LiteRtWebNnPrecision* precision, LiteRtWebNnOptionsPayload payload) {
-  LITERT_RETURN_IF_ERROR(precision, ErrorStatusBuilder::InvalidArgument())
-      << "`precision` cannot be null.";
-  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
-      << "`payload` cannot be null.";
-  *precision = payload->precision;
+LiteRtStatus LrtGetWebNnOptionsPowerPreference(
+    const LrtWebNnOptions* options,
+    LiteRtWebNnPowerPreference* power_preference) {
+  if (!options || !power_preference) return kLiteRtStatusErrorInvalidArgument;
+  *power_preference = options->power_preference;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetWebNnOptionsPrecision(LrtWebNnOptions* options,
+                                         LiteRtWebNnPrecision precision) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
+  options->precision = precision;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetWebNnOptionsPrecision(const LrtWebNnOptions* options,
+                                         LiteRtWebNnPrecision* precision) {
+  if (!options || !precision) return kLiteRtStatusErrorInvalidArgument;
+  *precision = options->precision;
   return kLiteRtStatusOk;
 }

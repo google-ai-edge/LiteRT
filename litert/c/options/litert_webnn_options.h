@@ -47,41 +47,53 @@ typedef enum {
   kLiteRtWebNnPrecisionFp16 = 1,
 } LiteRtWebNnPrecision;
 
-// Create a LiteRtOpaqueOptions object holding WebNN accelerator
-// options.
-LiteRtStatus LiteRtCreateWebNnOptions(LiteRtOpaqueOptions* options);
+typedef struct LrtWebNnOptions LrtWebNnOptions;
+
+// Creates a WebNN options object.
+// The caller is responsible for freeing the returned options using
+// `LrtDestroyWebNnOptions`.
+LiteRtStatus LrtCreateWebNnOptions(LrtWebNnOptions** options);
+
+// Destroys a WebNN options object.
+void LrtDestroyWebNnOptions(LrtWebNnOptions* options);
+
+// Serializes WebNN options and returns the components needed to create opaque
+// options. The caller is responsible for passing these to
+// `LiteRtCreateOpaqueOptions` and freeing the returned payload using
+// `payload_deleter`.
+LiteRtStatus LrtGetOpaqueWebNnOptionsData(const LrtWebNnOptions* options,
+                                          const char** identifier,
+                                          void** payload,
+                                          void (**payload_deleter)(void*));
+
+// Deserializes the given TOML string into an opaque options object.
+LiteRtStatus LrtCreateWebNnOptionsFromToml(const char* toml_string,
+                                           LrtWebNnOptions** options);
 
 // Sets the device type for WebNN.
-LiteRtStatus LiteRtSetWebNnOptionsDevicePreference(
-    LiteRtOpaqueOptions webnn_options, LiteRtWebNnDeviceType device_type);
-
-// Sets the power preference for WebNN.
-LiteRtStatus LiteRtSetWebNnOptionsPowerPreference(
-    LiteRtOpaqueOptions webnn_options,
-    LiteRtWebNnPowerPreference power_preference);
-
-// Sets the precision for WebNN.
-LiteRtStatus LiteRtSetWebNnOptionsPrecision(LiteRtOpaqueOptions webnn_options,
-                                            LiteRtWebNnPrecision precision);
-
-
-// Declarations below this point are meant to be used by accelerator code.
-LITERT_DEFINE_HANDLE(LiteRtWebNnOptionsPayload);
-
-const char* LiteRtGetWebNnOptionsPayloadIdentifier();
+LiteRtStatus LrtSetWebNnOptionsDevicePreference(
+    LrtWebNnOptions* options, LiteRtWebNnDeviceType device_type);
 
 // Gets the device type for WebNN.
-LiteRtStatus LiteRtGetWebNnOptionsDevicePreference(
-    LiteRtWebNnDeviceType* device_type, LiteRtWebNnOptionsPayload payload);
+LiteRtStatus LrtGetWebNnOptionsDevicePreference(
+    const LrtWebNnOptions* options, LiteRtWebNnDeviceType* device_type);
+
+// Sets the power preference for WebNN.
+LiteRtStatus LrtSetWebNnOptionsPowerPreference(
+    LrtWebNnOptions* options, LiteRtWebNnPowerPreference power_preference);
 
 // Gets the power preference for WebNN.
-LiteRtStatus LiteRtGetWebNnOptionsPowerPreference(
-    LiteRtWebNnPowerPreference* power_preference,
-    LiteRtWebNnOptionsPayload payload);
+LiteRtStatus LrtGetWebNnOptionsPowerPreference(
+    const LrtWebNnOptions* options,
+    LiteRtWebNnPowerPreference* power_preference);
+
+// Sets the precision for WebNN.
+LiteRtStatus LrtSetWebNnOptionsPrecision(LrtWebNnOptions* options,
+                                         LiteRtWebNnPrecision precision);
 
 // Gets the precision for WebNN.
-LiteRtStatus LiteRtGetWebNnOptionsPrecision(LiteRtWebNnPrecision* precision,
-                                            LiteRtWebNnOptionsPayload payload);
+LiteRtStatus LrtGetWebNnOptionsPrecision(const LrtWebNnOptions* options,
+                                         LiteRtWebNnPrecision* precision);
 
 #ifdef __cplusplus
 }  // extern "C"

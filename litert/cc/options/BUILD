@@ -93,12 +93,9 @@ cc_library(
     hdrs = ["litert_webnn_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_webnn_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_handle",
     ],
 )
 
