@@ -153,6 +153,11 @@ TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
 }
 
 TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP()
+        << "Skipping LoadHtpBackendApiTest because TARGET_BACKEND is not HTP";
+  }
+
   DLHandle handle = ::qnn::CreateDLHandle(::qnn::HtpBackend::GetLibraryName());
   auto api = ::qnn::ResolveQnnApi(
       handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());

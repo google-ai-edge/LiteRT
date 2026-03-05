@@ -10,12 +10,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string_view>
 #include <system_error>
 #include <vector>
 
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -222,4 +224,14 @@ std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name) {
   }
   return soc_model;
 }
+
+bool IsHtpBackend() {
+  // If env variable is not set, default to HTP (return true).
+  if (const char* env_p = std::getenv("GTEST_TARGET_BACKEND")) {
+    // If env variable is set, it must be HTP to return true.
+    return absl::AsciiStrToLower(env_p) == "htp";
+  }
+  return true;
+}
+
 }  // namespace qnn
