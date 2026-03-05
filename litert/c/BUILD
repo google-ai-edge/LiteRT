@@ -719,6 +719,7 @@ cc_test(
         ":litert_profiler_event",
         "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_runtime_options",
+        "//litert/c/options:litert_webnn_options",
     ],
 )
 
