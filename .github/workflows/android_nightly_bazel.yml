@@ -78,14 +78,10 @@ jobs:
       - name: Build Android artifacts with Bazel
         env:
           TF_SET_ANDROID_WORKSPACE: 1
-          BAZEL_CONFIG_FLAGS: "--config=release_android_arm64"
           USE_LOCAL_TF: "false"
         run: |
           cd ${GITHUB_WORKSPACE}
           chmod +x ci/build_android_package.sh
-          
-          # Set build flags for Bazel
-          export BAZEL_CONFIG_FLAGS="--config=release_android_arm64 ${BAZEL_CONFIG_FLAGS}"
           
           # Run the build script
           ci/build_android_package.sh
