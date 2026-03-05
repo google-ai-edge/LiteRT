@@ -23,7 +23,7 @@ concurrency:
 jobs:
   build_android:
     name: "Build Android AAR - Bazel"
-    runs-on: LiteRT_Linux_x64
+    runs-on: ubuntu-latest
     env:
       ANDROID_API_LEVEL: 23
       ANDROID_BUILD_TOOLS_VERSION: "35.0.0"
