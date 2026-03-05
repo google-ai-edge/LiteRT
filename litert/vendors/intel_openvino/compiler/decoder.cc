@@ -15,8 +15,11 @@
 
 #include "litert/vendors/intel_openvino/compiler/decoder.h"
 
+#include <cstdint>
 #include <map>
+#include <vector>
 
+#include "openvino/core/any.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_model_types.h"
@@ -378,6 +381,10 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
             LiteRtGetReshapeNewShapeOption(litert_op_, &reshape_new_shape,
                                            &new_shape_size),
             ERROR_LOG_STR("new_shape", op_name_.c_str()));
+        if (new_shape_size == 0 && reshape_new_shape == nullptr) {
+          // An empty vector represents a scalar shape in OpenVINO.
+          return ov::Any(std::vector<int64_t>{});
+        }
         std::vector<int64_t> new_shape(new_shape_size);
         for (int i = 0; i < new_shape_size; ++i) {
           new_shape[i] = reshape_new_shape[i];

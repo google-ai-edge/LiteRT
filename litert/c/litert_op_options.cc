@@ -335,12 +335,12 @@ LiteRtStatus LiteRtGetReshapeNewShapeOption(LiteRtOp op,
   size_t num_elements = 0;
   LITERT_RETURN_IF_ERROR(
       LiteRtGetNumLayoutElements(&(ranked_tensor_type.layout), &num_elements));
-  if (num_elements <= 0) {
-    LITERT_LOG(LITERT_WARNING,
-               "Expected positive number of elements for new shape tensor, but "
-               "got: %zu",
-               num_elements);
-    return kLiteRtStatusErrorInvalidArgument;
+  if (num_elements == 0) {
+    // b/489065208: An empty shape is a valid input for Reshape op to unpack a
+    // tensor of one element to a scalar.
+    *new_shape = nullptr;
+    *new_shape_size = 0;
+    return kLiteRtStatusOk;
   }
   if (new_shape_tensor->Weights().Buffer().Size() <= 0) {
     LITERT_LOG(
