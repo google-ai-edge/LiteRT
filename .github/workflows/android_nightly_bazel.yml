@@ -51,7 +51,7 @@ jobs:
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r27
+          ndk-version: r21
 
       - name: Export Android environment variables
         run: |
