@@ -808,6 +808,7 @@ cc_library(
     deps = [
         ":dump",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
