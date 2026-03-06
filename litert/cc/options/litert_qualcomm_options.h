@@ -24,20 +24,46 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert::qualcomm {
 
 /// @brief Defines the C++ wrapper for Qualcomm-specific LiteRT options.
-class QualcommOptions : public OpaqueOptions {
+class QualcommOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
-  static const char* Discriminator() {
-    return LiteRtQualcommOptionsGetIdentifier();
+  QualcommOptions() : options_(nullptr) {}
+  explicit QualcommOptions(LrtQualcommOptions options) : options_(options) {}
+  ~QualcommOptions() {
+    if (options_) {
+      LrtDestroyQualcommOptions(options_);
+    }
   }
 
-  static Expected<QualcommOptions> Create(OpaqueOptions& options);
+  QualcommOptions(QualcommOptions&& other) noexcept : options_(other.options_) {
+    other.options_ = nullptr;
+  }
+  QualcommOptions& operator=(QualcommOptions&& other) noexcept {
+    if (this != &other) {
+      if (options_) LrtDestroyQualcommOptions(options_);
+      options_ = other.options_;
+      other.options_ = nullptr;
+    }
+    return *this;
+  }
+
+  // Delete copy constructor and assignment
+  QualcommOptions(const QualcommOptions&) = delete;
+  QualcommOptions& operator=(const QualcommOptions&) = delete;
+
+  LrtQualcommOptions Get() const { return options_; }
+  LrtQualcommOptions Release() {
+    auto* res = options_;
+    options_ = nullptr;
+    return res;
+  }
+
+  static const char* Discriminator() {
+    return LrtQualcommOptionsGetIdentifier();
+  }
 
   static Expected<QualcommOptions> Create();
 
@@ -189,7 +215,7 @@ class QualcommOptions : public OpaqueOptions {
   absl::string_view GetSaverOutputDir();
 
  private:
-  LiteRtQualcommOptions Data() const;
+  LrtQualcommOptions options_;
 };
 
 }  // namespace litert::qualcomm

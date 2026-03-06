@@ -24,269 +24,278 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
-#include "litert/cc/internal/litert_detail.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-
-// C++ WRAPPERS ////////////////////////////////////////////////////////////////
 
 namespace litert::qualcomm {
 
-LiteRtQualcommOptions QualcommOptions::Data() const {
-  LiteRtQualcommOptions options;
-  internal::AssertOk(LiteRtQualcommOptionsGet, Get(), &options);
-  return options;
-}
-
+// Create a new QualcommOptions instance.
 Expected<QualcommOptions> QualcommOptions::Create() {
-  LiteRtOpaqueOptions options;
-  LITERT_RETURN_IF_ERROR(LiteRtQualcommOptionsCreate(&options));
-  return QualcommOptions(options, litert::OwnHandle::kYes);
+  LrtQualcommOptions c_options;
+  LITERT_RETURN_IF_ERROR(LrtCreateQualcommOptions(&c_options));
+  return QualcommOptions(c_options);
 }
 
-void QualcommOptions::SetLogLevel(QualcommOptions::LogLevel log_level) {
-  internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(),
-                     static_cast<LiteRtQualcommOptionsLogLevel>(log_level));
+void QualcommOptions::SetLogLevel(LogLevel log_level) {
+  LrtQualcommOptionsSetLogLevel(
+      options_, static_cast<LrtQualcommOptionsLogLevel>(log_level));
 }
 
 QualcommOptions::LogLevel QualcommOptions::GetLogLevel() {
-  LiteRtQualcommOptionsLogLevel log_level;
-  internal::AssertOk(LiteRtQualcommOptionsGetLogLevel, Data(), &log_level);
-  return static_cast<QualcommOptions::LogLevel>(log_level);
+  LrtQualcommOptionsLogLevel val;
+  auto status = LrtQualcommOptionsGetLogLevel(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return LogLevel::kInfo;
+  }
+  return static_cast<LogLevel>(val);
 }
 
 void QualcommOptions::SetHtpPerformanceMode(
-    QualcommOptions::HtpPerformanceMode htp_performance_mode) {
-  internal::AssertOk(LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
-                     static_cast<LiteRtQualcommOptionsHtpPerformanceMode>(
-                         htp_performance_mode));
+    HtpPerformanceMode htp_performance_mode) {
+  LrtQualcommOptionsSetHtpPerformanceMode(
+      options_,
+      static_cast<LrtQualcommOptionsHtpPerformanceMode>(htp_performance_mode));
 }
 
 QualcommOptions::HtpPerformanceMode QualcommOptions::GetHtpPerformanceMode() {
-  LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode;
-  internal::AssertOk(LiteRtQualcommOptionsGetHtpPerformanceMode, Data(),
-                     &htp_performance_mode);
-  return static_cast<QualcommOptions::HtpPerformanceMode>(htp_performance_mode);
+  LrtQualcommOptionsHtpPerformanceMode val;
+  auto status = LrtQualcommOptionsGetHtpPerformanceMode(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return HtpPerformanceMode::kDefault;
+  }
+  return static_cast<HtpPerformanceMode>(val);
 }
 
 void QualcommOptions::SetDspPerformanceMode(
-    QualcommOptions::DspPerformanceMode dsp_performance_mode) {
-  internal::AssertOk(LiteRtQualcommOptionsSetDspPerformanceMode, Data(),
-                     static_cast<LiteRtQualcommOptionsDspPerformanceMode>(
-                         dsp_performance_mode));
+    DspPerformanceMode dsp_performance_mode) {
+  LrtQualcommOptionsSetDspPerformanceMode(
+      options_,
+      static_cast<LrtQualcommOptionsDspPerformanceMode>(dsp_performance_mode));
 }
 
 QualcommOptions::DspPerformanceMode QualcommOptions::GetDspPerformanceMode() {
-  LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode;
-  internal::AssertOk(LiteRtQualcommOptionsGetDspPerformanceMode, Data(),
-                     &dsp_performance_mode);
-  return static_cast<QualcommOptions::DspPerformanceMode>(dsp_performance_mode);
-}
-
-void QualcommOptions::SetEnableWeightSharing(bool weight_sharing_enabled) {
-  internal::AssertOk(LiteRtQualcommOptionsSetEnableWeightSharing, Data(),
-                     weight_sharing_enabled);
-}
-
-bool QualcommOptions::GetEnableWeightSharing() {
-  bool enable_weight_sharing;
-  internal::AssertOk(LiteRtQualcommOptionsGetEnableWeightSharing, Data(),
-                     &enable_weight_sharing);
-  return enable_weight_sharing;
+  LrtQualcommOptionsDspPerformanceMode val;
+  auto status = LrtQualcommOptionsGetDspPerformanceMode(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return DspPerformanceMode::kDefault;
+  }
+  return static_cast<DspPerformanceMode>(val);
 }
 
 void QualcommOptions::SetUseHtpPreference(bool use_htp_preference) {
-  internal::AssertOk(LiteRtQualcommOptionsSetUseHtpPreference, Data(),
-                     use_htp_preference);
+  LrtQualcommOptionsSetUseHtpPreference(options_, use_htp_preference);
 }
 
 bool QualcommOptions::GetUseHtpPreference() {
-  bool use_htp_preference;
-  internal::AssertOk(LiteRtQualcommOptionsGetUseHtpPreference, Data(),
-                     &use_htp_preference);
-  return use_htp_preference;
+  bool val;
+  auto status = LrtQualcommOptionsGetUseHtpPreference(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return false;
+  }
+  return val;
 }
 
 void QualcommOptions::SetUseQint16AsQuint16(bool use_qin16_as_quint16) {
-  internal::AssertOk(LiteRtQualcommOptionsSetUseQint16AsQuint16, Data(),
-                     use_qin16_as_quint16);
+  LrtQualcommOptionsSetUseQint16AsQuint16(options_, use_qin16_as_quint16);
 }
 
 bool QualcommOptions::GetUseQint16AsQuint16() {
-  bool use_qin16_as_quint16;
-  internal::AssertOk(LiteRtQualcommOptionsGetUseQint16AsQuint16, Data(),
-                     &use_qin16_as_quint16);
-  return use_qin16_as_quint16;
+  bool val;
+  auto status = LrtQualcommOptionsGetUseQint16AsQuint16(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return false;
+  }
+  return val;
 }
 
 void QualcommOptions::SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32) {
-  internal::AssertOk(LiteRtQualcommOptionsSetUseInt64BiasAsInt32, Data(),
-                     use_int64_bias_as_int32);
+  LrtQualcommOptionsSetUseInt64BiasAsInt32(options_, use_int64_bias_as_int32);
 }
 
 bool QualcommOptions::GetUseInt64BiasAsInt32() {
-  bool use_int64_bias_as_int32;
-  internal::AssertOk(LiteRtQualcommOptionsGetUseInt64BiasAsInt32, Data(),
-                     &use_int64_bias_as_int32);
-  return use_int64_bias_as_int32;
-}
-
-void QualcommOptions::SetProfiling(QualcommOptions::Profiling profiling) {
-  internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(),
-                     static_cast<LiteRtQualcommOptionsProfiling>(profiling));
-}
-
-QualcommOptions::Profiling QualcommOptions::GetProfiling() {
-  LiteRtQualcommOptionsProfiling profiling;
-  internal::AssertOk(LiteRtQualcommOptionsGetProfiling, Data(), &profiling);
-  return static_cast<QualcommOptions::Profiling>(profiling);
-}
-
-void QualcommOptions::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
-  internal::AssertOk(LiteRtQualcommOptionsSetDumpTensorIds, Data(), ids.data(),
-                     ids.size());
-}
-
-std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
-  std::vector<std::int32_t> dump_ids;
-  const std::int32_t* ids = nullptr;
-  std::size_t number_of_ids = 0;
-  internal::AssertOk(LiteRtQualcommOptionsGetDumpTensorIds, Data(), &ids,
-                     &number_of_ids);
-  if (ids == nullptr) {
-    return dump_ids;
+  bool val;
+  auto status = LrtQualcommOptionsGetUseInt64BiasAsInt32(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return true;
   }
-  dump_ids.reserve(number_of_ids);
-  for (size_t i = 0; i < number_of_ids; i++) {
-    dump_ids.emplace_back(ids[i]);
+  return val;
+}
+
+void QualcommOptions::SetEnableWeightSharing(bool weight_sharing_enabled) {
+  LrtQualcommOptionsSetEnableWeightSharing(options_, weight_sharing_enabled);
+}
+
+bool QualcommOptions::GetEnableWeightSharing() {
+  bool val;
+  auto status = LrtQualcommOptionsGetEnableWeightSharing(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return false;
   }
-  return dump_ids;
-}
-
-void QualcommOptions::SetIrJsonDir(const std::string& ir_json_dir) {
-  internal::AssertOk(LiteRtQualcommOptionsSetIrJsonDir, Data(),
-                     ir_json_dir.c_str());
-}
-
-absl::string_view QualcommOptions::GetIrJsonDir() {
-  const char* ir_json_dir;
-  internal::AssertOk(LiteRtQualcommOptionsGetIrJsonDir, Data(), &ir_json_dir);
-  return absl::string_view(ir_json_dir);
-}
-
-void QualcommOptions::SetDlcDir(const std::string& dlc_dir) {
-  internal::AssertOk(LiteRtQualcommOptionsSetDlcDir, Data(), dlc_dir.c_str());
-}
-
-absl::string_view QualcommOptions::GetDlcDir() {
-  const char* dlc_dir;
-  internal::AssertOk(LiteRtQualcommOptionsGetDlcDir, Data(), &dlc_dir);
-  return absl::string_view(dlc_dir);
-}
-
-void QualcommOptions::SetVtcmSize(std::uint32_t vtcm_size) {
-  internal::AssertOk(LiteRtQualcommOptionsSetVtcmSize, Data(), vtcm_size);
-}
-
-std::uint32_t QualcommOptions::GetVtcmSize() {
-  std::uint32_t vtcm_size;
-  internal::AssertOk(LiteRtQualcommOptionsGetVtcmSize, Data(), &vtcm_size);
-  return vtcm_size;
-}
-
-void QualcommOptions::SetNumHvxThreads(std::uint32_t num_hvx_threads) {
-  internal::AssertOk(LiteRtQualcommOptionsSetNumHvxThreads, Data(),
-                     num_hvx_threads);
-}
-
-std::uint32_t QualcommOptions::GetNumHvxThreads() {
-  std::uint32_t num_hvx_threads;
-  internal::AssertOk(LiteRtQualcommOptionsGetNumHvxThreads, Data(),
-                     &num_hvx_threads);
-  return num_hvx_threads;
-}
-
-void QualcommOptions::SetOptimizationLevel(
-    QualcommOptions::OptimizationLevel optimization_level) {
-  internal::AssertOk(
-      LiteRtQualcommOptionsSetOptimizationLevel, Data(),
-      static_cast<LiteRtQualcommOptionsOptimizationLevel>(optimization_level));
-}
-
-QualcommOptions::OptimizationLevel QualcommOptions::GetOptimizationLevel() {
-  LiteRtQualcommOptionsOptimizationLevel optimization_level;
-  internal::AssertOk(LiteRtQualcommOptionsGetOptimizationLevel, Data(),
-                     &optimization_level);
-  return static_cast<QualcommOptions::OptimizationLevel>(optimization_level);
-}
-
-void QualcommOptions::SetGraphPriority(
-    QualcommOptions::GraphPriority graph_priority) {
-  internal::AssertOk(
-      LiteRtQualcommOptionsSetGraphPriority, Data(),
-      static_cast<LiteRtQualcommOptionsGraphPriority>(graph_priority));
-}
-
-QualcommOptions::GraphPriority QualcommOptions::GetGraphPriority() {
-  LiteRtQualcommOptionsGraphPriority graph_priority;
-  internal::AssertOk(LiteRtQualcommOptionsGetGraphPriority, Data(),
-                     &graph_priority);
-  return static_cast<QualcommOptions::GraphPriority>(graph_priority);
+  return val;
 }
 
 void QualcommOptions::SetUseConvHMX(bool use_conv_hmx) {
-  internal::AssertOk(LiteRtQualcommOptionsSetUseConvHMX, Data(), use_conv_hmx);
+  LrtQualcommOptionsSetUseConvHMX(options_, use_conv_hmx);
 }
 
 bool QualcommOptions::GetUseConvHMX() {
-  bool use_conv_hmx;
-  internal::AssertOk(LiteRtQualcommOptionsGetUseConvHMX, Data(), &use_conv_hmx);
-  return use_conv_hmx;
+  bool val;
+  auto status = LrtQualcommOptionsGetUseConvHMX(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return true;
+  }
+  return val;
 }
 
 void QualcommOptions::SetUseFoldReLU(bool use_fold_relu) {
-  internal::AssertOk(LiteRtQualcommOptionsSetUseFoldReLU, Data(),
-                     use_fold_relu);
+  LrtQualcommOptionsSetUseFoldReLU(options_, use_fold_relu);
 }
 
 bool QualcommOptions::GetUseFoldReLU() {
-  bool use_fold_relu;
-  internal::AssertOk(LiteRtQualcommOptionsGetUseFoldReLU, Data(),
-                     &use_fold_relu);
-  return use_fold_relu;
+  bool val;
+  auto status = LrtQualcommOptionsGetUseFoldReLU(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return true;
+  }
+  return val;
 }
 
-void QualcommOptions::SetBackend(Backend qnn_backend) {
-  internal::AssertOk(LiteRtQualcommOptionsSetBackend, Data(),
-                     static_cast<LiteRtQualcommOptionsBackend>(qnn_backend));
+void QualcommOptions::SetProfiling(Profiling profiling) {
+  LrtQualcommOptionsSetProfiling(
+      options_, static_cast<LrtQualcommOptionsProfiling>(profiling));
+}
+
+QualcommOptions::Profiling QualcommOptions::GetProfiling() {
+  LrtQualcommOptionsProfiling val;
+  auto status = LrtQualcommOptionsGetProfiling(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return Profiling::kOff;
+  }
+  return static_cast<Profiling>(val);
+}
+
+void QualcommOptions::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
+  LrtQualcommOptionsSetDumpTensorIds(options_, ids.data(), ids.size());
+}
+
+std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
+  const std::int32_t* ids;
+  size_t number_of_ids;
+  auto status =
+      LrtQualcommOptionsGetDumpTensorIds(options_, &ids, &number_of_ids);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return {};
+  }
+  return std::vector<std::int32_t>(ids, ids + number_of_ids);
+}
+
+void QualcommOptions::SetIrJsonDir(const std::string& ir_json_dir) {
+  LrtQualcommOptionsSetIrJsonDir(options_, ir_json_dir.c_str());
+}
+
+absl::string_view QualcommOptions::GetIrJsonDir() {
+  const char* val;
+  auto status = LrtQualcommOptionsGetIrJsonDir(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetDlcDir(const std::string& dlc_dir) {
+  LrtQualcommOptionsSetDlcDir(options_, dlc_dir.c_str());
+}
+
+absl::string_view QualcommOptions::GetDlcDir() {
+  const char* val;
+  auto status = LrtQualcommOptionsGetDlcDir(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetVtcmSize(std::uint32_t vtcm_size) {
+  LrtQualcommOptionsSetVtcmSize(options_, vtcm_size);
+}
+
+std::uint32_t QualcommOptions::GetVtcmSize() {
+  std::uint32_t val;
+  auto status = LrtQualcommOptionsGetVtcmSize(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return 0;
+  }
+  return val;
+}
+
+void QualcommOptions::SetNumHvxThreads(std::uint32_t num_hvx_threads) {
+  LrtQualcommOptionsSetNumHvxThreads(options_, num_hvx_threads);
+}
+
+std::uint32_t QualcommOptions::GetNumHvxThreads() {
+  std::uint32_t val;
+  auto status = LrtQualcommOptionsGetNumHvxThreads(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return 0;
+  }
+  return val;
+}
+
+void QualcommOptions::SetOptimizationLevel(
+    OptimizationLevel optimization_level) {
+  LrtQualcommOptionsSetOptimizationLevel(
+      options_,
+      static_cast<LrtQualcommOptionsOptimizationLevel>(optimization_level));
+}
+
+QualcommOptions::OptimizationLevel QualcommOptions::GetOptimizationLevel() {
+  LrtQualcommOptionsOptimizationLevel val;
+  auto status = LrtQualcommOptionsGetOptimizationLevel(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return OptimizationLevel::kOptimizeForInferenceO3;
+  }
+  return static_cast<OptimizationLevel>(val);
+}
+
+void QualcommOptions::SetGraphPriority(GraphPriority graph_priority) {
+  LrtQualcommOptionsSetGraphPriority(
+      options_, static_cast<LrtQualcommOptionsGraphPriority>(graph_priority));
+}
+
+QualcommOptions::GraphPriority QualcommOptions::GetGraphPriority() {
+  LrtQualcommOptionsGraphPriority val;
+  auto status = LrtQualcommOptionsGetGraphPriority(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return GraphPriority::kDefault;
+  }
+  return static_cast<GraphPriority>(val);
+}
+
+void QualcommOptions::SetBackend(Backend backend) {
+  LrtQualcommOptionsSetBackend(options_,
+                               static_cast<LrtQualcommOptionsBackend>(backend));
 }
 
 QualcommOptions::Backend QualcommOptions::GetBackend() {
-  LiteRtQualcommOptionsBackend qnn_backend;
-  internal::AssertOk(LiteRtQualcommOptionsGetBackend, Data(), &qnn_backend);
-  return static_cast<QualcommOptions::Backend>(qnn_backend);
+  LrtQualcommOptionsBackend val;
+  auto status = LrtQualcommOptionsGetBackend(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return Backend::kHtp;
+  }
+  return static_cast<Backend>(val);
 }
 
 void QualcommOptions::SetSaverOutputDir(const std::string& saver_output_dir) {
-  internal::AssertOk(LiteRtQualcommOptionsSetSaverOutputDir, Data(),
-                     saver_output_dir.c_str());
+  LrtQualcommOptionsSetSaverOutputDir(options_, saver_output_dir.c_str());
 }
 
 absl::string_view QualcommOptions::GetSaverOutputDir() {
-  const char* saver_output_dir;
-  internal::AssertOk(LiteRtQualcommOptionsGetSaverOutputDir, Data(),
-                     &saver_output_dir);
-  return absl::string_view(saver_output_dir);
-}
-
-Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
-  const auto id = options.GetIdentifier();
-  if (!id || *id != Discriminator()) {
-    return Error(kLiteRtStatusErrorInvalidArgument);
+  const char* val;
+  auto status = LrtQualcommOptionsGetSaverOutputDir(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
   }
-  return QualcommOptions(options.Get(), OwnHandle::kNo);
+  return val;
 }
 
 }  // namespace litert::qualcomm

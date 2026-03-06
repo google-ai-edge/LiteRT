@@ -83,9 +83,9 @@ cc_library(
     hdrs = ["litert_qualcomm_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/core/cache:hash_util",
+        "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.
@@ -102,6 +102,7 @@ cc_test(
         "//litert/cc:litert_opaque_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -116,7 +117,9 @@ cc_library(
         ":litert_google_tensor_options_type",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
         "//litert/core/cache:hash_util",
         "//litert/runtime:litert_google_tensor",
         "@com_google_absl//absl/strings:string_view",
@@ -146,7 +149,9 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
         "//litert/core/cache:hash_util",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -161,7 +166,9 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
         "//litert/core/cache:hash_util",
         "@com_google_absl//absl/strings:string_view",
     ],

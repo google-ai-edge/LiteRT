@@ -219,47 +219,6 @@ EXPORTS
   LiteRtMediatekOptionsSetPerformanceMode
   LiteRtPopOpaqueOptions
   LiteRtPushOp
-  LiteRtQualcommOptionsCreate
-  LiteRtQualcommOptionsGet
-  LiteRtQualcommOptionsGetBackend
-  LiteRtQualcommOptionsGetDlcDir
-  LiteRtQualcommOptionsGetDspPerformanceMode
-  LiteRtQualcommOptionsGetDumpTensorIds
-  LiteRtQualcommOptionsGetEnableWeightSharing
-  LiteRtQualcommOptionsGetGraphPriority
-  LiteRtQualcommOptionsGetHtpPerformanceMode
-  LiteRtQualcommOptionsGetIdentifier
-  LiteRtQualcommOptionsGetIrJsonDir
-  LiteRtQualcommOptionsGetLogLevel
-  LiteRtQualcommOptionsGetNumHvxThreads
-  LiteRtQualcommOptionsGetOptimizationLevel
-  LiteRtQualcommOptionsGetProfiling
-  LiteRtQualcommOptionsGetSaverOutputDir
-  LiteRtQualcommOptionsGetUseConvHMX
-  LiteRtQualcommOptionsGetUseFoldReLU
-  LiteRtQualcommOptionsGetUseHtpPreference
-  LiteRtQualcommOptionsGetUseQint16AsQuint16
-  LiteRtQualcommOptionsGetUseInt64BiasAsInt32
-  LiteRtQualcommOptionsGetVtcmSize
-  LiteRtQualcommOptionsSetBackend
-  LiteRtQualcommOptionsSetDlcDir
-  LiteRtQualcommOptionsSetDspPerformanceMode
-  LiteRtQualcommOptionsSetDumpTensorIds
-  LiteRtQualcommOptionsSetEnableWeightSharing
-  LiteRtQualcommOptionsSetGraphPriority
-  LiteRtQualcommOptionsSetHtpPerformanceMode
-  LiteRtQualcommOptionsSetIrJsonDir
-  LiteRtQualcommOptionsSetLogLevel
-  LiteRtQualcommOptionsSetNumHvxThreads
-  LiteRtQualcommOptionsSetOptimizationLevel
-  LiteRtQualcommOptionsSetProfiling
-  LiteRtQualcommOptionsSetSaverOutputDir
-  LiteRtQualcommOptionsSetUseConvHMX
-  LiteRtQualcommOptionsSetUseFoldReLU
-  LiteRtQualcommOptionsSetUseHtpPreference
-  LiteRtQualcommOptionsSetUseQint16AsQuint16
-  LiteRtQualcommOptionsSetUseInt64BiasAsInt32
-  LiteRtQualcommOptionsSetVtcmSize
   LiteRtRegisterAccelerator
   LiteRtRegisterTensorBufferHandlers
   LiteRtRunCompiledModel

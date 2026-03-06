@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -26,12 +27,14 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
@@ -81,8 +84,27 @@ LiteRtStatus Initialize(LiteRtEnvironment environment, LiteRtOptions options) {
   // TODO LUKE confirm where the lib dir is coming from, the
   // "dispatch_library_dir" thing makes no sense Since this should be shared lib
   // for libqnn.so.
-  auto [opts, opq_opts, qnn_opts] =
-      litert::ParseOptions<litert::qualcomm::QualcommOptions>(TheOptions);
+  litert::Expected<litert::qualcomm::QualcommOptions> qnn_opts =
+      litert::Error(kLiteRtStatusErrorNotFound, "Null Qualcomm options");
+
+  if (TheOptions) {
+    LiteRtOpaqueOptions opaque_options;
+    if (LiteRtGetOpaqueOptions(TheOptions, &opaque_options) ==
+        kLiteRtStatusOk) {
+      void* options_data = nullptr;
+      if (LiteRtFindOpaqueOptionsData(opaque_options,
+                                      LrtQualcommOptionsGetIdentifier(),
+                                      &options_data) == kLiteRtStatusOk &&
+          options_data != nullptr) {
+        LrtQualcommOptions options_handle = nullptr;
+        if (LrtCreateQualcommOptionsFromToml(
+                reinterpret_cast<const char*>(options_data), &options_handle) ==
+            kLiteRtStatusOk) {
+          qnn_opts = litert::qualcomm::QualcommOptions(options_handle);
+        }
+      }
+    }
+  }
 
   std::optional<std::string> shared_library_dir_opt =
       dispatch_lib_dir != nullptr

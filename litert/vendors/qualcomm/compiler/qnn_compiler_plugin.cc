@@ -25,7 +25,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -35,18 +34,16 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_op_code.h"
-#include "litert/c/options/litert_qualcomm_options.h"  // IWYU pragma: keep
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_element_type.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -200,10 +197,25 @@ class LiteRtCompilerPluginT {
  public:
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env_options,
                         LiteRtOptions litert_options) {
-    std::tie(litert_options_, opaque_options_, qualcomm_options_) =
-        litert::ParseOptions<litert::qualcomm::QualcommOptions>(litert_options);
-    if (qualcomm_options_.HasValue()) {
-      InitQnnOptions(qnn_options_, qualcomm_options_.Value());
+    if (litert_options) {
+      LiteRtOpaqueOptions opaque_options;
+      if (LiteRtGetOpaqueOptions(litert_options, &opaque_options) ==
+          kLiteRtStatusOk) {
+        void* options_data = nullptr;
+        if (LiteRtFindOpaqueOptionsData(opaque_options,
+                                        LrtQualcommOptionsGetIdentifier(),
+                                        &options_data) == kLiteRtStatusOk &&
+            options_data != nullptr) {
+          LrtQualcommOptions options_handle = nullptr;
+          if (LrtCreateQualcommOptionsFromToml(
+                  reinterpret_cast<const char*>(options_data),
+                  &options_handle) == kLiteRtStatusOk) {
+            qualcomm_options_ =
+                litert::qualcomm::QualcommOptions(options_handle);
+            InitQnnOptions(qnn_options_, qualcomm_options_.Value());
+          }
+        }
+      }
     }
   }
 
@@ -216,10 +228,6 @@ class LiteRtCompilerPluginT {
   QnnManager* QNN() { return qnn_manager_.get(); }
 
  private:
-  litert::Expected<litert::Options> litert_options_ =
-      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
-  litert::Expected<litert::OpaqueOptions> opaque_options_ =
-      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
   litert::Expected<litert::qualcomm::QualcommOptions> qualcomm_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null Qualcomm options");
   ::qnn::Options qnn_options_{};

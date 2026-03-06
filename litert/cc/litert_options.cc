@@ -23,6 +23,7 @@
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_gpu_options.h"
+#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_expected.h"
@@ -125,7 +126,8 @@ Expected<void> Options::Build() {
                                                   LrtGetOpaqueGpuOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(Get(), cpu_options_,
                                                   LrtGetOpaqueCpuOptionsData));
-  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), qualcomm_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+      Get(), qualcomm_options_, LrtGetOpaqueQualcommOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), mediatek_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), google_tensor_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), intel_openvino_options_));
