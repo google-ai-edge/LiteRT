@@ -43,14 +43,6 @@ namespace litert::tools {
 
 namespace {
 
-std::string OpCodeToString(LiteRtOpCode code) {
-  std::ostringstream oss;
-  litert::internal::Dump(code, oss);
-  if (oss.str().empty()) {
-    return "UNKNOWN";
-  }
-  return oss.str();
-}
 
 std::string OpSignature(const LiteRtOpT& op) {
   std::ostringstream oss;
