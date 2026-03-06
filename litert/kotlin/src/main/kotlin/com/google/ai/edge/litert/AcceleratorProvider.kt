@@ -80,7 +80,12 @@ interface NpuCompatibilityChecker {
       }
 
     internal val SUPPORTED_GOOGLE_SOCS =
-      setOf(Pair("Google", "Tensor G3"), Pair("Google", "Tensor G4"), Pair("Google", "Tensor G5"))
+      setOf(
+        Pair("Google", "Tensor G3"),
+        Pair("Google", "Tensor G4"),
+        Pair("Google", "Tensor G5"),
+        Pair("Google", "Tensor G6"),
+      )
 
     /** Google Tensor NPU compatibility checker. */
     val GoogleTensor =
