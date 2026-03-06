@@ -81,7 +81,7 @@ def _prepare_repo_files(ctx):
             for dst, src in symlink_mapping.items():
                 ctx.symlink(src, dst)
 
-    elif not ctx.attr.url:
+    elif not ctx.attr.urls:
         fail("A URL must be specified if local repo is not enabled.")
 
     else:
@@ -89,10 +89,12 @@ def _prepare_repo_files(ctx):
         if ctx.attr.file_extension:
             file_type = ctx.attr.file_extension
         ctx.download_and_extract(
-            url = ctx.attr.url,
-            auth = get_auth(ctx, [ctx.attr.url]),
+            url = ctx.attr.urls,
+            sha256 = ctx.attr.sha256,
+            auth = get_auth(ctx, ctx.attr.urls),
             stripPrefix = ctx.attr.strip_prefix,
             type = file_type,
+            canonical_id = ctx.attr.urls[0] if ctx.attr.urls else "",
         )
 
     if ctx.attr.symlink_mapping:
@@ -139,10 +141,16 @@ configurable_repo = repository_rule(
             """,
             mandatory = False,
         ),
-        "url": attr.string(
+        "urls": attr.string_list(
             doc = """
-            The url to the hosted litert repo archive to download. This must be a tarball.
+            The urls to the hosted litert repo archive to download. This must be a tarball.
             This may be unspecified if local path approach is used.
+            """,
+            mandatory = False,
+        ),
+        "sha256": attr.string(
+            doc = """
+            The sha256 of the file to download.
             """,
             mandatory = False,
         ),

@@ -579,3 +579,6 @@ build:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
 test:use_local_tf --action_env=USE_LOCAL_TF=true
 test:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
 # END-INTERNAL
+
+# Fix for QAIRT SDK download timeouts (SDK is ~1.5GB)
+common --experimental_scale_timeouts=5.0
