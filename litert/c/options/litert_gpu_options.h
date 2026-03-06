@@ -104,6 +104,12 @@ LiteRtStatus LrtSetGpuOptionsGpuPriority(LrtGpuOptions* gpu_options,
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     LrtGpuOptions* gpu_options, bool enable);
 
+// If true, the delegate hints waiting for completion. This is for some
+// backends, for example OpenCL on Mali, to wait for the enqueued commands to be
+// completed after each invoke.
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
+    LrtGpuOptions* gpu_options, bool enable);
+
 // Sets the GPU accelerator precision. e.g. FP16, FP32, etc.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPrecision(
     LrtGpuOptions* gpu_options, LiteRtDelegatePrecision precision);
@@ -238,6 +244,9 @@ LiteRtStatus LrtGetGpuOptionsExternalTensorsMode(bool* enabled,
                                                  const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
+    bool* enabled, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
     bool* enabled, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(

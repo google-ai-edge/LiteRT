@@ -62,6 +62,7 @@ class GpuOptions {
   LiteRtStatus EnableInfiniteFloatCapping(bool enabled);
   LiteRtStatus EnableBenchmarkMode(bool enabled);
   LiteRtStatus EnableAllowSrcQuantizedFcConvOps(bool enabled);
+  LiteRtStatus HintWaitingForCompletion(bool wait);
 
   enum class Precision : int {
     kDefault = kLiteRtDelegatePrecisionDefault,

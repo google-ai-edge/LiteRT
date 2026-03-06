@@ -150,6 +150,12 @@ struct LrtGpuOptions {
   //
   // WARNING: This option is experimental and subject to change.
   std::vector<std::string> buffer_storage_tensor_patterns;
+
+  // Added in version 2.1.0.
+  // If true, the delegate will wait for gpu completion after each invoke.
+  // Only for specific model and specific chipset, e.g. Open source models on
+  // OpenCL on AMD and Mali GPUs, when lower quality is observed.
+  std::optional<bool> hint_waiting_for_completion;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -189,6 +195,11 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
   if (options->allow_src_quantized_fc_conv_ops.has_value()) {
     ss << "allow_src_quantized_fc_conv_ops = "
        << (options->allow_src_quantized_fc_conv_ops.value() ? "true" : "false")
+       << "\n";
+  }
+  if (options->hint_waiting_for_completion.has_value()) {
+    ss << "hint_waiting_for_completion = "
+       << (options->hint_waiting_for_completion.value() ? "true" : "false")
        << "\n";
   }
   if (options->precision.has_value()) {
@@ -340,6 +351,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->allow_src_quantized_fc_conv_ops = *res;
+        } else if (key == "hint_waiting_for_completion") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->hint_waiting_for_completion = *res;
         } else if (key == "precision") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -516,6 +531,14 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->allow_src_quantized_fc_conv_ops = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
+    LrtGpuOptions* gpu_options, bool enable) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->hint_waiting_for_completion = enable;
   return kLiteRtStatusOk;
 }
 
@@ -768,6 +791,16 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
   *enabled = options->allow_src_quantized_fc_conv_ops.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *enabled = options->hint_waiting_for_completion.value_or(false);
   return kLiteRtStatusOk;
 }
 

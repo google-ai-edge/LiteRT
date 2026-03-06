@@ -54,6 +54,11 @@ LiteRtStatus GpuOptions::EnableAllowSrcQuantizedFcConvOps(bool enabled) {
       options_, enabled);
 }
 
+LiteRtStatus GpuOptions::HintWaitingForCompletion(bool wait) {
+  return LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(options_,
+                                                                    wait);
+}
+
 Expected<void> GpuOptions::SetPrecision(Precision precision) {
   LITERT_RETURN_IF_ERROR(LrtSetGpuAcceleratorCompilationOptionsPrecision(
       options_, static_cast<LiteRtDelegatePrecision>(precision)));
