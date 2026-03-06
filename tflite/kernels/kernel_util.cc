@@ -563,6 +563,9 @@ int TfLiteTypeGetSize(TfLiteType type) {
     case kTfLiteFloat16:
       static_assert(sizeof(int16_t) == 2, "");
       return 2;
+    case kTfLiteBFloat16:
+      static_assert(sizeof(int16_t) == 2, "");
+      return 2;
     case kTfLiteFloat32:
       static_assert(sizeof(float) == 4, "");
       return 4;
