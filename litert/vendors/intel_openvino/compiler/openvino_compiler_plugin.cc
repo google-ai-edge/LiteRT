@@ -312,7 +312,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   // TODO(rjasuja): Enhance implementation for Partition() call
   for (const auto& op : graph.Ops()) {
     if (!IsOpSupported(op)) {
-      LITERT_LOG(LITERT_ERROR, "op type %d is not supported", op.Code());
+      LITERT_LOG(LITERT_INFO, "op type %d is not supported", op.Code());
       continue;
     }
     LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
