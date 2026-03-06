@@ -1,0 +1,67 @@
+name: Build LiteRT Android Artifacts
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build_android_on_linux:
+    name: Build Android Artifacts on Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >
+            ndk;26.1.10909125
+            build-tools;35.0.1
+            platforms;android-35
+            platform-tools
+            cmdline-tools;latest
+            
+          
+      - name: Export Android NDK env
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          
+      - name: Configure Bazel for Android
+        run: |
+          echo "build --action_env ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> .bazelrc
+          
+      - name: Accept Android Licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.8.1
+
+          
+      
+      - name: Build Android Artifacts with Bazel
+        run: |
+         bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert
+            
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: |
+            bazel-bin/litert/kotlin/litert.aar
+            bazel-bin/tflite/java/tensorflow-lite-api.aar
+            bazel-bin/tflite/java/tensorflow-lite.aar
+            bazel-bin/tflite/java/tensorflow-lite-gpu-api.aar
+            bazel-bin/tflite/java/tensorflow-lite-gpu.aar
