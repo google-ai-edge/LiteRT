@@ -60,8 +60,8 @@ void ScaleOffsetQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
 }
 
 AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
-    const std::int32_t axis, const absl::Span<const float> scales,
-    const absl::Span<const std::int32_t> zero_points)
+    std::int32_t axis, absl::Span<const float> scales,
+    absl::Span<const std::int32_t> zero_points)
     : scale_offsets_(scales.size()) {
   assert(scales.size() == zero_points.size());
   for (size_t i = 0; i < scale_offsets_.size(); ++i) {
@@ -175,22 +175,23 @@ void AxisScaleOffsetQuantizeParamsWrapper::SetAxis(const std::int32_t axis) {
   qnn_quantize_param_.axisScaleOffsetEncoding.axis = axis;
 }
 
-void AxisScaleOffsetQuantizeParamsWrapper::GetScales(
-    std::vector<float>& scales) const {
-  scales.clear();
+std::vector<float> AxisScaleOffsetQuantizeParamsWrapper::GetScales() const {
+  std::vector<float> scales;
   scales.reserve(scale_offsets_.size());
   for (size_t i = 0; i < scale_offsets_.size(); ++i) {
     scales.emplace_back(scale_offsets_[i].scale);
   }
+  return scales;
 }
 
-void AxisScaleOffsetQuantizeParamsWrapper::GetZeroPoints(
-    std::vector<std::int32_t>& zero_points) const {
-  zero_points.clear();
+std::vector<std::int32_t> AxisScaleOffsetQuantizeParamsWrapper::GetZeroPoints()
+    const {
+  std::vector<std::int32_t> zero_points;
   zero_points.reserve(scale_offsets_.size());
   for (size_t i = 0; i < scale_offsets_.size(); ++i) {
     zero_points.emplace_back(-1 * scale_offsets_[i].offset);
   }
+  return zero_points;
 }
 
 BwScaleOffsetQuantizeParamsWrapper::BwScaleOffsetQuantizeParamsWrapper(
