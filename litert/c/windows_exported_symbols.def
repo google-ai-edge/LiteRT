@@ -81,6 +81,7 @@ EXPORTS
   LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode
   LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
   LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
+  LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer
   LiteRtFindOpaqueOptionsData
   LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
