@@ -16,6 +16,8 @@
 
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_external_litert_buffer_context.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -41,6 +43,11 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
           LiteRtDestroyExternalLiteRtBufferContext,
       .get_opaque_options = LiteRtGetOpaqueOptions,
       .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
+      .get_environment_options = LiteRtGetEnvironmentOptions,
+      .get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
+      .environment_has_gpu_environment = LiteRtEnvironmentHasGpuEnvironment,
+      .add_environment_options = LiteRtAddEnvironmentOptions,
+      .gpu_environment_create = LiteRtGpuEnvironmentCreate,
       .wrap_delegate = LiteRtWrapDelegate,
       .unwrap_delegate = LiteRtUnwrapDelegate,
   };

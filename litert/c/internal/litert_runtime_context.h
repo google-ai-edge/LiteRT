@@ -18,7 +18,9 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
 #ifdef __cplusplus
@@ -66,6 +68,21 @@ typedef struct LiteRtRuntimeContext {
   LiteRtStatus (*find_opaque_options_data)(LiteRtOpaqueOptions options,
                                            const char* payload_identifier,
                                            void** payload_data);
+  LiteRtStatus (*get_environment_options)(LiteRtEnvironment env,
+                                          LiteRtEnvironmentOptions* options);
+  LiteRtStatus (*get_environment_options_value)(
+      LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
+      LiteRtAny* option_value);
+  void (*environment_has_gpu_environment)(LiteRtEnvironment environment,
+                                          bool* has_gpu_environment);
+  LiteRtStatus (*add_environment_options)(LiteRtEnvironment environment,
+                                          int num_options,
+                                          const LiteRtEnvOption* options,
+                                          bool overwrite);
+  LiteRtStatus (*gpu_environment_create)(LiteRtEnvironment environment,
+                                         int num_options,
+                                         const LiteRtEnvOption* options);
+
   LiteRtStatus (*wrap_delegate)(TfLiteOpaqueDelegate* delegate,
                                 LiteRtDelegateWrapper* wrapper);
   LiteRtStatus (*unwrap_delegate)(LiteRtDelegateWrapper wrapper,
