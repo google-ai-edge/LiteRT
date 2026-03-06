@@ -104,6 +104,11 @@ LiteRtStatus LrtSetGpuOptionsGpuPriority(LrtGpuOptions* gpu_options,
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     LrtGpuOptions* gpu_options, bool enable);
 
+// Requests the delegate will force sync opencl invoke. This is to wait for all
+// the enqueued commands to be completed after each invoke.
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsForceSyncOpenclInvoke(
+    LrtGpuOptions* gpu_options, bool enable);
+
 // Sets the GPU accelerator precision. e.g. FP16, FP32, etc.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPrecision(
     LrtGpuOptions* gpu_options, LiteRtDelegatePrecision precision);
@@ -238,6 +243,9 @@ LiteRtStatus LrtGetGpuOptionsExternalTensorsMode(bool* enabled,
                                                  const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
+    bool* enabled, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsForceSyncOpenclInvoke(
     bool* enabled, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
