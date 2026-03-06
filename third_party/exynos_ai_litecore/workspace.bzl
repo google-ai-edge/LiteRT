@@ -20,7 +20,7 @@ def exynos_ai_litecore():
         name = "exynos_ai_litecore",
         build_file = "@//third_party/exynos_ai_litecore:exynos_ai_litecore.BUILD",
         local_path_env = "EXYNOS_AI_LITECORE_ROOT",
-        strip_prefix = "exynos_ai_litecore",
+        strip_prefix = "exynos-ai-litecore-v1.1.0",
         # TODO: Internal link (Not available). Please change to official link when release.
         url =
           "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.1.0/ai-litecore-ubuntu2404-v1.1.0.tar.gz",
