@@ -1,0 +1,4 @@
+# manufacturer,NPU version, Platform name, Recommend OpenVINO Version,Compatible OpenVINO Version
+Intel, NPU27xx, Intel NPU for Intel Core Ultra processors codename Meteor Lake, 2026.0, "2026.0, 2025.4"
+Intel, NPU40xx, Intel NPU for Intel Core Ultra processors (Series 2) codename Lunar Lake, 2026.0, "2026.0, 2025.4"
+Intel, NPU50xx, Intel NPU for Intel Core Ultra processors (Series 3) codename Panther Lake, 2026.0, "2026.0, 2025.4"
