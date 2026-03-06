@@ -1,5 +1,7 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -9,9 +11,10 @@ package(
     licenses = ["notice"],
 )
 
-py_strict_binary(
+py_binary(
     name = "modify_model_interface",
     srcs = ["modify_model_interface.py"],
+    strict_deps = True,
     deps = [
         ":modify_model_interface_constants",
         ":modify_model_interface_lib",
@@ -20,9 +23,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "modify_model_interface_lib",
     srcs = ["modify_model_interface_lib.py"],
+    strict_deps = True,
     deps = [
         ":_pywrap_modify_model_interface",
         ":modify_model_interface_constants",
@@ -31,9 +35,10 @@ py_strict_library(
 )
 
 # Use --config=disable_tf_lite_py when running this test under github.
-py_strict_test(
+py_test(
     name = "modify_model_interface_lib_test",
     srcs = ["modify_model_interface_lib_test.py"],
+    strict_deps = True,
     deps = [
         ":modify_model_interface_lib",
         #internal proto upb dep
@@ -45,9 +50,10 @@ py_strict_test(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "modify_model_interface_constants",
     srcs = ["modify_model_interface_constants.py"],
+    strict_deps = True,
     deps = ["@org_tensorflow//tensorflow/python/framework:dtypes"],
 )
 
