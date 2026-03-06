@@ -87,6 +87,12 @@ ABSL_FLAG(int, summary_max_rows, 50,
 ABSL_FLAG(std::string, sort_by, "cos_sim",
           "Metric to sort the summary table by (index, max_diff, mse, cos_sim, "
           "snr, psnr)");
+ABSL_FLAG(
+    std::string, boundary_tensors, "",
+    "Comma-separated list of boundary tensor names for multi-op chunking. "
+    "If empty, single-op mode is used.");
+ABSL_FLAG(bool, use_gpu_ref, false,
+          "Use GPU FP32 as reference path instead of CPU");
 
 namespace litert::tools {
 
@@ -207,6 +213,13 @@ int main(int argc, char** argv) {
       absl::GetFlag(FLAGS_use_accel_output_as_input);
   checker_options.save_failing_models =
       absl::GetFlag(FLAGS_save_failing_models);
+  checker_options.use_gpu_ref = absl::GetFlag(FLAGS_use_gpu_ref);
+
+  std::string boundary_tensors_str = absl::GetFlag(FLAGS_boundary_tensors);
+  if (!boundary_tensors_str.empty()) {
+    checker_options.boundary_tensors =
+        absl::StrSplit(boundary_tensors_str, ',');
+  }
 
   litert::tools::AccuracyDebuggerSummary summary;
   auto status = litert::tools::RunAccuracyDebugger(
