@@ -21,6 +21,9 @@ target_include_directories(qnn_transformation
 )
 
 target_link_libraries(qnn_transformation
-    PUBLIC
-        qnn_core
+    PRIVATE
+        qnn_log
+        qnn_tensor_pool
+        qnn_wrappers
+        qnn_builders
 )
