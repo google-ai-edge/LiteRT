@@ -1,12 +1,13 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library", "py_strict_test")
-
-# Placeholder: load py_proto_library
+load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_cc_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load(
     "@org_tensorflow//tensorflow/core/platform:build_config.bzl",
     "tf_proto_library",
 )
+
+# Placeholder: load py_proto_library
+load("@org_tensorflow//third_party/bazel_rules/rules_python/python:py_library.bzl", "py_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -35,9 +36,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "visualize_lib",
     srcs = ["visualize.py"],
+    strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
         "@org_tensorflow//third_party/py/numpy",
@@ -70,9 +72,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "convert_image_to_csv_lib",
     srcs = ["convert_image_to_csv.py"],
+    strict_deps = True,
     deps = [
         "@absl_py//absl:app",
         "@absl_py//absl/flags",
@@ -129,9 +132,10 @@ py_strict_binary(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "flatbuffer_utils",
     srcs = ["flatbuffer_utils.py"],
+    strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
         "//tflite/python:schema_util",
@@ -153,9 +157,10 @@ py_strict_test(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "test_utils",
     srcs = ["test_utils.py"],
+    strict_deps = True,
     deps = [
         "//tflite/python:schema_py",
         "@flatbuffers//:runtime_py",
