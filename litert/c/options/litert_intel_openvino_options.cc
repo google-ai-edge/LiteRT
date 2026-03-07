@@ -17,85 +17,122 @@
 
 #include "litert/c/options/litert_intel_openvino_options.h"
 
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
+#include <stdlib.h>
 
+#include <cstdint>
+#include <optional>
+#include <sstream>
+#include <string>
+
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/cache/hash_util.h"
+#include "litert/core/litert_toml_parser.h"
 
-struct LiteRtIntelOpenVinoOptionsT {
-  LiteRtIntelOpenVinoDeviceType device_type = kLiteRtIntelOpenVinoDeviceTypeNPU;
-  LiteRtIntelOpenVinoPerformanceMode performance_mode =
-      kLiteRtIntelOpenVinoPerformanceModeLatency;
+struct LrtIntelOpenVinoOptionsT {
+  std::optional<LiteRtIntelOpenVinoDeviceType> device_type;
+  std::optional<LiteRtIntelOpenVinoPerformanceMode> performance_mode;
   // Store custom configuration options as key-value pairs
   std::vector<std::pair<std::string, std::string>> configs_map_options;
 };
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsCreate(LiteRtOpaqueOptions* options) {
+LiteRtStatus LrtIntelOpenVinoOptionsCreate(LrtIntelOpenVinoOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-
-  auto options_data = std::make_unique<LiteRtIntelOpenVinoOptionsT>();
-
-  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      LiteRtIntelOpenVinoOptionsGetIdentifier(), options_data.get(),
-      [](void* payload) {
-        delete reinterpret_cast<LiteRtIntelOpenVinoOptions>(payload);
-      },
-      options));
-
-  auto intel_openvino_hash = [](const void* payload) -> uint64_t {
-    const LiteRtIntelOpenVinoOptionsT* opts =
-        reinterpret_cast<const LiteRtIntelOpenVinoOptionsT*>(payload);
-    uint64_t ans = 0;
-    litert::HashCombine(ans, opts->device_type, opts->performance_mode);
-    // Hash the configs_map_options
-    for (const auto& pair : opts->configs_map_options) {
-      litert::HashCombine(ans, pair.first, pair.second);
-    }
-    return ans;
-  };
-  LITERT_RETURN_IF_ERROR(
-      LiteRtSetOpaqueOptionsHash(*options, intel_openvino_hash));
-
-  options_data.release();
+  *options = new LrtIntelOpenVinoOptionsT{};
   return kLiteRtStatusOk;
 }
 
-const char* LiteRtIntelOpenVinoOptionsGetIdentifier() {
-  return "intel_openvino";
+void LrtDestroyIntelOpenVinoOptions(LrtIntelOpenVinoOptions options) {
+  delete options;
 }
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsGet(
-    LiteRtOpaqueOptions options, LiteRtIntelOpenVinoOptions* options_data) {
-  if (options_data == nullptr || options == nullptr) {
+static const char kIdentifier[] = "intel_openvino";
+
+LiteRtStatus LrtGetOpaqueIntelOpenVinoOptionsData(
+    LrtIntelOpenVinoOptions options, const char** identifier, void** payload,
+    void (**payload_deleter)(void*)) {
+  if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  const char* identifier;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetOpaqueOptionsIdentifier(options, &identifier));
-  if (absl::NullSafeStringView(identifier) !=
-      LiteRtIntelOpenVinoOptionsGetIdentifier()) {
+  if (identifier == nullptr || payload == nullptr ||
+      payload_deleter == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  void* payload;
-  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(options, &payload));
-  *options_data = reinterpret_cast<LiteRtIntelOpenVinoOptionsT*>(payload);
+
+  std::stringstream ss;
+  if (options->device_type.has_value()) {
+    ss << "device_type = " << options->device_type.value() << "\n";
+  }
+  if (options->performance_mode.has_value()) {
+    ss << "performance_mode = " << options->performance_mode.value() << "\n";
+  }
+  for (const auto& pair : options->configs_map_options) {
+    ss << "configs_map." << pair.first << " = \"" << pair.second << "\"\n";
+  }
+
+  *identifier = LrtGetIntelOpenVinoOptionsIdentifier();
+  *payload = strdup(ss.str().c_str());
+  *payload_deleter = [](void* p) { free(p); };
+
+  return kLiteRtStatusOk;
+}
+
+const char* LrtGetIntelOpenVinoOptionsIdentifier() { return kIdentifier; }
+
+LiteRtStatus LrtCreateIntelOpenVinoOptionsFromToml(
+    const char* payload, LrtIntelOpenVinoOptions* options) {
+  if (options == nullptr || payload == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LrtIntelOpenVinoOptions local_options = nullptr;
+  LITERT_RETURN_IF_ERROR(LrtIntelOpenVinoOptionsCreate(&local_options));
+
+  absl::string_view payload_sv(payload);
+
+  auto status = litert::internal::ParseToml(
+      payload_sv,
+      [local_options](absl::string_view key,
+                      absl::string_view value) -> LiteRtStatus {
+        if (key == "device_type") {
+          auto parsed_int = litert::internal::ParseTomlInt(value);
+          if (!parsed_int.HasValue()) return parsed_int.Error().Status();
+          return LrtIntelOpenVinoOptionsSetDeviceType(
+              local_options,
+              static_cast<LiteRtIntelOpenVinoDeviceType>(*parsed_int));
+        } else if (key == "performance_mode") {
+          auto parsed_int = litert::internal::ParseTomlInt(value);
+          if (!parsed_int.HasValue()) return parsed_int.Error().Status();
+          return LrtIntelOpenVinoOptionsSetPerformanceMode(
+              local_options,
+              static_cast<LiteRtIntelOpenVinoPerformanceMode>(*parsed_int));
+        } else if (absl::StartsWith(key, "configs_map.")) {
+          std::string config_key(key.substr(12));
+          std::string config_value(value);
+          return LrtIntelOpenVinoOptionsSetConfigsMapOption(
+              local_options, config_key.c_str(), config_value.c_str());
+        }
+        return kLiteRtStatusOk;
+      });
+
+  if (status != kLiteRtStatusOk) {
+    LrtDestroyIntelOpenVinoOptions(local_options);
+    return status;
+  }
+
+  *options = local_options;
   return kLiteRtStatusOk;
 }
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
 // device_type ----------------------------------------------------------------
-LiteRtStatus LiteRtIntelOpenVinoOptionsSetDeviceType(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsSetDeviceType(
+    LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoDeviceType device_type) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -104,19 +141,23 @@ LiteRtStatus LiteRtIntelOpenVinoOptionsSetDeviceType(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetDeviceType(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsGetDeviceType(
+    LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoDeviceType* device_type) {
   if (options == nullptr || device_type == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *device_type = options->device_type;
+  if (!options->device_type.has_value()) {
+    *device_type = kLiteRtIntelOpenVinoDeviceTypeNPU;
+  } else {
+    *device_type = options->device_type.value();
+  }
   return kLiteRtStatusOk;
 }
 
 // performance_mode -----------------------------------------------------------
-LiteRtStatus LiteRtIntelOpenVinoOptionsSetPerformanceMode(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsSetPerformanceMode(
+    LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoPerformanceMode performance_mode) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -125,19 +166,23 @@ LiteRtStatus LiteRtIntelOpenVinoOptionsSetPerformanceMode(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetPerformanceMode(
-    LiteRtIntelOpenVinoOptions options,
+LiteRtStatus LrtIntelOpenVinoOptionsGetPerformanceMode(
+    LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoPerformanceMode* performance_mode) {
   if (options == nullptr || performance_mode == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *performance_mode = options->performance_mode;
+  if (!options->performance_mode.has_value()) {
+    *performance_mode = kLiteRtIntelOpenVinoPerformanceModeLatency;
+  } else {
+    *performance_mode = options->performance_mode.value();
+  }
   return kLiteRtStatusOk;
 }
 
 // configs_map_options --------------------------------------------------------
-LiteRtStatus LiteRtIntelOpenVinoOptionsSetConfigsMapOption(
-    LiteRtIntelOpenVinoOptions options, const char* key, const char* value) {
+LiteRtStatus LrtIntelOpenVinoOptionsSetConfigsMapOption(
+    LrtIntelOpenVinoOptions options, const char* key, const char* value) {
   if (options == nullptr || key == nullptr || value == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -152,8 +197,8 @@ LiteRtStatus LiteRtIntelOpenVinoOptionsSetConfigsMapOption(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetNumConfigsMapOptions(
-    LiteRtIntelOpenVinoOptions options, int* num_options) {
+LiteRtStatus LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(
+    LrtIntelOpenVinoOptions options, int* num_options) {
   if (options == nullptr || num_options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -161,8 +206,8 @@ LiteRtStatus LiteRtIntelOpenVinoOptionsGetNumConfigsMapOptions(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtIntelOpenVinoOptionsGetConfigsMapOption(
-    LiteRtIntelOpenVinoOptions options, int index, const char** key,
+LiteRtStatus LrtIntelOpenVinoOptionsGetConfigsMapOption(
+    LrtIntelOpenVinoOptions options, int index, const char** key,
     const char** value) {
   if (options == nullptr || key == nullptr || value == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
