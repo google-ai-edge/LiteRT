@@ -157,6 +157,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators:auto_registration",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
@@ -435,10 +437,10 @@ cc_test(
 #         "//litert/cc:litert_any",
 #         "//litert/cc:litert_layout",
 #         "//litert/runtime:event",
-#         "//litert/runtime/ml_drift_delegate:buffer_handler_vulkan",
-#         "//litert/runtime/ml_drift_delegate:buffer_handler_webgpu",
-#         "//litert/runtime/ml_drift_delegate:shared_vulkan_env",
 #         "//litert/test:matchers",
+#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_vulkan",
+#         "//third_party/odml/litert/ml_drift/delegate:buffer_handler_webgpu",
+#         "//third_party/odml/litert/ml_drift/delegate:shared_vulkan_env",
 #         "//tflite/delegates/gpu/cl:opencl_wrapper",
 #         "//third_party/vulkan_loader",
 #     ],
@@ -501,6 +503,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
         "//tflite/c:c_api_types",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
     ],
     # Keep symbols in libLiteRt.dylib.
