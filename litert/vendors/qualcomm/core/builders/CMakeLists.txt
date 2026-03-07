@@ -30,6 +30,7 @@ target_sources(qnn_builders
         gather_op_builder.cc
         gathernd_op_builder.cc
         gelu_op_builder.cc
+        layer_norm_op_builder.cc
         l2_norm_op_builder.cc
         leaky_relu_op_builder.cc
         logistic_op_builder.cc
