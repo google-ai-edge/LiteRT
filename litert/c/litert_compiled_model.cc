@@ -24,6 +24,9 @@
 #include <string>
 #include <unordered_map>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
+#include "absl/base/const_init.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_scheduling_info.h"
@@ -49,6 +52,9 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
   if (!environment || !model || !compiled_model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  ABSL_CONST_INIT static absl::Mutex compiled_model_create_mutex(
+      absl::kConstInit);
+  absl::MutexLock lock(&compiled_model_create_mutex);
   LITERT_ASSIGN_OR_RETURN(auto created_compiled_model,
                           LiteRtCompiledModelT::Create(
                               environment, model, jit_compilation_options));
