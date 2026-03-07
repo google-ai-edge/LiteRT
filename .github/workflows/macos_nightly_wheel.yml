@@ -1,6 +1,9 @@
 name: macOS nightly wheel
 
 on:
+  pull_request:
+    branches:
+    - main
   schedule:
     - cron: "0 0 * * *"  # Runs at 0:00 UTC every day
   workflow_dispatch:
