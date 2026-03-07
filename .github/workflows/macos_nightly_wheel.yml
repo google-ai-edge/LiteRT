@@ -34,67 +34,328 @@ jobs:
           eval "$(/opt/homebrew/bin/brew shellenv)"
           brew install pyenv openssl readline xz zlib tcl-tk sqlite3
 
-      - name: Set Bazel version for Bazelisk
-        run: echo "7.6.1" > .bazelversion
+      
 
-      - name: Check Bazel (via Bazelisk) version
-        run: |
-          # Bazelisk should be pre-installed on the runner PATH
-          # The 'bazel' command will invoke bazelisk
-          command -v bazel
-          bazel --version
+            - name: Set Bazel version for Bazelisk
 
-      - name: Install Python ${{ matrix.python-version }}
-        shell: bash
-        run: |
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-          export PYENV_ROOT=$(brew --prefix pyenv)
-          export PATH="$PYENV_ROOT/bin:$PATH"
-          eval "$(pyenv init --path)"
-          eval "$(pyenv init -)"
+              run: echo "7.6.1" > .bazelversion
 
-          export CFLAGS="-I$(brew --prefix openssl)/include -I$(brew --prefix readline)/include -I$(brew --prefix xz)/include -I$(brew --prefix zlib)/include -I$(brew --prefix tcl-tk)/include -I$(brew --prefix sqlite3)/include"
-          export LDFLAGS="-L$(brew --prefix openssl)/lib -L$(brew --prefix readline)/lib -L$(brew --prefix xz)/lib -L$(brew --prefix zlib)/lib -L$(brew --prefix tcl-tk)/lib -L$(brew --prefix sqlite3)/lib"
+      
 
-          pyenv install --skip-existing ${{ matrix.python-version }}
-          pyenv global ${{ matrix.python-version }}
-          python -m pip install --upgrade pip
+            - name: Set up cache keys and bazel output base.
 
-      - name: Install virtualenv and create venv
-        shell: bash
-        run: |
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-          export PYENV_ROOT=$(brew --prefix pyenv)
-          export PATH="$PYENV_ROOT/bin:$PATH"
-          eval "$(pyenv init --path)"
-          eval "$(pyenv init -)"
+              id: cache-keys
 
-          pip install virtualenv
-          python -m virtualenv litert_env_${{ matrix.python-version }}
-          source litert_env_${{ matrix.python-version }}/bin/activate
-          pip install setuptools build wheel
+              shell: bash
 
-      - name: Run build script
-        shell: bash
-        run: |
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-          export PYENV_ROOT=$(brew --prefix pyenv)
-          export PATH="$PYENV_ROOT/bin:$PATH"
-          eval "$(pyenv init --path)"
-          eval "$(pyenv init -)"
+              run: |
 
-          source litert_env_${{ matrix.python-version }}/bin/activate
+                # The month is used as a cache-buster.
 
-          export CI_BUILD_PYTHON=python${{ matrix.python-version }}
-          export HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}
-          export USE_LOCAL_TF=false
+                CACHE_MONTH=$(date +%Y-%m)
 
-          # The 'bazel' command will be intercepted by bazelisk,
-          # which will download/use the version specified in .bazelversion
-          ./ci/build_pip_package_with_bazel.sh
+                CACHE_RESTORE_KEY_2="${{ github.workflow }}-${{ matrix.python-version }}-$CACHE_MONTH"
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-py${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}
-          path: ./dist/
+                echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
+
+      
+
+                if [ -f "WORKSPACE" ]; then
+
+                  WORKSPACE_HASH=$(sha256sum WORKSPACE | cut -d' ' -f1)
+
+                fi
+
+                if [ -f ".bazelrc" ]; then
+
+                  BAZELRC_HASH=$(sha256sum .bazelrc | cut -d' ' -f1)
+
+                fi
+
+                CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${WORKSPACE_HASH}${BAZELRC_HASH}"
+
+                echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$GITHUB_OUTPUT"
+
+      
+
+                BUILD_FILES_HASH=""
+
+                for f in $(find . -name 'BUILD' -o -name 'BUILD.bazel'); do
+
+                  BUILD_FILES_HASH="${BUILD_FILES_HASH}-$(sha256sum $f | cut -d' ' -f1)"
+
+                done
+
+                CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${BUILD_FILES_HASH}"
+
+                echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
+
+      
+
+                CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+
+                echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$GITHUB_OUTPUT"
+
+      
+
+                CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+
+                echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
+      
+
+                # Use a directory outside of the main checkout for the output base
+
+                # to avoid interfering with the source tree.
+
+                SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+
+                echo "BAZEL_OUTPUT_BASE=${HOME}/bazel-output-bases/w-$SHORT_SHA" >> "$GITHUB_ENV"
+
+      
+
+            - name: Restore bazel cache
+
+              id: bazel-cache
+
+              uses: actions/cache/restore@v4
+
+              with:
+
+                path: ~/.cache/bazel
+
+                key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+                restore-keys: |
+
+                  ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+
+                  ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+
+                  ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+
+                  ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+
+      
+
+            - name: Check cache hit
+
+              run: |
+
+                echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
+
+                echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
+
+                echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+
+      
+
+            - name: Set BAZEL_CONFIG_FLAGS for Cache
+
+              shell: bash
+
+              run: |
+
+                CacheDir="${HOME}/.cache/bazel"
+
+                echo "BAZEL_CONFIG_FLAGS=--disk_cache=$CacheDir" >> "$GITHUB_ENV"
+
+      
+
+            - name: Check Bazel (via Bazelisk) version
+
+              run: |
+
+                # Bazelisk should be pre-installed on the runner PATH
+
+                # The 'bazel' command will invoke bazelisk
+
+                command -v bazel
+
+                bazel --version
+
+      
+
+            - name: Install Python ${{ matrix.python-version }}
+
+              shell: bash
+
+              run: |
+
+                eval "$(/opt/homebrew/bin/brew shellenv)"
+
+                export PYENV_ROOT=$(brew --prefix pyenv)
+
+                export PATH="$PYENV_ROOT/bin:$PATH"
+
+                eval "$(pyenv init --path)"
+
+                eval "$(pyenv init -)"
+
+      
+
+                export CFLAGS="-I$(brew --prefix openssl)/include -I$(brew --prefix readline)/include -I$(brew --prefix xz)/include -I$(brew --prefix zlib)/include -I$(brew --prefix tcl-tk)/include -I$(brew --prefix sqlite3)/include"
+
+                export LDFLAGS="-L$(brew --prefix openssl)/lib -L$(brew --prefix readline)/lib -L$(brew --prefix xz)/lib -L$(brew --prefix zlib)/lib -L$(brew --prefix tcl-tk)/lib -L$(brew --prefix sqlite3)/lib"
+
+      
+
+                pyenv install --skip-existing ${{ matrix.python-version }}
+
+                pyenv global ${{ matrix.python-version }}
+
+                python -m pip install --upgrade pip
+
+      
+
+            - name: Install virtualenv and create venv
+
+              shell: bash
+
+              run: |
+
+                eval "$(/opt/homebrew/bin/brew shellenv)"
+
+                export PYENV_ROOT=$(brew --prefix pyenv)
+
+                export PATH="$PYENV_ROOT/bin:$PATH"
+
+                eval "$(pyenv init --path)"
+
+                eval "$(pyenv init -)"
+
+      
+
+                pip install virtualenv
+
+                python -m virtualenv litert_env_${{ matrix.python-version }}
+
+                source litert_env_${{ matrix.python-version }}/bin/activate
+
+                pip install setuptools build wheel
+
+      
+
+            - name: Run build script
+
+              shell: bash
+
+              run: |
+
+                eval "$(/opt/homebrew/bin/brew shellenv)"
+
+                export PYENV_ROOT=$(brew --prefix pyenv)
+
+                export PATH="$PYENV_ROOT/bin:$PATH"
+
+                eval "$(pyenv init --path)"
+
+                eval "$(pyenv init -)"
+
+      
+
+                source litert_env_${{ matrix.python-version }}/bin/activate
+
+      
+
+                export CI_BUILD_PYTHON=python${{ matrix.python-version }}
+
+                export HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}
+
+                export USE_LOCAL_TF=false
+
+      
+
+                # The 'bazel' command will be intercepted by bazelisk,
+
+                # which will download/use the version specified in .bazelversion
+
+                ./ci/build_pip_package_with_bazel.sh
+
+      
+
+            - name: Upload artifacts
+
+              uses: actions/upload-artifact@v4
+
+              with:
+
+                name: wheels-py${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}
+
+                path: ./dist/*.whl
+
+      
+
+            - name: Save bazel cache
+
+              uses: actions/cache/save@v4
+
+              if: always()
+
+              with:
+
+                path: ~/.cache/bazel
+
+                key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+      
+
+      upload-to-pypi:
+
+        name: "Upload Nightly Wheels to PyPI"
+
+        runs-on: ubuntu-latest
+
+        needs: build_wheels
+
+        if: success() && github.event_name == 'schedule'
+
+        steps:
+
+          - name: Set up Python
+
+            uses: actions/setup-python@v5
+
+            with:
+
+              python-version: "3.12"
+
+      
+
+          - name: Install twine
+
+            run: python -m pip install twine
+
+      
+
+          - name: Download all wheel artifacts
+
+            uses: actions/download-artifact@v4
+
+            with:
+
+              pattern: wheels-*
+
+              path: dist
+
+              merge-multiple: true
+
+      
+
+          - name: List downloaded wheels
+
+            run: ls -R dist
+
+      
+
+          - name: Upload to PyPI
+
+            env:
+
+              TWINE_USERNAME: __token__
+
+              TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+
+            run: twine upload dist/**/*.whl --non-interactive
+
+      
