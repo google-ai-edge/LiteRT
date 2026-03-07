@@ -332,9 +332,9 @@ http_archive(
 
 http_archive(
     name = "rules_android",
-    sha256 = "af84b69ab3d16dd1a41056286e6511f147a94ccea995603e13e934c915c1631c",
-    strip_prefix = "rules_android-0.6.0",
-    url = "https://github.com/bazelbuild/rules_android/releases/download/v0.6.0/rules_android-v0.6.0.tar.gz",
+    sha256 = "cd06d15dd8bb59926e4d65f9003bfc20f9da4b23519985511475e3b05811cb1c",
+    strip_prefix = "rules_android-0.8.0",
+    url = "https://github.com/bazelbuild/rules_android/releases/download/v0.8.0/rules_android-v0.8.0.tar.gz",
 )
 
 # Android rules dependencies
