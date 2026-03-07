@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "litert/cc/litert_common.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
@@ -34,7 +34,7 @@ TEST(LiteRtProfilerCcTest, GetProfileSummary) {
   auto runtime_options = options->GetRuntimeOptions();
   ASSERT_TRUE(runtime_options.HasValue());
   runtime_options->SetEnableProfiling(true);
-  auto compiled_model = CompiledModel::Create(
+  auto compiled_model = CompiledModelNext::Create(
       *env, testing::GetTestFilePath(kModelFileName), *options);
   ASSERT_TRUE(compiled_model.HasValue());
 

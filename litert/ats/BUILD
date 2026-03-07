@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
-load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 
@@ -130,21 +130,22 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = [
         "SingleOp",
-        "hf_all_minilm_l6_v2",
         "hf_mobilevit_small",
+        "qai_hub_midas",
         "qai_hub_real_esrgan_x4plus",
         "torchvision_mobilenet_v2",
         "u2net_lite",
         "torchvision_resnet18",
         "torchvision_squeezenet1_1",
         "whisper_tiny_encoder",
+        "yamnet",
         "yolo11n",
     ],
     dont_register = [
-        ".*SingleOp_inference_BinaryNoBroadcast.*",
-        ".*SingleOp_inference_Unary.*",
-        "qai_hub_midas",
-        "yamnet",
+        ".*6d.*",
+        "hf_all_minilm_l6_v2",
+        "whisper_tiny_decoder",
+        "qai_hub_real_esrgan_x4plus",
     ],
     jit_suffix = "",
 )
@@ -160,7 +161,7 @@ litert_test(
     tags = [
         "notap",
     ],
-    ungrte = True,
+    ungrte = if_oss(True, False),
     use_sys_malloc = True,
     deps = [
         ":compile_fixture",
@@ -223,6 +224,7 @@ cc_library(
         ":inference_capture",
         "//litert/c:litert_common",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",

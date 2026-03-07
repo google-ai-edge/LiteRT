@@ -146,21 +146,25 @@ def _apply_plugin(
     # Otherwise we use the default library path.
     plugin_path = common.get_resource(COMPILER_PLUGIN_LIB_PATH)
     lib_dir = os.path.dirname(plugin_path)
+    target = backend.target
+    assert isinstance(
+        target, target_lib.Target
+    ), "Target must be a MediaTek target."
+    recommended_np_version = target.recommended_np_version
 
     try:
       # pytype: disable=import-error
       import ai_edge_litert_sdk_mediatek  # pylint: disable=g-import-not-at-top
       # pytype: enable=import-error
 
-      # TODO(weiyiw): Translate SOC | OS version to the corresponding
-      # MediaTek SDK version and pass to the plugin.
-      sdk_version = "v8"
       sdk_libs_path = str(
-          ai_edge_litert_sdk_mediatek.path_to_sdk_libs(sdk_version)
+          ai_edge_litert_sdk_mediatek.path_to_sdk_libs(recommended_np_version)
       )
     except ImportError:
       sdk_libs_path = None
     extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_path}
+    if recommended_np_version == "v9":
+      extra_kwargs["mediatek_sdk_version_type"] = "version9"
   except FileNotFoundError:
     extra_kwargs = {}
   return component(

@@ -27,7 +27,11 @@ class LiteRtWrapperUtilsTest(unittest.TestCase):
     initial_ref = sys.getrefcount(model)
 
     # Create capsule, passing the model
-    capsule = _litert_wrapper_utils_test_helper.make_capsule(model)
+    capsule = (
+        _litert_wrapper_utils_test_helper.make_testing_tensor_buffer_capsule(
+            model
+        )
+    )
 
     # Refcount should increase by 1 because the capsule holds a reference
     self.assertEqual(sys.getrefcount(model), initial_ref + 1)
@@ -44,7 +48,11 @@ class LiteRtWrapperUtilsTest(unittest.TestCase):
 
   def test_no_model(self):
     # Just verify it doesn't crash
-    capsule = _litert_wrapper_utils_test_helper.make_capsule(None)
+    capsule = (
+        _litert_wrapper_utils_test_helper.make_testing_tensor_buffer_capsule(
+            None
+        )
+    )
     del capsule
 
 

@@ -28,10 +28,12 @@ limitations under the License.
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -51,7 +53,7 @@ limitations under the License.
 
 namespace litert::benchmark {
 namespace {
-using ::litert::CompiledModel;
+using ::litert::CompiledModelNext;
 using ::litert::Options;
 using ::litert::RuntimeOptions;
 using ::litert::TensorBuffer;
@@ -176,21 +178,22 @@ litert::Expected<Environment> CreateDefaultEnvironment(
   LITERT_LOG(LITERT_INFO, "compiler_cache_path: %s",
              compiler_cache_path.c_str());
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           dispatch_library_path.c_str(),
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerPluginLibraryDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           compiler_plugin_library_path.c_str(),
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerCacheDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerCacheDir,
           compiler_cache_path.c_str(),
       },
   };
-  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  return litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 }  // namespace
 
@@ -254,14 +257,13 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   environment_ = std::make_unique<litert::Environment>(std::move(env_result));
 
   auto compilation_options = CreateCompiledModelOptions(params_);
-  LITERT_ASSIGN_OR_RETURN(
-      auto compiled_model_result,
-      litert::CompiledModel::Create(*environment_, model_->Get(),
-                                    compilation_options),
-      AsTfLiteStatus(_ << "Failed to compile model."));
+  LITERT_ASSIGN_OR_RETURN(auto compiled_model_result,
+                          litert::CompiledModelNext::Create(
+                              *environment_, *model_, compilation_options),
+                          AsTfLiteStatus(_ << "Failed to compile model."));
 
-  compiled_model_ =
-      std::make_unique<litert::CompiledModel>(std::move(compiled_model_result));
+  compiled_model_ = std::make_unique<litert::CompiledModelNext>(
+      std::move(compiled_model_result));
 
   LiteRtCompiledModelT* compiled_model_ptr = compiled_model_->Get();
   if (compiled_model_ptr == nullptr) {
@@ -279,13 +281,12 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
 
   auto use_profiler = params_.Get<bool>("use_profiler");
   if (use_profiler) {
-    LITERT_ASSIGN_OR_ABORT(auto profiler, compiled_model_->GetProfiler());
-    profiler_ = std::make_unique<litert::Profiler>(std::move(profiler));
-    profiler_->StartProfiling();
+    LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
+    profiler_.StartProfiling();
   }
   log_output_ = std::make_unique<BenchmarkLoggingListener>([this]() {
     if (profiler_) {
-      auto res = profiler_->GetProfileSummary(compiled_model_->Get());
+      auto res = profiler_.GetProfileSummary(compiled_model_->Get());
       if (res.HasValue()) {
         return res.Value();
       }

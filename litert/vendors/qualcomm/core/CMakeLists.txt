@@ -39,8 +39,6 @@ target_link_libraries(qnn_core
         absl::str_format
         absl::span
         absl::string_view
-        qnn_backends
-        qnn_wrappers
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")

@@ -535,6 +535,7 @@ cc_library(
         ":op_macros",
         "//tflite:array",
         "//tflite:kernel_api",
+        "//tflite/core:subgraph",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:cppmath",
         "//tflite/kernels/internal:quantization_util",
@@ -2743,6 +2744,7 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )

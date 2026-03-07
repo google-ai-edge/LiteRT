@@ -16,64 +16,49 @@
 
 #include "litert/cc/options/litert_compiler_options.h"
 
-#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////
 
 namespace litert {
 
 Expected<CompilerOptions> CompilerOptions::Create() {
-  LiteRtOpaqueOptions options;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateCompilerOptions(&options));
-  return CompilerOptions(options, litert::OwnHandle::kYes);
+  LrtCompilerOptions* options = nullptr;
+  LITERT_RETURN_IF_ERROR(LrtCreateCompilerOptions(&options));
+  return CompilerOptions(options);
 }
 
-Expected<CompilerOptions> CompilerOptions::Create(OpaqueOptions& original) {
-  const auto id = original.GetIdentifier();
-  if (!id || *id != Discriminator()) {
-    return Error(kLiteRtStatusErrorInvalidArgument);
-  }
-  return CompilerOptions(original.Get(), OwnHandle::kNo);
-}
+CompilerOptions::CompilerOptions(LrtCompilerOptions* options)
+    : options_(options) {}
 
 Expected<void> CompilerOptions::SetPartitionStrategy(
     LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
-  LiteRtCompilerOptions compiler_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
-  LITERT_RETURN_IF_ERROR(LiteRtSetCompilerOptionsPartitionStrategy(
-      compiler_options, partition_strategy));
+  LITERT_RETURN_IF_ERROR(LrtSetCompilerOptionsPartitionStrategy(
+      options_.get(), partition_strategy));
   return {};
 }
 
 Expected<LiteRtCompilerOptionsPartitionStrategy>
 CompilerOptions::GetPartitionStrategy() const {
-  LiteRtCompilerOptions compiler_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
-  LiteRtCompilerOptionsPartitionStrategy partition_strategy;
-  LITERT_RETURN_IF_ERROR(LiteRtGetCompilerOptionsPartitionStrategy(
-      compiler_options, &partition_strategy));
-  return partition_strategy;
+  LiteRtCompilerOptionsPartitionStrategy strategy;
+  LITERT_RETURN_IF_ERROR(
+      LrtGetCompilerOptionsPartitionStrategy(options_.get(), &strategy));
+  return strategy;
 }
 
 Expected<void> CompilerOptions::SetDummyOption(bool dummy_option) {
-  LiteRtCompilerOptions compiler_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetDummyCompilerOptions(compiler_options, dummy_option));
+      LrtSetCompilerOptionsDummyOption(options_.get(), dummy_option));
   return {};
 }
 
 Expected<bool> CompilerOptions::GetDummyOption() const {
-  LiteRtCompilerOptions compiler_options;
-  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
   bool dummy_option;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetDummyCompilerOptions(compiler_options, &dummy_option));
+      LrtGetCompilerOptionsDummyOption(options_.get(), &dummy_option));
   return dummy_option;
 }
 

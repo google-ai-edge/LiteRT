@@ -593,8 +593,8 @@ ThrStatus thrUnregisterBuffer(ThrContext* context, ThrBufferHandle handle);
 //
 // Implementations are required to dup `fence_fd` internally. Accordingly, the
 // caller must close `fence_fd`.
-ThrStatus thrRegisterFence(ThrContext* context, ThrFenceType type,
-                           int fence_fd, ThrFenceHandle* handle);
+ThrStatus thrRegisterFence(ThrContext* context, ThrFenceType type, int fence_fd,
+                           ThrFenceHandle* handle);
 
 // Unregisters the registered fence associated with the given `ThrFenceHandle`.
 //
@@ -714,29 +714,56 @@ ThrStatus thrInvocationContextDetachInputBufferSyncFence(
 ThrStatus thrInvocationContextDetachInputBufferFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle handle);
 
-// Returns an output sync fence to the graph output edge. When graph execution
-// is finished, the sync fence will be fired.
-// This function can also be used to retrieve fences for any edge annotated
-// with "request_fence" set to 1. This requires that
-// `thrInvocationContextPrepareForInvoke2` is called with `kThrFenceTypeDma`;
-// otherwise, no fence will be available for retrieval, and this function will
+// Returns a dma-buf fence fd for the specified edge. This fence will be
+// signaled when the node producing the edge's data has completed execution.
+//
+// This function strictly returns a fence of type `kThrFenceTypeDma` because
+// "Sync Fence" refers specifically to a DMA fence. Other fence types (e.g.,
+// `eventfd` or `VendorPreferred`) cannot be retrieved via this API. Use
+// `thrInvocationContextGetOutputBufferFence` for generic fence retrieval.
+//
+// This function can be used to retrieve fences for graph output edges or for
+// any edge configured to produce a fence (e.g. via vendor-specific
+// annotations). Regardless of the edge type,
+// `thrInvocationContextPrepareForInvoke` must be called with
+// `create_output_sync_fence=true`, or `thrInvocationContextPrepareForInvoke2`
+// must be called with a valid `output_fence_type` (not `kThrFenceNoType`) to
+// enable fence generation.
+//
+// If the edge is for a graph output edge, the `output_fence_type` must be
+// `kThrFenceTypeDma` (or `create_output_sync_fence=true`). If the edge is for
+// an intermediate edge, it must be configured to produce a fence of type
+// `kThrFenceTypeDma`.
+//
+// If no fence is available for retrieval for the edge, this function will
 // return `kThrStatusFail`.
 //
 // Note: User needs to close the returned fd when no longer in use.
 ThrStatus thrInvocationContextGetOutputBufferSyncFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, int* fence_fd);
 
-// Has identical semantics to `thrInvocationContextGetOutputBufferSyncFence`,
-// but returns a fence handle rather than a raw fd.
+// Returns a fence handle for the specified edge. This fence will be signaled
+// when the node producing the edge's data has completed execution.
 //
-// This function can be used to retrieve fences for graph output edges, or for
-// any edge annotated with "request_fence" set to 1. This requires that
-// `thrInvocationContextPrepareForInvoke2` is called with a valid fence type
-// (e.g. `kThrFenceTypeDma` or `kThrFenceTypeVendorPreferred`); otherwise, no
-// fence will be available for retrieval, and this function will return
-// `kThrStatusFail`.
+// This function can be used to retrieve fences for graph output edges or for
+// any edge configured to produce a fence (e.g. via vendor-specific
+// annotations). Regardless of the edge type,
+// `thrInvocationContextPrepareForInvoke` must be called with
+// `create_output_sync_fence=true`, or `thrInvocationContextPrepareForInvoke2`
+// must be called with a valid `output_fence_type` (not `kThrFenceNoType`) to
+// enable fence generation.
 //
-// Note: the returned fence handle must be unregistered via
+// If the edge is for a graph output edge,
+// `thrInvocationContextPrepareForInvoke2` must be called with a valid
+// `output_fence_type` (not `kThrFenceNoType`). If the edge is for an
+// intermediate edge, it must be configured to produce a fence of a valid
+// `ThrFenceType` (not `kThrFenceNoType`), and the returned fence will be of
+// the requested type.
+//
+// If no fence is available for retrieval for the edge, this function will
+// return `kThrStatusFail`.
+//
+// Note: The returned fence handle must be unregistered via
 // `thrUnregisterFence`.
 ThrStatus thrInvocationContextGetOutputBufferFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle* handle);
@@ -822,8 +849,6 @@ ThrStatus thrVendorSetSystemAttributeStr(ThrContext* context, const char* key,
 // WARNING: This API is experimental and subject to change.
 ThrStatus thrVendorSetSystemAttributeInt64(ThrContext* context, const char* key,
                                            int64_t value);
-
-
 
 #ifdef __cplusplus
 }  // extern "C"

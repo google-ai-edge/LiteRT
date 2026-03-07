@@ -27,6 +27,12 @@ bool_flag(
     visibility = ["//visibility:public"],
 )
 
+bool_flag(
+    name = "resolve_symbols_in_exec",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 string_flag(
     name = "build_include",
     # LINT.IfChange(string_flag_default)
@@ -53,6 +59,12 @@ config_setting(
     flag_values = {
         ":ungrte": "true",
     },
+)
+
+config_setting(
+    name = "litert_disable_cpu",
+    # Relies on the same definition with TFLite to disable CPU backend on TFLite Interpreter.
+    define_values = {"tflite_with_xnnpack": "false"},
 )
 
 config_setting(

@@ -23,6 +23,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/test/common.h"
@@ -39,14 +40,14 @@ TEST(EnvironmentTest, Default) {
 
 TEST(EnvironmentTest, Options) {
   constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   EXPECT_TRUE(env);
 }
 
@@ -62,15 +63,15 @@ TEST(EnvironmentTest, CompiledModelBasic) {
 
 TEST(EnvironmentTest, StringLifeCycle) {
   std::string dispatch_library_dir = "/data/local/tmp";
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           absl::string_view(dispatch_library_dir),
       },
   };
 
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 
   EXPECT_TRUE(env);
 

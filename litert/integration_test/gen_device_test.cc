@@ -27,6 +27,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_model.h"
 #include "litert/integration_test/gen_device_test_lib.h"
 #include "litert/test/common.h"
@@ -97,18 +98,20 @@ class InvokeOnceTest : public GenDeviceTestFixt {
 
   // Opens model and initializes the underlying invoker.
   void SetUp() override {
-    const std::vector<litert::Environment::Option> environment_options = {
-        litert::Environment::Option{
-            litert::Environment::OptionTag::DispatchLibraryDir,
-            absl::string_view(dispatch_library_dir_),
-        },
-        litert::Environment::Option{
-            litert::Environment::OptionTag::CompilerPluginLibraryDir,
-            absl::string_view(compiler_library_dir_),
-        },
-    };
+    const std::vector<litert::EnvironmentOptions::Option> environment_options =
+        {
+            litert::EnvironmentOptions::Option{
+                litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+                dispatch_library_dir_,
+            },
+            litert::EnvironmentOptions::Option{
+                litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+                compiler_library_dir_,
+            },
+        };
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto env, litert::Environment::Create(environment_options));
+        auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                      absl::MakeConstSpan(environment_options))));
 
     LITERT_ASSERT_OK_AND_ASSIGN(auto model,
                                 litert::Model::CreateFromFile(model_path_));

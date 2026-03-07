@@ -21,6 +21,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -36,18 +37,19 @@ static constexpr absl::string_view kModel = "one_mul.tflite";
 
 TEST(ExampleEndToEndTest, JIT) {
   const auto libs_path = GetLiteRtPath(kLibsPath);
-  const std::vector<Environment::Option> environment_options = {
-      Environment::Option{
-          Environment::OptionTag::CompilerPluginLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           libs_path,
       },
-      Environment::Option{
-          Environment::OptionTag::DispatchLibraryDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           libs_path,
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto env, Environment::Create(absl::MakeConstSpan(environment_options)));
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto cm, CompiledModel::Create(env, GetTestFilePath(kModel),
                                      HwAccelerators::kNpu));

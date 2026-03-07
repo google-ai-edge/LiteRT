@@ -59,6 +59,8 @@ enum class ElementType {
 inline constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
   if (ty == ElementType::Bool)
     return ByteWidth(1);
+  else if (ty == ElementType::Int4)
+    return ByteWidth(1, 2);
   else if (ty == ElementType::Int8)
     return ByteWidth(1);
   else if (ty == ElementType::Int16)

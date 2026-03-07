@@ -34,6 +34,7 @@
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/model/model_buffer.h"
@@ -79,15 +80,15 @@ TEST(DispatchDelegate, CompiledModel) {
                   "Google Tensor TPU";
 #endif
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto env,
-      litert::Environment::Create(absl::MakeConstSpan(environment_options)));
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
@@ -112,8 +113,7 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg0, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
@@ -122,8 +122,7 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg1, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg2,
@@ -132,8 +131,7 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg2,
       input_buffer_requirements_arg2.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg2,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg2, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg3,
@@ -152,16 +150,14 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBufferType> input_buffer_types_arg4,
       input_buffer_requirements_arg4.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg4,
-              ElementsAre(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffer_types_arg4, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom2"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
   EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kAhwb));
 
   // ///////////////////////////////////////////////////////////////////////////

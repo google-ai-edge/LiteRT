@@ -342,6 +342,12 @@ void Dump(LiteRtElementType type, std::ostream& out) {
     case kLiteRtElementTypeUInt8:
       out << "ui8";
       break;
+    case kLiteRtElementTypeInt4:
+      out << "i4";
+      break;
+    case kLiteRtElementTypeInt2:
+      out << "i2";
+      break;
     case kLiteRtElementTypeBool:
       out << "i1";
       break;

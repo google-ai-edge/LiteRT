@@ -39,7 +39,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
-#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
@@ -511,16 +510,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @brief Returns `true` if the compiled model is fully accelerated with the
   /// given hardware accelerators.
   Expected<bool> IsFullyAccelerated();
-
-  /// @brief Returns the profiler used by the compiled model.
-  ///
-  /// The returned `Profiler` does not own the underlying `LiteRtProfiler`.
-  Expected<Profiler> GetProfiler() {
-    LiteRtProfiler profiler = nullptr;
-    LITERT_RETURN_IF_ERROR(
-        env_.runtime->CompiledModelGetProfiler(Get(), &profiler));
-    return Profiler(env_, profiler, OwnHandle::kNo);
-  };
 
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.

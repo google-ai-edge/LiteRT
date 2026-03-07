@@ -13,7 +13,8 @@
 # limitations under the License.
 # copybara:uncomment load("INTERNAL_ACCEL_RUNTIME/common:build_defs.bzl", "compile_model")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
@@ -95,6 +96,7 @@ litert_dynamic_lib(
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
     deps = [
+        ":litert_darwinn_runtime_options",
         "@com_google_absl//absl/algorithm:container",
         "//litert/c/internal:litert_scheduling_info",
         "@com_google_absl//absl/base:no_destructor",
@@ -112,9 +114,9 @@ litert_dynamic_lib(
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/cc/internal:litert_handle",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
         "//litert/vendors/cc:options_helper",
     ],
 )
@@ -171,6 +173,23 @@ cc_library(
 #         "INTERNAL_THREAD_PKG",
 #     ],
 # )
+#
+# cc_test(
+#     name = "darwinn_runtime_options_test",
+#     srcs = ["darwinn_runtime_options_test.cc"],
+#     deps = [
+#         ":litert_darwinn_runtime_options",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/strings:string_view",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc/dynamic_runtime:litert_opaque_options",
+#         "//litert/cc/dynamic_runtime:litert_options",
+#         "//litert/cc/internal:litert_handle",
+#         "//litert/cc/options/google:litert_darwinn_runtime_options",
+#     ],
+# )
+#
 # copybara:uncomment_end
 
 litert_device_test(
@@ -201,16 +220,14 @@ litert_device_test(
     ],
 )
 
-cc_test(
-    name = "darwinn_options_test",
-    srcs = ["darwinn_options_test.cc"],
+cc_library(
+    name = "litert_darwinn_runtime_options",
+    srcs = ["litert_darwinn_runtime_options.cc"],
+    hdrs = ["litert_darwinn_runtime_options.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_darwinn_options",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )

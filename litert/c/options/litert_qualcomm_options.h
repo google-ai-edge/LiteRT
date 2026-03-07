@@ -17,6 +17,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "litert/c/litert_common.h"
@@ -31,20 +32,28 @@
 extern "C" {
 #endif  // __cplusplus
 
-LITERT_DEFINE_HANDLE(LiteRtQualcommOptions);
+LITERT_DEFINE_HANDLE(LrtQualcommOptions);
 
-// Create a qualcomm options object that is type erased. The actual option
-// data can be accessed from the payload.
-LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options);
-
-// The a string identifier that discriminates qualcomm options within
+// The string identifier that discriminates qualcomm options within
 // type erased options.
-const char* LiteRtQualcommOptionsGetIdentifier();
+const char* LrtQualcommOptionsGetIdentifier();
 
-// Attempt to retrieve qualcomm options from the opaque options. Fails unless
-// the opaque options are of another type.
-LiteRtStatus LiteRtQualcommOptionsGet(LiteRtOpaqueOptions options,
-                                      LiteRtQualcommOptions* options_data);
+// Create a qualcomm options object.
+LiteRtStatus LrtCreateQualcommOptions(LrtQualcommOptions* options);
+
+#ifdef __cplusplus
+// Create a qualcomm options object mapped from a TOML payload.
+LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
+                                              LrtQualcommOptions* options);
+#endif  // __cplusplus
+
+// Destroy a qualcomm options object.
+void LrtDestroyQualcommOptions(LrtQualcommOptions options);
+
+LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
+                                             const char** identifier,
+                                             void** payload,
+                                             void (**payload_deleter)(void*));
 
 // GENERAL SDK SETTINGS ////////////////////////////////////////////////////////
 
@@ -53,20 +62,20 @@ LiteRtStatus LiteRtQualcommOptionsGet(LiteRtOpaqueOptions options,
 // This determines the logging level of all underlying qualcomm sdk libraries.
 // Does not effect litert logging. Defaults to INFO.
 
-typedef enum LiteRtQualcommOptionsLogLevel {
+typedef enum LrtQualcommOptionsLogLevel {
   kLiteRtQualcommLogOff = 0,
   kLiteRtQualcommLogLevelError = 1,
   kLiteRtQualcommLogLevelWarn = 2,
   kLiteRtQualcommLogLevelInfo = 3,
   kLiteRtQualcommLogLevelVerbose = 4,
   kLiteRtQualcommLogLevelDebug = 5,
-} LiteRtQualcommOptionsLogLevel;
+} LrtQualcommOptionsLogLevel;
 
-LiteRtStatus LiteRtQualcommOptionsSetLogLevel(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsLogLevel log_level);
+LiteRtStatus LrtQualcommOptionsSetLogLevel(
+    LrtQualcommOptions options, LrtQualcommOptionsLogLevel log_level);
 
-LiteRtStatus LiteRtQualcommOptionsGetLogLevel(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsLogLevel* log_level);
+LiteRtStatus LrtQualcommOptionsGetLogLevel(
+    LrtQualcommOptions options, LrtQualcommOptionsLogLevel* log_level);
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
@@ -75,59 +84,72 @@ LiteRtStatus LiteRtQualcommOptionsGetLogLevel(
 // This option controls whether to convert a LiteRt operation to QNN operations
 // which are preferred by the HTP backend. Defaults to false.
 
-LiteRtStatus LiteRtQualcommOptionsSetUseHtpPreference(
-    LiteRtQualcommOptions options, bool use_htp_preference);
+LiteRtStatus LrtQualcommOptionsSetUseHtpPreference(LrtQualcommOptions options,
+                                                   bool use_htp_preference);
 
-LiteRtStatus LiteRtQualcommOptionsGetUseHtpPreference(
-    LiteRtQualcommOptions options, bool* use_htp_preference);
+LiteRtStatus LrtQualcommOptionsGetUseHtpPreference(LrtQualcommOptions options,
+                                                   bool* use_htp_preference);
 
 // use_qint16_as_quint16
 
 // This option controls whether to convert a quantized int16 model to a
 // quantized uint16 model. Defaults to false.
 
-LiteRtStatus LiteRtQualcommOptionsSetUseQint16AsQuint16(
-    LiteRtQualcommOptions options, bool use_qint16_as_quint16);
+LiteRtStatus LrtQualcommOptionsSetUseQint16AsQuint16(
+    LrtQualcommOptions options, bool use_qint16_as_quint16);
 
-LiteRtStatus LiteRtQualcommOptionsGetUseQint16AsQuint16(
-    LiteRtQualcommOptions options, bool* use_qint16_as_quint16);
+LiteRtStatus LrtQualcommOptionsGetUseQint16AsQuint16(
+    LrtQualcommOptions options, bool* use_qint16_as_quint16);
+
+// use_int64_bias_as_int32
+
+// This option controls whether to convert bias tensors of FullyConnected
+// and Conv2D Ops from int64 to int32 . Defaults to true.
+
+LiteRtStatus LrtQualcommOptionsSetUseInt64BiasAsInt32(
+    LrtQualcommOptions options, bool use_int64_bias_as_int32);
+
+LiteRtStatus LrtQualcommOptionsGetUseInt64BiasAsInt32(
+    LrtQualcommOptions options, bool* use_int64_bias_as_int32);
 
 // enable_weight_sharing
 
 // Weight sharing indicates whether different subgraphs may share weight
 // tensors. This is only supported on x86 AOT. Defaults to false.
 
-LiteRtStatus LiteRtQualcommOptionsSetEnableWeightSharing(
-    LiteRtQualcommOptions options, bool enable_weight_sharing);
+LiteRtStatus LrtQualcommOptionsSetEnableWeightSharing(
+    LrtQualcommOptions options, bool enable_weight_sharing);
 
-LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
-    LiteRtQualcommOptions options, bool* enable_weight_sharing);
+LiteRtStatus LrtQualcommOptionsGetEnableWeightSharing(
+    LrtQualcommOptions options, bool* enable_weight_sharing);
 
-LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
-    LiteRtQualcommOptions options, const int32_t* ids, size_t number_of_ids);
+LiteRtStatus LrtQualcommOptionsSetDumpTensorIds(LrtQualcommOptions options,
+                                                const int32_t* ids,
+                                                size_t number_of_ids);
 
-LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
-    LiteRtQualcommOptions options, const int32_t** ids, size_t* number_of_ids);
+LiteRtStatus LrtQualcommOptionsGetDumpTensorIds(LrtQualcommOptions options,
+                                                const int32_t** ids,
+                                                size_t* number_of_ids);
 
 // When using short conv hmx, one might have better performance, but convolution
 // that have short depth and/or weights that are not symmetric could exhibit
 // inaccurate results.
 
-LiteRtStatus LiteRtQualcommOptionsSetUseConvHMX(LiteRtQualcommOptions options,
-                                                bool use_conv_hmx);
+LiteRtStatus LrtQualcommOptionsSetUseConvHMX(LrtQualcommOptions options,
+                                             bool use_conv_hmx);
 
-LiteRtStatus LiteRtQualcommOptionsGetUseConvHMX(LiteRtQualcommOptions options,
-                                                bool* use_conv_hmx);
+LiteRtStatus LrtQualcommOptionsGetUseConvHMX(LrtQualcommOptions options,
+                                             bool* use_conv_hmx);
 
 // When using fold relu, one might have better performance. This optimization is
 // correct when quantization ranges for convolution are equal to or are subset
 // of the Relu operation.
 
-LiteRtStatus LiteRtQualcommOptionsSetUseFoldReLU(LiteRtQualcommOptions options,
-                                                 bool use_fold_relu);
+LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
+                                              bool use_fold_relu);
 
-LiteRtStatus LiteRtQualcommOptionsGetUseFoldReLU(LiteRtQualcommOptions options,
-                                                 bool* use_fold_relu);
+LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
+                                              bool* use_fold_relu);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
@@ -137,7 +159,7 @@ LiteRtStatus LiteRtQualcommOptionsGetUseFoldReLU(LiteRtQualcommOptions options,
 // See QnnHtpPerfInfrastructure_SetPowerConfigFn_t in qnn_sdk. By default, it
 // will be decided by the backend (unknown).
 
-typedef enum LiteRtQualcommOptionsHtpPerformanceMode {
+typedef enum LrtQualcommOptionsHtpPerformanceMode {
   kLiteRtQualcommHtpPerformanceModeDefault = 0,
   kLiteRtQualcommHtpPerformanceModeSustainedHighPerformance = 1,
   kLiteRtQualcommHtpPerformanceModeBurst = 2,
@@ -148,19 +170,19 @@ typedef enum LiteRtQualcommOptionsHtpPerformanceMode {
   kLiteRtQualcommHtpPerformanceModeLowBalanced = 7,
   kLiteRtQualcommHtpPerformanceModeBalanced = 8,
   kLiteRtQualcommHtpPerformanceModeExtremePowerSaver = 9,
-} LiteRtQualcommOptionsHtpPerformanceMode;
+} LrtQualcommOptionsHtpPerformanceMode;
 
-LiteRtStatus LiteRtQualcommOptionsSetHtpPerformanceMode(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode);
+LiteRtStatus LrtQualcommOptionsSetHtpPerformanceMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerformanceMode htp_performance_mode);
 
-LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsHtpPerformanceMode* htp_performance_mode);
+LiteRtStatus LrtQualcommOptionsGetHtpPerformanceMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsHtpPerformanceMode* htp_performance_mode);
 
 // dsp_performance_mode
 
-typedef enum LiteRtQualcommOptionsDspPerformanceMode {
+typedef enum LrtQualcommOptionsDspPerformanceMode {
   kLiteRtQualcommDspPerformanceModeDefault = 0,
   kLiteRtQualcommDspPerformanceModeSustainedHighPerformance = 1,
   kLiteRtQualcommDspPerformanceModeBurst = 2,
@@ -170,108 +192,107 @@ typedef enum LiteRtQualcommOptionsDspPerformanceMode {
   kLiteRtQualcommDspPerformanceModeHighPowerSaver = 6,
   kLiteRtQualcommDspPerformanceModeLowBalanced = 7,
   kLiteRtQualcommDspPerformanceModeBalanced = 8,
-} LiteRtQualcommOptionsDspPerformanceMode;
+} LrtQualcommOptionsDspPerformanceMode;
 
-LiteRtStatus LiteRtQualcommOptionsSetDspPerformanceMode(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsDspPerformanceMode dsp_performance_mode);
+LiteRtStatus LrtQualcommOptionsSetDspPerformanceMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerformanceMode dsp_performance_mode);
 
-LiteRtStatus LiteRtQualcommOptionsGetDspPerformanceMode(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
+LiteRtStatus LrtQualcommOptionsGetDspPerformanceMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsDspPerformanceMode* dsp_performance_mode);
 
 // profiling
 
 // This option controls the profiling level. A higher level results in a more
 // detailed report after execution. Defaults to off.
 
-typedef enum LiteRtQualcommOptionsProfiling {
+typedef enum LrtQualcommOptionsProfiling {
   kLiteRtQualcommProfilingOff = 0,
   kLiteRtQualcommProfilingBasic,
   kLiteRtQualcommProfilingDetailed,
   kLiteRtQualcommProfilingLinting,
   kLiteRtQualcommProfilingOptrace,
-} LiteRtQualcommOptionsProfiling;
+} LrtQualcommOptionsProfiling;
 
-LiteRtStatus LiteRtQualcommOptionsSetProfiling(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling profiling);
+LiteRtStatus LrtQualcommOptionsSetProfiling(
+    LrtQualcommOptions options, LrtQualcommOptionsProfiling profiling);
 
-LiteRtStatus LiteRtQualcommOptionsGetProfiling(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
+LiteRtStatus LrtQualcommOptionsGetProfiling(
+    LrtQualcommOptions options, LrtQualcommOptionsProfiling* profiling);
 
-LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
-                                               const char* ir_json_dir);
+LiteRtStatus LrtQualcommOptionsSetIrJsonDir(LrtQualcommOptions options,
+                                            const char* ir_json_dir);
 
-LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
-                                               const char** ir_json_dir);
+LiteRtStatus LrtQualcommOptionsGetIrJsonDir(LrtQualcommOptions options,
+                                            const char** ir_json_dir);
 
-LiteRtStatus LiteRtQualcommOptionsSetDlcDir(LiteRtQualcommOptions options,
-                                            const char* dlc_dir);
+LiteRtStatus LrtQualcommOptionsSetDlcDir(LrtQualcommOptions options,
+                                         const char* dlc_dir);
 
-LiteRtStatus LiteRtQualcommOptionsGetDlcDir(LiteRtQualcommOptions options,
-                                            const char** dlc_dir);
+LiteRtStatus LrtQualcommOptionsGetDlcDir(LrtQualcommOptions options,
+                                         const char** dlc_dir);
 
-LiteRtStatus LiteRtQualcommOptionsSetVtcmSize(LiteRtQualcommOptions options,
-                                              uint32_t vtcm_size);
+LiteRtStatus LrtQualcommOptionsSetVtcmSize(LrtQualcommOptions options,
+                                           uint32_t vtcm_size);
 
-LiteRtStatus LiteRtQualcommOptionsGetVtcmSize(LiteRtQualcommOptions options,
-                                              uint32_t* vtcm_size);
+LiteRtStatus LrtQualcommOptionsGetVtcmSize(LrtQualcommOptions options,
+                                           uint32_t* vtcm_size);
 
-LiteRtStatus LiteRtQualcommOptionsSetNumHvxThreads(
-    LiteRtQualcommOptions options, uint32_t num_hvx_threads);
+LiteRtStatus LrtQualcommOptionsSetNumHvxThreads(LrtQualcommOptions options,
+                                                uint32_t num_hvx_threads);
 
-LiteRtStatus LiteRtQualcommOptionsGetNumHvxThreads(
-    LiteRtQualcommOptions options, uint32_t* num_hvx_threads);
+LiteRtStatus LrtQualcommOptionsGetNumHvxThreads(LrtQualcommOptions options,
+                                                uint32_t* num_hvx_threads);
 
-typedef enum LiteRtQualcommOptionsOptimizationLevel {
+typedef enum LrtQualcommOptionsOptimizationLevel {
   kHtpOptimizeForInference = 0,
   kHtpOptimizeForPrepare,
   kHtpOptimizeForInferenceO3,
-} LiteRtQualcommOptionsOptimizationLevel;
+} LrtQualcommOptionsOptimizationLevel;
 
-LiteRtStatus LiteRtQualcommOptionsSetOptimizationLevel(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsOptimizationLevel optimization_level);
+LiteRtStatus LrtQualcommOptionsSetOptimizationLevel(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOptimizationLevel optimization_level);
 
-LiteRtStatus LiteRtQualcommOptionsGetOptimizationLevel(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsOptimizationLevel* optimization_level);
+LiteRtStatus LrtQualcommOptionsGetOptimizationLevel(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOptimizationLevel* optimization_level);
 
-typedef enum LiteRtQualcommOptionsGraphPriority {
+typedef enum LrtQualcommOptionsGraphPriority {
   kLiteRTQualcommGraphPriorityDefault = 0,
   kLiteRTQualcommGraphPriorityLow,
   kLiteRTQualcommGraphPriorityNormal,
   kLiteRTQualcommGraphPriorityNormalHigh,
   kLiteRTQualcommGraphPriorityHigh,
-} LiteRtQualcommOptionsGraphPriority;
+} LrtQualcommOptionsGraphPriority;
 
-LiteRtStatus LiteRtQualcommOptionsSetGraphPriority(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsGraphPriority graph_priority);
+LiteRtStatus LrtQualcommOptionsSetGraphPriority(
+    LrtQualcommOptions options, LrtQualcommOptionsGraphPriority graph_priority);
 
-LiteRtStatus LiteRtQualcommOptionsGetGraphPriority(
-    LiteRtQualcommOptions options,
-    LiteRtQualcommOptionsGraphPriority* graph_priority);
+LiteRtStatus LrtQualcommOptionsGetGraphPriority(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGraphPriority* graph_priority);
 
-typedef enum LiteRtQualcommOptionsBackend {
+typedef enum LrtQualcommOptionsBackend {
   kLiteRtQualcommBackendUndefined = 0,
   kLiteRtQualcommBackendGpu,
   kLiteRtQualcommBackendHtp,
   kLiteRtQualcommBackendDsp,
   kLiteRtQualcommBackendIr,
-} LiteRtQualcommOptionsBackend;
+} LrtQualcommOptionsBackend;
 
-LiteRtStatus LiteRtQualcommOptionsSetBackend(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend qnn_backend);
+LiteRtStatus LrtQualcommOptionsSetBackend(
+    LrtQualcommOptions options, LrtQualcommOptionsBackend qnn_backend);
 
-LiteRtStatus LiteRtQualcommOptionsGetBackend(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsBackend* qnn_backend);
+LiteRtStatus LrtQualcommOptionsGetBackend(
+    LrtQualcommOptions options, LrtQualcommOptionsBackend* qnn_backend);
 
-LiteRtStatus LiteRtQualcommOptionsSetSaverOutputDir(
-    LiteRtQualcommOptions options, const char* saver_output_dir);
+LiteRtStatus LrtQualcommOptionsSetSaverOutputDir(LrtQualcommOptions options,
+                                                 const char* saver_output_dir);
 
-LiteRtStatus LiteRtQualcommOptionsGetSaverOutputDir(
-    LiteRtQualcommOptions options, const char** saver_output_dir);
+LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(LrtQualcommOptions options,
+                                                 const char** saver_output_dir);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

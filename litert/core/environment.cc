@@ -68,6 +68,8 @@ litert::Expected<void> LiteRtEnvironmentT::SetGpuEnvironment(
                               "GPU environment is already set.");
   }
   gpu_env_ = std::move(gpu_env);
+  LITERT_RETURN_IF_ERROR(
+      AddOptions(gpu_env_->GetGeneratedOptions(), /*overwrite=*/true));
   return {};
 }
 

@@ -34,6 +34,7 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
@@ -116,23 +117,24 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     const char* compiler_plugin_path, const char* dispatch_library_path,
     int hardware_accel, std::string* out_error) {
   // Create an environment with options
-  std::vector<Environment::Option> options;
+  std::vector<litert::EnvironmentOptions::Option> options;
   std::string runtime_path_str = std::string(runtime_path);
   if (!runtime_path_str.empty()) {
-    options.push_back(Environment::Option{
-        Environment::OptionTag::RuntimeLibraryDir, runtime_path_str});
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kRuntimeLibraryDir, runtime_path_str});
   }
   if (compiler_plugin_path && *compiler_plugin_path) {
-    options.push_back(
-        Environment::Option{Environment::OptionTag::CompilerPluginLibraryDir,
-                            std::string(compiler_plugin_path)});
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+        std::string(compiler_plugin_path)});
   }
   if (dispatch_library_path && *dispatch_library_path) {
-    options.push_back(
-        Environment::Option{Environment::OptionTag::DispatchLibraryDir,
-                            std::string(dispatch_library_path)});
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+        std::string(dispatch_library_path)});
   }
-  auto env_or = Environment::Create(options);
+  auto env_or = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(options)));
   if (!env_or) {
     if (out_error) *out_error = env_or.Error().Message();
     return nullptr;
@@ -182,24 +184,25 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   }
 
   // Create environment with options
-  std::vector<Environment::Option> options;
+  std::vector<litert::EnvironmentOptions::Option> options;
   std::string runtime_path_str = std::string(runtime_path);
   if (!runtime_path_str.empty()) {
-    options.push_back(Environment::Option{
-        Environment::OptionTag::RuntimeLibraryDir, runtime_path_str});
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kRuntimeLibraryDir, runtime_path_str});
   }
   if (compiler_plugin_path && *compiler_plugin_path) {
-    options.push_back(
-        Environment::Option{Environment::OptionTag::CompilerPluginLibraryDir,
-                            std::string(compiler_plugin_path)});
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+        std::string(compiler_plugin_path)});
   }
   if (dispatch_library_path && *dispatch_library_path) {
-    options.push_back(
-        Environment::Option{Environment::OptionTag::DispatchLibraryDir,
-                            std::string(dispatch_library_path)});
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+        std::string(dispatch_library_path)});
   }
 
-  auto env_or = Environment::Create(options);
+  auto env_or = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(options)));
   if (!env_or) {
     if (out_error) *out_error = env_or.Error().Message();
     return nullptr;

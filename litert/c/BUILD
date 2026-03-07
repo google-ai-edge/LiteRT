@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
 # copybara:uncomment_begin(google-only)
 # load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib", "macos_unit_test")
 # copybara:uncomment_end_and_comment_begin
@@ -24,8 +27,6 @@ load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-
-# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load(
     "//litert/build_common:litert_build_defs.bzl",
     "copy_file",
@@ -699,7 +700,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/internal:litert_logging",
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
-    "//litert/c/options:litert_darwinn_runtime_options",
+    # copybara:uncomment "//litert/c/options/google:litert_darwinn_runtime_options",
     "//litert/c/options:litert_google_tensor_options_type",
     "//litert/c/options:litert_google_tensor_options",
     "//litert/c/options:litert_gpu_options",
@@ -716,7 +717,9 @@ cc_test(
     linkopts = ["-ldl"],
     deps = LITERT_C_API_COMMON_DEPS + [
         ":litert_profiler_event",
+        "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_runtime_options",
+        "//litert/c/options:litert_webnn_options",
     ],
 )
 
@@ -867,10 +870,24 @@ filegroup(
 )
 
 # Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
-# resolve the symbols, not from libLiteRt.so.
 config_setting(
-    name = "resolve_symbols_in_exec",
+    name = "resolve_symbols_in_exec_define",
     define_values = {"resolve_symbols_in_exec": "true"},
+)
+
+config_setting(
+    name = "resolve_symbols_in_exec_flag",
+    flag_values = {"//litert/build_common:resolve_symbols_in_exec": "true"},
+)
+
+# Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
+# resolve the symbols, not from libLiteRt.so.
+selects.config_setting_group(
+    name = "resolve_symbols_in_exec",
+    match_any = [
+        ":resolve_symbols_in_exec_define",
+        ":resolve_symbols_in_exec_flag",
+    ],
 )
 
 config_setting(
@@ -903,6 +920,8 @@ cc_library(
         "//conditions:default": [],
     }),
     linkstatic = 1,
+    # Make the target public to allow clients to bundle libLiteRt.so
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_opencl_types",
         ":litert_webgpu_types",

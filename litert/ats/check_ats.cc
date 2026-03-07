@@ -42,7 +42,7 @@
 #include "litert/test/generators/generators.h"
 #include "litert/test/simple_buffer.h"
 
-// Simple validatino logic for the registration of ATS tests. We cannot use
+// Simple validating logic for the registration of ATS tests. We cannot use
 // gtest constructs for this.
 
 namespace litert::testing {

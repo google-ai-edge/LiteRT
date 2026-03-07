@@ -24,6 +24,7 @@
 #include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
@@ -36,19 +37,19 @@ TEST(DispatchDelegateTest, SwapInputTensorBufferBetweenInvocations) {
   // 1. Setup Environment
   const auto litert_libs_path =
       litert::testing::GetLiteRtPath("vendors/examples");
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           litert_libs_path,
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerPluginLibraryDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           litert_libs_path,
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto env,
-      litert::Environment::Create(absl::MakeConstSpan(environment_options)));
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
 
   // 2. Load Model
   std::string model_path = litert::testing::GetTestFilePath("one_mul.tflite");
@@ -107,19 +108,19 @@ TEST(DispatchDelegateTest, PerRunOptionsPlumbedToDispatch) {
   // 1. Setup Environment
   const auto litert_libs_path =
       litert::testing::GetLiteRtPath("vendors/examples");
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           litert_libs_path,
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerPluginLibraryDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           litert_libs_path,
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto env,
-      litert::Environment::Create(absl::MakeConstSpan(environment_options)));
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
 
   // 2. Load Model
   std::string model_path = litert::testing::GetTestFilePath("one_mul.tflite");

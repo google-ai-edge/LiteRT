@@ -25,7 +25,11 @@
 #include <utility>
 #include <vector>
 
+#ifndef LITERT_DISABLE_CPU
 #include "xnnpack.h"  // from @XNNPACK
+#else
+#define XNN_EXTRA_BYTES 16
+#endif
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -753,6 +757,11 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
 }
 
 Expected<void> LiteRtTensorBufferT::IsValid() {
+  // Bypass validation for special temporary scalar buffer.
+  if (tensor_type_.layout.rank == 1 && tensor_type_.layout.dimensions[0] == 0) {
+    return {};
+  }
+
   // Check for static dimensions.
   for (auto i = 0; i < tensor_type_.layout.rank; ++i) {
     if (tensor_type_.layout.dimensions[i] <= 0) {

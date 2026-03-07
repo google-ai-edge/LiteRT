@@ -32,6 +32,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -111,8 +112,8 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
   static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model,
                                                    const Options& options) {
     // Setup options.
-    const std::vector<Environment::Option> environment_options = {};
-    LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
+    LITERT_ASSIGN_OR_RETURN(
+        auto env, litert::Environment::Create(litert::EnvironmentOptions({})));
     // Init compiled model api.
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModelNext::Create(
@@ -158,25 +159,26 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
       LiteRtModelT& model, const Options& options,
       const std::string& dispatch_dir,
       const std::optional<std::string>& plugin_dir = std::nullopt) {
-    std::vector<litert::Environment::Option> environment_options = {
-        litert::Environment::Option{
-            litert::Environment::OptionTag::DispatchLibraryDir,
+    std::vector<litert::EnvironmentOptions::Option> environment_options = {
+        litert::EnvironmentOptions::Option{
+            litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
             absl::string_view(dispatch_dir),
         }};
 
     if (plugin_dir) {
-      environment_options.push_back(Environment::Option{
-          Environment::OptionTag::CompilerPluginLibraryDir,
+      environment_options.push_back(litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           absl::string_view(*plugin_dir),
       });
-      environment_options.push_back(Environment::Option{
-          Environment::OptionTag::CompilerCacheDir,
+      environment_options.push_back(litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerCacheDir,
           // TODO: Make this configurable.
           "/data/local/tmp/litert_compiler_cache",
       });
     }
 
-    LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
+    LITERT_ASSIGN_OR_RETURN(
+        auto env, Environment::Create(EnvironmentOptions(environment_options)));
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModelNext::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));

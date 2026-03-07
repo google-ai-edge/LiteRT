@@ -85,10 +85,18 @@ export declare interface LiteRtEnvironment extends Deletable {
 }
 
 /**
+ * Options for configuring the WebGPU delegate.
+ */
+export declare interface LiteRtGpuOptions {
+  precision?: 'fp16'|'fp32';
+}
+
+/**
  * Options for loading and compiling a LiteRt model.
  */
 export declare interface LiteRtCompileOptions {
   accelerator?: 'wasm'|'webgpu'|'webnn';
+  gpuOptions?: LiteRtGpuOptions;
 }
 
 declare const liteRtModelBrand: unique symbol;
@@ -170,8 +178,8 @@ export declare interface LiteRtCompiledModel extends Deletable {
       LiteRtTensorBufferRequirements;
   getOutputBufferRequirements(signatureIndex: number, outputIndex: number):
       LiteRtTensorBufferRequirements;
-  run(signatureIndex: number,
-      inputTensors: LiteRtTensorBuffer[]): LiteRtTensorBuffer[];
+  run(signatureIndex: number, inputTensors: LiteRtTensorBuffer[]):
+      LiteRtTensorBuffer[]|Promise<LiteRtTensorBuffer[]>;
 }
 
 /**

@@ -24,6 +24,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
@@ -39,17 +40,18 @@ using testing::Pointwise;
 
 TEST(JitCompilation, MediaTek) {
   const std::array environment_options = {
-      litert::Environment::Option{
-          /*.tag=*/litert::Environment::OptionTag::CompilerPluginLibraryDir,
+      litert::EnvironmentOptions::Option{
+          /*.tag=*/litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           /*.value=*/kCompilerPluginLibSearchPath,
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
-  LITERT_ASSERT_OK_AND_ASSIGN(auto environment,
-                              litert::Environment::Create(environment_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto environment, litert::Environment::Create(
+                            litert::EnvironmentOptions(environment_options)));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -103,21 +105,22 @@ class LiteRtCompilationCachingTest : public testing::Test {
  public:
   void RunScenario() {
     const std::array environment_options = {
-        litert::Environment::Option{
-            /*.tag=*/litert::Environment::OptionTag::CompilerPluginLibraryDir,
+        litert::EnvironmentOptions::Option{
+            /*.tag=*/litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
             /*.value=*/kCompilerPluginLibSearchPath,
         },
-        litert::Environment::Option{
-            litert::Environment::OptionTag::DispatchLibraryDir,
+        litert::EnvironmentOptions::Option{
+            litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
             kDispatchLibraryDir,
         },
-        litert::Environment::Option{
-            litert::Environment::OptionTag::CompilerCacheDir,
+        litert::EnvironmentOptions::Option{
+            litert::EnvironmentOptions::Tag::kCompilerCacheDir,
             kCompilerCacheDir,
         },
     };
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto environment, litert::Environment::Create(environment_options));
+        auto environment, litert::Environment::Create(
+                              litert::EnvironmentOptions(environment_options)));
 
     auto model_path = litert::testing::GetTestFilePath(kModelFileName);
 

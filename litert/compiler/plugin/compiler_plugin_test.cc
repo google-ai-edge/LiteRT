@@ -26,9 +26,13 @@
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_compiler_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_compiler_options.h"
 #include "litert/core/build_stamp.h"
@@ -74,7 +78,17 @@ TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
   auto compiler_options = CompilerOptions::Create();
   compiler_options->SetPartitionStrategy(
       kLiteRtCompilerOptionsPartitionStrategyDefault);
-  litert_options->AddOpaqueOptions(std::move(*compiler_options));
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
+      compiler_options->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_opts));
+  auto opaque_compiler_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+  litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
@@ -88,7 +102,17 @@ TEST(CompilerPluginTest, GetOptionsFromTestPluginOk) {
   auto compiler_options = CompilerOptions::Create();
   compiler_options->SetPartitionStrategy(
       kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
-  litert_options->AddOpaqueOptions(std::move(*compiler_options));
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
+      compiler_options->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_opts));
+  auto opaque_compiler_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+  litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
@@ -96,11 +120,9 @@ TEST(CompilerPluginTest, GetOptionsFromTestPluginOk) {
                                  /*env=*/nullptr, litert_options->Get()));
 
   auto compiler_options_from_plugin = plugin.CompilerOptions();
-  LiteRtCompilerOptionsPartitionStrategy strategy;
-  auto status = LiteRtGetCompilerOptionsPartitionStrategy(
-      *compiler_options_from_plugin, &strategy);
-  EXPECT_EQ(status, kLiteRtStatusOk);
-  EXPECT_EQ(strategy, kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+  ASSERT_TRUE(compiler_options_from_plugin);
+  EXPECT_EQ(compiler_options_from_plugin->partition_strategy,
+            kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 }
 
 TEST(CompilerPluginTest, FindTestPluginNotFound) {
@@ -437,12 +459,13 @@ TEST(ApplyTest, ApplyPlugins) {
 
   const std::string plugin_search_path = GetLiteRtPath(kTestPluginSearchPath);
   const std::array environment_options = {
-      litert::Environment::Option{
-          /*.tag=*/litert::Environment::OptionTag::CompilerPluginLibraryDir,
+      litert::EnvironmentOptions::Option{
+          /*.tag=*/litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
           /*.value=*/plugin_search_path.c_str(),
       },
   };
-  auto env = litert::Environment::Create(environment_options);
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(environment_options));
   ASSERT_TRUE(env);
 
   LiteRtHwAccelerators compilation_options = static_cast<LiteRtHwAccelerators>(

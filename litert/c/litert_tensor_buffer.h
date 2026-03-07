@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_H_
 #define ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_H_
 
-#include <memory.h>
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"

@@ -36,6 +36,7 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -95,9 +96,10 @@ struct ModelRunResult {
 };
 
 Expected<Environment> GetEnvironment() {
-  std::vector<litert::Environment::Option> environment_options = {};
+  std::vector<litert::EnvironmentOptions::Option> environment_options = {};
 
-  return Environment::Create(absl::MakeConstSpan(environment_options));
+  return Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 
 Expected<Options> GetGpuOptions() {

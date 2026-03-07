@@ -35,10 +35,13 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/scoped_file.h"
+#include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -79,6 +82,16 @@ ABSL_FLAG(std::string, input_dir, "",
           "An input folder containing .raw files with model input signatures "
           "as their file names.");
 
+ABSL_FLAG(std::string, scoped_weight_file, "",
+          "Optional path to a scoped external weight file.");
+ABSL_FLAG(std::string, scoped_weight_group, "",
+          "External buffer group name mapped to --scoped_weight_file.");
+ABSL_FLAG(uint64_t, scoped_weight_offset, 0,
+          "Byte offset in --scoped_weight_file where --scoped_weight_group "
+          "starts.");
+ABSL_FLAG(int64_t, scoped_weight_length, -1,
+          "Byte length for --scoped_weight_group in --scoped_weight_file. "
+          "-1 means until EOF.");
 namespace litert {
 namespace {
 
@@ -104,30 +117,105 @@ litert::HwAcceleratorSet GetAccelerator() {
 }
 
 Expected<Environment> GetEnvironment() {
-  std::vector<litert::Environment::Option> environment_options = {};
+  std::vector<litert::EnvironmentOptions::Option> environment_options = {};
 
   const auto dispatch_library_dir = absl::GetFlag(FLAGS_dispatch_library_dir);
   if (!dispatch_library_dir.empty()) {
-    environment_options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::DispatchLibraryDir,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
         absl::string_view(dispatch_library_dir)});
   }
 
   const auto compiler_plugin_library_dir =
       absl::GetFlag(FLAGS_compiler_plugin_library_dir);
   if (!compiler_plugin_library_dir.empty()) {
-    environment_options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::CompilerPluginLibraryDir,
+    environment_options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
         absl::string_view(compiler_plugin_library_dir)});
     const auto compiler_cache_dir = absl::GetFlag(FLAGS_compiler_cache_dir);
     if (!compiler_cache_dir.empty()) {
-      environment_options.push_back(litert::Environment::Option{
-          litert::Environment::OptionTag::CompilerCacheDir,
+      environment_options.push_back(litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerCacheDir,
           absl::string_view(compiler_cache_dir)});
     }
   }
 
-  return Environment::Create(absl::MakeConstSpan(environment_options));
+  return Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+}
+Expected<void> ConfigureScopedWeightSource(Options& options) {
+  const std::string scoped_weight_file =
+      absl::GetFlag(FLAGS_scoped_weight_file);
+  const std::string scoped_weight_group =
+      absl::GetFlag(FLAGS_scoped_weight_group);
+  const uint64_t scoped_weight_offset =
+      absl::GetFlag(FLAGS_scoped_weight_offset);
+  const int64_t scoped_weight_length =
+      absl::GetFlag(FLAGS_scoped_weight_length);
+
+  const bool any_scoped_weight_flag =
+      !scoped_weight_file.empty() || !scoped_weight_group.empty() ||
+      scoped_weight_offset != 0 || scoped_weight_length != -1;
+  if (!any_scoped_weight_flag) {
+    return {};
+  }
+
+  if (scoped_weight_file.empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_file must be set when scoped weights are "
+                 "configured.");
+  }
+  if (scoped_weight_group.empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_group must be set when scoped weights are "
+                 "configured.");
+  }
+  if (scoped_weight_length < -1) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_length must be -1 or a positive value.");
+  }
+  if (scoped_weight_length == 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_length must not be zero.");
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto scoped_file,
+                          ScopedFile::Open(scoped_weight_file));
+  LITERT_ASSIGN_OR_RETURN(const size_t scoped_file_size_bytes,
+                          scoped_file.GetSize());
+  const uint64_t scoped_file_size =
+      static_cast<uint64_t>(scoped_file_size_bytes);
+  if (scoped_weight_offset > scoped_file_size) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_offset exceeds scoped file size.");
+  }
+
+  const uint64_t remaining_bytes = scoped_file_size - scoped_weight_offset;
+  const uint64_t resolved_length =
+      scoped_weight_length == -1 ? remaining_bytes
+                                 : static_cast<uint64_t>(scoped_weight_length);
+  if (resolved_length == 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Resolved scoped section length must be positive.");
+  }
+  if (resolved_length > remaining_bytes) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Resolved scoped section exceeds scoped file size.");
+  }
+
+  Options::ScopedWeightSectionMap sections;
+  sections.emplace(scoped_weight_group, ScopedWeightSection{
+                                            .offset = scoped_weight_offset,
+                                            .length = resolved_length,
+                                        });
+
+  LITERT_RETURN_IF_ERROR(
+      options.SetExternalWeightScopedFile(scoped_file, std::move(sections)));
+  ABSL_LOG(INFO) << "Using scoped external weight source with group "
+                 << scoped_weight_group << ", offset " << scoped_weight_offset
+                 << ", length " << resolved_length << " from file "
+                 << scoped_weight_file;
+  return {};
 }
 
 Expected<Options> GetOptions() {
@@ -145,6 +233,7 @@ Expected<Options> GetOptions() {
       UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts));
   LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
   LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
+  LITERT_RETURN_IF_ERROR(ConfigureScopedWeightSource(options));
   return options;
 }
 
@@ -331,7 +420,7 @@ Expected<void> RunModel() {
     // Non-language model, Fill input buffers with sample data.
     for (size_t i = 0; i < input_buffers.size(); ++i) {
       auto& buffer = input_buffers[i];
-      LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
+      LITERT_RETURN_IF_ERROR(tensor_utils::FillBufferWithRandomData(buffer));
     }
   }
 
@@ -340,6 +429,7 @@ Expected<void> RunModel() {
       LITERT_RETURN_IF_ERROR(PrintTensorBuffer(input_buffers[i], "Input", i));
     }
   }
+
   ABSL_LOG(INFO) << "Prepare output buffers";
 
   LITERT_ASSIGN_OR_RETURN(auto output_buffers,

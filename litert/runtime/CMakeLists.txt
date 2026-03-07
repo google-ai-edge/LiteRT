@@ -39,6 +39,7 @@ set(LITERT_RUNTIME_SOURCES
     gl_buffer.cc
     gl_texture.cc
     ion_buffer.cc
+    litert_cpu_options.cc
     litert_runtime_options.cc
     magic_number_utils.cc
     profiler.cc
@@ -47,6 +48,7 @@ set(LITERT_RUNTIME_SOURCES
     tensor_buffer_registry.cc
     tensor_buffer_requirements.cc
     tfl_utils.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../weight_loader/external_weight_loader_litert.cc
     ${TFLITE_SOURCE_DIR}/delegates/utils/simple_opaque_delegate.cc
     ${TFLITE_SOURCE_DIR}/profiling/memory_info.cc
     ${TFLITE_SOURCE_DIR}/profiling/profile_buffer.cc
@@ -56,8 +58,8 @@ set(LITERT_RUNTIME_SOURCES
 # Runtime library
 add_library(litert_runtime STATIC ${LITERT_RUNTIME_SOURCES})
 
-set(LITERT_XNNPACK_INCLUDE_DIR "${TFLITE_BUILD_DIR}/xnnpack/include" CACHE PATH "Path to XNNPACK public headers used by LiteRT")
-set(LITERT_PTHREADPOOL_INCLUDE_DIR "${TFLITE_BUILD_DIR}/pthreadpool-source/include" CACHE PATH "Path to pthreadpool headers used by LiteRT")
+set(LITERT_XNNPACK_INCLUDE_DIR "${CMAKE_BINARY_DIR}/xnnpack/include" CACHE PATH "Path to XNNPACK public headers used by LiteRT")
+set(LITERT_PTHREADPOOL_INCLUDE_DIR "${CMAKE_BINARY_DIR}/pthreadpool-source/include" CACHE PATH "Path to pthreadpool headers used by LiteRT")
 
 # Optional GPU-related sources
 if(APPLE)
@@ -78,7 +80,7 @@ target_include_directories(litert_runtime
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${LITERT_XNNPACK_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${LITERT_PTHREADPOOL_INCLUDE_DIR}>
-        $<BUILD_INTERFACE:${TFLITE_BUILD_DIR}/opencl_headers>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )

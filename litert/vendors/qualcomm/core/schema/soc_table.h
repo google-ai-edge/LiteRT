@@ -18,6 +18,7 @@ enum class SnapdragonModel {
   SA8255 = 52,
   SXR2230P = 53,
   SM8650 = 57,
+  SSG2125P = 58,
   SC8380XP = 60,
   SM8750 = 69,
   SM8850 = 87,

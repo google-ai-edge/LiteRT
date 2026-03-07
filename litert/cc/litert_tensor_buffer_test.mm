@@ -22,6 +22,7 @@
 #include "litert/cc/internal/litert_platform_support.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -44,18 +45,18 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
     /*.element_type=*/kLiteRtElementTypeFloat32, ::litert::BuildLayout(kTensorDimensions)};
 const float kTolerance = 1e-5;
 
-
 // Create LiteRt environment with metal options.
 - (litert::Environment)createEnvironmentWithMetalDevice:
     (tflite::gpu::metal::MetalDevice *)metal_device {
-  std::vector<litert::Environment::Option> environment_options;
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
-                                 .value = (__bridge const void *)(metal_device->device())});
+  std::vector<litert::EnvironmentOptions::Option> environment_options;
+  environment_options.push_back({litert::EnvironmentOptions::Tag::kMetalDevice,
+                                 (__bridge const void *)(metal_device->device())});
 
   id<MTLCommandQueue> command_queue = [metal_device->device() newCommandQueue];
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
-                                 .value = (__bridge const void *)(command_queue)});
-  auto env = litert::Environment::Create(environment_options);
+  environment_options.push_back({litert::EnvironmentOptions::Tag::kMetalCommandQueue,
+                                 (__bridge const void *)(command_queue)});
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   XCTAssertTrue(env);
   return std::move(*env);
 }

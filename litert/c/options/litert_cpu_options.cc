@@ -15,116 +15,162 @@
 #include "litert/c/options/litert_cpu_options.h"
 
 #include <stdint.h>
+#include <string.h>  // NOLINT: To use strdup in some environments.
 
-#include <memory>
+#include <cstdlib>
+#include <optional>
+#include <string>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/runtime/litert_cpu_options.h"
-#include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 
-LiteRtStatus LiteRtCreateCpuOptions(LiteRtOpaqueOptions* options) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  auto options_data = std::make_unique<LiteRtCpuOptionsT>();
-  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      LiteRtGetCpuOptionsIdentifier(), options_data.get(),
-      [](void* payload) { delete reinterpret_cast<LiteRtCpuOptions>(payload); },
-      options));
-  options_data.release();
+struct LrtCpuOptions {
+  std::optional<int32_t> num_threads;
+  std::optional<uint32_t> flags;
+  std::optional<std::string> weight_cache_file_path;
+  std::optional<int> weight_cache_file_descriptor;
+};
+
+LiteRtStatus LrtCreateCpuOptions(LrtCpuOptions** options) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  *options = new LrtCpuOptions();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtFindCpuOptions(LiteRtOpaqueOptions opaque_options,
-                                  LiteRtCpuOptions* cpu_options) {
-  LITERT_RETURN_IF_ERROR(cpu_options,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "cpu_options is null.";
-  void* options_data = nullptr;
-  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
-      opaque_options, LiteRtGetCpuOptionsIdentifier(), &options_data));
-  *cpu_options = reinterpret_cast<LiteRtCpuOptions>(options_data);
+void LrtDestroyCpuOptions(LrtCpuOptions* options) { delete options; }
+
+LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
+                                        const char** identifier, void** payload,
+                                        void (**payload_deleter)(void*)) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(identifier != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "identifier is null.");
+  LITERT_ENSURE(payload != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "payload is null.");
+  LITERT_ENSURE(payload_deleter != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "payload_deleter is null.");
+
+  std::string toml_data;
+  if (options->num_threads.has_value()) {
+    absl::StrAppend(&toml_data, absl::StrFormat("num_threads = %d\n",
+                                                *options->num_threads));
+  }
+  if (options->flags.has_value()) {
+    absl::StrAppend(&toml_data,
+                    absl::StrFormat("flags = %u\n", *options->flags));
+  }
+  if (options->weight_cache_file_path.has_value()) {
+    absl::StrAppend(&toml_data,
+                    absl::StrFormat("weight_cache_file_path = \"%s\"\n",
+                                    *options->weight_cache_file_path));
+  }
+  if (options->weight_cache_file_descriptor.has_value()) {
+    absl::StrAppend(&toml_data,
+                    absl::StrFormat("weight_cache_file_descriptor = %d\n",
+                                    *options->weight_cache_file_descriptor));
+  }
+
+  char* data_buffer = strdup(toml_data.c_str());
+
+  *identifier = LrtGetCpuOptionsIdentifier();
+  *payload = data_buffer;
+  *payload_deleter = [](void* p) { free(static_cast<char*>(p)); };
+
   return kLiteRtStatusOk;
 }
 
-const char* LiteRtGetCpuOptionsIdentifier() { return "xnnpack"; }
+const char* LrtGetCpuOptionsIdentifier() { return "xnnpack"; }
 
-LiteRtStatus LiteRtSetCpuOptionsNumThread(LiteRtCpuOptions options,
-                                          int num_threads) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  options->xnn.num_threads = num_threads;
+LiteRtStatus LrtSetCpuOptionsNumThread(LrtCpuOptions* options,
+                                       int num_threads) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  options->num_threads = num_threads;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptionsConst options,
-                                          int* const num_threads) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(num_threads,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "num_threads is null.";
-  *num_threads = options->xnn.num_threads;
+LiteRtStatus LrtGetCpuOptionsNumThread(const LrtCpuOptions* options,
+                                       int* const num_threads) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(num_threads != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "num_threads is null.");
+  if (!options->num_threads.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *num_threads = *options->num_threads;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
-                                             uint32_t flags) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  options->xnn.flags = flags;
+LiteRtStatus LrtSetCpuOptionsXNNPackFlags(LrtCpuOptions* options,
+                                          uint32_t flags) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  options->flags = flags;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptionsConst options,
-                                             uint32_t* const flags) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(flags, litert::ErrorStatusBuilder::InvalidArgument())
-      << "flags is null.";
-  *flags = options->xnn.flags;
+LiteRtStatus LrtGetCpuOptionsXNNPackFlags(const LrtCpuOptions* options,
+                                          uint32_t* const flags) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(flags != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "flags is null.");
+  if (!options->flags.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *flags = *options->flags;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
-                                                       const char* path) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(options->xnn.weight_cache_file_descriptor <= 0,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "weight cache file descriptor and path cannot both be set.";
-  options->xnn.weight_cache_file_path = path;
+LiteRtStatus LrtSetCpuOptionsXnnPackWeightCachePath(LrtCpuOptions* options,
+                                                    const char* path) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  if (options->weight_cache_file_descriptor.has_value()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->weight_cache_file_path = std::string(path);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCachePath(
-    LiteRtCpuOptionsConst options, const char** const path) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(path, litert::ErrorStatusBuilder::InvalidArgument())
-      << "path is null.";
-  *path = options->xnn.weight_cache_file_path;
+LiteRtStatus LrtGetCpuOptionsXnnPackWeightCachePath(
+    const LrtCpuOptions* options, const char** const path) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(path != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "path is null.");
+  if (!options->weight_cache_file_path.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *path = options->weight_cache_file_path->c_str();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
-    LiteRtCpuOptions options, int fd) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(options->xnn.weight_cache_file_path == nullptr,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "weight cache file descriptor and path cannot both be set.";
-  options->xnn.weight_cache_file_descriptor = fd;
+LiteRtStatus LrtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    LrtCpuOptions* options, int fd) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  if (options->weight_cache_file_path.has_value()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->weight_cache_file_descriptor = fd;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
-    LiteRtCpuOptionsConst options, int* const fd) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(fd, litert::ErrorStatusBuilder::InvalidArgument())
-      << "fd is null.";
-  *fd = options->xnn.weight_cache_file_descriptor;
+LiteRtStatus LrtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    const LrtCpuOptions* options, int* const fd) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(fd != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "fd is null.");
+  if (!options->weight_cache_file_descriptor.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *fd = *options->weight_cache_file_descriptor;
   return kLiteRtStatusOk;
 }

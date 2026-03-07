@@ -27,6 +27,8 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
+exports_files(["run_model.cc"])
+
 # This user library should depend on libLiteRt.so to allow
 # CompilerPlugin to use the same libLiteRt.so
 cc_library(
@@ -359,12 +361,14 @@ cc_library(
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_profiler",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_compiled_model_next",
         "//litert/cc/internal:litert_tflite_error_status_builder",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",
@@ -378,7 +382,6 @@ cc_library(
         "//tflite/c:common",
         "//tflite/profiling:model_runtime_info",
         "//tflite/profiling:profile_buffer",
-        "//tflite/profiling:profile_summarizer",
         "//tflite/tools:command_line_flags",
         "//tflite/tools:utils",
         "//tflite/tools/benchmark:benchmark_model_lib",
@@ -464,11 +467,14 @@ cc_binary(
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
@@ -547,6 +553,7 @@ NUMERICS_CHECK_DEPS = [
     "//litert/cc:litert_compiled_model",
     "//litert/cc:litert_element_type",
     "//litert/cc:litert_environment",
+    "//litert/cc:litert_environment_options",
     "//litert/cc:litert_expected",
     "//litert/cc:litert_macros",
     "//litert/cc:litert_model",
@@ -561,7 +568,6 @@ cc_binary(
     deps = NUMERICS_CHECK_DEPS + [
         ":tensor_utils",
         "//litert/cc:litert_common",
-        "//litert/cc:litert_environment_options",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
@@ -811,6 +817,8 @@ cc_library(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
     ],
 )
 

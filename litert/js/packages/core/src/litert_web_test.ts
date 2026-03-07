@@ -94,6 +94,41 @@ describe('LiteRt', () => {
       }
     });
 
+    it('loads, compiles, and runs a model on the webnn accelerator',
+       async () => {
+         if (await supportsFeature('webnn')) {
+           await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
+           const model = await loadAndCompile(
+               '/testdata/add_10x10.tflite', {accelerator: 'webnn'});
+
+           const identityData = new Float32Array(100).fill(1);
+           const a = new Tensor(identityData, [10, 10]);
+
+           const rangeData = new Float32Array(100);
+           for (let i = 0; i < 100; i++) {
+             rangeData[i] = i;
+           }
+           const b = new Tensor(rangeData, [10, 10]);
+
+           const outputs = await model.run({'a': a, 'b': b});
+           const outputData = await outputs['Identity'].data();
+
+           const expectedData = new Float32Array(100);
+           for (let i = 0; i < 100; i++) {
+             expectedData[i] = identityData[i] + rangeData[i];
+           }
+           expect(outputData).toEqual(expectedData);
+
+           a.delete();
+           b.delete();
+           outputs['Identity'].delete();
+           model.delete();
+           await resetLiteRt();
+         } else {
+           pending('This browser does not support WebNN');
+         }
+       });
+
     it('throws an error if JSPI is not supported', async () => {
       if (await supportsFeature('jspi')) {
         pending('JSPI is supported in this browser');
@@ -167,7 +202,7 @@ describe('LiteRt', () => {
       wasmModule._free(ptr);
     });
   });
-  
+
   it('setDefaultEnvironment() sets the default environment', async () => {
     await resetLiteRt();
     const environment = new Environment({webGpuDevice: null});
@@ -311,6 +346,61 @@ describe('LiteRt', () => {
            accelerator: 'unsupported' as any
          })).toBeRejectedWithError(/Invalid accelerator: unsupported/);
        });
+
+    it('loads with compileOptions with webgpu accelerator and fp16 precision',
+       async () => {
+         const adapter = await navigator.gpu.requestAdapter();
+         if (!adapter) {
+           throw new Error('No GPU adapter found.');
+         }
+         const device = await adapter.requestDevice();
+         liteRt.setWebGpuDevice(device);
+         const model = await loadAndCompile(modelPath, {
+           environment: new Environment({webGpuDevice: device}),
+           accelerator: 'webgpu',
+           gpuOptions: {precision: 'fp16'},
+         });
+         expect(model).toBeDefined();
+         expect(model.options.accelerator).toBe('webgpu');
+         expect(model.options.gpuOptions).toBeDefined();
+         expect(model.options.gpuOptions!.precision).toBe('fp16');
+         model.delete();
+       });
+
+    it('loads with compileOptions with webgpu accelerator and fp32 precision',
+       async () => {
+         const adapter = await navigator.gpu.requestAdapter();
+         if (!adapter) {
+           throw new Error('No GPU adapter found.');
+         }
+         const device = await adapter.requestDevice();
+         liteRt.setWebGpuDevice(device);
+         const model = await loadAndCompile(modelPath, {
+           environment: new Environment({webGpuDevice: device}),
+           accelerator: 'webgpu',
+           gpuOptions: {precision: 'fp32'},
+         });
+         expect(model).toBeDefined();
+         expect(model.options.accelerator).toBe('webgpu');
+         expect(model.options.gpuOptions).toBeDefined();
+         expect(model.options.gpuOptions!.precision).toBe('fp32');
+         model.delete();
+       });
+
+    it('throws with invalid webgpu precision', async () => {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        throw new Error('No GPU adapter found.');
+      }
+      const device = await adapter.requestDevice();
+      liteRt.setWebGpuDevice(device);
+      await expectAsync(loadAndCompile(modelPath, {
+        environment: new Environment({webGpuDevice: device}),
+        accelerator: 'webgpu',
+        // tslint:disable-next-line:no-any
+        gpuOptions: {precision: 'invalid' as any},
+      })).toBeRejectedWithError(/Invalid WebGPU precision: invalid/);
+    });
 
     it('loads with compileOptions with webnn accelerator', async () => {
       // TODO: markoristic - migrate this test to jspi section once webnn

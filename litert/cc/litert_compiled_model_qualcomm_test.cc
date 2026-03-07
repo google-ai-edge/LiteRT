@@ -22,6 +22,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
@@ -36,14 +37,15 @@ TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
   const std::string dispatch_library_dir =
       testing::GetLiteRtPath(kDispatchLibraryDir);
   absl::string_view dispatch_library_dir_view(dispatch_library_dir);
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           dispatch_library_dir_view,
       },
   };
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
-                              litert::Environment::Create(environment_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
 
   std::string model_file_path = testing::GetTestFilePath(
       "simple_model_qualcomm_sm8650_precompiled.tflite");
@@ -71,14 +73,15 @@ TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
   const std::string dispatch_library_dir =
       testing::GetLiteRtPath(kDispatchLibraryDir);
   absl::string_view dispatch_library_dir_view(dispatch_library_dir);
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           dispatch_library_dir_view,
       },
   };
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
-                              litert::Environment::Create(environment_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
 
   std::string model_file_path = testing::GetTestFilePath(
       "simple_model_qualcomm_sm8650_precompiled.tflite");

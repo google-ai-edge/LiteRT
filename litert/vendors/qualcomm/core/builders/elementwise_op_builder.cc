@@ -35,15 +35,13 @@ std::vector<OpWrapper> BuildElementwiseSubOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
-
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  // TODO(jiunkaiy): Switch to QNN_OP_ELEMENT_WISE_BINARY (SUBTRACT) once the
+  // SINT16 validation issue is fixed.
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SUBTRACT);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }
   elementwise_op.AddOutputTensor(outputs[0]);
-  elementwise_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SUBTRACT);
 
   return res;
 }

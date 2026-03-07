@@ -32,6 +32,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
 /// @file
@@ -83,6 +84,16 @@ class CompiledModelNext : public CompiledModel {
   // Keep the stable CompiledModel APIs available alongside Next-only overloads.
   using CompiledModel::Run;
   using CompiledModel::RunAsync;
+
+  /// @brief Returns the profiler used by the compiled model.
+  ///
+  /// The returned `Profiler` does not own the underlying `LiteRtProfiler`.
+  Expected<Profiler> GetProfiler() {
+    LiteRtProfiler profiler = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelGetProfiler(Get(), &profiler));
+    return Profiler(profiler, OwnHandle::kNo);
+  }
 
   /// @brief Starts the collection of hardware-specific metrics at a given
   /// level of detail.

@@ -231,7 +231,10 @@ cc_library(
         "//litert/c:litert_tensor_buffer.h",
         "//litert/c:litert_tensor_buffer_requirements.h",
     ],
-    copts = litert_metal_opts(),
+    copts = litert_metal_opts() + select({
+        "//litert/build_common:litert_disable_cpu": ["-DLITERT_DISABLE_CPU"],
+        "//conditions:default": [],
+    }),
     linkopts = litert_metal_linkopts(),
     deps = [
         ":event",
@@ -254,7 +257,6 @@ cc_library(
         "//litert/core:environment",
         "//litert/core/util:tensor_type_util",
         "//litert/core/util:to_string",
-        "@XNNPACK",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -282,6 +284,9 @@ cc_library(
             ":open_cl_sync",
         ],
         "//conditions:default": [],
+    }) + select({
+        "//litert/build_common:litert_disable_cpu": [],
+        "//conditions:default": ["@XNNPACK"],
     }) + select({
         "//litert/build_common:build_include_npu_enabled": [
             ":dmabuf_buffer",
@@ -529,7 +534,14 @@ cc_library(
         "stub_op_resolver.h",
     ],
     copts = litert_metal_opts() + select({
-        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//litert:without_builtin_ops": [
+            # No builtin ops. Xnnpack is used for CPU backend.
+            "-DLITERT_NO_BUILTIN_OPS",
+        ],
+        "//litert/build_common:litert_disable_cpu": [
+            # No support for CPU backend. Builtin ops are still needed for GPU.
+            "-DLITERT_DISABLE_CPU",
+        ],
         "//conditions:default": [],
     }),
     linkopts = litert_metal_linkopts(),
@@ -537,7 +549,6 @@ cc_library(
         ":accelerator",
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
-        ":litert_cpu_options",
         ":litert_runtime_options",
         ":magic_number_utils",
         ":metrics",
@@ -581,9 +592,9 @@ cc_library(
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
-        "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
         "//litert/runtime/dispatch:dispatch_opaque_options",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
+        # "//weight_loader:external_weight_loader",  # copybara:uncomment
         "//tflite/converter:allocation",
         "//tflite:builtin_ops",
         "//tflite:framework",
@@ -604,8 +615,20 @@ cc_library(
         ],
         "//conditions:default": [],
     }) + select({
-        "//litert:without_builtin_ops": [],
-        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+        "//litert:without_builtin_ops": [
+            # No builtin ops. Xnnpack is used for CPU backend.
+            ":litert_cpu_options",
+            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
+        ],
+        "//litert/build_common:litert_disable_cpu": [
+            # No support for CPU backend. Builtin ops are still needed for GPU.
+            "//tflite/kernels:builtin_ops",
+        ],
+        "//conditions:default": [
+            ":litert_cpu_options",
+            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
+            "//tflite/kernels:builtin_ops",
+        ],
     }),
 )
 
@@ -627,20 +650,24 @@ cc_test(
         "//litert/c:litert_environment",
         "//litert/c:litert_layout",
         "//litert/c:litert_model",
+        "//litert/c:litert_opaque_options_header",
         "//litert/c:litert_profiler",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_runtime_options",
         "//litert/core:options",
         "//litert/core/model",
@@ -810,8 +837,25 @@ cc_library(
 
 cc_library(
     name = "litert_cpu_options",
+    srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
-    deps = ["//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_cpu_options_test",
+    srcs = ["litert_cpu_options_test.cc"],
+    deps = [
+        ":litert_cpu_options",
+        "//litert/c:litert_common",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -846,11 +890,6 @@ cc_test(
         "//tflite/delegates/gpu/common:data_type",
         "@com_google_googletest//:gtest_main",
     ],
-)
-
-cc_library(
-    name = "litert_darwinn_options",
-    hdrs = ["litert_darwinn_options.h"],
 )
 
 cc_test(

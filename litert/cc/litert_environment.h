@@ -279,7 +279,7 @@ class Environment {
   }
 
   static std::unique_ptr<RuntimeProxy> GetBuiltinRuntime() {
-    return std::make_unique<RuntimeProxy>(&kLiteRtRuntimeBuiltin);
+    return std::make_unique<RuntimeProxy>(kLiteRtRuntimeBuiltin);
   }
 };
 

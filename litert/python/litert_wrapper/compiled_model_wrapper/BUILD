@@ -43,6 +43,7 @@ cc_library(
     ],
     deps = [
         "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_environment_options",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",

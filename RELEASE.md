@@ -25,6 +25,13 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * <IF RELEASE CONTAINS MULTIPLE FEATURES FROM SAME AREA, GROUP THEM TOGETHER>
 -->
 
+* Updated CMake build rules to support both CompiledModel and Interpreter APIs.
+  cmake_example/CMakeLists.txt shows how you can use both libraries.
+
+* Expanded MediaTek NPU support to all applicable Android versions
+  (only Android 15 previously) by supporting bundling MediaTek libraries in
+  application binary.
+
 ### Bug Fixes and Other Changes
 
 <!---
@@ -32,6 +39,8 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * <IF A CHANGE CLOSES A GITHUB ISSUE, IT SHOULD BE DOCUMENTED HERE>
 * <NOTES SHOULD BE GROUPED PER AREA>
 -->
+
+* Move the experimental API `GetProfiler()` out of `litert::CompiledModel`.
 
 * Fixed a bug that given CPU Buffers are not always synced with GPU Accelerator
   from the second inference.

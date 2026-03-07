@@ -29,6 +29,7 @@ cc_library(
     linkopts = litert_metal_linkopts(),
     deps = [
         ":algo",
+        ":litert_compiler_options",
         "//litert/c:litert_any",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
@@ -42,6 +43,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_op_options",
         "//litert/cc/internal:litert_shared_library",
+        "//litert/cc/options:litert_compiler_options",
         "//litert/core:build_stamp",
         "//litert/core:dynamic_loading",
         "//litert/core:environment",
@@ -93,9 +95,13 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/options:litert_compiler_options",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/cc/internal:litert_handle",
         "//litert/cc/options:litert_compiler_options",
         "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_op_options",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_options_testonly",
         "//litert/core:build_stamp",
         "//litert/core:filesystem",
@@ -179,5 +185,30 @@ cc_test(
         "//litert/test:common",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_compiler_options",
+    srcs = ["litert_compiler_options.cc"],
+    hdrs = ["litert_compiler_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_compiler_options_test",
+    srcs = ["litert_compiler_options_test.cc"],
+    deps = [
+        ":litert_compiler_options",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_compiler_options",
+        "@com_google_googletest//:gtest_main",
+        "@tomlplusplus",
     ],
 )

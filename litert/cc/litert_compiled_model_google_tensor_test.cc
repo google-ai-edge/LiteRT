@@ -26,6 +26,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
@@ -62,14 +63,15 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   const std::string dispatch_library_dir =
       testing::GetLiteRtPath(kDispatchLibraryDir);
   absl::string_view dispatch_library_dir_view(dispatch_library_dir);
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           dispatch_library_dir_view,
       },
   };
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
-                              litert::Environment::Create(environment_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
 
   std::string model_file_path =
       testing::GetTestFilePath(kPrecompiledTfliteFile);
@@ -126,14 +128,15 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   }
 
   // Environment setup.
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
-                              litert::Environment::Create(environment_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
 
   std::string model_file_path =
       testing::GetTestFilePath(kPrecompiledTfliteFile);
@@ -270,22 +273,23 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> gl_env;
   ASSERT_OK(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&gl_env));
   // Environment setup.
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           kDispatchLibraryDir,
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::EglDisplay,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kEglDisplay,
           reinterpret_cast<int64_t>(gl_env->display()),
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::EglContext,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kEglContext,
           reinterpret_cast<int64_t>(gl_env->context().context()),
       },
   };
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
-                              litert::Environment::Create(environment_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
 
   std::string model_file_path =
       testing::GetTestFilePath(kPrecompiledTfliteFile);

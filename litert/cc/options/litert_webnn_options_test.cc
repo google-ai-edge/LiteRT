@@ -30,13 +30,11 @@ TEST(LiteRtWebNnOptionsTest, SetAndGetDevicePreference) {
       LiteRtWebNnDeviceType::kLiteRtWebNnDeviceTypeGpu;
   EXPECT_EQ(options.SetDevicePreference(kDevicePreference), kLiteRtStatusOk);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtWebNnOptionsPayload payload,
-                              options.GetData<LiteRtWebNnOptionsPayloadT>());
-
   LiteRtWebNnDeviceType device_preference =
       LiteRtWebNnDeviceType::kLiteRtWebNnDeviceTypeCpu;
-  EXPECT_EQ(LiteRtGetWebNnOptionsDevicePreference(&device_preference, payload),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LrtGetWebNnOptionsDevicePreference(options.Get(), &device_preference),
+      kLiteRtStatusOk);
   EXPECT_EQ(device_preference, kDevicePreference);
 }
 
@@ -47,12 +45,9 @@ TEST(LiteRtWebNnOptionsTest, SetAndGetPowerPreference) {
       LiteRtWebNnPowerPreference::kLiteRtWebNnPowerPreferenceLowPower;
   EXPECT_EQ(options.SetPowerPreference(kPowerPreference), kLiteRtStatusOk);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtWebNnOptionsPayload payload,
-                              options.GetData<LiteRtWebNnOptionsPayloadT>());
-
   LiteRtWebNnPowerPreference power_preference =
       LiteRtWebNnPowerPreference::kLiteRtWebNnPowerPreferenceDefault;
-  EXPECT_EQ(LiteRtGetWebNnOptionsPowerPreference(&power_preference, payload),
+  EXPECT_EQ(LrtGetWebNnOptionsPowerPreference(options.Get(), &power_preference),
             kLiteRtStatusOk);
   EXPECT_EQ(power_preference, kPowerPreference);
 }
@@ -63,11 +58,9 @@ TEST(LiteRtWebNnOptionsTest, SetAndGetPrecision) {
       LiteRtWebNnPrecision::kLiteRtWebNnPrecisionFp16;
   EXPECT_EQ(options.SetPrecision(kPrecision), kLiteRtStatusOk);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtWebNnOptionsPayload payload,
-                              options.GetData<LiteRtWebNnOptionsPayloadT>());
   LiteRtWebNnPrecision precision =
       LiteRtWebNnPrecision::kLiteRtWebNnPrecisionFp32;
-  EXPECT_EQ(LiteRtGetWebNnOptionsPrecision(&precision, payload),
+  EXPECT_EQ(LrtGetWebNnOptionsPrecision(options.Get(), &precision),
             kLiteRtStatusOk);
   EXPECT_EQ(precision, kPrecision);
 }

@@ -328,7 +328,6 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options_header",
         "//litert/c:litert_opencl_types",
-        "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
     ],

@@ -33,6 +33,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -66,8 +67,7 @@ struct TestParams {
 };
 
 Expected<Options> CreateGpuOptions(
-    bool external_tensors_mode,
-    GpuOptions::Precision precision,
+    bool external_tensors_mode, GpuOptions::Precision precision,
     GpuOptions::BufferStorageType buffer_storage_type) {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
@@ -89,8 +89,10 @@ TEST_P(ParameterizedTest, Basic) {
   ASSERT_TRUE(env);
 
   auto param = GetParam();
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(
-      param.external_tensors_mode, param.precision, param.buffer_storage_type));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      CreateGpuOptions(param.external_tensors_mode, param.precision,
+                       param.buffer_storage_type));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
@@ -156,19 +158,19 @@ TEST_P(ParameterizedTest, Basic) {
 
 INSTANTIATE_TEST_SUITE_P(
     CompiledModelWebGpuTest, ParameterizedTest,
-    ::testing::ConvertGenerator<TestParams::TupleType>(::testing::Combine(
-        ::testing::ValuesIn<bool>({false, true}),
-        ::testing::ValuesIn<bool>({false, true}),
-        ::testing::ValuesIn<GpuOptions::Precision>({
-            GpuOptions::Precision::kDefault,
-            GpuOptions::Precision::kFp16,
-            GpuOptions::Precision::kFp32,
-        }),
-        ::testing::ValuesIn<GpuOptions::BufferStorageType>({
-            GpuOptions::BufferStorageType::kDefault,
-            GpuOptions::BufferStorageType::kBuffer,
-            GpuOptions::BufferStorageType::kTexture2D,
-        }))),
+    ::testing::ConvertGenerator<TestParams::TupleType>(
+        ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
+                           ::testing::ValuesIn<bool>({false, true}),
+                           ::testing::ValuesIn<GpuOptions::Precision>({
+                               GpuOptions::Precision::kDefault,
+                               GpuOptions::Precision::kFp16,
+                               GpuOptions::Precision::kFp32,
+                           }),
+                           ::testing::ValuesIn<GpuOptions::BufferStorageType>({
+                               GpuOptions::BufferStorageType::kDefault,
+                               GpuOptions::BufferStorageType::kBuffer,
+                               GpuOptions::BufferStorageType::kTexture2D,
+                           }))),
     [](const ::testing::TestParamInfo<TestParams>& info) {
       std::string precision;
       switch (info.param.precision) {
@@ -225,9 +227,10 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
   ASSERT_TRUE(env);
 
   auto param = GetParam();
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(
-      param.external_tensors_mode, GpuOptions::Precision::kDefault,
-      GpuOptions::BufferStorageType::kDefault));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options, CreateGpuOptions(param.external_tensors_mode,
+                                     GpuOptions::Precision::kDefault,
+                                     GpuOptions::BufferStorageType::kDefault));
 
   // Create 1st model.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -319,8 +322,8 @@ TEST_P(ParameterizedPipelineTest, Pipeline) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
                      << kTestOutputTensorForPipelineTest[i];
     }
-    EXPECT_THAT(output, Pointwise(FloatNear(1e-5),
-                kTestOutputTensorForPipelineTest));
+    EXPECT_THAT(output,
+                Pointwise(FloatNear(1e-5), kTestOutputTensorForPipelineTest));
   }
 }
 
@@ -331,10 +334,10 @@ INSTANTIATE_TEST_SUITE_P(
                            ::testing::ValuesIn<bool>({false, true}),
                            ::testing::ValuesIn<bool>({false, true}))),
     [](const ::testing::TestParamInfo<PipelineTestParams>& info) {
-      return absl::StrCat(
-          info.param.async_1st_model ? "Async1st" : "Sync1st", "_",
-          info.param.async_2nd_model ? "Async2nd" : "Sync2nd",
-          info.param.external_tensors_mode ? "_External" : "");
+      return absl::StrCat(info.param.async_1st_model ? "Async1st" : "Sync1st",
+                          "_",
+                          info.param.async_2nd_model ? "Async2nd" : "Sync2nd",
+                          info.param.external_tensors_mode ? "_External" : "");
     });
 
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {
@@ -355,20 +358,20 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_device_id_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
+      env_options_1.GetOption(litert::EnvironmentOptions::Tag::kWebGpuDevice));
   ABSL_LOG(INFO) << "WebGPU device id: "
                  << reinterpret_cast<WGPUDevice>(
                         std::get<int64_t>(wegpu_device_id_1));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_command_queue_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
+      env_options_1.GetOption(litert::EnvironmentOptions::Tag::kWebGpuQueue));
   ABSL_LOG(INFO) << "WebGPU command queue: "
                  << reinterpret_cast<WGPUQueue>(
                         std::get<int64_t>(wegpu_command_queue_1));
 
   // Check if the 2nd LiteRT environment can get the same WebGPU device and
   // command queue.
-  auto env_2 = litert::Environment::Create({});
+  auto env_2 = litert::Environment::Create(litert::EnvironmentOptions({}));
   ASSERT_TRUE(env_2);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -382,12 +385,12 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_2, env_2->GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_device_id_2,
-      env_options_2.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
+      env_options_2.GetOption(litert::EnvironmentOptions::Tag::kWebGpuDevice));
   EXPECT_EQ(std::get<int64_t>(wegpu_device_id_1),
             std::get<int64_t>(wegpu_device_id_2));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_command_queue_2,
-      env_options_2.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
+      env_options_2.GetOption(litert::EnvironmentOptions::Tag::kWebGpuQueue));
   EXPECT_EQ(std::get<int64_t>(wegpu_command_queue_1),
             std::get<int64_t>(wegpu_command_queue_2));
 }
@@ -410,13 +413,13 @@ TEST(CompiledModelWebGpuTest, ConstructMlDriftWebGpuEnvironment) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_device_id_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
+      env_options_1.GetOption(litert::EnvironmentOptions::Tag::kWebGpuDevice));
   WGPUDevice wgpu_device =
       reinterpret_cast<WGPUDevice>(std::get<int64_t>(wegpu_device_id_1));
   ABSL_LOG(INFO) << "WebGPU device id: " << wgpu_device;
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_command_queue_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
+      env_options_1.GetOption(litert::EnvironmentOptions::Tag::kWebGpuQueue));
   WGPUQueue wgpu_queue =
       reinterpret_cast<WGPUQueue>(std::get<int64_t>(wegpu_command_queue_1));
   ABSL_LOG(INFO) << "WebGPU command queue: " << wgpu_queue;
@@ -466,24 +469,23 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResources) {
   auto status = webgpu_env->Initialize({.enable_host_mapped_pointer = true});
   ASSERT_OK(status);
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::WebGpuDevice,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kWebGpuDevice,
           reinterpret_cast<int64_t>(webgpu_env->device().Get()),
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::WebGpuQueue,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kWebGpuQueue,
           reinterpret_cast<int64_t>(webgpu_env->queue().Get()),
       },
   };
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options,
-      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
-                       GpuOptions::BufferStorageType::kDefault));
+      auto options, CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                                     GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
@@ -549,24 +551,23 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResourcesExternalBuffer) {
   auto status = webgpu_env->Initialize({.enable_host_mapped_pointer = true});
   ASSERT_OK(status);
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::WebGpuDevice,
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kWebGpuDevice,
           reinterpret_cast<int64_t>(webgpu_env->device().Get()),
       },
-      litert::Environment::Option{
-          litert::Environment::OptionTag::WebGpuQueue,
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kWebGpuQueue,
           reinterpret_cast<int64_t>(webgpu_env->queue().Get()),
       },
   };
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options,
-      CreateGpuOptions(false, GpuOptions::Precision::kDefault,
-                       GpuOptions::BufferStorageType::kDefault));
+      auto options, CreateGpuOptions(false, GpuOptions::Precision::kDefault,
+                                     GpuOptions::BufferStorageType::kDefault));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
