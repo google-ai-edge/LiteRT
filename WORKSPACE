@@ -338,14 +338,14 @@ http_archive(
 )
 
 # Android rules dependencies
-load("@rules_android//:prereqs.bzl", "rules_android_prereqs")
+# load("@rules_android//:prereqs.bzl", "rules_android_prereqs")
 
-rules_android_prereqs()
+# rules_android_prereqs()
 
 ##### rules_java setup for rules_android #####
-load("@rules_java//java:rules_java_deps.bzl", "rules_java_dependencies")
+# load("@rules_java//java:rules_java_deps.bzl", "rules_java_dependencies")
 
-rules_java_dependencies()
+# rules_java_dependencies()
 
 # note that the following line is what is minimally required from protobuf for the java rules
 # consider using the protobuf_deps() public API from @com_google_protobuf//:protobuf_deps.bzl
