@@ -20,6 +20,8 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
+# Removed mediatek_options_parser
+
 litert_cc_lib_with_mtk(
     name = "neuron_adapter_api",
     srcs = [
@@ -30,11 +32,11 @@ litert_cc_lib_with_mtk(
     ],
     ungrte = True,
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/internal:litert_shared_library",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",

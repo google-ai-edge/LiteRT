@@ -16,9 +16,9 @@
 #include <optional>
 #include <string>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
-#include "litert/vendors/cc/options_helper.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
@@ -29,6 +29,8 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -75,12 +77,30 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
   static_environment_options = environment_options;
   static_options = options;
 
-  auto [opts, opq_opts, mediatek_opts] =
-      litert::ParseOptions<litert::mediatek::MediatekOptions>(options);
+  LrtMediatekOptions* mediatek_opts = nullptr;
+  const char* mt_payload = "";
+  LiteRtOpaqueOptions opaque_opts_c = nullptr;
+  if (options &&
+      LiteRtGetOpaqueOptions(options, &opaque_opts_c) == kLiteRtStatusOk) {
+    const char* identifier;
+    void* payload;
+    if (LiteRtGetOpaqueOptionsIdentifier(opaque_opts_c, &identifier) ==
+        kLiteRtStatusOk) {
+      if (std::string(identifier) == "mediatek") {
+        if (LiteRtGetOpaqueOptionsData(opaque_opts_c, &payload) ==
+            kLiteRtStatusOk) {
+          mt_payload = reinterpret_cast<const std::string*>(payload)->c_str();
+        }
+      }
+    }
+  }
 
-  if (!mediatek_opts) {
-    LITERT_ASSIGN_OR_RETURN(mediatek_opts,
-                            ::litert::mediatek::MediatekOptions::Create());
+  auto create_status =
+      LrtCreateMediatekOptionsFromToml(mt_payload, &mediatek_opts);
+  if (create_status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Failed to parse Mediatek options: %d",
+               create_status);
+    return create_status;
   }
 
   auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
@@ -90,10 +110,13 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
       neuron_adapter_api) {
     static_neuron_adapter = neuron_adapter_api->release();
   } else {
+    LrtDestroyMediatekOptions(mediatek_opts);
     LITERT_LOG(LITERT_INFO, "Initialization failure: %s",
                neuron_adapter_api.Error().Message().c_str());
     return neuron_adapter_api.Error().Status();
   }
+
+  LrtDestroyMediatekOptions(mediatek_opts);
 
   auto get_version = static_neuron_adapter->api().get_version;
   if (!get_version) {
