@@ -36,6 +36,7 @@
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -48,6 +49,8 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_gpu_options.h"
+#include "litert/compiler/plugin/algo.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -75,9 +78,36 @@ std::string CsvEscape(const std::string& s) {
 
 namespace internal {
 
-ExtractedModel ExtractOp(const LiteRtOpT& op,
-                         const LiteRtModelT& original_model) {
+// Helper to get the index of a tensor in the original model's flat list of
+// tensors.
+int GetOriginalTensorIndex(const LiteRtTensorT* t, const LiteRtModelT& model) {
+  int idx = 0;
+  for (const auto* sg : model.Subgraphs()) {
+    for (const auto* tensor : sg->Tensors()) {
+      if (tensor == t) return idx;
+      idx++;
+    }
+  }
+  return -1;
+}
+
+ExtractedModel ExtractOps(const std::vector<const LiteRtOpT*>& ops,
+                          const LiteRtModelT& original_model) {
   ExtractedModel em;
+  if (ops.empty()) return em;
+
+  // Find the original subgraph these ops belong to.
+  const LiteRtSubgraphT* original_subgraph = nullptr;
+  for (const auto* sg : original_model.Subgraphs()) {
+    for (const auto* op : sg->Ops()) {
+      if (op == ops.front()) {
+        original_subgraph = sg;
+        break;
+      }
+    }
+    if (original_subgraph) break;
+  }
+
   const auto& original_op_codes =
       litert::internal::GetTflOpCodes(original_model);
   std::vector<litert::internal::TflOpCodePtr> new_op_codes;
@@ -114,104 +144,185 @@ ExtractedModel ExtractOp(const LiteRtOpT& op,
   };
 
   auto& main_sg = em.model.EmplaceSubgraph();
-  auto& main_op = main_sg.EmplaceOp();
-  litert::internal::CloneTo(op, main_op);
-  litert::internal::SetTflOpCodeInd(
-      main_op, get_or_add_opcode(litert::internal::GetTflOpCodeInd(op)));
 
-  LiteRtOpCode opcode_code = op.OpCode();
-  if (opcode_code == kLiteRtOpCodeShloComposite) {
-    auto old_opts2 = litert::internal::GetTflOptions2(op);
-    if (old_opts2.type == tflite::BuiltinOptions2_StableHLOCompositeOptions) {
-      const auto* composite_opts = old_opts2.AsStableHLOCompositeOptions();
-      int decomp_sg_idx = composite_opts->decomposition_subgraph_index;
-      if (decomp_sg_idx >= 0 &&
-          decomp_sg_idx < (int)original_model.Subgraphs().size()) {
-        const auto& original_decomp_sg =
-            *original_model.Subgraphs()[decomp_sg_idx];
-        auto& new_decomp_sg = em.model.EmplaceSubgraph();
-        absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*>
-            decomp_tensor_map;
+  // Map from original decomposition subgraph index to new model's subgraph
+  // index.
+  absl::flat_hash_map<int, int> decomp_sg_cache;
 
-        for (const auto* original_tensor : original_decomp_sg.Tensors()) {
-          auto& new_tensor = new_decomp_sg.EmplaceTensor();
-          litert::internal::CloneTo(*original_tensor, new_tensor);
-          if (litert::internal::IsConstant(*original_tensor)) {
-            auto buffer = original_tensor->Weights().Buffer();
-            ::SetWeightsFromOwnedBuffer(
-                new_tensor.Weights(),
-                litert::OwningBufferRef<uint8_t>(buffer.Data(), buffer.Size()));
+  for (const auto* op : ops) {
+    auto& main_op = main_sg.EmplaceOp();
+    litert::internal::CloneTo(*op, main_op);
+    litert::internal::SetTflOpCodeInd(
+        main_op, get_or_add_opcode(litert::internal::GetTflOpCodeInd(*op)));
+
+    LiteRtOpCode opcode_code = op->OpCode();
+    if (opcode_code == kLiteRtOpCodeShloComposite) {
+      auto old_opts2 = litert::internal::GetTflOptions2(*op);
+      if (old_opts2.type == tflite::BuiltinOptions2_StableHLOCompositeOptions) {
+        const auto* composite_opts = old_opts2.AsStableHLOCompositeOptions();
+        int decomp_sg_idx = composite_opts->decomposition_subgraph_index;
+        if (decomp_sg_idx >= 0 &&
+            decomp_sg_idx < (int)original_model.Subgraphs().size()) {
+          int new_decomp_sg_idx = -1;
+          if (decomp_sg_cache.contains(decomp_sg_idx)) {
+            new_decomp_sg_idx = decomp_sg_cache[decomp_sg_idx];
+          } else {
+            const auto& original_decomp_sg =
+                *original_model.Subgraphs()[decomp_sg_idx];
+            auto& new_decomp_sg = em.model.EmplaceSubgraph();
+            new_decomp_sg_idx = em.model.NumSubgraphs() - 1;
+            decomp_sg_cache[decomp_sg_idx] = new_decomp_sg_idx;
+
+            absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*>
+                decomp_tensor_map;
+
+            for (const auto* original_tensor : original_decomp_sg.Tensors()) {
+              auto& new_tensor = new_decomp_sg.EmplaceTensor();
+              litert::internal::CloneTo(*original_tensor, new_tensor);
+              if (litert::internal::IsConstant(*original_tensor)) {
+                auto buffer = original_tensor->Weights().Buffer();
+                ::SetWeightsFromOwnedBuffer(new_tensor.Weights(),
+                                            litert::OwningBufferRef<uint8_t>(
+                                                buffer.Data(), buffer.Size()));
+              }
+              decomp_tensor_map[original_tensor] = &new_tensor;
+            }
+
+            for (const auto* original_op : original_decomp_sg.Ops()) {
+              auto& new_op_in_decomp = new_decomp_sg.EmplaceOp();
+              litert::internal::CloneTo(*original_op, new_op_in_decomp);
+              litert::internal::SetTflOpCodeInd(
+                  new_op_in_decomp,
+                  get_or_add_opcode(
+                      litert::internal::GetTflOpCodeInd(*original_op)));
+              for (const auto* in_t : original_op->Inputs()) {
+                litert::internal::AttachInput(
+                    in_t ? decomp_tensor_map.at(in_t) : nullptr,
+                    new_op_in_decomp);
+              }
+              for (const auto* out_t : original_op->Outputs()) {
+                litert::internal::AttachOutput(
+                    out_t ? decomp_tensor_map.at(out_t) : nullptr,
+                    new_op_in_decomp);
+              }
+            }
+
+            for (const auto* original_in : original_decomp_sg.Inputs()) {
+              new_decomp_sg.Inputs().push_back(
+                  decomp_tensor_map.at(original_in));
+            }
+            for (const auto* original_out : original_decomp_sg.Outputs()) {
+              new_decomp_sg.Outputs().push_back(
+                  decomp_tensor_map.at(original_out));
+            }
+
+            auto decomp_tensors = new_decomp_sg.Tensors();
+            for (int i = 0; i < (int)decomp_tensors.size(); ++i)
+              decomp_tensors[i]->SetTensorIndex(i);
           }
-          decomp_tensor_map[original_tensor] = &new_tensor;
-        }
 
-        for (const auto* original_op : original_decomp_sg.Ops()) {
-          auto& new_op_in_decomp = new_decomp_sg.EmplaceOp();
-          litert::internal::CloneTo(*original_op, new_op_in_decomp);
-          litert::internal::SetTflOpCodeInd(
-              new_op_in_decomp,
-              get_or_add_opcode(
-                  litert::internal::GetTflOpCodeInd(*original_op)));
-          for (const auto* in_t : original_op->Inputs()) {
-            litert::internal::AttachInput(
-                in_t ? decomp_tensor_map.at(in_t) : nullptr, new_op_in_decomp);
-          }
-          for (const auto* out_t : original_op->Outputs()) {
-            litert::internal::AttachOutput(
-                out_t ? decomp_tensor_map.at(out_t) : nullptr,
-                new_op_in_decomp);
-          }
-        }
+          auto native_opts =
+              std::make_unique<tflite::StableHLOCompositeOptionsT>(
+                  *composite_opts);
+          native_opts->decomposition_subgraph_index = new_decomp_sg_idx;
 
-        for (const auto* original_in : original_decomp_sg.Inputs()) {
-          new_decomp_sg.Inputs().push_back(decomp_tensor_map.at(original_in));
+          tflite::BuiltinOptions2Union tfl_composite_opts;
+          tfl_composite_opts.type =
+              tflite::BuiltinOptions2_StableHLOCompositeOptions;
+          tfl_composite_opts.value = native_opts.release();
+          litert::internal::SetTflOptions2(main_op,
+                                           std::move(tfl_composite_opts));
         }
-        for (const auto* original_out : original_decomp_sg.Outputs()) {
-          new_decomp_sg.Outputs().push_back(decomp_tensor_map.at(original_out));
-        }
+      }
+    }
 
-        auto decomp_tensors = new_decomp_sg.Tensors();
-        for (int i = 0; i < (int)decomp_tensors.size(); ++i)
-          decomp_tensors[i]->SetTensorIndex(i);
+    for (const auto* input_tensor : op->Inputs()) {
+      if (input_tensor == nullptr) {
+        litert::internal::AttachInput(nullptr, main_op);
+        continue;
+      }
+      auto& new_tensor = get_or_create_tensor(input_tensor, main_sg);
+      litert::internal::AttachInput(&new_tensor, main_op);
+    }
+    for (const auto* output_tensor : op->Outputs()) {
+      if (output_tensor == nullptr) {
+        litert::internal::AttachOutput(nullptr, main_op);
+        continue;
+      }
+      auto& new_tensor = get_or_create_tensor(output_tensor, main_sg);
+      litert::internal::AttachOutput(&new_tensor, main_op);
+    }
+  }
 
-        auto opts = std::make_unique<tflite::StableHLOCompositeOptionsT>(
-            *composite_opts);
-        opts->decomposition_subgraph_index = 1;
-        tflite::BuiltinOptions2Union tfl_composite_opts;
-        tfl_composite_opts.type =
-            tflite::BuiltinOptions2_StableHLOCompositeOptions;
-        tfl_composite_opts.value = opts.release();
-        litert::internal::SetTflOptions2(main_op,
-                                         std::move(tfl_composite_opts));
+  // Re-identify Subgraph IO deterministically.
+  absl::flat_hash_set<LiteRtTensorT*> produced_tensors_new;
+  for (auto* op : main_sg.Ops()) {
+    for (auto* out : op->Outputs()) {
+      if (out) produced_tensors_new.insert(out);
+    }
+  }
+
+  std::vector<LiteRtTensorT*> island_inputs_new;
+  for (auto* op : main_sg.Ops()) {
+    for (auto* in : op->Inputs()) {
+      if (in && !produced_tensors_new.contains(in) &&
+          !litert::internal::IsConstant(*in)) {
+        bool found = false;
+        for (auto* existing : island_inputs_new)
+          if (existing == in) found = true;
+        if (!found) island_inputs_new.push_back(in);
       }
     }
   }
 
-  for (const auto* input_tensor : op.Inputs()) {
-    if (input_tensor == nullptr) {
-      litert::internal::AttachInput(nullptr, main_op);
-      continue;
+  // Only include produced tensors that are original subgraph outputs OR
+  // consumed by ops NOT in this island.
+  std::vector<LiteRtTensorT*> island_outputs_new;
+  absl::flat_hash_set<const LiteRtOpT*> island_ops_orig(ops.begin(), ops.end());
+
+  for (auto* t_new : produced_tensors_new) {
+    const LiteRtTensorT* t_orig = nullptr;
+    for (auto const& [orig, cloned] : global_tensor_map) {
+      if (cloned == t_new) {
+        t_orig = orig;
+        break;
+      }
     }
-    auto& new_tensor = get_or_create_tensor(input_tensor, main_sg);
-    litert::internal::AttachInput(&new_tensor, main_op);
-    if (!litert::internal::IsConstant(*input_tensor)) {
-      bool found = false;
-      for (auto* in : main_sg.Inputs())
-        if (in == &new_tensor) found = true;
-      if (!found) main_sg.Inputs().push_back(&new_tensor);
+    if (!t_orig) continue;
+
+    bool is_original_output = false;
+    if (original_subgraph) {
+      for (const auto* out : original_subgraph->Outputs()) {
+        if (out == t_orig) {
+          is_original_output = true;
+          break;
+        }
+      }
+    }
+
+    bool has_external_consumer = false;
+    if (original_subgraph) {
+      for (const auto* op : original_subgraph->Ops()) {
+        if (island_ops_orig.contains(op)) continue;
+        for (const auto* in : op->Inputs()) {
+          if (in == t_orig) {
+            has_external_consumer = true;
+            break;
+          }
+        }
+        if (has_external_consumer) break;
+      }
+    }
+
+    if (is_original_output || has_external_consumer) {
+      island_outputs_new.push_back(t_new);
     }
   }
-  for (const auto* output_tensor : op.Outputs()) {
-    if (output_tensor == nullptr) {
-      litert::internal::AttachOutput(nullptr, main_op);
-      continue;
+
+  if (island_outputs_new.empty()) {
+    for (auto* t : produced_tensors_new) {
+      island_outputs_new.push_back(t);
     }
-    auto& new_tensor = get_or_create_tensor(output_tensor, main_sg);
-    litert::internal::AttachOutput(&new_tensor, main_op);
-    bool found = false;
-    for (auto* out : main_sg.Outputs())
-      if (out == &new_tensor) found = true;
-    if (!found) main_sg.Outputs().push_back(&new_tensor);
   }
 
   absl::flat_hash_map<const LiteRtTensorT*, const LiteRtTensorT*>
@@ -220,18 +331,25 @@ ExtractedModel ExtractOp(const LiteRtOpT& op,
     if (cloned != nullptr) reverse_tensor_map[cloned] = orig;
   }
 
+  auto sort_by_orig = [&](LiteRtTensorT* a, LiteRtTensorT* b) {
+    return GetOriginalTensorIndex(reverse_tensor_map.at(a), original_model) <
+           GetOriginalTensorIndex(reverse_tensor_map.at(b), original_model);
+  };
+
+  std::sort(island_inputs_new.begin(), island_inputs_new.end(), sort_by_orig);
+  std::sort(island_outputs_new.begin(), island_outputs_new.end(), sort_by_orig);
+
+  for (auto* in : island_inputs_new) main_sg.Inputs().push_back(in);
+  for (auto* out : island_outputs_new) main_sg.Outputs().push_back(out);
+
   auto tensors = main_sg.Tensors();
   for (int i = 0; i < (int)tensors.size(); ++i) tensors[i]->SetTensorIndex(i);
 
   for (auto* in_t : main_sg.Inputs()) {
-    if (in_t && reverse_tensor_map.contains(in_t)) {
-      em.inputs.push_back(reverse_tensor_map.at(in_t));
-    }
+    em.inputs.push_back(reverse_tensor_map.at(in_t));
   }
   for (auto* out_t : main_sg.Outputs()) {
-    if (out_t && reverse_tensor_map.contains(out_t)) {
-      em.outputs.push_back(reverse_tensor_map.at(out_t));
-    }
+    em.outputs.push_back(reverse_tensor_map.at(out_t));
   }
 
   em.model.EmplaceSignature(::MakeDefaultSignature(&main_sg));
@@ -240,50 +358,98 @@ ExtractedModel ExtractOp(const LiteRtOpT& op,
   return em;
 }
 
-litert::Expected<std::vector<float>> GetFloats(TensorBuffer& buffer,
-                                               size_t num_elements) {
-  std::vector<float> data(num_elements);
+ExtractedModel ExtractOp(const LiteRtOpT& op,
+                         const LiteRtModelT& original_model) {
+  return ExtractOps({&op}, original_model);
+}
+
+ExtractedModel ExtractIsland(const std::vector<LiteRtOp>& partition,
+                             const LiteRtModelT& original_model) {
+  std::vector<const LiteRtOpT*> ops;
+  ops.reserve(partition.size());
+  for (auto* op : partition) ops.push_back(op);
+  return ExtractOps(ops, original_model);
+}
+
+std::vector<std::vector<LiteRtOp>> PartitionIntoIslands(
+    const LiteRtSubgraphT& subgraph,
+    const std::vector<std::string>& boundary_tensors) {
+  if (boundary_tensors.empty()) return {};
+
+  absl::flat_hash_set<absl::string_view> boundaries;
+  for (const auto& name : boundary_tensors) {
+    boundaries.insert(name);
+  }
+
+  std::vector<LiteRtOpWithPartitionIndex> selected_ops;
+  LiteRtParamIndex current_partition = 0;
+
+  for (auto* op : subgraph.Ops()) {
+    selected_ops.push_back({op, current_partition});
+
+    bool hit_boundary = false;
+    for (auto* out : op->Outputs()) {
+      if (out && boundaries.contains(out->Name())) {
+        hit_boundary = true;
+        break;
+      }
+    }
+    if (hit_boundary) {
+      current_partition++;
+    }
+  }
+
+  return litert::internal::GroupPartitionsV2(
+      selected_ops, const_cast<LiteRtSubgraph>(&subgraph));
+}
+
+litert::Expected<std::vector<double>> GetFloats(TensorBuffer& buffer,
+                                                size_t num_elements) {
+  std::vector<double> data(num_elements);
   auto type_res = buffer.TensorType();
   if (!type_res) return litert::Unexpected(type_res.Error().Status());
   auto element_type = type_res->ElementType();
 
   if (element_type == ElementType::Float32) {
-    LITERT_RETURN_IF_ERROR(buffer.Read<float>(absl::MakeSpan(data)));
+    std::vector<float> float_data(num_elements);
+    LITERT_RETURN_IF_ERROR(buffer.Read<float>(absl::MakeSpan(float_data)));
+    for (size_t i = 0; i < num_elements; ++i)
+      data[i] = static_cast<double>(float_data[i]);
   } else if (element_type == ElementType::Int32) {
     std::vector<int32_t> int_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<int32_t>(absl::MakeSpan(int_data)));
     for (size_t i = 0; i < num_elements; ++i)
-      data[i] = static_cast<float>(int_data[i]);
+      data[i] = static_cast<double>(int_data[i]);
   } else if (element_type == ElementType::Int64) {
     std::vector<int64_t> int_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<int64_t>(absl::MakeSpan(int_data)));
     for (size_t i = 0; i < num_elements; ++i)
-      data[i] = static_cast<float>(int_data[i]);
+      data[i] = static_cast<double>(int_data[i]);
   } else if (element_type == ElementType::Int16) {
     std::vector<int16_t> int_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<int16_t>(absl::MakeSpan(int_data)));
     for (size_t i = 0; i < num_elements; ++i)
-      data[i] = static_cast<float>(int_data[i]);
+      data[i] = static_cast<double>(int_data[i]);
   } else if (element_type == ElementType::UInt16) {
     std::vector<uint16_t> int_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<uint16_t>(absl::MakeSpan(int_data)));
     for (size_t i = 0; i < num_elements; ++i)
-      data[i] = static_cast<float>(int_data[i]);
+      data[i] = static_cast<double>(int_data[i]);
   } else if (element_type == ElementType::Int8) {
     std::vector<int8_t> int_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<int8_t>(absl::MakeSpan(int_data)));
     for (size_t i = 0; i < num_elements; ++i)
-      data[i] = static_cast<float>(int_data[i]);
+      data[i] = static_cast<double>(int_data[i]);
   } else if (element_type == ElementType::UInt8) {
     std::vector<uint8_t> int_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(int_data)));
     for (size_t i = 0; i < num_elements; ++i)
-      data[i] = static_cast<float>(int_data[i]);
+      data[i] = static_cast<double>(int_data[i]);
   } else if (element_type == ElementType::Bool) {
     std::vector<uint8_t> bool_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(bool_data)));
     for (size_t i = 0; i < num_elements; ++i)
-      data[i] = bool_data[i] ? 1.0f : 0.0f;
+      data[i] = bool_data[i] ? 1.0 : 0.0;
   } else if (element_type == ElementType::Float16) {
     std::vector<uint16_t> fp16_data(num_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<uint16_t>(absl::MakeSpan(fp16_data)));
@@ -307,7 +473,9 @@ litert::Expected<std::vector<float>> GetFloats(TensorBuffer& buffer,
       } else {
         r = (s << 31) | ((e + 127 - 15) << 23) | (f << 13);
       }
-      std::memcpy(&data[i], &r, 4);
+      float val;
+      std::memcpy(&val, &r, 4);
+      data[i] = static_cast<double>(val);
     }
   } else {
     auto size_res = buffer.Size();
@@ -315,7 +483,7 @@ litert::Expected<std::vector<float>> GetFloats(TensorBuffer& buffer,
     std::vector<uint8_t> raw_data(*size_res);
     LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(raw_data)));
     for (size_t i = 0; i < std::min(num_elements, raw_data.size()); ++i)
-      data[i] = static_cast<float>(raw_data[i]);
+      data[i] = static_cast<double>(raw_data[i]);
   }
   return data;
 }
@@ -335,34 +503,49 @@ litert::Expected<ComparisonResult> CompareBuffers(
 
   ComparisonResult res;
   res.failed = false;
-  double mean_squared_error = 0, sum_sq_cpu = 0, sum_sq_accel = 0,
+  double sum_squared_error = 0, sum_sq_cpu = 0, sum_sq_accel = 0,
          dot_product = 0, sum_cpu = 0, sum_accel = 0;
-  float max_abs_cpu = 0;
+  double max_abs_cpu = 0;
+
+  res.min_ref = std::numeric_limits<float>::max();
+  res.max_ref = -std::numeric_limits<float>::max();
+  res.min_accel = std::numeric_limits<float>::max();
+  res.max_accel = -std::numeric_limits<float>::max();
 
   for (size_t i = 0; i < total_elements; ++i) {
-    float diff = std::abs(cpu_data[i] - accel_data[i]);
-    mean_squared_error += (double)diff * diff;
-    if (diff > res.max_diff) res.max_diff = diff;
-    dot_product += (double)cpu_data[i] * accel_data[i];
-    sum_sq_cpu += (double)cpu_data[i] * cpu_data[i];
-    sum_sq_accel += (double)accel_data[i] * accel_data[i];
+    double diff = std::abs(cpu_data[i] - accel_data[i]);
+    sum_squared_error += diff * diff;
+    if (diff > res.max_diff) res.max_diff = static_cast<float>(diff);
+    dot_product += cpu_data[i] * accel_data[i];
+    sum_sq_cpu += cpu_data[i] * cpu_data[i];
+    sum_sq_accel += accel_data[i] * accel_data[i];
     sum_cpu += cpu_data[i];
     sum_accel += accel_data[i];
     if (std::abs(cpu_data[i]) > max_abs_cpu)
       max_abs_cpu = std::abs(cpu_data[i]);
+
+    if (std::isnan(accel_data[i])) res.has_nan_accel = true;
+    if (cpu_data[i] < res.min_ref)
+      res.min_ref = static_cast<float>(cpu_data[i]);
+    if (cpu_data[i] > res.max_ref)
+      res.max_ref = static_cast<float>(cpu_data[i]);
+    if (accel_data[i] < res.min_accel)
+      res.min_accel = static_cast<float>(accel_data[i]);
+    if (accel_data[i] > res.max_accel)
+      res.max_accel = static_cast<float>(accel_data[i]);
   }
 
-  res.mse = mean_squared_error / total_elements;
+  res.mse = sum_squared_error / total_elements;
   res.mean_diff = sum_cpu / total_elements - sum_accel / total_elements;
   double mag_cpu = std::sqrt(sum_sq_cpu), mag_accel = std::sqrt(sum_sq_accel);
   res.cosine_similarity = (mag_cpu > 0 && mag_accel > 0)
                               ? (dot_product / (mag_cpu * mag_accel))
                               : (mag_cpu == mag_accel ? 1.0 : 0.0);
-  if (mean_squared_error > 0) {
-    res.snr = 10.0 * std::log10(sum_sq_cpu / mean_squared_error);
+  if (sum_squared_error > 0) {
+    res.snr = 10.0 * std::log10(sum_sq_cpu / sum_squared_error);
     res.psnr = 20.0 * std::log10(max_abs_cpu / std::sqrt(res.mse));
   } else {
-    res.snr = res.psnr = std::numeric_limits<float>::infinity();
+    res.snr = res.psnr = std::numeric_limits<double>::infinity();
   }
 
   double mean_cpu = sum_cpu / total_elements,
@@ -375,7 +558,7 @@ litert::Expected<ComparisonResult> CompareBuffers(
   }
   res.pearson_correlation = (den_cpu > 0 && den_accel > 0)
                                 ? (num / std::sqrt(den_cpu * den_accel))
-                                : (mean_squared_error == 0 ? 1.0 : 0.0);
+                                : (sum_squared_error == 0 ? 1.0 : 0.0);
 
   if (res.max_diff > thresholds.max_diff)
     res.failing_metrics.push_back("max_diff");
@@ -433,19 +616,21 @@ void AccuracyDebuggerSummary::LogSummary(
   }
   static const char* kBanner =
       "\n================================================================"
-      "==============================================================";
+      "========================================================================"
+      "==";
   static const char* kSeparator =
       "----------------------------------------------------------------"
-      "--------------------------------------------------------------";
+      "------------------------------------------------------------------------"
+      "--";
   std::cout << kBanner << std::endl;
   std::cout << "Accuracy Debugger Summary" << std::endl;
   std::cout << "Total operations: " << all_ops.size() << std::endl;
   std::cout << "Regressions:      " << failing_op_indices.size() << std::endl;
   std::cout << kBanner << std::endl;
   std::cout << absl::StreamFormat(
-                   "%-6s %-25s | %-12s | %-12s | %-10s | %-10s | %-10s | %-15s",
-                   "Index", "Op Code", "Max Diff", "MSE", "Cos Sim", "SNR (dB)",
-                   "PSNR (dB)", "Status")
+                   "%-6s %-35s | %-12s | %-10s | %-5s | %-20s | %-20s | %-15s",
+                   "Index", "Op Code", "Max Diff", "Cos Sim", "NaN",
+                   "Ref Range", "Accel Range", "Status")
             << std::endl;
   std::cout << kSeparator << std::endl;
 
@@ -465,13 +650,19 @@ void AccuracyDebuggerSummary::LogSummary(
     }
     if (status == "OK" && op.metrics.failed) status = "REGRESSION";
 
-    std::cout << absl::StreamFormat(
-                     "[%4d] %-25s | %12.6f | %12.6f | %12.8f | %10.2f | "
-                     "%10.2f | %-15s",
-                     op.global_index, op.op_code, op.metrics.max_diff,
-                     op.metrics.mse, op.metrics.cosine_similarity,
-                     op.metrics.snr, op.metrics.psnr, status)
-              << std::endl;
+    std::string ref_range =
+        absl::StrFormat("[%.3f, %.3f]", op.metrics.min_ref, op.metrics.max_ref);
+    std::string accel_range = absl::StrFormat(
+        "[%.3f, %.3f]", op.metrics.min_accel, op.metrics.max_accel);
+    std::string has_nan = op.metrics.has_nan_accel ? "Y" : "N";
+
+    std::cout
+        << absl::StreamFormat(
+               "[%4d] %-35s | %12.6f | %10.8f | %5s | %-20s | %-20s | %-15s",
+               op.global_index, op.op_code, op.metrics.max_diff,
+               op.metrics.cosine_similarity, has_nan, ref_range, accel_range,
+               status)
+        << std::endl;
   }
   std::cout << kBanner << std::endl;
 }
@@ -484,7 +675,7 @@ void AccuracyDebuggerSummary::SaveToCsv(const std::string& path) const {
   }
 
   csv_file << "Index,Op Code,Tensor Name,Max Diff,MSE,Cos Sim,SNR (dB),PSNR "
-              "(dB),Status\n";
+              "(dB),NaN,Min Ref,Max Ref,Min Accel,Max Accel,Status\n";
   for (const auto& op : all_ops) {
     std::string status = "OK";
     for (const auto& m : op.metrics.failing_metrics) {
@@ -496,11 +687,28 @@ void AccuracyDebuggerSummary::SaveToCsv(const std::string& path) const {
     if (status == "OK" && op.metrics.failed) status = "REGRESSION";
 
     csv_file << absl::StrFormat(
-        "%d,%s,%s,%.6f,%.6f,%.8f,%.2f,%.2f,%s\n", op.global_index, op.op_code,
-        CsvEscape(op.tensor_name), op.metrics.max_diff, op.metrics.mse,
-        op.metrics.cosine_similarity, op.metrics.snr, op.metrics.psnr, status);
+        "%d,%s,%s,%.6f,%.6f,%.8f,%.2f,%.2f,%s,%.6f,%.6f,%.6f,%.6f,%s\n",
+        op.global_index, op.op_code, CsvEscape(op.tensor_name),
+        op.metrics.max_diff, op.metrics.mse, op.metrics.cosine_similarity,
+        op.metrics.snr, op.metrics.psnr, op.metrics.has_nan_accel ? "Y" : "N",
+        op.metrics.min_ref, op.metrics.max_ref, op.metrics.min_accel,
+        op.metrics.max_accel, status);
   }
   std::cout << "Summary saved to: " << path << std::endl;
+}
+
+std::string GetOpName(const LiteRtOpT& op) {
+  std::string name = OpCodeToString(op.OpCode());
+  if (op.OpCode() == kLiteRtOpCodeShloComposite) {
+    auto opts2 = litert::internal::GetTflOptions2(op);
+    if (opts2.type == tflite::BuiltinOptions2_StableHLOCompositeOptions) {
+      const auto* composite_opts = opts2.AsStableHLOCompositeOptions();
+      if (composite_opts && !composite_opts->name.empty()) {
+        name = absl::StrFormat("%s(%s)", name, composite_opts->name);
+      }
+    }
+  }
+  return name;
 }
 
 absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
@@ -509,24 +717,27 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
                                  AccuracyDebuggerSummary* summary) {
   auto cpu_opts_res = litert::Options::Create();
   if (!cpu_opts_res) return absl::InternalError("Opts failed");
-  cpu_opts_res->SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+  if (options.use_gpu_ref) {
+    cpu_opts_res->SetHardwareAccelerators(litert::HwAccelerators::kGpu);
+    auto gpu_opts = cpu_opts_res->GetGpuOptions();
+    if (!gpu_opts) return absl::InternalError("GPU opts failed");
+    gpu_opts->SetPrecision(litert::GpuOptions::Precision::kFp32);
+  } else {
+    cpu_opts_res->SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+  }
 
-  // Map to store "Golden" values computed strictly on CPU.
   absl::flat_hash_map<const LiteRtTensorT*, std::vector<char>>
       cpu_tensor_values;
-  // Map to store propagated values (may come from Accel if flag is set).
   absl::flat_hash_map<const LiteRtTensorT*, std::vector<char>>
       accel_tensor_values;
 
   std::vector<const LiteRtSubgraphT*> subgraphs;
-  absl::flat_hash_set<const LiteRtSubgraphT*> seen;
   if (options.signature_index < model.Signatures().size()) {
     subgraphs.push_back(
         &model.Signatures()[options.signature_index]->GetSubgraph());
-    seen.insert(subgraphs.back());
+  } else if (!model.Subgraphs().empty()) {
+    subgraphs.push_back(model.MainSubgraph());
   }
-  for (auto* sg : model.Subgraphs())
-    if (!seen.contains(sg)) subgraphs.push_back(sg);
 
   absl::flat_hash_map<const LiteRtTensorT*, int> global_consumer_counts;
   for (const auto* sg : subgraphs) {
@@ -540,206 +751,254 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
 
   std::filesystem::create_directories(options.output_dir);
 
-  int global_op_counter = 0;
+  struct WorkUnit {
+    std::vector<const LiteRtOpT*> ops;
+    std::string opcode_str;
+    bool skip_accel = false;
+  };
+  std::vector<WorkUnit> work_units;
+
   for (const auto* subgraph : subgraphs) {
-    int sg_idx = -1;
-    for (size_t i = 0; i < model.Subgraphs().size(); ++i)
-      if (model.Subgraphs()[i] == subgraph) sg_idx = i;
-    for (auto* op : subgraph->Ops()) {
-      if (options.max_ops != -1 && global_op_counter >= options.max_ops) break;
-      std::string opcode_str = OpCodeToString(op->OpCode());
-      std::string op_info = absl::StrFormat("[%d, SG %d] %s", global_op_counter,
-                                            sg_idx, opcode_str);
-
-      bool skip_accel = false;
-      LiteRtOpCode op_code = op->OpCode();
-      if (options.skip_unsupported_npu_ops &&
-          (op_code == kLiteRtOpCodeTflEmbeddingLookup ||
-           op_code == kLiteRtOpCodeTflCustom)) {
-        skip_accel = true;
+    if (!options.boundary_tensors.empty()) {
+      auto islands =
+          internal::PartitionIntoIslands(*subgraph, options.boundary_tensors);
+      for (size_t i = 0; i < islands.size(); ++i) {
+        WorkUnit unit;
+        for (auto* op : islands[i]) unit.ops.push_back(op);
+        unit.opcode_str =
+            absl::StrFormat("Partition_%d(%d Ops)", i, unit.ops.size());
+        work_units.push_back(std::move(unit));
       }
-
-      internal::ExtractedModel em = internal::ExtractOp(*op, model);
-      auto serialized_res =
-          litert::internal::SerializeModel(std::move(em.model));
-      if (!serialized_res) return absl::InternalError("Serialize failed");
-      auto serialized = std::move(*serialized_res);
-
-      // --- CPU Path (Golden Reference) ---
-      auto cpu_model_res =
-          CompiledModel::Create(env, serialized, *cpu_opts_res);
-      if (!cpu_model_res) {
-        ComparisonResult final_res;
-        final_res.failed = true;
-        final_res.failing_metrics.push_back("CPU_COMPILE_FAILED");
-        if (summary)
-          summary->all_ops.push_back(
-              {(int)global_op_counter, opcode_str, "", final_res});
-
-        global_op_counter++;
-        continue;
-      }
-      auto& cpu_model = *cpu_model_res;
-
-      auto cpu_in_exp = cpu_model.CreateInputBuffers(0);
-      if (!cpu_in_exp) return absl::InternalError("CPU inputs failed");
-      auto cpu_inputs = std::move(cpu_in_exp.Value());
-      auto cpu_out_exp = cpu_model.CreateOutputBuffers(0);
-      if (!cpu_out_exp) return absl::InternalError("CPU outputs failed");
-      auto cpu_outputs = std::move(cpu_out_exp.Value());
-
-      for (size_t i = 0; i < em.inputs.size(); ++i) {
-        const auto* orig = em.inputs[i];
-        if (cpu_tensor_values.contains(orig)) {
-          (void)cpu_inputs[i].Write<char>(
-              absl::MakeSpan(cpu_tensor_values[orig]));
-        } else {
-          (void)tensor_utils::FillBufferWithRandomData(cpu_inputs[i]);
-          auto size_res = cpu_inputs[i].Size();
-          if (!size_res) continue;
-          std::vector<char> tmp(*size_res);
-          (void)cpu_inputs[i].Read<char>(absl::MakeSpan(tmp));
-          // Initialize both paths with same random data if first time seeing
-          // this tensor.
-          cpu_tensor_values[orig] = tmp;
-          if (!accel_tensor_values.contains(orig)) {
-            accel_tensor_values[orig] = std::move(tmp);
-          }
+    } else {
+      for (const auto* op : subgraph->Ops()) {
+        WorkUnit unit;
+        unit.ops.push_back(op);
+        unit.opcode_str = GetOpName(*op);
+        if (options.skip_unsupported_npu_ops &&
+            (op->OpCode() == kLiteRtOpCodeTflEmbeddingLookup ||
+             op->OpCode() == kLiteRtOpCodeTflCustom)) {
+          unit.skip_accel = true;
         }
+        work_units.push_back(std::move(unit));
       }
-      auto cpu_run_status =
-          cpu_model.Run(static_cast<size_t>(0), cpu_inputs, cpu_outputs);
-      if (!cpu_run_status) {
-        ComparisonResult final_res;
-        final_res.failed = true;
-        final_res.failing_metrics.push_back("CPU_RUN_FAILED");
-        if (summary) {
-          summary->all_ops.push_back(
-              {(int)global_op_counter, opcode_str, "", final_res});
-          summary->failing_op_indices.push_back(global_op_counter);
-        }
-        global_op_counter++;
-        continue;
-      }
+    }
+  }
 
-      // Update CPU golden path values.
-      for (size_t i = 0; i < em.outputs.size(); ++i) {
-        auto size_res = cpu_outputs[i].Size();
+  int global_op_counter = 0;
+  for (auto& unit : work_units) {
+    if (options.max_ops != -1 && global_op_counter >= options.max_ops) break;
+
+    std::string op_info =
+        absl::StrFormat("[%d] %s", global_op_counter, unit.opcode_str);
+
+    internal::ExtractedModel em = internal::ExtractOps(unit.ops, model);
+    auto serialized_res = litert::internal::SerializeModel(std::move(em.model));
+    if (!serialized_res) return absl::InternalError("Serialize failed");
+    auto serialized = std::move(*serialized_res);
+
+    // --- CPU Path (Golden Reference) ---
+    auto cpu_model_res = CompiledModel::Create(env, serialized, *cpu_opts_res);
+    if (!cpu_model_res) {
+      ComparisonResult final_res;
+      final_res.failed = true;
+      final_res.failing_metrics.push_back("CPU_COMPILE_FAILED");
+      if (summary)
+        summary->all_ops.push_back(
+            {(int)global_op_counter, unit.opcode_str, "", final_res});
+      global_op_counter++;
+      continue;
+    }
+    auto& cpu_model = *cpu_model_res;
+
+    auto cpu_in_exp = cpu_model.CreateInputBuffers(0);
+    if (!cpu_in_exp) return absl::InternalError("CPU inputs failed");
+    auto cpu_inputs = std::move(cpu_in_exp.Value());
+
+    if (!options.input_dir.empty() && global_op_counter == 0) {
+      auto fill_status = tensor_utils::FillInputBuffersWithCustomData(
+          cpu_model, 0, cpu_inputs, options.input_dir);
+      if (!fill_status) {
+        ABSL_LOG(WARNING) << "Failed to fill inputs from " << options.input_dir
+                          << ": " << fill_status.Error().Message();
+      }
+    }
+
+    auto cpu_out_exp = cpu_model.CreateOutputBuffers(0);
+    if (!cpu_out_exp) return absl::InternalError("CPU outputs failed");
+    auto cpu_outputs = std::move(cpu_out_exp.Value());
+
+    for (size_t i = 0; i < em.inputs.size(); ++i) {
+      const auto* orig = em.inputs[i];
+      if (orig && cpu_tensor_values.contains(orig)) {
+        (void)cpu_inputs[i].Write<char>(
+            absl::MakeSpan(cpu_tensor_values[orig]));
+      } else {
+        (void)tensor_utils::FillBufferWithRandomData(cpu_inputs[i]);
+        auto size_res = cpu_inputs[i].Size();
         if (!size_res) continue;
-        std::vector<char> cpu_data(*size_res);
-        (void)cpu_outputs[i].Read<char>(absl::MakeSpan(cpu_data));
+        std::vector<char> tmp(*size_res);
+        (void)cpu_inputs[i].Read<char>(absl::MakeSpan(tmp));
+        if (orig) {
+          cpu_tensor_values[orig] = tmp;
+          accel_tensor_values[orig] = std::move(tmp);
+        }
+      }
+    }
+    auto cpu_run_status =
+        cpu_model.Run(static_cast<size_t>(0), cpu_inputs, cpu_outputs);
+    if (!cpu_run_status) {
+      ComparisonResult final_res;
+      final_res.failed = true;
+      final_res.failing_metrics.push_back("CPU_RUN_FAILED");
+      if (summary) {
+        summary->all_ops.push_back(
+            {(int)global_op_counter, unit.opcode_str, "", final_res});
+        summary->failing_op_indices.push_back(global_op_counter);
+      }
+      global_op_counter++;
+      continue;
+    }
+
+    for (size_t i = 0; i < em.outputs.size(); ++i) {
+      auto size_res = cpu_outputs[i].Size();
+      if (!size_res) continue;
+      std::vector<char> cpu_data(*size_res);
+      (void)cpu_outputs[i].Read<char>(absl::MakeSpan(cpu_data));
+      if (em.outputs[i]) {
         cpu_tensor_values[em.outputs[i]] = std::move(cpu_data);
       }
+    }
 
-      // --- Accel Path (Test Path) ---
-      ComparisonResult final_res;
-      final_res.failed = false;
-      std::string tensor_name = "";
-      bool accel_run_success = false;
-      if (skip_accel) {
-        final_res.failing_metrics.push_back("SKIPPED_FOR_NPU");
+    // --- Accel Path (Test Path) ---
+    ComparisonResult worst_res;
+    worst_res.failed = false;
+    bool accel_run_success = false;
+    bool any_tensor_failed = false;
+
+    if (unit.skip_accel) {
+      worst_res.failing_metrics.push_back("SKIPPED_FOR_NPU");
+    } else {
+      auto accel_model_res = CompiledModel::Create(env, serialized, accel_opts);
+      if (!accel_model_res) {
+        worst_res.failed = true;
+        worst_res.failing_metrics.push_back("ACCEL_COMPILE_FAILED");
       } else {
-        auto accel_model_res =
-            CompiledModel::Create(env, serialized, accel_opts);
-        if (!accel_model_res) {
-          final_res.failed = true;
-          final_res.failing_metrics.push_back("ACCEL_COMPILE_FAILED");
+        auto& accel_model = *accel_model_res;
+        auto fully_accel_exp = accel_model.IsFullyAccelerated();
+        if (!fully_accel_exp.HasValue() || !fully_accel_exp.Value()) {
+          worst_res.failed = true;
+          worst_res.failing_metrics.push_back("NOT_PARTITIONED");
         } else {
-          auto& accel_model = *accel_model_res;
-          auto fully_accel_exp = accel_model.IsFullyAccelerated();
-          if (!fully_accel_exp.HasValue() || !fully_accel_exp.Value()) {
-            final_res.failed = true;
-            final_res.failing_metrics.push_back("NOT_PARTITIONED");
+          auto accel_in_exp = accel_model.CreateInputBuffers(0);
+          auto accel_out_exp = accel_model.CreateOutputBuffers(0);
+          if (!accel_in_exp || !accel_out_exp) {
+            worst_res.failed = true;
+            worst_res.failing_metrics.push_back("ACCEL_BUFFERS_FAILED");
           } else {
-            auto accel_in_exp = accel_model.CreateInputBuffers(0);
-            auto accel_out_exp = accel_model.CreateOutputBuffers(0);
-            if (!accel_in_exp || !accel_out_exp) {
-              final_res.failed = true;
-              final_res.failing_metrics.push_back("ACCEL_BUFFERS_FAILED");
+            auto accel_inputs = std::move(accel_in_exp.Value());
+            auto accel_outputs = std::move(accel_out_exp.Value());
+            for (size_t i = 0; i < em.inputs.size(); ++i) {
+              const auto* orig = em.inputs[i];
+              if (!orig) continue;
+              const auto& source_map = options.use_accel_output_as_input
+                                           ? accel_tensor_values
+                                           : cpu_tensor_values;
+              if (source_map.contains(orig)) {
+                (void)accel_inputs[i].Write<char>(
+                    absl::MakeSpan(source_map.at(orig)));
+              }
+            }
+            auto run_status = accel_model.Run(static_cast<size_t>(0),
+                                              accel_inputs, accel_outputs);
+            if (!run_status) {
+              worst_res.failed = true;
+              worst_res.failing_metrics.push_back("ACCEL_RUN_FAILED");
             } else {
-              auto accel_inputs = std::move(accel_in_exp.Value());
-              auto accel_outputs = std::move(accel_out_exp.Value());
-              for (size_t i = 0; i < em.inputs.size(); ++i) {
-                const auto* orig = em.inputs[i];
-                // Use drifted inputs if flag is set, otherwise use golden
-                // inputs.
-                const auto& source_map = options.use_accel_output_as_input
-                                             ? accel_tensor_values
-                                             : cpu_tensor_values;
-                if (source_map.contains(orig)) {
-                  (void)accel_inputs[i].Write<char>(
-                      absl::MakeSpan(source_map.at(orig)));
+              accel_run_success = true;
+              for (size_t i = 0; i < em.outputs.size(); ++i) {
+                auto comp_res = internal::CompareBuffers(
+                    cpu_outputs[i], accel_outputs[i], options.thresholds,
+                    absl::StrFormat("%s out %d", op_info, i));
+                if (comp_res) {
+                  std::string t_name = em.outputs[i]
+                                           ? std::string(em.outputs[i]->Name())
+                                           : "unknown";
+                  ABSL_LOG(INFO) << absl::StreamFormat(
+                      "  Comparing tensor: %s | Max Diff: %.6f | MSE: %.6f | "
+                      "Cos Sim: %.6f",
+                      t_name, comp_res->max_diff, comp_res->mse,
+                      comp_res->cosine_similarity);
+
+                  if (comp_res->failed) any_tensor_failed = true;
+
+                  if (summary) {
+                    summary->all_ops.push_back({(int)global_op_counter,
+                                                unit.opcode_str, t_name,
+                                                *comp_res});
+                  }
+
+                  // Track worst result for save_failing_models decision.
+                  if (comp_res->failed) {
+                    worst_res = *comp_res;
+                  } else if (!worst_res.failed) {
+                    worst_res = *comp_res;
+                  }
                 }
               }
-              auto run_status = accel_model.Run(static_cast<size_t>(0),
-                                                accel_inputs, accel_outputs);
-              if (!run_status) {
-                final_res.failed = true;
-                final_res.failing_metrics.push_back("ACCEL_RUN_FAILED");
-              } else {
-                accel_run_success = true;
-                for (size_t i = 0; i < em.outputs.size(); ++i) {
-                  if (i == 0) {
-                    tensor_name = em.outputs[i]->Name();
-                  }
-                  // Compare pure CPU golden output vs current Accel output.
-                  auto comp_res = internal::CompareBuffers(
-                      cpu_outputs[i], accel_outputs[i], options.thresholds,
-                      absl::StrFormat("%s out %d", op_info, i));
-                  if (comp_res) {
-                    final_res = *comp_res;
-                    if (final_res.failed && summary)
-                      summary->failing_op_indices.push_back(global_op_counter);
-                  }
-                }
 
-                // Update test path values (potentially drifted).
-                for (size_t i = 0; i < em.outputs.size(); ++i) {
-                  auto size_res = accel_outputs[i].Size();
-                  if (!size_res) continue;
-                  std::vector<char> accel_data(*size_res);
-                  (void)accel_outputs[i].Read<char>(absl::MakeSpan(accel_data));
-                  accel_tensor_values[em.outputs[i]] = std::move(accel_data);
-                }
+              for (size_t i = 0; i < em.outputs.size(); ++i) {
+                if (!em.outputs[i]) continue;
+                auto size_res = accel_outputs[i].Size();
+                if (!size_res) continue;
+                std::vector<char> accel_data(*size_res);
+                (void)accel_outputs[i].Read<char>(absl::MakeSpan(accel_data));
+                accel_tensor_values[em.outputs[i]] = std::move(accel_data);
               }
             }
           }
         }
       }
+    }
 
-      // If accel failed, we must still update accel_tensor_values with golden
-      // data to avoid breaking the chain.
-      if (!accel_run_success) {
-        for (size_t i = 0; i < em.outputs.size(); ++i) {
+    if (!accel_run_success) {
+      // If path failed, push a single entry.
+      if (summary) {
+        summary->all_ops.push_back(
+            {(int)global_op_counter, unit.opcode_str, "", worst_res});
+      }
+      for (size_t i = 0; i < em.outputs.size(); ++i) {
+        if (em.outputs[i]) {
           accel_tensor_values[em.outputs[i]] = cpu_tensor_values[em.outputs[i]];
         }
       }
+    }
 
-      if (options.save_failing_models && final_res.failed) {
-        std::string base = absl::StrFormat("%s/op_%04d_%s", options.output_dir,
-                                           global_op_counter, opcode_str);
-        std::ofstream model_file(base + ".tflite", std::ios::binary);
-        model_file.write(reinterpret_cast<const char*>(serialized.Data()),
-                         serialized.Size());
-        for (size_t i = 0; i < em.inputs.size(); ++i) {
-          const auto* orig = em.inputs[i];
-          const auto& source_map = options.use_accel_output_as_input
-                                       ? accel_tensor_values
-                                       : cpu_tensor_values;
-          if (source_map.contains(orig)) {
-            std::ofstream in_file(base + absl::StrFormat("_in_%d.bin", i),
-                                  std::ios::binary);
-            in_file.write(source_map.at(orig).data(),
-                          source_map.at(orig).size());
-          }
+    if ((worst_res.failed || any_tensor_failed) && summary)
+      summary->failing_op_indices.push_back(global_op_counter);
+
+    if (options.save_failing_models &&
+        (worst_res.failed || any_tensor_failed)) {
+      std::string base = absl::StrFormat(
+          "%s/op_%04d_%s", options.output_dir, global_op_counter,
+          absl::StrReplaceAll(unit.opcode_str,
+                              {{"(", "_"}, {")", "_"}, {" ", "_"}}));
+      std::ofstream model_file(base + ".tflite", std::ios::binary);
+      model_file.write(reinterpret_cast<const char*>(serialized.Data()),
+                       serialized.Size());
+      for (size_t i = 0; i < em.inputs.size(); ++i) {
+        const auto* orig = em.inputs[i];
+        const auto& source_map = options.use_accel_output_as_input
+                                     ? accel_tensor_values
+                                     : cpu_tensor_values;
+        if (source_map.contains(orig)) {
+          std::ofstream in_file(base + absl::StrFormat("_in_%d.bin", i),
+                                std::ios::binary);
+          in_file.write(source_map.at(orig).data(), source_map.at(orig).size());
         }
       }
+    }
 
-      if (summary)
-        summary->all_ops.push_back(
-            {(int)global_op_counter, opcode_str, tensor_name, final_res});
-
-      // Cleanup tensors that are no longer needed.
+    for (const auto* op : unit.ops) {
       for (const auto* in_t : op->Inputs()) {
         if (in_t && global_consumer_counts.contains(in_t) &&
             --global_consumer_counts[in_t] == 0) {
@@ -747,9 +1006,10 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
           accel_tensor_values.erase(in_t);
         }
       }
-      global_op_counter++;
     }
+    global_op_counter++;
   }
+
   if (summary) {
     summary->LogSummary(options);
     summary->SaveToCsv(
