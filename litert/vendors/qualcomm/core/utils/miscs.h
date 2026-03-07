@@ -7,6 +7,7 @@
 #include <dlfcn.h>
 #endif
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -39,6 +40,36 @@ constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
 constexpr uint32_t kQuantBitWidth2 = 2;
 
+constexpr std::array<int8_t, 256 * 4> MakeInt2LUT()
+{
+   std::array<int8_t, 256 * 4> lut{};
+   for (int b = 0; b < 256; b++) {
+       for (int i = 0; i < 4; i++) {
+           int v = (b >> (i * 2)) & 3;
+           if (v & 2) v |= ~3;
+           lut[b * 4 + i] = static_cast<int8_t>(v);
+       }
+   }
+   return lut;
+}
+alignas(64) inline constexpr auto kInt2LUT = MakeInt2LUT();
+
+constexpr std::array<int8_t, 256 * 2> MakeInt4LUT() {
+  std::array<int8_t, 256 * 2> lut{};
+  for (int b = 0; b < 256; b++) {
+    for (int i = 0; i < 2; i++) {
+      int v = (b >> (i * 4)) & 0xF;
+      if (v & 0x8) v |= ~0xF;
+      lut[b * 2 + i] = static_cast<int8_t>(v);
+    }
+  }
+  return lut;
+}
+alignas(64) inline constexpr auto kInt4LUT = MakeInt4LUT();
+
+std::vector<std::int8_t> UnpackIntData(const void* src, size_t src_bytes,
+                                       uint32_t bit_width);
+
 template <typename...>
 inline constexpr bool always_false = false;
 template <typename T>
@@ -69,14 +100,34 @@ void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
 void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
                                   std::vector<std::int16_t>& dst);
 
-void ConvertDataFromInt4ToInt8(const void* src, size_t num_bytes,
-                               std::vector<std::int8_t>& dst);
-
-void ConvertDataFromInt2ToInt8(const void* src, size_t num_bytes,
-                               std::vector<std::int8_t>& dst);
-
 void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
                                std::vector<std::int8_t>& dst);
+
+template <uint32_t BitWidth>
+std::vector<std::int8_t> UnpackIntData(const void* src, size_t src_bytes) {
+  constexpr uint32_t values_per_byte = 8 / BitWidth;
+  std::vector<std::int8_t> dst;
+  dst.reserve(src_bytes * values_per_byte);
+  const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
+  
+  if constexpr (BitWidth == kQuantBitWidth2) {
+    for (size_t i = 0; i < src_bytes; i++) {
+      const int8_t* lut_entry = &kInt2LUT[byte_data[i] * 4];
+      dst.emplace_back(lut_entry[0]);
+      dst.emplace_back(lut_entry[1]);
+      dst.emplace_back(lut_entry[2]);
+      dst.emplace_back(lut_entry[3]);
+    }
+  } else if constexpr (BitWidth == kQuantBitWidth4) {
+    for (size_t i = 0; i < src_bytes; i++) {
+      const int8_t* lut_entry = &kInt4LUT[byte_data[i] * 2];
+      dst.emplace_back(lut_entry[0]);
+      dst.emplace_back(lut_entry[1]);
+    }
+  }
+  
+  return dst;
+}
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
 
