@@ -20,7 +20,6 @@ limitations under the License.
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "absl/types/any.h"
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/common/status.h"
