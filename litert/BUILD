@@ -43,7 +43,7 @@ package_group(
         "//litert/python/...",
         "//litert/runtime/accelerators/gpu/...",
         "//litert/runtime/dispatch/...",
-        "//litert/runtime/ml_drift_delegate/...",
+        "//third_party/odml/litert/ml_drift/delegate/...",
         "//litert/rust/...",
         "//litert/samples/...",
         "//litert/sdk_util/...",
@@ -84,6 +84,7 @@ package_group(
         "//litert/test/...",
         "//litert/tools/...",
         "//litert/vendors/...",
+        "//third_party/odml/litert/ml_drift/...",
         "//third_party/odml/litert/weight_loader/...",
     ] + litert_friends(),
 )

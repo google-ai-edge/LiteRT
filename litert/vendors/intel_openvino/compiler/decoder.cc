@@ -15,16 +15,23 @@
 
 #include "litert/vendors/intel_openvino/compiler/decoder.h"
 
+#include <array>
 #include <cstdint>
 #include <map>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/vendors/intel_openvino/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -33,7 +40,7 @@ namespace openvino {
 
 // This has been picked from the openvino build:
 // build/src/frontends/tensorflow_lite/src/schema_generated.h
-constexpr std::array<std::pair<LiteRtOpCode, const char*>, 159> kLitertOvMap{
+constexpr std::array<std::pair<LiteRtOpCode, const char*>, 161> kLitertOvMap{
     {{kLiteRtOpCodeTflAdd, "ADD"},
      {kLiteRtOpCodeTflAveragePool2d, "AVERAGE_POOL_2D"},
      {kLiteRtOpCodeTflConcatenation, "CONCATENATION"},
@@ -195,7 +202,8 @@ constexpr std::array<std::pair<LiteRtOpCode, const char*>, 159> kLitertOvMap{
      {kLiteRtOpCodeTflUnsortedSegmentSum, "UNSORTED_SEGMENT_SUM"},
      {kLiteRtOpCodeTflAtan2, "ATAN2"},
      {kLiteRtOpCodeTflUnsortedSegmentMin, "UNSORTED_SEGMENT_MIN"},
-     {kLiteRtOpCodeTflSign, "SIGN"}}};
+     {kLiteRtOpCodeTflSign, "SIGN"},
+     {kLiteRtOpCodeTflUnpack, "UNPACK"}}};
 
 constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
   for (const auto& entry : kLitertOvMap) {
@@ -673,6 +681,19 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(litert_op_, &axis),
                                ERROR_LOG_STR("axis", op_name_.c_str()));
         return ov::Any(axis);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeTflUnpack:
+      if (name == "axis") {
+        int32_t axis;
+        LITERT_RETURN_IF_ERROR(LiteRtGetUnpackAxisOption(litert_op_, &axis),
+                               ERROR_LOG_STR("axis", op_name_.c_str()));
+        return ov::Any(axis);
+      } else if (name == "num") {
+        int32_t num;
+        LITERT_RETURN_IF_ERROR(LiteRtGetUnpackNumOption(litert_op_, &num),
+                               ERROR_LOG_STR("num", op_name_.c_str()));
+        return ov::Any(num);
       }
       break;
     case LiteRtOpCode::kLiteRtOpCodeTflCast:

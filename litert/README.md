@@ -62,7 +62,8 @@ optimization tools.
 
 - tools/
 
-  Various tools (Benchmark, Accuracy evaluation, Apply Compiler Plugin CLI …)
+  Various tools (Benchmark, Numerical accuracy evaluation, Apply Compiler
+  Plugin CLI …)
 
 - vendors/
 
