@@ -95,10 +95,13 @@ LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
 
 LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*CreateDelegate)(LiteRtAccelerator accelerator,
+    LiteRtStatus (*CreateDelegate)(LiteRtRuntimeContext* runtime_context,
+                                   LiteRtEnvironment env,
+                                   LiteRtAccelerator accelerator,
                                    LiteRtOptions options,
                                    LiteRtDelegateWrapper* delegate),
-    void (*DestroyDelegate)(LiteRtDelegateWrapper delegate)) {
+    void (*DestroyDelegate)(LiteRtRuntimeContext* runtime_context,
+                            LiteRtDelegateWrapper delegate)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -121,8 +124,9 @@ LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
 
 LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
-                                           int detail_level)) {
+    LiteRtStatus (*StartMetricsCollection)(
+        LiteRtRuntimeContext* runtime_context, LiteRtDelegateWrapper delegate,
+        int detail_level)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -132,7 +136,8 @@ LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
 
 LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
+    LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
+                                          LiteRtDelegateWrapper delegate,
                                           LiteRtMetrics metrics)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;

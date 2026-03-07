@@ -19,6 +19,7 @@
 #include "litert/runtime/metrics.h"
 
 // We need to forward declare this to avoid a dependency loop.
+struct LiteRtRuntimeContext;
 struct LiteRtCompiledModelT;
 struct LiteRtEnvironmentT;
 
@@ -50,22 +51,27 @@ struct LiteRtAcceleratorT {
       LiteRtHwAcceleratorSet* supported_hardware);
 
   // Creates a delegate for the accelerator.
-  LiteRtStatus (*CreateDelegate)(LiteRtAcceleratorT* accelerator,
+  LiteRtStatus (*CreateDelegate)(LiteRtRuntimeContext* runtime_context,
+                                 LiteRtEnvironmentT* env,
+                                 LiteRtAcceleratorT* accelerator,
                                  LiteRtOptions compilation_options,
                                  LiteRtDelegateWrapper* delegate);
 
   // Destroys created delegate for the accelerator.
-  void (*DestroyDelegate)(LiteRtDelegateWrapper delegate);
+  void (*DestroyDelegate)(LiteRtRuntimeContext* runtime_context,
+                          LiteRtDelegateWrapper delegate);
 
   LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
       LiteRtAcceleratorT* accelerator, bool* does_jit_compilation);
 
   // Starts collection of HW-specific metrics at a specific level of detail.
-  LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
+  LiteRtStatus (*StartMetricsCollection)(LiteRtRuntimeContext* runtime_context,
+                                         LiteRtDelegateWrapper delegate,
                                          int detail_level);
 
   // Stops collection of HW-specific metrics and report the collected metrics.
-  LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
+  LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
+                                        LiteRtDelegateWrapper delegate,
                                         LiteRtMetricsT* metrics);
 
   // NOLINTEND(*-readability-class-member-naming)
