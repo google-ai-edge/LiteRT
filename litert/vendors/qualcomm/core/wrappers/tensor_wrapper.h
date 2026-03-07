@@ -148,6 +148,8 @@ class TensorWrapper final {
            qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
   }
 
+  bool IsNBitQuant(std::uint32_t bitwidth);
+
   // Utilities /////////////////////////////////////////////////////////
 
   // Allocate memory on owned_data_ for output tensors
@@ -168,6 +170,7 @@ class TensorWrapper final {
     }
     SetTensorType(QNN_TENSOR_TYPE_APP_READ);
   }
+  void UpdateBitWidth(uint32_t bitwidth);
 
  private:
   void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);

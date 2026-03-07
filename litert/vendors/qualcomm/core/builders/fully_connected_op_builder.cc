@@ -12,6 +12,7 @@
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
@@ -32,8 +33,17 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
 
   TensorWrapper& input_tensor = inputs[0];
   fully_connected_op.AddInputTensor(input_tensor);
+
   TensorWrapper& weight_tensor = inputs[1];
+  // TODO (chunhsue-qti): Treat a8w2 as a8w4, 2-bit quant weight tensor is
+  // QNN_DATATYPE_SFIXED_POINT_8 with bitwidth 2. Remove this after a8w2 is
+  // supported.
+  if (weight_tensor.IsQuantI8() && weight_tensor.IsNBitQuant(kQuantBitWidth2)) {
+    QNN_LOG_WARNING("Aggresively convert the a8w2 Fully Connected Op to a8w4.");
+    weight_tensor.UpdateBitWidth(kQuantBitWidth4);
+  }
   fully_connected_op.AddInputTensor(weight_tensor);
+
   if (inputs.size() - 1 >= kBiasIdx) {
     TensorWrapper& bias_tensor = inputs[kBiasIdx];
     if (use_int64_bias_as_int32 && bias_tensor.IsTensorStatic() &&
