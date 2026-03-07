@@ -566,8 +566,8 @@ test:bulk_test_cpu --verbose_failures=true
 test:bulk_test_cpu --flaky_test_attempts=3
 test:bulk_test_cpu --build_tests_only
 
-# TODO: b/397625618 Enable bzlmod
-common --noenable_bzlmod
+# Enable bzlmod for modern Bazel and rules compatibility
+common --enable_bzlmod
 
 # BEGIN-INTERNAL
 # Flags for tensorflow source rules to use local_repository rather than http_archive.
