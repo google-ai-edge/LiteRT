@@ -388,6 +388,32 @@ TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUInt32) {
   EXPECT_EQ(tensor_data, golden_data);
 }
 
+TEST(TensorPoolCreateTensorWithNameTest, CreateInputTensorWithName) {
+  TensorPool tensor_pool;
+  const char* input_name = "test_input_name";
+
+  auto& tensor_wrapper = tensor_pool.CreateInputTensorWithName(
+      input_name, QNN_DATATYPE_FLOAT_32, QuantizeParamsWrapperVariant{},
+      {1, 2, 3});
+
+  EXPECT_STREQ(tensor_wrapper.GetQnnTensor().v1.name, input_name);
+  EXPECT_EQ(tensor_wrapper.GetQnnTensor().v1.dataType, QNN_DATATYPE_FLOAT_32);
+  EXPECT_EQ(tensor_wrapper.GetQnnTensor().v1.type, QNN_TENSOR_TYPE_APP_WRITE);
+}
+
+TEST(TensorPoolCreateTensorWithNameTest, CreateOutputTensorWithName) {
+  TensorPool tensor_pool;
+  const char* output_name = "test_output_name";
+
+  auto& tensor_wrapper = tensor_pool.CreateOutputTensorWithName(
+      output_name, QNN_DATATYPE_FLOAT_32, QuantizeParamsWrapperVariant{},
+      {1, 2, 3});
+
+  EXPECT_STREQ(tensor_wrapper.GetQnnTensor().v1.name, output_name);
+  EXPECT_EQ(tensor_wrapper.GetQnnTensor().v1.dataType, QNN_DATATYPE_FLOAT_32);
+  EXPECT_EQ(tensor_wrapper.GetQnnTensor().v1.type, QNN_TENSOR_TYPE_APP_READ);
+}
+
 }  // namespace
 
 }  // namespace qnn

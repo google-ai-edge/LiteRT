@@ -27,10 +27,10 @@ TEST_P(QnnModelTest, FullyConnectedInt2Sanity) {
   const std::vector<std::uint32_t> kInDims{1, 2};
   const std::vector<std::uint32_t> kOutDims{1, 2};
 
-  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, input_quant, kInDims, "");
-  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, output_quant, kOutDims, "");
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_SFIXED_POINT_16, input_quant, kInDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_SFIXED_POINT_16, output_quant, kOutDims);
 
   const std::vector<std::uint32_t> kFilterDims{2, 2};
   auto weight_quant_param =

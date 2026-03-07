@@ -18,10 +18,10 @@ INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
 
 TEST_P(QnnModelTest, SingleRelu) {
   const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
-  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_FLOAT_32, {}, kDims, "");
-  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_FLOAT_32, {}, kDims, "");
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_FLOAT_32, {}, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_FLOAT_32, {}, kDims);
   auto ops = ::qnn::BuildReluOp(tensor_pool_, {input_0}, {output_0});
   ASSERT_FALSE(ops.empty());
 
