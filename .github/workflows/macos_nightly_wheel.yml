@@ -1,4 +1,4 @@
-name: macOS nightly wheel Build
+name: macOS nightly wheel
 
 on:
   pull_request:
