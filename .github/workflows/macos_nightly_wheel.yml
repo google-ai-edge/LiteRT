@@ -1,4 +1,4 @@
-name: macOS nightly wheel Build
+name: macOS nightly wheel
 
 on:
   pull_request:
@@ -36,6 +36,67 @@ jobs:
 
       - name: Set Bazel version for Bazelisk
         run: echo "7.6.1" > .bazelversion
+
+      - name: Set up cache keys and bazel output base.
+        id: cache-keys
+        shell: bash
+        run: |
+          # The month is used as a cache-buster.
+          CACHE_MONTH=$(date +%Y-%m)
+          CACHE_RESTORE_KEY_2="${{ github.workflow }}-${{ matrix.python-version }}-$CACHE_MONTH"
+          echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
+
+          if [ -f "WORKSPACE" ]; then
+            WORKSPACE_HASH=$(sha256sum WORKSPACE | cut -d' ' -f1)
+          fi
+          if [ -f ".bazelrc" ]; then
+            BAZELRC_HASH=$(sha256sum .bazelrc | cut -d' ' -f1)
+          fi
+          CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${WORKSPACE_HASH}${BAZELRC_HASH}"
+          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$GITHUB_OUTPUT"
+
+          BUILD_FILES_HASH=""
+          for f in $(find . -name 'BUILD' -o -name 'BUILD.bazel'); do
+            BUILD_FILES_HASH="${BUILD_FILES_HASH}-$(sha256sum $f | cut -d' ' -f1)"
+          done
+          BUILD_FILES_HASH=$(echo "$BUILD_FILES_HASH" | sha256sum | cut -d' ' -f1)
+          CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${BUILD_FILES_HASH}"
+          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
+
+          CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$GITHUB_OUTPUT"
+
+          CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
+          # Use a directory outside of the main checkout for the output base
+          # to avoid interfering with the source tree.
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+          echo "BAZEL_OUTPUT_BASE=${HOME}/bazel-output-bases/w-$SHORT_SHA" >> "$GITHUB_ENV"
+
+      - name: Restore bazel cache
+        id: bazel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/bazel
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+
+      - name: Check cache hit
+        run: |
+          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
+          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
+          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+
+      - name: Set BAZEL_CONFIG_FLAGS for Cache
+        shell: bash
+        run: |
+          CacheDir="${HOME}/.cache/bazel"
+          echo "BAZEL_CONFIG_FLAGS=--disk_cache=$CacheDir" >> "$GITHUB_ENV"
 
       - name: Check Bazel (via Bazelisk) version
         run: |
@@ -97,4 +158,41 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-py${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}
-          path: ./dist/
+          path: ./dist/*.whl
+
+      - name: Save bazel cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/.cache/bazel
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+  upload-to-pypi:
+    name: "Upload Nightly Wheels to PyPI"
+    runs-on: ubuntu-latest
+    needs: build_wheels
+    if: success() && github.event_name == 'schedule'
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install twine
+        run: python -m pip install twine
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: List downloaded wheels
+        run: ls -R dist
+
+      - name: Upload to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        run: twine upload dist/**/*.whl --non-interactive
