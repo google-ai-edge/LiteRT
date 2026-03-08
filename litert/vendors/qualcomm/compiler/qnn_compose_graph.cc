@@ -58,6 +58,7 @@
 #include "litert/vendors/qualcomm/core/builders/embedding_lookup_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder_htp.h"
+#include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gather_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
@@ -535,7 +536,13 @@ LiteRtStatus BuildFullyConnectedOp(
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  if (use_htp_preferences) {
+  const auto scale = GetSylvesterHadamardScale(input_tensors[1]);
+  if (scale) {
+    LITERT_LOG(LITERT_INFO, "Convert FC to HadamardTransform.");
+    op_wrappers = ::qnn::BuildHadamardTransformOp(
+        tensor_pool, input_tensors, {activation_input}, keep_num_dims);
+  }
+  if (op_wrappers.empty() && use_htp_preferences) {
     op_wrappers = ::qnn::BuildFullyConnectedOpHtp(
         tensor_pool, input_tensors, {activation_input}, keep_num_dims);
   }
