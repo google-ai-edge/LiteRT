@@ -49,6 +49,8 @@ jobs:
           for f in $(find . -name 'BUILD' -o -name 'BUILD.bazel'); do
             BUILD_FILES_HASH="${BUILD_FILES_HASH}-$(sha256sum $f | cut -d' ' -f1)"
           done
+          # Hash the long BUILD_FILES_HASH to create a shorter, fixed-length key.
+          BUILD_FILES_HASH=$(echo -n "${BUILD_FILES_HASH}" | sha256sum | cut -d' ' -f1)
           CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${BUILD_FILES_HASH}"
           echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
 
