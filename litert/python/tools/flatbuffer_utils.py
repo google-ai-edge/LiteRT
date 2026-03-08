@@ -18,13 +18,17 @@ All functions that are commonly used to work with FlatBuffers.
 """
 
 import copy
+import logging
+import mmap
+import os
 import random
 import re
 import struct
 import sys
-from typing import Optional, Type, TypeVar, Union
+from typing import Optional, Type, TypeVar, Union, overload
 
 import flatbuffers
+import numpy as np
 
 import os # import gfile
 from litert.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
@@ -63,7 +67,7 @@ def read_model(input_tflite_file):
   """Reads a tflite model as a python object.
 
   Args:
-    input_tflite_file: Full path name to the input tflite file
+    input_tflite_file: Full path name to the input tflite file.
 
   Raises:
     RuntimeError: If input_tflite_file path is invalid.
@@ -72,15 +76,70 @@ def read_model(input_tflite_file):
   Returns:
     A python object corresponding to the input tflite file.
   """
-  if not os.path.exists(input_tflite_file):
-    raise RuntimeError('Input file not found at %r\n' % input_tflite_file)
-  with open(input_tflite_file, 'rb') as input_file_handle:
-    model_bytearray = bytearray(input_file_handle.read())
+
+  model_bytearray = None
+
+  # Try to mmap the file first if it is local.
+  if (fd := os.open(input_tflite_file, os.O_RDONLY)) >= 0:
+    try:
+      model_bytearray = mmap.mmap(
+          fd, 0, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ
+      )
+    except IOError as e:
+      logging.info(
+          'Mapping model file "%s" failed with exception: %s.',
+          input_tflite_file,
+          e,
+      )
+    os.close(fd)
+
+  if not model_bytearray:
+    if not os.path.exists(input_tflite_file):
+      raise RuntimeError('Input file not found at %r\n' % input_tflite_file)
+    with open(input_tflite_file, 'rb') as input_file_handle:
+      model_bytearray = bytearray(input_file_handle.read())
+
   return read_model_from_bytearray(model_bytearray)
+
+
+@overload
+def _ndarrays_to_lists(value: np.ndarray) -> np.ndarray | list[int]:
+  ...
+
+
+def _ndarrays_to_lists[T](value: T) -> T:
+  """Recursively convert `np.ndarray`s of `np.int32` to `list`.
+
+  If the input is a `list`, this function recurses over its elements. If the
+  input has a `__dict__` attribute, this function recurses over its non-`None`
+  entries.
+
+  Args:
+    value: The object in which to replace `np.ndarray`s with `list`s.
+
+  Returns:
+    The modified value.
+  """
+  if isinstance(value, np.ndarray):
+    return value.tolist() if value.dtype == np.int32 else value
+  if isinstance(value, list):
+    return [_ndarrays_to_lists(v) for v in value]
+  if hasattr(value, '__dict__'):
+    for k, v in value.__dict__.items():
+      if v is not None:
+        value.__dict__[k] = _ndarrays_to_lists(v)
+  return value
 
 
 def read_model_from_bytearray(model_bytearray):
   """Reads a tflite model as a python object.
+
+  This function also does the following:
+   * Resolves `Buffer`s specified by their offset/size,
+   * Resolves `Operator.CustomOptions` specified by their offset/size,
+   * Converts non-`Buffer` `np.ndarray` objects (things like `op.inputs`) to
+     `list` since if the underlying buffer is not mutable, neither will the
+     `np.ndarray`s.
 
   Args:
     model_bytearray: TFLite model in bytearray format.
@@ -92,12 +151,14 @@ def read_model_from_bytearray(model_bytearray):
   if sys.byteorder == 'big':
     byte_swap_tflite_model_obj(model, 'little', 'big')
 
-  # Offset handling for models > 2GB
+  # Offset handling for buffers.
   for buffer in model.buffers:
     if buffer.offset:
       buffer.data = model_bytearray[buffer.offset : buffer.offset + buffer.size]
       buffer.offset = 0
       buffer.size = 0
+
+  # Offset handling for `Operator.CustomOptions`.
   for subgraph in model.subgraphs:
     for op in subgraph.operators:
       if op.largeCustomOptionsOffset:
@@ -107,6 +168,12 @@ def read_model_from_bytearray(model_bytearray):
         ]
         op.largeCustomOptionsOffset = 0
         op.largeCustomOptionsSize = 0
+
+  # Convert any non-buffer `np.ndarray`s to `list` to ensure they are mutable.
+  buffers = model.buffers
+  model.buffers = None
+  model = _ndarrays_to_lists(model)
+  model.buffers = buffers
 
   return model
 
@@ -377,7 +444,7 @@ def byte_swap_tflite_model_obj(model, from_endiness, to_endiness):
   if model is None:
     return
   # Get all the constant buffers, byte swapping them as per their data types
-  buffer_swapped = []
+  buffer_swapped = set()
   types_of_16_bits = [
       schema_fb.TensorType.FLOAT16,
       schema_fb.TensorType.INT16,
@@ -421,7 +488,7 @@ def byte_swap_tflite_model_obj(model, from_endiness, to_endiness):
           )
         else:
           continue
-        buffer_swapped.append(tensor.buffer)
+        buffer_swapped.add(tensor.buffer)
 
 
 def byte_swap_tflite_buffer(tflite_model, from_endiness, to_endiness):
