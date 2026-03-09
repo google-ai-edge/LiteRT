@@ -18,6 +18,9 @@
 #include <array>
 #include <utility>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
+#include "absl/base/const_init.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -37,6 +40,13 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
                                      LiteRtEnvironment* environment) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
                          kLiteRtStatusErrorInvalidArgument);
+
+  ABSL_CONST_INIT static absl::Mutex environment_create_mutex(absl::kConstInit);
+  // TODO b/491180241 - Experimental multi-threading support for Environment
+  // creation.
+  // Note: The entire Environment APIs are not verified to support
+  // multi-threading.
+  absl::MutexLock lock(environment_create_mutex);
 
   auto options_span = absl::MakeSpan(options, num_options);
   LITERT_ASSIGN_OR_RETURN(auto env,
