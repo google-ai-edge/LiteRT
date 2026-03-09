@@ -52,10 +52,14 @@ build:clang_local --repo_env USE_HERMETIC_CC_TOOLCHAIN=1
 
 build --repo_env=USE_PYWRAP_RULES=True
 build --copt=-DGRPC_BAZEL_BUILD
-build --cxxopt=-std=gnu++17
-build --cxxopt=-fpermissive
 build --host_copt=-DGRPC_BAZEL_BUILD
-build --host_cxxopt=-fpermissive
+# GCC/Clang-specific flags: only apply on non-Windows platforms.
+# Each platform already specifies its own C++ standard (see below).
+build:linux --cxxopt=-std=gnu++17
+build:linux --cxxopt=-fpermissive
+build:linux --host_cxxopt=-fpermissive
+build:macos --cxxopt=-fpermissive
+build:macos --host_cxxopt=-fpermissive
 build --action_env=GRPC_BAZEL_RUNTIME=1
 build --repo_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb
 build --action_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb
@@ -272,6 +276,12 @@ build:macos --copt=-w
 build:windows --copt=/W0
 build:windows --host_copt=/W0
 
+# Ensure the CPU is set explicitly for Windows so that XLA/TSL config_settings
+# (which match on cpu=x64_windows) resolve correctly. Without this,
+# if_not_windows() selects may fall through to the default branch and pass
+# GCC/Clang flags (e.g. -Wno-sign-compare) to MSVC.
+build:windows --cpu=x64_windows
+
 # Suppress most C++ compiler warnings to reduce log size but allow
 # for specific warnings to still be present.
 build:linux --copt="-Wno-all"
@@ -381,6 +391,13 @@ build:macos_arm64 --cxxopt=-std=c++17
 build:macos_arm64 --host_cxxopt=-std=c++17
 build:windows --cxxopt=/std:c++20
 build:windows --host_cxxopt=/std:c++20
+# Protobuf v6.31.1 uses incomplete (forward-declared) types as value types in
+# absl::flat_hash_map. Under MSVC C++20, std::pair requires complete types for
+# conditionally-trivial special members (P0848R3), causing compilation failures.
+# Compile protobuf with C++17 to work around this; the rest of the project
+# stays at C++20.
+build:windows --per_file_copt=external/com_google_protobuf/.*\.cc$@/std:c++17
+build:windows --host_per_file_copt=external/com_google_protobuf/.*\.cc$@/std:c++17
 
 # On windows, we still link everything into a single DLL.
 build:windows --config=monolithic

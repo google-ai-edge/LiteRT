@@ -1,0 +1,11 @@
+--- a/third_party/xla/xla/tsl/tsl.bzl
++++ b/third_party/xla/xla/tsl/tsl.bzl
+@@ -364,7 +364,7 @@
+             clean_dep("//xla/tsl:android"): android_copts,
+             clean_dep("//xla/tsl:emscripten"): [],
+             clean_dep("//xla/tsl:macos"): [],
+-            clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = False),
++            clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = True),
+             clean_dep("//xla/tsl:ios"): [],
+             clean_dep("//xla/tsl:no_lgpl_deps"): ["-D__TENSORFLOW_NO_LGPL_DEPS__", "-pthread"],
+             "//conditions:default": ["-pthread"],

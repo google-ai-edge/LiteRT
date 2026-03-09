@@ -1,0 +1,21 @@
+diff --git a/src/google/protobuf/port.h b/src/google/protobuf/port.h
+--- a/src/google/protobuf/port.h
++++ b/src/google/protobuf/port.h
+@@ -544,7 +544,13 @@
+   alignas(std::string) char buffer_[sizeof(std::string)];
+ };
+ 
+-using GlobalEmptyString = std::conditional_t<
+-    GlobalEmptyStringConstexpr::HasConstexprDefaultConstructor(0),
+-    const GlobalEmptyStringConstexpr, GlobalEmptyStringDynamicInit>;
++#ifdef _MSC_VER
++// MSVC: force DynamicInit to maintain ABI compatibility when protobuf sources
++// compile with /std:c++17 while the rest of the project uses /std:c++20.
++using GlobalEmptyString = GlobalEmptyStringDynamicInit;
++#else
++using GlobalEmptyString = std::conditional_t<
++    GlobalEmptyStringConstexpr::HasConstexprDefaultConstructor(0),
++    const GlobalEmptyStringConstexpr, GlobalEmptyStringDynamicInit>;
++#endif
+ 
+ PROTOBUF_EXPORT extern GlobalEmptyString fixed_address_empty_string;

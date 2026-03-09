@@ -36,6 +36,23 @@ def _tensorflow_source_repo_impl(ctx):
             stripPrefix = ctx.attr.strip_prefix,
         )
 
+    # Apply patches after extraction/symlinking.
+    for patch in ctx.attr.patches:
+        ctx.patch(ctx.path(patch), strip = 1)
+
+    # Append protobuf-specific patches to XLA's protobuf.patch so that
+    # tf_workspace2()'s protobuf fetch applies them automatically.
+    if ctx.attr.protobuf_patches:
+        pb_patch_path = ctx.path("third_party/xla/third_party/protobuf/protobuf.patch")
+        existing = ctx.read(pb_patch_path)
+        extras = []
+        for pb_patch in ctx.attr.protobuf_patches:
+            extras.append(ctx.read(ctx.path(pb_patch)))
+        ctx.file(
+            "third_party/xla/third_party/protobuf/protobuf.patch",
+            content = existing + "\n" + "\n".join(extras),
+        )
+
 tensorflow_source_repo = repository_rule(
     implementation = _tensorflow_source_repo_impl,
     local = False,
@@ -43,6 +60,8 @@ tensorflow_source_repo = repository_rule(
         "sha256": attr.string(mandatory = False),
         "strip_prefix": attr.string(mandatory = True),
         "urls": attr.string_list(mandatory = True),
+        "patches": attr.label_list(default = []),
+        "protobuf_patches": attr.label_list(default = []),
     },
     doc = """
     A custom repository rule to select between a local TensorFlow source or a remote http_archive
