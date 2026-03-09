@@ -204,12 +204,15 @@ load("@rules_jvm_external//:defs.bzl", "maven_install")
 maven_install(
     name = "litert_maven",
     artifacts = [
-        "androidx.lifecycle:lifecycle-common:2.8.7",
+        "androidx.lifecycle:lifecycle-common:2.5.1",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
-        "com.google.guava:guava:33.4.6-android",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.0",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0",
+        "com.google.guava:guava:33.2.0-android",
+        "org.jetbrains.kotlin:kotlin-stdlib:1.9.22",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1",
+        "androidx.lifecycle:lifecycle-runtime:2.5.1",
+        "androidx.lifecycle:lifecycle-runtime-ktx:2.5.1",
     ],
     repositories = [
         "https://jcenter.bintray.com",
@@ -223,8 +226,8 @@ maven_install(
 # Kotlin rules
 http_archive(
     name = "rules_kotlin",
-    sha256 = "e1448a56b2462407b2688dea86df5c375b36a0991bd478c2ddd94c97168125e2",
-    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.1.3/rules_kotlin-v2.1.3.tar.gz",
+    sha256 = "e124d13986085bc0a15be2c85c1415bab5708442b78d249fe22bf8df43a5340d",
+    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.2.0/rules_kotlin-v2.2.0.tar.gz",
 )
 
 # Sentencepiece
