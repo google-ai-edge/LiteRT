@@ -49,6 +49,8 @@ typedef struct LiteRtRuntimeContext {
   LiteRtStatus (*external_litert_buffer_context_register_tensor_buffer)(
       LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor,
       LiteRtTensorBuffer buffer);
+  LiteRtStatus (*external_litert_buffer_context_unregister_tensor_buffer)(
+      LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor);
   LiteRtStatus (*external_litert_buffer_context_register_buffer_requirements)(
       LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor,
       LiteRtTensorBufferRequirements buffer_requirements);

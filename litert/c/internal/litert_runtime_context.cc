@@ -29,6 +29,8 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
           LiteRtExternalLiteRtBufferContextCreateBufferForTensor,
       .external_litert_buffer_context_register_tensor_buffer =
           LiteRtExternalLiteRtBufferContextRegisterTensorBuffer,
+      .external_litert_buffer_context_unregister_tensor_buffer =
+          LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer,
       .external_litert_buffer_context_register_buffer_requirements =
           LiteRtExternalLiteRtBufferContextRegisterBufferRequirements,
       .external_litert_buffer_context_get_environment =
