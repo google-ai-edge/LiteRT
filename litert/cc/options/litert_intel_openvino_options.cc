@@ -17,73 +17,57 @@
 #include <string>
 #include <utility>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////
 namespace litert::intel_openvino {
 
-const char* IntelOpenVinoOptions::Discriminator() {
-  return LiteRtIntelOpenVinoOptionsGetIdentifier();
-}
-
-Expected<IntelOpenVinoOptions> IntelOpenVinoOptions::Create(
-    OpaqueOptions& options) {
-  const auto id = options.GetIdentifier();
-  if (!id || *id != Discriminator()) {
-    return Error(kLiteRtStatusErrorInvalidArgument);
-  }
-  return IntelOpenVinoOptions(options.Get(), OwnHandle::kNo);
-}
-
 Expected<IntelOpenVinoOptions> IntelOpenVinoOptions::Create() {
-  LiteRtOpaqueOptions options;
-  LITERT_RETURN_IF_ERROR(LiteRtIntelOpenVinoOptionsCreate(&options));
-  return IntelOpenVinoOptions(options, OwnHandle::kYes);
+  LrtIntelOpenVinoOptions options;
+  LITERT_RETURN_IF_ERROR(LrtIntelOpenVinoOptionsCreate(&options));
+  return IntelOpenVinoOptions(options);
 }
 
 void IntelOpenVinoOptions::SetDeviceType(
     LiteRtIntelOpenVinoDeviceType device_type) {
   LITERT_ABORT_IF_ERROR(
-      LiteRtIntelOpenVinoOptionsSetDeviceType(Data(), device_type));
+      LrtIntelOpenVinoOptionsSetDeviceType(Get(), device_type));
 }
 
 LiteRtIntelOpenVinoDeviceType IntelOpenVinoOptions::GetDeviceType() const {
   LiteRtIntelOpenVinoDeviceType device_type;
   LITERT_ABORT_IF_ERROR(
-      LiteRtIntelOpenVinoOptionsGetDeviceType(Data(), &device_type));
+      LrtIntelOpenVinoOptionsGetDeviceType(Get(), &device_type));
   return device_type;
 }
 
 void IntelOpenVinoOptions::SetPerformanceMode(
     LiteRtIntelOpenVinoPerformanceMode performance_mode) {
   LITERT_ABORT_IF_ERROR(
-      LiteRtIntelOpenVinoOptionsSetPerformanceMode(Data(), performance_mode));
+      LrtIntelOpenVinoOptionsSetPerformanceMode(Get(), performance_mode));
 }
 
 LiteRtIntelOpenVinoPerformanceMode IntelOpenVinoOptions::GetPerformanceMode()
     const {
   LiteRtIntelOpenVinoPerformanceMode performance_mode;
   LITERT_ABORT_IF_ERROR(
-      LiteRtIntelOpenVinoOptionsGetPerformanceMode(Data(), &performance_mode));
+      LrtIntelOpenVinoOptionsGetPerformanceMode(Get(), &performance_mode));
   return performance_mode;
 }
 
 void IntelOpenVinoOptions::SetConfigsMapOption(const char* key,
                                                const char* value) {
   LITERT_ABORT_IF_ERROR(
-      LiteRtIntelOpenVinoOptionsSetConfigsMapOption(Data(), key, value));
+      LrtIntelOpenVinoOptionsSetConfigsMapOption(Get(), key, value));
 }
 
 int IntelOpenVinoOptions::GetNumConfigsMapOptions() const {
   int num_options;
   LITERT_ABORT_IF_ERROR(
-      LiteRtIntelOpenVinoOptionsGetNumConfigsMapOptions(Data(), &num_options));
+      LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(Get(), &num_options));
   return num_options;
 }
 
@@ -91,8 +75,8 @@ std::pair<std::string, std::string> IntelOpenVinoOptions::GetConfigsMapOption(
     int index) const {
   const char* key = nullptr;
   const char* value = nullptr;
-  auto status = LiteRtIntelOpenVinoOptionsGetConfigsMapOption(Data(), index,
-                                                              &key, &value);
+  auto status =
+      LrtIntelOpenVinoOptionsGetConfigsMapOption(Get(), index, &key, &value);
 
   if (status != kLiteRtStatusOk) {
     // Return empty strings on error
@@ -101,12 +85,6 @@ std::pair<std::string, std::string> IntelOpenVinoOptions::GetConfigsMapOption(
 
   // Create string copies and return
   return std::make_pair(std::string(key), std::string(value));
-}
-
-LiteRtIntelOpenVinoOptions IntelOpenVinoOptions::Data() const {
-  LiteRtIntelOpenVinoOptions options_data;
-  LITERT_ABORT_IF_ERROR(LiteRtIntelOpenVinoOptionsGet(Get(), &options_data));
-  return options_data;
 }
 
 }  // namespace litert::intel_openvino

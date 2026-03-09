@@ -15,27 +15,32 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_INTEL_OPENVINO_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_INTEL_OPENVINO_OPTIONS_H_
 
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert::intel_openvino {
 
 /// @brief Defines the C++ wrapper for Intel OpenVINO-specific LiteRT options.
-class IntelOpenVinoOptions : public OpaqueOptions {
+class IntelOpenVinoOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
   IntelOpenVinoOptions() = delete;
 
-  static const char* Discriminator();
-
-  static Expected<IntelOpenVinoOptions> Create(OpaqueOptions& options);
+  // Non-copyable, only movable
+  IntelOpenVinoOptions(const IntelOpenVinoOptions&) = delete;
+  IntelOpenVinoOptions& operator=(const IntelOpenVinoOptions&) = delete;
+  IntelOpenVinoOptions(IntelOpenVinoOptions&&) = default;
+  IntelOpenVinoOptions& operator=(IntelOpenVinoOptions&&) = default;
 
   static Expected<IntelOpenVinoOptions> Create();
+
+  static IntelOpenVinoOptions CreateFromOwnedHandle(
+      LrtIntelOpenVinoOptions options) {
+    return IntelOpenVinoOptions(options);
+  }
 
   void SetDeviceType(LiteRtIntelOpenVinoDeviceType device_type);
 
@@ -51,8 +56,20 @@ class IntelOpenVinoOptions : public OpaqueOptions {
 
   std::pair<std::string, std::string> GetConfigsMapOption(int index) const;
 
+  LrtIntelOpenVinoOptions Get() const { return options_.get(); }
+
  private:
-  LiteRtIntelOpenVinoOptions Data() const;
+  explicit IntelOpenVinoOptions(LrtIntelOpenVinoOptions options)
+      : options_(options) {}
+
+  struct IntelOpenVinoOptionsDeleter {
+    void operator()(LrtIntelOpenVinoOptions options) const {
+      LrtDestroyIntelOpenVinoOptions(options);
+    }
+  };
+
+  std::unique_ptr<LrtIntelOpenVinoOptionsT, IntelOpenVinoOptionsDeleter>
+      options_;
 };
 
 }  // namespace litert::intel_openvino

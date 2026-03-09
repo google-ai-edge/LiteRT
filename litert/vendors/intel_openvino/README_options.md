@@ -78,19 +78,48 @@ options.SetConfigsMapOption("CACHE_DIR", "/tmp/ov_cache");
 ```c
 #include "litert/c/options/litert_intel_openvino_options.h"
 
-LiteRtOpaqueOptions opaque_options;
-LiteRtIntelOpenVinoOptionsCreate(&opaque_options);
-
-LiteRtIntelOpenVinoOptions options;
-LiteRtIntelOpenVinoOptionsGet(opaque_options, &options);
+LrtIntelOpenVinoOptions options;
+LrtIntelOpenVinoOptionsCreate(&options);
 
 // Configure options
-LiteRtIntelOpenVinoOptionsSetDeviceType(options, kLiteRtIntelOpenVinoDeviceTypeNPU);
-LiteRtIntelOpenVinoOptionsSetPerformanceMode(options, kLiteRtIntelOpenVinoPerformanceModeLatency);
+LrtIntelOpenVinoOptionsSetDeviceType(options, kLiteRtIntelOpenVinoDeviceTypeNPU);
+LrtIntelOpenVinoOptionsSetPerformanceMode(options, kLiteRtIntelOpenVinoPerformanceModeLatency);
 
 // Set custom configuration properties
-LiteRtIntelOpenVinoOptionsSetConfigsMapOption(options, "INFERENCE_PRECISION_HINT", "f16");
-LiteRtIntelOpenVinoOptionsSetConfigsMapOption(options, "CACHE_DIR", "/tmp/ov_cache");
+LrtIntelOpenVinoOptionsSetConfigsMapOption(options, "INFERENCE_PRECISION_HINT", "f16");
+LrtIntelOpenVinoOptionsSetConfigsMapOption(options, "CACHE_DIR", "/tmp/ov_cache");
+
+// Extract opaque payloads manually for passing
+const char* identifier;
+void* payload;
+void (*payload_deleter)(void*);
+LrtGetOpaqueIntelOpenVinoOptionsData(options, &identifier, &payload, &payload_deleter);
+
+// Cleanup
+LrtDestroyIntelOpenVinoOptions(options);
+payload_deleter(payload);
+```
+
+### Parsing from TOML
+
+Intel OpenVINO options can also be parsed directly from a TOML-formatted string payload using the C API. This is the mechanism used by the runtime when loading external configurations dynamically.
+
+```c
+#include "litert/c/options/litert_intel_openvino_options.h"
+
+const char* toml_payload =
+    "device_type = 2\n"  // NPU
+    "performance_mode = 0\n" // Latency
+    "configs_map.INFERENCE_PRECISION_HINT = \"f16\"\n";
+
+LrtIntelOpenVinoOptions options = NULL;
+LiteRtStatus status = LrtCreateIntelOpenVinoOptionsFromToml(toml_payload, &options);
+
+if (status == kLiteRtStatusOk) {
+  // Options successfully instantiated from string payload
+
+  LrtDestroyIntelOpenVinoOptions(options);
+}
 ```
 
 ## Integration with Intel OpenVINO Compiler Plugin

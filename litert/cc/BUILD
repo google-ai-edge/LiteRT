@@ -1072,6 +1072,7 @@ cc_library_with_testonly_vis(
         "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_cpu_options",
         "//litert/c/options:litert_gpu_options",
+        "//litert/c/options:litert_intel_openvino_options",
         "//litert/c/options:litert_mediatek_options",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/c/options:litert_runtime_options",
@@ -1274,10 +1275,10 @@ cc_library(
         # C++ Common Options API targets.
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_compiler_options",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_qualcomm_options",
         # Other (static) C++ API targets.
         ":litert_any",

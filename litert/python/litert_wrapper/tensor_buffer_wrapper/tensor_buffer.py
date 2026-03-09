@@ -62,8 +62,6 @@ class TensorBuffer:
     """
     if np_dtype == np.float32:
       return "float32"
-    elif np_dtype == np.float16:
-      return "float16"
     elif np_dtype == np.int32:
       return "int32"
     elif np_dtype == np.int8:
@@ -115,12 +113,7 @@ class TensorBuffer:
       raise ValueError("data_array must be a NumPy array")
 
     dtype_str = self._dtype_to_str(data_array.dtype)
-    flat = data_array.reshape(-1)
-    if data_array.dtype == np.float16:
-      # Preserve exact fp16 bit patterns through the Python binding.
-      _tb.WriteTensor(self._capsule, flat.view(np.uint16).tolist(), dtype_str)
-      return
-    _tb.WriteTensor(self._capsule, flat.tolist(), dtype_str)
+    _tb.WriteTensor(self._capsule, data_array.flatten().tolist(), dtype_str)
 
   def read(self, num_elements: int, output_dtype):
     """Reads data from this tensor buffer.
@@ -146,17 +139,7 @@ class TensorBuffer:
 
     dtype_str = self._dtype_to_str(output_dtype)
     data_list = _tb.ReadTensor(self._capsule, num_elements, dtype_str)
-    if output_dtype == np.float16:
-      return np.array(data_list, dtype=np.uint16).view(np.float16)
     return np.array(data_list, dtype=output_dtype)
-
-  def get_tensor_details(self):
-    """Returns tensor metadata for this buffer.
-
-    Returns:
-      A dictionary containing the buffer tensor `dtype` and `shape`.
-    """
-    return _tb.GetTensorDetails(self._capsule)
 
   def destroy(self):
     """Explicitly releases resources associated with this tensor buffer.

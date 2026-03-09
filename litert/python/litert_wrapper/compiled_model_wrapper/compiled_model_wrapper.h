@@ -143,12 +143,6 @@ class CompiledModelWrapper {
   // Returns input tensor details for a given signature.
   PyObject* GetInputTensorDetails(const char* signature_key);
 
-  // Returns output tensor details for a given signature.
-  PyObject* GetOutputTensorDetails(const char* signature_key);
-
-  // Returns whether the model is fully accelerated with selected accelerators.
-  PyObject* IsFullyAccelerated();
-
  private:
   // Returns the size in bytes of a single element of the given data type.
   static size_t ByteWidthOfDType(const std::string& dtype);
