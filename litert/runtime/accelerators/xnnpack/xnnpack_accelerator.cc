@@ -18,9 +18,8 @@
 
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -54,7 +53,9 @@ class CpuAccelerator final
   // C API
 
   // Creates a Dispatch delegate instance.
-  static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
+  static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
+                                     LiteRtEnvironment env,
+                                     LiteRtAccelerator accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate_wrapper) {
     LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
@@ -68,9 +69,10 @@ class CpuAccelerator final
         << "Accelerator is not registered to an environment.";
 
     LiteRtOpaqueOptions opaque_options;
-    LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options, &opaque_options));
+    LITERT_RETURN_IF_ERROR(
+        runtime_context->get_opaque_options(options, &opaque_options));
     const void* cpu_options_data = nullptr;
-    const auto options_data_status = LiteRtFindOpaqueOptionsData(
+    const auto options_data_status = runtime_context->find_opaque_options_data(
         opaque_options, LrtGetCpuOptionsIdentifier(),
         const_cast<void**>(&cpu_options_data));
 
@@ -98,15 +100,16 @@ class CpuAccelerator final
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
     LITERT_RETURN_IF_ERROR(
-        LiteRtWrapDelegate(xnnpack_delegate, delegate_wrapper));
+        runtime_context->wrap_delegate(xnnpack_delegate, delegate_wrapper));
 
     return kLiteRtStatusOk;
   }
 
   // Destroys an XNNPack delegate instance.
-  static void DestroyDelegate(LiteRtDelegateWrapper delegate_wrapper) {
+  static void DestroyDelegate(LiteRtRuntimeContext* runtime_context,
+                              LiteRtDelegateWrapper delegate_wrapper) {
     TfLiteOpaqueDelegate* xnnpack_delegate;
-    LiteRtUnwrapDelegate(delegate_wrapper, &xnnpack_delegate);
+    runtime_context->unwrap_delegate(delegate_wrapper, &xnnpack_delegate);
     TfLiteXNNPackDelegateDelete(xnnpack_delegate);
   }
 
@@ -140,10 +143,10 @@ LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .get_name = litert::CpuAccelerator::GetName,
     .get_version = litert::CpuAccelerator::GetVersion,
     .get_hardware_support = litert::CpuAccelerator::GetHardwareSupport,
-    .create_delegate = litert::CpuAccelerator::CreateDelegate,
-    .destroy_delegate = litert::CpuAccelerator::DestroyDelegate,
     .is_tflite_delegate_responsible_for_jit_compilation =
         litert::CpuAccelerator::IsTfLiteDelegateResponsibleForJitCompilation,
+    .create_delegate = litert::CpuAccelerator::CreateDelegate,
+    .destroy_delegate = litert::CpuAccelerator::DestroyDelegate,
     .create_func = nullptr,
     .destroy_func = nullptr,
     .lock_func = nullptr,

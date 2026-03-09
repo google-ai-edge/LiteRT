@@ -275,11 +275,13 @@ class LiteRtCompiledModelT {
         delegate;
     // NOLINTBEGIN(*-readability-class-member-naming)
     // Starts collection of HW-specific metrics at a specific level of detail.
-    LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
-                                           int detail_level);
+    LiteRtStatus (*StartMetricsCollection)(
+        LiteRtRuntimeContext* runtime_context, LiteRtDelegateWrapper delegate,
+        int detail_level);
 
     // Stops collection of HW-specific metrics and report the collected metrics.
-    LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
+    LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
+                                          LiteRtDelegateWrapper delegate,
                                           LiteRtMetricsT* metrics);
     // NOLINTEND(*-readability-class-member-naming)
   };

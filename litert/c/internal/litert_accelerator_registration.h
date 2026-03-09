@@ -23,6 +23,8 @@
 extern "C" {
 #endif
 
+typedef struct LiteRtRuntimeContext LiteRtRuntimeContext;
+
 // Creates an empty accelerator handle.
 LiteRtStatus LiteRtCreateAccelerator(LiteRtAccelerator* accelerator);
 
@@ -72,10 +74,13 @@ LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
 // the compiled model.
 LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*CreateDelegate)(LiteRtAccelerator accelerator,
+    LiteRtStatus (*CreateDelegate)(LiteRtRuntimeContext* runtime_context,
+                                   LiteRtEnvironment env,
+                                   LiteRtAccelerator accelerator,
                                    LiteRtOptions options,
                                    LiteRtDelegateWrapper* delegate),
-    void (*DestroyDelegate)(LiteRtDelegateWrapper delegate));
+    void (*DestroyDelegate)(LiteRtRuntimeContext* runtime_context,
+                            LiteRtDelegateWrapper delegate));
 
 // Sets the function used to surface whether the delegate created by the
 // accelerator does JIT compilation or not.
@@ -93,14 +98,16 @@ LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
 // specific level of detail (>= 0).
 LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
-                                           int detail_level));
+    LiteRtStatus (*StartMetricsCollection)(
+        LiteRtRuntimeContext* runtime_context, LiteRtDelegateWrapper delegate,
+        int detail_level));
 
 // Sets the function used to stop collection of HW-specific metrics and report
 // the collected metrics.
 LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
+    LiteRtStatus (*StopMetricsCollection)(LiteRtRuntimeContext* runtime_context,
+                                          LiteRtDelegateWrapper delegate,
                                           LiteRtMetrics metrics));
 
 #ifdef __cplusplus

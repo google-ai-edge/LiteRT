@@ -575,6 +575,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_accelerator",
+        "//litert/c/internal:litert_runtime_context",
         "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_scheduling_info",
