@@ -14,29 +14,30 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 
+#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_mediatek_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert::mediatek {
 
 /// @brief Defines the C++ wrapper for MediaTek-specific LiteRT options.
-class MediatekOptions : public OpaqueOptions {
+class MediatekOptions {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
   MediatekOptions() = delete;
-
-  static const char* Discriminator();
-
-  static Expected<MediatekOptions> Create(OpaqueOptions& options);
+  explicit MediatekOptions(LrtMediatekOptions* options,
+                           OwnHandle own = OwnHandle::kYes)
+      : options_(
+            options, own == OwnHandle::kYes ? LrtDestroyMediatekOptions
+                                            : [](LrtMediatekOptions*) {}) {}
 
   static Expected<MediatekOptions> Create();
+
+  LrtMediatekOptions* Get() const { return options_.get(); }
+  LrtMediatekOptions* Release() { return options_.release(); }
 
   void SetNeronSDKVersionType(
       LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
@@ -75,7 +76,7 @@ class MediatekOptions : public OpaqueOptions {
   absl::string_view GetAotCompilationOptions();
 
  private:
-  LiteRtMediatekOptions Data() const;
+  std::unique_ptr<LrtMediatekOptions, void (*)(LrtMediatekOptions*)> options_;
 };
 
 }  // namespace litert::mediatek

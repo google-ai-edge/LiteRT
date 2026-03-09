@@ -152,8 +152,8 @@ litert_device_test(
     backend_id = "mediatek",
     deps = [
         "//litert/c/internal:litert_logging",
-        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/internal:litert_shared_library",
+        "//litert/cc/options:litert_mediatek_options",
         "//litert/test:matchers",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_googletest//:gtest_main",

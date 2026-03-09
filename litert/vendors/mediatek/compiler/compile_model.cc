@@ -21,8 +21,8 @@
 #include "neuron/api/NeuronAdapter.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
@@ -32,8 +32,7 @@ constexpr int kPrefillPartitionIndex = 1;
 
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    std::optional<std::string> soc_model,
-    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+    std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
     const int subgraph_index, bool get_supported_mode) {
   // LITERT_USE_JIT is automatically defined based on the build target.
   // It is defined on devices with MediaTek hardwares.
@@ -60,7 +59,10 @@ Expected<NeuronCompilationPtr> CompileModel(
 #endif
   // NOLINTEND
 
-  if (mediatek_opts->GetEnableGemmaCompilerOptimizations()) {
+  bool gemma_compiler_optimizations;
+  LrtGetMediatekOptionsGemmaCompilerOptimizations(
+      mediatek_opts, &gemma_compiler_optimizations);
+  if (gemma_compiler_optimizations) {
     if (subgraph_index == kDecodePartitionIndex) {
       compile_options = " --option-bundle=gemma-decode-accuracy";
     }
@@ -97,18 +99,23 @@ Expected<NeuronCompilationPtr> CompileModel(
                  "Failed to set compilation priority");
   }
 
+  LiteRtMediatekNeuronAdapterPerformanceMode performance_mode;
+  LrtGetMediatekOptionsPerformanceMode(mediatek_opts, &performance_mode);
+
   LITERT_LOG(LITERT_INFO,
              "NeuronCompilation_setPreference being set with value: %d",
-             mediatek_opts->GetPerformanceMode());
+             performance_mode);
 
   if (neuron_adapter_api.api().compilation_set_preference(
-          compilation->get(), mediatek_opts->GetPerformanceMode()) !=
-      NEURON_NO_ERROR) {
+          compilation->get(), performance_mode) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation preference");
   }
 
-  if (mediatek_opts->GetEnableL1CacheOptimizations()) {
+  bool l1_cache_optimizations;
+  LrtGetMediatekOptionsL1CacheOptimizations(mediatek_opts,
+                                            &l1_cache_optimizations);
+  if (l1_cache_optimizations) {
     uint32_t apu_mem_size = 0;
     if (neuron_adapter_api.api().get_l1_memory_size_kb(&apu_mem_size) ==
             NEURON_NO_ERROR &&
@@ -123,8 +130,10 @@ Expected<NeuronCompilationPtr> CompileModel(
     }
   }
 
+  LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint;
+  LrtGetMediatekOptionsOptimizationHint(mediatek_opts, &optimization_hint);
   if (auto status = neuron_adapter_api.api().compilation_set_optimization_hint(
-          compilation->get(), mediatek_opts->GetOptimizationHint());
+          compilation->get(), optimization_hint);
       status != NEURON_NO_ERROR) {
     LITERT_LOG(LITERT_INFO,
                "NeuronCompilation_setOptimizationHint failed with error %d",
@@ -132,7 +141,7 @@ Expected<NeuronCompilationPtr> CompileModel(
     LITERT_LOG(LITERT_INFO,
                "NeuronCompilation_setOptimizationHint failed attempting to set "
                "optimization hint enum value to %d",
-               mediatek_opts->GetOptimizationHint());
+               optimization_hint);
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set optimization hint");
   }
@@ -168,8 +177,7 @@ Expected<NeuronCompilationPtr> CompileModel(
 
 Expected<void> GetSupportedOperations(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    std::optional<std::string> soc_model,
-    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+    std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
     const int subgraph_index, bool* support_flags, int num_ops) {
   auto compilation =
       CompileModel(neuron_adapter_api, model, soc_model, mediatek_opts,
