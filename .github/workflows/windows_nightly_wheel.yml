@@ -1,7 +1,7 @@
 name: "windows_nightly_wheel"
 on:
   schedule:
-    - cron: "0 7 * * *"  # Run at 7:00 am UTC every day to build nightly wheel.
+    - cron: "0 6 * * *"  # Run at 6:00 am UTC every day to build nightly wheel.
 
   workflow_dispatch: {} # Allow manual trigger
 
