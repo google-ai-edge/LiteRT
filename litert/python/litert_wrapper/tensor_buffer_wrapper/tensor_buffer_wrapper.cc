@@ -27,6 +27,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
@@ -34,6 +35,35 @@
 namespace litert::tensor_buffer_wrapper {
 
 namespace {
+const char* ElementTypeToString(ElementType dtype) {
+  switch (dtype) {
+    case ElementType::Float32:
+      return "float32";
+    case ElementType::Float16:
+      return "float16";
+    case ElementType::Int32:
+      return "int32";
+    case ElementType::UInt8:
+      return "uint8";
+    case ElementType::Int64:
+      return "int64";
+    case ElementType::Bool:
+      return "bool";
+    case ElementType::Int16:
+      return "int16";
+    case ElementType::Int8:
+      return "int8";
+    case ElementType::Float64:
+      return "float64";
+    case ElementType::UInt32:
+      return "uint32";
+    case ElementType::UInt16:
+      return "uint16";
+    default:
+      return "unknown";
+  }
+}
+
 // A deallocator that performs no operation, used when the memory is managed
 // externally.
 void NoopDeallocator(void*) {}
@@ -82,6 +112,36 @@ bool ConvertPyListToInt32Vector(PyObject* py_list, std::vector<int32_t>* out,
       return false;
     }
     out->push_back(static_cast<int32_t>(val));
+  }
+  return true;
+}
+
+// Converts a Python list of integers to a std::vector<uint16_t>.
+// Returns true on success, false on failure with error message populated.
+bool ConvertPyListToUInt16Vector(PyObject* py_list, std::vector<uint16_t>* out,
+                                 std::string* error) {
+  if (!PyList_Check(py_list)) {
+    *error = "Expected a Python list for float16 bit-pattern data";
+    return false;
+  }
+  Py_ssize_t length = PyList_Size(py_list);
+  out->reserve(length);
+  for (Py_ssize_t i = 0; i < length; ++i) {
+    PyObject* item = PyList_GetItem(py_list, i);
+    if (!PyLong_Check(item)) {
+      *error = "Non-integer value in float16 bit-pattern list.";
+      return false;
+    }
+    unsigned long val = PyLong_AsUnsignedLong(item);
+    if ((val == static_cast<unsigned long>(-1)) && PyErr_Occurred()) {
+      *error = "Error converting python int to uint16.";
+      return false;
+    }
+    if (val > 0xFFFFu) {
+      *error = "Value out of range for uint16 [0..65535].";
+      return false;
+    }
+    out->push_back(static_cast<uint16_t>(val));
   }
   return true;
 }
@@ -135,6 +195,15 @@ PyObject* BuildPyListFromInt32(absl::Span<const int32_t> data) {
   return py_list;
 }
 
+// Creates a Python list from a span of uint16_t values.
+PyObject* BuildPyListFromUInt16(absl::Span<const uint16_t> data) {
+  PyObject* py_list = PyList_New(data.size());
+  for (size_t i = 0; i < data.size(); i++) {
+    PyList_SetItem(py_list, i, PyLong_FromUnsignedLong(data[i]));
+  }
+  return py_list;
+}
+
 // Creates a Python list from a span of int8_t values.
 PyObject* BuildPyListFromInt8(absl::Span<const int8_t> data) {
   PyObject* py_list = PyList_New(data.size());
@@ -149,6 +218,7 @@ PyObject* BuildPyListFromInt8(absl::Span<const int8_t> data) {
 // Returns the size in bytes for the given data type.
 size_t TensorBufferWrapper::ByteWidthOfDType(const std::string& dtype) {
   if (dtype == "float32") return 4;
+  if (dtype == "float16") return 2;
   if (dtype == "int32") return 4;
   if (dtype == "int8") return 1;
   // Return 0 for unsupported data types
@@ -187,6 +257,8 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
   // Set the element type based on the dtype string
   if (dtype == "float32") {
     dummy_type.element_type = kLiteRtElementTypeFloat32;
+  } else if (dtype == "float16") {
+    dummy_type.element_type = kLiteRtElementTypeFloat16;
   } else if (dtype == "int8") {
     dummy_type.element_type = kLiteRtElementTypeInt8;
   } else if (dtype == "int32") {
@@ -274,6 +346,17 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
       return ConvertErrorToPyExc(status.Error());
     Py_RETURN_NONE;
   }
+  if (dtype == "float16") {
+    std::vector<uint16_t> host_data;
+    if (!ConvertPyListToUInt16Vector(data_list, &host_data, &error)) {
+      if (!error.empty()) return ReportError(error);
+    }
+    if (auto status = tb.Write<uint16_t>(absl::MakeConstSpan(host_data));
+        !status) {
+      return ConvertErrorToPyExc(status.Error());
+    }
+    Py_RETURN_NONE;
+  }
   if (dtype == "int32") {
     std::vector<int32_t> host_data;
     if (!ConvertPyListToInt32Vector(data_list, &host_data, &error)) {
@@ -318,6 +401,12 @@ PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
       return ConvertErrorToPyExc(status.Error());
     return BuildPyListFromFloat(data);
   }
+  if (dtype == "float16") {
+    std::vector<uint16_t> data(num_elements, 0);
+    if (auto status = tb.Read<uint16_t>(absl::MakeSpan(data)); !status)
+      return ConvertErrorToPyExc(status.Error());
+    return BuildPyListFromUInt16(data);
+  }
   if (dtype == "int32") {
     std::vector data(num_elements, 0);
     if (auto status = tb.Read<int32_t>(absl::MakeSpan(data)); !status)
@@ -331,6 +420,37 @@ PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
     return BuildPyListFromInt8(data);
   }
   return ReportError("ReadTensor: unsupported dtype '" + dtype + "'");
+}
+
+PyObject* TensorBufferWrapper::GetTensorDetails(PyObject* buffer_capsule) {
+  if (!PyCapsule_CheckExact(buffer_capsule)) {
+    return ReportError("GetTensorDetails: invalid capsule");
+  }
+  void* ptr = PyCapsule_GetPointer(
+      buffer_capsule, litert_wrapper_utils::kLiteRtTensorBufferName.data());
+  if (!ptr) {
+    return ReportError("GetTensorDetails: null pointer in capsule");
+  }
+  TensorBuffer tb = TensorBuffer::WrapCObject(
+      static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+  auto tensor_type_or = tb.TensorType();
+  if (!tensor_type_or) {
+    return ConvertErrorToPyExc(tensor_type_or.Error());
+  }
+  const auto& tensor_type = *tensor_type_or;
+
+  PyObject* tensor_dict = PyDict_New();
+  PyDict_SetItemString(
+      tensor_dict, "dtype",
+      PyUnicode_FromString(ElementTypeToString(tensor_type.ElementType())));
+  const auto shape = tensor_type.Layout().Dimensions();
+  PyObject* shape_list = PyList_New(shape.size());
+  for (size_t i = 0; i < shape.size(); ++i) {
+    PyList_SetItem(shape_list, i, PyLong_FromLong(shape[i]));
+  }
+  PyDict_SetItemString(tensor_dict, "shape", shape_list);
+  Py_DECREF(shape_list);
+  return tensor_dict;
 }
 
 // Explicitly destroys a TensorBuffer and releases associated resources.

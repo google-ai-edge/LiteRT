@@ -68,6 +68,14 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
           return py::reinterpret_steal<py::object>(res);
         });
 
+  m.def("GetTensorDetails", [](py::object capsule) {
+    PyObject* res = TensorBufferWrapper::GetTensorDetails(capsule.ptr());
+    if (!res) {
+      throw py::error_already_set();
+    }
+    return py::reinterpret_steal<py::object>(res);
+  });
+
   // Destroys a TensorBuffer and releases associated resources.
   // This should be called when the TensorBuffer is no longer needed.
   m.def("DestroyTensorBuffer", [](py::object capsule) {

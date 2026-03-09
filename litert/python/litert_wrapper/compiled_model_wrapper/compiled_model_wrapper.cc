@@ -506,6 +506,59 @@ PyObject* CompiledModelWrapper::GetInputTensorDetails(
   return result_dict;
 }
 
+PyObject* CompiledModelWrapper::GetOutputTensorDetails(
+    const char* signature_key) {
+  auto sig_or = model_.FindSignature(signature_key);
+  if (!sig_or) {
+    return ConvertErrorToPyExc(sig_or.Error());
+  }
+  auto sig = std::move(*sig_or);
+  auto output_names = sig.OutputNames();
+  PyObject* result_dict = PyDict_New();
+  for (const auto& name : output_names) {
+    auto tensor_or = sig.OutputTensor(name);
+    if (!tensor_or) {
+      Py_DECREF(result_dict);
+      return ConvertErrorToPyExc(tensor_or.Error());
+    }
+    auto tensor = std::move(*tensor_or);
+    PyObject* tensor_dict = PyDict_New();
+    PyDict_SetItemString(tensor_dict, "name",
+                         PyUnicode_FromString(tensor.Name().data()));
+    PyDict_SetItemString(tensor_dict, "index",
+                         PyLong_FromLong(tensor.TensorIndex()));
+    PyDict_SetItemString(
+        tensor_dict, "dtype",
+        PyUnicode_FromString(ElementTypeToString(tensor.ElementType())));
+    if (tensor.TypeId() == kLiteRtRankedTensorType) {
+      auto ranked_type_or = tensor.RankedTensorType();
+      if (!ranked_type_or) {
+        Py_DECREF(tensor_dict);
+        Py_DECREF(result_dict);
+        return ConvertErrorToPyExc(ranked_type_or.Error());
+      }
+      auto shape = ranked_type_or->Layout().Dimensions();
+      PyObject* shape_list = PyList_New(shape.size());
+      for (size_t i = 0; i < shape.size(); ++i) {
+        PyList_SetItem(shape_list, i, PyLong_FromLong(shape[i]));
+      }
+      PyDict_SetItemString(tensor_dict, "shape", shape_list);
+      Py_DECREF(shape_list);
+    }
+    PyDict_SetItemString(result_dict, name.data(), tensor_dict);
+    Py_DECREF(tensor_dict);
+  }
+  return result_dict;
+}
+
+PyObject* CompiledModelWrapper::IsFullyAccelerated() {
+  auto is_fully_accelerated_or = compiled_model_.IsFullyAccelerated();
+  if (!is_fully_accelerated_or) {
+    return ConvertErrorToPyExc(is_fully_accelerated_or.Error());
+  }
+  return PyBool_FromLong(*is_fully_accelerated_or ? 1 : 0);
+}
+
 PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
                                           PyObject* input_map,
                                           PyObject* output_map) {
