@@ -31,7 +31,6 @@
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/options/litert_mediatek_options.h"
 
 #define LOAD_SYMB(S, H)                                                   \
   if (auto maybe_H = dlib_.LookupSymbol<void*>(#S); maybe_H.HasValue()) { \
@@ -49,11 +48,18 @@ NeuronAdapterApi::NeuronAdapterApi() : api_(new Api) {}
 
 litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
     std::optional<std::string> shared_library_dir,
-    ::litert::Expected<litert::mediatek::MediatekOptions>& options) {
+    LrtMediatekOptions* options) {
   std::unique_ptr<NeuronAdapterApi> neuron_adapter_api(new NeuronAdapterApi);
 
-  if (auto status = neuron_adapter_api->LoadSymbols(
-          shared_library_dir, options->GetNeronSDKVersionType());
+  LiteRtMediatekOptionsNeronSDKVersionType neron_sdk_version;
+  auto get_sdk_status =
+      LrtGetMediatekOptionsNeronSDKVersionType(options, &neron_sdk_version);
+  if (get_sdk_status != kLiteRtStatusOk) {
+    return litert::Error(get_sdk_status, "Failed to get SDK version");
+  }
+
+  if (auto status = neuron_adapter_api->LoadSymbols(shared_library_dir,
+                                                    neron_sdk_version);
       !status) {
     LITERT_LOG(LITERT_ERROR, "Failed to load NeuronAdapter shared library: %s",
                status.Error().Message().c_str());
@@ -62,8 +68,15 @@ litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
 
   // Read the user provided aot compilation options, if any, otherwise use the
   // default options.
-  auto aot_compilation_options = options->GetAotCompilationOptions();
-  if (!aot_compilation_options.empty()) {
+  const char* aot_compilation_options;
+  auto get_aot_status = LrtGetMediatekOptionsAotCompilationOptions(
+      options, &aot_compilation_options);
+  if (get_aot_status != kLiteRtStatusOk) {
+    return litert::Error(get_aot_status,
+                         "Failed to get aot compilation options");
+  }
+
+  if (aot_compilation_options && aot_compilation_options[0] != '\0') {
     neuron_adapter_api->aot_compilation_options_ =
         std::string(aot_compilation_options);
   } else {
