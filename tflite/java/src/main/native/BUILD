@@ -109,6 +109,7 @@ cc_library_with_tflite(
         "//tflite/tools:verifier_internal",
     ],
     deps = [
+        "//tflite:interpreter_options_header",
         "//tflite:minimal_logging",
         "//tflite:op_resolver",
         "//tflite:schema_fbs_version",

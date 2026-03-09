@@ -768,6 +768,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     visibility = [
         "//tflite/core:__subpackages__",
+        "//tflite/java/src/main/native:__subpackages__",
     ],
 )
 
