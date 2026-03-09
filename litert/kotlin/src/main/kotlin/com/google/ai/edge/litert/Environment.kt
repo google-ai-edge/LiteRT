@@ -19,10 +19,21 @@ package com.google.ai.edge.litert
 /** Environment to hold configuration options for LiteRT runtime. */
 class Environment private constructor(handle: Long) : JniHandle(handle) {
 
-  /** Options configurable in LiteRT environment. */
+  /**
+   * Options configurable in LiteRT environment.
+   *
+   * NOTE: the values need to be consistent with the constants in `LiteRtEnvOptionTag` in
+   * litert/c/litert_environment_options.h.
+   */
   enum class Option private constructor(val value: Int) {
     CompilerPluginLibraryDir(0),
     DispatchLibraryDir(1),
+    /**
+     * This for internal use only.
+     *
+     * @suppress
+     */
+    SystemRuntimeHandle(23),
   }
 
   override protected fun destroy() {
