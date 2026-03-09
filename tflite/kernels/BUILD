@@ -535,7 +535,6 @@ cc_library(
         ":op_macros",
         "//tflite:array",
         "//tflite:kernel_api",
-        "//tflite/core:subgraph",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:cppmath",
         "//tflite/kernels/internal:quantization_util",
