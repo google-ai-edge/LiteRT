@@ -31,7 +31,6 @@ limitations under the License.
 #include "tflite/context_util.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
-#include "tflite/core/subgraph.h"
 #include "tflite/kernels/internal/cppmath.h"
 #include "tflite/kernels/internal/quantization_util.h"
 
@@ -196,22 +195,6 @@ TfLiteStatus GetIntermediatesSafe(const TfLiteContext* context,
   return kTfLiteOk;
 }
 #endif  // TF_LITE_STATIC_MEMORY
-
-bool IsTensorBackedByExternalBuffer(const TfLiteContext* context,
-                                    int tensor_index) {
-  if (context == nullptr || context->impl_ == nullptr) {
-    return false;
-  }
-  if (tensor_index < 0 || tensor_index >= context->tensors_size) {
-    return false;
-  }
-
-  const auto* subgraph = reinterpret_cast<const Subgraph*>(context->impl_);
-  const auto& external_buffer_ids =
-      subgraph->GetExternalTensorBufferIdentifiers();
-  return external_buffer_ids.find(static_cast<size_t>(tensor_index)) !=
-         external_buffer_ids.end();
-}
 
 // Per-axis
 TfLiteStatus PopulateConvolutionQuantizationParams(
