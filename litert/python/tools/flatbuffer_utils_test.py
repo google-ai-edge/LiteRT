@@ -400,14 +400,13 @@ class WriteReadModelTest(googletest.TestCase):
     for i in range(len(initial_tensors)):
       self.assertEqual(initial_tensors[i].name, final_tensors[i].name)
       self.assertEqual(initial_tensors[i].type, final_tensors[i].type)
-      self.assertEqual(initial_tensors[i].buffer, final_tensors[i].buffer)
+      if initial_model.buffers[initial_tensors[i].buffer].data is not None:
+        self.assertSequenceEqual(
+            list(initial_model.buffers[initial_tensors[i].buffer].data),
+            list(final_model.buffers[final_tensors[i].buffer].data),
+        )
       for j in range(len(initial_tensors[i].shape)):
         self.assertEqual(initial_tensors[i].shape[j], final_tensors[i].shape[j])
-    # Validate the first valid buffer (index 0 is always None)
-    initial_buffer = initial_model.buffers[1].data
-    final_buffer = final_model.buffers[1].data
-    for i in range(initial_buffer.size):
-      self.assertEqual(initial_buffer.data[i], final_buffer.data[i])
 
 
 class StripStringsTest(googletest.TestCase):
