@@ -642,6 +642,7 @@ cc_library(
     hdrs = ["litert_runtime_builtin.h"],
     visibility = [
         "//litert/cc:__pkg__",
+        "//litert/kotlin/src/tests/google:__pkg__",
     ],
     deps = [
         "//litert/c:litert_common",
