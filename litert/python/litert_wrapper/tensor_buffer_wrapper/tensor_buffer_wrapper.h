@@ -70,6 +70,18 @@ class TensorBufferWrapper {
                               const std::string& dtype);
 
   /**
+   * Returns tensor details for a TensorBuffer.
+   *
+   * The returned dictionary includes the host-visible tensor element dtype and
+   * shape associated with the buffer.
+   *
+   * @param buffer_capsule Python capsule containing the LiteRtTensorBuffer.
+   * @return A new Python dictionary containing tensor details, or nullptr on
+   * error.
+   */
+  static PyObject* GetTensorDetails(PyObject* buffer_capsule);
+
+  /**
    * Explicitly destroys a TensorBuffer and releases associated resources.
    *
    * @param buffer_capsule Python capsule containing the LiteRtTensorBuffer.
