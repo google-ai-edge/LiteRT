@@ -69,6 +69,7 @@ cc_binary(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
+        "//litert/cc/options:litert_gpu_options",
         "//litert/core/model:model_load",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags/vendors:google_tensor_flags",

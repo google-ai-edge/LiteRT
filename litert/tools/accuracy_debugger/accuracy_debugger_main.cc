@@ -29,6 +29,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/model/model_load.h"
 #include "litert/tools/accuracy_debugger/accuracy_debugger_util.h"
 
@@ -95,6 +96,8 @@ ABSL_FLAG(bool, use_gpu_ref, false,
           "Use GPU FP32 as reference path instead of CPU");
 ABSL_FLAG(bool, dump_only, false,
           "Only extract and save models, do not run accuracy checking.");
+ABSL_FLAG(bool, use_gpu_fp32_as_accel, false,
+          "Use FP32 as when using GPU accelerator.");
 
 namespace litert::tools {
 
@@ -157,6 +160,10 @@ litert::Expected<litert::Options> GetOptions() {
       UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts));
   LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
   LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
+  if (absl::GetFlag(FLAGS_use_gpu_fp32_as_accel)) {
+    auto gpu_opts = options.GetGpuOptions();
+    gpu_opts->SetPrecision(litert::GpuOptions::Precision::kFp32);
+  }
   return options;
 }
 
