@@ -8,8 +8,6 @@ on:
         default: true
         type: boolean
 
-  workflow_dispatch: {} # Allow manual trigger
-
 jobs:
   build-release:
     name: "Build stable Windows wheel - Python ${{ matrix.python-version }}"
