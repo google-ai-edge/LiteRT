@@ -1,5 +1,6 @@
 litert/c/internal/litert_runtime_c_api.h
 litert/c/internal/litert_logging.h
+litert/c/internal/litert_scheduling_info.h
 litert/c/litert_any.h
 litert/c/litert_common.h
 litert/c/litert_compiled_model.h
@@ -28,7 +29,6 @@ litert/c/litert_tensor_buffer.h
 litert/c/litert_webgpu_types.h
 litert/c/options/litert_compiler_options.h
 litert/c/options/litert_cpu_options.h
-litert/c/options/litert_darwinn_runtime_options.h
 litert/c/options/litert_google_tensor_options_type.h
 litert/c/options/litert_google_tensor_options.h
 litert/c/options/litert_gpu_options.h
@@ -65,6 +65,7 @@ litert/cc/litert_expected.h
 litert/cc/litert_layout.h
 litert/cc/litert_macros.h
 litert/cc/litert_model.h
+litert/cc/litert_model_types.h
 litert/cc/litert_opaque_options.h
 litert/cc/litert_options.h
 litert/cc/litert_profiler.h
@@ -74,7 +75,6 @@ litert/cc/litert_tensor_buffer_types.h
 litert/cc/litert_tensor_buffer.h
 litert/cc/options/litert_compiler_options.h
 litert/cc/options/litert_cpu_options.h
-litert/cc/options/litert_darwinn_options.h
 litert/cc/options/litert_google_tensor_options.h
 litert/cc/options/litert_gpu_options.h
 litert/cc/options/litert_intel_openvino_options.h
