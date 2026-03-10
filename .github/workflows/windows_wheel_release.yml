@@ -1,0 +1,170 @@
+name: "windows_wheel_release"
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'When true, wheels will not be published to PyPI.'
+        required: true
+        default: true
+        type: boolean
+
+  workflow_dispatch: {} # Allow manual trigger
+
+jobs:
+  build-release:
+    name: "Build stable Windows wheel - Python ${{ matrix.python-version }}"
+    runs-on: Windows_x64  # Latest high spec runner ((96 cores and 384GB RAM)).
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      # Clear ANDROID_NDK_HOME as windows-latest has NDK where jobs don't have permission for
+      # androidndk rulesto create symlinks.
+      ANDROID_NDK_HOME:
+      LITERT_MODELS: ""
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Mount Bazel
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install python-build and twine
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine wheel
+          python -m pip list
+
+      - name: Set USE_BAZEL_VERSION
+        shell: bash
+        run: |
+          if [ -f .bazelversion ]; then
+            echo "USE_BAZEL_VERSION=$(cat .bazelversion)" >> $GITHUB_ENV
+          elif [ -f bazelversion ]; then
+            echo "USE_BAZEL_VERSION=$(cat bazelversion)" >> $GITHUB_ENV
+          fi
+
+      - name: Configure tensorflow & python path
+        run: |
+          $env:PYTHON_BIN_PATH = (Get-Command python).Source
+          $env:PYTHON_LIB_PATH = (python -c 'import site; print(site.getsitepackages()[0])')
+          $env:TF_NEED_ROCM = 0
+          $env:TF_NEED_CUDA = 0
+          $env:TF_SET_ANDROID_WORKSPACE = 0
+          $env:CC_OPT_FLAGS = '/arch:AVX'
+          echo "HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}" >> $env:GITHUB_ENV
+          python configure.py
+
+      - name : Set up cache keys and bazel output base.
+        id: cache-keys
+        run: |
+          $CACHE_RESTORE_KEY_2="${{ github.workflow }}-${{ matrix.python-version }}"
+          $CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
+          $CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
+          # If it's not a pull request, then it will be the same as $CACHE_RESTORE_KEY_1-.
+          $CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+          $CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+          echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$env:GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$env:GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$env:GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
+          # D: is faster than C: for I/O.
+          $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
+          echo "BAZEL_OUTPUT_BASE=D:/w-$SHORT_SHA" >> "$env:GITHUB_ENV"
+
+      - name: Clean build outputs if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
+
+      - name: Restore bazel cache if cache is not being refreshed.
+        id: bazel-cache
+        if: env.REFRESH_CACHE != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/bazel-windows
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+
+      - name: Check cache hit
+        run: |
+          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
+          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
+          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+
+      - name: Set BAZEL_CONFIG_FLAGS for Cache
+        run: |
+          $CacheDir = Join-Path $env:USERPROFILE ".cache" "bazel-windows"
+          echo "BAZEL_CONFIG_FLAGS=--disk_cache=$CacheDir" >> $env:GITHUB_ENV
+
+      - name: Build LiteRT wheel for Windows
+        run: |
+          .\ci\build_pip_package_with_bazel_windows.ps1
+
+      - name: Verify the distribution
+        run: twine check --strict dist/*
+
+      - name: List the contents of ai-edge-litert wheel
+        run: Get-ChildItem dist -Filter *.whl | ForEach-Object { python -m zipfile --list $_.FullName }
+
+      - name: Install local wheel
+        run: Get-ChildItem dist -Filter *.whl | ForEach-Object { python -m pip install $_.FullName }
+
+      - name: Import ai_edge_litert
+        run: |
+          python -c "import ai_edge_litert"
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-edge-litert-windows-${{ matrix.python-version }}
+          path: dist/*.whl
+
+      - name: Save bazel cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/.cache/bazel-windows
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+  upload-to-pypi:
+    name: "Upload stable Wheels to PyPI"
+    runs-on: Windows_x64
+    needs: build-release
+    if: success() && inputs.dry_run == false
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install twine
+        run: python -m pip install twine
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ai-edge-litert-windows-*
+          path: dist
+          merge-multiple: true
+
+      - name: List downloaded wheels
+        run: dir dist
+
+      - name: Upload to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        run: twine upload dist/*.whl --non-interactive
