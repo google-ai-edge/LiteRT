@@ -128,8 +128,8 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
 
   if (tfl_op.large_custom_options_size() != 0) {
     // TODO: b/365299994 - Support large custom options.
-    LITERT_LOG(LITERT_ERROR, "Large custom options not yet supported.");
-    return kLiteRtStatusErrorUnsupported;
+    LITERT_LOG(LITERT_WARNING,
+               "Large custom options not yet supported in litert::Model.");
   }
 
   const auto* custom_opts = tfl_op.custom_options();
