@@ -267,6 +267,30 @@ TEST(CcSubgraphTest, SimpleModel) {
 //                               CC Model                                     //
 //===----------------------------------------------------------------------===//
 
+TEST(CcModelTest, CreateFromFileWithOptionsSuccess) {
+  const LiteRtModelFileLoadOptions load_options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeDefault,
+  };
+  auto model = ExtendedModel::CreateFromFile(
+      testing::GetTestFilePath("one_mul.tflite"), load_options);
+  ASSERT_TRUE(model.HasValue());
+  EXPECT_EQ(model->NumSubgraphs(), 1);
+}
+
+TEST(CcModelTest, CreateFromFileWithOptionsInvalidMode) {
+  LiteRtModelFileLoadOptions load_options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeDefault,
+  };
+  load_options.load_mode = static_cast<LiteRtModelFileLoadMode>(1234);
+  auto model = ExtendedModel::CreateFromFile(
+      testing::GetTestFilePath("one_mul.tflite"), load_options);
+  ASSERT_FALSE(model.HasValue());
+  EXPECT_EQ(static_cast<LiteRtStatus>(model.Error().StatusCC()),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(CcModelTest, AddMetadataSuccess) {
   auto model = testing::LoadTestFileModel("one_mul.tflite");
   constexpr absl::string_view kKey = "KEY";
@@ -310,7 +334,7 @@ TEST(CcModelTest, SerializeModelSuccess) {
   // TODO:(yunandrew) add check for serialized size
 }
 
-TEST(CcModelTest, SerializePreCompiledModelHasSameSizeAsOriginal) {
+TEST(CcModelTest, SerializePreCompiledModelIncludesMetadataPayload) {
   Expected<std::unique_ptr<internal::FlatbufferWrapper>> flatbuffer =
       internal::FlatbufferWrapper::CreateFromTflFile(
           testing::GetTestFilePath("simple_add_op.sm8750.tflite"));
@@ -323,7 +347,8 @@ TEST(CcModelTest, SerializePreCompiledModelHasSameSizeAsOriginal) {
   Expected<OwningBufferRef<uint8_t>> serialized =
       ExtendedModel::Serialize(std::move(model), serialization_options);
   ASSERT_TRUE(serialized.HasValue());
-  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
+  ASSERT_TRUE(flatbuffer.HasValue());
+  EXPECT_GE(serialized->Size(), flatbuffer->get()->Buf().Size());
 }
 
 }  // namespace

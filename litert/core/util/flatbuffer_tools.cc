@@ -15,7 +15,11 @@
 #include "litert/core/util/flatbuffer_tools.h"
 
 #include <algorithm>
+#include <filesystem>  // NOLINT
+#include <fstream>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -66,6 +70,169 @@ Expected<uint32_t> FindMetadataInd(const TflModel& model,
   return fb_metadata->buffer;
 }
 
+std::filesystem::path MakeStdPath(absl::string_view path) {
+  return std::filesystem::path(std::string(path.begin(), path.end()));
+}
+
+Expected<OwningBufferRef<uint8_t>> ReadFilePrefix(absl::string_view path,
+                                                  size_t size) {
+  const auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  const auto raw_file_size = std::filesystem::file_size(std_path, ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO, "Failed to stat file");
+  }
+  if (raw_file_size > std::numeric_limits<size_t>::max()) {
+    return Error(kLiteRtStatusErrorInvalidArgument, "File is too large");
+  }
+  const size_t file_size = static_cast<size_t>(raw_file_size);
+  if (size > file_size) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Read size exceeds file size");
+  }
+
+  std::ifstream ifs(std_path, std::ios::binary);
+  if (!ifs) {
+    return Error(kLiteRtStatusErrorFileIO, "Failed to open file");
+  }
+
+  OwningBufferRef<uint8_t> out(size);
+  if (size > static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Prefix read size too large");
+  }
+  ifs.read(reinterpret_cast<char*>(out.Data()),
+           static_cast<std::streamsize>(size));
+  if (!ifs) {
+    return Error(kLiteRtStatusErrorFileIO, "Failed to read file prefix");
+  }
+  return out;
+}
+
+Expected<size_t> FindFlatbufferRootSizeByVerification(absl::string_view path) {
+  const auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  const auto raw_file_size = std::filesystem::file_size(std_path, ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO, "Failed to stat file");
+  }
+  if (raw_file_size > std::numeric_limits<size_t>::max()) {
+    return Error(kLiteRtStatusErrorInvalidArgument, "File is too large");
+  }
+  const size_t file_size = static_cast<size_t>(raw_file_size);
+  if (file_size == 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument, "Empty model file");
+  }
+
+  size_t lower_invalid = 0;
+  size_t upper_valid = 0;
+  size_t probe = std::min<size_t>(file_size, 4096);
+  for (;;) {
+    LITERT_ASSIGN_OR_RETURN(auto prefix, ReadFilePrefix(path, probe));
+    if (VerifyFlatbuffer(prefix.Data(), prefix.Size())) {
+      upper_valid = probe;
+      break;
+    }
+    if (probe == file_size) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                   "Could not verify model flatbuffer");
+    }
+    lower_invalid = probe;
+    probe = std::min<size_t>(file_size, probe * 2);
+  }
+
+  while (lower_invalid + 1 < upper_valid) {
+    const size_t mid = lower_invalid + (upper_valid - lower_invalid) / 2;
+    LITERT_ASSIGN_OR_RETURN(auto prefix, ReadFilePrefix(path, mid));
+    if (VerifyFlatbuffer(prefix.Data(), prefix.Size())) {
+      upper_valid = mid;
+    } else {
+      lower_invalid = mid;
+    }
+  }
+
+  return upper_valid;
+}
+
+Expected<OwningBufferRef<uint8_t>> CopyMetadataFromPackedModel(
+    const tflite::Model* model, BufferRef<uint8_t> model_buffer,
+    absl::string_view key) {
+  if (model == nullptr || model->metadata() == nullptr ||
+      model->buffers() == nullptr) {
+    return Error(kLiteRtStatusErrorNotFound, "Model metadata not found");
+  }
+
+  const tflite::Metadata* metadata_entry = nullptr;
+  for (size_t i = 0; i < model->metadata()->size(); ++i) {
+    const auto* metadata = model->metadata()->Get(i);
+    if (metadata != nullptr && metadata->name() != nullptr &&
+        metadata->name()->str() == key) {
+      metadata_entry = metadata;
+      break;
+    }
+  }
+  if (metadata_entry == nullptr) {
+    return Error(kLiteRtStatusErrorNotFound,
+                 "Requested metadata key not found");
+  }
+  if (metadata_entry->buffer() >= model->buffers()->size()) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                 "Metadata references invalid buffer");
+  }
+
+  const auto* metadata_buffer = model->buffers()->Get(metadata_entry->buffer());
+  if (metadata_buffer == nullptr) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                 "Metadata buffer is missing");
+  }
+
+  OwningBufferRef<uint8_t> copied;
+  if (metadata_buffer->data() != nullptr) {
+    copied.Assign(metadata_buffer->data()->data(),
+                  metadata_buffer->data()->size());
+    return copied;
+  }
+
+  const size_t offset = metadata_buffer->offset();
+  const size_t size = metadata_buffer->size();
+  if (offset > model_buffer.Size() || size > model_buffer.Size() - offset) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                 "Metadata buffer points outside flatbuffer root");
+  }
+  copied.Assign(model_buffer.Data() + offset, size);
+  return copied;
+}
+
+bool HasExternalTensorBufferRanges(const tflite::Model* model) {
+  if (model == nullptr || model->subgraphs() == nullptr ||
+      model->buffers() == nullptr) {
+    return false;
+  }
+  for (size_t subgraph_index = 0; subgraph_index < model->subgraphs()->size();
+       ++subgraph_index) {
+    const auto* subgraph = model->subgraphs()->Get(subgraph_index);
+    if (subgraph == nullptr || subgraph->tensors() == nullptr) {
+      continue;
+    }
+    for (size_t tensor_index = 0; tensor_index < subgraph->tensors()->size();
+         ++tensor_index) {
+      const auto* tensor = subgraph->tensors()->Get(tensor_index);
+      if (tensor == nullptr) {
+        continue;
+      }
+      const auto buffer_index = tensor->buffer();
+      if (buffer_index == 0 || buffer_index >= model->buffers()->size()) {
+        continue;
+      }
+      const auto* buffer = model->buffers()->Get(buffer_index);
+      if (buffer != nullptr && buffer->offset() != 0 && buffer->size() != 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 absl::string_view FbBufToStr(const uint8_t* fb_data, size_t size) {
@@ -98,6 +265,27 @@ bool VerifyFlatbuffer(const uint8_t* buf, size_t buf_size) {
 #endif
   flatbuffers::Verifier verifier(buf, buf_size, options);
   return VerifyModelBuffer(verifier);
+}
+
+Expected<size_t> GetFlatbufferRootSizeFromFile(absl::string_view path) {
+  return FindFlatbufferRootSizeByVerification(path);
+}
+
+Expected<OwningBufferRef<uint8_t>> CopyModelMetadataFromBuffer(
+    BufferRef<uint8_t> model_buffer, absl::string_view key) {
+  if (!VerifyFlatbuffer(model_buffer.Data(), model_buffer.Size())) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
+  }
+  const auto* model = tflite::GetModel(model_buffer.Data());
+  return CopyMetadataFromPackedModel(model, model_buffer, key);
+}
+
+Expected<OwningBufferRef<uint8_t>> CopyModelMetadataFromFile(
+    absl::string_view path, absl::string_view key) {
+  LITERT_ASSIGN_OR_RETURN(size_t root_size,
+                          FindFlatbufferRootSizeByVerification(path));
+  LITERT_ASSIGN_OR_RETURN(auto root_prefix, ReadFilePrefix(path, root_size));
+  return CopyModelMetadataFromBuffer(root_prefix, key);
 }
 
 Expected<MutableBufferRef<uint8_t>> GetMetadata(absl::string_view key,
@@ -309,11 +497,47 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
-    absl::string_view path, bool allow_modifications) {
+    absl::string_view path, FileLoadOptions options) {
+  if (options.load_mode == FileLoadMode::kMetadataOnlyForFileCopy) {
+    LITERT_ASSIGN_OR_RETURN(auto root_size,
+                            FindFlatbufferRootSizeByVerification(path));
+    LITERT_ASSIGN_OR_RETURN(auto root_prefix, ReadFilePrefix(path, root_size));
+
+    const auto* packed_model = tflite::GetModel(root_prefix.Data());
+    if (packed_model == nullptr ||
+        !VerifyFlatbuffer(root_prefix.Data(), root_prefix.Size())) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                   "Failed to verify flatbuffer root for metadata-only load");
+    }
+    if (HasExternalTensorBufferRanges(packed_model)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Metadata-only model load mode requires full model payload "
+                   "because tensor buffers reference external ranges");
+    }
+
+    auto metadata_only_wrapper =
+        FlatbufferWrapper::CreateFromBuffer(std::move(root_prefix));
+    if (!metadata_only_wrapper) {
+      return metadata_only_wrapper.Error();
+    }
+    return std::move(*metadata_only_wrapper);
+  }
+
   auto error_reporter = tflite::DefaultErrorReporter();
   auto allocation = tflite::GetAllocationFromFile(path.data(), error_reporter,
-                                                  allow_modifications);
+                                                  options.allow_modifications);
+  if (allocation == nullptr) {
+    return Error(kLiteRtStatusErrorFileIO, "Failed to allocate model file");
+  }
+
   return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
+}
+
+Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
+    absl::string_view path, bool allow_modifications) {
+  FileLoadOptions options;
+  options.allow_modifications = allow_modifications;
+  return CreateFromTflFile(path, options);
 }
 
 OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model) {

@@ -19,6 +19,7 @@ cmake_minimum_required(VERSION 3.20)
 add_library(litert_core STATIC
     build_stamp.cc
     buffer_error_reporter.cc
+    dispatch_bytecode_manifest.cc
     error_reporter.cc
     dispatch_op_schema.cc
     dynamic_loading.cc

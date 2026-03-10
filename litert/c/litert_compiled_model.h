@@ -45,6 +45,10 @@ extern "C" {
 // `jit_compilation_options` is optional and can be null, and is owned by the
 // caller.  The model is loaded into memory and the caller takes ownership of
 // the returned object.
+// If the model was loaded with
+// kLiteRtModelFileLoadModeMetadataOnlyForFileCopy, compilation options must
+// include kLiteRtHwAcceleratorNpu; otherwise this API returns
+// kLiteRtStatusErrorInvalidArgument.
 //
 // Caller owns the returned LiteRtCompiledModel. The owner is responsible for
 // calling LiteRtDestroyCompiledModel() to release the object.

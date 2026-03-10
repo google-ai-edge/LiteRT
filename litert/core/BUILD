@@ -214,6 +214,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "dispatch_bytecode_manifest",
+    srcs = ["dispatch_bytecode_manifest.cc"],
+    hdrs = ["dispatch_bytecode_manifest.h"],
+    copts = ["-DFLATBUFFERS_LOCALE_INDEPENDENT=0"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
 cc_test(
     name = "filesystem_test",
     srcs = ["filesystem_test.cc"],

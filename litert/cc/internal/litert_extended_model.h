@@ -313,6 +313,18 @@ class ExtendedModel : public litert::Model {
     return CreateFromOwnedHandle(model);
   }
 
+  static Expected<ExtendedModel> CreateFromFile(
+      const std::string& filename,
+      const LiteRtModelFileLoadOptions& load_options) {
+    LiteRtModel model;
+    if (auto status = LiteRtCreateModelFromFileWithOptions(
+            filename.c_str(), &load_options, &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to load model from file");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
   /// @brief Creates a model from a buffer.
   ///
   /// The caller must ensure that the buffer remains valid for the lifetime of

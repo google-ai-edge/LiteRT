@@ -222,6 +222,15 @@ LiteRtStatus LiteRtGetSignatureOutputTensorByIndex(LiteRtSignature signature,
 
 LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
                                        LiteRtModel* model);
+
+// Creates a model from file with explicit loading options.
+// When options.load_mode is
+// kLiteRtModelFileLoadModeMetadataOnlyForFileCopy, model loading is strict and
+// fails if metadata-only loading cannot be used safely.
+LiteRtStatus LiteRtCreateModelFromFileWithOptions(
+    const char* filename, const LiteRtModelFileLoadOptions* options,
+    LiteRtModel* model);
+
 // The caller must ensure that the buffer remains valid for the lifetime of
 // the model.
 LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,

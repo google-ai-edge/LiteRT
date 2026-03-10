@@ -15,6 +15,9 @@
 #include "litert/core/util/flatbuffer_tools.h"
 
 #include <cstdint>
+#include <cstring>
+#include <filesystem>  // NOLINT
+#include <fstream>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -172,6 +175,115 @@ TEST(FlatbufferToolsTest, PerChannelQuantizedTest) {
 
   auto per_channel = AsPerChannelQparams(q_parms);
   ASSERT_TRUE(per_channel);
+}
+
+TEST(FlatbufferToolsTest, CopyModelMetadataFromFileReadsRootOnly) {
+  static constexpr absl::string_view kMetadataKey = "DispatchManifest";
+  static constexpr absl::string_view kMetadataData = "manifest_payload";
+  static constexpr absl::string_view kTrailingPayload = "TRAILING_BYTECODE";
+
+  auto flatbuffer = TestFlatbuffer();
+  ASSERT_NE(flatbuffer, nullptr);
+  auto model = flatbuffer->Unpack();
+  ASSERT_EQ(PushMetadata(
+                kMetadataKey, *model,
+                BufferRef<uint8_t>(kMetadataData.data(), kMetadataData.size())),
+            kLiteRtStatusOk);
+  auto serialized = SerializeFlatbuffer(*model);
+
+  const size_t root_size = serialized.Size();
+  OwningBufferRef<uint8_t> model_with_trailing(root_size +
+                                               kTrailingPayload.size());
+  std::memcpy(model_with_trailing.Data(), serialized.Data(), root_size);
+  std::memcpy(model_with_trailing.Data() + root_size, kTrailingPayload.data(),
+              kTrailingPayload.size());
+
+  const std::filesystem::path path =
+      std::filesystem::path(::testing::TempDir()) /
+      "metadata_only_copy_with_trailing.tflite";
+  std::ofstream ofs(path, std::ios::binary);
+  ASSERT_TRUE(ofs.good());
+  ofs.write(reinterpret_cast<const char*>(model_with_trailing.Data()),
+            model_with_trailing.Size());
+  ofs.close();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto computed_root_size,
+                              GetFlatbufferRootSizeFromFile(path.string()));
+  EXPECT_EQ(computed_root_size, root_size);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto metadata_copy,
+      CopyModelMetadataFromFile(path.string(), kMetadataKey));
+  EXPECT_EQ(metadata_copy.StrView(), kMetadataData);
+}
+
+TEST(FlatbufferToolsTest, CopyModelMetadataFromFileWithTruncatedModelFails) {
+  auto flatbuffer = TestFlatbuffer();
+  ASSERT_NE(flatbuffer, nullptr);
+  auto serialized = SerializeFlatbuffer(*flatbuffer);
+  ASSERT_GT(serialized.Size(), 32);
+
+  const std::filesystem::path path =
+      std::filesystem::path(::testing::TempDir()) / "truncated_model.tflite";
+  std::ofstream ofs(path, std::ios::binary);
+  ASSERT_TRUE(ofs.good());
+  ofs.write(reinterpret_cast<const char*>(serialized.Data()), 32);
+  ofs.close();
+
+  EXPECT_FALSE(CopyModelMetadataFromFile(path.string(), kKey));
+}
+
+TEST(FlatbufferToolsTest,
+     MetadataOnlyFileLoadFailsWithExternalTensorBufferRanges) {
+  auto flatbuffer = TestFlatbuffer("add_cst.tflite");
+  ASSERT_NE(flatbuffer, nullptr);
+  auto tfl_model = flatbuffer->Unpack();
+
+  bool patched_external_range = false;
+  for (auto& subgraph : tfl_model->subgraphs) {
+    if (subgraph == nullptr) {
+      continue;
+    }
+    for (auto& tensor : subgraph->tensors) {
+      if (tensor == nullptr) {
+        continue;
+      }
+      const auto buffer_index = tensor->buffer;
+      if (buffer_index == 0 || buffer_index >= tfl_model->buffers.size()) {
+        continue;
+      }
+      auto* buffer = tfl_model->buffers[buffer_index].get();
+      if (buffer == nullptr) {
+        continue;
+      }
+      buffer->offset = 16;
+      buffer->size = 4;
+      patched_external_range = true;
+      break;
+    }
+    if (patched_external_range) {
+      break;
+    }
+  }
+  ASSERT_TRUE(patched_external_range);
+
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  const std::filesystem::path path =
+      std::filesystem::path(::testing::TempDir()) /
+      "metadata_only_external_ranges.tflite";
+  std::ofstream ofs(path, std::ios::binary);
+  ASSERT_TRUE(ofs.good());
+  ofs.write(reinterpret_cast<const char*>(serialized.Data()),
+            serialized.Size());
+  ofs.close();
+
+  FlatbufferWrapper::FileLoadOptions options;
+  options.load_mode = FlatbufferWrapper::FileLoadMode::kMetadataOnlyForFileCopy;
+  auto model_with_metadata_only =
+      FlatbufferWrapper::CreateFromTflFile(path.string(), options);
+  ASSERT_FALSE(model_with_metadata_only);
+  EXPECT_EQ(model_with_metadata_only.Error().Status(),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 }  // namespace

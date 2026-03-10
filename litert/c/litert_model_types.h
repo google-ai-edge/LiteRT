@@ -196,6 +196,25 @@ typedef struct LiteRtModelSerializationOptions {
   size_t bytecode_alignment;
 } LiteRtModelSerializationOptions;
 
+// File loading behavior for LiteRtCreateModelFromFileWithOptions.
+typedef enum LiteRtModelFileLoadMode {
+  // Preserve current behavior.
+  kLiteRtModelFileLoadModeDefault = 0,
+  // Keep only verified flatbuffer-root metadata bytes in memory and rely on
+  // runtime bytecode resolution by source file path / fd+offset fallback.
+  // This mode is intended for NPU workflows and is validated at
+  // LiteRtCreateCompiledModel time: compilation options must include
+  // kLiteRtHwAcceleratorNpu.
+  kLiteRtModelFileLoadModeMetadataOnlyForFileCopy = 1,
+} LiteRtModelFileLoadMode;
+
+// Options for LiteRtCreateModelFromFileWithOptions.
+typedef struct LiteRtModelFileLoadOptions {
+  // Whether mmap-based loads may be mapped writable/private.
+  bool allow_modifications;
+  // File loading mode.
+  LiteRtModelFileLoadMode load_mode;
+} LiteRtModelFileLoadOptions;
 
 #ifdef __cplusplus
 }

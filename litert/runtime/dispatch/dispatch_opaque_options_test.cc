@@ -15,6 +15,8 @@
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
@@ -66,6 +68,41 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFd) {
   auto alloc_base_fd = options->GetAllocBaseFd();
   ASSERT_TRUE(alloc_base_fd);
   ASSERT_EQ(*alloc_base_fd, dummy_fd);
+}
+
+TEST(DispatchDelegateOptionsTest, SetAllocBaseSize) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  constexpr size_t kAllocBaseSize = 1234;
+  ASSERT_TRUE(options->SetAllocBaseSize(kAllocBaseSize));
+  auto alloc_base_size = options->GetAllocBaseSize();
+  ASSERT_TRUE(alloc_base_size);
+  EXPECT_EQ(*alloc_base_size, kAllocBaseSize);
+}
+
+TEST(DispatchDelegateOptionsTest, SetModelSourcePath) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  constexpr absl::string_view kPath = "/tmp/model.tflite";
+  ASSERT_TRUE(options->SetModelSourcePath(kPath));
+  auto model_source_path = options->GetModelSourcePath();
+  ASSERT_TRUE(model_source_path);
+  EXPECT_EQ(*model_source_path, kPath);
+}
+
+TEST(DispatchDelegateOptionsTest, SetDispatchManifest) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  constexpr absl::string_view kManifest = "manifest";
+  ASSERT_TRUE(options->SetDispatchManifest(
+      BufferRef<uint8_t>(kManifest.data(), kManifest.size())));
+
+  auto manifest = options->GetDispatchManifest();
+  ASSERT_TRUE(manifest);
+  EXPECT_EQ(manifest->StrView(), kManifest);
 }
 
 }  // namespace

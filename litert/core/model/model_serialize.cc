@@ -41,6 +41,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_bytecode_manifest.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/insert_order_map.h"
 #include "litert/core/model/litert_to_flatbuffer.h"
@@ -73,6 +74,7 @@ class SerializationContext {
       absl::flat_hash_map<TflBufferInd, LiteRtModelT::BufferId>;
   using TflBufferIdMap =
       absl::flat_hash_map<LiteRtModelT::BufferId, TflBufferInd>;
+  using TflOpToManifestEntryMap = absl::flat_hash_map<TflOpInd, size_t>;
 
   explicit SerializationContext(uint32_t dispatch_op_code_ind,
                                 LiteRtModelT& litert_model,
@@ -154,12 +156,31 @@ class SerializationContext {
                        LiteRtModelT::OpAssetReference asset) {
     TflOpInd tfl_op_ind = {subgraph_ind, op_ind};
     op_asset_map_.emplace(tfl_op_ind, asset);
+    op_to_manifest_entry_map_.insert_or_assign(
+        tfl_op_ind, dispatch_manifest_entries_.size());
+    DispatchBytecodeManifestEntry manifest_entry;
+    manifest_entry.subgraph_index = subgraph_ind;
+    manifest_entry.op_index = op_ind;
+    manifest_entry.function_name = asset.second;
+    // Placeholder values patched after final appended offsets are known.
+    manifest_entry.bytecode_offset = 1;
+    manifest_entry.bytecode_size = 1;
+    dispatch_manifest_entries_.push_back(std::move(manifest_entry));
   }
 
   const TflOpAssetMap& OpAssetMap() const { return op_asset_map_; }
 
   const TflOffsetTensorMap& OffsetTensorMap() const {
     return offset_tensor_map_;
+  }
+
+  const std::vector<DispatchBytecodeManifestEntry>& DispatchManifestEntries()
+      const {
+    return dispatch_manifest_entries_;
+  }
+
+  const TflOpToManifestEntryMap& OpToManifestEntryMap() const {
+    return op_to_manifest_entry_map_;
   }
 
   // Get the index in the tfl op codes for the dispatch custom code.
@@ -175,6 +196,8 @@ class SerializationContext {
   TflOpAssetMap op_asset_map_;
   TflOffsetTensorMap offset_tensor_map_;
   TflBufferIdMap buffer_id_map_;
+  std::vector<DispatchBytecodeManifestEntry> dispatch_manifest_entries_;
+  TflOpToManifestEntryMap op_to_manifest_entry_map_;
   size_t bytecode_alignment_ = 0;
 };
 
@@ -338,12 +361,22 @@ Expected<TflModelPtr> PackAsTflite(SerializationContext& builder) {
   for (auto it = litert_model.MetadataBegin(); it != litert_model.MetadataEnd();
        ++it) {
     const auto& [key, buf_id] = *it;
+    if (key == kLiteRtDispatchBytecodeManifestKey) {
+      // This metadata is regenerated from the serialized op layout below.
+      continue;
+    }
     auto buf = litert_model.Buffers()->GetBuffer(buf_id);
     if (!buf) {
       LITERT_LOG(LITERT_ERROR, "Failed to find metadata buffer");
       return buf.Error();
     }
     builder.PushMetadata(key, *buf);
+  }
+
+  if (!builder.DispatchManifestEntries().empty()) {
+    auto manifest =
+        MakeDispatchBytecodeManifest(builder.DispatchManifestEntries());
+    builder.PushMetadata(kLiteRtDispatchBytecodeManifestKey, manifest);
   }
 
   builder.Model().version = 3;
@@ -410,6 +443,44 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
   // Read serialized tflite in packed form.
   auto* tfl_model = tflite::GetMutableModel(serialized_tfl.Data());
 
+  MutableBufferRef<uint8_t> manifest_data;
+  if (!builder.DispatchManifestEntries().empty()) {
+    if (tfl_model->mutable_metadata() == nullptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Dispatch bytecode manifest metadata is missing");
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
+    bool manifest_found = false;
+    for (auto i = 0; i < tfl_model->mutable_metadata()->size(); ++i) {
+      auto* metadata = tfl_model->mutable_metadata()->GetMutableObject(i);
+      if (metadata == nullptr || metadata->name() == nullptr ||
+          metadata->name()->str() != kLiteRtDispatchBytecodeManifestKey) {
+        continue;
+      }
+      if (metadata->buffer() >= tfl_model->mutable_buffers()->size()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Dispatch bytecode manifest has invalid buffer index");
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+      auto* manifest_buffer =
+          tfl_model->mutable_buffers()->GetMutableObject(metadata->buffer());
+      if (manifest_buffer == nullptr ||
+          manifest_buffer->mutable_data() == nullptr) {
+        LITERT_LOG(LITERT_ERROR, "Dispatch bytecode manifest is missing data");
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+      manifest_data =
+          MutableBufferRef<uint8_t>(manifest_buffer->mutable_data()->data(),
+                                    manifest_buffer->mutable_data()->size());
+      manifest_found = true;
+      break;
+    }
+    if (!manifest_found) {
+      LITERT_LOG(LITERT_ERROR, "Dispatch bytecode manifest metadata not found");
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
+  }
+
   // Find the ops that have external buffers and mark them with the future size
   // and offset.
   for (auto sg_ind = 0; sg_ind < tfl_model->mutable_subgraphs()->size();
@@ -452,6 +523,21 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       if (!UpdateDispatchOpOptionsInPlace(dispach_opts, old_raw_opts)) {
         LITERT_LOG(LITERT_ERROR, "Failed to update dispatch op options");
         return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+
+      if (manifest_data.Size() != 0) {
+        auto manifest_entry_ind_it = builder.OpToManifestEntryMap().find(ind);
+        if (manifest_entry_ind_it == builder.OpToManifestEntryMap().end()) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Dispatch op is missing bytecode manifest entry");
+          return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+        }
+        if (!UpdateDispatchBytecodeManifestEntryInPlace(
+                manifest_entry_ind_it->second, offset, size, manifest_data)) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Failed to patch dispatch bytecode manifest");
+          return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+        }
       }
     }
   }

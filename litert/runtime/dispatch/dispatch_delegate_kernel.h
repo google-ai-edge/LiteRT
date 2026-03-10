@@ -25,6 +25,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
@@ -116,6 +117,8 @@ class DispatchDelegateKernel
 
   Expected<const void*> FindAllocBase() const;
   Expected<int> FindAllocBaseFd() const;
+  Expected<size_t> FindAllocBaseSize() const;
+  Expected<std::string> FindModelSourcePath() const;
 
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;
@@ -161,6 +164,25 @@ class DispatchDelegateKernel
 
   absl::flat_hash_map<TfLiteOpaqueTensor*, std::vector<PortConnection>>
       io_tensors_port_connections_;
+
+  struct BytecodeKey {
+    size_t offset = 0;
+    size_t size = 0;
+
+    bool operator==(const BytecodeKey& other) const {
+      return offset == other.offset && size == other.size;
+    }
+  };
+
+  struct BytecodeKeyHash {
+    size_t operator()(const BytecodeKey& key) const {
+      return std::hash<size_t>()(key.offset) ^
+             (std::hash<size_t>()(key.size) << 1);
+    }
+  };
+
+  std::unordered_map<BytecodeKey, OwningBufferRef<uint8_t>, BytecodeKeyHash>
+      bytecode_copy_cache_;
 };
 
 }  // namespace litert::internal

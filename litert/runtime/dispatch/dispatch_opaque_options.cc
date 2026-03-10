@@ -14,9 +14,14 @@
 
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
+#include <cstddef>
+#include <string>
+
+#include "absl/strings/string_view.h"  // from @com_google_absl  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -28,6 +33,9 @@ namespace {
 struct Payload {
   const void* alloc_base = nullptr;
   int alloc_base_fd = -1;
+  size_t alloc_base_size = 0;
+  std::string model_source_path;
+  OwningBufferRef<uint8_t> dispatch_manifest;
 };
 
 }  // namespace
@@ -70,6 +78,43 @@ Expected<void> DispatchDelegateOptions::SetAllocBaseFd(int alloc_base_fd) {
 Expected<int> DispatchDelegateOptions::GetAllocBaseFd() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->alloc_base_fd;
+}
+
+Expected<void> DispatchDelegateOptions::SetAllocBaseSize(
+    size_t alloc_base_size) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->alloc_base_size = alloc_base_size;
+  return {};
+}
+
+Expected<size_t> DispatchDelegateOptions::GetAllocBaseSize() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->alloc_base_size;
+}
+
+Expected<void> DispatchDelegateOptions::SetModelSourcePath(
+    absl::string_view model_source_path) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->model_source_path.assign(model_source_path.data(),
+                                    model_source_path.size());
+  return {};
+}
+
+Expected<std::string> DispatchDelegateOptions::GetModelSourcePath() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->model_source_path;
+}
+
+Expected<void> DispatchDelegateOptions::SetDispatchManifest(
+    BufferRef<uint8_t> manifest) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->dispatch_manifest.Assign(manifest.Data(), manifest.Size());
+  return {};
+}
+
+Expected<BufferRef<uint8_t>> DispatchDelegateOptions::GetDispatchManifest() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->dispatch_manifest;
 }
 
 }  // namespace litert::internal

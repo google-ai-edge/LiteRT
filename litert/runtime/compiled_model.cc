@@ -71,6 +71,7 @@
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/core/buffer_error_reporter.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_bytecode_manifest.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
 #include "tflite/model_builder.h"
@@ -112,11 +113,14 @@
 #include "litert/runtime/stub_op_resolver.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 
+using litert::BufferRef;
 using litert::Error;
 using litert::Expected;
 using litert::Unexpected;
+using litert::internal::CopyModelMetadataFromBuffer;
 using litert::internal::DispatchDelegateOptions;
 using litert::internal::GetTensorIdentifier;
+using litert::internal::kLiteRtDispatchBytecodeManifestKey;
 #if !defined(LITERT_DISABLE_NPU)
 using litert::internal::SerializeModel;
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -732,10 +736,45 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
     // Add information about the model allocation to the opaque chain.
     LITERT_ASSIGN_OR_RETURN(auto dispatch_options,
                             DispatchDelegateOptions::Create());
+    size_t model_alloc_size = 0;
+    if (compiled_model->fb_model_ != nullptr &&
+        compiled_model->fb_model_->allocation() != nullptr) {
+      model_alloc_size = compiled_model->fb_model_->allocation()->bytes();
+    }
+
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
+    LITERT_RETURN_IF_ERROR(dispatch_options.SetAllocBaseSize(model_alloc_size));
+
+    std::optional<std::string> active_model_source_path;
+#if !defined(LITERT_DISABLE_NPU)
+    if (compiled_model->model_buf_.Size() == 0 &&
+        compiled_model->cached_model_.has_value() &&
+        compiled_model->cached_model_.value()->SourcePath().has_value()) {
+      active_model_source_path =
+          compiled_model->cached_model_.value()->SourcePath().value();
+    }
+#endif  // !defined(LITERT_DISABLE_NPU)
+    if (!active_model_source_path.has_value() &&
+        compiled_model->model_buf_.Size() == 0 &&
+        model->SourcePath().has_value()) {
+      active_model_source_path = model->SourcePath().value();
+    }
+    if (active_model_source_path.has_value()) {
+      LITERT_RETURN_IF_ERROR(
+          dispatch_options.SetModelSourcePath(*active_model_source_path));
+    }
+
+    if (model_alloc_size > 0) {
+      auto manifest = CopyModelMetadataFromBuffer(
+          BufferRef<uint8_t>(compiled_model->GetModelBase(), model_alloc_size),
+          kLiteRtDispatchBytecodeManifestKey);
+      if (manifest) {
+        LITERT_RETURN_IF_ERROR(dispatch_options.SetDispatchManifest(*manifest));
+      }
+    }
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 

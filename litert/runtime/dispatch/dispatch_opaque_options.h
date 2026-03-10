@@ -15,6 +15,11 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 
+#include <cstddef>
+#include <string>
+
+#include "absl/strings/string_view.h"  // from @com_google_absl  // from @com_google_absl
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
@@ -55,6 +60,31 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+  // alloc_base_size -----------------------------------------------------------
+
+  // Alloc base size is the number of valid bytes at alloc_base.
+  Expected<void> SetAllocBaseSize(size_t alloc_base_size);
+
+  // Get alloc base size.
+  Expected<size_t> GetAllocBaseSize();
+
+  // model_source_path ---------------------------------------------------------
+
+  // Source file path used to resolve bytecode ranges when alloc_base does not
+  // contain appended bytecode bytes.
+  Expected<void> SetModelSourcePath(absl::string_view model_source_path);
+
+  // Get source file path. Returns an empty string if unset.
+  Expected<std::string> GetModelSourcePath();
+
+  // dispatch_manifest ---------------------------------------------------------
+
+  // Optional cached manifest metadata payload.
+  Expected<void> SetDispatchManifest(BufferRef<uint8_t> manifest);
+
+  // Get cached manifest metadata payload. May be empty if unset.
+  Expected<BufferRef<uint8_t>> GetDispatchManifest();
 };
 
 }  // namespace litert::internal

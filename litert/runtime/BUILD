@@ -588,6 +588,7 @@ cc_library(
         "//litert/cc/internal:litert_tensor_buffer_utils",
         "//litert/core:buffer_error_reporter",
         "//litert/core:build_stamp",
+        "//litert/core:dispatch_bytecode_manifest",
         "//litert/core:environment",
         "//litert/core:error_reporter",
         "//litert/core:options",

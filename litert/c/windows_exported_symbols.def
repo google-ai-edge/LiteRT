@@ -52,6 +52,7 @@ EXPORTS
   LiteRtCreateMetrics
   LiteRtCreateModelFromBuffer
   LiteRtCreateModelFromFile
+  LiteRtCreateModelFromFileWithOptions
   LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
   LiteRtCreateTensorBufferFromGlBuffer

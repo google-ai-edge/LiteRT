@@ -206,6 +206,10 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_model.h: LiteRtCreateModelFromFile
   LiteRtStatus (*litert_create_model_from_file)(const char* filename,
                                                 LiteRtModel* model);
+  // litert_model.h: LiteRtCreateModelFromFileWithOptions
+  LiteRtStatus (*litert_create_model_from_file_with_options)(
+      const char* filename, const LiteRtModelFileLoadOptions* options,
+      LiteRtModel* model);
   // litert_model.h: LiteRtCreateModelFromBuffer
   LiteRtStatus (*litert_create_model_from_buffer)(const void* buffer_addr,
                                                   size_t buffer_size,

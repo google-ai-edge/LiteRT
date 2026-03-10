@@ -323,6 +323,13 @@ class RuntimeProxy {
     LITERT_PROXY_METHOD_STATUS(litert_create_model_from_file, filename, model);
   }
 
+  LiteRtStatus CreateModelFromFileWithOptions(
+      const char* filename, const LiteRtModelFileLoadOptions* options,
+      LiteRtModel* model) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_model_from_file_with_options,
+                               filename, options, model);
+  }
+
   LiteRtStatus CreateModelFromBuffer(const void* buffer_addr,
                                      size_t buffer_size, LiteRtModel* model) {
     LITERT_PROXY_METHOD_STATUS(litert_create_model_from_buffer, buffer_addr,
