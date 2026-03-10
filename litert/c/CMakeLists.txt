@@ -130,7 +130,7 @@ add_subdirectory(options)
 # C API shared library
 add_library(litert_runtime_c_api_shared_lib SHARED empty.cc)
 set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES
-    OUTPUT_NAME "LiteRtRuntimeCApi"
+    OUTPUT_NAME "LiteRt"
     POSITION_INDEPENDENT_CODE ON
 )
 set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES INTERFACE_LINK_LIBRARIES "")
