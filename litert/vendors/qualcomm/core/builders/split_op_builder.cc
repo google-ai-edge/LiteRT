@@ -54,16 +54,27 @@ std::vector<OpWrapper> BuildSplitOp(
   TensorWrapper& split_indice_tensor = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_UINT_32, axis_tensor.GetQuantParams(), {num_splits - 1},
       sizeof(std::uint32_t) * split_indice.size(), split_indice.data());
-
-  auto& split_op = CreateOpWrapper(res, QNN_OP_SPLIT);
-  split_op.AddInputTensor(input_tensor);
-  for (const auto& output : outputs) {
-    split_op.AddOutputTensor(output);
-  }
-  split_op.AddScalarParam<std::uint32_t>(QNN_OP_SPLIT_PARAM_AXIS, axis);
-  split_op.AddTensorParam(QNN_OP_SPLIT_PARAM_SPLIT_INDEX, split_indice_tensor);
-
+  res.emplace_back(CreateSplitOp(
+      input_tensor,
+      std::vector<ConstTensorWrapperRef>(outputs.begin(), outputs.end()), axis,
+      split_indice_tensor));
   return res;
+}
+
+OpWrapper CreateSplitOp(const TensorWrapper& input_0,
+                        const std::vector<ConstTensorWrapperRef>& outputs,
+                        std::uint32_t axis, const TensorWrapper& split_index) {
+  auto name = GetUniqueOpName(QNN_OP_SPLIT);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_SPLIT, QnnOpCode::kSplit);
+  op.AddInputTensor(input_0);
+  for (const auto& output : outputs) {
+    op.AddOutputTensor(output);
+  }
+  op.AddScalarParam<std::uint32_t>(QNN_OP_SPLIT_PARAM_AXIS, axis);
+  op.AddTensorParam(QNN_OP_SPLIT_PARAM_SPLIT_INDEX, split_index);
+  return op;
 }
 
 }  // namespace qnn

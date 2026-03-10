@@ -6,25 +6,25 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildSelectOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs) {
-  std::vector<OpWrapper> res;
-
-  auto& select_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
-  for (const auto& input : inputs) {
-    select_op.AddInputTensor(input);
-  }
-  select_op.AddOutputTensor(outputs[0]);
-
-  return res;
+OpWrapper CreateSelectOp(const TensorWrapper& input_0,
+                         const TensorWrapper& input_1,
+                         const TensorWrapper& input_2,
+                         const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_SELECT);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(QNN_OP_ELEMENT_WISE_SELECT, QnnOpCode::kElementWiseSelect);
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddInputTensor(input_2);
+  op.AddOutputTensor(output_0);
+  return op;
 }
 
 }  // namespace qnn
