@@ -52,10 +52,6 @@ class GoogleTensorOptions : public OpaqueOptions {
 
   absl::string_view GetOutputDir() const;
 
-  void SetDumpOpTimings(bool dump_op_timings);
-
-  bool GetDumpOpTimings() const;
-
   bool GetEnableLargeModelSupport() const;
 
   void SetEnableLargeModelSupport(bool enable_large_model_support);

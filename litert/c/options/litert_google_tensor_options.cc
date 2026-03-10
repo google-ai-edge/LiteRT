@@ -47,7 +47,7 @@ LiteRtStatus LiteRtGoogleTensorOptionsCreate(LiteRtOpaqueOptions* options) {
     uint64_t ans = 0;
     litert::HashCombine(
         ans, options->float_truncation_type, options->int64_to_int32_truncation,
-        options->output_dir, options->dump_op_timings,
+        options->output_dir,
         options->enable_large_model_support, options->sharding_intensity);
     return ans;
   };
@@ -141,26 +141,6 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetOutputDir(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *output_dir = options->output_dir.c_str();
-  return kLiteRtStatusOk;
-}
-
-// dump_op_timings -------------------------------------------------------------
-
-LiteRtStatus LiteRtGoogleTensorOptionsSetDumpOpTimings(
-    LiteRtGoogleTensorOptions options, bool dump_op_timings) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  options->dump_op_timings = dump_op_timings;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtGoogleTensorOptionsGetDumpOpTimings(
-    LiteRtGoogleTensorOptions options, bool* dump_op_timings) {
-  if (options == nullptr || dump_op_timings == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *dump_op_timings = options->dump_op_timings;
   return kLiteRtStatusOk;
 }
 
