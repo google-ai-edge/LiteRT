@@ -13,20 +13,47 @@
 #include "QnnOpDef.h"  // from @qairt
 
 namespace qnn {
+namespace {
+OpWrapper CreateElementWiseBinaryOp(const char* op_type, QnnOpCode op_code,
+                                    const char* param_name,
+                                    std::uint32_t param_value,
+                                    const TensorWrapper& input_0,
+                                    const TensorWrapper& input_1,
+                                    const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_BINARY);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(op_type, op_code);
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddOutputTensor(output_0);
+  op.AddScalarParam<std::uint32_t>(param_name, param_value);
+  return op;
+}
+
+OpWrapper CreateElementWiseUnary(const char* op_type, QnnOpCode op_code,
+                                 const char* param_name,
+                                 std::uint32_t param_value,
+                                 const TensorWrapper& input_0,
+                                 const TensorWrapper& output_0) {
+  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_UNARY);
+  OpWrapper op;
+  op.SetName(std::move(name));
+  op.SetType(op_type, op_code);
+  op.AddInputTensor(input_0);
+  op.AddOutputTensor(output_0);
+  op.AddScalarParam<std::uint32_t>(param_name, param_value);
+  return op;
+}
+}  // namespace
 
 OpWrapper CreateElementWiseAddOp(const TensorWrapper& input_0,
                                  const TensorWrapper& input_1,
                                  const TensorWrapper& output_0) {
-  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_BINARY);
-  OpWrapper op;
-  op.SetName(std::move(name));
-  op.SetType(QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary);
-  op.AddInputTensor(input_0);
-  op.AddInputTensor(input_1);
-  op.AddOutputTensor(output_0);
-  op.AddScalarParam<std::uint32_t>(QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-                                   QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
-  return op;
+  return CreateElementWiseBinaryOp(
+      QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary,
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD, input_0, input_1, output_0);
 }
 
 std::vector<OpWrapper> BuildElementwiseSubOp(
@@ -47,17 +74,11 @@ std::vector<OpWrapper> BuildElementwiseSubOp(
 OpWrapper CreateElementWiseMulOp(const TensorWrapper& input_0,
                                  const TensorWrapper& input_1,
                                  const TensorWrapper& output_0) {
-  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_BINARY);
-  OpWrapper op;
-  op.SetName(std::move(name));
-  op.SetType(QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary);
-  op.AddInputTensor(input_0);
-  op.AddInputTensor(input_1);
-  op.AddOutputTensor(output_0);
-  op.AddScalarParam<std::uint32_t>(
+  return CreateElementWiseBinaryOp(
+      QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary,
       QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
-  return op;
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY, input_0, input_1,
+      output_0);
 }
 
 std::vector<OpWrapper> BuildElementwiseDivOp(
@@ -334,17 +355,11 @@ std::vector<OpWrapper> BuildElementwiseFloorDivOp(
 OpWrapper CreateElementWiseNotEqualOp(const TensorWrapper& input_0,
                                       const TensorWrapper& input_1,
                                       const TensorWrapper& output_0) {
-  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_BINARY);
-  OpWrapper op;
-  op.SetName(std::move(name));
-  op.SetType(QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary);
-  op.AddInputTensor(input_0);
-  op.AddInputTensor(input_1);
-  op.AddOutputTensor(output_0);
-  op.AddScalarParam<std::uint32_t>(
+  return CreateElementWiseBinaryOp(
+      QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary,
       QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL);
-  return op;
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL, input_0, input_1,
+      output_0);
 }
 
 std::vector<OpWrapper> BuildElementwiseOrOp(
@@ -399,15 +414,10 @@ std::vector<OpWrapper> BuildElementwiseLessEqualOp(
 
 OpWrapper CreateElementWiseNotOp(const TensorWrapper& input_0,
                                  const TensorWrapper& output_0) {
-  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_UNARY);
-  OpWrapper op;
-  op.SetName(std::move(name));
-  op.SetType(QNN_OP_ELEMENT_WISE_UNARY, QnnOpCode::kElementWiseUnary);
-  op.AddInputTensor(input_0);
-  op.AddOutputTensor(output_0);
-  op.AddScalarParam<std::uint32_t>(QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
-                                   QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
-  return op;
+  return CreateElementWiseUnary(
+      QNN_OP_ELEMENT_WISE_UNARY, QnnOpCode::kElementWiseUnary,
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT, input_0, output_0);
 }
 
 std::vector<OpWrapper> BuildElementwiseGreaterEqualOp(
@@ -444,16 +454,10 @@ std::vector<OpWrapper> BuildElementwiseExpOp(
 OpWrapper CreateElementWiseEqualOp(const TensorWrapper& input_0,
                                    const TensorWrapper& input_1,
                                    const TensorWrapper& output_0) {
-  auto name = GetUniqueOpName(QNN_OP_ELEMENT_WISE_BINARY);
-  OpWrapper op;
-  op.SetName(std::move(name));
-  op.SetType(QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary);
-  op.AddInputTensor(input_0);
-  op.AddInputTensor(input_1);
-  op.AddOutputTensor(output_0);
-  op.AddScalarParam<std::uint32_t>(QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-                                   QNN_OP_ELEMENT_WISE_BINARY_OPERATION_EQUAL);
-  return op;
+  return CreateElementWiseBinaryOp(
+      QNN_OP_ELEMENT_WISE_BINARY, QnnOpCode::kElementWiseBinary,
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_EQUAL, input_0, input_1, output_0);
 }
 
 std::vector<OpWrapper> BuildElementwiseLogOp(
