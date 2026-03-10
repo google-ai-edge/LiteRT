@@ -27,7 +27,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/internal/litert_runtime_builtin.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment_options.h"
@@ -296,10 +295,7 @@ class Environment {
   /// used.
   static std::unique_ptr<RuntimeProxy> CreateRuntime(
       const struct LiteRtRuntimeCApiStruct* system_runtime_handle = nullptr) {
-    if (system_runtime_handle != nullptr) {
-      return std::make_unique<RuntimeProxy>(system_runtime_handle);
-    }
-    return std::make_unique<RuntimeProxy>(kLiteRtRuntimeBuiltin);
+    return std::make_unique<RuntimeProxy>(system_runtime_handle);
   }
 };
 
