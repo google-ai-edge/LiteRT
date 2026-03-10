@@ -121,7 +121,7 @@ std::vector<OpWrapper> MHA2SHA(TensorPool& tensor_pool, const OpWrapper& mul_op,
   std::vector<std::uint32_t> split_indice;
   split_indice.reserve(num_heads);
   for (std::uint32_t i = 1; i < num_heads; i++) {
-    split_indice.emplace_back(i * mha_input.GetDim(1) / num_heads);
+    split_indice.emplace_back(i * mha_input.GetDimension(1) / num_heads);
   }
   const auto& split_indice_tensor = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_UINT_32, {},
@@ -145,7 +145,7 @@ std::vector<OpWrapper> MHA2SHA(TensorPool& tensor_pool, const OpWrapper& mul_op,
   std::vector<std::uint32_t> split_mask_indice;
   split_mask_indice.reserve(num_heads);
   for (std::uint32_t i = 1; i < num_heads; i++) {
-    split_mask_indice.emplace_back(i * mask_input.GetDim(2) / num_heads);
+    split_mask_indice.emplace_back(i * mask_input.GetDimension(2) / num_heads);
   }
   const auto& split_mask_indice_tensor = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_UINT_32, {},
