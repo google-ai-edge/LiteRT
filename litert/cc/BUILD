@@ -229,7 +229,6 @@ cc_test(
 cc_library(
     name = "litert_environment_options",
     hdrs = ["litert_environment_options.h"],
-    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_any",
         ":litert_common",
