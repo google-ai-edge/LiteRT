@@ -49,6 +49,8 @@ class OpWrapper final {
 
   std::string_view GetName() const;
 
+  const char* GetTypeName() const;
+
   bool IsOpCode(QnnOpCode op_code) const;
 
   const TensorWrapper& GetInputTensor(size_t i) const;

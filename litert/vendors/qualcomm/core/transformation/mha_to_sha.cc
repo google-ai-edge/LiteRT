@@ -17,6 +17,7 @@
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
@@ -83,24 +84,35 @@ const TensorWrapper& BuildSingleSHA(
   matmul_k1_output_dims[2] /= num_heads;
   const auto& matmul_k1_output = tensor_pool.CloneNativeTensorFrom(
       matmul_k1.GetOutputTensor(0), matmul_k1_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(
-      matmul_k1, mul_output, matmul_k1.GetInputTensor(1), matmul_k1_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_k1_inputs = {
+      mul_output, matmul_k1.GetInputTensor(1)};
+  const std::array<ConstTensorWrapperRef, 1> matmul_k1_outputs = {
+      matmul_k1_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_k1, matmul_k1_inputs,
+                                              matmul_k1_outputs));
 
   // MatMul 2
   auto matmul_k2_output_dims = matmul_k2.GetOutputTensor(0).GetDimensions();
   matmul_k2_output_dims[2] /= num_heads;
   const auto& matmul_k2_output = tensor_pool.CloneNativeTensorFrom(
       matmul_k2.GetOutputTensor(0), matmul_k2_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(
-      matmul_k2, mul_output, matmul_k2.GetInputTensor(1), matmul_k2_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_k2_inputs = {
+      mul_output, matmul_k2.GetInputTensor(1)};
+  const std::array<ConstTensorWrapperRef, 1> matmul_k2_outputs = {
+      matmul_k2_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_k2, matmul_k2_inputs,
+                                              matmul_k2_outputs));
 
   // Concat
   auto concat_output_dims = matmul_k1_output_dims;
   concat_output_dims[3] += matmul_k2_output_dims[3];
   const auto& concat_output = tensor_pool.CloneNativeTensorFrom(
       concat.GetOutputTensor(0), concat_output_dims);
-  new_ops.emplace_back(CreateConcatenationOpWithSameParam(
-      concat, {matmul_k1_output, matmul_k2_output}, concat_output));
+  const std::array<ConstTensorWrapperRef, 2> concat_inputs = {
+      matmul_k1_output, matmul_k2_output};
+  const std::array<ConstTensorWrapperRef, 1> concat_outputs = {concat_output};
+  new_ops.emplace_back(
+      CreateOpWithSameParams(concat, concat_inputs, concat_outputs));
 
   // Add
   const auto& add_1_output = tensor_pool.CloneNativeTensorFrom(
@@ -110,8 +122,11 @@ const TensorWrapper& BuildSingleSHA(
   // Softmax
   const auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
       softmax.GetOutputTensor(0), add_1_output.GetDimensions());
+  const std::array<ConstTensorWrapperRef, 1> softmax_inputs = {add_1_output};
+  const std::array<ConstTensorWrapperRef, 1> softmax_outputs = {
+      softmax_output};
   new_ops.emplace_back(
-      CreateSoftmaxOpWithSameParam(softmax, add_1_output, softmax_output));
+      CreateOpWithSameParams(softmax, softmax_inputs, softmax_outputs));
 
   // Slice 1
   auto slice_1_ranges = slice_1.GetTensorParam(0).GetTensor();
@@ -153,9 +168,12 @@ const TensorWrapper& BuildSingleSHA(
   matmul_v1_output_dims[2] = matmul_v1_output_dims[2] / num_heads;
   const auto& matmul_v1_output = tensor_pool.CloneNativeTensorFrom(
       matmul_v1.GetOutputTensor(0), matmul_v1_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(matmul_v1, slice_1_output,
-                                                   matmul_v1.GetInputTensor(1),
-                                                   matmul_v1_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_v1_inputs = {
+      slice_1_output, matmul_v1.GetInputTensor(1)};
+  const std::array<ConstTensorWrapperRef, 1> matmul_v1_outputs = {
+      matmul_v1_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_v1, matmul_v1_inputs,
+                                              matmul_v1_outputs));
 
   // MatMul 2
   std::vector<uint32_t> matmul_v2_output_dims =
@@ -163,9 +181,12 @@ const TensorWrapper& BuildSingleSHA(
   matmul_v2_output_dims[2] = matmul_v2_output_dims[2] / num_heads;
   const auto& matmul_v2_output = tensor_pool.CloneNativeTensorFrom(
       matmul_v2.GetOutputTensor(0), matmul_v2_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(matmul_v2, slice_2_output,
-                                                   matmul_v2.GetInputTensor(1),
-                                                   matmul_v2_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_v2_inputs = {
+      slice_2_output, matmul_v2.GetInputTensor(1)};
+  const std::array<ConstTensorWrapperRef, 1> matmul_v2_outputs = {
+      matmul_v2_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_v2, matmul_v2_inputs,
+                                              matmul_v2_outputs));
 
   // Add 2
   const auto& add_2_output = tensor_pool.CloneNativeTensorFrom(
@@ -201,8 +222,12 @@ const TensorWrapper& BuildSingleSHA(
   matmul_q_output_dims[1] /= num_attn_per_kv_heads;
   const auto& matmul_q_output = tensor_pool.CloneNativeTensorFrom(
       matmul_k1.GetOutputTensor(0), matmul_q_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(matmul_k1, mul_output,
-                                                   q_slice, matmul_q_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_q_inputs = {mul_output,
+                                                                q_slice};
+  const std::array<ConstTensorWrapperRef, 1> matmul_q_outputs = {
+      matmul_q_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_k1, matmul_q_inputs,
+                                              matmul_q_outputs));
 
   // Add
   auto add_1_output_dims = add_1.GetOutputTensor(0).GetDimensions();
@@ -218,8 +243,12 @@ const TensorWrapper& BuildSingleSHA(
   matmul_qk_output_dims[1] /= num_attn_per_kv_heads;
   const auto& matmul_qk_output = tensor_pool.CloneNativeTensorFrom(
       matmul_k2.GetOutputTensor(0), matmul_qk_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(
-      matmul_k2, mul_output, add_1_output, matmul_qk_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_qk_inputs = {
+      mul_output, add_1_output};
+  const std::array<ConstTensorWrapperRef, 1> matmul_qk_outputs = {
+      matmul_qk_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_k2, matmul_qk_inputs,
+                                              matmul_qk_outputs));
 
   // Concat
   std::uint32_t adjusted_axis = 2;
@@ -254,8 +283,12 @@ const TensorWrapper& BuildSingleSHA(
   softmax_output_dims[1] /= num_attn_per_kv_heads;
   const auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
       softmax.GetOutputTensor(0), softmax_output_dims);
+  const std::array<ConstTensorWrapperRef, 1> softmax_inputs = {
+      reshape_3_output};
+  const std::array<ConstTensorWrapperRef, 1> softmax_outputs = {
+      softmax_output};
   new_ops.emplace_back(
-      CreateSoftmaxOpWithSameParam(softmax, reshape_3_output, softmax_output));
+      CreateOpWithSameParams(softmax, softmax_inputs, softmax_outputs));
 
   // Slice 1
   auto slice_1_param = slice_1.GetTensorParam(0).GetTensor();
@@ -305,8 +338,12 @@ const TensorWrapper& BuildSingleSHA(
   matmul_v1_output_dims[1] /= num_attn_per_kv_heads;
   const auto& matmul_v1_output = tensor_pool.CloneNativeTensorFrom(
       matmul_v1.GetOutputTensor(0), matmul_v1_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(matmul_v1, slice_1_output,
-                                                   v_cache, matmul_v1_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_v1_inputs = {
+      slice_1_output, v_cache};
+  const std::array<ConstTensorWrapperRef, 1> matmul_v1_outputs = {
+      matmul_v1_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_v1, matmul_v1_inputs,
+                                              matmul_v1_outputs));
 
   // Matmul v2
   auto matmul_v2_output_dims = matmul_v2.GetOutputTensor(0).GetDimensions();
@@ -314,8 +351,12 @@ const TensorWrapper& BuildSingleSHA(
   matmul_v2_output_dims[1] /= num_attn_per_kv_heads;
   const auto& matmul_v2_output = tensor_pool.CloneNativeTensorFrom(
       matmul_v2.GetOutputTensor(0), matmul_v2_output_dims);
-  new_ops.emplace_back(CreateMatmulOpWithSameParam(matmul_v2, slice_2_output,
-                                                   v_slice, matmul_v2_output));
+  const std::array<ConstTensorWrapperRef, 2> matmul_v2_inputs = {
+      slice_2_output, v_slice};
+  const std::array<ConstTensorWrapperRef, 1> matmul_v2_outputs = {
+      matmul_v2_output};
+  new_ops.emplace_back(CreateOpWithSameParams(matmul_v2, matmul_v2_inputs,
+                                              matmul_v2_outputs));
 
   // Add 3
   auto add_3_output_dims = add_3.GetOutputTensor(0).GetDimensions();
@@ -448,9 +489,13 @@ size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
                                    .GetDimensions();
   const auto& transpose_output =
       tensor_pool.CloneNativeTensorFrom(pattern_input, transpose_output_dims);
-  new_ops.emplace_back(
-      CreateTransposeOpWithSameParam(ops[start_index + kTransposePrefillIndex],
-                                     pattern_input, transpose_output));
+  const std::array<ConstTensorWrapperRef, 1> transpose_inputs = {
+      pattern_input};
+  const std::array<ConstTensorWrapperRef, 1> transpose_outputs = {
+      transpose_output};
+  new_ops.emplace_back(CreateOpWithSameParams(
+      ops[start_index + kTransposePrefillIndex], transpose_inputs,
+      transpose_outputs));
 
   // Reshape
   const auto& reshape_output = tensor_pool.CloneNativeTensorFrom(
@@ -799,8 +844,12 @@ bool OptimizeMHATinyGemmaPrefill(
   auto transpose_output_dims = transpoe_0.GetOutputTensor(0).GetDimensions();
   const auto& transpose_output =
       tensor_pool.CloneNativeTensorFrom(pattern_input, transpose_output_dims);
-  auto& new_transpose_0 = new_ops.emplace_back(CreateTransposeOpWithSameParam(
-      transpoe_0, pattern_input, transpose_output));
+  const std::array<ConstTensorWrapperRef, 1> transpose_inputs = {
+      pattern_input};
+  const std::array<ConstTensorWrapperRef, 1> transpose_outputs = {
+      transpose_output};
+  auto& new_transpose_0 = new_ops.emplace_back(
+      CreateOpWithSameParams(transpoe_0, transpose_inputs, transpose_outputs));
 
   // Process MHA to SHA transformation.
   const int num_heads = pattern_input.GetDimension(2);
@@ -1240,8 +1289,12 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
           matmul_qk_out,
           {q_matmul_in.GetDimension(0), q_matmul_in.GetDimension(1),
            k_matmul_in.GetDimension(2)});
-      new_ops.emplace_back(CreateMatmulOpWithSameParam(
-          ops[matmul_qk_index], q_matmul_in, k_matmul_in, select_in));
+      const std::array<ConstTensorWrapperRef, 2> matmul_qk_inputs = {
+          q_matmul_in, k_matmul_in};
+      const std::array<ConstTensorWrapperRef, 1> matmul_qk_outputs = {
+          select_in};
+      new_ops.emplace_back(CreateOpWithSameParams(
+          ops[matmul_qk_index], matmul_qk_inputs, matmul_qk_outputs));
 
       // Change Select to Add.
       const auto& softmax_in =
@@ -1252,12 +1305,19 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
       // Softmax
       const auto& qk_softmax =
           tensor_pool.CloneNativeTensorFrom(softmax_in, select_out_dims);
-      new_ops.emplace_back(CreateSoftmaxOpWithSameParam(
-          ops[select_index + kAttnSoftmax], softmax_in, qk_softmax));
+      const std::array<ConstTensorWrapperRef, 1> softmax_inputs = {softmax_in};
+      const std::array<ConstTensorWrapperRef, 1> softmax_outputs = {
+          qk_softmax};
+      new_ops.emplace_back(CreateOpWithSameParams(
+          ops[select_index + kAttnSoftmax], softmax_inputs, softmax_outputs));
 
       // MatMul
-      new_ops.emplace_back(CreateMatmulOpWithSameParam(
-          ops[matmul_qk_index], qk_softmax, v_sha_inputs[i], sha_outputs[i]));
+      const std::array<ConstTensorWrapperRef, 2> matmul_out_inputs = {
+          qk_softmax, v_sha_inputs[i]};
+      const std::array<ConstTensorWrapperRef, 1> matmul_out_outputs = {
+          sha_outputs[i]};
+      new_ops.emplace_back(CreateOpWithSameParams(
+          ops[matmul_qk_index], matmul_out_inputs, matmul_out_outputs));
     }
     // Pack
     new_ops.emplace_back(CreatePackOp(sha_outputs, mha_out, 2));

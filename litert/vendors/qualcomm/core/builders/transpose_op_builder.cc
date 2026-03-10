@@ -45,15 +45,4 @@ OpWrapper CreateTransposeOp(const TensorWrapper& input_0,
   return op;
 }
 
-OpWrapper CreateTransposeOpWithSameParam(const OpWrapper& src,
-                                         const TensorWrapper& input_0,
-                                         const TensorWrapper& output_0) {
-  auto name = GetUniqueOpName(QNN_OP_TRANSPOSE);
-  OpWrapper op(src);
-  op.SetName(std::move(name));
-  op.AddInputTensor(input_0);
-  op.AddOutputTensor(output_0);
-  return op;
-}
-
 }  // namespace qnn

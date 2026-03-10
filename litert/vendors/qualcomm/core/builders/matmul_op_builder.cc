@@ -28,18 +28,4 @@ OpWrapper CreateMatmulOp(const TensorWrapper& input_0,
   return op;
 }
 
-OpWrapper CreateMatmulOpWithSameParam(const OpWrapper& src,
-                                      const TensorWrapper& input_0,
-                                      const TensorWrapper& input_1,
-                                      const TensorWrapper& output_0) {
-  auto name = GetUniqueOpName(QNN_OP_MAT_MUL);
-  OpWrapper op(src);
-  op.SetName(std::move(name));
-  op.ClearInputOutputTensors();
-  op.AddInputTensor(input_0);
-  op.AddInputTensor(input_1);
-  op.AddOutputTensor(output_0);
-  return op;
-}
-
 }  // namespace qnn

@@ -3,10 +3,12 @@
 
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 
+#include <array>
 #include <cstddef>
 #include <functional>
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -26,9 +28,12 @@ size_t FuseMatMulConvertDecode(
   }
   // Graph transform
   QNN_LOG_INFO("[G2G] MatMul-convert fusion (Decode)");
-  auto new_matmul = CreateMatmulOpWithSameParam(
-      matmul, matmul.GetInputTensor(0), matmul.GetInputTensor(1),
-      convert.GetOutputTensor(0));
+  const std::array<ConstTensorWrapperRef, 2> matmul_inputs = {
+      matmul.GetInputTensor(0), matmul.GetInputTensor(1)};
+  const std::array<ConstTensorWrapperRef, 1> matmul_outputs = {
+      convert.GetOutputTensor(0)};
+  auto new_matmul =
+      CreateOpWithSameParams(matmul, matmul_inputs, matmul_outputs);
   if (validate_op_config(new_matmul)) {
     ops.erase(ops.begin() + start_index,
               ops.begin() + start_index + pattern_size);
@@ -52,9 +57,12 @@ size_t FuseMatMulConvertPrefill(
   }
   // Graph transform
   QNN_LOG_INFO("[G2G] MatMul-convert fusion (Prefill)");
-  auto new_matmul = CreateMatmulOpWithSameParam(
-      matmul, matmul.GetInputTensor(0), matmul.GetInputTensor(1),
-      convert.GetOutputTensor(0));
+  const std::array<ConstTensorWrapperRef, 2> matmul_inputs = {
+      matmul.GetInputTensor(0), matmul.GetInputTensor(1)};
+  const std::array<ConstTensorWrapperRef, 1> matmul_outputs = {
+      convert.GetOutputTensor(0)};
+  auto new_matmul =
+      CreateOpWithSameParams(matmul, matmul_inputs, matmul_outputs);
   if (validate_op_config(new_matmul)) {
     ops.erase(ops.begin() + start_index + 2);
     ops.erase(ops.begin() + start_index);

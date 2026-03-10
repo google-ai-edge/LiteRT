@@ -198,6 +198,11 @@ TEST(OpWrapperTest, GetInputOutputTensorTest) {
   EXPECT_EQ(op_wrapper.GetOutputTensor(0), tensor_wrapper_output);
 }
 
+TEST(OpWrapperTest, GetTypeName) {
+  OpWrapper src{"src", "OP_TYPE", QnnOpCode::kMatMul};
+  EXPECT_STREQ(src.GetTypeName(), "OP_TYPE");
+}
+
 TEST(OpWrapperTest, GetName) {
   OpWrapper op{"name", "OP_TYPE", QnnOpCode::kUnknown};
   EXPECT_STREQ(op.GetName().data(), "name");

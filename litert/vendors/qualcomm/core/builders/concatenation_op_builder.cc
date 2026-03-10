@@ -28,18 +28,4 @@ OpWrapper CreateConcatenationOp(
   return op;
 }
 
-OpWrapper CreateConcatenationOpWithSameParam(
-    const OpWrapper& src, const std::vector<ConstTensorWrapperRef>& inputs,
-    const TensorWrapper& output) {
-  auto name = GetUniqueOpName(QNN_OP_CONCAT);
-  OpWrapper op(src);
-  op.SetName(std::move(name));
-  op.ClearInputOutputTensors();
-  for (const auto& input : inputs) {
-    op.AddInputTensor(input);
-  }
-  op.AddOutputTensor(output);
-  return op;
-}
-
 }  // namespace qnn

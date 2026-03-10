@@ -16,10 +16,6 @@ OpWrapper CreateConcatenationOp(
     const std::vector<ConstTensorWrapperRef>& inputs,
     const TensorWrapper& output, std::uint32_t axis);
 
-OpWrapper CreateConcatenationOpWithSameParam(
-    const OpWrapper& src, const std::vector<ConstTensorWrapperRef>& inputs,
-    const TensorWrapper& output);
-
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_CONCATENATION_OP_BUILDER_H_

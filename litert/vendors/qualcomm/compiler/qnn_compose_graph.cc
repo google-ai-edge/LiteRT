@@ -499,13 +499,15 @@ LiteRtStatus BuildConcatenationOp(
   LITERT_RETURN_IF_ERROR(LiteRtGetConcatenationFusedActivationOption(
       litert_op.Get(), &fused_activation));
 
+  std::uint32_t adjusted_axis =
+      (axis >= 0) ? axis : axis + input_tensors[0].get().GetRank();
   const auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
   op_wrappers.clear();
   op_wrappers.emplace_back(::qnn::CreateConcatenationOp(
       std::vector<::qnn::ConstTensorWrapperRef>(input_tensors.begin(),
                                                 input_tensors.end()),
-      activation_input, axis));
+      activation_input, adjusted_axis));
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
