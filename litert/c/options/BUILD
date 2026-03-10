@@ -183,6 +183,22 @@ cc_test(
     ],
 )
 
+# SAMSUNG ######################################################################################
+
+cc_library(
+    name = "litert_samsung_options",
+    srcs = ["litert_samsung_options.cc"],
+    hdrs = ["litert_samsung_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
+)
+
 cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
