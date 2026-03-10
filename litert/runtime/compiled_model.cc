@@ -266,7 +266,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   if (hardware_accelerators & kLiteRtHwAcceleratorGpu) {
     const char* accelerator_supported_custom_ops[] = {
         "Convolution2DTransposeBias", "MaxPoolingWithArgmax2D",
-        "MaxUnpooling2D", "Resampler"};
+        "MaxUnpooling2D", "Resampler", "custom_call.GroupNorm",
+        "custom_call.LayerNorm", "custom_call.RmsNorm",
+        "custom_call.PixelShuffle"};
     for (const auto& op_name : accelerator_supported_custom_ops) {
       resolver.AddCustom(op_name, &sStubRegistration);
     }
