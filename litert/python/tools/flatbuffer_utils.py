@@ -27,7 +27,7 @@ import random
 import re
 import struct
 import sys
-from typing import Literal, Protocol, Type, TypeVar, overload
+from typing import Any, Literal, Protocol, Type, TypeVar, overload
 
 import flatbuffers
 import numpy as np
@@ -150,12 +150,25 @@ def read_model(input_tflite_file: Path) -> ModelT:
   return read_model_from_bytearray(model_bytearray)
 
 
+T = TypeVar('T')
+
+
 @overload
 def _ndarrays_to_lists(value: np.ndarray) -> np.ndarray | list[int]:
   ...
 
 
-def _ndarrays_to_lists[T](value: T) -> T:
+@overload
+def _ndarrays_to_lists(value: list) -> list:
+  ...
+
+
+@overload
+def _ndarrays_to_lists(value: T) -> T:
+  ...
+
+
+def _ndarrays_to_lists(value: Any) -> Any:
   """Recursively convert `np.ndarray`s of `np.int32` to `list`.
 
   If the input is a `list`, this function recurses over its elements. If the
@@ -220,7 +233,7 @@ def read_model_from_bytearray(model_bytearray: BufferType) -> ModelT:
   # Convert any non-buffer `np.ndarray`s to `list` to ensure they are mutable.
   buffers = model.buffers
   model.buffers = None
-  model = _ndarrays_to_lists(model)
+  _ndarrays_to_lists(model)
   model.buffers = buffers
 
   return model
