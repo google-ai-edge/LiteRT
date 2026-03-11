@@ -14,11 +14,10 @@
 
 #include "litert/c/options/litert_compiler_options.h"
 
-#include <string.h>  // NOLINT: To use strdup in some environments.
-
-#include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <sstream>
+#include <string>
 
 #include "litert/c/litert_common.h"
 
@@ -63,8 +62,10 @@ LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
   }
 
   *identifier = LrtGetCompilerOptionsIdentifier();
-  *payload = strdup(ss.str().c_str());
-  *payload_deleter = [](void* p) { free(p); };
+  std::string toml_str = ss.str();
+  *payload = new char[toml_str.size() + 1];
+  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
+  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
 
   return kLiteRtStatusOk;
 }

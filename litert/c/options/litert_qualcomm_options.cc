@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -266,8 +267,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
 
   *identifier = LrtQualcommOptionsGetIdentifier();
-  *payload = strdup(toml.str().c_str());
-  *payload_deleter = [](void* payload) { free(payload); };
+  std::string toml_str = toml.str();
+  *payload = new char[toml_str.size() + 1];
+  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
+  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
 
   return kLiteRtStatusOk;
 }

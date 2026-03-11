@@ -14,9 +14,8 @@
 
 #include "litert/c/options/litert_gpu_options.h"
 
-#include <string.h>  // NOLINT: To use strdup in some environments.
-
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -320,8 +319,10 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     ss << "]\n";
   }
   *identifier = LrtGetGpuOptionsIdentifier();
-  *payload = strdup(ss.str().c_str());
-  *payload_deleter = [](void* p) { free(p); };
+  std::string toml_str = ss.str();
+  *payload = new char[toml_str.size() + 1];
+  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
+  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
   return kLiteRtStatusOk;
 }
 
