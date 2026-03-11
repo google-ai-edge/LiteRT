@@ -42,6 +42,15 @@ constexpr SocInfo kSocInfos[] = {
     {SocInfo("SM8750", SnapdragonModel::SM8750, DspArch::V79,
              8  // vtcm_size_in_mb
              )},
+    {SocInfo("SXR2330P", SnapdragonModel::SXR2330P, DspArch::V79,
+             8  // vtcm_size_in_mb
+             )},
+    {SocInfo("QCS9100", SnapdragonModel::QCS9100, DspArch::V73,
+             8  // vtcm_size_in_mb
+             )},
+    {SocInfo("QCS8300", SnapdragonModel::QCS8300, DspArch::V75,
+             8  // vtcm_size_in_mb
+             )},
     {SocInfo("SM8850", SnapdragonModel::SM8850, DspArch::V81,
              8  // vtcm_size_in_mb
              )},
