@@ -127,11 +127,33 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchDeviceContextT& device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-    int num_inputs, int num_outputs) {
+    int num_inputs, int num_outputs,
+    litert::Expected<IntelOpenVinoOptions>& intel_openvino_opts) {
   const void* exec_bytecode_ptr =
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;
   auto exec_bytecode_size = exec_bytecode_buffer->size;
+  std::string device = "NPU";  // Default device
+  if (intel_openvino_opts.HasValue()) {
+    const auto& intel_opts = intel_openvino_opts.Value();
+    // Configure device type
+    auto device_type = intel_opts.GetDeviceType();
+    switch (device_type) {
+      case kLiteRtIntelOpenVinoDeviceTypeCPU:
+        device = "CPU";
+        break;
+      case kLiteRtIntelOpenVinoDeviceTypeGPU:
+        device = "GPU";
+        break;
+      case kLiteRtIntelOpenVinoDeviceTypeNPU:
+        device = "NPU";
+        break;
+      case kLiteRtIntelOpenVinoDeviceTypeAUTO:
+        device = "AUTO";
+        break;
+    }
+  }
+  OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
   if (!exec_bytecode_ptr || exec_bytecode_size == 0) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -151,7 +173,7 @@ LiteRtDispatchInvocationContextT::Create(
   }
   ov::CompiledModel compiled_model;
   try {
-    compiled_model = core->import_model(model_stream, "NPU");
+    compiled_model = core->import_model(model_stream, device);
   } catch (const std::exception& e) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
   }
@@ -210,13 +232,8 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-#if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#else
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#endif
+                          device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_input_tensor(graph_input_index, ov_tensor);
@@ -225,13 +242,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-#if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#else
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#endif
+                          device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_output_tensor(graph_output_index, ov_tensor);

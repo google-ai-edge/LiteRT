@@ -40,7 +40,7 @@
 #include "litert/vendors/intel_openvino/utils.h"
 
 #if defined(LITERT_WINDOWS_OS)
-#include "litert/vendors/intel_openvino/dispatch/remote_tensor_buffer.h"
+#include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 #endif  // LITERT_WINDOWS_OS
 
 #if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
@@ -149,20 +149,20 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           LiteRtGetTensorBufferCustomTensorBufferHandle(tensor_buffer,
                                                         &hw_memory_handle),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to get OpenVINO remote tensor buffer."));
-      RemoteTensorBuffer* custom_tensor_buffer =
-          reinterpret_cast<RemoteTensorBuffer*>(hw_memory_handle);
+                             "Failed to get OpenVINO tensor buffer."));
+      OpenVinoTensorBuffer* custom_tensor_buffer =
+          reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_handle);
 
-      LITERT_ASSIGN_OR_RETURN(auto remote_tensor,
-                              custom_tensor_buffer->GetZeroBufferTensor());
+      LITERT_ASSIGN_OR_RETURN(auto openvino_tensor,
+                              custom_tensor_buffer->GetOVTensor());
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
-                                 remote_tensor);
+                                 openvino_tensor);
 
       return next_handle_++;
 #else
       return litert::Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          "Remote tensor support is missing on this platform.");
+          "OpenVINO tensor support is missing on this platform.");
 #endif  // LITERT_WINDOWS_OS
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
