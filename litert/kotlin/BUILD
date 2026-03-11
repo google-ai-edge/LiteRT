@@ -248,3 +248,10 @@ aar_with_jni(
     name = "litert",
     android_library = ":litert_kotlin_api",
 )
+
+exports_files(
+    srcs = [
+        "litert_version_script.lds",
+        "src/main/AndroidManifest.xml",
+    ] + glob(["src/main/kotlin/**/*.kt"]),
+)
