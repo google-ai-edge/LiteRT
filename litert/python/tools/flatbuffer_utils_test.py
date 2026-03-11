@@ -309,6 +309,60 @@ def build_mock_model():
   return load_model_from_flatbuffer(model)
 
 
+class UpdatePackedBufferTest(googletest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self._model = flatbuffer_utils.ModelT(
+        buffers=[
+            flatbuffer_utils.BufferT(data=[0, 1, 2, 3], offset=1, size=1),
+            flatbuffer_utils.BufferT(),
+        ]
+    )
+    self._serialized_model = flatbuffer_utils.convert_object_to_bytearray(
+        self._model
+    )
+    self._packed_model = flatbuffer_utils.Model.GetRootAs(
+        self._serialized_model, 0
+    )
+
+  def test_update_packed_buffer(self):
+    # Update the zeroth buffer.
+    flatbuffer_utils.update_packed_buffer(
+        self._packed_model.Buffers(0), offset=10, size=11
+    )
+
+    # Check if the pack model's data is updated.
+    self.assertEqual(self._packed_model.Buffers(0).Offset(), 10)
+    self.assertEqual(self._packed_model.Buffers(0).Size(), 11)
+    for k in range(4):
+      self.assertEqual(self._packed_model.Buffers(0).Data(k), k)
+
+    # Check whether the underlying serialized representation was also changed.
+    model = flatbuffer_utils.convert_bytearray_to_object(self._serialized_model)
+    self.assertEqual(model.buffers[0].offset, 10)
+    self.assertEqual(model.buffers[0].size, 11)
+    self.assertSequenceEqual(
+        list(model.buffers[0].data), list(self._model.buffers[0].data)
+    )
+
+  def test_fails_when_no_buffer_reserved(self):
+    # Update the 1st buffer, which has default values only, and thus no space in
+    # the flatbuffer reserved for it.
+    with self.assertRaisesWithLiteralMatch(
+        ValueError, 'Failed to set `offset`, no buffer reserved for it.'
+    ):
+      flatbuffer_utils.update_packed_buffer(
+          self._packed_model.Buffers(1), offset=101
+      )
+    with self.assertRaisesWithLiteralMatch(
+        ValueError, 'Failed to set `size`, no buffer reserved for it.'
+    ):
+      flatbuffer_utils.update_packed_buffer(
+          self._packed_model.Buffers(1), size=101
+      )
+
+
 class WriteReadModelTest(googletest.TestCase):
 
   def testWriteReadModel(self):
@@ -346,14 +400,13 @@ class WriteReadModelTest(googletest.TestCase):
     for i in range(len(initial_tensors)):
       self.assertEqual(initial_tensors[i].name, final_tensors[i].name)
       self.assertEqual(initial_tensors[i].type, final_tensors[i].type)
-      self.assertEqual(initial_tensors[i].buffer, final_tensors[i].buffer)
+      if initial_model.buffers[initial_tensors[i].buffer].data is not None:
+        self.assertSequenceEqual(
+            list(initial_model.buffers[initial_tensors[i].buffer].data),
+            list(final_model.buffers[final_tensors[i].buffer].data),
+        )
       for j in range(len(initial_tensors[i].shape)):
         self.assertEqual(initial_tensors[i].shape[j], final_tensors[i].shape[j])
-    # Validate the first valid buffer (index 0 is always None)
-    initial_buffer = initial_model.buffers[1].data
-    final_buffer = final_model.buffers[1].data
-    for i in range(initial_buffer.size):
-      self.assertEqual(initial_buffer.data[i], final_buffer.data[i])
 
 
 class StripStringsTest(googletest.TestCase):
