@@ -18,6 +18,7 @@
 
 #include <cstdlib>
 #include <sstream>
+#include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -65,11 +66,11 @@ LiteRtStatus LrtGetOpaqueWebNnOptionsData(const LrtWebNnOptions* options,
      << "\n";
   ss << "precision = " << static_cast<int>(options->precision) << "\n";
 
-  char* payload_str = strdup(ss.str().c_str());
-
   *identifier = "webnn_options_string";
-  *payload = payload_str;
-  *payload_deleter = [](void* p) { free(p); };
+  std::string toml_str = ss.str();
+  *payload = new char[toml_str.size() + 1];
+  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
+  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
 
   return kLiteRtStatusOk;
 }
