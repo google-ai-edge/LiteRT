@@ -139,14 +139,35 @@ exports_files(
 
 # If litert_link_capi_so is not defined, each target links LiteRT C API either statically or
 # dynamically based on its own requirements.
+#
+# DEPRECATED: Use :litert_runtime_link_mode_dynamic instead.
 config_setting(
     name = "litert_link_capi_so",
     values = {"define": "litert_link_capi_so=true"},
 )
 
+# DEPRECATED: Use :litert_runtime_link_mode_static instead.
 config_setting(
     name = "litert_link_capi_static",
     values = {"define": "litert_link_capi_so=false"},
+)
+
+# LiteRT runtime will be linked dynamically.
+config_setting(
+    name = "litert_runtime_link_mode_dynamic",
+    values = {"define": "litert_runtime_link_mode=dynamic"},
+)
+
+# LiteRT runtime will be linked statically. (This is the default behavior.)
+config_setting(
+    name = "litert_runtime_link_mode_static",
+    values = {"define": "litert_runtime_link_mode=static"},
+)
+
+# LiteRT runtime will not be linked in the binary.
+config_setting(
+    name = "litert_runtime_link_mode_none",
+    values = {"define": "litert_runtime_link_mode=none"},
 )
 
 # Configuration for building with built-in kernels (default)

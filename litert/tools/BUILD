@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -393,16 +392,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ],
 )
-
-# copybara:uncomment_begin(google-only)
-# # Ensure that benchmark tool is statically linked.
-# check_dependencies(
-#     of = [":benchmark_litert_model"],
-#     dont_depend_on = [
-#         "//litert/c:litert_runtime_c_api_shared_lib",
-#     ],
-# )
-# copybara:uncomment_end
 
 cc_test(
     name = "benchmark_litert_model_test",

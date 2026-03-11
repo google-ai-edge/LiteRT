@@ -542,7 +542,7 @@ cc_test(
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
-        "//litert/cc/internal:litert_runtime_builtin_runtimecapi",
+        "//litert/cc/internal:litert_runtime_builtin_dynamic",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",

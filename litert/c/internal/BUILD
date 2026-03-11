@@ -378,19 +378,6 @@ cc_library(
     ],
 )
 
-# Do NOT use this target directly. This should only be used by RuntimeProxy.
-cc_library(
-    name = "litert_runtime_c_api_runtimecapi",
-    hdrs = ["litert_runtime_c_api.h"],
-    visibility = [
-        "//litert/cc/internal:__pkg__",
-    ],
-    deps = [
-        ":litert_scheduling_info",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-    ],
-)
-
 # Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",

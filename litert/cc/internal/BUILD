@@ -637,55 +637,59 @@ cc_test(
 
 # Do not use this target directly. It should only be used by Environment.
 cc_library(
-    name = "litert_runtime_builtin",
+    name = "litert_runtime_builtin_dynamic",
     srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
-    # The visiblity is for testing only, otherwise it should be private.
+    # The visibility is for testing only, otherwise it would be private.
+    visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model_header",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_event_header",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c/internal:litert_runtime_c_api",
+    ],
+)
+
+cc_library(
+    name = "litert_runtime_builtin_static",
+    srcs = ["litert_runtime_builtin.cc"],
+    hdrs = ["litert_runtime_builtin.h"],
+    # The visibility is for testing only, otherwise it would be private.
     visibility = [
         "//litert/cc:__pkg__",
         "//litert/kotlin/src/tests/google:__pkg__",
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_compiled_model",
-        "//litert/c:litert_environment_header",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_event",
+        "//litert/c:litert_compiled_model_impl",
+        "//litert/c:litert_environment_impl",
+        "//litert/c:litert_environment_options_impl",
+        "//litert/c:litert_event_impl",
         "//litert/c:litert_layout",
-        "//litert/c:litert_metrics",
-        "//litert/c:litert_model",
-        "//litert/c:litert_opaque_options_header",
-        "//litert/c:litert_options",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_metrics_impl",
+        "//litert/c:litert_model_impl",
+        "//litert/c:litert_opaque_options_impl",
+        "//litert/c:litert_options_impl",
+        "//litert/c:litert_tensor_buffer_impl",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )
 
-# Do not use this target directly. It should only be used by Environment.
 cc_library(
-    name = "litert_runtime_no_builtin",
+    name = "litert_runtime_builtin_none",
     srcs = ["litert_runtime_no_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
-    visibility = [
-        "//litert/cc:__pkg__",
-    ],
+    visibility = ["//visibility:private"],
     deps = [
-        "//litert/c/internal:litert_runtime_c_api",
-    ],
-)
-
-# Do not use this target directly. It should only be used by Environment.
-cc_library(
-    name = "litert_runtime_builtin_runtimecapi",
-    srcs = ["litert_runtime_builtin.cc"],
-    hdrs = ["litert_runtime_builtin.h"],
-    # The visiblity is for testing only, otherwise it should be private.
-    visibility = [
-        "//litert/cc:__subpackages__",
-    ],
-    deps = [
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )
@@ -722,12 +726,10 @@ cc_test(
     ],
 )
 
-# This target should NOT introduce any dependency on the runtime implementation.
 cc_library(
     name = "litert_runtime_proxy",
     hdrs = ["litert_runtime_proxy.h"],
     deps = [
-        ":litert_runtime_builtin",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
@@ -746,14 +748,27 @@ cc_library(
         "//litert/c/internal:litert_scheduling_info",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:die_if_null",
-    ],
+    ] + select({
+        "//litert:litert_runtime_link_mode_dynamic": [
+            ":litert_runtime_builtin_dynamic",
+        ],
+        "//litert:litert_runtime_link_mode_none": [
+            ":litert_runtime_builtin_none",
+        ],
+        "//conditions:default": [":litert_runtime_builtin_static"],
+    }),
 )
 
+# TODO(niuchl): Remove this target once all dynamic_runtime targets are migrated.
 cc_library(
     name = "litert_runtime_proxy_runtimecapi",
     hdrs = ["litert_runtime_proxy.h"],
+    visibility = [
+        "//litert/cc:__pkg__",
+        "//litert/cc/dynamic_runtime:__pkg__",
+    ],
     deps = [
-        ":litert_runtime_builtin_runtimecapi",
+        ":litert_runtime_builtin_dynamic",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
