@@ -301,7 +301,8 @@ LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
+LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context,
+                                 LiteRtOptions options) {
   *device_context = new LiteRtDispatchDeviceContextT();
   return kLiteRtStatusOk;
 }

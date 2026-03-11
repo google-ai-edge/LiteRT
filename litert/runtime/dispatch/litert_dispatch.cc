@@ -195,12 +195,12 @@ LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextCreate(
-    LiteRtDispatchDeviceContext* device_context) {
+    LiteRtDispatchDeviceContext* device_context, LiteRtOptions options) {
   if (!device_context) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  INVOKE_FUNC(device_context_create, device_context);
+  INVOKE_FUNC(device_context_create, device_context, options);
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextDestroy(

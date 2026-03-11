@@ -73,7 +73,8 @@ void DispatchApiTest::SetUp() {
   LITERT_LOG(LITERT_INFO, "API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
 
-  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(&device_context_));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchDeviceContextCreate(&device_context_, /*options=*/nullptr));
 }
 
 void DispatchApiTest::TearDown() {

@@ -40,7 +40,7 @@ LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextCreate(
-    LiteRtDispatchDeviceContext* device_context) {
+    LiteRtDispatchDeviceContext* device_context, LiteRtOptions options) {
   return kLiteRtStatusErrorUnsupported;
 }
 
