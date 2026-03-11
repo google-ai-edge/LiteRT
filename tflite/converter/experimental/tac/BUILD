@@ -3,7 +3,6 @@ load(
     "@llvm-project//mlir:tblgen.bzl",
     "gentbl_cc_library",
 )
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_google", "tf_cc_binary", "tf_cc_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load(
@@ -11,6 +10,7 @@ load(
     "tf_proto_library",
 )
 load("@org_tensorflow//tensorflow/core/platform:rules_cc.bzl", "cc_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -378,11 +378,12 @@ exports_files([
     "run_lit.sh",
 ])
 
-py_strict_library(
+py_library(
     name = "tac",
     srcs = [
         "tac.py",
     ],
+    strict_deps = True,
     visibility = ["//visibility:public"],
     deps = [
         "//tflite/converter/experimental/tac/py_wrapper:_pywrap_tac_wrapper",

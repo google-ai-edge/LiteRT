@@ -1,6 +1,6 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "tf_python_pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:rules_cc.bzl", "cc_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("@xla//xla/tsl/platform:build_config_root.bzl", "if_pywrap")
 
 licenses(["notice"])
@@ -152,11 +152,12 @@ cc_library(
     ],
 )
 
-py_strict_library(
+py_library(
     name = "wrap_converter",
     srcs = [
         "wrap_converter.py",
     ],
+    strict_deps = True,
     deps = [
         ":_pywrap_converter_api",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/python:py_function_lib_py",
