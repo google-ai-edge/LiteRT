@@ -96,6 +96,7 @@ litert_bin(
             "//litert/vendors/mediatek/compiler:compiler_plugin_so",
             "//litert/vendors/examples:example_plugin_so",
             "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+            # copybara:uncomment "//litert/vendors/samsung/compiler:compiler_plugin_so",
             "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
             "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
             "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
