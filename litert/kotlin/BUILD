@@ -164,8 +164,13 @@ android_library(
     name = "litert_kotlin_api_native_deps",
     exports = [
         ":litert_jni_lib",
-        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
-    ],
+    ] + select({
+        # GPU accelerator is not supported on armv7.
+        "@platforms//cpu:armv7": [],
+        "//conditions:default": [
+            # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
+        ],
+    }),
 )
 
 # TFLite Java sources w/o any changes.
