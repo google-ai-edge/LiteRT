@@ -15,9 +15,8 @@ sudo mv bazelisk-linux-amd64 /usr/local/bin/bazel
 # macOS (via Homebrew)
 brew install bazelisk
 
-# Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-windows-amd64.exe -OutFile bazel.exe
-Move-Item bazel.exe C:\Windows\System32\
+# Windows (via Windows Package Manager winget)
+powershell winget install --id=Bazel.Bazelisk -eall users.users.
 ```
 
 ## Setup local build environment
@@ -115,19 +114,9 @@ bazel build //litert/tools:benchmark_model
 
 ### Step 1: Install Prerequisites
 
-```powershell
-# Install Chocolatey
-Set-ExecutionPolicy Bypass -Scope Process -Force
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-
-# Install required packages
-choco install git python3 -y
-
-# Install Visual Studio Build Tools (if not installed)
-choco install visualstudio2022buildtools -y
-choco install visualstudio2022-workload-vctools -y
-```
+1. Visual Studio 2022 - Download from https://visualstudio.microsoft.com/downloads/ and install all users.
+2. Git for Windows - Install from https://git-scm.com/download/win (includes Git Bash needed for flatbuffer generation scripts).
+3. Python 3.13 - Download from https://www.python.org/downloads/ and install for all users.
 
 ### Step 2: Configure Environment
 
@@ -140,6 +129,9 @@ choco install visualstudio2022-workload-vctools -y
 ```
 
 ### Step 3: Build for Windows
+
+Now is a good moment to check if you can build a simple C++ sample project with
+bazel on windows, follow https://bazel.build/versions/7.6.0/configure/windows#build_cpp.
 
 #### Bazel Build (Windows)
 
@@ -154,7 +146,7 @@ build --config=windows
 
 # Build
 bazel build //litert/cc:litert_compiled_model
-bazel build //litert/tools:benchmark_model
+bazel build --define=protobuf_allow_msvc=true //litert/tools:benchmark_model
 ```
 
 ## Android Build Instructions
