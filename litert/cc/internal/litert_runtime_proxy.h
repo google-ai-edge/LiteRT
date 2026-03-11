@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -60,8 +61,9 @@ class RuntimeProxy {
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
-      : runtime_c_api_(runtime_c_api == nullptr ? kLiteRtRuntimeBuiltin
-                                                : runtime_c_api) {};
+      : runtime_c_api_(ABSL_DIE_IF_NULL(runtime_c_api == nullptr
+                                            ? kLiteRtRuntimeBuiltin
+                                            : runtime_c_api)) {};
 
   ~RuntimeProxy() = default;
 

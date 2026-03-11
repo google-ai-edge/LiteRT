@@ -745,6 +745,7 @@ cc_library(
         "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:die_if_null",
     ],
 )
 
@@ -770,5 +771,6 @@ cc_library(
         "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:die_if_null",
     ],
 )
