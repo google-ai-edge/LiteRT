@@ -13,8 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -66,6 +66,7 @@ pybind_extension(
 py_test(
     name = "py_bindings_test",
     srcs = ["py_bindings_test.py"],
+    strict_deps = False,
     deps = [
         "//tflite/converter/integrations/python/mlir",
     ],

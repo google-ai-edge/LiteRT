@@ -1,5 +1,5 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "filegroup")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//tflite/converter:glob_lit_test.bzl", "glob_lit_tests")
 
 # copybara:uncomment package(default_applicable_licenses = ["@org_tensorflow//tensorflow:license"])
@@ -43,20 +43,22 @@ filegroup(
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "saved_model_error",
     srcs = ["saved_model_error.py"],
     main = "saved_model_error.py",
+    strict_deps = True,
     deps = [
         "@absl_py//absl:app",
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],
 )
 
-py_strict_binary(
+py_binary(
     name = "concrete_function_error",
     srcs = ["concrete_function_error.py"],
     main = "concrete_function_error.py",
+    strict_deps = True,
     deps = [
         "@absl_py//absl:app",
         "@org_tensorflow//tensorflow:tensorflow_py",
