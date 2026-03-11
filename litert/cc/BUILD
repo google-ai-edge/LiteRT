@@ -737,7 +737,7 @@ cc_test(
         ":litert_environment",
         ":litert_environment_options",
         ":litert_expected",
-        "//litert/cc/internal:litert_runtime_builtin",
+        "//litert/cc/internal:litert_runtime_builtin_static",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
