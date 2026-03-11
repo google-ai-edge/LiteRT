@@ -7,6 +7,11 @@ on:
         required: true
         default: true
         type: boolean
+      ref:
+        description: 'The commit, tag or branch to run the workflow on. If empty, run on the latest commit.'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build-release:
@@ -26,6 +31,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # If inputs.ref is empty, checkout the latest commit on the default branch.
+          ref: ${{ inputs.ref }}
 
       - name: Mount Bazel
         uses: bazelbuild/setup-bazelisk@v3
