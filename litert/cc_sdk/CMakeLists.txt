@@ -23,6 +23,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
+# The codebase has deprecated Error constructors that are still in use
+add_compile_options(
+  -Wno-deprecated-declarations
+  -Wno-return-type
+  -fpermissive
+)
+
 set(LITERT_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/include")
 set(LITERT_BUILD_COMMON_GENERATED_DIR "${LITERT_GENERATED_INCLUDE_DIR}/litert/build_common")
 file(MAKE_DIRECTORY "${LITERT_BUILD_COMMON_GENERATED_DIR}")
