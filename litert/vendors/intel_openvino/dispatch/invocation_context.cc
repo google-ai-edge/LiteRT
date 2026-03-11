@@ -210,13 +210,8 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-#if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#else
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#endif
+                          device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_input_tensor(graph_input_index, ov_tensor);
@@ -225,13 +220,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-#if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#else
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-#endif
+                          device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_output_tensor(graph_output_index, ov_tensor);

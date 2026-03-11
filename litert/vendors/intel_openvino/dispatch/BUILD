@@ -83,7 +83,7 @@ litert_bin(
         "dispatch_api.cc",
         "invocation_context.cc",
         "openvino_shared_core.cc",
-        "remote_tensor_buffer.cc",
+        "openvino_tensor_buffer.cc",
     ],
     copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
@@ -127,7 +127,7 @@ litert_lib(
         "device_context.h",
         "invocation_context.h",
         "openvino_shared_core.h",
-        "remote_tensor_buffer.h",
+        "openvino_tensor_buffer.h",
     ],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
