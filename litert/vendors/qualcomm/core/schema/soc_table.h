@@ -21,6 +21,9 @@ enum class SnapdragonModel {
   SSG2125P = 58,
   SC8380XP = 60,
   SM8750 = 69,
+  SXR2330P = 75,
+  QCS9100 = 77,
+  QCS8300 = 82,
   SM8850 = 87,
   SAR2230P = 95,
 };
