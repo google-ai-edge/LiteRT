@@ -23,6 +23,7 @@
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "flatbuffers/vector.h"  // from @flatbuffers
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
@@ -40,6 +41,11 @@
 
 namespace litert::internal {
 namespace {
+
+// Composite ops which may include magic numbers in the composite attributes.
+constexpr absl::string_view kCompositeOpsWhichMayHaveMagicNumbers[] = {
+    "odml.cache_update",
+};
 
 const LiteRtSignatureT* GetSignature(const LiteRtModelT& model,
                                      absl::string_view signature_key) {
@@ -132,7 +138,6 @@ int64_t GetMagicNumberFactor(int64_t value, int64_t magic_number) {
 // Returns the number of dimensions updated.
 Expected<int> UpdateMagicNumberInDimensions(
     int64_t magic_number, int64_t target_number, LiteRtTensorT& tensor,
-    const tflite::FlatBufferModel& fb_model,
     const tflite::SubGraph& tfl_subgraph) {
   if (tensor.Type().first != kLiteRtRankedTensorType) {
     return 0;
@@ -230,12 +235,72 @@ Expected<int> UpdateMagicNumberInParam(int64_t magic_number,
   return 0;
 }
 
-Expected<int> GetDecompositionSubgraphIndex(const LiteRtModelT& model,
-                                            const LiteRtOpT& op) {
+Expected<const tflite::StableHLOCompositeOptionsT*>
+GetStableHLOCompositeOptions(const LiteRtOpT& op) {
   LITERT_RETURN_IF_ERROR(op.OpCode() == kLiteRtOpCodeShloComposite);
   const auto* opts =
       litert::internal::GetTflOptions2(op).AsStableHLOCompositeOptions();
   LITERT_RETURN_IF_ERROR(opts != nullptr);
+  return opts;
+}
+
+// Whether the op is required to update composite attributes.
+bool IsOpRequiredToUpdateCompositeAttributes(const LiteRtOpT& op) {
+  auto opts = GetStableHLOCompositeOptions(op);
+  if (opts.HasValue()) {
+    for (const auto& name : kCompositeOpsWhichMayHaveMagicNumbers) {
+      if (opts.Value()->name == name) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Updates the composite attributes of a given op.
+// Returns the number of elements updated.
+Expected<int> UpdateMagicNumberInCompositeAttributes(
+    int64_t magic_number, int64_t target_number, const LiteRtOpT& op,
+    const tflite::Operator& tflite_op) {
+  LITERT_ASSIGN_OR_RETURN(const auto* opts, GetStableHLOCompositeOptions(op));
+  flexbuffers::Map flexbuffer_map =
+      flexbuffers::GetRoot(opts->composite_attributes).AsMap();
+  auto keys = flexbuffer_map.Keys();
+  int num_updated = 0;
+  for (int k = 0; k < keys.size(); ++k) {
+    auto value = flexbuffer_map[keys[k].AsString().c_str()];
+    if (value.IsIntOrUint()) {
+      auto value_int = value.AsInt64();
+      if (value_int != magic_number) {
+        continue;
+      }
+
+      LITERT_LOG(LITERT_DEBUG,
+                 "Update composite attributes, %s of %s from %" PRId64
+                 " to %" PRId64,
+                 keys[k].AsString().c_str(), opts->name.c_str(), magic_number,
+                 target_number);
+      value.MutateInt(target_number);
+
+      // Update the flatbuffer accordingly.
+      const auto* tflite_opts =
+          tflite_op.builtin_options_2_as_StableHLOCompositeOptions()
+              ->composite_attributes();
+      // Overwrite the composite_attributes entirely as it's not easy to
+      // get the start offset of the given entry.
+      memcpy(const_cast<unsigned char*>(tflite_opts->data()),
+             opts->composite_attributes.data(),
+             opts->composite_attributes.size());
+
+      ++num_updated;
+    }
+  }
+  return num_updated;
+}
+
+Expected<int> GetDecompositionSubgraphIndex(const LiteRtModelT& model,
+                                            const LiteRtOpT& op) {
+  LITERT_ASSIGN_OR_RETURN(const auto* opts, GetStableHLOCompositeOptions(op));
   LITERT_RETURN_IF_ERROR(opts->decomposition_subgraph_index <
                          model.NumSubgraphs());
   return opts->decomposition_subgraph_index;
@@ -256,10 +321,9 @@ Expected<int> ReplaceMagicNumberInSubgraph(
     const tflite::SubGraph& tfl_subgraph, LiteRtSubgraphT& subgraph) {
   int updated_tensors = 0;
   for (auto* tensor : subgraph.Tensors()) {
-    LITERT_ASSIGN_OR_RETURN(
-        int num_updated,
-        UpdateMagicNumberInDimensions(magic_number, target_number, *tensor,
-                                      fb_model, tfl_subgraph));
+    LITERT_ASSIGN_OR_RETURN(int num_updated, UpdateMagicNumberInDimensions(
+                                                 magic_number, target_number,
+                                                 *tensor, tfl_subgraph));
     updated_tensors += num_updated;
   }
 
@@ -269,8 +333,8 @@ Expected<int> ReplaceMagicNumberInSubgraph(
                op->OpCode(), GetParamIndices(op->Inputs()).c_str(),
                GetParamIndices(op->Outputs()).c_str());
 
-    // Update subgraphs of this subgraph.
     if (op->OpCode() == kLiteRtOpCodeShloComposite) {
+      // Update subgraphs of this composite op.
       LITERT_ASSIGN_OR_RETURN(int decomp_index,
                               GetDecompositionSubgraphIndex(model, *op));
       const auto* decomp_subgraph = fb_model->subgraphs()->Get(decomp_index);
@@ -287,6 +351,16 @@ Expected<int> ReplaceMagicNumberInSubgraph(
                    num_tensors_updated, decomp_index, magic_number);
       }
       updated_tensors += num_tensors_updated;
+
+      if (IsOpRequiredToUpdateCompositeAttributes(*op)) {
+        const auto* tflite_op = tfl_subgraph.operators()->Get(i);
+        LITERT_RETURN_IF_ERROR(tflite_op != nullptr);
+        LITERT_ASSIGN_OR_RETURN(
+            int num_updated, UpdateMagicNumberInCompositeAttributes(
+                                 magic_number, target_number, *op, *tflite_op));
+        updated_tensors += num_updated;
+      }
+
       continue;
     }
 
