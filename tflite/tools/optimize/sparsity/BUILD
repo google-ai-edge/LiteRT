@@ -1,4 +1,4 @@
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 
@@ -35,9 +35,10 @@ pybind_extension(
     ],
 )
 
-py_strict_test(
+py_test(
     name = "format_converter_wrapper_pybind11_test",
     srcs = ["format_converter_wrapper_pybind11_test.py"],
+    strict_deps = True,
     deps = [
         ":format_converter_wrapper_pybind11",
         "@absl_py//absl/testing:absltest",
