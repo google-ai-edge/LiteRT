@@ -68,6 +68,7 @@
 #include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/onehot_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pad_op_builder.h"
@@ -1218,6 +1219,19 @@ LiteRtStatus BuildLogSoftmaxOp(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildOneHotOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  int32_t axis{};
+  LITERT_RETURN_IF_ERROR(LiteRtGetOneHotAxisOption(litert_op.Get(), &axis));
+  op_wrappers =
+      ::qnn::BuildOneHotOp(tensor_pool, input_tensors, output_tensors, axis);
+  return kLiteRtStatusOk;
+}
+
 constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1>
 GetOpBuilders() {
   std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> builders{};
@@ -1282,6 +1296,7 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflReduceMax] = Adapt<BuildReduceMaxOp>;
   builders[kLiteRtOpCodeTflPack] = Adapt<BuildPackOp>;
   builders[kLiteRtOpCodeTflLogicalOr] = Adapt<BuildLogicalOrOp>;
+  builders[kLiteRtOpCodeTflOneHot] = Adapt<BuildOneHotOp>;
   builders[kLiteRtOpCodeTflLogicalAnd] = Adapt<BuildLogicalAndOp>;
   builders[kLiteRtOpCodeTflLogicalNot] = Adapt<BuildLogicalNotOp>;
   builders[kLiteRtOpCodeTflUnpack] = Adapt<BuildUnpackOp>;
