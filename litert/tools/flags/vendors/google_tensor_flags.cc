@@ -28,7 +28,7 @@
 // it becomes an issue.
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtGoogleTensorOptionsTruncationType* options,
+                   LrtGoogleTensorOptionsTruncationType* options,
                    std::string* error) {
   if (text == "auto") {
     *options = kLiteRtGoogleTensorFloatTruncationTypeAuto;
@@ -50,7 +50,7 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
-std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options) {
+std::string AbslUnparseFlag(LrtGoogleTensorOptionsTruncationType options) {
   switch (options) {
     case kLiteRtGoogleTensorFloatTruncationTypeAuto:
       return "auto";
@@ -64,7 +64,7 @@ std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options) {
 }
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtGoogleTensorOptionsShardingIntensity* options,
+                   LrtGoogleTensorOptionsShardingIntensity* options,
                    std::string* error) {
   if (text == "minimal") {
     *options = kLiteRtGoogleTensorShardingIntensityMinimal;
@@ -86,8 +86,7 @@ bool AbslParseFlag(absl::string_view text,
   return false;
 }
 
-std::string AbslUnparseFlag(
-    LiteRtGoogleTensorOptionsShardingIntensity options) {
+std::string AbslUnparseFlag(LrtGoogleTensorOptionsShardingIntensity options) {
   switch (options) {
     case kLiteRtGoogleTensorShardingIntensityMinimal:
       return "minimal";
@@ -100,8 +99,7 @@ std::string AbslUnparseFlag(
   }
 }
 
-ABSL_FLAG(LiteRtGoogleTensorOptionsTruncationType,
-          google_tensor_truncation_type,
+ABSL_FLAG(LrtGoogleTensorOptionsTruncationType, google_tensor_truncation_type,
           kLiteRtGoogleTensorFloatTruncationTypeAuto,
           "Float truncation type for Google Tensor.");
 
@@ -117,7 +115,7 @@ ABSL_FLAG(bool, google_tensor_enable_large_model_support, false,
 ABSL_FLAG(bool, google_tensor_enable_4bit_compilation, false,
           "Whether to enable 4bit compilation.");
 
-ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
+ABSL_FLAG(LrtGoogleTensorOptionsShardingIntensity,
           google_tensor_sharding_intensity,
           kLiteRtGoogleTensorShardingIntensityMinimal,
           "Sharding intensity for Google Tensor.");

@@ -15,6 +15,7 @@
 #include "litert/c/options/litert_google_tensor_options.h"
 
 #include <cstdint>
+#include <string>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -26,98 +27,138 @@
 namespace litert::google_tensor {
 namespace {
 
-TEST(LiteRtGoogleTensorOptionsTest, CreateAndGet) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
+void SerializeAndParse(LrtGoogleTensorOptions payload,
+                       LrtGoogleTensorOptions* parsed) {
+  const char* identifier;
+  void* raw_payload = nullptr;
+  void (*payload_deleter)(void*);
+  LITERT_ASSERT_OK(LrtGetOpaqueGoogleTensorOptionsData(
+      payload, &identifier, &raw_payload, &payload_deleter));
+  EXPECT_STREQ(identifier, "google_tensor");
+  std::string* toml_str = reinterpret_cast<std::string*>(raw_payload);
 
-  LiteRtGoogleTensorOptions options_data;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data));
+  LITERT_ASSERT_OK(
+      LrtCreateGoogleTensorOptionsFromToml(toml_str->c_str(), parsed));
 
-  LiteRtDestroyOpaqueOptions(options);
+  payload_deleter(raw_payload);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, FloatTruncationType) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
+TEST(LrtGoogleTensorOptionsTest, CreateAndGet) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
-  LiteRtGoogleTensorOptions options_data;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data));
+  const char* identifier;
+  void* payload;
+  void (*payload_deleter)(void*);
+  LITERT_ASSERT_OK(LrtGetOpaqueGoogleTensorOptionsData(
+      options, &identifier, &payload, &payload_deleter));
+
+  ASSERT_STREQ(identifier, "google_tensor");
+  ASSERT_NE(payload, nullptr);
+
+  payload_deleter(payload);
+  LrtDestroyGoogleTensorOptions(options);
+}
+
+TEST(LrtGoogleTensorOptionsTest, FloatTruncationType) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
   bool int64_to_int32_truncation;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation(
-      options_data, &int64_to_int32_truncation));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInt64ToInt32Truncation(
+      options, &int64_to_int32_truncation));
   ASSERT_FALSE(int64_to_int32_truncation);
 
   LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data, true));
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation(
-      options_data, &int64_to_int32_truncation));
+      LrtGoogleTensorOptionsSetInt64ToInt32Truncation(options, true));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInt64ToInt32Truncation(
+      options, &int64_to_int32_truncation));
   ASSERT_TRUE(int64_to_int32_truncation);
 
-  LiteRtDestroyOpaqueOptions(options);
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  bool parsed_truncation;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetInt64ToInt32Truncation(
+      parsed, &parsed_truncation));
+  EXPECT_TRUE(parsed_truncation);
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
-
-  LiteRtGoogleTensorOptions options_data;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data));
+TEST(LrtGoogleTensorOptionsTest, Int64ToInt32Truncation) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
   const char* output_dir;
-  LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsGetOutputDir(options_data, &output_dir));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputDir(options, &output_dir));
   ASSERT_STREQ(output_dir, "");
 
   LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetOutputDir(options_data, "/tmp/test_dir"));
-  LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsGetOutputDir(options_data, &output_dir));
+      LrtGoogleTensorOptionsSetOutputDir(options, "/tmp/test_dir"));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOutputDir(options, &output_dir));
   ASSERT_STREQ(output_dir, "/tmp/test_dir");
 
-  LiteRtDestroyOpaqueOptions(options);
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  const char* parsed_output_dir;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetOutputDir(parsed, &parsed_output_dir));
+  EXPECT_STREQ(parsed_output_dir, "/tmp/test_dir");
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, OutputDir) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
-
-  LiteRtGoogleTensorOptions options_data;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data));
+TEST(LrtGoogleTensorOptionsTest, OutputDir) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
   bool dump_op_timings;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetDumpOpTimings(options_data,
-                                                             &dump_op_timings));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetDumpOpTimings(options, &dump_op_timings));
   ASSERT_FALSE(dump_op_timings);
 
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetDumpOpTimings(options, true));
   LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetDumpOpTimings(options_data, true));
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetDumpOpTimings(options_data,
-                                                             &dump_op_timings));
+      LrtGoogleTensorOptionsGetDumpOpTimings(options, &dump_op_timings));
   ASSERT_TRUE(dump_op_timings);
 
-  LiteRtDestroyOpaqueOptions(options);
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  bool parsed_dump;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetDumpOpTimings(parsed, &parsed_dump));
+  EXPECT_TRUE(parsed_dump);
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, DumpOpTimings) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
+TEST(LrtGoogleTensorOptionsTest, DumpOpTimings) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
-  LiteRtGoogleTensorOptions options_data;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data));
-
-  LiteRtGoogleTensorOptionsTruncationType truncation_type;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetFloatTruncationType(
-      options_data, &truncation_type));
+  LrtGoogleTensorOptionsTruncationType truncation_type;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetFloatTruncationType(options, &truncation_type));
   ASSERT_EQ(truncation_type, kLiteRtGoogleTensorFloatTruncationTypeAuto);
 
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsSetFloatTruncationType(
-      options_data, kLiteRtGoogleTensorFloatTruncationTypeBfloat16));
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetFloatTruncationType(
-      options_data, &truncation_type));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetFloatTruncationType(
+      options, kLiteRtGoogleTensorFloatTruncationTypeBfloat16));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetFloatTruncationType(options, &truncation_type));
   ASSERT_EQ(truncation_type, kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
 
-  LiteRtDestroyOpaqueOptions(options);
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  LrtGoogleTensorOptionsTruncationType parsed_trunc;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetFloatTruncationType(parsed, &parsed_trunc));
+  EXPECT_EQ(parsed_trunc, kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
 }
 
 TEST(GoogleTensorOptionsTest, CppApi) {
@@ -144,83 +185,47 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetDumpOpTimings());
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, Hash) {
-  LiteRtOpaqueOptions options1;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options1));
-  LiteRtOpaqueOptions options2;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options2));
-
-  uint64_t hash1, hash2;
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
-  EXPECT_EQ(hash1, hash2);
-
-  LiteRtGoogleTensorOptions options_data1;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options1, &options_data1));
-  LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data1, true));
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
-  EXPECT_NE(hash1, hash2);
-
-  LiteRtGoogleTensorOptions options_data2;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options2, &options_data2));
-  LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data2, true));
-  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
-  EXPECT_EQ(hash1, hash2);
-
-  LiteRtDestroyOpaqueOptions(options1);
-  LiteRtDestroyOpaqueOptions(options2);
-}
-
-TEST(LiteRtGoogleTensorOptionsTest, Enable4BitCompilationCAPI) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
-
-  LiteRtGoogleTensorOptions options_data1;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data1));
+TEST(LrtGoogleTensorOptionsTest, Enable4BitCompilationCAPI) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
   // Check default value
   bool enable_4bit = true;  // Initialize to non-default to ensure it's set
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
-      options_data1, &enable_4bit));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetEnable4BitCompilation(options, &enable_4bit));
   EXPECT_FALSE(enable_4bit);
 
   // Set to true
   LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetEnable4BitCompilation(options_data1, true));
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
-      options_data1, &enable_4bit));
+      LrtGoogleTensorOptionsSetEnable4BitCompilation(options, true));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetEnable4BitCompilation(options, &enable_4bit));
   EXPECT_TRUE(enable_4bit);
 
   // Set to false
   LITERT_ASSERT_OK(
-      LiteRtGoogleTensorOptionsSetEnable4BitCompilation(options_data1, false));
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
-      options_data1, &enable_4bit));
+      LrtGoogleTensorOptionsSetEnable4BitCompilation(options, false));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetEnable4BitCompilation(options, &enable_4bit));
   EXPECT_FALSE(enable_4bit);
 
-  LiteRtDestroyOpaqueOptions(options);
+  LrtDestroyGoogleTensorOptions(options);
 }
 
-TEST(LiteRtGoogleTensorOptionsTest, Enable4BitCompilationCAPINullArgs) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
-
-  LiteRtGoogleTensorOptions options_data1;
-  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data1));
+TEST(LrtGoogleTensorOptionsTest, Enable4BitCompilationCAPINullArgs) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
 
   bool enable_4bit;
-  EXPECT_EQ(LiteRtGoogleTensorOptionsSetEnable4BitCompilation(nullptr, true),
+  EXPECT_EQ(LrtGoogleTensorOptionsSetEnable4BitCompilation(nullptr, true),
             kLiteRtStatusErrorInvalidArgument);
   EXPECT_EQ(
-      LiteRtGoogleTensorOptionsGetEnable4BitCompilation(nullptr, &enable_4bit),
+      LrtGoogleTensorOptionsGetEnable4BitCompilation(nullptr, &enable_4bit),
       kLiteRtStatusErrorInvalidArgument);
-  EXPECT_EQ(
-      LiteRtGoogleTensorOptionsGetEnable4BitCompilation(options_data1, nullptr),
-      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtGoogleTensorOptionsGetEnable4BitCompilation(options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
 
-  LiteRtDestroyOpaqueOptions(options);
+  LrtDestroyGoogleTensorOptions(options);
 }
 
 }  // namespace

@@ -1069,6 +1069,7 @@ cc_library_with_testonly_vis(
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_cpu_options",
+        "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_gpu_options",
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/c/options:litert_mediatek_options",
@@ -1317,7 +1318,7 @@ cc_library(
         "//conditions:default": [
             "//litert/cc/dynamic_runtime:litert_op_options",
             # C++ NPU Options API targets.
-            "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
+            "//litert/cc/options:litert_google_tensor_options",
             "//litert/cc/options:litert_mediatek_options",
         ],
     }) + gles_headers(),

@@ -121,7 +121,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
         "//litert/core/cache:hash_util",
-        "//litert/runtime:litert_google_tensor",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

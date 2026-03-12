@@ -25,18 +25,18 @@ namespace {
 
 TEST(TruncationTypeFlagTest, Malformed) {
   std::string error;
-  LiteRtGoogleTensorOptionsTruncationType value;
+  LrtGoogleTensorOptionsTruncationType value;
 
   EXPECT_FALSE(AbslParseFlag("oogabooga", &value, &error));
 }
 
 TEST(TruncationTypeFlagTest, Parse) {
   std::string error;
-  LiteRtGoogleTensorOptionsTruncationType value;
+  LrtGoogleTensorOptionsTruncationType value;
 
   {
     static constexpr absl::string_view kLevel = "auto";
-    static constexpr LiteRtGoogleTensorOptionsTruncationType kLevelEnum =
+    static constexpr LrtGoogleTensorOptionsTruncationType kLevelEnum =
         kLiteRtGoogleTensorFloatTruncationTypeAuto;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
@@ -45,7 +45,7 @@ TEST(TruncationTypeFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kLevel = "no_truncation";
-    static constexpr LiteRtGoogleTensorOptionsTruncationType kLevelEnum =
+    static constexpr LrtGoogleTensorOptionsTruncationType kLevelEnum =
         kLiteRtGoogleTensorFloatTruncationTypeNoTruncation;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
@@ -54,7 +54,7 @@ TEST(TruncationTypeFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kLevel = "bfloat16";
-    static constexpr LiteRtGoogleTensorOptionsTruncationType kLevelEnum =
+    static constexpr LrtGoogleTensorOptionsTruncationType kLevelEnum =
         kLiteRtGoogleTensorFloatTruncationTypeBfloat16;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
@@ -62,7 +62,7 @@ TEST(TruncationTypeFlagTest, Parse) {
   }
   {
     static constexpr absl::string_view kLevel = "half";
-    static constexpr LiteRtGoogleTensorOptionsTruncationType kLevelEnum =
+    static constexpr LrtGoogleTensorOptionsTruncationType kLevelEnum =
         kLiteRtGoogleTensorFloatTruncationTypeHalf;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
