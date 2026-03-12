@@ -309,6 +309,60 @@ def build_mock_model():
   return load_model_from_flatbuffer(model)
 
 
+class UpdatePackedBufferTest(googletest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self._model = flatbuffer_utils.ModelT(
+        buffers=[
+            flatbuffer_utils.BufferT(data=[0, 1, 2, 3], offset=1, size=1),
+            flatbuffer_utils.BufferT(),
+        ]
+    )
+    self._serialized_model = flatbuffer_utils.convert_object_to_bytearray(
+        self._model
+    )
+    self._packed_model = flatbuffer_utils.Model.GetRootAs(
+        self._serialized_model, 0
+    )
+
+  def test_update_packed_buffer(self):
+    # Update the zeroth buffer.
+    flatbuffer_utils.update_packed_buffer(
+        self._packed_model.Buffers(0), offset=10, size=11
+    )
+
+    # Check if the pack model's data is updated.
+    self.assertEqual(self._packed_model.Buffers(0).Offset(), 10)
+    self.assertEqual(self._packed_model.Buffers(0).Size(), 11)
+    for k in range(4):
+      self.assertEqual(self._packed_model.Buffers(0).Data(k), k)
+
+    # Check whether the underlying serialized representation was also changed.
+    model = flatbuffer_utils.convert_bytearray_to_object(self._serialized_model)
+    self.assertEqual(model.buffers[0].offset, 10)
+    self.assertEqual(model.buffers[0].size, 11)
+    self.assertSequenceEqual(
+        list(model.buffers[0].data), list(self._model.buffers[0].data)
+    )
+
+  def test_fails_when_no_buffer_reserved(self):
+    # Update the 1st buffer, which has default values only, and thus no space in
+    # the flatbuffer reserved for it.
+    with self.assertRaisesWithLiteralMatch(
+        ValueError, 'Failed to set `offset`, no buffer reserved for it.'
+    ):
+      flatbuffer_utils.update_packed_buffer(
+          self._packed_model.Buffers(1), offset=101
+      )
+    with self.assertRaisesWithLiteralMatch(
+        ValueError, 'Failed to set `size`, no buffer reserved for it.'
+    ):
+      flatbuffer_utils.update_packed_buffer(
+          self._packed_model.Buffers(1), size=101
+      )
+
+
 class WriteReadModelTest(googletest.TestCase):
 
   def testWriteReadModel(self):

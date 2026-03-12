@@ -83,6 +83,65 @@ _TFLITE_FILE_IDENTIFIER = b'TFL3'
 _TENSOR_TYPE_TO_NAME = {v: k for k, v in TensorType.__dict__.items()}
 
 
+def update_packed_buffer(
+    packed_buffer: Buffer, offset: int | None = None, size: int | None = None
+):
+  """Sets the `offset` and `size` values in a packed `Buffer` object.
+
+  This is based on the implementation of `Buffer.Offset` and `Buffer.Size` in
+  `schema_py_generated.py`.
+
+  The `Bufffer` is declared as follows in the TFLite schema:
+  ```
+  table Buffer {
+    data:[ubyte] (force_align: 16);
+    offset: ulong;
+    size: ulong;
+  }
+  ```
+  i.e. the `offset` and `size` fields are of type `uint64` and reside at offsets
+  6 and 8 of the `Buffer` vtable, respectively.
+
+  Note that for this to work, the original `Buffer` object has to have had
+  non-default values for `offset` and `size` set.
+
+  Args:
+    packed_buffer: The packed `Buffer` object to modify.
+    offset: Integer offset value.
+    size: Integer size value.
+
+  Raises:
+    `ValueError` if the original `Buffer` object has no spece reserved for
+    either `offset` or `size`.
+  """
+  table = packed_buffer._tab  # pylint: disable=protected-access
+  packer_type = flatbuffers.number_types.Uint64Flags.packer_type
+  if offset is not None:
+    vtable_offset = flatbuffers.number_types.UOffsetTFlags.py_type(
+        table.Offset(6)
+    )
+    if vtable_offset == 0:
+      raise ValueError('Failed to set `offset`, no buffer reserved for it.')
+    flatbuffers.encode.Write(
+        packer_type,
+        table.Bytes,
+        vtable_offset + table.Pos,
+        offset,
+    )
+  if size is not None:
+    vtable_offset = flatbuffers.number_types.UOffsetTFlags.py_type(
+        table.Offset(8)
+    )
+    if vtable_offset == 0:
+      raise ValueError('Failed to set `size`, no buffer reserved for it.')
+    flatbuffers.encode.Write(
+        packer_type,
+        table.Bytes,
+        vtable_offset + table.Pos,
+        size,
+    )
+
+
 def get_builtin_code_from_operator_code(
     opcode: OperatorCode | OperatorCodeT,
 ) -> int:
@@ -271,8 +330,9 @@ def convert_object_to_bytearray(
   builder = flatbuffers.Builder(1024)
   model_offset = model_object.Pack(builder)
   builder.Finish(model_offset, file_identifier=_TFLITE_FILE_IDENTIFIER)
-  model_bytearray = bytearray(builder.Output())
-  model_bytearray = model_bytearray + extra_buffer
+  model_bytearray = builder.Output()
+  if extra_buffer:
+    model_bytearray = model_bytearray + extra_buffer
   return model_bytearray
 
 
