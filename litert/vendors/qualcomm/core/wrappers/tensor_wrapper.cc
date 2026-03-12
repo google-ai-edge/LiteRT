@@ -24,26 +24,6 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
-namespace {
-
-bool IsNBitQuant(const QuantizeParamsWrapperVariant& quantize_params,
-                 uint32_t bitwidth) {
-  if (std::holds_alternative<BwScaleOffsetQuantizeParamsWrapper>(
-          quantize_params)) {
-    const auto& wrapper =
-        std::get<BwScaleOffsetQuantizeParamsWrapper>(quantize_params);
-    return wrapper.GetBitwidth() == bitwidth;
-
-  } else if (std::holds_alternative<BwAxisScaleOffsetQuantizeParamsWrapper>(
-                 quantize_params)) {
-    const auto& wrapper =
-        std::get<BwAxisScaleOffsetQuantizeParamsWrapper>(quantize_params);
-    return wrapper.GetBitwidth() == bitwidth;
-  }
-  return false;
-}
-}  // namespace
-
 std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
   std::size_t bytes = 0;
   switch (data_type) {
@@ -120,13 +100,13 @@ TensorWrapper::TensorWrapper(
                     dimensions) {
   // Already map to QNN_DATATYPE_SFIXED_POINT_8 for 4-bit and 2-bit
   // quantization
-  if (IsNBitQuant(quantize_params, kQuantBitWidth4)) {
+  if (IsQuantBitwidth(kQuantBitWidth4)) {
     std::vector<std::int8_t> int8_data;
     QNN_LOG_DEBUG("4-bit Qunat, converting data to 8-bit for QNN.");
     ConvertDataFromInt4ToInt8(data, bytes, int8_data);
     // Set copy_data to true to prevent loss of int8_data.
     SetDataBy(GetTensorBytes(), int8_data.data(), true);
-  } else if (IsNBitQuant(quantize_params, kQuantBitWidth2)) {
+  } else if (IsQuantBitwidth(kQuantBitWidth2)) {
     std::vector<std::int8_t> int8_data;
     QNN_LOG_DEBUG("2-bit Qunat, converting data to 8-bit for QNN.");
     ConvertDataFromInt2ToInt8(data, bytes, int8_data);
@@ -405,4 +385,34 @@ TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
   }
 }
 
+bool TensorWrapper::IsQuantBitwidth(std::uint32_t bitwidth) const {
+  if (const auto* wrapper =
+          std::get_if<BwScaleOffsetQuantizeParamsWrapper>(&quantize_params_)) {
+    return wrapper->GetBitwidth() == bitwidth;
+
+  } else if (const auto* wrapper =
+                 std::get_if<BwAxisScaleOffsetQuantizeParamsWrapper>(
+                     &quantize_params_)) {
+    return wrapper->GetBitwidth() == bitwidth;
+  }
+  return false;
+}
+
+void TensorWrapper::SetQuantBitwidth(std::uint32_t bitwidth) {
+  if (auto* wrapper =
+          std::get_if<BwScaleOffsetQuantizeParamsWrapper>(&quantize_params_)) {
+    wrapper->SetBitwidth(bitwidth);
+
+  } else if (auto* wrapper =
+                 std::get_if<BwAxisScaleOffsetQuantizeParamsWrapper>(
+                     &quantize_params_)) {
+    wrapper->SetBitwidth(bitwidth);
+  } else {
+    QNN_LOG_WARNING(
+        "Cannot update bitwidth for non bitwidth-based quantization.");
+    return;
+  }
+
+  UpdateQnnQuantParams();
+}
 }  // namespace qnn
