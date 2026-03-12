@@ -572,6 +572,7 @@ if(TFLITE_ENABLE_XNNPACK)
     PRIVATE "${PROJECT_BINARY_DIR}/tensorflow"
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}"
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/tflite"
+    PRIVATE "${XNNPACK_SOURCE_DIR}"
   )
   add_dependencies(xnnpack-delegate xnnpack_weight_cache_schema_cc_fbs)
   target_link_libraries(xnnpack-delegate
