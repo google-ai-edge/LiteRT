@@ -133,6 +133,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflMinimum,
     kLiteRtOpCodeShloComposite,
+    kLiteRtOpCodeTflL2Normalization,
 };
 // LINT.ThenChange(./MediaTek_Neuro_Compiler.md:supported_ops)
 // clang-format on

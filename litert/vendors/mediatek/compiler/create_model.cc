@@ -280,6 +280,10 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_MAXIMUM);
         break;
+      case kLiteRtOpCodeTflL2Normalization:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_L2_NORMALIZATION);
+        break;
       case kLiteRtOpCodeTflRelu:
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_RELU);
