@@ -18,6 +18,12 @@ cmake_minimum_required(VERSION 3.20)
 # Internal implementation library.
 set(LITERT_CC_INTERNAL_SRCS
     scoped_file.cc
+    litert_op_options.cc
+    litert_builder.cc
+    litert_shared_library.cc
+    litert_tensor_buffer_utils.cc
+    litert_extended_model.cc
+    litert_runtime_builtin.cc
 )
 
 if(WIN32)
