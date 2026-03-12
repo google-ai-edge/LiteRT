@@ -125,24 +125,24 @@ TEST_P(QnnModelTest, SingleElementWiseMax) {
 
 TEST_P(QnnModelTest, SingleElementWiseBinaryMulAsymmetricQuant) {
   const std::vector<std::uint32_t> kDims{1, 1, 1, 4};
-  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_8,
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_SFIXED_POINT_8,
       ::qnn::QuantizeParamsWrapperVariant{
           std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.005f,
           -97},
-      kDims, "");
-  auto& input_1 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_8,
+      kDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_SFIXED_POINT_8,
       ::qnn::QuantizeParamsWrapperVariant{
           std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.09f,
           8},
-      kDims, "");
-  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_8,
+      kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_SFIXED_POINT_8,
       ::qnn::QuantizeParamsWrapperVariant{
           std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.06f,
           -68},
-      kDims, "");
+      kDims);
   auto ops = ::qnn::BuildElementwiseMulOp(tensor_pool_, {input_0, input_1},
                                           {output_0});
   ASSERT_FALSE(ops.empty());
