@@ -20,53 +20,79 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+# ------------------------------------------------------------------------------
+# COMMON DEPENDENCIES
+# ------------------------------------------------------------------------------
+
+LITERT_CORE_DEPS = [
+    "//litert/c:litert_common",
+    "//litert/c:litert_layout",
+    "//litert/c:litert_model_types",
+    "//litert/c:litert_tensor_buffer",
+    "//litert/c:litert_tensor_buffer_types",
+]
+
+ABSL_BASE_DEPS = [
+    "@com_google_absl//absl/container:flat_hash_map",
+    "@com_google_absl//absl/status",
+    "@com_google_absl//absl/status:statusor",
+    "@com_google_absl//absl/strings:string_view",
+    "@com_google_absl//absl/types:span",
+]
+
+# ------------------------------------------------------------------------------
+# LIBRARY
+# ------------------------------------------------------------------------------
+
 cc_library(
     name = "external_weight_loader",
-    srcs = ["external_weight_loader_litert.cc"],
+    srcs = [
+        "external_weight_loader_litert.cc",
+    ],
     hdrs = [
         "external_weight_loader_litert.h",
     ],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_macros",
-        "//litert/cc/internal:scoped_weight_source",
-        "//litert/core:environment",
-        "//litert/core/model:flatbuffer_to_litert",
-        "//litert/runtime:open_cl_sync",
-        "//tflite:framework",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@opencl_headers",
-    ],
+    deps = (
+        LITERT_CORE_DEPS
+        + ABSL_BASE_DEPS
+        + [
+            "//litert/cc:litert_macros",
+            "//litert/cc/internal:scoped_weight_source",
+            "//litert/core:environment",
+            "//litert/core/model:flatbuffer_to_litert",
+            "//litert/runtime:open_cl_sync",
+            "//tflite:framework",
+            "//tflite/schema:schema_fbs",
+            "@com_google_absl//absl/strings:str_format",
+            "@opencl_headers",
+        ]
+    ),
 )
+
+# ------------------------------------------------------------------------------
+# TEST
+# ------------------------------------------------------------------------------
 
 cc_test(
     name = "external_weight_loader_test",
-    srcs = ["external_weight_loader_litert_test.cc"],
-    deps = [
-        ":external_weight_loader",
-        "//litert/c:litert_common",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc/internal:scoped_file",
-        "//litert/cc/internal:scoped_weight_source",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-        "@flatbuffers//:runtime_cc",
+    srcs = [
+        "external_weight_loader_litert_test.cc",
     ],
+    deps = (
+        [
+            ":external_weight_loader",
+            "//litert/cc/internal:scoped_file",
+            "//litert/cc/internal:scoped_weight_source",
+            "//tflite/schema:schema_fbs",
+            "@com_google_googletest//:gtest_main",
+            "@flatbuffers//:runtime_cc",
+        ]
+        + LITERT_CORE_DEPS
+        + [
+            "@com_google_absl//absl/container:flat_hash_map",
+            "@com_google_absl//absl/status",
+            "@com_google_absl//absl/strings:string_view",
+            "@com_google_absl//absl/types:span",
+        ]
+    ),
 )
