@@ -19,9 +19,6 @@ All functions that are commonly used to work with FlatBuffers.
 
 from collections.abc import Mapping
 import copy
-import logging
-import mmap
-import os
 import pathlib
 import random
 import re
@@ -33,6 +30,7 @@ import flatbuffers
 import numpy as np
 
 import os # import gfile
+from litert.python.tools import mmap_utils
 from litert.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
 
 # Types imported from `schema_py_generated`.
@@ -57,7 +55,7 @@ TensorType = schema_fb.TensorType
 
 # Local convenience types.
 Path = str | pathlib.Path
-BufferType = bytes | bytearray | memoryview | mmap.mmap
+BufferType = mmap_utils.BufferType
 Endiness = Literal['little', 'big']
 
 
@@ -184,29 +182,8 @@ def read_model(input_tflite_file: Path) -> ModelT:
     A python object corresponding to the input tflite file.
   """
 
-  model_bytearray = None
-
-  # Try to mmap the file first if it is local.
-  if (fd := os.open(input_tflite_file, os.O_RDONLY)) >= 0:
-    try:
-      model_bytearray = mmap.mmap(
-          fd, 0, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ
-      )
-    except IOError as e:
-      logging.info(
-          'Mapping model file "%s" failed with exception: %s.',
-          input_tflite_file,
-          e,
-      )
-    os.close(fd)
-
-  if not model_bytearray:
-    if not os.path.exists(input_tflite_file):
-      raise RuntimeError('Input file not found at %r\n' % input_tflite_file)
-    with open(input_tflite_file, 'rb') as input_file_handle:
-      model_bytearray = bytearray(input_file_handle.read())
-
-  return read_model_from_bytearray(model_bytearray)
+  serialized_model = mmap_utils.get_file_contents(input_tflite_file)
+  return read_model_from_bytearray(serialized_model)
 
 
 T = TypeVar('T')
@@ -218,7 +195,7 @@ def _ndarrays_to_lists(value: np.ndarray) -> np.ndarray | list[int]:
 
 
 @overload
-def _ndarrays_to_lists(value: list) -> list:
+def _ndarrays_to_lists(value: list[T]) -> list[T]:
   ...
 
 

@@ -23,6 +23,7 @@ pytype_strict_library(
     name = "flatbuffer_utils",
     srcs = ["flatbuffer_utils.py"],
     deps = [
+        ":mmap_utils",
         # Dependency placeholder: gfile,
         # copybara:uncomment "//third_party/py/flatbuffers",
         "@org_tensorflow//third_party/py/numpy:headers",
@@ -39,5 +40,23 @@ py_strict_test(
         "@absl_py//absl/testing:absltest",
         # copybara:uncomment "//third_party/py/flatbuffers",
         "//tflite/python:schema_py",
+    ],
+)
+
+pytype_strict_library(
+    name = "mmap_utils",
+    srcs = ["mmap_utils.py"],
+    deps = [
+        # Dependency placeholder: gfile,
+    ],
+)
+
+py_strict_test(
+    name = "mmap_utils_test",
+    srcs = ["mmap_utils_test.py"],
+    deps = [
+        ":mmap_utils",
+        # Dependency placeholder: gfile,
+        "@absl_py//absl/testing:absltest",
     ],
 )
