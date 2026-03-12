@@ -67,6 +67,8 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   /// environment (if applicable).
   ///
   /// The returned object is owned by the caller.
+  /// @deprecated Use API with explicit Environment instead.
+  [[deprecated("Use API with explicit Environment instead.")]]
   static Expected<TensorBuffer> CreateManagedHostMemory(
       const RankedTensorType& tensor_type, size_t buffer_size);
 
@@ -81,6 +83,8 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
       const Environment& env, const RankedTensorType& tensor_type,
       void* host_mem_addr, size_t buffer_size);
 
+  /// @deprecated Use API with explicit Environment instead.
+  [[deprecated("Use API with explicit Environment instead.")]]
   static Expected<TensorBuffer> CreateFromHostMemory(
       const RankedTensorType& tensor_type, void* host_mem_addr,
       size_t buffer_size);
