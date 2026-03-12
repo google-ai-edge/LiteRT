@@ -1065,7 +1065,7 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
       << "`convert_weights_on_gpu` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *convert_weights_on_gpu = options->convert_weights_on_gpu.value_or(false);
+  *convert_weights_on_gpu = options->convert_weights_on_gpu.value_or(true);
   return kLiteRtStatusOk;
 }
 
