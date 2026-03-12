@@ -12,11 +12,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "common-types.h"  // from @exynos_ai_litecore
@@ -94,7 +97,7 @@ class OpParamWrapper {
   const ParamWrapper& GetValue() const { return op_params_; }
 
  private:
-  OpParamWrapper(const std::string& key) : key_(key) {}
+  explicit OpParamWrapper(const std::string& key) : key_(key) {}
   std::string key_;
   ParamWrapper op_params_;
   std::unique_ptr<uint8_t[]> storage_;
@@ -164,4 +167,4 @@ class OpWrapper {
 };
 
 }  // namespace litert::samsung
-#endif
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_

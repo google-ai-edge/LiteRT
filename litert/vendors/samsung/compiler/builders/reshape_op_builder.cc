@@ -21,6 +21,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
@@ -40,7 +41,7 @@ Expected<OpWrapper> BuildReshapeOp(const Op& op) {
   if (auto status = LiteRtGetReshapeNewShapeOption(op.Get(), &reshape_new_shape,
                                                    &new_shape_size);
       status != kLiteRtStatusOk) {
-    return Error(status, "Fail to get new shape.");
+    return Error(static_cast<litert::Status>(status), "Fail to get new shape.");
   }
   std::vector<int32_t> new_shape(reshape_new_shape,
                                  reshape_new_shape + new_shape_size);

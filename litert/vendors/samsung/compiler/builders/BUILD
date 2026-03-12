@@ -36,6 +36,7 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
@@ -48,10 +49,9 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
     ],
 )
 
@@ -62,8 +62,8 @@ cc_library(
     deps = [
         ":op_wrapper",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_model",
     ],
 )
