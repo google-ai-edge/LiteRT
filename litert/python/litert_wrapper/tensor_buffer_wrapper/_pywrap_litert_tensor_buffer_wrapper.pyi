@@ -28,8 +28,8 @@ def CreateTensorBufferFromHostMemory(
     Args:
       py_data: Python data to be used as the source for the tensor buffer.
         Can be a NumPy array (e.g., np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)).
-      dtype: Data type of the tensor elements as a string (e.g., 'float32') or
-        numpy dtype (e.g., np.float32).
+      dtype: Data type of the tensor elements as a string (e.g., 'float32',
+        'float16') or numpy dtype (e.g., np.float32).
       num_elements: Number of elements in the tensor.
 
     Returns:
@@ -49,8 +49,8 @@ def WriteTensor(
       capsule: PyCapsule object containing the LiteRT TensorBuffer.
       data_list: Data to write to the tensor buffer. Can be a list or NumPy array
         (e.g., np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)).
-      dtype: Data type of the tensor elements as a string (e.g., 'float32') or
-        numpy dtype (e.g., np.float32).
+      dtype: Data type of the tensor elements as a string (e.g., 'float32',
+        'float16') or numpy dtype (e.g., np.float32).
     """
     ...
 
@@ -65,12 +65,26 @@ def ReadTensor(
     Args:
       capsule: PyCapsule object containing the LiteRT TensorBuffer.
       num_elements: Number of elements to read from the buffer.
-      dtype: Data type of the tensor elements as a string (e.g., 'float32') or
-        numpy dtype (e.g., np.float32).
+      dtype: Data type of the tensor elements as a string (e.g., 'float32',
+        'float16') or numpy dtype (e.g., np.float32).
 
     Returns:
       A list containing the tensor data. Can be converted to NumPy array if needed:
       e.g., np.array(output_data, dtype=np.float32).reshape((1, 4))
+    """
+    ...
+
+
+def GetTensorDetails(
+        capsule: object
+) -> Any:
+    """Returns tensor details for the given tensor buffer.
+
+    Args:
+      capsule: PyCapsule object containing the LiteRT TensorBuffer.
+
+    Returns:
+      A dictionary containing at least the tensor `dtype` and `shape`.
     """
     ...
 
