@@ -389,6 +389,7 @@ cc_library(
         "//tflite/tools/benchmark/proto:benchmark_result_cc",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -653,13 +654,17 @@ cc_binary(
     deps = [
         ":dump",
         ":tool_display",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/cc/internal:litert_logging",
         "//litert/core/model",
+        "//litert/core/model:shape_inference",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -788,6 +793,29 @@ cc_binary(
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_binary(
+    name = "apply_input_shapes_main",
+    srcs = ["apply_input_shapes_main.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/cc:litert_expected",
+        "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
+        "//litert/core/model:shape_inference",
+        "//litert/core/model:shape_inference_types",
+        "//litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
