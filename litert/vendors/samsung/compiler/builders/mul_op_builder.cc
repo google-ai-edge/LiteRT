@@ -14,13 +14,15 @@
 // limitations under the License.
 #include "litert/vendors/samsung/compiler/builders/mul_op_builder.h"
 
+#include <cstdint>
 #include <string>
 
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 namespace litert::samsung {
 
 Expected<OpWrapper> BuildMulOp(const Op& op) {
@@ -37,12 +39,13 @@ Expected<OpWrapper> BuildMulOp(const Op& op) {
   if (auto status =
           LiteRtGetMulFusedActivationOption(op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
-    return Error(status, "Fail to get fused activation");
+    return Error(static_cast<litert::Status>(status),
+                 "Fail to get fused activation");
   }
   if (tfl_fused_activation == 1) {
     op_wrapper.AddParam("activation", "Relu");
   } else if (tfl_fused_activation != 0) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
+    return Error(litert::Status::kErrorRuntimeFailure,
                  "Unsupported fused activation");
   }
 
