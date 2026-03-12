@@ -269,31 +269,33 @@ Expected<int> UpdateMagicNumberInCompositeAttributes(
   int num_updated = 0;
   for (int k = 0; k < keys.size(); ++k) {
     auto value = flexbuffer_map[keys[k].AsString().c_str()];
-    if (value.IsIntOrUint()) {
-      auto value_int = value.AsInt64();
-      if (value_int != magic_number) {
-        continue;
-      }
-
-      LITERT_LOG(LITERT_DEBUG,
-                 "Update composite attributes, %s of %s from %" PRId64
-                 " to %" PRId64,
-                 keys[k].AsString().c_str(), opts->name.c_str(), magic_number,
-                 target_number);
-      value.MutateInt(target_number);
-
-      // Update the flatbuffer accordingly.
-      const auto* tflite_opts =
-          tflite_op.builtin_options_2_as_StableHLOCompositeOptions()
-              ->composite_attributes();
-      // Overwrite the composite_attributes entirely as it's not easy to
-      // get the start offset of the given entry.
-      memcpy(const_cast<unsigned char*>(tflite_opts->data()),
-             opts->composite_attributes.data(),
-             opts->composite_attributes.size());
-
-      ++num_updated;
+    if (!value.IsIntOrUint()) {
+      continue;
     }
+
+    int64_t factor = GetMagicNumberFactor(value.AsInt64(), magic_number);
+    if (factor == 0) {
+      continue;
+    }
+
+    LITERT_LOG(LITERT_DEBUG,
+               "Update composite attributes, %s of %s from %" PRId64
+               " to %" PRId64,
+               keys[k].AsString().c_str(), opts->name.c_str(), magic_number,
+               target_number);
+    value.MutateInt(target_number * factor);
+
+    // Update the flatbuffer accordingly.
+    const auto* tflite_opts =
+        tflite_op.builtin_options_2_as_StableHLOCompositeOptions()
+            ->composite_attributes();
+    // Overwrite the composite_attributes entirely as it's not easy to
+    // get the start offset of the given entry.
+    memcpy(const_cast<unsigned char*>(tflite_opts->data()),
+           opts->composite_attributes.data(),
+           opts->composite_attributes.size());
+
+    ++num_updated;
   }
   return num_updated;
 }
