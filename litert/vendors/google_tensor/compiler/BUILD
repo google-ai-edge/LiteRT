@@ -58,6 +58,7 @@ litert_dynamic_lib(
     ],
     deps = [
         ":google_tensor_options_cc_proto",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_google_tensor_options",
@@ -111,6 +112,7 @@ cc_test(
     }),
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
+        "//litert/c:litert_common",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/test:common",

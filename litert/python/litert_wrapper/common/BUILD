@@ -27,6 +27,7 @@ cc_library(
     srcs = ["litert_wrapper_utils.cc"],
     hdrs = ["litert_wrapper_utils.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "@com_google_absl//absl/strings:string_view",
         "@xla//third_party/python_runtime:headers",

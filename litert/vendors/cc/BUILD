@@ -59,6 +59,7 @@ cc_test(
     srcs = ["options_helper_test.cc"],
     deps = [
         ":options_helper",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",

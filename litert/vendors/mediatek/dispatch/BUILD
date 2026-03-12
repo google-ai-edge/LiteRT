@@ -54,6 +54,7 @@ litert_dynamic_lib(
     ],
     visibility = ["//litert:__subpackages__"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
@@ -79,6 +80,7 @@ litert_device_test(
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
