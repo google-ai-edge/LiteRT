@@ -16,8 +16,13 @@
 
 #include <string.h>
 
+#include <cstdint>
+#include <utility>
 #include <vector>
 
+#include "graphgen_common.h"  // from @exynos_ai_litecore
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 
 namespace litert::samsung {
@@ -35,7 +40,7 @@ Expected<std::vector<char>> Compile(AiLiteCoreManager::Ptr ai_lite_core,
   if (auto init_result = ai_lite_core->Api().InitializeBackendContext(
           backend_handler.get(), soc_model_id);
       init_result != ::GraphGenResult::SUCCESS) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
+    return Error(litert::Status::kErrorRuntimeFailure,
                  "Samsung Backend initialize failed.");
   }
 
@@ -46,16 +51,20 @@ Expected<std::vector<char>> Compile(AiLiteCoreManager::Ptr ai_lite_core,
       backend_handler.get(), buf_head, g_buffer.size() * sizeof(char),
       &nnc_buffer);
   if (compile_result != ::GraphGenResult::SUCCESS) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
+    return Error(litert::Status::kErrorRuntimeFailure,
                  "Fail to compile graph with Samsung backend");
   }
 
+  if (!nnc_buffer) {
+    return Error(litert::Status::kErrorRuntimeFailure, "NNCBuffer is null");
+  }
   std::vector<char> compile_binary(nnc_buffer->size);
   memcpy(compile_binary.data(), nnc_buffer->addr, nnc_buffer->size);
   if (auto release_result =
           ai_lite_core->Api().ReleaseBuffer(backend_handler.get(), nnc_buffer);
       release_result != ::GraphGenResult::SUCCESS) {
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Fail to release buffer.");
+    return Error(litert::Status::kErrorRuntimeFailure,
+                 "Fail to release buffer.");
   }
 
   return compile_binary;

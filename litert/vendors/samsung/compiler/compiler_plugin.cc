@@ -16,26 +16,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdlib>
-#include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
-#include <unordered_map>
+#include <tuple>
 #include <utility>
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
-#include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
+#include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/compile_model.h"
 #include "litert/vendors/samsung/compiler/create_model.h"
 #include "litert/vendors/samsung/soc_model.h"
@@ -58,13 +59,13 @@ class LiteRtCompilerPluginT {
 
  private:
   litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null environment options");
+      litert::Status::kErrorInvalidArgument, "Null environment options");
   litert::Expected<litert::Options> opts_ =
-      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
-  litert::Expected<litert::OpaqueOptions> opq_ =
-      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
+      litert::Error(litert::Status::kErrorInvalidArgument, "Null options");
+  litert::Expected<litert::OpaqueOptions> opq_ = litert::Error(
+      litert::Status::kErrorInvalidArgument, "Null opaque options");
   litert::Expected<SamsungOptions> samsung_opts_ = litert::Error(
-      kLiteRtStatusErrorInvalidArgument, "Null google tensor options");
+      litert::Status::kErrorInvalidArgument, "Null google tensor options");
 };
 
 constexpr char kPluginManufacturer[] = "Samsung";

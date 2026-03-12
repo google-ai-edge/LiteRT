@@ -15,14 +15,27 @@
 
 #include "litert/vendors/samsung/compiler/create_model.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <utility>
+#include <vector>
+
+#include "absl/algorithm/container.h"  // from @com_google_absl
+#include "common-types.h"  // from @exynos_ai_litecore
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_options.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
+#include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/builders/add_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/mul_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 
 namespace litert::samsung {
@@ -66,7 +79,7 @@ Expected<const char*> MapToElementTypeStr(ElementType element_type) {
     case ElementType::Float32:
       return "FLOAT32";
     default:
-      return Error(kLiteRtStatusErrorRuntimeFailure,
+      return Error(litert::Status::kErrorRuntimeFailure,
                    "Element Type not supported");
   }
 }
@@ -86,12 +99,12 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
 
   auto ranked_tensor_type = t.RankedTensorType();
   if (!ranked_tensor_type) {
-    return ranked_tensor_type.Error().Status();
+    return static_cast<LiteRtStatus>(ranked_tensor_type.Error().StatusCC());
   }
 
   auto dimensions = ranked_tensor_type->Layout().Dimensions();
   std::vector<DIM_T> tensor_shape(dimensions.size());
-  std::copy(dimensions.begin(), dimensions.end(), tensor_shape.begin());
+  absl::c_copy(dimensions, tensor_shape.begin());
 
   if (tensor_shape.empty()) {
     // Shape size of tensor couldn't be zero
@@ -101,7 +114,7 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
   auto element_type = ranked_tensor_type->ElementType();
   auto element_type_mapping = MapToElementTypeStr(element_type);
   if (!element_type_mapping.HasValue()) {
-    return element_type_mapping.Error().Status();
+    return static_cast<LiteRtStatus>(element_type_mapping.Error().StatusCC());
   }
 
   TENSOR_ID_T tensor_id;
@@ -187,7 +200,8 @@ Expected<std::vector<char>> GraphCreator::Release() const {
   uint64_t num_bytes;
   if (ai_lite_core_->Api().Serialize(handler_, &graph_ptr, &num_bytes) !=
       GraphWrapperReturn::SUCCESS) {
-    return Error(kLiteRtStatusErrorRuntimeFailure, "Fail to serialize graph");
+    return Error(litert::Status::kErrorRuntimeFailure,
+                 "Fail to serialize graph");
   }
 
   auto g_buffer = std::vector<char>(num_bytes / sizeof(char));
@@ -265,7 +279,7 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
     const auto& op = ops[op_idx];
     LITERT_LOG(LITERT_INFO, "OP %d, ", op_idx);
     Expected<OpWrapper> op_wrapper =
-        Error(kLiteRtStatusErrorInvalidArgument, "Invalid op wrapper");
+        Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
     switch (op.Code()) {
       case kLiteRtOpCodeTflAdd:
         op_wrapper = BuildAddOp(op);
@@ -281,11 +295,12 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
     }
     if (auto status = graph_crt.CreateOpNode(op_wrapper.Value());
         status != kLiteRtStatusOk) {
-      return Error(status, "Fail to build op");
+      return Error(static_cast<litert::Status>(status), "Fail to build op");
     }
   }
   if (auto status = graph_crt.Finish(); status != kLiteRtStatusOk) {
-    return Error(status, "Fail to build graph for samsung backend.");
+    return Error(static_cast<litert::Status>(status),
+                 "Fail to build graph for samsung backend.");
   }
 
   return graph_crt.Release();

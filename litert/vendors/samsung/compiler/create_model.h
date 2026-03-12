@@ -12,14 +12,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
+
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
+#include "common-types.h"  // from @exynos_ai_litecore
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
@@ -62,4 +66,4 @@ class GraphCreator {
 Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
                                         const Subgraph& partition);
 }  // namespace litert::samsung
-#endif
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
