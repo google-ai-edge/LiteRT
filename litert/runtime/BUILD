@@ -860,12 +860,6 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_google_tensor",
-    hdrs = ["litert_google_tensor.h"],
-    deps = ["//litert/c/options:litert_google_tensor_options_type"],
-)
-
-cc_library(
     name = "litert_gpu_util",
     hdrs = ["litert_gpu_util.h"],
     deps = [

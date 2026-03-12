@@ -17,18 +17,18 @@
 
 // float_truncation_type -------------------------------------------------------
 
-typedef enum LiteRtGoogleTensorOptionsTruncationType {
+typedef enum LrtGoogleTensorOptionsTruncationType {
   kLiteRtGoogleTensorFloatTruncationTypeAuto = 0,
   kLiteRtGoogleTensorFloatTruncationTypeNoTruncation = 1,
   kLiteRtGoogleTensorFloatTruncationTypeBfloat16 = 2,
   kLiteRtGoogleTensorFloatTruncationTypeHalf = 3,
-} LiteRtGoogleTensorOptionsTruncationType;
+} LrtGoogleTensorOptionsTruncationType;
 
-typedef enum LiteRtGoogleTensorOptionsShardingIntensity {
+typedef enum LrtGoogleTensorOptionsShardingIntensity {
   kLiteRtGoogleTensorShardingIntensityMinimal = 0,
   kLiteRtGoogleTensorShardingIntensityModerate = 1,
   kLiteRtGoogleTensorShardingIntensityExtensive = 2,
   kLiteRtGoogleTensorShardingIntensityMaximum = 3,
-} LiteRtGoogleTensorOptionsShardingIntensity;
+} LrtGoogleTensorOptionsShardingIntensity;
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_TYPE_H_

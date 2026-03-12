@@ -34,9 +34,9 @@ The `litert/runtime` directory contains the following files:
 *   **`gl_texture.h`**: This file defines the `GlTexture` class, which represents an OpenGL texture.
 *   **`gpu_environment.h`**: This file defines the `GpuEnvironment` class, which is used to manage the GPU environment.
 *   **`ion_buffer.h`**: This file defines the `IonBuffer` struct, which represents an ION buffer.
-*   **`litert_cpu_options.h`**: This file defines the `LiteRtCpuOptions` struct, which is used to configure the CPU backend.
-*   **`litert_google_tensor.h`**: This file defines the `LiteRtGoogleTensorOptions` struct, which is used to configure the Google Tensor backend.
-*   **`litert_runtime_options.h`**: This file defines the `LiteRtRuntimeOptions` struct, which is used to configure the LiteRT runtime.
+*   **`litert_cpu_options.h`**: This file defines the `LrtCpuOptions` struct, which is used to configure the CPU backend.
+*   **`litert_google_tensor.h`**: This file defines the `LrtGoogleTensorOptions` struct, which is used to configure the Google Tensor backend.
+*   **`litert_runtime_options.h`**: This file defines the `LrtRuntimeOptions` struct, which is used to configure the LiteRT runtime.
 *   **`metrics.h`**: This file defines the `LiteRtMetricsT` struct, which is used to collect metrics.
 *   **`open_cl_memory.h`**: This file defines the `OpenClMemory` class, which represents an OpenCL memory object.
 *   **`open_cl_sync.h`**: This file defines functions for synchronizing with OpenCL.

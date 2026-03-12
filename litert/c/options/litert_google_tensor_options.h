@@ -16,7 +16,6 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 
 #ifdef __cplusplus
@@ -26,99 +25,101 @@
 extern "C" {
 #endif  // __cplusplus
 
-// Create a google tensor options object that is type erased. The actual option
-// data can be accessed from the payload.
-LiteRtStatus LiteRtGoogleTensorOptionsCreate(LiteRtOpaqueOptions* options);
+LITERT_DEFINE_HANDLE(LrtGoogleTensorOptions);
 
-LITERT_DEFINE_HANDLE(LiteRtGoogleTensorOptions);
+LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options);
 
-// The a string identifier that discriminates qualcomm options within
+void LrtDestroyGoogleTensorOptions(LrtGoogleTensorOptions options);
+
+// The a string identifier that discriminates GoogleTensor options within
 // type erased options.
-const char* LiteRtGoogleTensorOptionsGetIdentifier();
+const char* LrtGoogleTensorOptionsGetIdentifier();
 
-// Attempt to retieve google tensor options from the opaque options. Fails
-// unlesss the opaque options are of another type.
-LiteRtStatus LiteRtGoogleTensorOptionsGet(
-    LiteRtOpaqueOptions options, LiteRtGoogleTensorOptions* options_data);
+LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
+    LrtGoogleTensorOptions options, const char** identifier, void** payload,
+    void (**payload_deleter)(void*));
+
+// Creates a google_tensor options object from a TOML payload.
+LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
+    const char* toml_payload, LrtGoogleTensorOptions* options);
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
+LiteRtStatus LrtGoogleTensorOptionsSetFloatTruncationType(
+    LrtGoogleTensorOptions options,
+    LrtGoogleTensorOptionsTruncationType truncation_type);
 
-LiteRtStatus LiteRtGoogleTensorOptionsSetFloatTruncationType(
-    LiteRtGoogleTensorOptions options,
-    LiteRtGoogleTensorOptionsTruncationType truncation_type);
-
-LiteRtStatus LiteRtGoogleTensorOptionsGetFloatTruncationType(
-    LiteRtGoogleTensorOptions options,
-    LiteRtGoogleTensorOptionsTruncationType* truncation_type);
+LiteRtStatus LrtGoogleTensorOptionsGetFloatTruncationType(
+    LrtGoogleTensorOptions options,
+    LrtGoogleTensorOptionsTruncationType* truncation_type);
 
 // int64_to_int32_truncation ---------------------------------------------------
 
-LiteRtStatus LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(
-    LiteRtGoogleTensorOptions options, bool int64_to_int32_truncation);
+LiteRtStatus LrtGoogleTensorOptionsSetInt64ToInt32Truncation(
+    LrtGoogleTensorOptions options, bool int64_to_int32_truncation);
 
-LiteRtStatus LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation(
-    LiteRtGoogleTensorOptions options, bool* int64_to_int32_truncation);
+LiteRtStatus LrtGoogleTensorOptionsGetInt64ToInt32Truncation(
+    LrtGoogleTensorOptions options, bool* int64_to_int32_truncation);
 
 // output_dir ------------------------------------------------------------------
 
 // Sets the output directory for the generated files.
 // The `output_dir` string is copied and stored in the `options` object.
-LiteRtStatus LiteRtGoogleTensorOptionsSetOutputDir(
-    LiteRtGoogleTensorOptions options, const char* output_dir);
+LiteRtStatus LrtGoogleTensorOptionsSetOutputDir(LrtGoogleTensorOptions options,
+                                                const char* output_dir);
 
 // Returns the output directory for the generated files.
 // The `output_dir` string is owned by the `options` object.
-LiteRtStatus LiteRtGoogleTensorOptionsGetOutputDir(
-    LiteRtGoogleTensorOptions options, const char** output_dir);
+LiteRtStatus LrtGoogleTensorOptionsGetOutputDir(LrtGoogleTensorOptions options,
+                                                const char** output_dir);
 
 // dump_op_timings -------------------------------------------------------------
 
-LiteRtStatus LiteRtGoogleTensorOptionsSetDumpOpTimings(
-    LiteRtGoogleTensorOptions options, bool dump_op_timings);
+LiteRtStatus LrtGoogleTensorOptionsSetDumpOpTimings(
+    LrtGoogleTensorOptions options, bool dump_op_timings);
 
-LiteRtStatus LiteRtGoogleTensorOptionsGetDumpOpTimings(
-    LiteRtGoogleTensorOptions options, bool* dump_op_timings);
+LiteRtStatus LrtGoogleTensorOptionsGetDumpOpTimings(
+    LrtGoogleTensorOptions options, bool* dump_op_timings);
 
 // enable_large_model_support --------------------------------------------------
 
-LiteRtStatus LiteRtGoogleTensorOptionsSetEnableLargeModelSupport(
-    LiteRtGoogleTensorOptions options, bool enable_large_model_support);
+LiteRtStatus LrtGoogleTensorOptionsSetEnableLargeModelSupport(
+    LrtGoogleTensorOptions options, bool enable_large_model_support);
 
-LiteRtStatus LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
-    LiteRtGoogleTensorOptions options, bool* enable_large_model_support);
+LiteRtStatus LrtGoogleTensorOptionsGetEnableLargeModelSupport(
+    LrtGoogleTensorOptions options, bool* enable_large_model_support);
 
 // enable_4bit_compilation -----------------------------------------------------
-LiteRtStatus LiteRtGoogleTensorOptionsSetEnable4BitCompilation(
-    LiteRtGoogleTensorOptions options, bool enable_4bit_compilation);
+LiteRtStatus LrtGoogleTensorOptionsSetEnable4BitCompilation(
+    LrtGoogleTensorOptions options, bool enable_4bit_compilation);
 
-LiteRtStatus LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
-    LiteRtGoogleTensorOptions options, bool* enable_4bit_compilation);
+LiteRtStatus LrtGoogleTensorOptionsGetEnable4BitCompilation(
+    LrtGoogleTensorOptions options, bool* enable_4bit_compilation);
 
 // sharding intensity ---------------------------------------------------------
 
-LiteRtStatus LiteRtGoogleTensorOptionsSetShardingIntensity(
-    LiteRtGoogleTensorOptions options,
-    LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity);
+LiteRtStatus LrtGoogleTensorOptionsSetShardingIntensity(
+    LrtGoogleTensorOptions options,
+    LrtGoogleTensorOptionsShardingIntensity sharding_intensity);
 
-LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
-    LiteRtGoogleTensorOptions options,
-    LiteRtGoogleTensorOptionsShardingIntensity* sharding_intensity);
+LiteRtStatus LrtGoogleTensorOptionsGetShardingIntensity(
+    LrtGoogleTensorOptions options,
+    LrtGoogleTensorOptionsShardingIntensity* sharding_intensity);
 
 // enable_dynamic_range_quantization -----------------------------------------
-LiteRtStatus LiteRtGoogleTensorOptionsSetEnableDynamicRangeQuantization(
-    LiteRtGoogleTensorOptions options, bool enable_dynamic_range_quantization);
+LiteRtStatus LrtGoogleTensorOptionsSetEnableDynamicRangeQuantization(
+    LrtGoogleTensorOptions options, bool enable_dynamic_range_quantization);
 
-LiteRtStatus LiteRtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
-    LiteRtGoogleTensorOptions options, bool* enable_dynamic_range_quantization);
+LiteRtStatus LrtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
+    LrtGoogleTensorOptions options, bool* enable_dynamic_range_quantization);
 
 #ifdef __cplusplus
 // testing flags ---------------------------------------------------------------
-LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(
-    LiteRtGoogleTensorOptions options, const std::string& testing_flags);
+LiteRtStatus LrtGoogleTensorOptionsSetTestingFlags(
+    LrtGoogleTensorOptions options, const std::string& testing_flags);
 
-LiteRtStatus LiteRtGoogleTensorOptionsGetTestingFlags(
-    LiteRtGoogleTensorOptions options,
+LiteRtStatus LrtGoogleTensorOptionsGetTestingFlags(
+    LrtGoogleTensorOptions options,
     std::vector<std::vector<std::string>>* testing_flags);
 }  // extern "C"
 #endif  // __cplusplus
