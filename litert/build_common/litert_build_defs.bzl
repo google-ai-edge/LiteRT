@@ -506,3 +506,56 @@ def cc_library_with_testonly_vis(
         visibility = testonly_vis,
         **rule_kwargs
     )
+
+def litert_c_api_library(
+        name,
+        srcs = [],
+        hdrs = [],
+        deps = [],
+        header_deps = [],
+        impl_deps = [],
+        tags = [],
+        **kwargs):
+    """
+    Defines a LiteRT C API library with separate header and implementation targets.
+
+    This macro defines three targets:
+    - `{name}_header`: A cc_library containing only the headers.
+    - `{name}_impl`: A cc_library containing the implementation (srcs) and internal dependencies.
+    - `{name}` (alias): An alias that selects the implementation mode.
+
+    Args:
+      name: The name of the library.
+      srcs: Source files for the implementation.
+      hdrs: Public header files.
+      deps: Dependencies for both header and implementation.
+      header_deps: Optional dependencies for the header target only.
+      impl_deps: Optional dependencies for the implementation target only.
+      tags: Tags for the implementation target.
+      **kwargs: Additional arguments passed to the implementation cc_library.
+    """
+    cc_library(
+        name = name + "_header",
+        hdrs = hdrs,
+        visibility = ["//litert:litert_internal_users"],
+        deps = deps + header_deps,
+        tags = tags + ["avoid_dep"],
+    )
+
+    cc_library(
+        name = name + "_impl",
+        srcs = srcs,
+        hdrs = hdrs,
+        deps = deps + [":" + name + "_header"] + impl_deps,
+        alwayslink = 1,
+        tags = tags + ["avoid_dep"],
+        **kwargs
+    )
+
+    native.alias(
+        name = name,
+        actual = select({
+            "//litert:litert_runtime_link_mode_dynamic": ":" + name + "_header",
+            "//conditions:default": ":" + name + "_impl",
+        }),
+    )
