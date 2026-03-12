@@ -34,6 +34,7 @@ load(
     "export_lrt_runtime_only_script",
     "export_lrt_tflite_runtime_linkopt",
     "export_lrt_tflite_runtime_script",
+    "litert_c_api_library",
 )
 load(
     "//litert/build_common:special_rule.bzl",
@@ -116,108 +117,52 @@ cc_library(
     hdrs = ["litert_any.h"],
 )
 
-cc_library(
-    name = "litert_metrics_header",
-    hdrs = ["litert_metrics.h"],
-    deps = [
-        ":litert_any",
-        ":litert_common",
-    ],
-)
-
-cc_library(
-    name = "litert_metrics_impl",
+litert_c_api_library(
+    name = "litert_metrics",
     srcs = ["litert_metrics.cc"],
     hdrs = ["litert_metrics.h"],
+    impl_deps = ["//litert/runtime:metrics"],
     deps = [
         ":litert_any",
         ":litert_common",
-        "//litert/runtime:metrics",
-    ],
-    # Keep symbols in libLiteRt.dylib.
-    alwayslink = 1,
-)
-
-alias(
-    name = "litert_metrics",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_metrics_header",
-        "//conditions:default": ":litert_metrics_impl",
-    }),
-)
-
-cc_library(
-    name = "litert_environment_header",
-    hdrs = ["litert_environment.h"],
-    deps = [
-        ":litert_common",
-        ":litert_environment_options_header",
     ],
 )
 
-cc_library(
-    name = "litert_environment_impl",
+litert_c_api_library(
+    name = "litert_environment",
     srcs = ["litert_environment.cc"],
     hdrs = ["litert_environment.h"],
-    deps = [
-        ":litert_common",
+    header_deps = [":litert_environment_options_header"],
+    impl_deps = [
         ":litert_environment_options",
-        "//litert/cc:litert_macros",
-        "//litert/core:environment",
-        "//litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
+        "//litert/cc:litert_macros",
+        "//litert/core:environment",
+        "//litert/runtime/accelerators:auto_registration",
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
             "//litert/runtime:gpu_environment",
         ],
         "//conditions:default": [],
     }),
-    # Keep symbols in libLiteRt.dylib.
-    alwayslink = 1,
+    deps = [":litert_common"],
 )
 
-alias(
-    name = "litert_environment",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_environment_header",
-        "//conditions:default": ":litert_environment_impl",
-    }),
-)
-
-# This target has C API implementation. Shouldn't be used for runtime implementation.
-cc_library(
-    name = "litert_environment_options_impl",
+litert_c_api_library(
+    name = "litert_environment_options",
     srcs = ["litert_environment_options.cc"],
     hdrs = ["litert_environment_options.h"],
-    deps = [
-        ":litert_any",
-        ":litert_common",
-        ":litert_custom_tensor_buffer",
+    impl_deps = [
         "//litert/cc:litert_macros",
         "//litert/core:environment_options",
     ],
-)
-
-# The header only taget. It's used for runtime implementation.
-cc_library(
-    name = "litert_environment_options_header",
-    hdrs = ["litert_environment_options.h"],
-    tags = ["avoid_dep"],
     deps = [
         ":litert_any",
         ":litert_common",
         ":litert_custom_tensor_buffer",
     ],
-)
-
-alias(
-    name = "litert_environment_options",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_environment_options_header",
-        "//conditions:default": ":litert_environment_options_impl",
-    }),
 )
 
 cc_test(
@@ -251,25 +196,14 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "litert_model_header",
-    hdrs = ["litert_model.h"],
-    deps = [
-        ":litert_common",
-        ":litert_model_types",
-        ":litert_op_code",
-    ],
-)
-
-cc_library(
-    name = "litert_model_impl",
+litert_c_api_library(
+    name = "litert_model",
     srcs = ["litert_model.cc"],
     hdrs = ["litert_model.h"],
-    deps = [
-        ":litert_common",
+    impl_deps = [
         ":litert_layout",
-        ":litert_model_types",
-        ":litert_op_code",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "//litert/build_common:build_config",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
@@ -277,22 +211,17 @@ cc_library(
         "//litert/core/model",
         "//litert/core/model:model_load",
         "//tflite/core/c:private_c_api_types",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
             "//litert/core/model:model_serialize",
         ],
         "//conditions:default": [],
     }),
-)
-
-alias(
-    name = "litert_model",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_model_header",
-        "//conditions:default": ":litert_model_impl",
-    }),
+    deps = [
+        ":litert_common",
+        ":litert_model_types",
+        ":litert_op_code",
+    ],
 )
 
 # Flavor aliases for model (NPU serialization gated by flavor)
@@ -318,37 +247,21 @@ cc_library(
     hdrs = ["litert_op_code.h"],
 )
 
-cc_library(
-    name = "litert_op_options_header",
-    hdrs = ["litert_op_options.h"],
-    deps = [
-        ":litert_common",
-    ],
-)
-
-cc_library(
-    name = "litert_op_options_impl",
+litert_c_api_library(
+    name = "litert_op_options",
     srcs = ["litert_op_options.cc"],
     hdrs = ["litert_op_options.h"],
-    deps = [
-        ":litert_common",
+    impl_deps = [
         ":litert_layout",
         ":litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/core/model",
-        "//tflite/c:c_api_types",
         "//tflite/converter/core:model_builder_base",
+        "//tflite/c:c_api_types",
         "//tflite/schema:schema_fbs",
     ],
-)
-
-alias(
-    name = "litert_op_options",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_op_options_header",
-        "//conditions:default": ":litert_op_options_impl",
-    }),
+    deps = [":litert_common"],
 )
 
 cc_test(
@@ -379,40 +292,22 @@ cc_library(
     hdrs = ["litert_event_type.h"],
 )
 
-cc_library(
-    name = "litert_event_header",
-    hdrs = ["litert_event.h"],
-    deps = [
-        ":litert_common",
-        ":litert_event_type",
-        ":litert_gl_types",
-        ":litert_opencl_types",
-    ],
-)
-
-cc_library(
-    name = "litert_event_impl",
+litert_c_api_library(
+    name = "litert_event",
     srcs = ["litert_event.cc"],
     hdrs = ["litert_event.h"],
-    deps = [
-        ":litert_common",
-        ":litert_event_type",
-        ":litert_gl_types",
-        ":litert_opencl_types",
+    impl_deps = [
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:event",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
     ],
-    alwayslink = 1,
-)
-
-alias(
-    name = "litert_event",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_event_header",
-        "//conditions:default": ":litert_event_impl",
-    }),
+    deps = [
+        ":litert_common",
+        ":litert_event_type",
+        ":litert_gl_types",
+        ":litert_opencl_types",
+    ],
 )
 
 cc_library(
@@ -436,25 +331,8 @@ cc_library(
     hdrs = ["litert_webgpu_types.h"],
 )
 
-cc_library(
-    name = "litert_tensor_buffer_header",
-    hdrs = [
-        "litert_tensor_buffer.h",
-        "litert_tensor_buffer_requirements.h",
-    ],
-    deps = [
-        ":litert_common",
-        ":litert_custom_tensor_buffer",
-        ":litert_gl_types",
-        ":litert_model_types",
-        ":litert_opencl_types",
-        ":litert_tensor_buffer_types",
-        ":litert_webgpu_types",
-    ],
-)
-
-cc_library(
-    name = "litert_tensor_buffer_impl",
+litert_c_api_library(
+    name = "litert_tensor_buffer",
     srcs = [
         "litert_tensor_buffer.cc",
         "litert_tensor_buffer_requirements.cc",
@@ -464,33 +342,26 @@ cc_library(
         "litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
-    linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
-    deps = [
-        ":litert_common",
-        ":litert_custom_tensor_buffer",
+    impl_deps = [
         ":litert_event",
-        ":litert_gl_types",
-        ":litert_model_types",
-        ":litert_opencl_types",
-        ":litert_tensor_buffer_types",
-        ":litert_webgpu_types",
+        "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",
-        "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ] + gles_deps(),
-    alwayslink = 1,
-)
-
-alias(
-    name = "litert_tensor_buffer",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_tensor_buffer_header",
-        "//conditions:default": ":litert_tensor_buffer_impl",
-    }),
+    linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
+    deps = [
+        ":litert_common",
+        ":litert_custom_tensor_buffer",
+        ":litert_gl_types",
+        ":litert_model_types",
+        ":litert_opencl_types",
+        ":litert_tensor_buffer_types",
+        ":litert_webgpu_types",
+    ],
 )
 
 cc_test(
@@ -558,34 +429,20 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "litert_options_header",
-    hdrs = ["litert_options.h"],
-    deps = [
-        ":litert_common",
-        ":litert_custom_op_kernel",
-    ],
-)
-
-cc_library(
-    name = "litert_options_impl",
+litert_c_api_library(
+    name = "litert_options",
     srcs = ["litert_options.cc"],
     hdrs = ["litert_options.h"],
-    deps = [
-        ":litert_common",
+    impl_deps = [
         ":litert_opaque_options",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/core:options",
     ],
-)
-
-alias(
-    name = "litert_options",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_options_header",
-        "//conditions:default": ":litert_options_impl",
-    }),
+    deps = [
+        ":litert_common",
+        ":litert_custom_op_kernel",
+    ],
 )
 
 cc_test(
@@ -601,51 +458,34 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "litert_compiled_model_header",
-    hdrs = ["litert_compiled_model.h"],
-    deps = [
-        ":litert_common",
-        ":litert_environment_header",
-        ":litert_layout",
-        ":litert_metrics_header",
-        ":litert_tensor_buffer_header",
-        "//litert/c/internal:litert_scheduling_info",
-        "//tflite/c:c_api_types",
-    ],
-)
-
-cc_library(
-    name = "litert_compiled_model_impl",
+litert_c_api_library(
+    name = "litert_compiled_model",
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
-    deps = [
-        ":litert_common",
+    header_deps = [
+        ":litert_environment_header",
+        ":litert_metrics_header",
+        ":litert_tensor_buffer_header",
+    ],
+    impl_deps = [
         ":litert_environment",
-        ":litert_layout",
         ":litert_metrics",
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
-        "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_scheduling_info",
-        "//litert/cc:litert_macros",
-        "//litert/runtime:compiled_model",
-        "//tflite/c:c_api_types",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:compiled_model",
     ],
-    # Keep symbols in libLiteRt.dylib.
-    alwayslink = 1,
-)
-
-alias(
-    name = "litert_compiled_model",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_compiled_model_header",
-        "//conditions:default": ":litert_compiled_model_impl",
-    }),
+    deps = [
+        ":litert_common",
+        ":litert_layout",
+        "//litert/c/internal:litert_scheduling_info",
+        "//tflite/c:c_api_types",
+    ],
 )
 
 cc_test(
@@ -697,26 +537,11 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "litert_opaque_options_impl",
+litert_c_api_library(
+    name = "litert_opaque_options",
     srcs = ["litert_opaque_options.cc"],
     hdrs = ["litert_opaque_options.h"],
     deps = [":litert_common"],
-    alwayslink = 1,
-)
-
-cc_library(
-    name = "litert_opaque_options_header",
-    hdrs = ["litert_opaque_options.h"],
-    deps = [":litert_common"],
-)
-
-alias(
-    name = "litert_opaque_options",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_opaque_options_header",
-        "//conditions:default": ":litert_opaque_options_impl",
-    }),
 )
 
 cc_test(
@@ -749,34 +574,19 @@ cc_library(
     deps = [":litert_common"],
 )
 
-cc_library(
-    name = "litert_profiler_header",
-    hdrs = ["litert_profiler.h"],
-    deps = [
-        ":litert_common",
-        ":litert_profiler_event",
-    ],
-)
-
-cc_library(
-    name = "litert_profiler_impl",
+litert_c_api_library(
+    name = "litert_profiler",
     srcs = ["litert_profiler.cc"],
     hdrs = ["litert_profiler.h"],
-    deps = [
-        ":litert_common",
-        ":litert_profiler_event",
+    impl_deps = [
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
         "//litert/runtime:profiler",
     ],
-)
-
-alias(
-    name = "litert_profiler",
-    actual = select({
-        "//litert:litert_runtime_link_mode_dynamic": ":litert_profiler_header",
-        "//conditions:default": ":litert_profiler_impl",
-    }),
+    deps = [
+        ":litert_common",
+        ":litert_profiler_event",
+    ],
 )
 
 cc_library(
