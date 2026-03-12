@@ -13,17 +13,56 @@ load(
 )
 
 package(
-    default_visibility = [
-        "//tflite:__subpackages__",
-    ],
+    default_visibility = ["//tflite:__subpackages__"],
     licenses = ["notice"],
 )
 
+# ================================
+# Shared constants (Optimization)
+# ================================
+
+TFLITE_C_HEADERS = [
+    ":builtin_ops.h",
+    ":c_api.h",
+    ":c_api_experimental.h",
+    ":c_api_opaque.h",
+    ":c_api_types.h",
+    ":common.h",
+    ":operator.h",
+    ":profiler.h",
+    ":telemetry_setting.h",
+    ":tflite_types.h",
+    ":types.h",
+    ":xnnpack_delegate.h",
+]
+
+TFLITE_PUBLIC_HEADERS = [
+    ":builtin_ops.h",
+    ":c_api.h",
+    ":c_api_experimental.h",
+    ":c_api_types.h",
+    ":common.h",
+    ":profiler.h",
+    ":telemetry_setting.h",
+    ":xnnpack_delegate.h",
+]
+
+IOS_SIM_ARCH = [
+    "x86_64",
+    "arm64",
+]
+
+IOS_DEVICE_ARCH = [
+    "arm64",
+]
+
+# ================================
+# Shell utilities
+# ================================
+
 sh_binary(
     name = "hide_symbols_with_allowlist",
-    srcs = [
-        "hide_symbols_with_allowlist.sh",
-    ],
+    srcs = ["hide_symbols_with_allowlist.sh"],
     visibility = [
         "//tflite:__subpackages__",
         "@org_tensorflow_lite_support//tensorflow_lite_support:__subpackages__",
@@ -32,36 +71,32 @@ sh_binary(
 
 sh_binary(
     name = "hide_xcframework_symbols_with_allowlist",
-    srcs = [
-        "hide_xcframework_symbols_with_allowlist.sh",
-    ],
+    srcs = ["hide_xcframework_symbols_with_allowlist.sh"],
     visibility = [
         "//tflite:__subpackages__",
         "@org_tensorflow_lite_support//tensorflow_lite_support:__subpackages__",
     ],
 )
 
+# ================================
+# Python utilities
+# ================================
+
 pytype_strict_library(
     name = "extract_object_files",
-    srcs = [
-        "extract_object_files.py",
-    ],
+    srcs = ["extract_object_files.py"],
 )
 
 pytype_strict_binary(
     name = "extract_object_files_main",
-    srcs = [
-        "extract_object_files_main.py",
-    ],
+    srcs = ["extract_object_files_main.py"],
     python_version = "PY3",
     srcs_version = "PY3",
     visibility = [
         "//tflite:__subpackages__",
         "@org_tensorflow_lite_support//tensorflow_lite_support:__subpackages__",
     ],
-    deps = [
-        ":extract_object_files",
-    ],
+    deps = [":extract_object_files"],
 )
 
 filegroup(
@@ -71,12 +106,8 @@ filegroup(
 
 py_strict_test(
     name = "extract_object_files_test",
-    srcs = [
-        "extract_object_files_test.py",
-    ],
-    data = [
-        ":extract_object_files_testdata",
-    ],
+    srcs = ["extract_object_files_test.py"],
+    data = [":extract_object_files_testdata"],
     python_version = "PY3",
     srcs_version = "PY3",
     deps = [
@@ -87,11 +118,14 @@ py_strict_test(
     ],
 )
 
+# ================================
+# Header include path cleanup
+# ================================
+
 strip_common_include_path_prefix(
     name = "strip_common_include_path_core",
     hdr_labels = [
         "//tflite:builtin_ops.h",
-        # Here we include the paths of the actual c library headers in tensorflow/lite/core/c instead of the shim headers in tensorflow/lite/c.
         "//tflite/core/c:c_api.h",
         "//tflite/core/c:c_api_experimental.h",
         "//tflite/core/c:c_api_opaque.h",
@@ -115,94 +149,53 @@ strip_common_include_path_prefix(
     prefix = "TensorFlowLiteC/",
 )
 
-# bazel build -c opt --config=ios_fat //tensorflow/lite/ios:TensorFlowLiteC_framework
+# ================================
+# Main TensorFlow Lite framework
+# ================================
+
 tflite_ios_framework(
     name = "TensorFlowLiteC_framework",
-    hdrs = [
-        ":builtin_ops.h",
-        ":c_api.h",
-        ":c_api_experimental.h",
-        ":c_api_opaque.h",
-        ":c_api_types.h",
-        ":common.h",
-        ":operator.h",
-        ":profiler.h",
-        ":telemetry_setting.h",
-        ":tflite_types.h",
-        ":types.h",
-        ":xnnpack_delegate.h",
-    ],
+    hdrs = TFLITE_C_HEADERS,
     allowlist_symbols_file = ":allowlist_TensorFlowLiteC.txt",
     bundle_name = "TensorFlowLiteC",
     minimum_os_version = TFL_MINIMUM_OS_VERSION,
-    deps = [
-        ":tensorflow_lite_c",
-    ],
+    deps = [":tensorflow_lite_c"],
 )
 
-# bazel build -c opt --config=ios //tensorflow/lite/ios:TensorFlowLiteC_xcframework
+# ================================
+# XCFramework
+# ================================
+
 tflite_ios_xcframework(
     name = "TensorFlowLiteC_xcframework",
     allowlist_symbols_file = ":allowlist_TensorFlowLiteC.txt",
     bundle_name = "TensorFlowLiteC",
     ios = {
-        "simulator": [
-            "x86_64",
-            "arm64",
-        ],
-        "device": ["arm64"],
+        "simulator": IOS_SIM_ARCH,
+        "device": IOS_DEVICE_ARCH,
     },
     minimum_os_versions = {"ios": TFL_MINIMUM_OS_VERSION},
-    public_hdrs = [
-        ":builtin_ops.h",
-        ":c_api.h",
-        ":c_api_experimental.h",
-        ":c_api_types.h",
-        ":common.h",
-        ":profiler.h",
-        ":telemetry_setting.h",
-        ":xnnpack_delegate.h",
-    ],
-    tags = ["manual"],  # TODO: Remove once tf is on bazel 6.x+
-    deps = [
-        ":tensorflow_lite_c",
-    ],
+    public_hdrs = TFLITE_PUBLIC_HEADERS,
+    tags = ["manual"],
+    deps = [":tensorflow_lite_c"],
 )
 
-# Similar to TensorFlowLiteC_framework but this is a static framework and symbol
-# hiding is not applied. Note both have the same bundle name.
+# ================================
+# Static framework (no symbol hiding)
+# ================================
+
 ios_static_framework(
     name = "TensorFlowLiteC_static_framework",
-    hdrs = [
-        ":builtin_ops.h",
-        ":c_api.h",
-        ":c_api_experimental.h",
-        ":c_api_opaque.h",
-        ":c_api_types.h",
-        ":common.h",
-        ":operator.h",
-        ":profiler.h",
-        ":telemetry_setting.h",
-        ":tflite_types.h",
-        ":types.h",
-        ":xnnpack_delegate.h",
-    ],
+    hdrs = TFLITE_C_HEADERS,
     bundle_name = "TensorFlowLiteC",
     minimum_os_version = TFL_MINIMUM_OS_VERSION,
-    deps = [
-        ":tensorflow_lite_c",
-    ],
+    deps = [":tensorflow_lite_c"],
 )
 
-# This target builds the flex delegate as a separate static framework, which
-# does not include the TensorFlow Lite runtime. As this target does not contain
-# TensorFlow Lite runtime, it is intended to be linked along with the
-# TensorFlowLiteC framework above in a composable way.
-#
-# The flex delegate cannot be built for i386, so it can't be built with ios_fat
-# config.
-#
-# bazel build -c opt --config=ios --ios_multi_cpus=armv7,arm64,x86_64 //tensorflow/lite/ios:TensorFlowLiteSelectTfOps_framework
+# ================================
+# Flex delegate
+# ================================
+
 ios_static_framework(
     name = "TensorFlowLiteSelectTfOps_framework",
     avoid_deps = [
@@ -212,48 +205,38 @@ ios_static_framework(
     ],
     bundle_name = "TensorFlowLiteSelectTfOps",
     minimum_os_version = TFL_MINIMUM_OS_VERSION,
-    deps = [
-        "//tflite/delegates/flex:delegate",
-    ],
+    deps = ["//tflite/delegates/flex:delegate"],
 )
 
-# This target builds the Core ML delegate as a separate static framework, which
-# does not include the TensorFlow Lite runtime. As this target does not contain
-# TensorFlow Lite runtime, it is intended to be linked along with the
-# TensorFlowLiteC framework above in a composable way.
-#
-# bazel build -c opt --config=ios_fat //tensorflow/lite/ios:TensorFlowLiteCCoreML_framework
+# ================================
+# CoreML delegate
+# ================================
+
 tflite_ios_framework(
     name = "TensorFlowLiteCCoreML_framework",
-    hdrs = [
-        ":coreml_delegate.h",
-    ],
+    hdrs = [":coreml_delegate.h"],
     allowlist_symbols_file = ":allowlist_TensorFlowLiteCCoreML.txt",
     bundle_name = "TensorFlowLiteCCoreML",
     minimum_os_version = TFL_MINIMUM_OS_VERSION,
-    deps = [
-        "//tflite/delegates/coreml:coreml_delegate",
-    ],
+    deps = ["//tflite/delegates/coreml:coreml_delegate"],
 )
 
-# This target builds the Metal delegate as a separate static framework, which
-# does not include the TensorFlow Lite runtime. As this target does not contain
-# TensorFlow Lite runtime, it is intended to be linked along with the
-# TensorFlowLiteC framework above in a composable way.
-#
-# bazel build -c opt --config=ios_fat //tensorflow/lite/ios:TensorFlowLiteCMetal_framework
+# ================================
+# Metal delegate
+# ================================
+
 tflite_ios_framework(
     name = "TensorFlowLiteCMetal_framework",
-    hdrs = [
-        ":metal_delegate.h",
-    ],
+    hdrs = [":metal_delegate.h"],
     allowlist_symbols_file = ":allowlist_TensorFlowLiteCMetal.txt",
     bundle_name = "TensorFlowLiteCMetal",
     minimum_os_version = TFL_MINIMUM_OS_VERSION,
-    deps = [
-        "//tflite/delegates/gpu:metal_delegate",
-    ],
+    deps = ["//tflite/delegates/gpu:metal_delegate"],
 )
+
+# ================================
+# Core C API library
+# ================================
 
 cc_library(
     name = "tensorflow_lite_c",
@@ -289,15 +272,16 @@ cc_library(
     ],
 )
 
-# Used for building TensorFlowLiteC framework.
+# ================================
+# Build tests
+# ================================
+
 build_test(
     name = "framework_build_test",
-    # build_test targets are not meant to be run with sanitizers.
     tags = [
         "noasan",
         "nomsan",
         "notsan",
-        # TODO(b/176993122): restore once the apple_genrule issue is resolved.
         "notap",
         "nozapfhahn",
     ],
