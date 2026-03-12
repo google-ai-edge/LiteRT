@@ -340,6 +340,7 @@ TEST_P(CompiledModelGpuTest, PartialDelegation) {
                               compilation_options->GetGpuOptions());
   LITERT_ASSERT_OK(
       gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
+  LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env,
@@ -405,6 +406,7 @@ TEST_P(CompiledModelGpuTest, PartialDelegationNoCpuFallbackError) {
                               compilation_options->GetGpuOptions());
   LITERT_ASSERT_OK(
       gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
+  LITERT_ASSERT_OK(gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
 
   auto compiled_model_res = CompiledModel::Create(
       *env, testing::GetTestFilePath(kModelPartilaFileName),
