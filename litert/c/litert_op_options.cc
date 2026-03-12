@@ -446,6 +446,18 @@ LiteRtStatus LiteRtGetPackValuesCountOption(LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetOneHotAxisOption(LiteRtOp op, int32_t* axis) {
+  if (op->OpCode() != kLiteRtOpCodeTflOneHot) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *axis = opts.AsOneHotOptions()->axis;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis) {
   if (op->OpCode() != kLiteRtOpCodeTflUnpack) {
     return kLiteRtStatusErrorInvalidArgument;
