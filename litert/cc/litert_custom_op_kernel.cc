@@ -41,22 +41,23 @@ LiteRtStatus CustomOpKernel::GetOutputLayoutsHelper(
     size_t num_outputs, LiteRtLayout* output_layouts) {
   auto* self = static_cast<CustomOpKernel*>(user_data);
 
-  std::vector<Layout> input_layouts_;
-  input_layouts_.reserve(num_inputs);
+  std::vector<Layout> input_layouts_vector;
+  input_layouts_vector.reserve(num_inputs);
   for (auto i = 0; i < num_inputs; ++i) {
-    input_layouts_.push_back(Layout(input_layouts[i]));
+    input_layouts_vector.push_back(Layout(input_layouts[i]));
   }
 
-  std::vector<Layout> output_layouts_(num_outputs);
+  std::vector<Layout> output_layouts_vector(num_outputs);
 
-  if (auto status = self->GetOutputLayouts(input_layouts_, output_layouts_);
+  if (auto status = self->GetOutputLayouts(input_layouts_vector,
+                                           output_layouts_vector);
       !status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
     return status.Error().Status();
   }
 
   for (auto i = 0; i < num_outputs; ++i) {
-    output_layouts[i] = static_cast<LiteRtLayout>(output_layouts_[i]);
+    output_layouts[i] = static_cast<LiteRtLayout>(output_layouts_vector[i]);
   }
 
   return kLiteRtStatusOk;
