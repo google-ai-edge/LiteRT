@@ -28,6 +28,7 @@
 #include "litert/test/simple_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/examples/example_common.h"
 
 namespace litert::example {
 namespace {
@@ -90,6 +91,32 @@ class ExampleDispatchTest : public ::testing::Test {
  private:
   LiteRtDispatchApi api_;
 };
+
+TEST_F(ExampleDispatchTest, InvocationContextCreateFromHandle) {
+  LiteRtDispatchDeviceContext device_context;
+  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+
+  // Create a dummy global graph to act as our handle
+  ::litert::example::ExampleGlobalGraph global_graph;
+  ::litert::example::ExampleGraph example_graph;
+  example_graph.SetVersion("1");
+  global_graph.subgraphs_["test_function"] = std::move(example_graph);
+
+  LiteRtMemBuffer handle_buffer = {
+      /*.fd=*/-1,
+      /*.base_addr=*/&global_graph,
+      /*.offset=*/0,
+      /*.size=*/0,
+  };
+
+  LiteRtDispatchInvocationContext invocation_context;
+  LITERT_ASSERT_OK(Api().invocation_context_create(
+      device_context, kLiteRtDispatchExecutableTypeJitHandle, &handle_buffer,
+      "test_function", 0, 0, &invocation_context));
+
+  LITERT_ASSERT_OK(Api().invocation_context_destroy(invocation_context));
+  LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
+}
 
 TEST_F(ExampleDispatchTest, CheckRuntimeCompatibility) {
   LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};

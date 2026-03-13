@@ -490,33 +490,60 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
   // Read offset and size (relative to alloc_base) from the custom options (and
   // name).
   const auto dispatch_opts = GetDispatchOpOptions(custom_opts);
-  if (dispatch_opts.bytecode_offset == 0) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Found dispatch op with missing bytecode offset");
-  }
-
-  // Find pointer to the start of the loaded model buffer.
-  LITERT_ASSIGN_OR_RETURN(const void* alloc_base, FindAllocBase());
-  LITERT_ASSIGN_OR_RETURN(const int alloc_fd, FindAllocBaseFd());
-
-  // Get location of bytecode in the model buffer relative to alloc_base.
-  LiteRtMemBuffer exec_bytecode_buffer = {
-      /*.fd=*/alloc_fd,
-      /*.base_addr=*/alloc_base,
-      /*.offset=*/dispatch_opts.bytecode_offset,
-      /*.size=*/dispatch_opts.bytecode_size};
   const auto& function_name = dispatch_opts.name;
 
   auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
   auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
 
   LiteRtDispatchInvocationContext invocation_context;
-  if (auto status = LiteRtDispatchInvocationContextCreate(
-          device_context_, kLiteRtDispatchExecutableTypeMlModel,
-          &exec_bytecode_buffer, function_name.data(), num_node_inputs,
-          num_node_outputs, &invocation_context);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to create invocation context");
+
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      auto dispatch_delegate_options,
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+
+  auto exec_handle_expected =
+      dispatch_delegate_options.GetExecHandle(function_name);
+  if (exec_handle_expected.HasValue() &&
+      exec_handle_expected.Value() != nullptr) {
+    LiteRtMemBuffer exec_bytecode_buffer = {
+        /*.fd=*/-1,
+        /*.base_addr=*/exec_handle_expected.Value(),
+        /*.offset=*/0,
+        /*.size=*/0};
+
+    if (auto status = LiteRtDispatchInvocationContextCreate(
+            device_context_, kLiteRtDispatchExecutableTypeJitHandle,
+            &exec_bytecode_buffer, function_name.data(), num_node_inputs,
+            num_node_outputs, &invocation_context);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to create invocation context");
+    }
+  } else {
+    if (dispatch_opts.bytecode_offset == 0) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Found dispatch op with missing bytecode offset");
+    }
+
+    // Find pointer to the start of the loaded model buffer.
+    LITERT_ASSIGN_OR_RETURN(const void* alloc_base, FindAllocBase());
+    LITERT_ASSIGN_OR_RETURN(const int alloc_fd, FindAllocBaseFd());
+
+    // Get location of bytecode in the model buffer relative to alloc_base.
+    LiteRtMemBuffer exec_bytecode_buffer = {
+        /*.fd=*/alloc_fd,
+        /*.base_addr=*/alloc_base,
+        /*.offset=*/dispatch_opts.bytecode_offset,
+        /*.size=*/dispatch_opts.bytecode_size};
+
+    if (auto status = LiteRtDispatchInvocationContextCreate(
+            device_context_, kLiteRtDispatchExecutableTypeMlModel,
+            &exec_bytecode_buffer, function_name.data(), num_node_inputs,
+            num_node_outputs, &invocation_context);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to create invocation context");
+    }
   }
 
   // Apply dispatch annotations from the compiled model

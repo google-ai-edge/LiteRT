@@ -55,6 +55,12 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+  // Add an opaque executable handle for JIT
+  Expected<void> AddExecHandle(absl::string_view name, const void* handle);
+
+  // Get the opaque executable handle for JIT
+  Expected<const void*> GetExecHandle(absl::string_view name);
 };
 
 }  // namespace litert::internal

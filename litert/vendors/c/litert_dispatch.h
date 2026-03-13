@@ -50,6 +50,7 @@ typedef enum LiteRtDispatchExecutableType {
   kLiteRtDispatchExecutableTypeUnknown = 0,
   kLiteRtDispatchExecutableTypeDspLibrary = 1,  // DSP library
   kLiteRtDispatchExecutableTypeMlModel = 2,     // Vendor-specific ML model
+  kLiteRtDispatchExecutableTypeJitHandle = 3,
 } LiteRtDispatchExecutableType;
 
 typedef struct LiteRtMemBuffer {
@@ -96,6 +97,10 @@ LiteRtDispatchGetCapabilities(int* capabilities);
 // error.
 LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchDeviceContextCreate(LiteRtDispatchDeviceContext* device_context);
+
+// Create a new device context from a JIT handle.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextCreateFromHandle(
+    LiteRtDispatchDeviceContext* device_context, const void* handle);
 
 // Release a `LiteRtDispatchDeviceContext` object.
 //
