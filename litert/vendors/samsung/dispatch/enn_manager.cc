@@ -31,14 +31,14 @@ static const char kEnnApiLibName[] = "libenn_public_api_cpp.so";
   }
 
 namespace litert::samsung {
-EnnManager::EnnManager() : api_(new PublicApi) {}
+EnnManager::EnnManager() : api_(std::make_unique<EnnManager::PublicApi>()) {}
 
 Expected<EnnManager::UniquePtr> EnnManager::Create() {
 #if !defined(__ANDROID__)
   return Error(kLiteRtStatusErrorRuntimeFailure,
                "Only support android platform");
 #else
-  EnnManager::UniquePtr enn_manager(new EnnManager);
+  auto enn_manager = std::unique_ptr<EnnManager>(new EnnManager());
   if (auto status = enn_manager->LoadEnnRuntimeLibrary(kEnnApiLibName);
       status != kLiteRtStatusOk) {
     return Error(status, "Fail to load enn runtime.");
@@ -73,6 +73,7 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   ENN_LOAD_API(enn_runtime_lib_, EnnUnsetBuffers);
   ENN_LOAD_API(enn_runtime_lib_, EnnCloseModel);
   ENN_LOAD_API(enn_runtime_lib_, EnnDeinitialize);
+  ENN_LOAD_API(enn_runtime_lib_, EnnAllocateAllBuffers);
 
   if (api_->EnnInitialize() != ENN_RET_SUCCESS) {
     return kLiteRtStatusErrorRuntimeFailure;

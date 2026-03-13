@@ -61,7 +61,8 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     int num_inputs, int num_outputs)
     : enn_manager_(enn_manager), device_context_(device_context),
       model_id_(model_id), inputs_buf_(num_inputs, nullptr),
-      outputs_buf_(num_outputs, nullptr) {}
+      outputs_buf_(num_outputs, nullptr) {
+}
 
 litert::Expected<LiteRtDispatchInvocationContextT::UniquePtr>
 LiteRtDispatchInvocationContextT::Create(
@@ -70,6 +71,7 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer *exec_bytecode_buffer, const char *function_name,
     int num_inputs, int num_outputs) {
+  EnnBufferPtr *tmp_buf_ptr;
   if (!enn_manager) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Fail to get enn runtime.");
@@ -90,14 +92,25 @@ LiteRtDispatchInvocationContextT::Create(
   NumberOfBuffersInfo buffer_info;
   if (enn_manager->Api().EnnGetBuffersInfo(model_id, &buffer_info) !=
       ENN_RET_SUCCESS) {
+    enn_manager->Api().EnnCloseModel(model_id);
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Fail to get buffers information");
   }
   if (buffer_info.n_in_buf != num_inputs ||
       buffer_info.n_out_buf != num_outputs) {
+    enn_manager->Api().EnnCloseModel(model_id);
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Number of inputs/outputs is invalid");
   }
+
+  if (enn_manager->Api().EnnAllocateAllBuffers(model_id, &tmp_buf_ptr,
+                                               &buffer_info) != ENN_RET_SUCCESS) {
+    enn_manager->Api().EnnCloseModel(model_id);
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "EnnAllocateAllBuffers Failed");
+  }
+
+  device_context->SetEnnCommittedBuffer(tmp_buf_ptr);
 
   return LiteRtDispatchInvocationContextT::UniquePtr(
       new LiteRtDispatchInvocationContextT(enn_manager, device_context,
@@ -175,28 +188,22 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  if (auto status = SetBuffers(); !status) {
+  if (auto status = SetInputBuffers(); !status) {
     return status.Error();
-  }
-  if (enn_manager_->Api().EnnBufferCommit(model_id_) != ENN_RET_SUCCESS) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Fail to commit buffer");
   }
 
   if (enn_manager_->Api().EnnExecuteModel(model_id_) != ENN_RET_SUCCESS) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Fail to execute");
   }
 
-  if (enn_manager_->Api().EnnBufferUncommit(model_id_) != ENN_RET_SUCCESS) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Fail to uncommit buffer");
+  if (auto status = SetOutputBuffers(); !status) {
+    return status.Error();
   }
-  enn_manager_->Api().EnnUnsetBuffers(model_id_);
 
   return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::SetBuffers() const {
+litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers() const {
   bool input_prepared =
       std::all_of(inputs_buf_.begin(), inputs_buf_.end(),
                   [](const EnnBufferPtr &val) { return val != nullptr; });
@@ -207,23 +214,25 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::SetBuffers() const {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Inputs/outputs not prepared.");
   }
+  LITERT_ASSIGN_OR_RETURN(auto committed_buf, device_context_->GetEnnCommittedBuffer());
 
-  for (int index = 0; index < inputs_buf_.size(); index++) {
-    if (enn_manager_->Api().EnnSetBufferByIndex(model_id_, ENN_DIR_IN, index,
-                                                inputs_buf_.at(index)) !=
-        ENN_RET_SUCCESS) {
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "Fail to attach input");
-    }
-  }
-  for (int index = 0; index < outputs_buf_.size(); index++) {
-    if (enn_manager_->Api().EnnSetBufferByIndex(model_id_, ENN_DIR_OUT, index,
-                                                outputs_buf_.at(index)) !=
-        ENN_RET_SUCCESS) {
-      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                           "Fail to attach output");
-    }
+  for (int idx = 0; idx < inputs_buf_.size() ; idx++) {
+    auto usr_buf = inputs_buf_.at(idx);
+    auto target_buf = committed_buf[idx];
+    memcpy(target_buf->va, usr_buf->va, usr_buf->size);
   }
 
+  return {};
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::SetOutputBuffers() const {
+  LITERT_ASSIGN_OR_RETURN(auto committed_buf, device_context_->GetEnnCommittedBuffer());
+
+  int _input_buf_size = inputs_buf_.size();
+  for (int idx = 0; idx < outputs_buf_.size(); idx++) {
+    auto usr_buf = outputs_buf_.at(idx);
+    auto target_buf = committed_buf[idx + _input_buf_size];
+    memcpy(usr_buf->va, target_buf->va, usr_buf->size);
+  }
   return {};
 }

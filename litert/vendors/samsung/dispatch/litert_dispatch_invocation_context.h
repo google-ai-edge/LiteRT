@@ -86,7 +86,8 @@ private:
       LiteRtDispatchDeviceContext device_context, const EnnModelId &model_id,
       int num_inputs, int num_outputs);
 
-  litert::Expected<void> SetBuffers() const;
+  litert::Expected<void> SetInputBuffers() const;
+  litert::Expected<void> SetOutputBuffers() const;
 
   const ::litert::samsung::EnnManager *enn_manager_;
   LiteRtDispatchDeviceContext device_context_;
