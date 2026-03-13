@@ -18,10 +18,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = [
-        "//litert/python/tools/model_utils:__subpackages__",
-        "//tflite/converter/integrations:__subpackages__",
-    ],
+    default_visibility = ["//tflite/converter/integrations:__subpackages__"],
     licenses = ["notice"],
 )
 
