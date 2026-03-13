@@ -15,6 +15,22 @@
 // Copyright (C) 2026 Samsung Electronics Co. LTD. 
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdio>
+#include <optional>
+#include <string>
+
+#include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_scheduling_info.h"
+#include "litert/c/litert_any.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
+#include "litert/cc/litert_expected.h"
+
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/samsung/dispatch/enn_manager.h"
@@ -27,9 +43,9 @@ static std::unique_ptr<::litert::samsung::EnnManager> static_enn_manager;
 
 char BuildId[256];
 
-LiteRtEnvironmentOptions static_environment_options;
+LiteRtEnvironmentOptions static_environment_options = nullptr;
 
-LiteRtOptions static_options;
+LiteRtOptions static_options = nullptr;
 
 } // namespace
 
@@ -38,12 +54,13 @@ LiteRtOptions static_options;
 // This function should be called before calling any other Dispatch API
 // functions.
 LiteRtStatus
-LiteRtSamsungInitialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
+LiteRtSamsungInitialize(LiteRtEnvironment environment, LiteRtOptions options) {
+  LiteRtEnvironmentOptions environment_options;
+  LiteRtGetEnvironmentOptions(environment, &environment_options);
+  // TODO Make Exynos options
+
   if (auto enn_manager = ::litert::samsung::EnnManager::Create(); enn_manager) {
-    LITERT_LOG(LITERT_INFO, "Initialize done");
     static_enn_manager.reset(enn_manager->release());
-    LITERT_LOG(LITERT_INFO, "Static prepared.");
   } else {
     LITERT_LOG(LITERT_INFO, "Failed to initialize: %s",
                enn_manager.Error().Message().c_str());
@@ -190,6 +207,16 @@ LiteRtStatus LiteRtSamsungInvocationContextDestroy(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSamsungInvocationContextSetSchedulingInfo(
+    LiteRtDispatchInvocationContext invocation_context,
+    const LiteRtSchedulingInfo* scheduling_info) {
+  if (invocation_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  invocation_context->SetSchedulingInfo(scheduling_info);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus
 LiteRtSamsungAttachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
@@ -246,6 +273,12 @@ LiteRtSamsungInvoke(LiteRtDispatchInvocationContext invocation_context) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
+                                       LiteRtEnvironmentOptions env,
+                                       LiteRtOptions options) {
+  return kLiteRtStatusOk;
+}
+
 // /////////////////////////////////////////////////////////////////////////////
 
 LiteRtDispatchInterface TheInterface = {
@@ -261,11 +294,19 @@ LiteRtDispatchInterface TheInterface = {
     /*.unregister_tensor_buffer=*/LiteRtSamsungUnregisterTensorBuffer,
     /*.invocation_context_create=*/LiteRtSamsungInvocationContextCreate,
     /*.invocation_context_destroy=*/LiteRtSamsungInvocationContextDestroy,
+    /*.invocation_context_set_scheduling_info=*/
+    LiteRtSamsungInvocationContextSetSchedulingInfo,
     /*.attach_input=*/LiteRtSamsungAttachInput,
     /*.attach_output=*/LiteRtSamsungAttachOutput,
     /*.detach_input=*/LiteRtSamsungDetachInput,
     /*.detach_output=*/LiteRtSamsungDetachOutput,
     /*.invoke=*/LiteRtSamsungInvoke,
+    /*.start_metrics_collection=*/nullptr,
+    /*.stop_metrics_collection=*/nullptr,
+    /*.get_num_metrics=*/nullptr,
+    /*.get_metric=*/nullptr,
+    /*.destroy_metrics=*/nullptr,
+    /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
 };
 
 LiteRtDispatchApi TheApi = {

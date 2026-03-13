@@ -21,6 +21,7 @@
 #include <optional>
 
 #include "litert/c/litert_model.h"
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -66,6 +67,19 @@ public:
 
   litert::Expected<void> Invoke();
 
+  void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
+    if (scheduling_info == nullptr) {
+      scheduling_info_ = std::nullopt;
+      return;
+    }
+    scheduling_info_ = *scheduling_info;
+  }
+
+  const LiteRtSchedulingInfo* GetSchedulingInfo() const {
+    return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;
+  }
+
+
 private:
   LiteRtDispatchInvocationContextT(
       const ::litert::samsung::EnnManager *enn_manager,
@@ -76,6 +90,7 @@ private:
 
   const ::litert::samsung::EnnManager *enn_manager_;
   LiteRtDispatchDeviceContext device_context_;
+  std::optional<LiteRtSchedulingInfo> scheduling_info_;
   EnnModelId model_id_;
   std::vector<EnnBufferPtr> inputs_buf_;
   std::vector<EnnBufferPtr> outputs_buf_;
