@@ -33,12 +33,13 @@ target_include_directories(qnn_core
 
 target_link_libraries(qnn_core
     PUBLIC
+        absl::strings
+        absl::string_view
+    PRIVATE
         absl::status
         absl::statusor
-        absl::strings
         absl::str_format
         absl::span
-        absl::string_view
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")

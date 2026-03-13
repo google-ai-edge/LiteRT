@@ -19,8 +19,9 @@ target_include_directories(qnn_dump
 
 target_link_libraries(qnn_dump
     PUBLIC
-        qnn_core
         absl::status
         absl::statusor
         nlohmann_json::nlohmann_json
+    PRIVATE
+        qnn_core
 )
