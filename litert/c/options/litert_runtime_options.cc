@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 
 struct LrtRuntimeOptions {
@@ -72,9 +73,7 @@ LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
 
   *identifier = LrtGetRuntimeOptionsIdentifier();
   std::string toml_str = ss.str();
-  *payload = new char[toml_str.size() + 1];
-  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
-  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
+  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/core/litert_toml_parser.h"
 
@@ -268,9 +269,7 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
 
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
-  *payload = new char[toml_str.size() + 1];
-  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
-  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
+  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }
