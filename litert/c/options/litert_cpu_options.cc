@@ -23,6 +23,7 @@
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 
@@ -74,11 +75,8 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
                                     *options->weight_cache_file_descriptor));
   }
 
-  char* data_buffer = strdup(toml_data.c_str());
-
   *identifier = LrtGetCpuOptionsIdentifier();
-  *payload = data_buffer;
-  *payload_deleter = [](void* p) { free(static_cast<char*>(p)); };
+  litert::internal::MakeCStringPayload(toml_data, payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

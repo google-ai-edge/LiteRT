@@ -20,6 +20,7 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
@@ -163,10 +164,7 @@ LiteRtStatus LrtGetOpaqueMediatekOptionsData(const LrtMediatekOptions* options,
   }
 
   *identifier = "mediatek";
-  *payload = new std::string(toml_str);
-  *payload_deleter = [](void* payload) {
-    delete reinterpret_cast<std::string*>(payload);
-  };
+  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
   return kLiteRtStatusOk;
 }
 

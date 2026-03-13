@@ -35,10 +35,9 @@ void SerializeAndParse(LrtGoogleTensorOptions payload,
   LITERT_ASSERT_OK(LrtGetOpaqueGoogleTensorOptionsData(
       payload, &identifier, &raw_payload, &payload_deleter));
   EXPECT_STREQ(identifier, "google_tensor");
-  std::string* toml_str = reinterpret_cast<std::string*>(raw_payload);
+  const char* toml_str = static_cast<const char*>(raw_payload);
 
-  LITERT_ASSERT_OK(
-      LrtCreateGoogleTensorOptionsFromToml(toml_str->c_str(), parsed));
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptionsFromToml(toml_str, parsed));
 
   payload_deleter(raw_payload);
 }

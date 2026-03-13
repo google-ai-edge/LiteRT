@@ -32,9 +32,9 @@ void SerializeAndParse(LrtMediatekOptions* payload,
   LITERT_ASSERT_OK(LrtGetOpaqueMediatekOptionsData(
       payload, &identifier, &raw_payload, &payload_deleter));
   EXPECT_STREQ(identifier, "mediatek");
-  std::string* toml_str = reinterpret_cast<std::string*>(raw_payload);
+  const char* toml_str = static_cast<const char*>(raw_payload);
 
-  LITERT_ASSERT_OK(LrtCreateMediatekOptionsFromToml(toml_str->c_str(), parsed));
+  LITERT_ASSERT_OK(LrtCreateMediatekOptionsFromToml(toml_str, parsed));
 
   payload_deleter(raw_payload);
 }
@@ -50,8 +50,8 @@ TEST(LrtMediatekOptionsTest, GetOpaqueDataEmpty) {
                                                    &payload, &payload_deleter));
 
   EXPECT_STREQ(identifier, "mediatek");
-  absl::string_view toml_str = *reinterpret_cast<std::string*>(payload);
-  EXPECT_TRUE(toml_str.empty());
+  const char* toml_str = static_cast<const char*>(payload);
+  EXPECT_STREQ(toml_str, "");
 
   payload_deleter(payload);
   LrtDestroyMediatekOptions(options);
@@ -283,7 +283,7 @@ TEST(LrtMediatekOptionsTest, GetOpaqueDataPopulated) {
                                                    &payload, &payload_deleter));
 
   EXPECT_STREQ(identifier, "mediatek");
-  absl::string_view toml_str = *reinterpret_cast<std::string*>(payload);
+  const char* toml_str = static_cast<const char*>(payload);
   EXPECT_TRUE(absl::StrContains(toml_str, "performance_mode = 1"));
   EXPECT_TRUE(absl::StrContains(
       toml_str, "aot_compilation_options = \"--test_compilation\""));

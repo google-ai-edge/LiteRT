@@ -45,6 +45,14 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_options_helper",
+    hdrs = ["litert_options_helper.h"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],

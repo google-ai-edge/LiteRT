@@ -21,6 +21,7 @@
 #include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
@@ -68,9 +69,7 @@ LiteRtStatus LrtGetOpaqueWebNnOptionsData(const LrtWebNnOptions* options,
 
   *identifier = "webnn_options_string";
   std::string toml_str = ss.str();
-  *payload = new char[toml_str.size() + 1];
-  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
-  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
+  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

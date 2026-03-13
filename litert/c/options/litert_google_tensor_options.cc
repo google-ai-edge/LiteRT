@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
@@ -94,8 +95,7 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
   }
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
-  *payload = new std::string(toml_str);
-  *payload_deleter = [](void* p) { delete reinterpret_cast<std::string*>(p); };
+  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
   return kLiteRtStatusOk;
 }
 
