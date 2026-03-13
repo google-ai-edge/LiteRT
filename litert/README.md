@@ -56,10 +56,6 @@ optimization tools.
   Private code and APIs specific to the runtime, defined inside lrt:::internal
   namespace.
 
-- samples/
-
-  Sample codes
-
 - tools/
 
   Various tools (Benchmark, Numerical accuracy evaluation, Apply Compiler
