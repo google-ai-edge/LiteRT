@@ -21,9 +21,9 @@ import re
 import subprocess
 import tempfile
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import components
-from litert.python.aot.core import types
 
 _BINARY = pathlib.Path("tools/apply_plugin_main")
 
@@ -55,8 +55,8 @@ class ApplyPlugin(components.ApplyPluginT):
 
   def __call__(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
       soc_manufacturer: str,
       soc_model: str,
       sdk_libs_path: str | None = None,
@@ -138,9 +138,9 @@ class ApplyPlugin(components.ApplyPluginT):
       raise ValueError(f"{output_model.path} is not a TFLite model.")
 
     partition_stats = _RE_PARTITION_STATS.findall(result.stdout)
-    output_model.partition_stats = types.PartitionStats(
+    output_model.partition_stats = aot_types.PartitionStats(
         subgraph_stats=[
-            types.SubgraphPartitionStats(
+            aot_types.SubgraphPartitionStats(
                 subgraph_index=int(s[0]),
                 num_ops_offloaded=int(s[1]),
                 num_total_ops=int(s[2]),

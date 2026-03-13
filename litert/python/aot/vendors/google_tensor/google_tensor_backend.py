@@ -20,9 +20,9 @@ import os
 import pathlib
 from typing import Iterable
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import components
-from litert.python.aot.core import types
 from litert.python.aot.vendors import import_vendor
 from litert.python.aot.vendors.google_tensor import target as target_lib
 
@@ -37,10 +37,10 @@ def _is_google_tensor_flag(flag: str) -> bool:
 
 
 @import_vendor.register_backend
-class GoogleTensorBackend(types.Backend):
+class GoogleTensorBackend(aot_types.Backend):
   """Backend implementation for the Google Tensor compiler plugin."""
 
-  def __init__(self, config: types.Config):
+  def __init__(self, config: aot_types.Config):
     super().__init__(config)
     self._compilation_config = config.get("compilation_config", None)
 
@@ -75,7 +75,7 @@ class GoogleTensorBackend(types.Backend):
     return target_lib._GOOGLE_TENSOR_BACKEND_ID  # pylint: disable=protected-access
 
   @classmethod
-  def create(cls, config: types.Config) -> "GoogleTensorBackend":
+  def create(cls, config: aot_types.Config) -> "GoogleTensorBackend":
     if config.get("backend_id", "") != cls.id():
       raise ValueError("Invalid backend id")
     return cls(config)
@@ -86,19 +86,19 @@ class GoogleTensorBackend(types.Backend):
 
   def call_component(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
-      component: types.Component,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
+      component: aot_types.Component,
   ):
     return _call_component(component, self, input_model, output_model)
 
 
 @functools.singledispatch
 def _call_component(
-    component: types.Component,
+    component: aot_types.Component,
     backend: GoogleTensorBackend,
-    unused_input_model: types.Model,
-    unused_output_model: types.Model,
+    unused_input_model: aot_types.Model,
+    unused_output_model: aot_types.Model,
 ):
   raise NotImplementedError(
       f"{backend.id()} backend does not support"
@@ -110,8 +110,8 @@ def _call_component(
 def _apply_plugin(
     component: components.ApplyPluginT,
     backend: GoogleTensorBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   """Calls the apply plugin component."""
   try:
@@ -157,8 +157,8 @@ def _apply_plugin(
 def _aie_quantizer(
     component: components.AieQuantizerT,
     backend: GoogleTensorBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(
       input_model,
@@ -171,7 +171,7 @@ def _aie_quantizer(
 def _mlir_transforms(
     component: components.MlirTransformsT,
     unused_backend: GoogleTensorBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(input_model, output_model, [])

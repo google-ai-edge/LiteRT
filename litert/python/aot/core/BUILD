@@ -51,8 +51,8 @@ pytype_strict_library(
 )
 
 pytype_strict_library(
-    name = "types",
-    srcs = ["types.py"],
+    name = "aot_types",
+    srcs = ["aot_types.py"],
     visibility = ["//visibility:public"],
 )
 
@@ -66,9 +66,9 @@ pytype_strict_library(
         "//conditions:default": [],
     }),
     deps = [
+        ":aot_types",
         ":common",
         ":components",
-        ":types",
     ],
 )
 
@@ -81,9 +81,9 @@ pytype_strict_contrib_test(
         "nosan",
     ],
     deps = [
+        ":aot_types",
         ":apply_plugin",
         ":test_common",
-        ":types",
         "@absl_py//absl/testing:absltest",
     ],
 )
@@ -104,9 +104,9 @@ pytype_strict_library(
     name = "mlir_transforms",
     srcs = ["mlir_transforms.py"],
     deps = [
+        ":aot_types",
         ":components",
         ":tflxx_util",
-        ":types",
     ],
 )
 
@@ -114,14 +114,14 @@ pytype_strict_library(
     name = "components",
     srcs = ["components.py"],
     visibility = ["//visibility:public"],
-    deps = [":types"],
+    deps = [":aot_types"],
 )
 
 pytype_strict_library(
     name = "tflxx_util",
     srcs = ["tflxx_util.py"],
     deps = [
-        ":types",
+        ":aot_types",
     ] + tflxx_deps_if_enabled(),
 )
 
@@ -129,10 +129,10 @@ pytype_strict_contrib_test(
     name = "mlir_transforms_test",
     srcs = ["mlir_transforms_test.py"],
     deps = [
+        ":aot_types",
         ":common",
         ":mlir_transforms",
         ":test_common",
-        ":types",
         "@absl_py//absl/testing:absltest",
     ],
 )
