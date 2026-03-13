@@ -15,11 +15,14 @@
 #include "litert/c/litert_opaque_options.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "litert/c/litert_common.h"
+
+extern "C" {
 
 struct LiteRtOpaqueOptionsT {
   std::string payload_identifier;
@@ -40,15 +43,23 @@ LiteRtStatus LiteRtCreateOpaqueOptions(const char* payload_identifier,
   if (!payload_identifier || !payload_data || !payload_destructor || !options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *options = new LiteRtOpaqueOptionsT(std::string(payload_identifier),
-                                      payload_data, payload_destructor);
+  void* mem = std::malloc(sizeof(LiteRtOpaqueOptionsT));
+  if (!mem) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  *options = new (mem) LiteRtOpaqueOptionsT(std::string(payload_identifier),
+                                            payload_data, payload_destructor);
+  // *options = new LiteRtOpaqueOptionsT(std::string(payload_identifier),
+  //                                     payload_data, payload_destructor);
   return kLiteRtStatusOk;
 }
 
 void LiteRtDestroyOpaqueOptions(LiteRtOpaqueOptions options) {
   while (options) {
     LiteRtOpaqueOptions next = options->next;
-    delete options;
+    options->~LiteRtOpaqueOptionsT();
+    std::free(options);
+    // delete options;
     options = next;
   }
 }
@@ -145,3 +156,5 @@ LiteRtStatus LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options,
   *hash = options->payload_hash_func(options->payload_data.get());
   return kLiteRtStatusOk;
 }
+
+}  // extern "C"
