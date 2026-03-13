@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +31,8 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_bytecode_manifest.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
@@ -387,6 +390,44 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
   return kLiteRtStatusOk;
 }
 
+using DispatchManifestMap = absl::flat_hash_map<std::pair<size_t, size_t>,
+                                                DispatchBytecodeManifestEntry>;
+
+bool IsByteRangeInBounds(size_t offset, size_t size, size_t total_size) {
+  return offset <= total_size && size <= total_size - offset;
+}
+
+Expected<DispatchManifestMap> ParseDispatchManifest(const LiteRtModelT& model,
+                                                    size_t model_size) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto manifest_buffer,
+      model.FindMetadata(kLiteRtDispatchBytecodeManifestKey));
+  LITERT_ASSIGN_OR_RETURN(auto manifest_entries,
+                          ParseDispatchBytecodeManifest(manifest_buffer));
+
+  DispatchManifestMap manifest_by_op;
+  manifest_by_op.reserve(manifest_entries.size());
+  for (const auto& entry : manifest_entries) {
+    const auto op_key = std::make_pair(entry.subgraph_index, entry.op_index);
+    if (manifest_by_op.contains(op_key)) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                   "Dispatch manifest contains duplicate op mapping");
+    }
+    if (entry.bytecode_offset == 0 || entry.bytecode_size == 0) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                   "Dispatch manifest contains zero offset/size");
+    }
+    if (!IsByteRangeInBounds(entry.bytecode_offset, entry.bytecode_size,
+                             model_size)) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                   "Dispatch manifest contains out-of-bounds bytecode range");
+    }
+    manifest_by_op.insert_or_assign(op_key, entry);
+  }
+
+  return manifest_by_op;
+}
+
 Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
   auto litert_model = std::make_unique<LiteRtModelT>(std::move(flatbuffer));
 
@@ -465,40 +506,109 @@ Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(BufferRef<uint8_t> buffer) {
 }
 
 Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
-                                              bool allow_modifications) {
+                                              ModelFileLoadOptions options) {
+  FlatbufferWrapper::FileLoadOptions flatbuffer_options;
+  flatbuffer_options.allow_modifications = options.allow_modifications;
+  flatbuffer_options.load_mode =
+      options.load_mode == ModelFileLoadMode::kMetadataOnlyForFileCopy
+          ? FlatbufferWrapper::FileLoadMode::kMetadataOnlyForFileCopy
+          : FlatbufferWrapper::FileLoadMode::kDefault;
+
   auto flatbuffer =
-      FlatbufferWrapper::CreateFromTflFile(filename, allow_modifications);
+      FlatbufferWrapper::CreateFromTflFile(filename, flatbuffer_options);
   if (!flatbuffer) {
     return flatbuffer.Error();
   }
   LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
+  model->SetFileLoadMode(options.load_mode ==
+                                 ModelFileLoadMode::kMetadataOnlyForFileCopy
+                             ? kLiteRtModelFileLoadModeMetadataOnlyForFileCopy
+                             : kLiteRtModelFileLoadModeDefault);
   model->SetSourcePath(std::string(filename));
+
+  const size_t loaded_model_size = GetTflFlatbuffer(*model).Buf().Size();
+  std::optional<DispatchManifestMap> dispatch_manifest;
+  if (auto parsed_manifest = ParseDispatchManifest(*model, loaded_model_size);
+      parsed_manifest) {
+    dispatch_manifest = std::move(*parsed_manifest);
+  } else if (parsed_manifest.Error().Status() != kLiteRtStatusErrorNotFound) {
+    LITERT_LOG(LITERT_WARNING,
+               "Ignoring invalid dispatch bytecode manifest metadata: %s",
+               parsed_manifest.Error().Message().c_str());
+  }
 
   // Load bytecode of each dispatch op and attach it to the model.
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
-  for (const LiteRtSubgraph& subgraph : model->Subgraphs()) {
-    for (LiteRtOp op : subgraph->Ops()) {
-      if (op->OpCode() == kLiteRtOpCodeTflCustom &&
-          op->CustomOptions().Size() > 0) {
-        DispatchOpOptions dispatch_opts =
-            GetDispatchOpOptions(op->CustomOptions());
-        if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {
-          BufferRef<uint8_t> byte_code(
-              GetTflFlatbuffer(*model).AllocBase() +
-                  dispatch_opts.bytecode_offset,
-              dispatch_opts.bytecode_size);
-          const BufferManager::BufferId buf_id =
-              model->Buffers()->RegisterNonOwnedBuffer(byte_code);
-          buffer_id_map.insert({dispatch_opts.bytecode_offset, buf_id});
-        }
-
-        model->AttachAssetToOp(op, buffer_id_map[dispatch_opts.bytecode_offset],
-                               std::move(dispatch_opts.name));
+  for (size_t subgraph_index = 0; subgraph_index < model->Subgraphs().size();
+       ++subgraph_index) {
+    LiteRtSubgraph subgraph = &model->Subgraph(subgraph_index);
+    for (size_t op_index = 0; op_index < subgraph->Ops().size(); ++op_index) {
+      LiteRtOp op = subgraph->Ops()[op_index];
+      if (op->OpCode() != kLiteRtOpCodeTflCustom ||
+          op->CustomOptions().Size() == 0) {
+        continue;
       }
+      auto op_custom_code = op->CustomCode();
+      if (!op_custom_code || *op_custom_code != kLiteRtDispatchOpCustomName) {
+        continue;
+      }
+
+      std::optional<DispatchBytecodeManifestEntry> manifest_entry;
+      if (dispatch_manifest.has_value()) {
+        auto it = dispatch_manifest->find({subgraph_index, op_index});
+        if (it != dispatch_manifest->end()) {
+          manifest_entry = it->second;
+        }
+      }
+
+      DispatchOpOptions dispatch_opts;
+      bool dispatch_opts_from_manifest = false;
+      if (manifest_entry.has_value()) {
+        dispatch_opts.bytecode_offset = manifest_entry->bytecode_offset;
+        dispatch_opts.bytecode_size = manifest_entry->bytecode_size;
+        dispatch_opts.name = manifest_entry->function_name;
+        dispatch_opts_from_manifest = true;
+      } else {
+        dispatch_opts = GetDispatchOpOptions(op->CustomOptions());
+      }
+
+      if (dispatch_opts.bytecode_offset == 0 ||
+          dispatch_opts.bytecode_size == 0) {
+        if (dispatch_opts_from_manifest) {
+          LITERT_LOG(LITERT_WARNING,
+                     "Skipping dispatch manifest entry with empty bytecode "
+                     "range");
+        }
+        continue;
+      }
+      if (!IsByteRangeInBounds(dispatch_opts.bytecode_offset,
+                               dispatch_opts.bytecode_size,
+                               loaded_model_size)) {
+        // Metadata-only loads only keep the flatbuffer root in memory.
+        continue;
+      }
+      if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {
+        BufferRef<uint8_t> byte_code(GetTflFlatbuffer(*model).AllocBase() +
+                                         dispatch_opts.bytecode_offset,
+                                     dispatch_opts.bytecode_size);
+        const BufferManager::BufferId buf_id =
+            model->Buffers()->RegisterNonOwnedBuffer(byte_code);
+        buffer_id_map.insert({dispatch_opts.bytecode_offset, buf_id});
+      }
+
+      model->AttachAssetToOp(op, buffer_id_map[dispatch_opts.bytecode_offset],
+                             std::move(dispatch_opts.name));
     }
   }
 
   return std::move(model);
+}
+
+Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
+                                              bool allow_modifications) {
+  ModelFileLoadOptions options;
+  options.allow_modifications = allow_modifications;
+  return LoadModelFromFile(filename, options);
 }
 
 }  // namespace litert::internal

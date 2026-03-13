@@ -162,6 +162,73 @@ TEST(CompiledModelTest, Basic) {
   }
 }
 
+TEST(CompiledModelTest, MetadataOnlyModelRejectsCpuOnlyCompilation) {
+  auto path = testing::GetTestFilePath(kModelFileName);
+
+  LiteRtModel model = nullptr;
+  const LiteRtModelFileLoadOptions load_options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeMetadataOnlyForFileCopy,
+  };
+  LITERT_ASSERT_OK(LiteRtCreateModelFromFileWithOptions(path.c_str(),
+                                                        &load_options, &model));
+
+  LiteRtOptions jit_compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&jit_compilation_options));
+  LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
+      jit_compilation_options, kLiteRtHwAcceleratorCpu));
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
+
+  LiteRtCompiledModel compiled_model = nullptr;
+  EXPECT_EQ(LiteRtCreateCompiledModel(environment, model,
+                                      jit_compilation_options, &compiled_model),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(compiled_model, nullptr);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(CompiledModelTest, MetadataOnlyModelAllowsNpuCompilationRequest) {
+  auto path = testing::GetTestFilePath(kModelFileName);
+
+  LiteRtModel model = nullptr;
+  const LiteRtModelFileLoadOptions load_options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeMetadataOnlyForFileCopy,
+  };
+  LITERT_ASSERT_OK(LiteRtCreateModelFromFileWithOptions(path.c_str(),
+                                                        &load_options, &model));
+
+  LiteRtOptions jit_compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&jit_compilation_options));
+  LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
+      jit_compilation_options,
+      kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorNpu));
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
+
+  LiteRtCompiledModel compiled_model = nullptr;
+  const LiteRtStatus status = LiteRtCreateCompiledModel(
+      environment, model, jit_compilation_options, &compiled_model);
+  EXPECT_NE(status, kLiteRtStatusErrorInvalidArgument);
+
+  if (compiled_model != nullptr) {
+    LiteRtDestroyCompiledModel(compiled_model);
+  }
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
 TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
   // Use the dynamic model for testing resize functionality
   auto path = testing::GetTestFilePath(kDynamicModelFileName);

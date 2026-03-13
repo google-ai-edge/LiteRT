@@ -157,6 +157,19 @@ bool VerifyFlatbuffer(const uint8_t* buf, size_t buf_size);
 // Override of above with view input.
 bool VerifyFlatbuffer(absl::Span<const uint8_t> buf);
 
+// Returns the exact verified flatbuffer root size (excluding any trailing
+// payload) by reading bounded file prefixes.
+Expected<size_t> GetFlatbufferRootSizeFromFile(absl::string_view path);
+
+// Copy the metadata blob associated with key from a serialized model buffer.
+Expected<OwningBufferRef<uint8_t>> CopyModelMetadataFromBuffer(
+    BufferRef<uint8_t> model_buffer, absl::string_view key);
+
+// Copy the metadata blob associated with key from a model file while reading
+// only the flatbuffer root region.
+Expected<OwningBufferRef<uint8_t>> CopyModelMetadataFromFile(
+    absl::string_view path, absl::string_view key);
+
 // TFL flatbuffer IR helpers.
 
 // Get the metadata buffer under given key if it exists.
@@ -258,8 +271,21 @@ class FlatbufferWrapper {
  public:
   using Ptr = std::unique_ptr<FlatbufferWrapper>;
 
+  enum class FileLoadMode {
+    kDefault = 0,
+    kMetadataOnlyForFileCopy = 1,
+  };
+
+  struct FileLoadOptions {
+    bool allow_modifications = false;
+    FileLoadMode load_mode = FileLoadMode::kDefault;
+  };
+
   // TODO Don't return a unique_ptr, this can just be a move only type, all the
   // fields are unique_ptrs. Load flatbuffer from file.
+  static Expected<Ptr> CreateFromTflFile(absl::string_view path,
+                                         FileLoadOptions options);
+
   static Expected<Ptr> CreateFromTflFile(absl::string_view path,
                                          bool allow_modifications = false);
 

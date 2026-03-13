@@ -18,7 +18,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>  // NOLINT
+#include <fstream>
 #include <iterator>
+#include <limits>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -141,6 +144,24 @@ Expected<int> DispatchDelegateKernel::FindAllocBaseFd() const {
       auto dispatch_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
   return dispatch_options.GetAllocBaseFd();
+}
+
+Expected<size_t> DispatchDelegateKernel::FindAllocBaseSize() const {
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      auto dispatch_options,
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  return dispatch_options.GetAllocBaseSize();
+}
+
+Expected<std::string> DispatchDelegateKernel::FindModelSourcePath() const {
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      auto dispatch_options,
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  return dispatch_options.GetModelSourcePath();
 }
 
 TfLiteStatus DispatchDelegateKernel::Init(
@@ -490,34 +511,148 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
   // Read offset and size (relative to alloc_base) from the custom options (and
   // name).
   const auto dispatch_opts = GetDispatchOpOptions(custom_opts);
-  if (dispatch_opts.bytecode_offset == 0) {
+  if (dispatch_opts.bytecode_offset == 0 || dispatch_opts.bytecode_size == 0) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Found dispatch op with missing bytecode offset");
+                      "Found dispatch op with missing bytecode range");
   }
 
   // Find pointer to the start of the loaded model buffer.
   LITERT_ASSIGN_OR_RETURN(const void* alloc_base, FindAllocBase());
   LITERT_ASSIGN_OR_RETURN(const int alloc_fd, FindAllocBaseFd());
-
-  // Get location of bytecode in the model buffer relative to alloc_base.
-  LiteRtMemBuffer exec_bytecode_buffer = {
-      /*.fd=*/alloc_fd,
-      /*.base_addr=*/alloc_base,
-      /*.offset=*/dispatch_opts.bytecode_offset,
-      /*.size=*/dispatch_opts.bytecode_size};
+  LITERT_ASSIGN_OR_RETURN(const size_t alloc_size, FindAllocBaseSize());
+  LITERT_ASSIGN_OR_RETURN(std::string model_source_path, FindModelSourcePath());
   const auto& function_name = dispatch_opts.name;
 
-  auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
-  auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+  const auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+  const auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
 
-  LiteRtDispatchInvocationContext invocation_context;
-  if (auto status = LiteRtDispatchInvocationContextCreate(
-          device_context_, kLiteRtDispatchExecutableTypeMlModel,
-          &exec_bytecode_buffer, function_name.data(), num_node_inputs,
-          num_node_outputs, &invocation_context);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to create invocation context");
+  auto create_invocation_context = [&](const LiteRtMemBuffer& bytecode_buffer)
+      -> Expected<LiteRtDispatchInvocationContext> {
+    LiteRtDispatchInvocationContext invocation_context;
+    if (auto status = LiteRtDispatchInvocationContextCreate(
+            device_context_, kLiteRtDispatchExecutableTypeMlModel,
+            &bytecode_buffer, function_name.data(), num_node_inputs,
+            num_node_outputs, &invocation_context);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to create invocation context");
+    }
+    return invocation_context;
+  };
+
+  const auto is_range_in_bounds = [](size_t offset, size_t size,
+                                     size_t total_size) {
+    return offset <= total_size && size <= total_size - offset;
+  };
+  const bool bytecode_in_alloc_range =
+      alloc_base != nullptr &&
+      is_range_in_bounds(dispatch_opts.bytecode_offset,
+                         dispatch_opts.bytecode_size, alloc_size);
+
+  Expected<LiteRtDispatchInvocationContext> maybe_invocation_context =
+      Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                 "Dispatch invocation context was not initialized");
+
+  // First priority: in-memory base pointer path (existing behavior).
+  if (bytecode_in_alloc_range) {
+    LiteRtMemBuffer exec_bytecode_buffer = {
+        /*.fd=*/alloc_fd,
+        /*.base_addr=*/alloc_base,
+        /*.offset=*/dispatch_opts.bytecode_offset,
+        /*.size=*/dispatch_opts.bytecode_size};
+    maybe_invocation_context = create_invocation_context(exec_bytecode_buffer);
+  } else {
+    // Second priority: fd+offset path, if available from model allocation.
+    if (alloc_fd >= 0) {
+      LiteRtMemBuffer fd_bytecode_buffer = {
+          /*.fd=*/alloc_fd,
+          /*.base_addr=*/nullptr,
+          /*.offset=*/dispatch_opts.bytecode_offset,
+          /*.size=*/dispatch_opts.bytecode_size};
+      maybe_invocation_context = create_invocation_context(fd_bytecode_buffer);
+    }
+
+    // Third priority: read just the bytecode range from model source path.
+    if (!maybe_invocation_context) {
+      if (model_source_path.empty()) {
+        return Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Dispatch bytecode range is out-of-bounds for alloc_base and no "
+            "model source path is available for fallback");
+      }
+
+      BytecodeKey bytecode_key;
+      bytecode_key.offset = dispatch_opts.bytecode_offset;
+      bytecode_key.size = dispatch_opts.bytecode_size;
+
+      auto cached_it = bytecode_copy_cache_.find(bytecode_key);
+      if (cached_it == bytecode_copy_cache_.end()) {
+        const std::filesystem::path source_path(model_source_path);
+        std::error_code ec;
+        const auto raw_file_size = std::filesystem::file_size(source_path, ec);
+        if (ec) {
+          return Unexpected(kLiteRtStatusErrorFileIO,
+                            "Failed to stat model source file");
+        }
+        if (raw_file_size > std::numeric_limits<size_t>::max()) {
+          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "Model source file is too large");
+        }
+        const size_t file_size = static_cast<size_t>(raw_file_size);
+        if (!is_range_in_bounds(dispatch_opts.bytecode_offset,
+                                dispatch_opts.bytecode_size, file_size)) {
+          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "Dispatch bytecode range is out-of-bounds for "
+                            "source model file");
+        }
+
+        auto inserted = bytecode_copy_cache_.emplace(
+            bytecode_key,
+            OwningBufferRef<uint8_t>(dispatch_opts.bytecode_size));
+        cached_it = inserted.first;
+
+        std::ifstream ifs(source_path, std::ios::binary);
+        if (!ifs) {
+          return Unexpected(kLiteRtStatusErrorFileIO,
+                            "Failed to open model source file");
+        }
+        if (dispatch_opts.bytecode_offset >
+            static_cast<size_t>(std::numeric_limits<std::streamoff>::max())) {
+          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "Bytecode offset exceeds stream seek range");
+        }
+        if (dispatch_opts.bytecode_size >
+            static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) {
+          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "Bytecode size exceeds stream read range");
+        }
+        ifs.seekg(static_cast<std::streamoff>(dispatch_opts.bytecode_offset),
+                  std::ios::beg);
+        if (!ifs) {
+          return Unexpected(kLiteRtStatusErrorFileIO,
+                            "Failed to seek bytecode offset in source file");
+        }
+        ifs.read(reinterpret_cast<char*>(cached_it->second.Data()),
+                 static_cast<std::streamsize>(dispatch_opts.bytecode_size));
+        if (!ifs) {
+          return Unexpected(kLiteRtStatusErrorFileIO,
+                            "Failed to read bytecode range from source file");
+        }
+      }
+
+      LiteRtMemBuffer copied_bytecode_buffer = {
+          /*.fd=*/-1,
+          /*.base_addr=*/cached_it->second.Data(),
+          /*.offset=*/0,
+          /*.size=*/cached_it->second.Size()};
+      maybe_invocation_context =
+          create_invocation_context(copied_bytecode_buffer);
+    }
   }
+  if (!maybe_invocation_context) {
+    return maybe_invocation_context.Error();
+  }
+  LiteRtDispatchInvocationContext invocation_context =
+      *maybe_invocation_context;
 
   // Apply dispatch annotations from the compiled model
   if (buffer_context_) {

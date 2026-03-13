@@ -450,6 +450,28 @@ TEST(LiteRtModelTest, AddMetadataExistingFails) {
       IsError(kLiteRtStatusErrorAlreadyExists));
 }
 
+TEST(LiteRtModelTest, CreateModelFromFileWithOptionsBadPath) {
+  LiteRtModel model = nullptr;
+  const LiteRtModelFileLoadOptions options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeMetadataOnlyForFileCopy,
+  };
+  EXPECT_NE(LiteRtCreateModelFromFileWithOptions("bad_path", &options, &model),
+            kLiteRtStatusOk);
+}
+
+TEST(LiteRtModelTest, CreateModelFromFileWithOptionsInvalidMode) {
+  LiteRtModel model = nullptr;
+  LiteRtModelFileLoadOptions options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeDefault,
+  };
+  options.load_mode = static_cast<LiteRtModelFileLoadMode>(1234);
+  EXPECT_THAT(
+      LiteRtCreateModelFromFileWithOptions("unused_path", &options, &model),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
 TEST(LiteRtModelTest, GetSubgraph) {
   LiteRtModelT model;
   auto& subgraph = model.EmplaceSubgraph();

@@ -85,6 +85,8 @@ const LiteRtRuntimeCApiStruct* kLiteRtRuntimeBuiltin =
             LiteRtGetSignatureOutputTensorByIndex,
         // LiteRtModel
         .litert_create_model_from_file = LiteRtCreateModelFromFile,
+        .litert_create_model_from_file_with_options =
+            LiteRtCreateModelFromFileWithOptions,
         .litert_create_model_from_buffer = LiteRtCreateModelFromBuffer,
         .litert_get_model_metadata = LiteRtGetModelMetadata,
         .litert_add_model_metadata = LiteRtAddModelMetadata,

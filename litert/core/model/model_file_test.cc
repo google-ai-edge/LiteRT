@@ -36,19 +36,21 @@
 
 #include <gmock/gmock.h>  // IWYU pragma: keep
 #include <gtest/gtest.h>
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/dispatch_bytecode_manifest.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/graph_validation.h"
@@ -358,6 +360,20 @@ TEST(ModelLoadTest, WithOffsetTensorBuffer) {
   }
 }
 
+TEST(ModelLoadTest, RecordsFileLoadMode) {
+  ModelFileLoadOptions metadata_only_options;
+  metadata_only_options.load_mode = ModelFileLoadMode::kMetadataOnlyForFileCopy;
+  auto metadata_only_model =
+      LoadModelFromFile(GetTestFilePath(kAddSimple), metadata_only_options);
+  ASSERT_TRUE(metadata_only_model);
+  EXPECT_EQ((*metadata_only_model)->FileLoadMode(),
+            kLiteRtModelFileLoadModeMetadataOnlyForFileCopy);
+
+  auto default_model = LoadModelFromFile(GetTestFilePath(kAddSimple));
+  ASSERT_TRUE(default_model);
+  EXPECT_EQ((*default_model)->FileLoadMode(), kLiteRtModelFileLoadModeDefault);
+}
+
 TEST(ModelTestCApi, Int2) {
   auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
   ASSERT_TRUE(model);
@@ -595,6 +611,64 @@ TEST(ModelSerializeTest, WithMultipleUniqueExternalBuffer) {
     EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
                                            dispatch_opts.bytecode_size),
               kByteCode2);
+  }
+}
+
+TEST(ModelSerializeTest, EmitsDispatchBytecodeManifestMetadata) {
+  static constexpr absl::string_view kByteCodeA = "SOME_BYTE_CODE_A";
+  static constexpr absl::string_view kByteCodeB = "SOME_BYTE_CODE_B";
+  static constexpr absl::string_view kFunctionA = "func_a";
+  static constexpr absl::string_view kFunctionB = "func_b";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op_a = sg.EmplaceOp();
+  auto& op_b = sg.EmplaceOp();
+
+  {
+    OwningBufferRef<uint8_t> buffer(kByteCodeA);
+    const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+    root.AttachAssetToOp(&op_a, buf_id, std::string(kFunctionA));
+  }
+  {
+    OwningBufferRef<uint8_t> buffer(kByteCodeB);
+    const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+    root.AttachAssetToOp(&op_b, buf_id, std::string(kFunctionB));
+  }
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+  auto tfl = fb->get()->Unpack();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto manifest_buffer,
+      GetMetadata(kLiteRtDispatchBytecodeManifestKey, *tfl));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto manifest_entries,
+                              ParseDispatchBytecodeManifest(manifest_buffer));
+  ASSERT_EQ(manifest_entries.size(), 2);
+
+  absl::flat_hash_map<std::pair<size_t, size_t>, DispatchBytecodeManifestEntry>
+      manifest_by_op;
+  for (const auto& entry : manifest_entries) {
+    manifest_by_op.insert_or_assign({entry.subgraph_index, entry.op_index},
+                                    entry);
+  }
+
+  for (size_t op_index = 0; op_index < tfl->subgraphs[0]->operators.size();
+       ++op_index) {
+    const auto& op = tfl->subgraphs[0]->operators[op_index];
+    const auto custom_opts = BufferRef<uint8_t>(op->custom_options.data(),
+                                                op->custom_options.size());
+    const auto dispatch_opts = GetDispatchOpOptions(custom_opts);
+    ASSERT_TRUE(manifest_by_op.contains({0, op_index}));
+    const auto& manifest_entry = manifest_by_op.at({0, op_index});
+    EXPECT_EQ(manifest_entry.function_name, dispatch_opts.name);
+    EXPECT_EQ(manifest_entry.bytecode_offset, dispatch_opts.bytecode_offset);
+    EXPECT_EQ(manifest_entry.bytecode_size, dispatch_opts.bytecode_size);
+    EXPECT_NE(manifest_entry.bytecode_offset, 0);
+    EXPECT_NE(manifest_entry.bytecode_size, 0);
   }
 }
 
@@ -871,7 +945,51 @@ TEST(ModelLoadSerializeTest, LoadAndSerializeWithBytecode) {
       SerializeModel(std::move(*model.Get()));
   EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
 
-  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
+  auto serialized_fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(serialized_fb);
+
+  auto original_tfl = flatbuffer->get()->Unpack();
+  auto serialized_tfl = serialized_fb->get()->Unpack();
+
+  ASSERT_FALSE(original_tfl->subgraphs.empty());
+  ASSERT_FALSE(serialized_tfl->subgraphs.empty());
+  ASSERT_FALSE(original_tfl->subgraphs[0]->operators.empty());
+  ASSERT_FALSE(serialized_tfl->subgraphs[0]->operators.empty());
+
+  const auto& original_opts =
+      original_tfl->subgraphs[0]->operators[0]->custom_options;
+  const auto& serialized_opts =
+      serialized_tfl->subgraphs[0]->operators[0]->custom_options;
+
+  const auto original_dispatch_opts = GetDispatchOpOptions(
+      BufferRef<uint8_t>(original_opts.data(), original_opts.size()));
+  const auto serialized_dispatch_opts = GetDispatchOpOptions(
+      BufferRef<uint8_t>(serialized_opts.data(), serialized_opts.size()));
+
+  EXPECT_EQ(serialized_dispatch_opts.name, original_dispatch_opts.name);
+  EXPECT_EQ(serialized_dispatch_opts.bytecode_size,
+            original_dispatch_opts.bytecode_size);
+  EXPECT_EQ(
+      serialized->StrView().substr(serialized_dispatch_opts.bytecode_offset,
+                                   serialized_dispatch_opts.bytecode_size),
+      flatbuffer->get()->Buf().StrView().substr(
+          original_dispatch_opts.bytecode_offset,
+          original_dispatch_opts.bytecode_size));
+
+  // Serialization now emits an additive manifest metadata blob for dispatch
+  // bytecode, so the serialized file may be larger than the source.
+  EXPECT_GE(serialized->Size(), flatbuffer->get()->Buf().Size());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto manifest_buffer,
+      GetMetadata(kLiteRtDispatchBytecodeManifestKey, *serialized_tfl));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto manifest_entries,
+                              ParseDispatchBytecodeManifest(manifest_buffer));
+  ASSERT_FALSE(manifest_entries.empty());
+  EXPECT_EQ(manifest_entries[0].bytecode_offset,
+            serialized_dispatch_opts.bytecode_offset);
+  EXPECT_EQ(manifest_entries[0].bytecode_size,
+            serialized_dispatch_opts.bytecode_size);
 }
 
 // Tests that explicitly check litert graph structure.

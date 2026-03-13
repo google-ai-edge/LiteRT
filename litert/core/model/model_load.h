@@ -25,9 +25,24 @@
 
 namespace litert::internal {
 
+enum class ModelFileLoadMode {
+  kDefault = 0,
+  // Strict metadata-only copy mode. Loads only the verified flatbuffer root
+  // bytes and returns an error if root-only loading is unsafe for the model.
+  kMetadataOnlyForFileCopy = 1,
+};
+
+struct ModelFileLoadOptions {
+  bool allow_modifications = false;
+  ModelFileLoadMode load_mode = ModelFileLoadMode::kDefault;
+};
+
 // Loads a model from a file. If allow_modifications is true, then the model
 // can be modified in place, for example, model would be mmap'ed with writable
 // flag and private mapping (not to update the model file on disk).
+Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromFile(
+    absl::string_view filename, ModelFileLoadOptions options);
+
 Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromFile(
     absl::string_view filename, bool allow_modifications = false);
 

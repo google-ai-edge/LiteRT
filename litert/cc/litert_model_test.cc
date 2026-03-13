@@ -57,6 +57,33 @@ constexpr LiteRtRankedTensorType kTensorType = {
 //                                CC Model                                    //
 //===----------------------------------------------------------------------===//
 
+TEST(CcModelTest, CreateFromFileWithOptionsSuccess) {
+  const LiteRtModelFileLoadOptions load_options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeDefault,
+  };
+  auto model = Model::CreateFromFile(testing::GetTestFilePath("one_mul.tflite"),
+                                     load_options);
+  ASSERT_TRUE(model.HasValue());
+  LiteRtParamIndex num_subgraphs;
+  ASSERT_EQ(LiteRtGetNumModelSubgraphs(model->Get(), &num_subgraphs),
+            kLiteRtStatusOk);
+  EXPECT_EQ(num_subgraphs, 1);
+}
+
+TEST(CcModelTest, CreateFromFileWithOptionsInvalidMode) {
+  LiteRtModelFileLoadOptions load_options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeDefault,
+  };
+  load_options.load_mode = static_cast<LiteRtModelFileLoadMode>(1234);
+  auto model = Model::CreateFromFile(testing::GetTestFilePath("one_mul.tflite"),
+                                     load_options);
+  ASSERT_FALSE(model.HasValue());
+  EXPECT_EQ(static_cast<LiteRtStatus>(model.Error().StatusCC()),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(CcModelTest, SimpleModel) {
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 

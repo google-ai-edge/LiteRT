@@ -45,12 +45,46 @@ extern "C" {
 
 LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
                                        LiteRtModel* model) {
+  const LiteRtModelFileLoadOptions options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeDefault,
+  };
+  return LiteRtCreateModelFromFileWithOptions(filename, &options, model);
+}
+
+LiteRtStatus LiteRtCreateModelFromFileWithOptions(
+    const char* filename, const LiteRtModelFileLoadOptions* options,
+    LiteRtModel* model) {
   if (!filename || !model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_ASSIGN_OR_RETURN(LiteRtModelT::Ptr new_model,
-                          litert::internal::LoadModelFromFile(filename));
+  LiteRtModelFileLoadOptions resolved_options = {
+      /*allow_modifications=*/false,
+      /*load_mode=*/kLiteRtModelFileLoadModeDefault,
+  };
+  if (options != nullptr) {
+    resolved_options = *options;
+  }
+
+  litert::internal::ModelFileLoadOptions internal_options;
+  internal_options.allow_modifications = resolved_options.allow_modifications;
+  switch (resolved_options.load_mode) {
+    case kLiteRtModelFileLoadModeDefault:
+      internal_options.load_mode =
+          litert::internal::ModelFileLoadMode::kDefault;
+      break;
+    case kLiteRtModelFileLoadModeMetadataOnlyForFileCopy:
+      internal_options.load_mode =
+          litert::internal::ModelFileLoadMode::kMetadataOnlyForFileCopy;
+      break;
+    default:
+      return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtModelT::Ptr new_model,
+      litert::internal::LoadModelFromFile(filename, internal_options));
   *model = new_model.release();
   return kLiteRtStatusOk;
 }

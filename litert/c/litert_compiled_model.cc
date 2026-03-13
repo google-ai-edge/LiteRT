@@ -60,6 +60,30 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
   // multi-threading.
   absl::MutexLock lock(compiled_model_create_mutex);
 
+
+  if (model->FileLoadMode() ==
+      kLiteRtModelFileLoadModeMetadataOnlyForFileCopy) {
+    if (jit_compilation_options == nullptr) {
+      LITERT_LOG(
+          LITERT_ERROR,
+          "Metadata-only model load mode requires compilation options with "
+          "NPU accelerator.");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
+    if (auto status = LiteRtGetOptionsHardwareAccelerators(
+            jit_compilation_options, &hardware_accelerators);
+        status != kLiteRtStatusOk) {
+      return status;
+    }
+    if ((hardware_accelerators & kLiteRtHwAcceleratorNpu) == 0) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Metadata-only model load mode is only supported when NPU "
+                 "accelerator is requested.");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  }
+
   LITERT_ASSIGN_OR_RETURN(auto created_compiled_model,
                           LiteRtCompiledModelT::Create(
                               environment, model, jit_compilation_options));
