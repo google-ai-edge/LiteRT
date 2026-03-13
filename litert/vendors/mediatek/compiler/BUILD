@@ -89,6 +89,7 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_conv_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

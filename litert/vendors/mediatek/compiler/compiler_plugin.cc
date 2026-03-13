@@ -132,6 +132,8 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflAbs,
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflMinimum,
+    kLiteRtOpCodeTflTile,
+    kLiteRtOpCodeTflUnpack,
     kLiteRtOpCodeShloComposite,
 };
 // LINT.ThenChange(./MediaTek_Neuro_Compiler.md:supported_ops)
@@ -461,6 +463,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
     const auto& op = ops[op_idx];
     if (!IsOpSupported(op)) {
+      LITERT_LOG(LITERT_ERROR, "Unlegalized op: %d", op.Code());
       unknown_op_indices.insert(op_idx);
     }
   }
