@@ -25,6 +25,7 @@ def qairt():
         strip_prefix = "qairt/2.42.0.251225",
         url = "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.42.0.251225/v2.42.0.251225.zip",
         file_extension = "zip",
+        canonical_id = "qairt-2.42.0.251225",
     )
 
 # LINT.ThenChange(
