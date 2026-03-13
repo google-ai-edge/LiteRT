@@ -34,8 +34,6 @@ using litert::internal::ParseToml;
 struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsLogLevel> log_level;
   std::optional<LrtQualcommOptionsProfiling> profiling;
-  std::optional<bool> use_htp_preference;
-  std::optional<bool> use_qint16_as_quint16;
   std::optional<bool> use_int64_bias_as_int32;
   std::optional<LrtQualcommOptionsBackend> qnn_backend;
   std::optional<bool> enable_weight_sharing;
@@ -77,14 +75,6 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return v.Error().Status();
           LrtQualcommOptionsSetProfiling(
               parsed_options, static_cast<LrtQualcommOptionsProfiling>(*v));
-        } else if (key == "use_htp_preference") {
-          auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
-          LrtQualcommOptionsSetUseHtpPreference(parsed_options, *v);
-        } else if (key == "use_qint16_as_quint16") {
-          auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
-          LrtQualcommOptionsSetUseQint16AsQuint16(parsed_options, *v);
         } else if (key == "use_int64_bias_as_int32") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return v.Error().Status();
@@ -198,14 +188,6 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->profiling.has_value()) {
     toml << "profiling = " << static_cast<int>(*options->profiling) << "\n";
-  }
-  if (options->use_htp_preference.has_value()) {
-    toml << "use_htp_preference = "
-         << (*options->use_htp_preference ? "true" : "false") << "\n";
-  }
-  if (options->use_qint16_as_quint16.has_value()) {
-    toml << "use_qint16_as_quint16 = "
-         << (*options->use_qint16_as_quint16 ? "true" : "false") << "\n";
   }
   if (options->use_int64_bias_as_int32.has_value()) {
     toml << "use_int64_bias_as_int32 = "
@@ -353,50 +335,6 @@ LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(
 }
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
-
-LiteRtStatus LrtQualcommOptionsSetUseHtpPreference(LrtQualcommOptions options,
-                                                   bool use_htp_preference) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->use_htp_preference = use_htp_preference;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetUseHtpPreference(LrtQualcommOptions options,
-                                                   bool* use_htp_preference) {
-  if (use_htp_preference == nullptr || options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *use_htp_preference = options->use_htp_preference.value_or(false);
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsSetUseQint16AsQuint16(
-    LrtQualcommOptions options, bool use_qint16_as_quint16) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->use_qint16_as_quint16 = use_qint16_as_quint16;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetUseQint16AsQuint16(
-    LrtQualcommOptions options, bool* use_qint16_as_quint16) {
-  if (use_qint16_as_quint16 == nullptr || options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *use_qint16_as_quint16 = options->use_qint16_as_quint16.value_or(false);
-
-  return kLiteRtStatusOk;
-}
 
 LiteRtStatus LrtQualcommOptionsSetUseInt64BiasAsInt32(
     LrtQualcommOptions options, bool use_int64_bias_as_int32) {

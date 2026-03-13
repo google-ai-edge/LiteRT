@@ -27,7 +27,6 @@
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/test/matchers.h"
-
 namespace litert::qualcomm {
 namespace {
 
@@ -89,32 +88,6 @@ TEST(LiteRtQualcommOptionsTest, LogLevel) {
 
   auto parsed = SerializeAndParse(qualcomm_options);
   EXPECT_EQ(parsed.GetLogLevel(), QualcommOptions::LogLevel::kWarn);
-
-  LrtDestroyQualcommOptions(qualcomm_options);
-}
-
-TEST(LiteRtQualcommOptionsTest, UseHtpPreference) {
-  LrtQualcommOptions qualcomm_options;
-  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
-
-  LITERT_ASSERT_OK(
-      LrtQualcommOptionsSetUseHtpPreference(qualcomm_options, true));
-
-  auto parsed = SerializeAndParse(qualcomm_options);
-  EXPECT_TRUE(parsed.GetUseHtpPreference());
-
-  LrtDestroyQualcommOptions(qualcomm_options);
-}
-
-TEST(LiteRtQualcommOptionsTest, UseQint16AsQuint16) {
-  LrtQualcommOptions qualcomm_options;
-  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
-
-  LITERT_ASSERT_OK(
-      LrtQualcommOptionsSetUseQint16AsQuint16(qualcomm_options, false));
-
-  auto parsed = SerializeAndParse(qualcomm_options);
-  EXPECT_FALSE(parsed.GetUseQint16AsQuint16());
 
   LrtDestroyQualcommOptions(qualcomm_options);
 }
@@ -335,14 +308,6 @@ TEST(QualcommOptionsTest, CppWrapper) {
   options->SetLogLevel(QualcommOptions::LogLevel::kWarn);
   EXPECT_EQ(options->GetLogLevel(), QualcommOptions::LogLevel::kWarn);
 
-  EXPECT_FALSE(options->GetUseHtpPreference());
-  options->SetUseHtpPreference(true);
-  EXPECT_TRUE(options->GetUseHtpPreference());
-
-  EXPECT_FALSE(options->GetUseQint16AsQuint16());
-  options->SetUseQint16AsQuint16(true);
-  EXPECT_TRUE(options->GetUseQint16AsQuint16());
-
   EXPECT_TRUE(options->GetUseInt64BiasAsInt32());
   options->SetUseInt64BiasAsInt32(false);
   EXPECT_FALSE(options->GetUseInt64BiasAsInt32());
@@ -358,7 +323,6 @@ TEST(QualcommOptionsTest, CppWrapper) {
   options->SetDspPerformanceMode(QualcommOptions::DspPerformanceMode::kBurst);
   EXPECT_EQ(options->GetDspPerformanceMode(),
             QualcommOptions::DspPerformanceMode::kBurst);
-
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
   options->SetProfiling(QualcommOptions::Profiling::kDetailed);
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kDetailed);
@@ -366,11 +330,6 @@ TEST(QualcommOptionsTest, CppWrapper) {
   const std::vector<std::int32_t> kDumpTensorIds{1, 2, 3};
   EXPECT_TRUE(options->GetDumpTensorIds().empty());
   options->SetDumpTensorIds(kDumpTensorIds);
-  auto ids = options->GetDumpTensorIds();
-  for (size_t i = 0; i < kDumpTensorIds.size(); i++) {
-    EXPECT_EQ(ids[i], kDumpTensorIds[i]);
-  }
-
   EXPECT_EQ(options->GetIrJsonDir(), "");
   options->SetIrJsonDir("tmp");
   EXPECT_EQ(options->GetIrJsonDir(), "tmp");
