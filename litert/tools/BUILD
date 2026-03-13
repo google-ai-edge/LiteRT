@@ -575,6 +575,9 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     data = litert_gpu_accelerator_prebuilts(),
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc:litert_common",
@@ -588,6 +591,9 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check_cl_gl",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
@@ -603,6 +609,9 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check_vulkan",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     tags = ["requires-gpu-nvidia"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
@@ -622,6 +631,9 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check_jet",
     srcs = ["gpu_numerics_check.cc"],
+    copts = [
+        "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+    ],
     tags = [
         "manual",
         "nofastbuild",
