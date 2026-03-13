@@ -103,6 +103,7 @@ def _py_wheel_impl(ctx):
         inputs = filelist + py_filelist + structured_deps_filelist + package_data_filelist + [ctx.file.setup_py],
         outputs = [output_file],
         executable = executable,
+        env = ctx.configuration.default_shell_env,
     )
     return [DefaultInfo(files = depset(direct = [output_file]))]
 

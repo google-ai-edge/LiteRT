@@ -63,6 +63,7 @@ def _sdist_impl(ctx):
         outputs = [output_sdist],
         progress_message = "Creating sdist for {} via Python wrapper".format(ctx.attr.package_name),
         mnemonic = "PySdistWrapper",
+        env = ctx.configuration.default_shell_env,
     )
     return [DefaultInfo(files = depset(direct = [output_sdist]))]
 

@@ -103,8 +103,10 @@ def main():
       shutil.rmtree(sdist_temp_output_dir)
     os.makedirs(sdist_temp_output_dir)
 
+    py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
+    py_executable = f"python{py_version}" if py_version else sys.executable
     cmd = [
-        sys.executable,
+        py_executable,
         tmp_setup_py_path,
         "sdist",
         "--dist-dir",
