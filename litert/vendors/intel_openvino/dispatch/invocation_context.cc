@@ -15,7 +15,14 @@
 
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
 
+#include <algorithm>
 #include <chrono>  // NOLINT
+#include <cstddef>
+#include <cstring>
+#include <exception>
+#include <ios>
+#include <istream>
+#include <streambuf>
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
@@ -31,6 +38,90 @@
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
+namespace {
+
+// This class is copied from the OpenVINO codebase with minor modifications
+// for Google C++ Style Guide compliance. It wraps a pre-allocated memory
+// buffer to provide a std::streambuf interface, enabling zero-copy stream
+// reading.
+//
+// TODO(b/449624371): Remove SharedStreamBuffer once OpenVINO provides a
+// public equivalent.
+class SharedStreamBuffer : public std::streambuf {
+ public:
+  SharedStreamBuffer(const char* data, size_t size)
+      : data_(data), size_(size), offset_(0) {}
+  explicit SharedStreamBuffer(const void* data, size_t size)
+      : SharedStreamBuffer(reinterpret_cast<const char*>(data), size) {}
+
+ protected:
+  // override std::streambuf methods
+  std::streamsize xsgetn(char* s, std::streamsize count) override {
+    auto real_count = std::min<std::streamsize>(size_ - offset_, count);
+    std::memcpy(s, data_ + offset_, real_count);
+    offset_ += real_count;
+    return real_count;
+  }
+
+  int_type underflow() override {
+    return (size_ == offset_) ? traits_type::eof()
+                              : traits_type::to_int_type(*(data_ + offset_));
+  }
+
+  int_type uflow() override {
+    return (size_ == offset_) ? traits_type::eof()
+                              : traits_type::to_int_type(*(data_ + offset_++));
+  }
+
+  std::streamsize showmanyc() override { return size_ - offset_; }
+
+  pos_type seekpos(pos_type pos, std::ios_base::openmode which) override {
+    return seekoff(pos, std::ios_base::beg, which);
+  }
+
+  pos_type seekoff(off_type off, std::ios_base::seekdir dir,
+                   std::ios_base::openmode which) override {
+    if (which != std::ios_base::in) {
+      return pos_type(off_type(-1));
+    }
+
+    size_t new_offset;
+    switch (dir) {
+      case std::ios_base::beg:
+        new_offset = off;
+        break;
+      case std::ios_base::cur:
+        new_offset = offset_ + off;
+        break;
+      case std::ios_base::end:
+        new_offset = size_ + off;
+        break;
+      default:
+        return pos_type(off_type(-1));
+    }
+
+    // Check bounds
+    if (new_offset > size_) {
+      return pos_type(off_type(-1));
+    }
+
+    offset_ = new_offset;
+    return pos_type(offset_);
+  }
+
+  // Non-virtual overload with default argument for backward compatibility
+  pos_type seekoff(off_type off, std::ios_base::seekdir dir) {
+    return seekoff(off, dir, std::ios_base::in);
+  }
+
+ private:
+  const char* data_;
+  const size_t size_;
+  size_t offset_;
+};
+
+}  // namespace
+
 litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchDeviceContextT& device_context,
@@ -42,9 +133,13 @@ LiteRtDispatchInvocationContextT::Create(
       exec_bytecode_buffer->offset;
   auto exec_bytecode_size = exec_bytecode_buffer->size;
 
-  std::string bytecode_buffer(reinterpret_cast<const char*>(exec_bytecode_ptr),
-                              exec_bytecode_size);
-  std::istringstream model_stream(bytecode_buffer);
+  if (!exec_bytecode_ptr || exec_bytecode_size == 0) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Empty bytecode buffer");
+  }
+  SharedStreamBuffer membuf(static_cast<const char*>(exec_bytecode_ptr),
+                            exec_bytecode_size);
+  std::istream model_stream(&membuf);
   if (!model_stream) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to open model bytecode stream");
@@ -54,7 +149,13 @@ LiteRtDispatchInvocationContextT::Create(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get OpenVINO core from device context");
   }
-  ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
+  ov::CompiledModel compiled_model;
+  try {
+    compiled_model = core->import_model(model_stream, "NPU");
+  } catch (const std::exception& e) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
+  }
+
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model

@@ -17,10 +17,14 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <ios>
 #include <memory>
+#include <ostream>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "openvino/core/any.hpp"
@@ -138,6 +142,32 @@ constexpr LiteRtOpCode kSupportedOps[] = {
 
 constexpr auto kNumPluginSocModels =
     sizeof(kPluginSocModels) / sizeof(kPluginSocModels[0]);
+
+// When exporting a model via the OpenVINO NPU plugin, standard string streams
+// might encounter a 32-bit std::streamsize limitation on specific platforms,
+// which restricts model export capacity. This custom output stream buffer
+// bypasses that limitation, enabling support for larger models.
+class CustomOStreamBuf : public std::streambuf {
+ public:
+  CustomOStreamBuf() = default;
+  std::string drain_str() { return std::move(target_); }
+
+ protected:
+  std::streamsize xsputn(const char* s, std::streamsize n) override {
+    target_.append(s, n);
+    return n;
+  }
+  int_type overflow(int_type ch) override {
+    if (ch != traits_type::eof()) {
+      target_.push_back(static_cast<char>(ch));
+      return ch;
+    }
+    return traits_type::eof();
+  }
+
+ private:
+  std::string target_;
+};
 
 }  // namespace
 
@@ -445,11 +475,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         auto ov_model = tflite_fe->convert(input_model);
 
         // Use device and configs_map from Intel OpenVINO options
-        std::ostringstream oss;
         auto compiled_model = core.compile_model(ov_model, device, configs_map);
+
+        CustomOStreamBuf obuf;
+        std::ostream oss(&obuf);
         compiled_model.export_model(oss);
         LITERT_LOG(LITERT_INFO, "Model export done");
-        result->byte_code[partition_idx] = oss.str();
+        result->byte_code[partition_idx] = obuf.drain_str();
 
         result->graph_names.emplace_back(graph_name);
       } else {
