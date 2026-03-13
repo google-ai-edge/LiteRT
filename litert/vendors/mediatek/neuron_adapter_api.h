@@ -49,7 +49,7 @@ static constexpr int32_t kMinMagicNumberForNeuronService = 300;
 /** Option `import_forever` has been recommended by MediaTek to reduce memory */
 /* footprint when using the same I/O buffers across multiple invocations. */
 static constexpr char kDefaultAotCompilationOptions[] =
-    "--apusys-config \"{ \\\"import_forever\\\": true }\"";
+    "--opt-accuracy --opt 3 --apusys-config \"{ \\\"import_forever\\\": true }\"";
 
 // Extension operand
 enum {
@@ -91,7 +91,7 @@ class NeuronAdapterApi {
     return aot_compilation_options_;
   }
 
-  absl::string_view JitCompileOptions() const { return ""; }
+  absl::string_view JitCompileOptions() const { return " --opt-accuracy --opt 3"; }
 
   Expected<NeuronModelPtr> CreateModel() const;
 
@@ -185,6 +185,8 @@ struct NeuronAdapterApi::Api {
   decltype(&NeuronModel_setOperandValue) model_set_operand_value = nullptr;
   decltype(&NeuronModel_setOperandSymmPerChannelQuantParams)
       model_set_symm_per_channel_quant_params = nullptr;
+  decltype(&NeuronModel_setOperandPerChannelQuantParams)
+      model_set_per_channel_quant_params = nullptr;
   decltype(&Neuron_getVersion) get_version = nullptr;
   decltype(&NeuronModel_relaxComputationFloat32toFloat16) relax_fp32_to_fp16 =
       nullptr;

@@ -95,16 +95,21 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   constexpr auto kLibNeuronAdapterLib = "libneuron_adapter.so";
   std::vector<std::string> so_paths;
 
+  so_paths.push_back("libneuron_adapter_mgvi.so");
+
   // Add preinstalled libraries for system partition applications.
-  so_paths.push_back("libneuronusdk_adapter.mtk.so");
   // Check if the device need to use higher version of usdk.
   auto magic_number = GetNeuroPilotMagicNumber();
   if (magic_number && magic_number.Value() >= kMinMagicNumberForNeuronService) {
     so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
-    so_paths.push_back("libneuronusdk_adapter.so");
+  } else {
+    so_paths.push_back("libneuronusdk_adapter.mtk.so");
   }
-  so_paths.push_back("libneuron_adapter_mgvi.so");
-  // Some platforms have non-usdk non-mgvi build.
+
+  // User-installed usdk
+  so_paths.push_back("libneuronusdk_adapter.so");
+
+  // Some platforms have non-usdk non-mgvi build
   so_paths.push_back(kLibNeuronAdapterLib);
 
   // Add the library from the provided shared lib directory if available.
@@ -201,6 +206,8 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   LOAD_SYMB(NeuronModel_setOperandValue, api_->model_set_operand_value);
   LOAD_SYMB(NeuronModel_setOperandSymmPerChannelQuantParams,
             api_->model_set_symm_per_channel_quant_params);
+  LOAD_SYMB(NeuronModel_setOperandPerChannelQuantParams,
+            api_->model_set_per_channel_quant_params);
   LOAD_SYMB(Neuron_getVersion, api_->get_version);
   LOAD_SYMB(NeuronModel_relaxComputationFloat32toFloat16,
             api_->relax_fp32_to_fp16);
@@ -279,11 +286,16 @@ bool NeuronAdapterApi::IsFeatureEnabled(NeuronFeatureType feature) const {
   }
 
   auto is_version_greater = [this](const NeuronRuntimeVersion& min_ver) {
-    if (runtime_version_.major > min_ver.major) return true;
-    if (runtime_version_.major < min_ver.major) return false;
-    if (runtime_version_.minor > min_ver.minor) return true;
-    if (runtime_version_.minor < min_ver.minor) return false;
-    if (runtime_version_.patch >= min_ver.patch) return true;
+    if (runtime_version_.major > min_ver.major)
+      return true;
+    if (runtime_version_.major < min_ver.major)
+      return false;
+    if (runtime_version_.minor > min_ver.minor)
+      return true;
+    if (runtime_version_.minor < min_ver.minor)
+      return false;
+    if (runtime_version_.patch >= min_ver.patch)
+      return true;
     return false;
   };
 
