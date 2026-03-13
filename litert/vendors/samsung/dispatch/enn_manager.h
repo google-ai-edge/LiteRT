@@ -39,12 +39,11 @@ public:
   static Expected<EnnManager::UniquePtr> Create();
 
   const PublicApi &Api() const;
-
   ~EnnManager();
 
 private:
   EnnManager();
-  // Loads and resolve compiler related api
+// Loads and resolve compiler related api
   LiteRtStatus LoadEnnRuntimeLibrary(absl::string_view path);
 
   SharedLibrary enn_runtime_lib_;
@@ -59,6 +58,9 @@ struct EnnManager::PublicApi {
                                                const uint32_t size,
                                                const uint32_t offset,
                                                EnnBufferPtr *out);
+  EnnReturn (*EnnAllocateAllBuffers)(const EnnModelId model_id,
+                                     EnnBufferPtr **out_buffers,
+                                     NumberOfBuffersInfo *out_buffers_info);
   EnnReturn (*EnnBufferCommit)(const EnnModelId model_id);
   EnnReturn (*EnnGetBuffersInfo)(const EnnModelId model_id,
                                  NumberOfBuffersInfo *buffers_info);
