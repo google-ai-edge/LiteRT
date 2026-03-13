@@ -284,8 +284,11 @@ def build_pyproject_wheel(
   """
   env = os.environ.copy()
 
+  py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
+  py_executable = f"python{py_version}" if py_version else sys.executable
+
   command = [
-      sys.executable,
+      py_executable,
       "-m",
       "build",
       "-w",
@@ -334,9 +337,11 @@ def build_setup_py_wheel(
   )
   env["PACKAGE_VERSION"] = version
 
+  py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
+  py_executable = f"python{py_version}" if py_version else sys.executable
   command = [
-      sys.executable,
-      f"{buildtree_path}/setup.py",
+      py_executable,
+      os.path.join(buildtree_path, "setup.py"),
       "bdist_wheel",
       f"--plat-name={platform_name}",
   ]
