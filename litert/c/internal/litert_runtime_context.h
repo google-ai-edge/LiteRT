@@ -72,7 +72,7 @@ typedef struct LiteRtRuntimeContext {
                                   TfLiteOpaqueDelegate** delegate);
 } LiteRtRuntimeContext;
 
-LiteRtRuntimeContext* LrtGetRuntimeContext();
+LiteRtRuntimeContext* LiteRtGetRuntimeContext();
 
 #ifdef __cplusplus
 }  // extern "C"
