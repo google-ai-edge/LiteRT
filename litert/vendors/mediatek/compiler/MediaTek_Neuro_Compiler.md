@@ -130,5 +130,6 @@ the `VerifyCommonOp` function.
 :                                         : `MTKEXT_RMS_NORMALIZATION`) and    :
 :                                         : `odml.l2_norm` (as                 :
 :                                         : `NEURON_L2_NORMALIZATION`).        :
+| `kLiteRtOpCodeTflL2Normalization`       | Legalized to `NEURON_L2_NORMALIZATION` |
 
 <!-- LINT.ThenChange(./compiler_plugin.cc:supported_ops) -->
