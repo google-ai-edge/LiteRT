@@ -418,8 +418,9 @@ Expected<int> UpdateMagicNumbersInModel(
       total_updated_tensors += updated_tensors;
       LITERT_LOG(LITERT_INFO,
                  "%d tensors of signature %s have been updated for magic "
-                 "number %" PRId64,
-                 updated_tensors, signature->Key().data(), config.magic_number);
+                 "number % " PRId64 " to target number %" PRId64,
+                 updated_tensors, signature->Key().data(), config.magic_number,
+                 config.target_number);
     }
   }
 
