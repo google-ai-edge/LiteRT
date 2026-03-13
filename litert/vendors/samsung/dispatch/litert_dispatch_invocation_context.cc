@@ -92,20 +92,29 @@ LiteRtDispatchInvocationContextT::Create(
   NumberOfBuffersInfo buffer_info;
   if (enn_manager->Api().EnnGetBuffersInfo(model_id, &buffer_info) !=
       ENN_RET_SUCCESS) {
-    enn_manager->Api().EnnCloseModel(model_id);
+    if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to trying to Close Model");
+    }
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Fail to get buffers information");
   }
   if (buffer_info.n_in_buf != num_inputs ||
       buffer_info.n_out_buf != num_outputs) {
-    enn_manager->Api().EnnCloseModel(model_id);
+    if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to trying to Close Model");
+    }
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Number of inputs/outputs is invalid");
   }
 
   if (enn_manager->Api().EnnAllocateAllBuffers(model_id, &tmp_buf_ptr,
                                                &buffer_info) != ENN_RET_SUCCESS) {
-    enn_manager->Api().EnnCloseModel(model_id);
+    if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
+        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to trying to Close Model");
+    }
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "EnnAllocateAllBuffers Failed");
   }
