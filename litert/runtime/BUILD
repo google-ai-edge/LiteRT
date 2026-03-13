@@ -858,6 +858,13 @@ cc_test(
     ],
 )
 
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "litert_fabric_options",
+#     hdrs = ["fabric/litert_fabric_options.h"],
+# )
+# copybara:uncomment_end
+
 cc_library(
     name = "profiler_summarizer",
     srcs = ["profiler_summarizer.cc"],

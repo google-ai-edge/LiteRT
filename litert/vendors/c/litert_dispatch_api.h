@@ -96,6 +96,16 @@ typedef LiteRtStatus (*LiteRtDispatchDetachOutputT)(
     LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
     LiteRtTensorBufferHandle tensor_buffer_handle);
 
+typedef LiteRtStatus (*LiteRtDispatchAttachEdgeBufferT)(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
+
+typedef LiteRtStatus (*LiteRtDispatchDetachEdgeBufferT)(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
+
 typedef LiteRtStatus (*LiteRtDispatchInvokeT)(
     LiteRtDispatchInvocationContext invocation_context);
 
@@ -147,6 +157,10 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchDestroyMetricsT destroy_metrics;
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
   LiteRtDispatchInvocationContextSetOptionsT invocation_context_set_options;
+
+  // Optional extensions (capability-gated).
+  LiteRtDispatchAttachEdgeBufferT attach_edge_buffer;
+  LiteRtDispatchDetachEdgeBufferT detach_edge_buffer;
 } LiteRtDispatchInterface;
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -201,6 +215,16 @@ typedef LiteRtStatus (*LiteRtDispatchUnloadExecutableT)(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableHandle exec_handle);
 
+typedef LiteRtStatus (*LiteRtDispatchGetScratchpadRequirementsT)(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferRequirements* scratchpad_requirements);
+
+typedef LiteRtStatus (*LiteRtDispatchAttachScratchpadBufferT)(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferHandle scratchpad_buffer_handle);
+
 typedef LiteRtStatus (*LiteRtDispatchAssignNodeFunctionT)(
     LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
     LiteRtDispatchExecutableHandle exec_handle, const char* function_name);
@@ -243,6 +267,9 @@ typedef struct LiteRtDispatchGraphInterface {
   LiteRtDispatchInvocationContextCreateFromGraphT
       invocation_context_create_from_graph;
   LiteRtDispatchInvocationContextGetGraphT invocation_context_get_graph;
+  // Optional extensions (capability-gated).
+  LiteRtDispatchGetScratchpadRequirementsT get_scratchpad_requirements;
+  LiteRtDispatchAttachScratchpadBufferT attach_scratchpad_buffer;
 } LiteRtDispatchGraphInterface;
 
 // /////////////////////////////////////////////////////////////////////////////

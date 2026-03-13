@@ -117,6 +117,7 @@ litert::Expected<std::string> GetSharedLibraryPath(
 LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
                                       LiteRtOptions options) {
   if (IsTheApiInitialized) {
+    LITERT_LOG(LITERT_INFO, "Dispatch API already initialized.");
     return kLiteRtStatusOk;
   }
   LiteRtEnvironmentOptions env_options;
@@ -131,23 +132,34 @@ LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
              shared_lib_path.c_str());
 
   if (!DispatchSharedLibrary) {
+    LITERT_LOG(LITERT_VERBOSE, "Creating DispatchSharedLibrary holder.");
     DispatchSharedLibrary = new litert::SharedLibrary();
   }
 
+  LITERT_LOG(LITERT_VERBOSE, "Calling SharedLibrary::Load for dispatch API.");
   LITERT_ASSIGN_OR_RETURN(
       *DispatchSharedLibrary,
       litert::SharedLibrary::Load(shared_lib_path,
                                   litert::RtldFlags::Now().Local()));
+  LITERT_LOG(LITERT_INFO, "Dispatch shared library loaded.");
 
   using LiteRtDispatchGetApi_t = LiteRtStatus (*)(LiteRtDispatchApi*);
+  LITERT_LOG(LITERT_VERBOSE, "Looking up symbol LiteRtDispatchGetApi.");
   LITERT_ASSIGN_OR_RETURN(
       auto LiteRtDispatchGetApi,
       DispatchSharedLibrary->LookupSymbol<LiteRtDispatchGetApi_t>(
           "LiteRtDispatchGetApi"));
+  LITERT_LOG(LITERT_VERBOSE, "LiteRtDispatchGetApi symbol resolved.");
 
   if (auto status = LiteRtDispatchGetApi(&TheApi); status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "LiteRtDispatchGetApi call failed with status %d.",
+               status);
     return status;
   }
+  LITERT_LOG(LITERT_INFO, "Dispatch API version from vendor: %d.%d.%d",
+             static_cast<int>(TheApi.version.major),
+             static_cast<int>(TheApi.version.minor),
+             static_cast<int>(TheApi.version.patch));
 
   if (!litert::internal::IsSameVersionAsRuntime(TheApi.version)) {
     LITERT_LOG(LITERT_ERROR, "Unsupported dispatch runtime version");
@@ -155,6 +167,8 @@ LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
   }
 
   auto status = Initialize(env, options);
+  LITERT_LOG(LITERT_INFO, "Dispatch vendor initialize returned status %d.",
+             status);
   if (status == kLiteRtStatusOk) {
     IsTheApiInitialized = true;
   }
@@ -367,6 +381,38 @@ LiteRtStatus LiteRtDispatchDetachOutput(
               tensor_buffer_handle);
 }
 
+LiteRtStatus LiteRtDispatchAttachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (!invocation_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface || !TheApi.interface->attach_edge_buffer) {
+    LITERT_LOG(LITERT_ERROR, "attach_edge_buffer not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  return TheApi.interface->attach_edge_buffer(invocation_context, edge_id,
+                                              tensor_buffer_handle);
+}
+
+LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (!invocation_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface || !TheApi.interface->detach_edge_buffer) {
+    LITERT_LOG(LITERT_ERROR, "detach_edge_buffer not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  return TheApi.interface->detach_edge_buffer(invocation_context, edge_id,
+                                              tensor_buffer_handle);
+}
+
 LiteRtStatus LiteRtDispatchInvoke(
     LiteRtDispatchInvocationContext invocation_context) {
   if (!invocation_context) {
@@ -566,6 +612,40 @@ LiteRtStatus LiteRtDispatchUnloadExecutable(
     return kLiteRtStatusErrorInvalidArgument;
   }
   INVOKE_GRAPH_FUNC(unload_executable, device_context, exec_handle);
+}
+
+LiteRtStatus LiteRtDispatchGetScratchpadRequirements(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferRequirements* scratchpad_requirements) {
+  if (!device_context || !scratchpad_requirements) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.graph_interface ||
+      !TheApi.graph_interface->get_scratchpad_requirements) {
+    LITERT_LOG(LITERT_ERROR, "get_scratchpad_requirements not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  INVOKE_GRAPH_FUNC(get_scratchpad_requirements, device_context, exec_handle,
+                    function_name, scratchpad_requirements);
+}
+
+LiteRtStatus LiteRtDispatchAttachScratchpadBuffer(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferHandle scratchpad_buffer_handle) {
+  if (!device_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.graph_interface ||
+      !TheApi.graph_interface->attach_scratchpad_buffer) {
+    LITERT_LOG(LITERT_ERROR, "attach_scratchpad_buffer not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  INVOKE_GRAPH_FUNC(attach_scratchpad_buffer, device_context, exec_handle,
+                    function_name, scratchpad_buffer_handle);
 }
 
 LiteRtStatus LiteRtDispatchAssignNodeFunction(

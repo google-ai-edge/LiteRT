@@ -43,6 +43,10 @@ typedef enum LiteRtDispatchCapabilities {
   kLiteRtDispatchCapabilitiesBasic = 1,  // The vendor supports the Basic API
   kLiteRtDispatchCapabilitiesAsync = 2,  // The vendor supports the Async API
   kLiteRtDispatchCapabilitiesGraph = 4,  // The vendor supports the Graph API
+  // The vendor supports binding buffers to internal graph edges by edge_id.
+  kLiteRtDispatchCapabilitiesEdgeBufferBinding = 8,
+  // The vendor supports querying and attaching scratchpad buffers.
+  kLiteRtDispatchCapabilitiesScratchpad = 16,
 } LiteRtDispatchCapabilities;
 
 // Types of executable that can run on the HW accelerators.
@@ -293,6 +297,20 @@ LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchUnloadExecutable(LiteRtDispatchDeviceContext device_context,
                                LiteRtDispatchExecutableHandle exec_handle);
 
+// Query scratchpad buffer requirements for a specific executable function.
+//
+// The returned `scratchpad_requirements` object is owned by the caller.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetScratchpadRequirements(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferRequirements* scratchpad_requirements);
+
+// Attach a scratchpad buffer to a specific executable function.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachScratchpadBuffer(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferHandle scratchpad_buffer_handle);
+
 // Assign an executable function to a graph node. Parameter `function_name` is
 // mandatory if the given executable includes multiple functions.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAssignNodeFunction(
@@ -317,6 +335,22 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateEdge(
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context);
+
+// Attach a buffer to an internal graph edge by edge id.
+//
+// This is intended for advanced runtimes that want to provide buffers for
+// intermediate edges (and other internal edges) based on an external memory
+// plan (e.g., northbound).
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
+
+// Detach a buffer from an internal graph edge by edge id.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle);
 
 // Get the dispatch graph associated with an invocation context.
 // Note:
