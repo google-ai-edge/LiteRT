@@ -204,6 +204,8 @@ def export_lrt_runtime_only_linkopt():
         "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
         "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
             "-Wl,-z,max-page-size=16384",
+            "-Wl,-z,common-page-size=16384",
+            "-Wl,-z,separate-loadable-segments",
             _EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX,
         ],
         "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
