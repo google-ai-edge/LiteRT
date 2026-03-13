@@ -38,9 +38,13 @@
 
 extern "C" {
 
-// Define a data pointer to an accelerator definition. This pointer is updated
-// by statically linked CPU (XNNPack) accelerator.
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef = nullptr;
+// Define a weak function to retrieve the CPU accelerator definition.
+// If a CPU accelerator is statically linked, its strong definition will
+// override this at link-time.
+__attribute__((weak)) LiteRtAcceleratorDef*
+LiteRtGetStaticLinkedCpuAcceleratorDef() {
+  return nullptr;
+}
 
 // Define a data pointer to an accelerator definition. This pointer is updated
 // by statically linked GPU accelerator.
@@ -276,9 +280,9 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #endif
 
   // Register the CPU accelerator.
-  if (LiteRtStaticLinkedAcceleratorCpuDef != nullptr) {
-    if (auto status = RegisterAccelerator(&environment,
-                                          LiteRtStaticLinkedAcceleratorCpuDef);
+  LiteRtAcceleratorDef* cpu_def = LiteRtGetStaticLinkedCpuAcceleratorDef();
+  if (cpu_def != nullptr) {
+    if (auto status = RegisterAccelerator(&environment, cpu_def);
         status == kLiteRtStatusOk) {
       LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
     } else {
