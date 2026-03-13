@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/converter/transforms/dilated_conv.h"
 
+#include <memory>
 #include <utility>
 
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"  // from @llvm-project
