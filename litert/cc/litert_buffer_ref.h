@@ -234,7 +234,8 @@ class MutableBufferRef : public BufferRef<ByteT> {
   /// @return `true` if the entire string fits and is written, `false`
   /// otherwise.
   bool WriteInto(absl::string_view str, size_t offset = 0) {
-    if (str.size() > this->Size() - offset) {
+    // Check for integer underflow when offset > Size()
+    if (offset > this->Size() || str.size() > this->Size() - offset) {
       return false;
     }
     std::memcpy(Data() + offset, str.data(), str.size());
