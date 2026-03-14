@@ -16,158 +16,139 @@
 """Wrapper to create sdist using setup.py."""
 
 import argparse
-import glob
-import os
-import shutil
 import subprocess
 import sys
+import shutil
+from pathlib import Path
+import glob
+
+
+def run_command(cmd):
+    """Run subprocess command and handle errors."""
+    print("Running:", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print("Error running command", file=sys.stderr)
+        print(result.stdout, file=sys.stderr)
+        print(result.stderr, file=sys.stderr)
+        sys.exit(result.returncode)
+
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+
+
+def prepare_setup(setup_template, dest_setup, project_name, version, nightly):
+    """Generate setup.py from template."""
+    content = setup_template.read_text()
+
+    package_name = f"{project_name}_nightly" if nightly else project_name
+
+    content = content.replace("{{ PACKAGE_NAME }}", package_name)
+    content = content.replace("{{ PACKAGE_VERSION }}", version)
+
+    dest_setup.write_text(content)
+
+
+def prepare_init(src_init, dest_init, version):
+    """Generate __init__.py with version."""
+    content = src_init.read_text()
+    content = content.replace("{{ PACKAGE_VERSION }}", version)
+    dest_init.write_text(content)
+
+
+def find_sdist(dist_dir):
+    """Find generated tar.gz file."""
+    files = glob.glob(str(dist_dir / "*.tar.gz"))
+
+    if not files:
+        raise FileNotFoundError("No .tar.gz file generated")
+
+    if len(files) > 1:
+        print("Warning: multiple archives found, using first")
+
+    return Path(files[0])
 
 
 def main():
-  parser = argparse.ArgumentParser(
-      description="Wrapper to create sdist using setup.py."
-  )
-  parser.add_argument(
-      "--project_name",
-      required=True,
-      help="Name of the project",
-  )
-  parser.add_argument(
-      "--dir",
-      required=True,
-      help="Directory containing the project files.",
-  )
-  parser.add_argument(
-      "--setup_py",
-      default="setup.template.py",
-      help="Name of the setup script (default: setup.py).",
-  )
-  parser.add_argument(
-      "--output_sdist_path",
-      required=True,
-      help="Full path where the final sdist .tar.gz should be placed.",
-  )
-  parser.add_argument(
-      "--nightly_suffix",
-      help=(
-          "Suffix to be added to the name of the sdist for nightly builds. Does"
-          " not affect the name of the module."
-      ),
-  )
-  parser.add_argument("--version", help="version of the sdist")
+    parser = argparse.ArgumentParser(description="Create sdist using setup.py")
 
-  args = parser.parse_args()
+    parser.add_argument("--project_name", required=True)
+    parser.add_argument("--dir", required=True)
+    parser.add_argument("--setup_py", default="setup.template.py")
+    parser.add_argument("--output_sdist_path", required=True)
+    parser.add_argument("--nightly_suffix")
+    parser.add_argument("--version", required=True)
 
-  original_cwd = os.getcwd()
-  build_dir = os.path.join(os.getcwd(), "sdist_build")
-  os.makedirs(build_dir)
-  sdist_temp_output_dir = "dist_sdist_temp"
-  project_name = args.project_name
-  version = args.version
+    args = parser.parse_args()
 
-  try:
-    print(f"Changing working directory to: {args.dir}")
-    os.chdir(args.dir)
+    original_dir = Path.cwd()
+    project_dir = Path(args.dir).resolve()
 
-    with open(args.setup_py, "rt") as f:
-      setup_py_content = f.read()
-    setup_py_content = setup_py_content.replace(
-        "{{ PACKAGE_NAME }}",
-        project_name + "_nightly" if args.nightly_suffix else project_name,
-    )
-    setup_py_content = setup_py_content.replace(
-        "{{ PACKAGE_VERSION }}",
-        version,
-    )
-    tmp_setup_py_path = os.path.join(build_dir, "setup.py")
-    with open(tmp_setup_py_path, "wt") as f:
-      f.write(setup_py_content)
+    build_dir = original_dir / "sdist_build"
+    dist_temp = build_dir / "dist_sdist_temp"
 
-    shutil.copy("MANIFEST.in", build_dir)
+    build_dir.mkdir(exist_ok=True)
 
-    os.makedirs(os.path.join(build_dir, project_name))
-    with open(os.path.join(project_name, "__init__.py"), "rt") as f:
-      init_py_content = f.read()
-    init_py_content = init_py_content.replace(
-        "{{ PACKAGE_VERSION }}",
-        version,
-    )
-    dest_init_py_path = os.path.join(build_dir, project_name, "__init__.py")
-    with open(dest_init_py_path, "wt") as f:
-      f.write(init_py_content)
+    try:
+        print("Switching to project directory:", project_dir)
+        os.chdir(project_dir)
 
-    print(f"Changing working directory to: {build_dir}")
-    os.chdir(build_dir)
+        tmp_setup = build_dir / "setup.py"
+        prepare_setup(
+            project_dir / args.setup_py,
+            tmp_setup,
+            args.project_name,
+            args.version,
+            args.nightly_suffix,
+        )
 
-    if os.path.exists(sdist_temp_output_dir):
-      shutil.rmtree(sdist_temp_output_dir)
-    os.makedirs(sdist_temp_output_dir)
+        shutil.copy("MANIFEST.in", build_dir)
 
-    py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
-    py_executable = f"python{py_version}" if py_version else sys.executable
-    cmd = [
-        py_executable,
-        tmp_setup_py_path,
-        "sdist",
-        "--dist-dir",
-        sdist_temp_output_dir,
-    ]
+        package_dir = build_dir / args.project_name
+        package_dir.mkdir(exist_ok=True)
 
-    print(f"Running command: {' '.join(cmd)}")
-    process = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        prepare_init(
+            project_dir / args.project_name / "__init__.py",
+            package_dir / "__init__.py",
+            args.version,
+        )
 
-    if process.returncode != 0:
-      print("Error running setup.py sdist:", file=sys.stderr)
-      print(f"Stdout:\n{process.stdout}", file=sys.stderr)
-      print(f"Stderr:\n{process.stderr}", file=sys.stderr)
-      sys.exit(process.returncode)
-    else:
-      print("setup.py sdist ran successfully.")
-      if process.stdout:
-        print(f"Stdout:\n{process.stdout}")
-      if process.stderr:
-        print(f"Stderr:\n{process.stderr}")
+        print("Switching to build directory:", build_dir)
+        os.chdir(build_dir)
 
-    # Find the generated .tar.gz file
-    # sdist usually creates <package_name>-<version>.tar.gz
-    sdist_files = glob.glob(os.path.join(sdist_temp_output_dir, "*.tar.gz"))
+        dist_temp.mkdir(exist_ok=True)
 
-    if not sdist_files:
-      print(
-          f"Error: No .tar.gz file found in {sdist_temp_output_dir}",
-          file=sys.stderr,
-      )
-      print(
-          f"Contents of {sdist_temp_output_dir}:"
-          f" {os.listdir(sdist_temp_output_dir)}",
-          file=sys.stderr,
-      )
-      sys.exit(1)
-    if len(sdist_files) > 1:
-      print(
-          f"Warning: Multiple .tar.gz files found in {sdist_temp_output_dir}."
-          f" Using the first one: {sdist_files[0]}",
-          file=sys.stderr,
-      )
+        py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
+        python_exec = f"python{py_version}" if py_version else sys.executable
 
-    actual_sdist_file = sdist_files[0]
-    print(f"Found sdist archive: {actual_sdist_file}")
+        cmd = [
+            python_exec,
+            str(tmp_setup),
+            "sdist",
+            "--dist-dir",
+            str(dist_temp),
+        ]
 
-    final_output_path_abs = os.path.join(original_cwd, args.output_sdist_path)
-    final_output_dir_abs = os.path.dirname(final_output_path_abs)
+        run_command(cmd)
 
-    if not os.path.exists(final_output_dir_abs):
-      os.makedirs(final_output_dir_abs)
+        archive = find_sdist(dist_temp)
 
-    print(f"Moving {actual_sdist_file} to {final_output_path_abs}")
-    shutil.move(actual_sdist_file, final_output_path_abs)
+        final_path = original_dir / args.output_sdist_path
+        final_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Successfully created sdist: {final_output_path_abs}")
-    shutil.rmtree(build_dir)
+        print("Moving archive:", archive, "->", final_path)
+        shutil.move(str(archive), str(final_path))
 
-  finally:
-    os.chdir(original_cwd)
+        print("Successfully created:", final_path)
+
+    finally:
+        os.chdir(original_dir)
+        if build_dir.exists():
+            shutil.rmtree(build_dir)
 
 
 if __name__ == "__main__":
-  main()
+    main()
