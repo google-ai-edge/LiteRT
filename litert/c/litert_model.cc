@@ -109,7 +109,7 @@ LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
   }
   auto m_buf = model->FindMetadata(metadata_key);
   if (!m_buf) {
-    return m_buf.Error().Status();
+    return litert::ToLiteRtStatus(m_buf.Error().StatusCC());
   }
   *metadata_buffer = m_buf->Data();
   *metadata_buffer_size = m_buf->Size();
@@ -232,7 +232,7 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
     delete model;
   }
   if (!serialized) {
-    return serialized.Error().Status();
+    return litert::ToLiteRtStatus(serialized.Error().StatusCC());
   }
   std::tie(*buf, *size, *offset) = serialized->Release();
   return kLiteRtStatusOk;
@@ -300,7 +300,7 @@ LiteRtStatus LiteRtGetSignatureInputTensor(LiteRtSignature signature,
   }
   auto input_tensor = signature->FindInputTensor(input_name);
   if (!input_tensor) {
-    return input_tensor.Error().Status();
+    return litert::ToLiteRtStatus(input_tensor.Error().StatusCC());
   }
   *tensor = *input_tensor;
   return kLiteRtStatusOk;
@@ -349,7 +349,7 @@ LiteRtStatus LiteRtGetSignatureOutputTensor(LiteRtSignature signature,
   }
   auto output_tensor = signature->FindOutputTensor(output_name);
   if (!output_tensor) {
-    return output_tensor.Error().Status();
+    return litert::ToLiteRtStatus(output_tensor.Error().StatusCC());
   }
   *tensor = *output_tensor;
   return kLiteRtStatusOk;

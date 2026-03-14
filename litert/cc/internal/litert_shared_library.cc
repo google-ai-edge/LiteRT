@@ -238,12 +238,12 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
   SharedLibrary lib;
   switch (handle_kind) {
     case HandleKind::kInvalid:
-      return Error(kLiteRtStatusErrorDynamicLoading,
+      return Error(Status::kErrorDynamicLoading,
                    "This is a logic error. LoadImpl should not be called with "
                    "HandleKind::kInvalid");
     case HandleKind::kPath:
       if (path.empty()) {
-        return Error(kLiteRtStatusErrorDynamicLoading,
+        return Error(Status::kErrorDynamicLoading,
                      "Cannot not load shared library: empty path.");
       }
       lib.path_ = path;
@@ -253,7 +253,7 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
             dlopen(lib.Path().c_str(), SanitizeFlagsInCaseOfAsan(flags));
       }
       if (!lib.handle_) {
-        return Error(kLiteRtStatusErrorDynamicLoading,
+        return Error(Status::kErrorDynamicLoading,
                      absl::StrFormat("Could not load shared library %s: %s.",
                                      lib.path_, DlError()));
       }
@@ -273,7 +273,7 @@ Expected<void*> SharedLibrary::LookupSymbolImpl(const char* symbol_name) const {
   void* symbol = dlsym(handle_, symbol_name);
 
   if (!symbol) {
-    return Error(kLiteRtStatusErrorDynamicLoading,
+    return Error(Status::kErrorDynamicLoading,
                  absl::StrFormat("Could not load symbol %s: %s.", symbol_name,
                                  DlError()));
   }

@@ -38,7 +38,7 @@ namespace litert {
 ///        and access type-erased configuration data.
 /// @todo Work logging into this API (and derived classes).
 class OpaqueOptions
-    : public internal::Handle<LiteRtOpaqueOptions, LiteRtDestroyOpaqueOptions> {
+    : public internal::BaseHandle<LiteRtOpaqueOptions> {
  public:
   using Ref = std::reference_wrapper<OpaqueOptions>;
   friend class RuntimeOptions;
@@ -120,7 +120,9 @@ class OpaqueOptions
   /// `AcceleratorCompilationOptions` object should take ownership of the
   /// provided `options` handle.
   explicit OpaqueOptions(LiteRtOpaqueOptions options, OwnHandle owned)
-      : Handle(options, owned) {}
+      : internal::BaseHandle<LiteRtOpaqueOptions>(options,
+                                                  LiteRtDestroyOpaqueOptions,
+                                                  owned) {}
 };
 
 /// @brief Finds the opaque option in the chain that matches the provided

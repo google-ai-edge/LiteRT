@@ -202,7 +202,7 @@ Expected<size_t> Model::GetSignatureIndex(
       return i;
     }
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+  return Unexpected(Status::kErrorNotFound, "Signature not found");
 }
 
 Expected<SimpleSignature> Model::FindSignature(

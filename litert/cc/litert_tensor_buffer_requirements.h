@@ -60,7 +60,7 @@ class TensorBufferRequirements {
         (alignment & (alignment - 1)) != 0) {
       LITERT_LOG(LITERT_ERROR,
                  "Invalid parameters to create TensorBufferRequirements");
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
 
     std::vector<TensorBufferType> types(buffer_types.begin(),
@@ -72,7 +72,7 @@ class TensorBufferRequirements {
   Expected<TensorBufferType> SupportedType(int index) const {
     if (index < 0 || index >= supported_types_.size()) {
       LITERT_LOG(LITERT_ERROR, "Index out of bounds for supported types");
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
     return supported_types_[index];
   }
@@ -122,7 +122,7 @@ inline Expected<TensorBufferRequirements> Join(
   if (src1.strides_ == src2.strides_) {
     strides = src1.strides_;
   } else {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Status::kErrorInvalidArgument,
                       "Can't join requirements due to incompatible strides");
   }
 
@@ -137,7 +137,7 @@ inline Expected<TensorBufferRequirements> Join(
     }
   }
   if (buffer_types.empty()) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Status::kErrorInvalidArgument,
                       "Can't join requirements due to incompatible supported "
                       "tensor buffer types");
   }

@@ -42,7 +42,7 @@ namespace litert {
 /// @brief A C++ wrapper for `LiteRtModel`, representing a LiteRT model.
 ///
 /// \internal
-class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
+class Model : public internal::BaseHandle<LiteRtModel> {
  public:
   Model() = default;
 
@@ -58,7 +58,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     LiteRtModel model;
     if (auto status = LiteRtCreateModelFromFile(filename.c_str(), &model);
         status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to load model from file");
+      return Unexpected(ToStatus(status), "Failed to load model from file");
     }
     return CreateFromOwnedHandle(model);
   }
@@ -72,7 +72,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     if (auto status =
             LiteRtCreateModelFromBuffer(buffer.Data(), buffer.Size(), &model);
         status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to load model from buffer");
+      return Unexpected(ToStatus(status), "Failed to load model from buffer");
     }
     return CreateFromOwnedHandle(model);
   }
@@ -83,7 +83,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     size_t buffer_size;
     if (LiteRtGetModelMetadata(Get(), metadata_key.data(), &buffer,
                                &buffer_size) != kLiteRtStatusOk) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Metadata key not found");
+      return Unexpected(Status::kErrorNotFound, "Metadata key not found");
     }
     return absl::MakeSpan(static_cast<const uint8_t*>(buffer), buffer_size);
   }
@@ -114,7 +114,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+      return Unexpected(Status::kErrorNotFound, "Signature not found");
     }
     return signature->InputNames();
   }
@@ -133,7 +133,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+      return Unexpected(Status::kErrorNotFound, "Signature not found");
     }
     return signature->OutputNames();
   }
@@ -221,7 +221,8 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
  protected:
   /// @param owned Indicates if the created `TensorBuffer` object should take
   /// ownership of the provided `tensor_buffer` handle.
-  Model(LiteRtModel model, OwnHandle owned) : Handle(model, owned) {}
+  Model(LiteRtModel model, OwnHandle owned)
+      : internal::BaseHandle<LiteRtModel>(model, LiteRtDestroyModel, owned) {}
 };
 
 }  // namespace litert

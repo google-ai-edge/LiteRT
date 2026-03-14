@@ -65,13 +65,15 @@ TEST(CcOpTest, SimpleSupportedOp) {
   ASSERT_TRUE(input1.HasValue());
   auto input2 = op.Input(2);
   ASSERT_FALSE(input2.HasValue());
-  EXPECT_EQ(input2.Error().Status(), kLiteRtStatusErrorIndexOOB);
+  EXPECT_EQ(ToLiteRtStatus(input2.Error().StatusCC()),
+            kLiteRtStatusErrorIndexOOB);
 
   auto output0 = op.Output(0);
   ASSERT_TRUE(output0.HasValue());
   auto output1 = op.Output(1);
   ASSERT_FALSE(output1.HasValue());
-  EXPECT_EQ(output1.Error().Status(), kLiteRtStatusErrorIndexOOB);
+  EXPECT_EQ(ToLiteRtStatus(output1.Error().StatusCC()),
+            kLiteRtStatusErrorIndexOOB);
 }
 
 TEST(CcOpTest, CustomCode) {

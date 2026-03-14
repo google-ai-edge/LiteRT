@@ -78,7 +78,7 @@ class SimpleTensor {
 
   Expected<LiteRtUnrankedTensorType> UnrankedTensorType() const {
     if (type_id_ != kLiteRtUnrankedTensorType) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Not an unranked invalid tensor");
     }
     return std::get<LiteRtUnrankedTensorType>(type_);
@@ -86,7 +86,7 @@ class SimpleTensor {
 
   Expected<RankedTensorType> RankedTensorType() const {
     if (type_id_ != kLiteRtRankedTensorType) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Not a ranked tensor type");
     }
     return std::get<litert::RankedTensorType>(type_);
@@ -175,13 +175,13 @@ class SimpleSignature {
         return *input_tensors_[i];
       }
     }
-    return Error(kLiteRtStatusErrorNotFound, "Input tensor not found");
+    return Error(Status::kErrorNotFound, "Input tensor not found");
   }
 
   /// @brief Returns the input tensor at the given index.
   Expected<const SimpleTensor&> InputTensor(size_t index) const {
     if (index >= input_names_.size()) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Input index out of bounds");
     }
     return InputTensor(input_names_[index]);
@@ -194,13 +194,13 @@ class SimpleSignature {
         return *output_tensors_[i];
       }
     }
-    return Error(kLiteRtStatusErrorNotFound, "Output tensor not found");
+    return Error(Status::kErrorNotFound, "Output tensor not found");
   }
 
   /// @brief Returns the output tensor at the given index.
   Expected<const SimpleTensor&> OutputTensor(size_t index) const {
     if (index >= output_names_.size()) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Output index out of bounds");
     }
     return OutputTensor(output_names_[index]);

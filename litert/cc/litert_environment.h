@@ -103,6 +103,7 @@ class Environment {
     return FromCOptions(options);
   }
 
+  [[deprecated("Use Create(const EnvironmentOptions&) instead.")]]
   static Expected<Environment> Create(absl::Span<const Option> options) {
     std::vector<EnvironmentOptions::Option> env_options;
     env_options.reserve(options.size());
@@ -132,7 +133,7 @@ class Environment {
     if (auto status = runtime->CreateEnvironment(c_options->size(),
                                                  c_options->data(), &env);
         status != kLiteRtStatusOk) {
-      return Error(status);
+      return Error(ToStatus(status));
     } else {
       return Environment(env, std::move(runtime));
     }

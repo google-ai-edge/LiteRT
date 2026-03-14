@@ -58,7 +58,7 @@ LiteRtStatus CompositeOptions::InitFromOp(LiteRtOp op) {
 }
 
 Expected<void> CompositeOptions::SetOpOptions(LiteRtBuilder builder) {
-  return Unexpected(kLiteRtStatusErrorUnsupported);
+  return Unexpected(Status::kErrorUnsupported);
 }
 
 LiteRtStatus RmsNormOpts::InitFromOp(LiteRtOp litert_op) {
@@ -77,7 +77,7 @@ LiteRtStatus RmsNormOpts::InitFromOp(LiteRtOp litert_op) {
 }
 
 Expected<void> RmsNormOpts::SetOpOptions(LiteRtBuilder builder) {
-  return Unexpected(kLiteRtStatusErrorUnsupported);
+  return Unexpected(Status::kErrorUnsupported);
 }
 
 LiteRtStatus AddOptions::InitFromOp(LiteRtOp op) {

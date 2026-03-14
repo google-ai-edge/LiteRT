@@ -70,62 +70,62 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
                         absl::string_view value) -> LiteRtStatus {
         if (key == "log_level") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetLogLevel(
               parsed_options, static_cast<LrtQualcommOptionsLogLevel>(*v));
         } else if (key == "profiling") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetProfiling(
               parsed_options, static_cast<LrtQualcommOptionsProfiling>(*v));
         } else if (key == "use_htp_preference") {
           auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetUseHtpPreference(parsed_options, *v);
         } else if (key == "use_qint16_as_quint16") {
           auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetUseQint16AsQuint16(parsed_options, *v);
         } else if (key == "use_int64_bias_as_int32") {
           auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetUseInt64BiasAsInt32(parsed_options, *v);
         } else if (key == "qnn_backend") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetBackend(
               parsed_options, static_cast<LrtQualcommOptionsBackend>(*v));
         } else if (key == "enable_weight_sharing") {
           auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetEnableWeightSharing(parsed_options, *v);
         } else if (key == "use_conv_hmx") {
           auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetUseConvHMX(parsed_options, *v);
         } else if (key == "use_fold_relu") {
           auto v = litert::internal::ParseTomlBool(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetHtpPerformanceMode(
               parsed_options,
               static_cast<LrtQualcommOptionsHtpPerformanceMode>(*v));
         } else if (key == "dsp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetDspPerformanceMode(
               parsed_options,
               static_cast<LrtQualcommOptionsDspPerformanceMode>(*v));
         } else if (key == "dump_tensor_ids") {
           auto parts = litert::internal::ParseTomlStringArray(value);
-          if (!parts) return parts.Error().Status();
+          if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
           std::vector<int32_t> ids;
           for (auto& part : parts.Value()) {
             auto v = litert::internal::ParseTomlInt(part);
-            if (!v) return v.Error().Status();
+            if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
             ids.push_back(*v);
           }
           LrtQualcommOptionsSetDumpTensorIds(parsed_options, ids.data(),
@@ -138,23 +138,23 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
                                       std::string(value).c_str());
         } else if (key == "vtcm_size") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetVtcmSize(parsed_options,
                                         static_cast<uint32_t>(*v));
         } else if (key == "num_hvx_threads") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetNumHvxThreads(parsed_options,
                                              static_cast<uint32_t>(*v));
         } else if (key == "optimization_level") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetOptimizationLevel(
               parsed_options,
               static_cast<LrtQualcommOptionsOptimizationLevel>(*v));
         } else if (key == "graph_priority") {
           auto v = litert::internal::ParseTomlInt(value);
-          if (!v) return v.Error().Status();
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetGraphPriority(
               parsed_options, static_cast<LrtQualcommOptionsGraphPriority>(*v));
         } else if (key == "saver_output_dir") {

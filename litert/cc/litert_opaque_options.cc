@@ -38,7 +38,7 @@ Expected<OpaqueOptions> FindOpaqueOptions(
     }
     chain = chain->Next();
   }
-  return Error(kLiteRtStatusErrorInvalidArgument);
+  return Error(Status::kErrorInvalidArgument);
 }
 
 Expected<void> OpaqueOptions::SetHash(

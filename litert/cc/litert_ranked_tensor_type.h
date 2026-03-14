@@ -73,7 +73,7 @@ class RankedTensorType {
     LITERT_ASSIGN_OR_RETURN(const size_t num_elements, layout_.NumElements());
     auto byte_width = GetByteWidth(element_type_);
     if (!byte_width) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
     return *byte_width * num_elements;
   }

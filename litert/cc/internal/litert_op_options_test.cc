@@ -102,7 +102,8 @@ TEST(OpOptionsTest, GetRmsNormEpsilonFromSimpleComposite) {
       GetOptionsAs<RmsNormOpts>(rms_norm_composite_op);
 
   EXPECT_FALSE(info);
-  EXPECT_EQ(info.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(ToLiteRtStatus(info.Error().StatusCC()),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(OpOptionsTest, GetAddOptions) {
