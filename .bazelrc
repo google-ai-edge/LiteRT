@@ -282,6 +282,9 @@ build:windows --host_copt=/W0
 # GCC/Clang flags (e.g. -Wno-sign-compare) to MSVC.
 build:windows --cpu=x64_windows
 
+# Exclude OpenCL from Windows builds.
+build:windows --copt=/DLITERT_DISABLE_OPENCL_SUPPORT=1
+
 # Suppress most C++ compiler warnings to reduce log size but allow
 # for specific warnings to still be present.
 build:linux --copt="-Wno-all"
