@@ -45,7 +45,7 @@ LiteRtStatus LiteRtGetAccelerator(LiteRtEnvironment environment,
   litert::Expected<LiteRtAccelerator> registered_accelerator =
       environment->GetAcceleratorRegistry().Get(index);
   if (!registered_accelerator.HasValue()) {
-    return registered_accelerator.Error().Status();
+    return litert::ToLiteRtStatus(registered_accelerator.Error().StatusCC());
   }
   *accelerator = registered_accelerator.Value();
   return kLiteRtStatusOk;
@@ -68,7 +68,7 @@ LiteRtStatus LiteRtGetAcceleratorId(LiteRtAccelerator accelerator,
       accelerator->env->GetAcceleratorRegistry().FindAcceleratorIndex(
           accelerator);
   if (!index.HasValue()) {
-    return index.Error().Status();
+    return litert::ToLiteRtStatus(index.Error().StatusCC());
   }
   *id = index.Value();
   return kLiteRtStatusOk;

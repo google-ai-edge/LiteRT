@@ -103,13 +103,17 @@ LiteRtStatus LrtCreateIntelOpenVinoOptionsFromToml(
                       absl::string_view value) -> LiteRtStatus {
         if (key == "device_type") {
           auto parsed_int = litert::internal::ParseTomlInt(value);
-          if (!parsed_int.HasValue()) return parsed_int.Error().Status();
+          if (!parsed_int.HasValue()) {
+            return litert::ToLiteRtStatus(parsed_int.Error().StatusCC());
+          }
           return LrtIntelOpenVinoOptionsSetDeviceType(
               local_options,
               static_cast<LiteRtIntelOpenVinoDeviceType>(*parsed_int));
         } else if (key == "performance_mode") {
           auto parsed_int = litert::internal::ParseTomlInt(value);
-          if (!parsed_int.HasValue()) return parsed_int.Error().Status();
+          if (!parsed_int.HasValue()) {
+            return litert::ToLiteRtStatus(parsed_int.Error().StatusCC());
+          }
           return LrtIntelOpenVinoOptionsSetPerformanceMode(
               local_options,
               static_cast<LiteRtIntelOpenVinoPerformanceMode>(*parsed_int));

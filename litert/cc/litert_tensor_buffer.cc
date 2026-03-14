@@ -33,7 +33,7 @@ namespace litert {
 
 Expected<TensorBuffer> TensorBuffer::Duplicate() const {
   if (!IsOwned()) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Status::kErrorInvalidArgument,
                       "Cannot duplicate a non-owned tensor buffer");
   }
   LITERT_RETURN_IF_ERROR(env_.runtime->DuplicateTensorBuffer(Get()));
@@ -121,7 +121,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 #else
-  return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  return litert::Unexpected(Status::kErrorRuntimeFailure,
                             "OpenCL is not supported on this platform");
 #endif
 }

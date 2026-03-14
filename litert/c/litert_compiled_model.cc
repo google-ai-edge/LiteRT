@@ -166,7 +166,7 @@ LiteRtStatus LiteRtRunCompiledModelWithOptions(
                                      output_buffers, &async, options);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -205,7 +205,7 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithOptions(
 
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -219,7 +219,7 @@ LiteRtStatus LiteRtCompiledModelSetSchedulingInfo(
   auto res = compiled_model->SetSchedulingInfo(scheduling_info);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -240,7 +240,7 @@ LiteRtStatus LiteRtRunCompiledModelWithSchedulingInfo(
                                      output_buffers, &async, scheduling_info);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -266,7 +266,7 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
       output_buffers, async_ptr, scheduling_info);
   if (!res) {
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
+    return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -466,7 +466,7 @@ LiteRtStatus LiteRtCompiledModelClearErrors(
 
   auto result = compiled_model->ClearErrors();
   if (!result) {
-    return result.Error().Status();
+    return litert::ToLiteRtStatus(result.Error().StatusCC());
   }
 
   return kLiteRtStatusOk;
@@ -479,7 +479,7 @@ LiteRtStatus LiteRtCompiledModelGetErrorMessages(
 
   auto result = compiled_model->GetErrorMessages();
   if (!result) {
-    return result.Error().Status();
+    return litert::ToLiteRtStatus(result.Error().StatusCC());
   }
 
   // Allocate and copy the string

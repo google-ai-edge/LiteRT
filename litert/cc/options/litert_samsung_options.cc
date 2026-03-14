@@ -30,7 +30,7 @@ const char* SamsungOptions::Discriminator() {
 Expected<SamsungOptions> SamsungOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
-    return Error(kLiteRtStatusErrorInvalidArgument);
+    return Error(Status::kErrorInvalidArgument);
   }
   return SamsungOptions(options.Get(), OwnHandle::kNo);
 }

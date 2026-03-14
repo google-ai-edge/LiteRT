@@ -110,10 +110,10 @@ class [[deprecated("Use BaseHandle instead.")]] Handle : public BaseHandle<H> {
 /// `NonOwnedHandle` object goes out of scope.
 /// @tparam H The handle type.
 template <typename H>
-class NonOwnedHandle : public Handle<H, DummyDeleter<H>> {
+class NonOwnedHandle : public BaseHandle<H> {
  public:
   explicit NonOwnedHandle(H handle) noexcept
-      : Handle<H, DummyDeleter<H>>(handle, OwnHandle::kNo) {}
+      : BaseHandle<H>(handle, DummyDeleter<H>, OwnHandle::kNo) {}
 };
 
 }  // namespace internal

@@ -181,14 +181,14 @@ class ClEnvironment {
                                       tflite::gpu::cl::CLContext* context) {
     if (gl_env == nullptr) {
       if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
-        return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+        return litert::Unexpected(Status::kErrorInvalidArgument,
                                   "Failed to create CL context");
       }
     } else {
 #if LITERT_HAS_OPENGL_SUPPORT
       if (!tflite::gpu::cl::IsGlSharingSupported(device)) {
         if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
-          return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+          return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL context");
         }
       } else {
@@ -200,7 +200,7 @@ class ClEnvironment {
                      gl_env->GetEglEnvironment().display()),
                  context)
                  .ok()) {
-          return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+          return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL-GL context");
         }
       }

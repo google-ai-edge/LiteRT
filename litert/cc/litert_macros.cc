@@ -76,7 +76,7 @@ litert::Error ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
 }
 
 absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
-  switch (error_.Status()) {
+  switch (error_.StatusCC()) {
     case kLiteRtStatusOk:
       return absl::OkStatus();
     case kLiteRtStatusErrorInvalidArgument:

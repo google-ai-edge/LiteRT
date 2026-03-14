@@ -114,7 +114,7 @@ inline Expected<LiteRtAny> ToLiteRtAny(const LiteRtVariant& var) {
           result.ptr_value = arg;
           return result;
         } else {
-          return Error(kLiteRtStatusErrorInvalidArgument,
+          return Error(Status::kErrorInvalidArgument,
                        "Invalid type for ToLiteRtAny");
         }
       },
@@ -126,7 +126,7 @@ namespace internal {
 inline Expected<void> CheckType(const LiteRtAny& any,
                                 const LiteRtAnyType type) {
   if (any.type != type) {
-    return Error(kLiteRtStatusErrorInvalidArgument,
+    return Error(Status::kErrorInvalidArgument,
                  absl::StrFormat("Wrong LiteRtAny type. Expected %s, got %s.",
                                  LiteRtAnyTypeToString(type),
                                  LiteRtAnyTypeToString(any.type)));
@@ -140,7 +140,7 @@ Expected<T> GetInt(const LiteRtAny& any) {
   if (any.int_value > std::numeric_limits<T>::max() ||
       any.int_value < std::numeric_limits<T>::lowest()) {
     return Error(
-        kLiteRtStatusErrorInvalidArgument,
+        Status::kErrorInvalidArgument,
         absl::StrFormat("LiteRtAny integer is out of range. %v <= %v <= %v",
                         std::numeric_limits<T>::lowest(), any.int_value,
                         std::numeric_limits<T>::max()));
@@ -154,7 +154,7 @@ Expected<T> GetReal(const LiteRtAny& any) {
   if (any.real_value > std::numeric_limits<T>::max() ||
       any.real_value < std::numeric_limits<T>::lowest()) {
     return Error(
-        kLiteRtStatusErrorInvalidArgument,
+        Status::kErrorInvalidArgument,
         absl::StrFormat("LiteRtAny real is out of range. %v <= %v <= %v",
                         std::numeric_limits<T>::lowest(), any.real_value,
                         std::numeric_limits<T>::max()));

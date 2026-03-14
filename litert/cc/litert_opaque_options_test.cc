@@ -60,7 +60,7 @@ class SimpleOptions : public OpaqueOptions {
   static Expected<SimpleOptions> Create(OpaqueOptions& options) {
     const auto id = options.GetIdentifier();
     if (!id || *id != Discriminator()) {
-      return Error(kLiteRtStatusErrorInvalidArgument);
+      return Error(Status::kErrorInvalidArgument);
     }
     return SimpleOptions(options.Get(), OwnHandle::kNo);
   }
@@ -121,7 +121,8 @@ TEST(OpaqueOptionsTest, GetPayloadHashFailsIfUnset) {
   LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions opts, SimpleOptions::Create());
   auto hash_result = opts.Hash();
   EXPECT_FALSE(hash_result);
-  EXPECT_EQ(hash_result.Error().Status(), kLiteRtStatusErrorUnsupported);
+  EXPECT_EQ(ToLiteRtStatus(hash_result.Error().StatusCC()),
+            kLiteRtStatusErrorUnsupported);
 }
 
 TEST(OpaqueOptionsTest, SetAndGetPayloadHash) {

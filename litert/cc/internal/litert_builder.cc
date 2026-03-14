@@ -64,7 +64,7 @@ Expected<Tensor> Builder::BuildTensor(const RankedTensorSpec& spec) const {
 
 Expected<Tensor> Builder::CloneTensor(const Tensor& src) const {
   if (src.TypeId() != kLiteRtRankedTensorType) {
-    return Unexpected(kLiteRtStatusErrorUnsupported);
+    return Unexpected(Status::kErrorUnsupported);
   }
   auto ranked_type = src.RankedTensorType();
   if (!ranked_type) {
