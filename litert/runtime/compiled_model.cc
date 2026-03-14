@@ -811,6 +811,10 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
                           compiled_model->HasNonDelegatedOps());
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
       has_non_delegated_ops) {
+    LITERT_LOG(LITERT_ERROR,
+               "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to "
+               "the compilation accelerator set to allow using the CPU to run "
+               "those.");
     return Error(
         kLiteRtStatusErrorCompilation,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
