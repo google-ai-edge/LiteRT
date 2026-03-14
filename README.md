@@ -96,12 +96,12 @@ get started based on your goals:
 ### 1. 🔄 I have a PyTorch model...
 
 - **Goal**: Convert a model from PyTorch to run on LiteRT.
-- **Path1 (classic models)**: Use the
+- **Path 1 (classic models)**: Use the
   [LiteRT Torch Converter](https://github.com/google-ai-edge/litert-torch) to
   transform your PyTorch model into the `.tflite` format, and use AI Edge
   Quantizer to optimize the model for optimal performance under resource
   constraints. From there, you can deploy it using the standard LiteRT runtime.
-- **Path2 (LLMs)**: Use
+- **Path 2 (LLMs)**: Use
   [LiteRT Generative Torch API](https://github.com/google-ai-edge/litert-torch/tree/main/litert_torch/generative) to
   reauthor and convert your PyTorch LLMs into Apache format, and deploy it using
   [LiteRT LM](https://github.com/google-ai-edge/litert-lm).
@@ -110,12 +110,12 @@ get started based on your goals:
 
 - **Goal**: Run a pre-trained model (like image segmentation) in a mobile app
   for the first time.
-- **Path1 (Beginner dev)**: Follow step-by-step instructions via Android Studio
+- **Path 1 (Beginner dev)**: Follow step-by-step instructions via Android Studio
   to create a
   [Real-time segmentation App](https://developers.google.com/codelabs/litert-image-segmentation-android#0)
   for CPU/GPU/NPU inference. Source code
   [link](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api/image_segmentation).
-- **Path2 (Experienced dev)**: Start with the
+- **Path 2 (Experienced dev)**: Start with the
   [Get Started guide](https://ai.google.dev/edge/litert/next/get_started), find
   a pre-trained .tflite model on [Kaggle Models](https://www.kaggle.com/models?framework=tfLite&size=small),
   and use the standard LiteRT runtime to integrate it into your Android or iOS
