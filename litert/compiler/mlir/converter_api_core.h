@@ -55,9 +55,6 @@ struct ConvertToTFLConfig {
   // but it may cause incorrect results when broadcasting ops are introduced by
   // explicit broadcasting in the source model.
   bool unsafe_fuse_dynamic_shaped_broadcast = false;
-
-  // If false, downcast x64 tensors and inputs to x32.
-  bool enable_x64 = true;
 };
 
 // Register passes to be used via MLIR pybindings pass manager.
