@@ -19,7 +19,7 @@ import copy
 import dataclasses
 from typing import Any, Iterable
 
-from litert.python.aot.core import types
+from litert.python.aot.core import aot_types
 from litert.python.aot.vendors import fallback_backend
 
 
@@ -27,24 +27,25 @@ from litert.python.aot.vendors import fallback_backend
 class VendorRegistry:
   """A vendor registry."""
 
-  backend_class: types.BackendT
+  backend_class: aot_types.BackendT
 
 
 _VENDOR_REGISTRY: dict[str, VendorRegistry] = {}
 
 
 def register_backend(
-    backend_class: types.BackendT,
+    backend_class: aot_types.BackendT,
 ):
   backend_id = backend_class.id()
   _VENDOR_REGISTRY[backend_id] = VendorRegistry(backend_class)
 
   return backend_class
 
+
 register_backend(fallback_backend.FallbackBackend)
 
 
-def import_vendor(backend_id: str) -> types.BackendT:
+def import_vendor(backend_id: str) -> aot_types.BackendT:
   """Imports a vendor backend class based on its ID.
 
   Args:
@@ -63,7 +64,7 @@ def import_vendor(backend_id: str) -> types.BackendT:
   return vendor_module.backend_class
 
 
-class AllRegisteredTarget(types.Target):
+class AllRegisteredTarget(aot_types.Target):
   """A virtual Compilation target."""
 
   def __hash__(self) -> int:
@@ -84,15 +85,15 @@ class AllRegisteredTarget(types.Target):
 
 
 @register_backend
-class AllRegisteredBackend(types.Backend):
+class AllRegisteredBackend(aot_types.Backend):
   """A virtual backend that represents all registered backends."""
 
   # NOTE: Only initialize through "create".
-  def __init__(self, config: types.Config):
+  def __init__(self, config: aot_types.Config):
     self._config = config
 
   @classmethod
-  def create(cls, config: types.Config) -> 'AllRegisteredBackend':
+  def create(cls, config: aot_types.Config) -> 'AllRegisteredBackend':
     return AllRegisteredBackend(config)
 
   @classmethod
@@ -108,21 +109,21 @@ class AllRegisteredBackend(types.Backend):
     return ''
 
   @property
-  def config(self) -> types.Config:
+  def config(self) -> aot_types.Config:
     return self._config
 
   def call_component(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
-      component: types.Component,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
+      component: aot_types.Component,
   ):
     del input_model, output_model, component
     raise NotImplementedError(
         'AllRegisteredBackend does not support any component.'
     )
 
-  def specialize(self) -> Iterable[types.Backend]:
+  def specialize(self) -> Iterable[aot_types.Backend]:
     for backend_id, vendor_module in _VENDOR_REGISTRY.items():
       if backend_id == 'all':
         continue

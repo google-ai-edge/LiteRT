@@ -115,7 +115,7 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot:aot_compile",
     "//litert/python/aot/ai_pack:export_lib",
     "//litert/python/aot/core:common",
-    "//litert/python/aot/core:types",
+    "//litert/python/aot/core:aot_types",
     "//litert/python/aot/core:apply_plugin",
     "//litert/python/aot/core:mlir_transforms",
     "//litert/python/aot/core:components",

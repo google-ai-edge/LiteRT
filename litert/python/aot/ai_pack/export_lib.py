@@ -18,8 +18,8 @@ import os
 import pathlib
 from typing import cast
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
-from litert.python.aot.core import types
 from litert.python.aot.vendors import fallback_backend
 from litert.python.aot.vendors.google_tensor import target as google_tensor_target
 from litert.python.aot.vendors.mediatek import mediatek_backend
@@ -44,7 +44,7 @@ _DEVICE_SELECTOR_TEMPLATE = """        <config:device-selector>
         </config:device-selector>"""
 
 
-def _is_mobile_device_backend(backend: types.Backend):
+def _is_mobile_device_backend(backend: aot_types.Backend):
   """Returns True if the backend is a mobile device backend."""
   target = backend.target
   if backend.id() == qualcomm_backend.QualcommBackend.id():
@@ -68,7 +68,7 @@ def _is_mobile_device_backend(backend: types.Backend):
 
 
 def _export_model_files_to_ai_pack(
-    compiled_models: types.CompilationResult,
+    compiled_models: aot_types.CompilationResult,
     ai_pack_dir: pathlib.Path,
     ai_pack_name: str,
     litert_model_name: str,
@@ -131,7 +131,7 @@ def _export_model_files_to_ai_pack(
 
 
 def _export_model_files_to_mtk_ai_pack(
-    compiled_models: types.CompilationResult,
+    compiled_models: aot_types.CompilationResult,
     ai_pack_dir: pathlib.Path,
     ai_pack_name: str,
     litert_model_name: str,
@@ -164,7 +164,7 @@ def _export_model_files_to_mtk_ai_pack(
     model.save(model_export_path, export_only=True)
 
 
-def _build_targeting_config(compiled_backends: list[types.Backend]) -> str:
+def _build_targeting_config(compiled_backends: list[aot_types.Backend]) -> str:
   """Builds device-targeting-config in device_targeting_configuration.xml."""
   device_groups = []
   for backend in compiled_backends:
@@ -178,7 +178,7 @@ def _build_targeting_config(compiled_backends: list[types.Backend]) -> str:
   return _DEVICE_TARGETING_CONFIGURATION.format(device_groups=device_groups)
 
 
-def _target_to_ai_pack_info(target: types.Target) -> str | None:
+def _target_to_ai_pack_info(target: aot_types.Target) -> str | None:
   """Builds the device group used in device_targeting_configuration.xml."""
   if isinstance(target, qnn_target.Target):
     group_name = str(target)
@@ -252,7 +252,7 @@ def _process_google_tensor_target(
 
 
 def _write_targeting_config(
-    compiled_models: types.CompilationResult, ai_pack_dir: pathlib.Path
+    compiled_models: aot_types.CompilationResult, ai_pack_dir: pathlib.Path
 ) -> None:
   """Writes device_targeting_configuration.xml for the given compiled models."""
   compiled_backends = [x for x, _ in compiled_models.models_with_backend]
@@ -265,7 +265,7 @@ def _write_targeting_config(
 
 
 def export(
-    compiled_models: types.CompilationResult,
+    compiled_models: aot_types.CompilationResult,
     ai_pack_dir: pathlib.Path | str,
     ai_pack_name: str,
     litert_model_name: str,

@@ -16,10 +16,10 @@ import os
 from unittest import mock
 
 from absl.testing import absltest as googletest
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import components
 from litert.python.aot.core import test_common
-from litert.python.aot.core import types
 from litert.python.aot.vendors.google_tensor import google_tensor_backend
 from litert.python.aot.vendors.google_tensor import target as target_lib
 
@@ -67,15 +67,15 @@ class _MockSdk:
 class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
 
   @property
-  def basic_config(self) -> types.Config:
+  def basic_config(self) -> aot_types.Config:
     return {
         "backend_id": google_tensor_backend.GoogleTensorBackend.id(),
         "output_dir": self.output_dir(),
     }
 
   @property
-  def output_model(self) -> types.Model:
-    return types.Model(self.output_dir() / "output.tflite")
+  def output_model(self) -> aot_types.Model:
+    return aot_types.Model(self.output_dir() / "output.tflite")
 
   def test_unsupported_component(self):
     backend = google_tensor_backend.GoogleTensorBackend.create(
@@ -85,7 +85,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
         NotImplementedError,
         "GOOGLE backend does not support mock_component component.",
     ):
-      model = types.Model("add_simple.tflite")
+      model = aot_types.Model("add_simple.tflite")
       component = MockComponent()
       backend.call_component(model, self.output_model, component)
 
@@ -102,7 +102,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
         self.basic_config
     )
     mock_get_resource.return_value = "/fake/path/to/plugin.so"
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     output_model = self.output_model
     component = MockApplyPlugin()
     backend.call_component(model, output_model, component)
@@ -142,7 +142,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     backend = google_tensor_backend.GoogleTensorBackend.create(
         self.basic_config
     )
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     output_model = self.output_model
     component = MockApplyPlugin()
 
@@ -165,7 +165,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     config["google_tensor_truncation_type"] = "bf16"
     config["Unsupported_flag"] = "unsupported_value"
     backend = google_tensor_backend.GoogleTensorBackend.create(config)
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     output_model = self.output_model
     component = MockApplyPlugin()
     backend.call_component(model, output_model, component)
@@ -179,7 +179,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     backend = google_tensor_backend.GoogleTensorBackend.create(
         self.basic_config
     )
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     component = MockAieQuantizer()
     backend.call_component(model, self.output_model, component)
     mck.assert_called_once()
@@ -189,7 +189,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     backend = google_tensor_backend.GoogleTensorBackend.create(
         self.basic_config
     )
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     component = MockMlirTransforms()
     backend.call_component(model, self.output_model, component)
     mck.assert_called_once()
