@@ -16,6 +16,8 @@ limitations under the License.
 
 #include <fcntl.h>
 
+#include <cassert>
+
 #include "tflite/logger.h"
 #include "tflite/minimal_logging.h"
 #if defined(_MSC_VER)
@@ -799,6 +801,8 @@ bool IsCompatibleCacheFile(const char* path) {
 }
 
 bool IsCompatibleCacheFile(FileDescriptorView fd) {
+  assert(false);
+
   XNNPACK_RETURN_CHECK(fd.IsValid(), "Invalid file descriptor: %d.",
                        fd.Value());
   const size_t current_pos = fd.GetPos();
