@@ -15,30 +15,20 @@
 # LiteRT C API Options
 cmake_minimum_required(VERSION 3.20)
 
-# Options library
-add_library(litert_c_options STATIC
-    litert_cpu_options.cc
-    litert_google_tensor_options.cc
-    litert_gpu_options.cc
-    litert_intel_openvino_options.cc
-    litert_mediatek_options.cc
-    litert_qualcomm_options.cc
-    litert_runtime_options.cc
-    litert_compiler_options.cc
-)
+# Compatibility target: source-build CMake now compiles all public c/options
+# sources directly into litert_c_api so consumers only need the main C API
+# library.
+add_library(litert_c_options INTERFACE)
 
 target_include_directories(litert_c_options
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(litert_c_options
-    PUBLIC
+    INTERFACE
+        litert_c_api
         absl::status
         absl::statusor
-    PRIVATE
-        litert_c_api
 )
