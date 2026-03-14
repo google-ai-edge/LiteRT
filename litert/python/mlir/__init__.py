@@ -19,7 +19,7 @@ import sys
 
 __all__ = []
 
-ROOT_PACKAGE_NAME = "ai_edge_litert"
+ROOT_PACKAGE_NAME = ".".join(__name__.split(".")[:-1])
 MLIR_PACKAGE_NAME = f"{ROOT_PACKAGE_NAME}.mlir"
 MLIR_LIBS_PACKAGE_NAME = f"{ROOT_PACKAGE_NAME}.mlir._mlir_libs"
 MLIR_LIBS_SO_MODULE_NAMES = [
