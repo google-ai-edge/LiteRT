@@ -34,17 +34,22 @@ from litert.python.tools import mmap_utils
 from litert.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
 
 # Types imported from `schema_py_generated`.
+ActivationFunctionType = schema_fb.ActivationFunctionType
+BlockwiseQuantizationT = schema_fb.BlockwiseQuantizationT
 Buffer = schema_fb.Buffer
 BufferT = schema_fb.BufferT
 BuiltinOperator = schema_fb.BuiltinOperator
 BuiltinOptions = schema_fb.BuiltinOptions
 BuiltinOptions2 = schema_fb.BuiltinOptions2
+FullyConnectedOptionsT = schema_fb.FullyConnectedOptionsT
 Model = schema_fb.Model
 ModelT = schema_fb.ModelT
 Operator = schema_fb.Operator
 OperatorCode = schema_fb.OperatorCode
 OperatorCodeT = schema_fb.OperatorCodeT
 OperatorT = schema_fb.OperatorT
+QuantizationDetails = schema_fb.QuantizationDetails
+QuantizationParametersT = schema_fb.QuantizationParametersT
 StableHLOCompositeOptions = schema_fb.StableHLOCompositeOptions
 StableHLOCompositeOptionsT = schema_fb.StableHLOCompositeOptionsT
 SubGraph = schema_fb.SubGraph
@@ -228,6 +233,30 @@ def _ndarrays_to_lists(value: Any) -> Any:
   return value
 
 
+def _compact_buffers_array(model: ModelT):
+  """Make all empty buffers point to the zeroth buffer."""
+  if model.buffers is None:
+    return
+
+  # Initialize the mapping with all buffers pointing to a initial empty buffer.
+  new_bid_for_old = np.zeros(shape=[len(model.buffers)], dtype=np.int32)
+  buffers = [BufferT()]
+
+  # Collect all non-empty buffers.
+  for k, buffer in enumerate(model.buffers):
+    if buffer.data is not None or buffer.size:
+      new_bid_for_old[k] = len(buffers)
+      buffers.append(buffer)
+
+  # Update the buffer IDs in the model subgraphs and metadata.
+  model.buffers = buffers
+  for subgraph in model.subgraphs or []:
+    for tensor in subgraph.tensors or []:
+      tensor.buffer = new_bid_for_old[tensor.buffer]
+  for metadata in model.metadata or []:
+    metadata.buffer = new_bid_for_old[metadata.buffer]
+
+
 def read_model_from_bytearray(model_bytearray: BufferType) -> ModelT:
   """Reads a tflite model as a python object.
 
@@ -265,6 +294,8 @@ def read_model_from_bytearray(model_bytearray: BufferType) -> ModelT:
         ]
         op.largeCustomOptionsOffset = 0
         op.largeCustomOptionsSize = 0
+
+  _compact_buffers_array(model)
 
   # Convert any non-buffer `np.ndarray`s to `list` to ensure they are mutable.
   buffers = model.buffers
