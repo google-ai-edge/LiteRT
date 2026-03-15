@@ -66,7 +66,11 @@ enum class Status(val code: Int) {
   // Version related errors.
   ErrorUnsupportedRuntimeVersion(4000),
   ErrorUnsupportedCompilerVersion(4001),
-  ErrorIncompatibleByteCodeVersion(4002);
+  ErrorIncompatibleByteCodeVersion(4002),
+
+  // Shape inference related errors.
+  ErrorUnsupportedShapeInferencedOp(5000),
+  ErrorShapeInferenceFailed(5001);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_common.h:status_codes)
 
