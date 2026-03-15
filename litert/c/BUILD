@@ -524,6 +524,7 @@ cc_test(
         "//litert/test:testdata/simple_model.tflite",
     ],
     deps = [
+        ":litert_common",
         ":litert_environment_options",
         ":litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
@@ -875,7 +876,10 @@ config_setting(
 
 filegroup(
     name = "c_api_headers",
-    srcs = glob(["litert_*.h"]),
+    srcs = glob(
+        ["litert_*.h"],
+        exclude = ["litert_common.h"],
+    ),
     visibility = ["//litert/cc:__pkg__"],
 )
 
@@ -900,6 +904,7 @@ cc_library(
     # Make the target public to allow clients to bundle libLiteRt.so
     visibility = ["//litert:litert_public"],
     deps = [
+        ":litert_common",
         ":litert_opencl_types",
         ":litert_webgpu_types",
         # only depend on headers

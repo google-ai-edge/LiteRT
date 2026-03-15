@@ -42,6 +42,7 @@ cc_library(
         "compiled_model_wrapper.h",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc:litert_environment_options",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",

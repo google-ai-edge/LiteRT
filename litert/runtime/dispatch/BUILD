@@ -433,6 +433,7 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
@@ -466,6 +467,7 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
@@ -543,6 +545,7 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
@@ -577,6 +580,7 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc/dynamic_runtime:litert_compiled_model",

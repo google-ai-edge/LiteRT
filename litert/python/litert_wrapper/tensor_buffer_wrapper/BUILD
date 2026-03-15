@@ -39,6 +39,7 @@ cc_library(
         "tensor_buffer_wrapper.h",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",

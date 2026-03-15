@@ -25,6 +25,7 @@ cc_library(
     srcs = ["ai_litecore_manager.cc"],
     hdrs = ["ai_litecore_manager.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",

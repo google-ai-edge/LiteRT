@@ -31,6 +31,9 @@ VERS_1.0 {
     LiteRtSetMinLoggerSeverity;
     LiteRtUseSinkLogger;
     LiteRtUseStandardLogger;
+    /* c/litert_common.h */
+    LiteRtCompareApiVersion;
+    LiteRtGetStatusString;
 
     /* Hide everything else */
     *;

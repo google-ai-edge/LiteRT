@@ -35,6 +35,7 @@ cc_library(
     hdrs = ["add_op_builder.h"],
     deps = [
         ":op_wrapper",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
@@ -48,6 +49,7 @@ cc_library(
     hdrs = ["mul_op_builder.h"],
     deps = [
         ":op_wrapper",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
@@ -61,6 +63,7 @@ cc_library(
     hdrs = ["reshape_op_builder.h"],
     deps = [
         ":op_wrapper",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
