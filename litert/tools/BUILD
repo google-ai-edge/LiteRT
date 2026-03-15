@@ -185,6 +185,21 @@ litert_bin(
     ],
 )
 
+tool_test(
+    name = "apply_plugin_main_for_google_tensor_test",
+    data = ["//litert/test:testdata/simple_quantized_ops.tflite"],
+    tool = ":apply_plugin_main_for_google_tensor",
+    tool_args = [
+        "--soc_model=Tensor_G5",
+        "--soc_manufacturer=Google",
+        "--model={}".format(
+            runfile_path("//litert/test:testdata/simple_quantized_ops.tflite"),
+        ),
+        "--cmd=apply",
+        "--o=$$(mktemp)",
+    ],
+)
+
 # Apply plugin test tests the core logic of the tool (with a dummy plugin impl), while the
 # following tests the actual plugins will function correctly.
 [
