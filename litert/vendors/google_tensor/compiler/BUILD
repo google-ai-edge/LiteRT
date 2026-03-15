@@ -58,6 +58,7 @@ litert_dynamic_lib(
     ],
     deps = [
         ":google_tensor_options_cc_proto",
+        "//litert/c:litert_op_options",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_google_tensor_options",
