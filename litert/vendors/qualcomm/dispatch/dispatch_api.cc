@@ -172,7 +172,8 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
+LiteRtStatus DeviceContextCreate(LiteRtOptions options,
+                                 LiteRtDispatchDeviceContext* device_context) {
   if (auto context = LiteRtDispatchDeviceContextT::Create(Qnn()); context) {
     *device_context = context->release();
     return kLiteRtStatusOk;

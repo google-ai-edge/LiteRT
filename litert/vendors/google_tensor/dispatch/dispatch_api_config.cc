@@ -15,23 +15,14 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 
 #include <cstdio>
-#include <memory>
-#include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/cc/options_helper.h"
-#include "litert/vendors/google_tensor/dispatch/litert_darwinn_runtime_options.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
@@ -54,10 +45,6 @@ bool TheDispatchApiConfigIsInitialized = false;
     }                                                         \
   } while (0)
 
-// Optional DarwiNN-specific options provided by the application.
-absl_nullable std::unique_ptr<litert::LiteRtDarwinnRuntimeOptionsT>
-    TheDarwinnOptions;
-
 // Google Tensor Dispatch API build ID.
 char TheBuildId[256];
 
@@ -72,33 +59,6 @@ std::vector<LiteRtTensorBufferType> TheSupportedTensorBufferTypes;
 
 LiteRtStatus InitializeDispatchApiConfig(
     LiteRtEnvironmentOptions environment_options, LiteRtOptions options) {
-  bool found_darwinn_options = false;
-  if (options) {
-    litert::Options cc_options(options, litert::OwnHandle::kNo);
-    auto opaque_options = cc_options.GetOpaqueOptions();
-    if (opaque_options) {
-      auto darwinn_options_data = litert::FindOpaqueData<const char>(
-          *opaque_options, litert::LiteRtDarwinnRuntimeOptionsT::Identifier());
-
-      if (darwinn_options_data) {
-        litert::LiteRtDarwinnRuntimeOptionsT darwinn_options;
-        absl::string_view data_str(*darwinn_options_data);
-        if (litert::internal::ParseLiteRtDarwinnRuntimeOptions(
-                data_str.data(), data_str.size(), &darwinn_options) ==
-            kLiteRtStatusOk) {
-          TheDarwinnOptions =
-              std::make_unique<litert::LiteRtDarwinnRuntimeOptionsT>(
-                  darwinn_options);
-          LITERT_LOG(LITERT_INFO, "Found and parsed Darwinn runtime options");
-          found_darwinn_options = true;
-        }
-      }
-    }
-  }
-  if (!found_darwinn_options) {
-    LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found, using defaults");
-  }
-
   const char* sb_api_version = thrGetVendorApiVersion();
   const char* sb_vendor_id = thrGetVendorId();
   snprintf(TheBuildId, sizeof(TheBuildId),
@@ -134,11 +94,6 @@ LiteRtStatus InitializeDispatchApiConfig(
 
   TheDispatchApiConfigIsInitialized = true;
   return kLiteRtStatusOk;
-}
-
-litert::LiteRtDarwinnRuntimeOptionsT* absl_nullable GetTheDarwinnOptions() {
-  CHECK_DISPATCH_API_CONFIG_INIT();
-  return TheDarwinnOptions.get();
 }
 
 const char* absl_nonnull GetTheBuildId() {

@@ -39,7 +39,7 @@ typedef LiteRtStatus (*LiteRtDispatchGetBuildIdT)(const char** build_id);
 typedef LiteRtStatus (*LiteRtDispatchGetCapabilitiesT)(int* capabilities);
 
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextCreateT)(
-    LiteRtDispatchDeviceContext* device_context);
+    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context);
 
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextDestroyT)(
     LiteRtDispatchDeviceContext device_context);
