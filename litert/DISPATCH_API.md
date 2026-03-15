@@ -47,7 +47,8 @@ register TensorBuffers.
 
 ```
 LiteRtStatus
-LiteRtDispatchDeviceContextCreate(LiteRtDispatchDeviceContext* device_context);
+LiteRtDispatchDeviceContextCreate(LiteRtDispatchDeviceContext* device_context,
+                                  LiteRtOptions options);
 
 LiteRtStatus
 LiteRtDispatchDeviceContextDestroy(LiteRtDispatchDeviceContext device_context);
@@ -123,8 +124,9 @@ illustrate how it operates.
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchDeviceContextCreate(&device_context, /*options=*/nullptr),
+      kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
   auto model_file_name =

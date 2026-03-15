@@ -93,8 +93,9 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchDeviceContextCreate(&device_context, /*options=*/nullptr),
+      kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
   auto model_file_name =
@@ -355,8 +356,10 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchDeviceContextCreate(&device_context, /*options=*/nullptr),
+      kLiteRtStatusOk);
+
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
   auto model_file_name =
@@ -643,8 +646,10 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchDeviceContextCreate(&device_context, /*options=*/nullptr),
+      kLiteRtStatusOk);
+
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
   auto model_file_name =
@@ -940,8 +945,10 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchDeviceContextCreate(&device_context, /*options=*/nullptr),
+      kLiteRtStatusOk);
+
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
   auto model_file_name =

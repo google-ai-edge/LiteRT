@@ -139,7 +139,7 @@ LiteRtStatus DispatchGetCapabilities(int* capabilities) {
 // LiteRtDispatchDeviceContextDestroy() to release it. Return NULL in case of
 // error.
 LiteRtStatus DispatchDeviceContextCreate(
-    LiteRtDispatchDeviceContext* device_context) {
+    LiteRtDispatchDeviceContext* device_context, LiteRtOptions options) {
   try {
     if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
       *device_context = context->release();
