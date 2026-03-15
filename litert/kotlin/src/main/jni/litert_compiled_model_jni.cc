@@ -102,8 +102,6 @@ enum GpuOptionsKey {
 // Keys for Qualcomm options, the values should match the ones in Kotlin.
 enum QualcommOptionsKey {
   kLogLevel = 0,
-  kUseHtpPreference = 1,
-  kUseQint16AsQuint16 = 2,
   kEnableWeightSharing = 3,
   kDumpTensorIds = 4,
   kUseConvHmx = 5,
@@ -381,14 +379,6 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
       case QualcommOptionsKey::kLogLevel:
         qualcomm_options.SetLogLevel(static_cast<QualcommOptions::LogLevel>(
             std::stoi(qualcomm_options_values_vector[i])));
-        break;
-      case QualcommOptionsKey::kUseHtpPreference:
-        qualcomm_options.SetUseHtpPreference(
-            strcmp(qualcomm_options_values_vector[i], "true") == 0);
-        break;
-      case QualcommOptionsKey::kUseQint16AsQuint16:
-        qualcomm_options.SetUseQint16AsQuint16(
-            strcmp(qualcomm_options_values_vector[i], "true") == 0);
         break;
       case QualcommOptionsKey::kEnableWeightSharing:
         qualcomm_options.SetEnableWeightSharing(

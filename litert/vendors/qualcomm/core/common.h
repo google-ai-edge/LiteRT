@@ -91,12 +91,6 @@ class Options {
   void SetProfiling(Profiling profiling);
   Profiling GetProfiling() const;
 
-  void SetUseHtpPreference(bool use_htp_preference);
-  bool GetUseHtpPreference() const;
-
-  void SetUseQint16AsQuint16(bool use_qint16_as_quint16);
-  bool GetUseQint16AsQuint16() const;
-
   void SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32);
   bool GetUseInt64BiasAsInt32() const;
 
@@ -146,8 +140,6 @@ class Options {
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
   Profiling profiling_ = Profiling::kOff;
-  bool use_htp_preference_ = false;
-  bool use_qint16_as_quint16_ = false;
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
   bool use_conv_hmx_ = true;
