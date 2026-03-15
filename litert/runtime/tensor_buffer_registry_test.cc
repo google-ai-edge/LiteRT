@@ -43,7 +43,8 @@ static int kDummyHandleStorage = 0;
 constexpr char kMockBufferValue = 0xaa;
 
 LiteRtStatus CreateMyCustomTensorBuffer(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info) {
   auto memory_info =
@@ -54,7 +55,8 @@ LiteRtStatus CreateMyCustomTensorBuffer(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DestroyMyCustomTensorBuffer(LiteRtEnvironment env,
+LiteRtStatus DestroyMyCustomTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                         LiteRtEnvironment env,
                                          HwMemoryInfoPtr hw_memory_info) {
   auto hw_info = reinterpret_cast<CustomHwMemoryInfo*>(hw_memory_info);
   if (hw_info->mapped_ptr) {
@@ -64,12 +66,14 @@ LiteRtStatus DestroyMyCustomTensorBuffer(LiteRtEnvironment env,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus UnlockMyCustomTensorBuffer(LiteRtEnvironment env,
+LiteRtStatus UnlockMyCustomTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                        LiteRtEnvironment env,
                                         HwMemoryInfoPtr hw_memory_info) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LockMyCustomTensorBuffer(LiteRtEnvironment env,
+LiteRtStatus LockMyCustomTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                      LiteRtEnvironment env,
                                       HwMemoryInfoPtr hw_memory_info,
                                       LiteRtTensorBufferLockMode mode,
                                       void** host_memory_ptr) {

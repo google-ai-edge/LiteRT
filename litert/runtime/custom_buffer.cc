@@ -16,6 +16,7 @@
 
 #include <stdlib.h>
 
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
@@ -44,7 +45,8 @@ CustomBuffer::~CustomBuffer() {
   LITERT_ASSIGN_OR_ABORT(auto custom_buffer_handlers,
                          registry->GetCustomHandlers(buffer_type_));
   if (hw_memory_info_) {
-    custom_buffer_handlers.destroy_func(env_, hw_memory_info_);
+    custom_buffer_handlers.destroy_func(LrtGetRuntimeContext(), env_,
+                                        hw_memory_info_);
   }
 }
 
@@ -53,8 +55,8 @@ Expected<void*> CustomBuffer::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type_));
   void* host_memory_ptr = nullptr;
-  auto status = custom_buffer_handlers.lock_func(env_, hw_memory_info_, mode,
-                                                 &host_memory_ptr);
+  auto status = custom_buffer_handlers.lock_func(
+      LrtGetRuntimeContext(), env_, hw_memory_info_, mode, &host_memory_ptr);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock custom tensor buffer.");
   }
@@ -65,7 +67,8 @@ Expected<void> CustomBuffer::Unlock() {
   LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env_));
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type_));
-  auto status = custom_buffer_handlers.unlock_func(env_, hw_memory_info_);
+  auto status = custom_buffer_handlers.unlock_func(LrtGetRuntimeContext(), env_,
+                                                   hw_memory_info_);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock custom tensor buffer.");
   }
@@ -80,7 +83,8 @@ Expected<void> CustomBuffer::Clear() {
     return Unexpected(kLiteRtStatusErrorUnsupported,
                       "This buffer type does not support clearing.");
   }
-  auto status = custom_buffer_handlers.clear_func(env_, hw_memory_info_);
+  auto status = custom_buffer_handlers.clear_func(LrtGetRuntimeContext(), env_,
+                                                  hw_memory_info_);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to clear custom tensor buffer.");
   }
@@ -96,8 +100,8 @@ Expected<CustomBuffer> CustomBuffer::Alloc(
                           registry->GetCustomHandlers(buffer_type));
   HwMemoryInfoPtr hw_memory_info = nullptr;
   auto status = custom_buffer_handlers.create_func(
-      env, &tensor_type, buffer_type, buffer_size, packed_buffer_size,
-      &hw_memory_info);
+      LrtGetRuntimeContext(), env, &tensor_type, buffer_type, buffer_size,
+      packed_buffer_size, &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to create custom tensor buffer.");
   }
@@ -122,8 +126,8 @@ Expected<CustomBuffer> CustomBuffer::Wrap(
   // The import_func is responsible for creating HwMemoryInfo
   // and setting its internal 'owns_handle' flag to false.
   auto status = custom_buffer_handlers.import_func(
-      env, &tensor_type, buffer_type, hw_buffer_handle, buffer_size,
-      packed_buffer_size, &hw_memory_info);
+      LrtGetRuntimeContext(), env, &tensor_type, buffer_type, hw_buffer_handle,
+      buffer_size, packed_buffer_size, &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to import custom tensor buffer.");
   }

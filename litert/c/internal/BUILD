@@ -70,6 +70,7 @@ cc_test(
     deps = [
         ":litert_accelerator",
         ":litert_accelerator_registration",
+        ":litert_runtime_context",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
         "//litert/cc:litert_expected",
@@ -96,7 +97,9 @@ cc_library(
     name = "litert_runtime_context_header",
     hdrs = ["litert_runtime_context.h"],
     deps = [
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
         "//tflite/c:c_api_types",
     ],
@@ -109,6 +112,8 @@ cc_library(
     visibility = [
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime:__pkg__",
+        # "//litert/c:__pkg__",
+        # "//third_party/odml/litert/ml_drift/delegate:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -116,8 +121,11 @@ cc_library(
     deps = [
         ":litert_delegate_wrapper",
         ":litert_external_litert_buffer_context",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
@@ -151,7 +159,7 @@ cc_test(
     srcs = ["litert_accelerator_registration_test.cc"],
     deps = [
         ":litert_accelerator_registration",
-        ":litert_runtime_context_header",
+        ":litert_runtime_context",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
         "//litert/c:litert_opaque_options",

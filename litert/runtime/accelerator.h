@@ -19,7 +19,7 @@
 #include "litert/runtime/metrics.h"
 
 // We need to forward declare this to avoid a dependency loop.
-struct LiteRtRuntimeContext;
+typedef struct LiteRtRuntimeContext LiteRtRuntimeContext;
 struct LiteRtCompiledModelT;
 struct LiteRtEnvironmentT;
 
