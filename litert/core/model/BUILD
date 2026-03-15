@@ -375,3 +375,489 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "op_shape_inference_utils",
+    hdrs = ["ops/op_shape_inference_utils.h"],
+    deps = [
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "shape_inference_types",
+    hdrs = ["shape_inference_types.h"],
+    deps = [
+        ":model",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_simple_binary",
+    hdrs = ["ops/simple_binary.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_simple_unary",
+    hdrs = ["ops/simple_unary.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_broadcast_to",
+    hdrs = ["ops/broadcast_to.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_concatenation",
+    hdrs = ["ops/concatenation.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_convolution",
+    hdrs = ["ops/convolution.h"],
+    deps = [
+        ":model",
+        ":op_shape_inference_utils",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_gather",
+    hdrs = ["ops/gather.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_pack",
+    hdrs = ["ops/pack.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_matmul",
+    hdrs = ["ops/matmul.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_pad",
+    hdrs = ["ops/pad.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_pooling",
+    hdrs = ["ops/pooling.h"],
+    deps = [
+        ":model",
+        ":op_shape_inference_utils",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_reductions",
+    hdrs = ["ops/reductions.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_reshape",
+    hdrs = ["ops/reshape.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_select",
+    hdrs = ["ops/select.h"],
+    deps = [
+        ":model",
+        ":op_shape_inference_utils",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_slice",
+    hdrs = ["ops/slice.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_spatial",
+    hdrs = ["ops/spatial.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_split",
+    hdrs = ["ops/split.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_split_test",
+    srcs = ["ops/split_test.cc"],
+    deps = [
+        ":model",
+        ":ops_split",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "ops_tile",
+    hdrs = ["ops/tile.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_tile_test",
+    srcs = ["ops/tile_test.cc"],
+    deps = [
+        ":model",
+        ":ops_tile",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_spatial_test",
+    srcs = ["ops/spatial_test.cc"],
+    deps = [
+        ":model",
+        ":ops_spatial",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_slice_test",
+    srcs = ["ops/slice_test.cc"],
+    deps = [
+        ":model",
+        ":ops_slice",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_select_test",
+    srcs = ["ops/select_test.cc"],
+    deps = [
+        ":model",
+        ":ops_select",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_reshape_test",
+    srcs = ["ops/reshape_test.cc"],
+    deps = [
+        ":model",
+        ":ops_reshape",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_reductions_test",
+    srcs = ["ops/reductions_test.cc"],
+    deps = [
+        ":model",
+        ":ops_reductions",
+        ":ops_simple_unary",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_pooling_test",
+    srcs = ["ops/pooling_test.cc"],
+    deps = [
+        ":model",
+        ":ops_pooling",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_pad_test",
+    srcs = ["ops/pad_test.cc"],
+    deps = [
+        ":model",
+        ":ops_pad",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_matmul_test",
+    srcs = ["ops/matmul_test.cc"],
+    deps = [
+        ":model",
+        ":ops_matmul",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_pack_test",
+    srcs = ["ops/pack_test.cc"],
+    deps = [
+        ":model",
+        ":ops_pack",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_gather_test",
+    srcs = ["ops/gather_test.cc"],
+    deps = [
+        ":model",
+        ":ops_gather",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_convolution_test",
+    srcs = ["ops/convolution_test.cc"],
+    deps = [
+        ":model",
+        ":ops_convolution",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_depthwise_convolution_test",
+    srcs = ["ops/depthwise_convolution_test.cc"],
+    deps = [
+        ":model",
+        ":ops_convolution",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_concatenation_test",
+    srcs = ["ops/concatenation_test.cc"],
+    deps = [
+        ":model",
+        ":ops_concatenation",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_broadcast_to_test",
+    srcs = ["ops/broadcast_to_test.cc"],
+    deps = [
+        ":model",
+        ":ops_broadcast_to",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_simple_binary_test",
+    srcs = ["ops/simple_binary_test.cc"],
+    deps = [
+        ":model",
+        ":ops_simple_binary",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_simple_unary_test",
+    srcs = ["ops/simple_unary_test.cc"],
+    deps = [
+        ":model",
+        ":ops_simple_unary",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
