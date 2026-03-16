@@ -159,7 +159,7 @@ LiteRtStatus LiteRtGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtDeviceContextCreate(
-    LiteRtDispatchDeviceContext* device_context) {
+    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
   if (auto context =
           LiteRtDispatchDeviceContextT::Create(*static_neuron_adapter);
       context) {

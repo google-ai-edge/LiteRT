@@ -119,7 +119,8 @@ TEST_F(ExampleDispatchTest, GetCapabilities) {
 
 TEST_F(ExampleDispatchTest, DeviceContextCreate) {
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  LITERT_ASSERT_OK(
+      Api().device_context_create(/*options=*/nullptr, &device_context));
   LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
 }
 
@@ -147,7 +148,8 @@ ops:mul(0,1)(2))";
       kLiteRtDispatchExecutableTypeMlModel;
 
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  LITERT_ASSERT_OK(
+      Api().device_context_create(/*options=*/nullptr, &device_context));
   auto device_context_ptr = CreateDevicePtr(Api(), device_context);
 
   LiteRtDispatchInvocationContext invocation_context;
@@ -224,7 +226,8 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
 
 TEST_F(ExampleDispatchTest, RegisterBuffer) {
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  LITERT_ASSERT_OK(
+      Api().device_context_create(/*options=*/nullptr, &device_context));
   auto device_context_ptr = CreateDevicePtr(Api(), device_context);
   LiteRtTensorBufferHandle handle;
   LITERT_ASSERT_OK(
@@ -256,7 +259,8 @@ ops:mul(0,1)(2))";
       kLiteRtDispatchExecutableTypeMlModel;
 
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  LITERT_ASSERT_OK(
+      Api().device_context_create(/*options=*/nullptr, &device_context));
 
   LiteRtDispatchInvocationContext invocation_context;
   EXPECT_EQ(kLiteRtStatusErrorUnsupportedCompilerVersion,
@@ -295,7 +299,8 @@ ops:mul(0,1)(2)
   exec_bytecode_buffer.offset = 0;
 
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  LITERT_ASSERT_OK(
+      Api().device_context_create(/*options=*/nullptr, &device_context));
   auto device_context_ptr = CreateDevicePtr(Api(), device_context);
 
   auto run_partition = [&](const char* name) {
