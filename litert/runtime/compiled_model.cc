@@ -98,9 +98,7 @@
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "weight_loader/external_weight_loader_litert.h"
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/core/api/profiler.h"
@@ -440,19 +438,25 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       std::make_unique<LiteRtExternalLiteRtBufferContextT>(env, get_tensor_id);
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+
   std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source;
   auto* options_impl =
       reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options);
   if (options_impl != nullptr) {
+    options_impl->weight_loader = nullptr;
     scoped_weight_source = std::move(options_impl->scoped_weight_source);
   }
   weight_loader_ = weight_loader::CreateLiteRtWeightLoader(
       fb_model_->GetModel(), model_directory_, std::move(scoped_weight_source));
-  if (options_impl != nullptr) {
-    options_impl->weight_loader = weight_loader_.get();
-  }
+  has_external_weights_ = false;
   if (weight_loader_) {
+    auto weight_infos = weight_loader_->GetWeightInfo();
+    has_external_weights_ = !weight_infos.empty();
+    if (!has_external_weights_) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "External weight loader: no external weight tensors found");
+      return {};
+    }
     weight_loader::WeightAccessRequest request;
     request.cpu = true;
     // TODO(b/456318365): Handle weight access request to support multiple
@@ -463,8 +467,12 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 std::string(prepare_status.message()));
     }
+
+    if (options_impl != nullptr) {
+      options_impl->weight_loader = weight_loader_.get();
+    }
+
     // Inspect the weight infos to log the available weights for GPU delegates.
-    auto weight_infos = weight_loader_->GetWeightInfo();
     LITERT_LOG(LITERT_DEBUG,
                "External weight loader: %zu weight tensors available for GPU "
                "delegates",
@@ -482,13 +490,11 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       }
     }
   }
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   return {};
 }
 
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
-  if (!weight_loader_) {
+  if (!weight_loader_ || !has_external_weights_) {
     return {};
   }
 
@@ -553,7 +559,6 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
   }
   return {};
 }
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
 namespace {
 
@@ -776,14 +781,12 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   // Load and restore external weights for CPU execution before delegates are
   // applied. This ensures that XNNPack and other CPU delegates can see the
   // weight data.
   if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
     LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
   }
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
