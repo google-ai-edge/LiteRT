@@ -741,7 +741,6 @@ class RuntimeProxy {
                                tensor_buffer, host_memory_addr);
   }
 
-#if LITERT_HAS_AHWB_SUPPORT
   LiteRtStatus CreateTensorBufferFromAhwb(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       AHardwareBuffer* ahwb, size_t ahwb_offset,
@@ -757,8 +756,6 @@ class RuntimeProxy {
                                ahwb);
   }
 
-#endif  // LITERT_HAS_AHWB_SUPPORT
-#if LITERT_HAS_ION_SUPPORT
   LiteRtStatus CreateTensorBufferFromIonBuffer(
       const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
       int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
@@ -776,8 +773,6 @@ class RuntimeProxy {
                                ion_buffer_addr, ion_buffer_fd);
   }
 
-#endif  // LITERT_HAS_ION_SUPPORT
-#if LITERT_HAS_DMABUF_SUPPORT
   LiteRtStatus CreateTensorBufferFromDmaBufBuffer(
       const LiteRtRankedTensorType* tensor_type, void* dmabuf_buffer_addr,
       int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
@@ -797,8 +792,6 @@ class RuntimeProxy {
                                dmabuf_buffer_fd);
   }
 
-#endif  // LITERT_HAS_DMABUF_SUPPORT
-#if LITERT_HAS_FASTRPC_SUPPORT
   LiteRtStatus CreateTensorBufferFromFastRpcBuffer(
       const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
       int fastrpc_fd, size_t fastrpc_buffer_size, size_t fastrpc_buffer_offset,
@@ -817,8 +810,6 @@ class RuntimeProxy {
                                fastrpc_buffer_fd);
   }
 
-#endif  // LITERT_HAS_FASTRPC_SUPPORT
-#if LITERT_HAS_OPENCL_SUPPORT
   LiteRtStatus CreateTensorBufferFromOpenClMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
@@ -835,7 +826,6 @@ class RuntimeProxy {
                                tensor_buffer, cl_mem_addr);
   }
 
-#endif  // LITERT_HAS_OPENCL_SUPPORT
   LiteRtStatus GetTensorBufferCustomTensorBufferHandle(
       LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
     LITERT_PROXY_METHOD_STATUS(
@@ -879,7 +869,6 @@ class RuntimeProxy {
                                layer);
   }
 
-#if LITERT_HAS_WEBGPU_SUPPORT
   LiteRtStatus CreateTensorBufferFromWebGpuBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
@@ -906,8 +895,6 @@ class RuntimeProxy {
                                webgpu_texture_size, deallocator, tensor_buffer);
   }
 
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
-#if LITERT_HAS_METAL_SUPPORT
   LiteRtStatus CreateTensorBufferFromMetalMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       LiteRtTensorBufferType buffer_type, void* metal_buffer,
@@ -924,15 +911,12 @@ class RuntimeProxy {
                                tensor_buffer, hw_memory_handle);
   }
 
-#endif  // LITERT_HAS_METAL_SUPPORT
-#if LITERT_HAS_VULKAN_SUPPORT
   LiteRtStatus GetTensorBufferVulkanMemory(LiteRtTensorBuffer tensor_buffer,
                                            HwMemoryHandle* hw_memory_handle) {
     LITERT_PROXY_METHOD_STATUS(litert_get_tensor_buffer_vulkan_memory,
                                tensor_buffer, hw_memory_handle);
   }
 
-#endif  // LITERT_HAS_VULKAN_SUPPORT
   LiteRtStatus DuplicateTensorBuffer(LiteRtTensorBuffer tensor_buffer) {
     LITERT_PROXY_METHOD_STATUS(litert_duplicate_tensor_buffer, tensor_buffer);
   }
