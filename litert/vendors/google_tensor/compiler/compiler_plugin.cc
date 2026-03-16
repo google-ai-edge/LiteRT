@@ -399,10 +399,10 @@ class LiteRtCompilerPluginT {
       auto identifier = LrtGoogleTensorOptionsGetIdentifier();
       if (LiteRtFindOpaqueOptionsData(opq_->Get(), identifier, &payload) ==
           kLiteRtStatusOk) {
-        // we assume the payload is a std::string*
+        // we assume the payload is a const char* pointing to a TOML string.
         LrtGoogleTensorOptions options;
         auto status = LrtCreateGoogleTensorOptionsFromToml(
-            reinterpret_cast<const std::string*>(payload)->c_str(), &options);
+            reinterpret_cast<const char*>(payload), &options);
         if (status == kLiteRtStatusOk) {
           google_tensor_opts = options;
         } else {
