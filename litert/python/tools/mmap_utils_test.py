@@ -144,6 +144,14 @@ class MmapUtilsTest(googletest.TestCase):
         self._test_data, mmap_utils.get_file_contents(self._mappable_path)
     )
 
+  def test_get_file_contents_os_open_fails_once(self):
+    # Make the next call to `os.open` fail.
+    self._raise_on_next_event('open', OSError())
+
+    self.assertEqual(
+        self._test_data, mmap_utils.get_file_contents(self._mappable_path)
+    )
+
   def test_set_file_contents_mappable_file(self):
     mmap_utils.set_file_contents(self._mappable_path, self._test_data)
     with open(self._mappable_path, 'rb') as f:
