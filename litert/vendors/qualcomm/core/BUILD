@@ -53,6 +53,10 @@ cc_library(
     name = "common",
     srcs = ["common.cc"],
     hdrs = ["common.h"],
+    linkopts = select({
+        "@platforms//os:android": ["-llog"],
+        "//conditions:default": [],
+    }),
     deps = [
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
