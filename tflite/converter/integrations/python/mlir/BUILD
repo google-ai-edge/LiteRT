@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("@xla//third_party/rules_python/python:defs.bzl", "py_library")
 load("//tflite/converter:symlink_files.bzl", "symlink_inputs")
 
 package(

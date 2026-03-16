@@ -1,6 +1,6 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "tf_python_pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:rules_cc.bzl", "cc_library")
-load("@rules_python//python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 load("@xla//xla/tsl/platform:build_config_root.bzl", "if_pywrap")
 
 licenses(["notice"])

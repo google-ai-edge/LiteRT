@@ -14,7 +14,7 @@
 # ==============================================================================
 
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
-load("@rules_python//python:py_test.bzl", "py_test")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],

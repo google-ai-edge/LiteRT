@@ -7,7 +7,7 @@
 """
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("@rules_python//python:py_test.bzl", "py_test")
+load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
 load(
     "@xla//xla:lit.bzl",
     "lit_script_with_xla_gpu_cuda_data_dir",
