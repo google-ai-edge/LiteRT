@@ -20,7 +20,7 @@
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 
-LiteRtRuntimeContext* LrtGetRuntimeContext() {
+LiteRtRuntimeContext* LiteRtGetRuntimeContext() {
   static LiteRtRuntimeContext context = {
       .create_tensor_buffer_requirements = LiteRtCreateTensorBufferRequirements,
       .get_external_litert_buffer_context_tensor_buffer =
