@@ -15,8 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_C_API_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_C_API_H_
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -34,7 +34,9 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 // TODO(b/475253786): Clean up build time macros in the function table.
 
@@ -734,6 +736,8 @@ typedef struct LiteRtRuntimeCApiStruct {
       bool* async, const LiteRtSchedulingInfo* scheduling_info);
 } LiteRtRuntimeCApiStruct;
 
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_C_API_H_
