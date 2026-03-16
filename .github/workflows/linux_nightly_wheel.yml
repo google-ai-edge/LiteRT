@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "0 6 * * *"  # Run at 6:00 am UTC every day to build nightly wheel.
   workflow_dispatch:
+    inputs:
+      build_converter:
+        description: 'When true, build the converter into the wheels.'
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-nightly
@@ -93,6 +99,7 @@ jobs:
           USE_LOCAL_TF: "false"
           TEST_MANYLINUX_COMPLIANCE: "true"
           BAZEL_CONFIG_FLAGS: ${{ env.BAZEL_CONFIG_FLAGS }}
+          BUILD_CONVERTER: ${{ inputs.build_converter }}
         run: |
           export NIGHTLY_RELEASE_DATE=$(TZ='America/Los_Angeles' date +%Y%m%d)
           if [[ -f "ci/build_pip_package_with_docker.sh" ]]; then
