@@ -39,6 +39,48 @@ The commits in the pull request will be squashed into a single commit with the
 pull request creator as the author. These pull requests will be labeled as
 pending merge internally.
 
+#### C++ coding style
+
+Changes to TensorFlow C++ code should conform to
+[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html).
+
+Use `clang-tidy` to check your C/C++ changes. To install `clang-tidy` on
+ubuntu:16.04, do:
+
+```bash
+apt-get install -y clang-tidy
+```
+
+You can check a C/C++ file by doing:
+
+```bash
+clang-format <my_cc_file> --style=google > /tmp/my_cc_file.cc
+diff <my_cc_file> /tmp/my_cc_file.cc
+```
+
+#### Python coding style
+
+Changes to TensorFlow Python code should conform to
+[Google Python Style Guide](https://github.com/google/styleguide/blob/gh-pages/pyguide.md)
+
+Use `pylint` to check your Python changes. To install `pylint` and check a file
+with `pylint` against TensorFlow's custom style definition:
+
+```bash
+pip install pylint
+pylint --rcfile=tensorflow/tools/ci_build/pylintrc myfile.py
+```
+
+Note `pylint --rcfile=tensorflow/tools/ci_build/pylintrc` should run from the
+top level tensorflow directory.
+
+#### Coding style for other languages
+
+*   [Google Java Style Guide](https://google.github.io/styleguide/javaguide.html)
+*   [Google JavaScript Style Guide](https://google.github.io/styleguide/jsguide.html)
+*   [Google Shell Style Guide](https://google.github.io/styleguide/shellguide.html)
+*   [Google Objective-C Style Guide](https://google.github.io/styleguide/objcguide.html)
+
 #### License
 
 Include a license at the top of new files.
