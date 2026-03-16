@@ -35,12 +35,33 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/stderr_reporter.h"
 
 // Tests for CC Wrapper classes around public C api.
 
 namespace litert {
 
 namespace {
+
+// copybara:uncomment_begin(google_only)
+// TEST(CcExtendedModelTest, CreateFromMemoryAllocation) {
+//   auto runtime = testing::MakeRuntimeFromTestFile("one_mul.tflite");
+//   ASSERT_TRUE(runtime);
+// 
+//   const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+//   auto allocation = std::make_unique<tflite::MemoryAllocation>(
+//       model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+// 
+//   auto model = ExtendedModel::CreateFromAllocation(std::move(allocation));
+//   ASSERT_TRUE(model);
+// 
+//   auto subgraph = model->MainSubgraph();
+//   ASSERT_TRUE(subgraph);
+//   EXPECT_EQ(subgraph->Inputs().size(), 2);
+//   EXPECT_EQ(subgraph->Outputs().size(), 1);
+// }
+// copybara:uncomment_end
 
 //===----------------------------------------------------------------------===//
 //                                CC Op                                       //

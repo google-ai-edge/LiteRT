@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -32,6 +33,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "tflite/converter/allocation.h"
 
 namespace litert {
 
@@ -146,6 +148,15 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
 }
 
 }  // namespace
+
+// copybara:uncomment_begin(google_only)
+// Expected<ExtendedModel> ExtendedModel::CreateFromAllocation(
+//     std::unique_ptr<tflite::Allocation> allocation) {
+//   LITERT_ASSIGN_OR_RETURN(
+//       auto model, litert::Model::CreateFromAllocation(std::move(allocation)));
+//   return CreateFromOwnedHandle(model.Release());
+// }
+// copybara:uncomment_end
 
 Signature::Signature(LiteRtSignature signature)
     : internal::NonOwnedHandle<LiteRtSignature>(signature),

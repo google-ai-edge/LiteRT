@@ -16,8 +16,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -26,12 +28,17 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/stderr_reporter.h"
 
 // Tests for CC Wrapper classes around public C api.
 
@@ -103,6 +110,33 @@ TEST(CcModelTest, SimpleModelSignature) {
   EXPECT_EQ(output_names->size(), 2);
   EXPECT_EQ(output_names->at(0), "sum");
   EXPECT_EQ(output_names->at(1), "prod");
+}
+
+TEST(CcModelTest, CreateFromMemoryAllocation) {
+  auto runtime = testing::MakeRuntimeFromTestFile("one_mul.tflite");
+  ASSERT_TRUE(runtime);
+
+  const auto model_buffer = (*runtime)->Flatbuffer().Buf();
+  auto allocation = std::make_unique<tflite::MemoryAllocation>(
+      model_buffer.Data(), model_buffer.Size(), tflite::DefaultErrorReporter());
+
+  auto model = Model::CreateFromAllocation(std::move(allocation));
+  ASSERT_TRUE(model);
+  EXPECT_EQ(model->GetNumSignatures(), 1);
+
+  auto signature = model->FindSignature(Model::DefaultSignatureKey());
+  ASSERT_TRUE(signature);
+  EXPECT_THAT(signature->InputNames(),
+              ::testing::ElementsAreArray({"arg0", "arg1"}));
+  EXPECT_THAT(signature->OutputNames(),
+              ::testing::ElementsAreArray({"tfl.mul"}));
+}
+
+TEST(CcModelTest, CreateFromNullAllocationFails) {
+  auto model =
+      Model::CreateFromAllocation(std::unique_ptr<tflite::Allocation>());
+  ASSERT_FALSE(model);
+  EXPECT_EQ(model.Error().Status(), kLiteRtStatusErrorFileIO);
 }
 
 //===----------------------------------------------------------------------===//
