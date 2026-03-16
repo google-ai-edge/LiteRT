@@ -40,6 +40,7 @@ litert_dynamic_lib(
     deps = [
         ":compile_model",
         ":create_model",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
@@ -61,6 +62,7 @@ cc_library(
     srcs = ["create_model.cc"],
     hdrs = ["create_model.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",

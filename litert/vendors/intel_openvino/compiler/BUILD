@@ -44,10 +44,9 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":graph_iterator",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/vendors/cc:options_helper",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
@@ -73,6 +72,7 @@ litert_bin(
     deps = [
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
+        "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_options",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -96,6 +96,7 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )
@@ -129,6 +130,7 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc/dynamic_runtime:litert_extended_model",

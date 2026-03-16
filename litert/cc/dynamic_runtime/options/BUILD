@@ -52,6 +52,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
