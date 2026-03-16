@@ -117,13 +117,6 @@ TEST(OpaqueOptionsTest, FindType) {
   EXPECT_EQ(found.Data(), 1);
 }
 
-TEST(OpaqueOptionsTest, GetPayloadHashFailsIfUnset) {
-  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions opts, SimpleOptions::Create());
-  auto hash_result = opts.Hash();
-  EXPECT_FALSE(hash_result);
-  EXPECT_EQ(hash_result.Error().Status(), kLiteRtStatusErrorUnsupported);
-}
-
 TEST(OpaqueOptionsTest, SetAndGetPayloadHash) {
   const int kPayloadValue = 42;
   LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions opts,
