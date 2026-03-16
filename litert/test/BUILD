@@ -335,6 +335,7 @@ cc_library(
     testonly = True,
     hdrs = ["simple_buffer.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",

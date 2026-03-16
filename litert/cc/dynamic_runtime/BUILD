@@ -86,6 +86,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
             "//litert/c/internal:litert_logging",
         ],
@@ -140,6 +141,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
@@ -173,6 +175,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -215,6 +218,7 @@ cc_library(
     ],
     deps = [
         ":litert_model",
+        "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -258,6 +262,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
@@ -344,6 +349,7 @@ cc_library(
     srcs = ["//litert/cc:litert_opaque_options.cc"],
     hdrs = ["//litert/cc:litert_opaque_options.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
@@ -381,6 +387,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@flatbuffers//:runtime_cc",
         # copybara:uncomment "@flatbuffers//src:util",
+        "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ] + select({
@@ -449,6 +456,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
@@ -521,6 +529,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
@@ -584,6 +593,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
@@ -646,6 +656,7 @@ cc_test(
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
+#         "//litert/c:litert_common",
 #         "//litert/cc:litert_api_with_dynamic_runtime",
 #         "//litert/cc:litert_ranked_tensor_type",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
@@ -698,6 +709,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
@@ -707,6 +719,7 @@ cc_library(
     name = "litert_profiler",
     hdrs = ["//litert/cc:litert_profiler.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",

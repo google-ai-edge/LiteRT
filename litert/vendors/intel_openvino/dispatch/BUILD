@@ -61,6 +61,7 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":litert_dispatch_api",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_scheduling_info",
@@ -101,6 +102,7 @@ litert_bin(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":litert_dispatch_api",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
@@ -129,6 +131,7 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_element_type",
@@ -164,6 +167,7 @@ cc_test(
         "notap",
     ],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
