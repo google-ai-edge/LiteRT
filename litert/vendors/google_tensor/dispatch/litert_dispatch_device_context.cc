@@ -15,16 +15,20 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
 #include <inttypes.h>
+
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <utility>
+
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
 
 #if __ANDROID__
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
 
-#include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -42,7 +46,7 @@
 namespace gt = litert::google_tensor;
 
 LiteRtStatus LiteRtDispatchDeviceContextT::Create(
-    LiteRtDispatchDeviceContext& device_context) {
+    LiteRtOptions options, LiteRtDispatchDeviceContext& device_context) {
   ThrContext* thr_context = thrContextCreate();
   if (thr_context == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to create SB context");
@@ -56,11 +60,31 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
                                 thr_context, "edgetpu_use_tpu_tachyon", "1"),
                             "Failed to enable Tachyon SB");
 
+  std::optional<litert::LiteRtDarwinnRuntimeOptionsT> darwinn_options;
+  if (options) {
+    litert::Options cc_options(options, litert::OwnHandle::kNo);
+    auto opaque_options = cc_options.GetOpaqueOptions();
+    if (opaque_options) {
+      auto darwinn_options_data = litert::FindOpaqueData<const char>(
+          *opaque_options, litert::LiteRtDarwinnRuntimeOptionsT::Identifier());
+      if (darwinn_options_data) {
+        litert::LiteRtDarwinnRuntimeOptionsT darwinn_opts;
+        absl::string_view data_str(*darwinn_options_data);
+        if (litert::internal::ParseLiteRtDarwinnRuntimeOptions(
+                data_str.data(), data_str.size(), &darwinn_opts) ==
+            kLiteRtStatusOk) {
+          darwinn_options = std::move(darwinn_opts);
+          LITERT_LOG(LITERT_INFO, "Found and parsed Darwinn runtime options");
+        }
+      } else {
+        LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found");
+      }
+    }
+  }
+
   // If provided, store DarwiNN options to be applied to graphs.
   std::optional<DarwinnOptionsData> options_data;
-  if (litert::LiteRtDarwinnRuntimeOptionsT* absl_nullable darwinn_options =
-          gt::GetTheDarwinnOptions();
-      darwinn_options != nullptr) {
+  if (darwinn_options != std::nullopt) {
     options_data.emplace();
 
     options_data->inference_power_state =

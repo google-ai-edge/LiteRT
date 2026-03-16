@@ -110,10 +110,11 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
+LiteRtStatus DeviceContextCreate(LiteRtOptions options,
+                                 LiteRtDispatchDeviceContext* device_context) {
   GT_LOG_RETURN_IF_NULL(device_context);
 
-  return LiteRtDispatchDeviceContextT::Create(*device_context);
+  return LiteRtDispatchDeviceContextT::Create(options, *device_context);
 }
 
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
