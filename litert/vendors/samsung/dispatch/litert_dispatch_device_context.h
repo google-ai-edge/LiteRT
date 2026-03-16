@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Copyright (C) 2026 Samsung Electronics Co. LTD. 
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
-
 
 #ifndef LITERT_VENDORS_SAMSUNG_DISPATCH_DEVICE_CONTEXT_H_
 #define LITERT_VENDORS_SAMSUNG_DISPATCH_DEVICE_CONTEXT_H_
@@ -26,54 +25,52 @@
 #include "litert/vendors/samsung/dispatch/enn_type.h"
 
 class LiteRtDispatchDeviceContextT {
-public:
+ public:
   using UniquePtr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
   ~LiteRtDispatchDeviceContextT() = default;
 
-  static litert::Expected<LiteRtDispatchDeviceContextT::UniquePtr>
-  Create(const litert::samsung::EnnManager *enn_manager);
+  static litert::Expected<LiteRtDispatchDeviceContextT::UniquePtr> Create(
+      const litert::samsung::EnnManager *enn_manager);
 
-  litert::Expected<LiteRtTensorBufferHandle>
-  RegisterTensorBuffer(LiteRtTensorBuffer tensor_buffer);
+  litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
+      LiteRtTensorBuffer tensor_buffer);
 
-  litert::Expected<void>
-  UnregisterTensorBuffer(LiteRtTensorBufferHandle tensor_buffer_handle) {
+  litert::Expected<void> UnregisterTensorBuffer(
+      LiteRtTensorBufferHandle tensor_buffer_handle) {
     return tensor_buffer_registry_.Unregister(tensor_buffer_handle);
   }
 
-  litert::Expected<EnnBufferPtr>
-  GetEnnBuffer(LiteRtTensorBufferHandle tensor_buffer_handle) {
+  litert::Expected<EnnBufferPtr> GetEnnBuffer(
+      LiteRtTensorBufferHandle tensor_buffer_handle) {
     return tensor_buffer_registry_.Find(tensor_buffer_handle);
   }
 
-  litert::Expected<EnnBufferPtr*>
-  GetEnnCommittedBuffer(void) {
+  litert::Expected<EnnBufferPtr *> GetEnnCommittedBuffer(void) {
     return _commit_buf_set;
   }
 
-  litert::Expected<void>
-  SetEnnCommittedBuffer(EnnBufferPtr* update) {
+  litert::Expected<void> SetEnnCommittedBuffer(EnnBufferPtr *update) {
     _commit_buf_set = update;
     return {};
   }
 
-private:
+ private:
   class EnnBufferRegistry {
-  public:
+   public:
     explicit EnnBufferRegistry(const litert::samsung::EnnManager *enn_manager)
         : enn_manager_(enn_manager) {}
 
     ~EnnBufferRegistry();
     LiteRtTensorBufferHandle Register(EnnBufferPtr enn_buffer);
 
-    litert::Expected<void>
-    Unregister(LiteRtTensorBufferHandle tensor_buffer_handle);
+    litert::Expected<void> Unregister(
+        LiteRtTensorBufferHandle tensor_buffer_handle);
 
-    litert::Expected<EnnBufferPtr>
-    Find(LiteRtTensorBufferHandle tensor_buffer_handle);
+    litert::Expected<EnnBufferPtr> Find(
+        LiteRtTensorBufferHandle tensor_buffer_handle);
 
-  private:
+   private:
     const litert::samsung::EnnManager *enn_manager_;
     std::vector<EnnBufferPtr> buffers_;
   };
@@ -85,4 +82,4 @@ private:
   EnnBufferPtr *_commit_buf_set;
 };
 
-#endif // LITERT_VENDORS_SAMSUNG_DISPATCH_DEVICE_CONTEXT_H_
+#endif  // LITERT_VENDORS_SAMSUNG_DISPATCH_DEVICE_CONTEXT_H_

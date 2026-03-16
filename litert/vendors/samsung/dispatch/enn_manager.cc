@@ -1,4 +1,4 @@
-// Copyright (C) 2026 Samsung Electronics Co. LTD. 
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,14 +20,14 @@
 // system library in mobile phone with exynos chip
 static const char kEnnApiLibName[] = "libenn_public_api_cpp.so";
 
-#define ENN_LOAD_API(LIB, SYM)                                                 \
-  if (auto symbol = LIB.LookupSymbol<void *>(#SYM); symbol.HasValue()) {       \
-    api_->SYM =                                                                \
-        reinterpret_cast<decltype((api_->SYM))>(std::move(symbol.Value()));    \
-  } else {                                                                     \
-    LITERT_LOG(LITERT_WARNING, "Failed to load symbol %s: %s", #SYM,           \
-               LIB.DlError());                                                 \
-    return kLiteRtStatusErrorDynamicLoading;                                   \
+#define ENN_LOAD_API(LIB, SYM)                                              \
+  if (auto symbol = LIB.LookupSymbol<void *>(#SYM); symbol.HasValue()) {    \
+    api_->SYM =                                                             \
+        reinterpret_cast<decltype((api_->SYM))>(std::move(symbol.Value())); \
+  } else {                                                                  \
+    LITERT_LOG(LITERT_WARNING, "Failed to load symbol %s: %s", #SYM,        \
+               LIB.DlError());                                              \
+    return kLiteRtStatusErrorDynamicLoading;                                \
   }
 
 namespace litert::samsung {
@@ -82,4 +82,4 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   return kLiteRtStatusOk;
 }
 
-} // namespace litert::samsung
+}  // namespace litert::samsung

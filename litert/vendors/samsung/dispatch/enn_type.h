@@ -1,4 +1,4 @@
-// Copyright (C) 2026 Samsung Electronics Co. LTD. 
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 
-typedef uint64_t EnnModelId; // higher 32-bits are initialized with zero
+typedef uint64_t EnnModelId;  // higher 32-bits are initialized with zero
 
 typedef enum _EnnReturn {
   ENN_RET_SUCCESS = 0,
@@ -49,7 +49,7 @@ typedef enum _enn_buf_dir_e {
 // data structure for user buffer
 typedef struct _ennBuffer {
   void *va;
-  uint32_t size; // requested size
+  uint32_t size;  // requested size
   uint32_t offset;
 } EnnBuffer;
 

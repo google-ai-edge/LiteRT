@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Copyright (C) 2026 Samsung Electronics Co. LTD. 
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
-
 
 #include "litert/vendors/samsung/dispatch/litert_dispatch_device_context.h"
 
@@ -67,22 +66,23 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   void *addr;
 
   switch (tensor_buffer_type) {
-  case kLiteRtTensorBufferTypeDmaBuf:
+    case kLiteRtTensorBufferTypeDmaBuf:
 #if LITERT_HAS_DMABUF_SUPPORT
-    if (auto status =
-            LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &addr, &fd);
-        status != kLiteRtStatusOk) {
-      return litert::Error(status, "Failed to get DMA-BUF");
-    }
+      if (auto status =
+              LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &addr, &fd);
+          status != kLiteRtStatusOk) {
+        return litert::Error(status, "Failed to get DMA-BUF");
+      }
 #else
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "DMA-BUF is not supported on this platform");
-#endif // LITERT_HAS_DMABUF_SUPPORT
-    break;
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "DMA-BUF is not supported on this platform");
+#endif  // LITERT_HAS_DMABUF_SUPPORT
+      break;
 
-  default:
-    LITERT_LOG(LITERT_ERROR, "Unsupported buffer type: %d", tensor_buffer_type);
-    return litert::Unexpected(kLiteRtStatusErrorUnsupported);
+    default:
+      LITERT_LOG(LITERT_ERROR, "Unsupported buffer type: %d",
+                 tensor_buffer_type);
+      return litert::Unexpected(kLiteRtStatusErrorUnsupported);
   }
   EnnBufferPtr enn_buffer_p;
   if (enn_manager_->Api().EnnCreateBufferFromFdWithOffset(

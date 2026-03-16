@@ -24,14 +24,13 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
-
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/samsung/dispatch/litert_dispatch_device_context.h"
 namespace litert::samsung {
 
 // Require continuous memory for tensor buffer. No strides.
-Expected<LiteRtTensorBufferRequirements>
-GetTensorBufferRequirements(const LiteRtRankedTensorType &tensor_type) {
+Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+    const LiteRtRankedTensorType &tensor_type) {
   static constexpr std::array<const LiteRtTensorBufferType, 1>
       kSupportedTensorBufferTypes = {
           kLiteRtTensorBufferTypeDmaBuf,
@@ -53,16 +52,17 @@ GetTensorBufferRequirements(const LiteRtRankedTensorType &tensor_type) {
 
   return requirements;
 }
-} // namespace litert::samsung
+}  // namespace litert::samsung
 
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     const ::litert::samsung::EnnManager *enn_manager,
     LiteRtDispatchDeviceContext device_context, const EnnModelId &model_id,
     int num_inputs, int num_outputs)
-    : enn_manager_(enn_manager), device_context_(device_context),
-      model_id_(model_id), inputs_buf_(num_inputs, nullptr),
-      outputs_buf_(num_outputs, nullptr) {
-}
+    : enn_manager_(enn_manager),
+      device_context_(device_context),
+      model_id_(model_id),
+      inputs_buf_(num_inputs, nullptr),
+      outputs_buf_(num_outputs, nullptr) {}
 
 litert::Expected<LiteRtDispatchInvocationContextT::UniquePtr>
 LiteRtDispatchInvocationContextT::Create(
@@ -93,8 +93,8 @@ LiteRtDispatchInvocationContextT::Create(
   if (enn_manager->Api().EnnGetBuffersInfo(model_id, &buffer_info) !=
       ENN_RET_SUCCESS) {
     if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
-        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Fail to trying to Close Model");
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Fail to trying to Close Model");
     }
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Fail to get buffers information");
@@ -102,18 +102,18 @@ LiteRtDispatchInvocationContextT::Create(
   if (buffer_info.n_in_buf != num_inputs ||
       buffer_info.n_out_buf != num_outputs) {
     if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
-        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Fail to trying to Close Model");
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Fail to trying to Close Model");
     }
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Number of inputs/outputs is invalid");
   }
 
-  if (enn_manager->Api().EnnAllocateAllBuffers(model_id, &tmp_buf_ptr,
-                                               &buffer_info) != ENN_RET_SUCCESS) {
+  if (enn_manager->Api().EnnAllocateAllBuffers(
+          model_id, &tmp_buf_ptr, &buffer_info) != ENN_RET_SUCCESS) {
     if (enn_manager->Api().EnnCloseModel(model_id) != ENN_RET_SUCCESS) {
-        return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Fail to trying to Close Model");
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Fail to trying to Close Model");
     }
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "EnnAllocateAllBuffers Failed");
@@ -212,7 +212,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers() const {
+litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers()
+    const {
   bool input_prepared =
       std::all_of(inputs_buf_.begin(), inputs_buf_.end(),
                   [](const EnnBufferPtr &val) { return val != nullptr; });
@@ -223,9 +224,10 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers() const
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Inputs/outputs not prepared.");
   }
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf, device_context_->GetEnnCommittedBuffer());
+  LITERT_ASSIGN_OR_RETURN(auto committed_buf,
+                          device_context_->GetEnnCommittedBuffer());
 
-  for (int idx = 0; idx < inputs_buf_.size() ; idx++) {
+  for (int idx = 0; idx < inputs_buf_.size(); idx++) {
     auto usr_buf = inputs_buf_.at(idx);
     auto target_buf = committed_buf[idx];
     memcpy(target_buf->va, usr_buf->va, usr_buf->size);
@@ -234,8 +236,10 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::SetInputBuffers() const
   return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::SetOutputBuffers() const {
-  LITERT_ASSIGN_OR_RETURN(auto committed_buf, device_context_->GetEnnCommittedBuffer());
+litert::Expected<void> LiteRtDispatchInvocationContextT::SetOutputBuffers()
+    const {
+  LITERT_ASSIGN_OR_RETURN(auto committed_buf,
+                          device_context_->GetEnnCommittedBuffer());
 
   int _input_buf_size = inputs_buf_.size();
   for (int idx = 0; idx < outputs_buf_.size(); idx++) {
