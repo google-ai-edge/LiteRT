@@ -1,5 +1,5 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "filegroup")
-load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 load("//tflite/converter:glob_lit_test.bzl", "glob_lit_tests")
 
 # copybara:uncomment package(default_applicable_licenses = ["@org_tensorflow//tensorflow:license"])
