@@ -284,8 +284,7 @@ def build_pyproject_wheel(
   """
   env = os.environ.copy()
 
-  py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
-  py_executable = f"python{py_version}" if py_version else sys.executable
+  py_executable = sys.executable
 
   command = [
       py_executable,
@@ -338,7 +337,10 @@ def build_setup_py_wheel(
   env["PACKAGE_VERSION"] = version
 
   py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
-  py_executable = f"python{py_version}" if py_version else sys.executable
+  if py_version and sys.platform != "darwin":
+    py_executable = f"python{py_version}"
+  else:
+    py_executable = sys.executable
   command = [
       py_executable,
       os.path.join(buildtree_path, "setup.py"),
