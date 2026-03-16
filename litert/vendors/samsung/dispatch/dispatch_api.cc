@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Copyright (C) 2026 Samsung Electronics Co. LTD. 
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdio>
 #include <optional>
 #include <string>
 
-#include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/base/no_destructor.h"   // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -30,7 +30,6 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/litert_expected.h"
-
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/samsung/dispatch/enn_manager.h"
@@ -47,14 +46,14 @@ LiteRtEnvironmentOptions static_environment_options = nullptr;
 
 LiteRtOptions static_options = nullptr;
 
-} // namespace
+}  // namespace
 
 // Initialize the Dispatch API runtime.
 //
 // This function should be called before calling any other Dispatch API
 // functions.
-LiteRtStatus
-LiteRtSamsungInitialize(LiteRtEnvironment environment, LiteRtOptions options) {
+LiteRtStatus LiteRtSamsungInitialize(LiteRtEnvironment environment,
+                                     LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
   LiteRtGetEnvironmentOptions(environment, &environment_options);
   // TODO Make Exynos options
@@ -98,8 +97,8 @@ LiteRtStatus LiteRtSamsungGetCapabilities(int *capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSamsungDeviceContextCreate(LiteRtDispatchDeviceContext *device_context) {
+LiteRtStatus LiteRtSamsungDeviceContextCreate(
+    LiteRtDispatchDeviceContext *device_context) {
   if (auto context =
           LiteRtDispatchDeviceContextT::Create(static_enn_manager.get());
       context) {
@@ -112,8 +111,8 @@ LiteRtSamsungDeviceContextCreate(LiteRtDispatchDeviceContext *device_context) {
   }
 }
 
-LiteRtStatus
-LiteRtSamsungDeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
+LiteRtStatus LiteRtSamsungDeviceContextDestroy(
+    LiteRtDispatchDeviceContext device_context) {
   delete device_context;
   return kLiteRtStatusOk;
 }
@@ -209,7 +208,7 @@ LiteRtStatus LiteRtSamsungInvocationContextDestroy(
 
 LiteRtStatus LiteRtSamsungInvocationContextSetSchedulingInfo(
     LiteRtDispatchInvocationContext invocation_context,
-    const LiteRtSchedulingInfo* scheduling_info) {
+    const LiteRtSchedulingInfo *scheduling_info) {
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -217,10 +216,9 @@ LiteRtStatus LiteRtSamsungInvocationContextSetSchedulingInfo(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSamsungAttachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
+LiteRtStatus LiteRtSamsungAttachInput(
+    LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (auto status = invocation_context->AttachInput(graph_input_index,
                                                     tensor_buffer_handle);
       !status) {
@@ -231,10 +229,9 @@ LiteRtSamsungAttachInput(LiteRtDispatchInvocationContext invocation_context,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSamsungAttachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
+LiteRtStatus LiteRtSamsungAttachOutput(
+    LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (auto status = invocation_context->AttachOutput(graph_output_index,
                                                      tensor_buffer_handle);
       !status) {
@@ -245,26 +242,24 @@ LiteRtSamsungAttachOutput(LiteRtDispatchInvocationContext invocation_context,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSamsungDetachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
+LiteRtStatus LiteRtSamsungDetachInput(
+    LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
   LITERT_RETURN_IF_ERROR(
       invocation_context->DetachInput(graph_input_index, tensor_buffer_handle));
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSamsungDetachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
+LiteRtStatus LiteRtSamsungDetachOutput(
+    LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
   LITERT_RETURN_IF_ERROR(invocation_context->DetachOutput(
       graph_output_index, tensor_buffer_handle));
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus
-LiteRtSamsungInvoke(LiteRtDispatchInvocationContext invocation_context) {
+LiteRtStatus LiteRtSamsungInvoke(
+    LiteRtDispatchInvocationContext invocation_context) {
   if (auto status = invocation_context->Invoke(); !status) {
     LITERT_LOG(LITERT_ERROR, "Failed to execute invocation context: %s",
                status.Error().Message().c_str());

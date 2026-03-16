@@ -1,4 +1,4 @@
-// Copyright (C) 2026 Samsung Electronics Co. LTD. 
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,17 +16,16 @@
 #ifndef LITERT_VENDORS_SAMSUNG_ENN_MANAGER_H_
 #define LITERT_VENDORS_SAMSUNG_ENN_MANAGER_H_
 
-#include "litert/vendors/samsung/dispatch/enn_type.h"
 #include <memory>
 
-#include "litert/cc/litert_expected.h"
-
 #include "litert/cc/internal/litert_shared_library.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/vendors/samsung/dispatch/enn_type.h"
 
 namespace litert::samsung {
 
 class EnnManager {
-public:
+ public:
   using UniquePtr = std::unique_ptr<EnnManager>;
   using Ptr = EnnManager *;
   struct PublicApi;
@@ -41,9 +40,9 @@ public:
   const PublicApi &Api() const;
   ~EnnManager();
 
-private:
+ private:
   EnnManager();
-// Loads and resolve compiler related api
+  // Loads and resolve compiler related api
   LiteRtStatus LoadEnnRuntimeLibrary(absl::string_view path);
 
   SharedLibrary enn_runtime_lib_;
@@ -75,6 +74,6 @@ struct EnnManager::PublicApi {
   EnnReturn (*EnnDeinitialize)(void);
 };
 
-} // namespace litert::samsung
+}  // namespace litert::samsung
 
-#endif // LITERT_VENDORS_SAMSUNG_ENN_MANAGER_H_
+#endif  // LITERT_VENDORS_SAMSUNG_ENN_MANAGER_H_
