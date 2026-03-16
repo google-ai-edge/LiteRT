@@ -47,10 +47,10 @@ class Error {
  public:
   /// @brief Constructs an `Error` from a status and an optional error message.
   /// @note `::litert::Status::kOk` should not be passed.
-  explicit Error(Status status, std::string message = "")
+  explicit Error(::litert::Status status, std::string message = "")
       : status_(static_cast<LiteRtStatus>(status)),
         message_(std::move(message)) {
-    ABSL_DCHECK(status != Status::kOk);
+    ABSL_DCHECK(status != ::litert::Status::kOk);
   }
 
   [[deprecated("Use the constructor that takes ::litert::Status instead.")]]
@@ -61,8 +61,8 @@ class Error {
 
   /// @brief Gets the status.
   /// @todo Rename to `Status()` after the deprecated function is removed.
-  constexpr Status StatusCC() const {
-    return static_cast<enum Status>(status_);
+  constexpr ::litert::Status StatusCC() const {
+    return static_cast<enum ::litert::Status>(status_);
   }
 
   [[deprecated("Use StatusCC() instead.")]]
