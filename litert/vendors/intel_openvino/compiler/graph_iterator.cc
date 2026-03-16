@@ -130,13 +130,6 @@ GraphIteratorDelegate::get_decoder() const {
         LITERT_LOG(LITERT_VERBOSE, "Data is static or constant for op %d",
                    op.Code());
         tensor_meta_info.m_tensor_data = input.Weights().Bytes().data();
-        if (op.Code() != LiteRtOpCode::kLiteRtOpCodeTflConv2d &&
-            op.Code() != LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d &&
-            op.Code() != LiteRtOpCode::kLiteRtOpCodeTflMul &&
-            op.Code() != LiteRtOpCode::kLiteRtOpCodeTflAdd &&
-            op.Code() != LiteRtOpCode::kLiteRtOpCodeTflEmbeddingLookup &&
-            op.Code() != LiteRtOpCode::kLiteRtOpCodeTflFullyConnected)
-          tensor_meta_info.m_quantization_info = nullptr;
       }
       input_meta_info.push_back(tensor_meta_info);
     }
