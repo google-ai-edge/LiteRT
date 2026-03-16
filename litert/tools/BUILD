@@ -481,6 +481,76 @@ cc_binary(
     ] + litert_gpu_accelerator_deps(),
 )
 
+tool_test(
+    name = "run_external_gpu_numerics_test",
+    data = [
+        "//litert/test:extern_weight_model_file",
+        "//litert/test:extern_weight_test_data",
+    ],
+    tags = ["requires-gpu-nvidia"],
+    tool = ":gpu_numerics_check_external_weights",
+    tool_args = [
+        "--graph=$(location //litert/test:extern_weight_model_file)",
+        "--gpu_backend=webgpu",
+        "--enable_constant_tensors_sharing=true",
+        "--epsilon=1e-4",
+        "--deterministic_inputs=true",
+        "--fail_on_threshold=true",
+        "--max_abs_diff_threshold=6.84088",
+        "--mean_abs_diff_threshold=1.089756",
+        "--diff_ratio_threshold=2.0",
+        "--print_diff_stats=true",
+    ],
+)
+
+tool_test(
+    name = "run_external2_gpu_numerics_test",
+    data = [
+        "//litert/test:extern_weight_model_file2",
+        "//litert/test:extern_weight_test_data2",
+    ],
+    tags = ["requires-gpu-nvidia"],
+    tool = ":gpu_numerics_check_external_weights",
+    tool_args = [
+        "--graph=$(location //litert/test:extern_weight_model_file2)",
+        "--gpu_backend=webgpu",
+        "--enable_constant_tensors_sharing=true",
+        "--epsilon=1e-4",
+        "--deterministic_inputs=true",
+        "--fail_on_threshold=true",
+        "--max_abs_diff_threshold=43.0654",
+        "--mean_abs_diff_threshold=10.8344",
+        "--diff_ratio_threshold=2.0",
+        "--print_diff_stats=true",
+    ],
+)
+
+tool_test(
+    name = "run_external2_scoped_gpu_numerics_test",
+    data = [
+        "//litert/test:extern_weight_model_file2_for_scoped",
+        "//litert/test:extern_weight_weight_file2",
+    ],
+    tags = ["requires-gpu-nvidia"],
+    tool = ":gpu_numerics_check_external_weights",
+    tool_args = [
+        "--graph={}".format(runfile_path("//litert/test:extern_weight_model_file2_for_scoped")),
+        "--gpu_backend=webgpu",
+        "--enable_constant_tensors_sharing=true",
+        "--epsilon=1e-4",
+        "--deterministic_inputs=true",
+        "--fail_on_threshold=true",
+        "--max_abs_diff_threshold=43.0654",
+        "--mean_abs_diff_threshold=10.8344",
+        "--diff_ratio_threshold=2.0",
+        "--print_diff_stats=true",
+        "--scoped_weight_file={}".format(runfile_path("//litert/test:extern_weight_weight_file2")),
+        "--scoped_weight_group=weights.bin",
+        "--scoped_weight_offset=0",
+        "--scoped_weight_length=-1",
+    ],
+)
+
 [
     litert_device_exec(
         name = "run_model_device_{}".format(backend),
@@ -552,6 +622,25 @@ NUMERICS_CHECK_DEPS = [
     "//tflite/profiling:time",
 ]
 
+cc_library(
+    name = "gpu_numerics_threshold",
+    srcs = ["gpu_numerics_threshold.cc"],
+    hdrs = ["gpu_numerics_threshold.h"],
+    deps = [
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "gpu_numerics_threshold_test",
+    srcs = ["gpu_numerics_threshold_test.cc"],
+    deps = [
+        ":gpu_numerics_threshold",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
@@ -580,11 +669,29 @@ cc_binary(
     ],
     data = litert_gpu_accelerator_prebuilts(),
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
         "//litert/cc:litert_common",
+        "//litert/cc/internal:scoped_file",
         "//litert/cc/options:litert_gpu_options",
         "//litert/core:filesystem",
         "//tflite/c:c_api_types",
         "//tflite/tools:utils",
+        "@com_google_absl//absl/strings",
+    ] + litert_gpu_accelerator_deps(),
+)
+
+cc_binary(
+    name = "gpu_numerics_check_external_weights",
+    srcs = ["gpu_numerics_check.cc"],
+    deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "//litert/cc:litert_common",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/core:filesystem",
+        "//tflite/c:c_api_types",
+        "//tflite/tools:utils",
+        "@com_google_absl//absl/strings",
     ] + litert_gpu_accelerator_deps(),
 )
 
@@ -595,6 +702,9 @@ cc_binary(
         "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
     ],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
@@ -614,6 +724,9 @@ cc_binary(
     ],
     tags = ["requires-gpu-nvidia"],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
@@ -644,6 +757,9 @@ cc_binary(
         "requires-gpu-nvidia",
     ],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
