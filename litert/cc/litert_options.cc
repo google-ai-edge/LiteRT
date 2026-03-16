@@ -40,9 +40,7 @@
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "litert/core/options.h"
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
 namespace litert {
 
@@ -146,7 +144,6 @@ Expected<void> Options::Build() {
 
 Expected<void> Options::SetExternalWeightScopedFile(
     ScopedFile& scoped_file, ScopedWeightSectionMap sections) {
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   if (!scoped_file.IsValid()) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Scoped file handle must be valid");
@@ -169,10 +166,6 @@ Expected<void> Options::SetExternalWeightScopedFile(
   options_impl->scoped_weight_source = std::make_unique<ScopedWeightSource>(
       std::move(scoped_file), std::move(sections));
   return {};
-#else
-  return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                    "LiteRT was built without external weight loader support");
-#endif
 }
 
 }  // namespace litert
