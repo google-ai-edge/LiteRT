@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -32,6 +33,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#include "tflite/converter/allocation.h"
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/model/model_serialize.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -658,3 +660,16 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
 #ifdef __cplusplus
 }  // extern "C"
 #endif
+
+LiteRtStatus LiteRtCreateModelFromAllocation(
+    std::unique_ptr<tflite::Allocation> allocation, LiteRtModel* model) {
+  if (!model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtModelT::Ptr new_model,
+      litert::internal::LoadModelFromAllocation(std::move(allocation)));
+  *model = new_model.release();
+  return kLiteRtStatusOk;
+}
