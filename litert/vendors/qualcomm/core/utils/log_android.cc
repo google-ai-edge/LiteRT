@@ -49,7 +49,7 @@ void QNNLogger::Log(::qnn::LogLevel severity, const char* format, ...) {
   // First log to Android's explicit log(cat) API.
   va_list args_copy;
   va_copy(args_copy, args);
-  __android_log_vprint(GetPlatformSeverity(severity), "qnn", format, args_copy);
+  __android_log_vprint(GetPlatformSeverity(severity), "lrt-qc", format, args_copy);
   va_end(args_copy);
 
   // Print to file pointer.

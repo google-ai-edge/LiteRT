@@ -9,12 +9,35 @@
 #include <string>
 #include <vector>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif  // defined(__ANDROID__)
+
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
 namespace qnn {
 namespace {
+
+#if defined(__ANDROID__)
+int GetAndroidLogPriority(QnnLog_Level_t level) {
+  switch (level) {
+    case QNN_LOG_LEVEL_ERROR:
+      return ANDROID_LOG_ERROR;
+    case QNN_LOG_LEVEL_WARN:
+      return ANDROID_LOG_WARN;
+    case QNN_LOG_LEVEL_INFO:
+      return ANDROID_LOG_INFO;
+    case QNN_LOG_LEVEL_VERBOSE:
+      return ANDROID_LOG_VERBOSE;
+    case QNN_LOG_LEVEL_DEBUG:
+      return ANDROID_LOG_DEBUG;
+    case QNN_LOG_LEVEL_MAX:
+      return ANDROID_LOG_UNKNOWN;
+  }
+}
+#endif  // defined(__ANDROID__)
 
 void DefaultStdOutLogger(const char* fmt, QnnLog_Level_t level,
                          uint64_t timestamp, va_list argp) {
@@ -39,6 +62,16 @@ void DefaultStdOutLogger(const char* fmt, QnnLog_Level_t level,
       levelStr = "UNKNOWN";
       break;
   }
+
+#if defined(__ANDROID__)
+  // Log to Android logcat.
+  va_list argp_copy;
+  va_copy(argp_copy, argp);
+  __android_log_vprint(GetAndroidLogPriority(level), "qnn", fmt, argp_copy);
+  va_end(argp_copy);
+#endif  // defined(__ANDROID__)
+
+  // Also print to stdout for console output.
   char buffer1[256];
   char buffer2[256];
   double ms = timestamp;
