@@ -1,7 +1,7 @@
 """Default (OSS) build versions of Python strict rules."""
 
 load(
-    "@rules_python//python:defs.bzl",
+    "@xla//third_party/rules_python/python:defs.bzl",
     _py_binary = "py_binary",
     _py_library = "py_library",
     _py_test = "py_test",
