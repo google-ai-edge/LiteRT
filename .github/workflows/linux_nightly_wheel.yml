@@ -159,4 +159,4 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
-        run: twine upload dist/*.whl --non-interactive
+        run: twine upload dist/*.whl --verbose --non-interactive
