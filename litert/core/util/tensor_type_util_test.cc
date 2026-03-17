@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_model.h"
 
 using litert::internal::GetNumBytes;
 using litert::internal::GetNumElements;

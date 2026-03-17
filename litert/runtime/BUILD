@@ -819,6 +819,7 @@ cc_library(
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
