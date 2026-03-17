@@ -79,28 +79,6 @@ LiteRtStatus LrtQualcommOptionsGetLogLevel(
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-// use_htp_preference
-
-// This option controls whether to convert a LiteRt operation to QNN operations
-// which are preferred by the HTP backend. Defaults to false.
-
-LiteRtStatus LrtQualcommOptionsSetUseHtpPreference(LrtQualcommOptions options,
-                                                   bool use_htp_preference);
-
-LiteRtStatus LrtQualcommOptionsGetUseHtpPreference(LrtQualcommOptions options,
-                                                   bool* use_htp_preference);
-
-// use_qint16_as_quint16
-
-// This option controls whether to convert a quantized int16 model to a
-// quantized uint16 model. Defaults to false.
-
-LiteRtStatus LrtQualcommOptionsSetUseQint16AsQuint16(
-    LrtQualcommOptions options, bool use_qint16_as_quint16);
-
-LiteRtStatus LrtQualcommOptionsGetUseQint16AsQuint16(
-    LrtQualcommOptions options, bool* use_qint16_as_quint16);
-
 // use_int64_bias_as_int32
 
 // This option controls whether to convert bias tensors of FullyConnected

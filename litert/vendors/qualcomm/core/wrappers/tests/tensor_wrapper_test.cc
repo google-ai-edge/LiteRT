@@ -282,52 +282,6 @@ TEST(TensorWrapperTest, GetTensorDataTest) {
   }
 }
 
-TEST(TensorWrapperTest, ConvertQint16ToQuint16Test) {
-  std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
-  ScaleOffsetQuantizeParamsWrapper q_param(0.0001, 0);
-  TensorWrapper tensor_wrapper{"", QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_SFIXED_POINT_16, q_param,
-                               dummy_dims};
-
-  std::vector<float> data = {1, 2, 3};
-  const auto& int16_q_param_ref = tensor_wrapper.GetQuantParams();
-  EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
-      int16_q_param_ref));
-  const float int16_scale =
-      std::get<ScaleOffsetQuantizeParamsWrapper>(int16_q_param_ref).GetScale();
-  const std::int32_t int16_zero_point =
-      std::get<ScaleOffsetQuantizeParamsWrapper>(int16_q_param_ref)
-          .GetZeroPoint();
-  std::vector<std::int16_t> int16_data;
-  for (int i = 0; i < data.size(); ++i) {
-    int16_data.emplace_back(
-        Quantize<std::int16_t>(data[i], int16_scale, int16_zero_point));
-  }
-  tensor_wrapper.SetTensorData<std::int16_t>(
-      absl::MakeSpan(int16_data.data(), int16_data.size()));
-
-  tensor_wrapper.ConvertQint16ToQuint16();
-
-  const auto& uint16_q_param_ref = tensor_wrapper.GetQuantParams();
-  EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
-      uint16_q_param_ref));
-  const float uint16_scale =
-      std::get<ScaleOffsetQuantizeParamsWrapper>(uint16_q_param_ref).GetScale();
-  const std::int32_t uint16_zero_point =
-      std::get<ScaleOffsetQuantizeParamsWrapper>(uint16_q_param_ref)
-          .GetZeroPoint();
-  const auto uint16_data = *(tensor_wrapper.GetTensorData<std::uint16_t>());
-  std::vector<float> deq_data;
-  for (size_t i = 0; i < data.size(); i++) {
-    deq_data.emplace_back(
-        Dequantize(uint16_data[i], uint16_scale, uint16_zero_point));
-  }
-  ASSERT_EQ(data.size(), deq_data.size());
-  for (size_t i = 0; i < data.size(); ++i) {
-    EXPECT_NEAR(data[i], deq_data[i], 1e-3);
-  }
-}
-
 TEST(TensorWrapperTest, UpdateBitWidthTest) {
   BwScaleOffsetQuantizeParamsWrapper q_param(2, 0.0001f, 0);
   TensorWrapper tensor_wrapper{"",

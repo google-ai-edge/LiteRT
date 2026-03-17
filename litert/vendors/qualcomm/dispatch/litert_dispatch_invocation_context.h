@@ -98,12 +98,6 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> DetachBuffer(
       Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle);
 
-  litert::Expected<void> ConvertToUint16(
-      LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes);
-
-  litert::Expected<void> ConvertToInt16(
-      LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes);
-
   litert::Expected<void> WriteTensorTo(
       const std::filesystem::path& output_folder, ::qnn::TensorWrapper& tensor);
 

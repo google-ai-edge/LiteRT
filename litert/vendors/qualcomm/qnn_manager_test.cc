@@ -59,9 +59,6 @@ TEST(QnnManagerTest, GetOptions) {
   const auto& options_ref = (*qnn)->GetOptions();
   EXPECT_EQ(options.GetLogLevel(), options_ref.GetLogLevel());
   EXPECT_EQ(options.GetProfiling(), options_ref.GetProfiling());
-  EXPECT_EQ(options.GetUseHtpPreference(), options_ref.GetUseHtpPreference());
-  EXPECT_EQ(options.GetUseQint16AsQuint16(),
-            options_ref.GetUseQint16AsQuint16());
   EXPECT_EQ(options.GetEnableWeightSharing(),
             options_ref.GetEnableWeightSharing());
   EXPECT_EQ(options.GetHtpPerformanceMode(),

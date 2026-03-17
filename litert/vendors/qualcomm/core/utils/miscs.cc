@@ -29,23 +29,6 @@ static constexpr int kRequiredNumProviders{1};
 typedef Qnn_ErrorHandle_t (*QnnInterfaceGetProvidersFn_t)(
     const QnnInterface_t*** provider_list, uint32_t* num_providers);
 
-void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
-                                  std::vector<std::uint16_t>& dst) {
-  dst.clear();
-  dst.reserve(src.size());
-  for (const auto& data : src) {
-    dst.emplace_back(data + kUint16ZeroPoint);
-  }
-}
-void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
-                                  std::vector<std::int16_t>& dst) {
-  dst.clear();
-  dst.reserve(src.size());
-  for (const auto& data : src) {
-    dst.emplace_back(data - kUint16ZeroPoint);
-  }
-}
-
 void ConvertDataFromInt4ToInt8(const void* src, size_t num_bytes,
                                std::vector<std::int8_t>& dst) {
   dst.clear();
