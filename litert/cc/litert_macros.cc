@@ -21,6 +21,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_source_location.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert {
@@ -76,64 +77,64 @@ litert::Error ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
 }
 
 absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
-  switch (error_.Status()) {
-    case kLiteRtStatusOk:
+  switch (error_.StatusCC()) {
+    case Status::kOk:
       return absl::OkStatus();
-    case kLiteRtStatusErrorInvalidArgument:
+    case Status::kErrorInvalidArgument:
       return absl::InvalidArgumentError(LogMessage());
-    case kLiteRtStatusErrorMemoryAllocationFailure:
+    case Status::kErrorMemoryAllocationFailure:
       return absl::ResourceExhaustedError(LogMessage());
-    case kLiteRtStatusErrorRuntimeFailure:
+    case Status::kErrorRuntimeFailure:
       return absl::InternalError(LogMessage());
-    case kLiteRtStatusErrorMissingInputTensor:
+    case Status::kErrorMissingInputTensor:
       return absl::InvalidArgumentError(LogMessage());
-    case kLiteRtStatusErrorUnsupported:
+    case Status::kErrorUnsupported:
       return absl::UnimplementedError(LogMessage());
-    case kLiteRtStatusErrorNotFound:
+    case Status::kErrorNotFound:
       return absl::NotFoundError(LogMessage());
-    case kLiteRtStatusErrorTimeoutExpired:
+    case Status::kErrorTimeoutExpired:
       return absl::DeadlineExceededError(LogMessage());
-    case kLiteRtStatusCancelled:
+    case Status::kCancelled:
       return absl::CancelledError(LogMessage());
-    case kLiteRtStatusErrorWrongVersion:
+    case Status::kErrorWrongVersion:
       return absl::FailedPreconditionError(LogMessage());
-    case kLiteRtStatusErrorUnknown:
+    case Status::kErrorUnknown:
       return absl::UnknownError(LogMessage());
-    case kLiteRtStatusErrorAlreadyExists:
+    case Status::kErrorAlreadyExists:
       return absl::AlreadyExistsError(LogMessage());
-    case kLiteRtStatusErrorFileIO:
+    case Status::kErrorFileIO:
       return absl::UnavailableError(LogMessage());
-    case kLiteRtStatusErrorInvalidFlatbuffer:
+    case Status::kErrorInvalidFlatbuffer:
       return absl::InvalidArgumentError(LogMessage());
-    case kLiteRtStatusErrorDynamicLoading:
+    case Status::kErrorDynamicLoading:
       return absl::UnavailableError(LogMessage());
-    case kLiteRtStatusErrorSerialization:
+    case Status::kErrorSerialization:
       return absl::InternalError(LogMessage());
-    case kLiteRtStatusErrorCompilation:
+    case Status::kErrorCompilation:
       return absl::InternalError(LogMessage());
-    case kLiteRtStatusErrorIndexOOB:
+    case Status::kErrorIndexOOB:
       return absl::OutOfRangeError(LogMessage());
-    case kLiteRtStatusErrorInvalidIrType:
+    case Status::kErrorInvalidIrType:
       return absl::InvalidArgumentError(LogMessage());
-    case kLiteRtStatusErrorInvalidGraphInvariant:
+    case Status::kErrorInvalidGraphInvariant:
       return absl::InvalidArgumentError(LogMessage());
-    case kLiteRtStatusErrorGraphModification:
+    case Status::kErrorGraphModification:
       return absl::InternalError(LogMessage());
-    case kLiteRtStatusErrorInvalidToolConfig:
+    case Status::kErrorInvalidToolConfig:
       return absl::InvalidArgumentError(LogMessage());
-    case kLiteRtStatusLegalizeNoMatch:
+    case Status::kLegalizeNoMatch:
       return absl::NotFoundError(LogMessage());
-    case kLiteRtStatusErrorInvalidLegalization:
+    case Status::kErrorInvalidLegalization:
       return absl::InvalidArgumentError(LogMessage());
-    case kLiteRtStatusPatternNoMatch:
+    case Status::kPatternNoMatch:
       return absl::NotFoundError(error_.Message());
-    case kLiteRtStatusInvalidTransformation:
+    case Status::kInvalidTransformation:
       return absl::InvalidArgumentError(error_.Message());
-    case kLiteRtStatusErrorUnsupportedRuntimeVersion:
+    case Status::kErrorUnsupportedRuntimeVersion:
       return absl::FailedPreconditionError(LogMessage());
-    case kLiteRtStatusErrorUnsupportedCompilerVersion:
+    case Status::kErrorUnsupportedCompilerVersion:
       return absl::FailedPreconditionError(LogMessage());
-    case kLiteRtStatusErrorIncompatibleByteCodeVersion:
+    case Status::kErrorIncompatibleByteCodeVersion:
       return absl::FailedPreconditionError(LogMessage());
   }
 }

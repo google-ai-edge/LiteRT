@@ -27,10 +27,12 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -254,7 +256,7 @@ Expected<size_t> CompiledModel::GetSignatureIndex(
       return i;
     }
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+  return Unexpected(Status::kErrorNotFound, "Signature not found");
 }
 
 Expected<size_t> CompiledModel::FindInputIndex(
@@ -265,7 +267,7 @@ Expected<size_t> CompiledModel::FindInputIndex(
   if (it != input_names.end()) {
     return std::distance(input_names.begin(), it);
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Failed to find input");
+  return Unexpected(Status::kErrorNotFound, "Failed to find input");
 }
 
 Expected<std::vector<absl::string_view>> CompiledModel::GetSignatureInputNames(
@@ -298,7 +300,7 @@ Expected<size_t> CompiledModel::FindOutputIndex(
   if (it != output_names.end()) {
     return std::distance(output_names.begin(), it);
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Failed to find output");
+  return Unexpected(Status::kErrorNotFound, "Failed to find output");
 }
 
 Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
@@ -307,7 +309,7 @@ Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
   LITERT_ASSIGN_OR_RETURN(const std::vector<TensorBufferType>& supported_types,
                           buffer_requirements.SupportedTypes());
   if (supported_types.empty()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+    return Unexpected(Status::kErrorRuntimeFailure,
                       "Input doesn't support any tensor buffer types");
   }
   // For simplicity we just pick the first supported tensor buffer type.
@@ -410,7 +412,7 @@ Expected<void> CompiledModel::RunCApiHelper(
     LiteRtTensorBuffer* output_buffers, bool& async, LiteRtOptions run_options,
     const LiteRtSchedulingInfo* scheduling_info) const {
   if (run_options != nullptr && scheduling_info != nullptr) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Status::kErrorInvalidArgument,
                       "Run options and scheduling info are mutually exclusive");
   }
 
@@ -441,7 +443,7 @@ Expected<void> CompiledModel::RunCApiHelper(
                        num_output_buffers, output_buffers);
   }
   if (status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to invoke the compiled model");
+    return Unexpected(ToStatus(status), "Failed to invoke the compiled model");
   }
   return {};
 }
@@ -512,8 +514,7 @@ Expected<void> CompiledModel::RunMapHelper(
     const LiteRtSchedulingInfo* scheduling_info) const {
   auto signature_index = GetSignatureIndex(signature_key);
   if (!signature_index) {
-    return Unexpected(kLiteRtStatusErrorNotFound,
-                      "Failed to get signature_index");
+    return Unexpected(Status::kErrorNotFound, "Failed to get signature_index");
   }
   return RunMapWithIndexHelper(*signature_index, input_map, output_map, async,
                                run_options, scheduling_info);
@@ -567,7 +568,7 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
     absl::string_view output_name = output_names[i];
     auto it = output_map.find(output_name);
     if (it == output_map.end()) {
-      return Unexpected(kLiteRtStatusErrorNotFound,
+      return Unexpected(Status::kErrorNotFound,
                         "The given map is missing some output TensorBuffers");
     }
     output_buffers_ptr[i] = it->second.Get();

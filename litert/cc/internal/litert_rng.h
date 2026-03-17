@@ -421,10 +421,10 @@ class RandomTensorType {
   /// any defaults.
   static Expected<ResolvedDimSpec> ResolveDimSpec(DimSize dim) {
     if (dim < kMinDimSize) {
-      return Error(kLiteRtStatusErrorInvalidArgument, "Dimension must be > 0");
+      return Error(Status::kErrorInvalidArgument, "Dimension must be > 0");
     }
     if (dim > kMaxDimSize) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Dimension must be <= kMaxDimSize");
     }
     return ResolvedDimSpec(dim);
@@ -434,7 +434,7 @@ class RandomTensorType {
     LITERT_ASSIGN_OR_RETURN(auto l, ResolveDimSpec(dim.first));
     LITERT_ASSIGN_OR_RETURN(auto r, ResolveDimSpec(dim.second));
     if (l >= r) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
+      return Error(Status::kErrorInvalidArgument,
                    "Left dimension must be < right dimension");
     }
     return ResolvedDimSpec(

@@ -23,9 +23,9 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -73,7 +73,7 @@ class RankedTensorType {
     LITERT_ASSIGN_OR_RETURN(const size_t num_elements, layout_.NumElements());
     auto byte_width = GetByteWidth(element_type_);
     if (!byte_width) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
     return *byte_width * num_elements;
   }

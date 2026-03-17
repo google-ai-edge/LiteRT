@@ -32,6 +32,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_platform_support.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
@@ -44,6 +45,7 @@
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/test/matchers.h"
+#include <CL/cl.h>
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
@@ -181,14 +183,14 @@ class ClEnvironment {
                                       tflite::gpu::cl::CLContext* context) {
     if (gl_env == nullptr) {
       if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
-        return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+        return litert::Unexpected(Status::kErrorInvalidArgument,
                                   "Failed to create CL context");
       }
     } else {
 #if LITERT_HAS_OPENGL_SUPPORT
       if (!tflite::gpu::cl::IsGlSharingSupported(device)) {
         if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
-          return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+          return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL context");
         }
       } else {
@@ -200,7 +202,7 @@ class ClEnvironment {
                      gl_env->GetEglEnvironment().display()),
                  context)
                  .ok()) {
-          return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+          return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL-GL context");
         }
       }

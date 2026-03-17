@@ -78,6 +78,7 @@ cc_library(
     deps = [
         ":litert_environment",
         ":litert_tensor_buffer",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc/internal:litert_handle",
@@ -176,6 +177,7 @@ cc_library(
     ],
     deps = [
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -219,9 +221,11 @@ cc_library(
     deps = [
         ":litert_model",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_detail",
@@ -249,6 +253,7 @@ cc_library(
     deps = [
         ":litert_extended_model",
         ":litert_op_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
@@ -349,6 +354,7 @@ cc_library(
     srcs = ["//litert/cc:litert_opaque_options.cc"],
     hdrs = ["//litert/cc:litert_opaque_options.h"],
     deps = [
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
@@ -370,6 +376,7 @@ cc_test(
         ":litert_opaque_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
@@ -387,6 +394,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@flatbuffers//:runtime_cc",
         # copybara:uncomment "@flatbuffers//src:util",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ] + select({
@@ -422,6 +430,7 @@ cc_test(
         # copybara:comment_end
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
+        "//litert/cc:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
@@ -442,6 +451,7 @@ cc_library(
     deps = [
         ":litert_environment",
         ":litert_event",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
@@ -476,6 +486,7 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -519,6 +530,7 @@ cc_library(
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
         "//litert/cc:litert_any",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

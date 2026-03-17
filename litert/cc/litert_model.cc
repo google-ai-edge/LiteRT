@@ -26,8 +26,10 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
 namespace litert {
@@ -202,7 +204,7 @@ Expected<size_t> Model::GetSignatureIndex(
       return i;
     }
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+  return Unexpected(Status::kErrorNotFound, "Signature not found");
 }
 
 Expected<SimpleSignature> Model::FindSignature(

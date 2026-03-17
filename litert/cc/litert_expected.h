@@ -73,7 +73,7 @@ class Error {
   const std::string& Message() const { return message_; }
 
   friend std::ostream& operator<<(std::ostream& stream, const Error& error) {
-    stream << LiteRtGetStatusString(error.Status());
+    stream << LiteRtGetStatusString(error.status_);
     if (!error.Message().empty()) {
       stream << ": " << error.Message();
     }
@@ -82,7 +82,7 @@ class Error {
 
   template <class Sink>
   friend void AbslStringify(Sink& sink, const Error& error) {
-    absl::Format(&sink, "%s", LiteRtGetStatusString(error.Status()));
+    absl::Format(&sink, "%s", LiteRtGetStatusString(error.status_));
     if (!error.Message().empty()) {
       absl::Format(&sink, ": %v", error.Message());
     }
@@ -96,9 +96,18 @@ class Error {
 /// @brief A utility for generic return values that represents a failure.
 class Unexpected {
  public:
-  template <class... Args>
-  constexpr explicit Unexpected(Args&&... args)
-      : error_(std::forward<Args>(args)...) {}
+  explicit Unexpected(Status status, std::string message = "")
+      : error_(status, std::move(message)) {}
+
+  explicit Unexpected(LiteRtStatus status, std::string message = "")
+      : error_(ToStatus(status), std::move(message)) {}
+
+  template <class First, class... Rest,
+            class = std::enable_if_t<
+                !std::is_same_v<std::decay_t<First>, Status> &&
+                !std::is_same_v<std::decay_t<First>, LiteRtStatus>>>
+  constexpr explicit Unexpected(First&& first, Rest&&... rest)
+      : error_(std::forward<First>(first), std::forward<Rest>(rest)...) {}
 
   /// @brief Allows for implicit conversion from a convertible `Error` value
   /// in-place.
@@ -141,7 +150,7 @@ class Unexpected {
 /// Expected<Foo> Bar() {
 ///   bool success = ...
 ///   if (!success) {
-///     return Unexpected(kLiteRtStatus, "Bad Baz");
+///     return Unexpected(Status::kErrorUnknown, "Bad Baz");
 ///   }
 ///   return Foo();
 /// }

@@ -23,6 +23,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_logging.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/test/matchers.h"
 
@@ -38,13 +39,13 @@ TEST(LiteRtReturnIfErrorTest, ConvertsResultToLiteRtStatus) {
   EXPECT_EQ(
       []() -> LiteRtStatus {
         LITERT_RETURN_IF_ERROR(
-            Expected<int>(Unexpected(kLiteRtStatusErrorNotFound)));
+            Expected<int>(Unexpected(Status::kErrorNotFound)));
         return kLiteRtStatusOk;
       }(),
       kLiteRtStatusErrorNotFound);
   EXPECT_EQ(
       []() -> LiteRtStatus {
-        LITERT_RETURN_IF_ERROR(Unexpected(kLiteRtStatusErrorNotFound));
+        LITERT_RETURN_IF_ERROR(Unexpected(Status::kErrorNotFound));
         return kLiteRtStatusOk;
       }(),
       kLiteRtStatusErrorNotFound);
@@ -72,20 +73,20 @@ TEST(LiteRtReturnIfErrorTest, ConvertsResultToExpectedHoldingAnError) {
   EXPECT_THAT(
       []() -> Expected<void> {
         LITERT_RETURN_IF_ERROR(
-            Expected<void>(Unexpected(kLiteRtStatusErrorNotFound)));
+            Expected<void>(Unexpected(Status::kErrorNotFound)));
         return {};
       }(),
       AllOf(Property(&Expected<void>::HasValue, false),
             Property(&Expected<void>::Error,
-                     Property(&Error::Status, kLiteRtStatusErrorNotFound))));
+                     Property(&Error::StatusCC, Status::kErrorNotFound))));
   EXPECT_THAT(
       []() -> Expected<void> {
-        LITERT_RETURN_IF_ERROR(Unexpected(kLiteRtStatusErrorNotFound));
+        LITERT_RETURN_IF_ERROR(Unexpected(Status::kErrorNotFound));
         return {};
       }(),
       AllOf(Property(&Expected<void>::HasValue, false),
             Property(&Expected<void>::Error,
-                     Property(&Error::Status, kLiteRtStatusErrorNotFound))));
+                     Property(&Error::StatusCC, Status::kErrorNotFound))));
   EXPECT_THAT(
       []() -> Expected<void> {
         LITERT_RETURN_IF_ERROR(kLiteRtStatusErrorNotFound);
@@ -93,7 +94,7 @@ TEST(LiteRtReturnIfErrorTest, ConvertsResultToExpectedHoldingAnError) {
       }(),
       AllOf(Property(&Expected<void>::HasValue, false),
             Property(&Expected<void>::Error,
-                     Property(&Error::Status, kLiteRtStatusErrorNotFound))));
+                     Property(&Error::StatusCC, Status::kErrorNotFound))));
   EXPECT_THAT(
       []() -> Expected<void> {
         LITERT_RETURN_IF_ERROR(true);
@@ -107,7 +108,7 @@ TEST(LiteRtReturnIfErrorTest, ConvertsResultToExpectedHoldingAnError) {
       }(),
       AllOf(Property(&Expected<void>::HasValue, false),
             Property(&Expected<void>::Error,
-                     Property(&Error::Status, kLiteRtStatusErrorUnknown))));
+                     Property(&Error::StatusCC, Status::kErrorUnknown))));
   EXPECT_THAT(
       []() -> Expected<void> {
         LITERT_RETURN_IF_ERROR(false) << "Extra message";
@@ -115,7 +116,7 @@ TEST(LiteRtReturnIfErrorTest, ConvertsResultToExpectedHoldingAnError) {
       }(),
       AllOf(Property(&Expected<void>::HasValue, false),
             Property(&Expected<void>::Error,
-                     Property(&Error::Status, kLiteRtStatusErrorUnknown)),
+                     Property(&Error::StatusCC, Status::kErrorUnknown)),
             Property(&Expected<void>::Error,
                      Property(&Error::Message, HasSubstr("Extra message")))));
 }
@@ -220,7 +221,7 @@ TEST(LiteRtAssignOrReturnTest, MoveOnlyVariableAssignmentWorks) {
 
 TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
   Expected<int> InvalidArgumentError =
-      Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument));
+      Expected<int>(Unexpected(Status::kErrorInvalidArgument));
 
   int canary_value = 0;
   auto ErrorWithStatus = [&]() -> LiteRtStatus {
@@ -243,7 +244,7 @@ TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
   };
   auto expected_return = ErrorWithExpected();
   ASSERT_FALSE(expected_return.HasValue());
-  EXPECT_EQ(expected_return.Error().Status(),
+  EXPECT_EQ(ToLiteRtStatus(expected_return.Error().StatusCC()),
             kLiteRtStatusErrorInvalidArgument);
   EXPECT_EQ(canary_value, 0);
 }
@@ -266,7 +267,7 @@ TEST(LiteRtAbortIfErrorTest, DoesntDieWithSuccessValues) {
 
 TEST(LiteRtAbortIfErrorTest, DiesWithErrorValue) {
   Expected<int> InvalidArgumentError = Expected<int>(
-      Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
+      Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
 #ifndef NDEBUG
@@ -291,7 +292,7 @@ TEST(LiteRtAssignOrAbortTest, AllowsStructuredBindings) {
 
 TEST(LiteRtAssignOrAbortTest, DiesWithError) {
   Expected<int> InvalidArgumentError = Expected<int>(
-      Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
+      Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError),
 #ifndef NDEBUG
@@ -304,7 +305,7 @@ TEST(LiteRtAssignOrAbortTest, DiesWithError) {
 
 TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
   Expected<int> InvalidArgumentError = Expected<int>(
-      Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
+      Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
                              _ << "Error abort log"),
@@ -320,7 +321,7 @@ TEST(LiteRtErrorStatusBuilderTest, BacktraceWorks) {
   const int error_1_line = __LINE__ + 3;
   auto error_1 = []() -> Expected<void> {
     LITERT_RETURN_IF_ERROR(
-        Unexpected(kLiteRtStatusErrorUnknown, "An error message."));
+        Unexpected(Status::kErrorUnknown, "An error message."));
     return {};
   };
 
@@ -362,7 +363,7 @@ TEST(LiteRtErrorStatusBuilderTest, CastToLiteRtStatusLogsError) {
   litert::InterceptLogs log_interceptor;
   auto error_1 = []() -> LiteRtStatus {
     LITERT_RETURN_IF_ERROR(
-        Unexpected(kLiteRtStatusErrorUnknown, "An error message."))
+        Unexpected(Status::kErrorUnknown, "An error message."))
         << "Failed a subcall.";
     return kLiteRtStatusOk;
   };
@@ -376,7 +377,7 @@ TEST(LiteRtErrorStatusBuilderTest, CastToLiteRtStatusLogsError) {
 TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatus) {
   auto error = []() -> absl::Status {
     LITERT_RETURN_IF_ERROR(
-        Unexpected(kLiteRtStatusErrorInvalidArgument, "An error message."));
+        Unexpected(Status::kErrorInvalidArgument, "An error message."));
     return absl::OkStatus();
   }();
   EXPECT_FALSE(error.ok());
@@ -387,7 +388,7 @@ TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatus) {
 TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatusOr) {
   auto error_1 = []() -> absl::StatusOr<int> {
     LITERT_RETURN_IF_ERROR(
-        Unexpected(kLiteRtStatusErrorInvalidArgument, "An error message."));
+        Unexpected(Status::kErrorInvalidArgument, "An error message."));
     return 1;
   }();
   EXPECT_FALSE(error_1.ok());
@@ -396,7 +397,7 @@ TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatusOr) {
 
   auto error_2 = []() -> absl::StatusOr<int> {
     LITERT_ASSIGN_OR_RETURN(
-        auto v, Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument,
+        auto v, Expected<int>(Unexpected(Status::kErrorInvalidArgument,
                                          "An error message.")));
     return v;
   }();

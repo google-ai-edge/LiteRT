@@ -56,7 +56,7 @@ LiteRtStatus ApplyPlugin(std::unique_ptr<ApplyPluginRun> run);
 /// This class provides methods to set hardware accelerators, add custom
 /// operations, bind external tensors, and configure various backend-specific
 /// options (e.g., GPU, CPU, Qualcomm, MediaTek, etc.).
-class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
+class Options : public internal::BaseHandle<LiteRtOptions> {
  public:
   friend class CompiledModel;
   friend class CompiledModelNext;
@@ -78,8 +78,8 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   /// @param owned Indicates whether this object should take ownership of the
   /// provided handle.
   explicit Options(LiteRtOptions compilation_options, OwnHandle owned)
-      : internal::Handle<LiteRtOptions, LiteRtDestroyOptions>(
-            compilation_options, owned) {}
+      : internal::BaseHandle<LiteRtOptions>(compilation_options,
+                                            LiteRtDestroyOptions, owned) {}
 
   /// Creates a new `Options` object.
   /// @return An `Expected` object containing the new `Options` instance, or an

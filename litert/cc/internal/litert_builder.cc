@@ -25,6 +25,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert {
@@ -64,7 +65,7 @@ Expected<Tensor> Builder::BuildTensor(const RankedTensorSpec& spec) const {
 
 Expected<Tensor> Builder::CloneTensor(const Tensor& src) const {
   if (src.TypeId() != kLiteRtRankedTensorType) {
-    return Unexpected(kLiteRtStatusErrorUnsupported);
+    return Unexpected(Status::kErrorUnsupported);
   }
   auto ranked_type = src.RankedTensorType();
   if (!ranked_type) {

@@ -29,6 +29,7 @@
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -132,7 +133,7 @@ class Environment {
     if (auto status = runtime->CreateEnvironment(c_options->size(),
                                                  c_options->data(), &env);
         status != kLiteRtStatusOk) {
-      return Error(status);
+      return Error(ToStatus(status));
     } else {
       return Environment(env, std::move(runtime));
     }

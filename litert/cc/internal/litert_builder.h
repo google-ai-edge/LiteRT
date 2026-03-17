@@ -153,7 +153,7 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
   template <typename T>
   Expected<void> SetOpOptions(Op& op, T&& options) const {
     if constexpr (!std::is_base_of_v<OpOptions, T>) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
     options.op = op.Get();
     options.SetOpOptions(this->Get());

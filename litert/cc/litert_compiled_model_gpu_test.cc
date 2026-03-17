@@ -410,7 +410,8 @@ TEST_P(CompiledModelGpuTest, PartialDelegationNoCpuFallbackError) {
       *env, testing::GetTestFilePath(kModelPartilaFileName),
       *compilation_options);
   EXPECT_FALSE(compiled_model_res.HasValue());
-  EXPECT_EQ(compiled_model_res.Error().Status(), kLiteRtStatusErrorCompilation);
+  EXPECT_EQ(ToLiteRtStatus(compiled_model_res.Error().StatusCC()),
+            kLiteRtStatusErrorCompilation);
 }
 
 TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
