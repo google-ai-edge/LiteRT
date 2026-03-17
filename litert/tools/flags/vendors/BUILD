@@ -254,3 +254,41 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+# SAMSUNG####################################################################################
+
+cc_library(
+    name = "samsung_flags",
+    srcs = ["samsung_flags.cc"],
+    hdrs = ["samsung_flags.h"],
+    copts = [
+        "-DINCLUDE_SAMSUNG_COMPILE_FLAGS",
+        "-DINCLUDE_SAMSUNG_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/c/options:litert_samsung_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_samsung_options",
+	"@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "samsung_flags_with_dynamic_runtime",
+    srcs = ["samsung_flags.cc"],
+    hdrs = ["samsung_flags.h"],
+    copts = [
+        "-DINCLUDE_SAMSUNG_COMPILE_FLAGS",
+        "-DINCLUDE_SAMSUNG_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
