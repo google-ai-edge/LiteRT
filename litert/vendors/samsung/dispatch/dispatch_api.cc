@@ -19,7 +19,7 @@
 #include <optional>
 #include <string>
 
-#include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/base/no_destructor.h"   // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -42,6 +42,10 @@ static std::unique_ptr<::litert::samsung::EnnManager> static_enn_manager;
 
 char BuildId[256];
 
+LiteRtEnvironmentOptions static_environment_options = nullptr;
+
+LiteRtOptions static_options = nullptr;
+
 }  // namespace
 
 // Initialize the Dispatch API runtime.
@@ -53,7 +57,7 @@ LiteRtStatus LiteRtSamsungInitialize(LiteRtEnvironment environment,
   LiteRtEnvironmentOptions environment_options;
   LiteRtGetEnvironmentOptions(environment, &environment_options);
 
-  const char* dispatch_lib_dir = nullptr;
+  const char *dispatch_lib_dir = nullptr;
   if (environment_options) {
     LiteRtAny dispatch_lib_dir_any;
     auto status = LiteRtGetEnvironmentOptionsValue(
@@ -87,31 +91,29 @@ LiteRtStatus LiteRtSamsungInitialize(LiteRtEnvironment environment,
 }
 
 // Return the version of the Dispatch API runtime.
-LiteRtStatus LiteRtSamsungGetApiVersion(LiteRtApiVersion* api_version) {
-  return kLiteRtStatusErrorUnsupported;
-}
+LiteRtStatus LiteRtSamsungGetApiVersion(LiteRtApiVersion *api_version) {}
 
 // Return the vendor id, the Samsung Dispatch runtime.
-LiteRtStatus LiteRtSamsungGetVendorId(const char** vendor_id) {
+LiteRtStatus LiteRtSamsungGetVendorId(const char **vendor_id) {
   *vendor_id = "Samsung";
   return kLiteRtStatusOk;
 }
 
 // Return the build ID of the Dispatch API runtime.
-LiteRtStatus LiteRtSamsungGetBuildId(const char** build_id) {
+LiteRtStatus LiteRtSamsungGetBuildId(const char **build_id) {
   *build_id = BuildId;
   return kLiteRtStatusOk;
 }
 
 // Return the capabilities supported by Samsung dispatch API runtime.
 // Only Support basic now.
-LiteRtStatus LiteRtSamsungGetCapabilities(int* capabilities) {
+LiteRtStatus LiteRtSamsungGetCapabilities(int *capabilities) {
   *capabilities = kLiteRtDispatchCapabilitiesBasic;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtSamsungDeviceContextCreate(
-    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
+    LiteRtOptions options, LiteRtDispatchDeviceContext *device_context) {
   if (auto context =
           LiteRtDispatchDeviceContextT::Create(static_enn_manager.get());
       context) {
@@ -132,8 +134,8 @@ LiteRtStatus LiteRtSamsungDeviceContextDestroy(
 
 LiteRtStatus LiteRtSamsungGetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    const LiteRtRankedTensorType *tensor_type,
+    LiteRtTensorBufferRequirements *tensor_buffer_requirements) {
   if (auto requirements =
           invocation_context->GetInputRequirements(input_index, *tensor_type);
       requirements) {
@@ -146,8 +148,8 @@ LiteRtStatus LiteRtSamsungGetInputRequirements(
 
 LiteRtStatus LiteRtSamsungGetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+    const LiteRtRankedTensorType *tensor_type,
+    LiteRtTensorBufferRequirements *tensor_buffer_requirements) {
   if (auto requirements =
           invocation_context->GetOutputRequirements(output_index, *tensor_type);
       requirements) {
@@ -162,7 +164,7 @@ LiteRtStatus LiteRtSamsungGetOutputRequirements(
 LiteRtStatus LiteRtSamsungRegisterTensorBuffer(
     LiteRtDispatchDeviceContext device_context,
     LiteRtTensorBuffer tensor_buffer,
-    LiteRtTensorBufferHandle* tensor_buffer_handle) {
+    LiteRtTensorBufferHandle *tensor_buffer_handle) {
   if (auto result = device_context->RegisterTensorBuffer(tensor_buffer);
       result) {
     *tensor_buffer_handle = *result;
@@ -193,9 +195,9 @@ LiteRtStatus LiteRtSamsungUnregisterTensorBuffer(
 LiteRtStatus LiteRtSamsungInvocationContextCreate(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
-    const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
+    const LiteRtMemBuffer *exec_bytecode_buffer, const char *function_name,
     int num_inputs, int num_outputs,
-    LiteRtDispatchInvocationContext* invocation_context) {
+    LiteRtDispatchInvocationContext *invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
       static_enn_manager.get(), device_context, exec_type, exec_bytecode_buffer,
       function_name, num_inputs, num_outputs);
@@ -221,7 +223,7 @@ LiteRtStatus LiteRtSamsungInvocationContextDestroy(
 
 LiteRtStatus LiteRtSamsungInvocationContextSetSchedulingInfo(
     LiteRtDispatchInvocationContext invocation_context,
-    const LiteRtSchedulingInfo* scheduling_info) {
+    const LiteRtSchedulingInfo *scheduling_info) {
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -326,7 +328,7 @@ LiteRtDispatchApi TheApi = {
     /*.graph_interface=*/nullptr,
 };
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
+LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi *api) {
   *api = TheApi;
   return kLiteRtStatusOk;
 }

@@ -15,12 +15,12 @@
 // Copyright (C) 2026 Samsung Electronics Co. LTD.
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_SAMSUNG__FLAGS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_SAMSUNG__FLAGS_H_
+#ifndef ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_SAMSUNG__FLAGS_H_
+#define ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_SAMSUNG__FLAGS_H_
 
 #include <string>
 
-#include "absl/flags/declare.h"  // from @com_google_absl
+#include "absl/flags/declare.h"        // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_samsung_options.h"
@@ -47,4 +47,4 @@ Expected<void> UpdateSamsungOptionsFromFlags(SamsungOptions& options);
 }  // namespace litert::samsung
 #endif
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_SAMSUNG__FLAGS_H_
+#endif  // ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_SAMSUNG__FLAGS_H_

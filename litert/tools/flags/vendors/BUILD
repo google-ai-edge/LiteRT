@@ -269,7 +269,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_samsung_options",
-        "@com_google_absl//absl/flags:flag",
+	"@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,

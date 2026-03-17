@@ -39,6 +39,7 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_samsung_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
 

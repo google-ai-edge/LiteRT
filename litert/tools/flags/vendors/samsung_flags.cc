@@ -19,7 +19,7 @@
 
 #include <string>
 
-#include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/flags/flag.h"           // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/litert_expected.h"
