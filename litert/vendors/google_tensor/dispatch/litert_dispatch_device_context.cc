@@ -20,11 +20,6 @@
 #include <optional>
 #include <utility>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
-
 #if __ANDROID__
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
@@ -35,12 +30,14 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+#include "litert/vendors/google_tensor/dispatch/google/darwinn_options_utils.h"
+#include "litert/vendors/google_tensor/dispatch/google/litert_darwinn_runtime_options.h"
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
-#include "litert/vendors/google_tensor/dispatch/litert_darwinn_runtime_options.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace gt = litert::google_tensor;
@@ -60,54 +57,15 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
                                 thr_context, "edgetpu_use_tpu_tachyon", "1"),
                             "Failed to enable Tachyon SB");
 
-  std::optional<litert::LiteRtDarwinnRuntimeOptionsT> darwinn_options;
-  if (options) {
-    litert::Options cc_options(options, litert::OwnHandle::kNo);
-    auto opaque_options = cc_options.GetOpaqueOptions();
-    if (opaque_options) {
-      auto darwinn_options_data = litert::FindOpaqueData<const char>(
-          *opaque_options, litert::LiteRtDarwinnRuntimeOptionsT::Identifier());
-      if (darwinn_options_data) {
-        litert::LiteRtDarwinnRuntimeOptionsT darwinn_opts;
-        absl::string_view data_str(*darwinn_options_data);
-        if (litert::internal::ParseLiteRtDarwinnRuntimeOptions(
-                data_str.data(), data_str.size(), &darwinn_opts) ==
-            kLiteRtStatusOk) {
-          darwinn_options = std::move(darwinn_opts);
-          LITERT_LOG(LITERT_INFO, "Found and parsed Darwinn runtime options");
-        }
-      } else {
-        LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found");
-      }
-    }
-  }
-
-  // If provided, store DarwiNN options to be applied to graphs.
-  std::optional<DarwinnOptionsData> options_data;
-  if (darwinn_options != std::nullopt) {
-    options_data.emplace();
-
-    options_data->inference_power_state =
-        darwinn_options->inference_power_state;
-    options_data->inference_memory_power_state =
-        darwinn_options->inference_memory_power_state;
-
-    // Use default values if explicitly set to -1
-    if (darwinn_options->inference_priority != -1) {
-      options_data->inference_priority = darwinn_options->inference_priority;
-    }
-
-    options_data->atomic_inference = darwinn_options->atomic_inference;
-    options_data->prefer_coherent = darwinn_options->prefer_coherent;
-
-    LITERT_LOG(LITERT_INFO,
-               "DarwiNN runtime options will be applied to graphs");
-  }
-
   // The returned instance must be allocated with `new`, as it will be
   // deallocated via `delete` in `Destroy`.
-  device_context =
-      new LiteRtDispatchDeviceContextT(thr_context, std::move(options_data));
+  device_context = new LiteRtDispatchDeviceContextT(thr_context);
+
+#if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  std::optional<litert::LiteRtDarwinnRuntimeOptionsT> options_data =
+      gt::GetDarwinnOptionsData(options);
+  device_context->darwinn_options() = std::move(options_data);
+#endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
   std::move(thr_context_cleanup).Cancel();
   return kLiteRtStatusOk;

@@ -128,7 +128,6 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     list(APPEND DISPATCH_SRCS
       "${SRC_DIR}/dispatch_api_config.cc"
       "${SRC_DIR}/dispatch_api_utils.cc"
-      "${SRC_DIR}/litert_darwinn_runtime_options.cc"
     )
   endif()
 
