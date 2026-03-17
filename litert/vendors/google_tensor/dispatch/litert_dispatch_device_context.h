@@ -17,6 +17,9 @@
 
 #include <optional>
 
+#include <utility>
+#include <vector>
+
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -73,12 +76,19 @@ class LiteRtDispatchDeviceContextT {
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchDeviceContextT() = default;
 
+  struct MmapRegion {
+    LiteRtDispatchExecutableHandle exec_handle;
+    void* addr;
+    size_t length;
+  };
+
   ThrContext* absl_nonnull thr_context_;
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   std::optional<litert::LiteRtDarwinnRuntimeOptionsT> darwinn_options_;
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   // A device context cannot be destroyed with any registered graphs.
   absl::flat_hash_set<LiteRtDispatchGraph> registered_graphs_;
+  std::vector<MmapRegion> mmap_regions_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

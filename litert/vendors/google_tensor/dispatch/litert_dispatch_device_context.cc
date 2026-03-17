@@ -18,6 +18,8 @@
 
 #include <cstddef>
 #include <optional>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <utility>
 
 #if __ANDROID__
@@ -78,6 +80,12 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Destroy() {
                registered_graphs_.size());
     return kLiteRtStatusErrorRuntimeFailure;
   }
+
+  // Release any remaining mmap'd bytecode regions.
+  for (auto& region : mmap_regions_) {
+    munmap(region.addr, region.length);
+  }
+  mmap_regions_.clear();
 
   GT_LOG_RETURN_IF_SB_ERROR(thrContextDelete(thr_context_),
                             "Failed to delete SB context");
@@ -188,13 +196,38 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
   }
 
   if (bytecode_buffer.fd >= 0) {
-    GT_LOG_RETURN_IF_SB_ERROR(
-        thrLoadSqContainerFdWithOffset(thr_context_, thr_type,
-                                       bytecode_buffer.fd, bytecode_buffer.size,
-                                       bytecode_buffer.offset,
-                                       /*lazy_loading=*/false, &exec_handle),
-        "Failed to load SQ container from fd %d with size %zu and offset %zu",
-        bytecode_buffer.fd, bytecode_buffer.size, bytecode_buffer.offset);
+    ThrStatus sq_status = thrLoadSqContainerFdWithOffset(
+        thr_context_, thr_type, bytecode_buffer.fd, bytecode_buffer.size,
+        bytecode_buffer.offset, /*lazy_loading=*/false, &exec_handle);
+    if (sq_status != kThrStatusSuccess) {
+      // Fallback for older Southbound runtimes that lack
+      // thrLoadSqContainerFdWithOffset: mmap the bytecode region from the
+      // flatbuffer FD and load via the buffer-based API.
+      LITERT_LOG(LITERT_INFO,
+                 "thrLoadSqContainerFdWithOffset unavailable or failed, "
+                 "falling back to mmap + thrLoadSqContainer");
+      size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+      size_t aligned_offset = bytecode_buffer.offset & ~(page_size - 1);
+      size_t offset_delta = bytecode_buffer.offset - aligned_offset;
+      size_t map_length = bytecode_buffer.size + offset_delta;
+      void* mapped = mmap(nullptr, map_length, PROT_READ, MAP_PRIVATE,
+                          bytecode_buffer.fd,
+                          static_cast<off_t>(aligned_offset));
+      if (mapped == MAP_FAILED) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed to mmap SQ bytecode (fd=%d, size=%zu, offset=%zu)",
+                   bytecode_buffer.fd, bytecode_buffer.size,
+                   bytecode_buffer.offset);
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+      const void* bytecode_ptr =
+          static_cast<const std::byte*>(mapped) + offset_delta;
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrLoadSqContainer(thr_context_, thr_type, bytecode_ptr,
+                             bytecode_buffer.size, &exec_handle),
+          "Failed to load SQ container from mmap'd buffer");
+      mmap_regions_.push_back({exec_handle, mapped, map_length});
+    }
   } else {
     const auto* sq_bytecode =
         static_cast<const std::byte*>(bytecode_buffer.base_addr) +
@@ -215,6 +248,15 @@ LiteRtStatus LiteRtDispatchDeviceContextT::UnloadExecutable(
   GT_LOG_RETURN_IF_SB_ERROR(thrUnloadSqContainer(thr_context_, exec_handle),
                             "Failed to unload SQ container %" PRIu64,
                             exec_handle);
+
+  // Release any mmap'd region associated with this executable.
+  for (auto it = mmap_regions_.begin(); it != mmap_regions_.end(); ++it) {
+    if (it->exec_handle == exec_handle) {
+      munmap(it->addr, it->length);
+      mmap_regions_.erase(it);
+      break;
+    }
+  }
 
   return kLiteRtStatusOk;
 }
