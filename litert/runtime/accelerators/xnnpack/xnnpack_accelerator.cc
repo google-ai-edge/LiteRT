@@ -91,8 +91,11 @@ class CpuAccelerator final
         return options_data_status;
     }
 
-    // TODO: b/403547017 - Make the CPU accelerator configurable using the
-    // compilation options.
+    if (parsed_options.kernel_mode != kLiteRtCpuKernelModeXnnpack) {
+      *delegate_wrapper = nullptr;
+      return kLiteRtStatusOk;
+    }
+
     auto xnn_options = parsed_options.xnn;
     TfLiteOpaqueDelegate* xnnpack_delegate =
         TfLiteXNNPackDelegateCreate(&xnn_options);
@@ -108,6 +111,9 @@ class CpuAccelerator final
   // Destroys an XNNPack delegate instance.
   static void DestroyDelegate(LiteRtRuntimeContext* runtime_context,
                               LiteRtDelegateWrapper delegate_wrapper) {
+    if (delegate_wrapper == nullptr) {
+      return;
+    }
     TfLiteOpaqueDelegate* xnnpack_delegate;
     runtime_context->unwrap_delegate(delegate_wrapper, &xnnpack_delegate);
     TfLiteXNNPackDelegateDelete(xnnpack_delegate);

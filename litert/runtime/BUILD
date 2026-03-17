@@ -624,11 +624,13 @@ cc_library(
         "//litert/build_common:litert_disable_cpu": [
             # No support for CPU backend. Builtin ops are still needed for GPU.
             "//tflite/kernels:builtin_ops",
+            "//tflite/kernels:reference_ops",
         ],
         "//conditions:default": [
             ":litert_cpu_options",
             "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
             "//tflite/kernels:builtin_ops",
+            "//tflite/kernels:reference_ops",
         ],
     }),
 )
