@@ -16,7 +16,7 @@ load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 
 # copybara:uncomment load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_python//python:py_library.bzl", "py_library")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 
 WINDOWS_PYBIND_UNDEFS = select({
     "@platforms//os:windows": [

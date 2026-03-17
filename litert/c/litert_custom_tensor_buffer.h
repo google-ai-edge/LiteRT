@@ -25,6 +25,8 @@
 extern "C" {
 #endif  // __cplusplus
 
+typedef struct LiteRtRuntimeContext LiteRtRuntimeContext;
+
 // Generic hardware memory handle type. This could be a specific hardware
 // memory handle type such as cl_mem, WGPBuffer, etc.
 // It's created by `CreateCustomTensorBuffer` and destroyed by
@@ -46,7 +48,8 @@ typedef struct HwMemoryInfo* HwMemoryInfoPtr;
 
 // Custom TensorBuffer handler function to create a custom TensorBuffer.
 typedef LiteRtStatus (*CreateCustomTensorBuffer)(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info);
 
@@ -56,29 +59,33 @@ typedef LiteRtStatus (*CreateCustomTensorBuffer)(
 // or destroy the handle. The implementation should store an "owns_tensor =
 // false" flag inside its HwMemoryInfo-derived struct.
 typedef LiteRtStatus (*ImportCustomTensorBuffer)(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
     size_t bytes, size_t packed_bytes, HwMemoryInfoPtr* hw_memory_info);
 
 // Custom TensorBuffer handler function to destroy a custom TensorBuffer.
 typedef LiteRtStatus (*DestroyCustomTensorBuffer)(
-    LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
+    LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    HwMemoryInfoPtr hw_memory_info);
 
 // Custom TensorBuffer handler function to lock a custom TensorBuffer.
 // `host_memory_ptr` is the CPU mapped memory pointer to the custom
 // TensorBuffer.
-typedef LiteRtStatus (*LockCustomTensorBuffer)(LiteRtEnvironment env,
-                                               HwMemoryInfoPtr hw_memory_info,
-                                               LiteRtTensorBufferLockMode mode,
-                                               void** host_memory_ptr);
+typedef LiteRtStatus (*LockCustomTensorBuffer)(
+    LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    HwMemoryInfoPtr hw_memory_info, LiteRtTensorBufferLockMode mode,
+    void** host_memory_ptr);
 
 // Custom TensorBuffer handler function to unlock a custom TensorBuffer.
 typedef LiteRtStatus (*UnlockCustomTensorBuffer)(
-    LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
+    LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    HwMemoryInfoPtr hw_memory_info);
 
 // Custom TensorBuffer handler function to clear a custom TensorBuffer.
 typedef LiteRtStatus (*ClearCustomTensorBuffer)(
-    LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
+    LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    HwMemoryInfoPtr hw_memory_info);
 
 #ifdef __cplusplus
 }
