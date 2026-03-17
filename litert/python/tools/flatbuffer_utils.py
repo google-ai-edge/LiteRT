@@ -34,17 +34,22 @@ from litert.python.tools import mmap_utils
 from litert.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
 
 # Types imported from `schema_py_generated`.
+ActivationFunctionType = schema_fb.ActivationFunctionType
+BlockwiseQuantizationT = schema_fb.BlockwiseQuantizationT
 Buffer = schema_fb.Buffer
 BufferT = schema_fb.BufferT
 BuiltinOperator = schema_fb.BuiltinOperator
 BuiltinOptions = schema_fb.BuiltinOptions
 BuiltinOptions2 = schema_fb.BuiltinOptions2
+FullyConnectedOptionsT = schema_fb.FullyConnectedOptionsT
 Model = schema_fb.Model
 ModelT = schema_fb.ModelT
 Operator = schema_fb.Operator
 OperatorCode = schema_fb.OperatorCode
 OperatorCodeT = schema_fb.OperatorCodeT
 OperatorT = schema_fb.OperatorT
+QuantizationDetails = schema_fb.QuantizationDetails
+QuantizationParametersT = schema_fb.QuantizationParametersT
 StableHLOCompositeOptions = schema_fb.StableHLOCompositeOptions
 StableHLOCompositeOptionsT = schema_fb.StableHLOCompositeOptionsT
 SubGraph = schema_fb.SubGraph
