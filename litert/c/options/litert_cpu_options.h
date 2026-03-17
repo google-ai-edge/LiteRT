@@ -25,6 +25,16 @@ extern "C" {
 
 typedef struct LrtCpuOptions LrtCpuOptions;
 
+// Selects how CPU ops are executed.
+typedef enum LiteRtCpuKernelMode {
+  // Use the XNNPACK delegate. This is the default CPU mode.
+  kLiteRtCpuKernelModeXnnpack = 0,
+  // Use LiteRT's built-in reference kernels instead of XNNPACK.
+  kLiteRtCpuKernelModeReference = 1,
+  // Use LiteRT's built-in optimized kernels instead of XNNPACK.
+  kLiteRtCpuKernelModeBuiltin = 2,
+} LiteRtCpuKernelMode;
+
 // Creates a cpu options object.
 // The caller is responsible for freeing the returned options using
 // `LrtDestroyCpuOptions`.
@@ -43,6 +53,14 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
 // Gets the identifier for CPU options stored in opaque options.
 const char* LrtGetCpuOptionsIdentifier();
 
+// Sets how LiteRT should execute CPU ops.
+LiteRtStatus LrtSetCpuOptionsKernelMode(LrtCpuOptions* options,
+                                        LiteRtCpuKernelMode mode);
+
+// Gets the CPU kernel mode that was set.
+LiteRtStatus LrtGetCpuOptionsKernelMode(const LrtCpuOptions* options,
+                                        LiteRtCpuKernelMode* mode);
+
 // Sets the number of CPU threads used by the CPU accelerator.
 LiteRtStatus LrtSetCpuOptionsNumThread(LrtCpuOptions* options, int num_threads);
 
@@ -50,32 +68,36 @@ LiteRtStatus LrtSetCpuOptionsNumThread(LrtCpuOptions* options, int num_threads);
 LiteRtStatus LrtGetCpuOptionsNumThread(const LrtCpuOptions* options,
                                        int* num_threads);
 
-// Sets the XNNPack flags used by the CPU accelerator.
+// Sets the XNNPack flags used by the CPU accelerator in XNNPACK mode.
 LiteRtStatus LrtSetCpuOptionsXNNPackFlags(LrtCpuOptions* options,
                                           uint32_t flags);
 
-// Gets the XNNPack flags used by the CPU accelerator.
+// Gets the XNNPack flags used by the CPU accelerator in XNNPACK mode.
 LiteRtStatus LrtGetCpuOptionsXNNPackFlags(const LrtCpuOptions* options,
                                           uint32_t* flags);
 
-// Sets the XNNPack weight cache file path used by the CPU accelerator.
+// Sets the XNNPack weight cache file path used by the CPU accelerator in
+// XNNPACK mode.
 // Weight cache file path and descriptor must not both be set.
 // The `path` string is copied into the options object.
 LiteRtStatus LrtSetCpuOptionsXnnPackWeightCachePath(LrtCpuOptions* options,
                                                     const char* path);
 
-// Gets the XNNPack weight cache file path used by the CPU accelerator.
+// Gets the XNNPack weight cache file path used by the CPU accelerator in
+// XNNPACK mode.
 // The returned string pointer is owned by the options object and is valid
 // as long as the options object is valid and the path is not modified.
 LiteRtStatus LrtGetCpuOptionsXnnPackWeightCachePath(
     const LrtCpuOptions* options, const char** path);
 
-// Sets the XNNPack weight cache file descriptor used by the CPU accelerator.
+// Sets the XNNPack weight cache file descriptor used by the CPU accelerator in
+// XNNPACK mode.
 // Weight cache file path and descriptor must not both be set.
 LiteRtStatus LrtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
     LrtCpuOptions* options, int fd);
 
-// Gets the XNNPack weight cache file descriptor used by the CPU accelerator.
+// Gets the XNNPack weight cache file descriptor used by the CPU accelerator in
+// XNNPACK mode.
 LiteRtStatus LrtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
     const LrtCpuOptions* options, int* fd);
 

@@ -48,6 +48,21 @@ Expected<int> CpuOptions::GetNumThreads() const {
   return num_threads;
 }
 
+Expected<void> CpuOptions::SetKernelMode(LiteRtCpuKernelMode mode) {
+  LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsKernelMode(options_.get(), mode));
+  return {};
+}
+
+Expected<LiteRtCpuKernelMode> CpuOptions::GetKernelMode() const {
+  LiteRtCpuKernelMode mode;
+  auto s = LrtGetCpuOptionsKernelMode(options_.get(), &mode);
+  if (s == kLiteRtStatusErrorNotFound) {
+    return kLiteRtCpuKernelModeXnnpack;
+  }
+  LITERT_RETURN_IF_ERROR(s);
+  return mode;
+}
+
 Expected<void> CpuOptions::SetXNNPackFlags(uint32_t flags) {
   LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsXNNPackFlags(options_.get(), flags));
   return {};
