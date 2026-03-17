@@ -88,9 +88,18 @@ absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> MergeModuleOps(
 absl::Status ExportFlatbufferToFile(mlir::ModuleOp module_op,
                                     absl::string_view output_path);
 
+// Exports the MLIR operation to flatbuffer and exports it to the given file
+// path.
+absl::Status ExportFlatbufferToFile(mlir::Operation* op,
+                                    absl::string_view output_path);
+
 // Exports the MLIR module to flatbuffer and returns the bytes.
 absl::StatusOr<llvm::SmallVector<char>> ExportFlatbufferToBytes(
     mlir::ModuleOp module_op);
+
+// Exports the MLIR operation to flatbuffer and returns the bytes.
+absl::StatusOr<llvm::SmallVector<char>> ExportFlatbufferToBytes(
+    mlir::Operation* op);
 
 // Returns a callback resource attribute that wraps the given Python
 // chunk iterator factory. The factory is expected to be a callable that
