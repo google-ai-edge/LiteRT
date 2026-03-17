@@ -717,7 +717,7 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else {
     // TODO: Add more as needed.
-    return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    return Unexpected(Status::kErrorInvalidArgument);
   }
 }
 

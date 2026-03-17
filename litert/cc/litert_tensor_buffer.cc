@@ -23,6 +23,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -33,7 +34,7 @@ namespace litert {
 
 Expected<TensorBuffer> TensorBuffer::Duplicate() const {
   if (!IsOwned()) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Status::kErrorInvalidArgument,
                       "Cannot duplicate a non-owned tensor buffer");
   }
   LITERT_RETURN_IF_ERROR(env_.runtime->DuplicateTensorBuffer(Get()));
@@ -121,7 +122,7 @@ Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 #else
-  return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  return litert::Unexpected(Status::kErrorRuntimeFailure,
                             "OpenCL is not supported on this platform");
 #endif
 }

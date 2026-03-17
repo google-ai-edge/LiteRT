@@ -133,7 +133,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     if (auto status = env_holder.runtime->CreateModelFromFile(
             model_filename.c_str(), &litert_model);
         status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to load model from file");
+      return Unexpected(ToStatus(status), "Failed to load model from file");
     }
     LiteRtCompiledModel compiled_model;
     if (auto res = env_holder.runtime->CreateCompiledModel(
@@ -141,7 +141,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
             &compiled_model);
         res != kLiteRtStatusOk) {
       env_holder.runtime->DestroyModel(litert_model);
-      return Unexpected(res, "Failed to compile model");
+      return Unexpected(ToStatus(res), "Failed to compile model");
     }
     return CompiledModel(env_holder, litert_model,
                          /*model_owned=*/OwnHandle::kYes, compiled_model,
@@ -159,7 +159,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     if (auto status = env_holder.runtime->CreateModelFromBuffer(
             model_buffer.Data(), model_buffer.Size(), &litert_model);
         status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to load model from buffer");
+      return Unexpected(ToStatus(status), "Failed to load model from buffer");
     }
     LiteRtCompiledModel compiled_model;
     if (auto res = env_holder.runtime->CreateCompiledModel(
@@ -167,7 +167,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
             &compiled_model);
         res != kLiteRtStatusOk) {
       env_holder.runtime->DestroyModel(litert_model);
-      return Unexpected(res, "Failed to compile model");
+      return Unexpected(ToStatus(res), "Failed to compile model");
     }
     return CompiledModel(env_holder, litert_model,
                          /*model_owned=*/OwnHandle::kYes, compiled_model,
@@ -718,7 +718,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+      return Unexpected(Status::kErrorNotFound, "Signature not found");
     }
     return signature->InputNames();
   }
@@ -737,7 +737,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+      return Unexpected(Status::kErrorNotFound, "Signature not found");
     }
     return signature->OutputNames();
   }

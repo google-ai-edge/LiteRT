@@ -68,7 +68,7 @@ Expected<CompiledModelNext> CompiledModelNext::Create(
   if (auto status = env_holder.runtime->CreateModelFromFile(
           model_filename.c_str(), &litert_model);
       status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to load model from file");
+    return Unexpected(ToStatus(status), "Failed to load model from file");
   }
   LiteRtCompiledModel compiled_model;
   if (auto status = env_holder.runtime->CreateCompiledModel(
@@ -76,7 +76,7 @@ Expected<CompiledModelNext> CompiledModelNext::Create(
           &compiled_model);
       status != kLiteRtStatusOk) {
     env_holder.runtime->DestroyModel(litert_model);
-    return Unexpected(status, "Failed to compile model");
+    return Unexpected(ToStatus(status), "Failed to compile model");
   }
   return CompiledModelNext(env_holder, litert_model,
                            /*model_owned=*/OwnHandle::kYes, compiled_model,
@@ -110,7 +110,7 @@ Expected<void> CompiledModelNext::StartMetricsCollection(int detail_level) {
   if (auto status = env_.runtime->CompiledModelStartMetricsCollection(
           Get(), detail_level);
       status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to start metrics collection");
+    return Unexpected(ToStatus(status), "Failed to start metrics collection");
   }
   return {};
 }
@@ -143,7 +143,7 @@ Expected<void> CompiledModelNext::SetSchedulingInfo(
   auto status =
       env_.runtime->CompiledModelSetSchedulingInfo(Get(), &scheduling_info);
   if (status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to set scheduling info");
+    return Unexpected(ToStatus(status), "Failed to set scheduling info");
   }
   return {};
 }
@@ -151,7 +151,7 @@ Expected<void> CompiledModelNext::SetSchedulingInfo(
 Expected<void> CompiledModelNext::ClearSchedulingInfo() const {
   auto status = env_.runtime->CompiledModelSetSchedulingInfo(Get(), nullptr);
   if (status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to clear scheduling info");
+    return Unexpected(ToStatus(status), "Failed to clear scheduling info");
   }
   return {};
 }

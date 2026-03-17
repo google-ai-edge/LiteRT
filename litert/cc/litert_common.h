@@ -66,6 +66,14 @@ enum class Status : int {
 };
 // LINT.ThenChange(../c/litert_common.h:status_codes)
 
+constexpr Status ToStatus(LiteRtStatus status) {
+  return static_cast<Status>(status);
+}
+
+constexpr LiteRtStatus ToLiteRtStatus(Status status) {
+  return static_cast<LiteRtStatus>(status);
+}
+
 enum class HwAccelerators : int {
   kNone = kLiteRtHwAcceleratorNone,
   kCpu = kLiteRtHwAcceleratorCpu,

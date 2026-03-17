@@ -28,6 +28,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
@@ -65,13 +66,15 @@ TEST(CcOpTest, SimpleSupportedOp) {
   ASSERT_TRUE(input1.HasValue());
   auto input2 = op.Input(2);
   ASSERT_FALSE(input2.HasValue());
-  EXPECT_EQ(input2.Error().Status(), kLiteRtStatusErrorIndexOOB);
+  EXPECT_EQ(ToLiteRtStatus(input2.Error().StatusCC()),
+            kLiteRtStatusErrorIndexOOB);
 
   auto output0 = op.Output(0);
   ASSERT_TRUE(output0.HasValue());
   auto output1 = op.Output(1);
   ASSERT_FALSE(output1.HasValue());
-  EXPECT_EQ(output1.Error().Status(), kLiteRtStatusErrorIndexOOB);
+  EXPECT_EQ(ToLiteRtStatus(output1.Error().StatusCC()),
+            kLiteRtStatusErrorIndexOOB);
 }
 
 TEST(CcOpTest, CustomCode) {

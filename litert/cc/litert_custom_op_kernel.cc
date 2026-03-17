@@ -21,6 +21,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
@@ -31,7 +32,7 @@ LiteRtStatus CustomOpKernel::InitHelper(void* user_data, const void* init_data,
   auto* self = static_cast<CustomOpKernel*>(user_data);
   if (auto status = self->Init(init_data, init_data_size); !status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
-    return status.Error().Status();
+    return litert::ToLiteRtStatus(status.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }
@@ -53,7 +54,7 @@ LiteRtStatus CustomOpKernel::GetOutputLayoutsHelper(
                                            output_layouts_vector);
       !status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
-    return status.Error().Status();
+    return litert::ToLiteRtStatus(status.Error().StatusCC());
   }
 
   for (auto i = 0; i < num_outputs; ++i) {
@@ -83,7 +84,7 @@ LiteRtStatus CustomOpKernel::RunHelper(void* user_data, size_t num_inputs,
 
   if (auto status = self->Run(inputs_, outputs_); !status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
-    return status.Error().Status();
+    return litert::ToLiteRtStatus(status.Error().StatusCC());
   }
 
   return kLiteRtStatusOk;
@@ -93,7 +94,7 @@ LiteRtStatus CustomOpKernel::DestroyHelper(void* user_data) {
   auto* self = static_cast<CustomOpKernel*>(user_data);
   if (auto status = self->Destroy(); !status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
-    return status.Error().Status();
+    return litert::ToLiteRtStatus(status.Error().StatusCC());
   }
   return kLiteRtStatusOk;
 }

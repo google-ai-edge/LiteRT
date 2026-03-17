@@ -33,10 +33,12 @@
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_model_types.h"
 
 /// @file
 /// @brief Defines extended C++ wrappers for the LiteRT model components,
@@ -138,11 +140,11 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
 
     const enum ElementType ty = ranked_tensor_type->ElementType();
     if (ty != GetElementType<T>()) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
 
     if (!HasWeights()) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
     const absl::Span<const uint8_t> weights = Weights().Bytes();
 
@@ -152,11 +154,11 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
     }
     auto byte_width = GetByteWidth(ty);
     if (!byte_width.has_value()) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
 
     if (byte_width.value() * *num_elements != weights.size()) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(Status::kErrorInvalidArgument);
     }
 
     return absl::MakeConstSpan(reinterpret_cast<const T*>(weights.data()),
@@ -308,7 +310,7 @@ class ExtendedModel : public litert::Model {
     LiteRtModel model;
     if (auto status = LiteRtCreateModelFromFile(filename.c_str(), &model);
         status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to load model from file");
+      return Unexpected(ToStatus(status), "Failed to load model from file");
     }
     return CreateFromOwnedHandle(model);
   }
@@ -322,7 +324,7 @@ class ExtendedModel : public litert::Model {
     if (auto status =
             LiteRtCreateModelFromBuffer(buffer.Data(), buffer.Size(), &model);
         status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to load model from buffer");
+      return Unexpected(ToStatus(status), "Failed to load model from buffer");
     }
     return CreateFromOwnedHandle(model);
   }
@@ -333,7 +335,7 @@ class ExtendedModel : public litert::Model {
     size_t buffer_size;
     if (LiteRtGetModelMetadata(Get(), metadata_key.data(), &buffer,
                                &buffer_size) != kLiteRtStatusOk) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Metadata key not found");
+      return Unexpected(Status::kErrorNotFound, "Metadata key not found");
     }
     return absl::MakeSpan(static_cast<const uint8_t*>(buffer), buffer_size);
   }
@@ -343,7 +345,7 @@ class ExtendedModel : public litert::Model {
     LiteRtStatus status = LiteRtAddModelMetadata(
         Get(), metadata_key.data(), metadata_data.data(), metadata_data.size());
     if (status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to add metadata");
+      return Unexpected(ToStatus(status), "Failed to add metadata");
     }
     return {};
   }
@@ -365,7 +367,7 @@ class ExtendedModel : public litert::Model {
     LiteRtSubgraph subgraph;
     if (LiteRtGetModelSubgraph(Get(), subgraph_index, &subgraph) !=
         kLiteRtStatusOk) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Subgraph not found");
+      return Unexpected(Status::kErrorNotFound, "Subgraph not found");
     }
     return litert::Subgraph(subgraph);
   }
@@ -423,7 +425,7 @@ class ExtendedModel : public litert::Model {
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+      return Unexpected(Status::kErrorNotFound, "Signature not found");
     }
     return signature->InputNames();
   }
@@ -448,7 +450,7 @@ class ExtendedModel : public litert::Model {
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
-      return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+      return Unexpected(Status::kErrorNotFound, "Signature not found");
     }
     return signature->OutputNames();
   }

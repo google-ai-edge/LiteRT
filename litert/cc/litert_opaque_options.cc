@@ -17,9 +17,9 @@
 #include <cstdint>
 #include <string>
 
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -38,7 +38,7 @@ Expected<OpaqueOptions> FindOpaqueOptions(
     }
     chain = chain->Next();
   }
-  return Error(kLiteRtStatusErrorInvalidArgument);
+  return Error(Status::kErrorInvalidArgument);
 }
 
 Expected<void> OpaqueOptions::SetHash(

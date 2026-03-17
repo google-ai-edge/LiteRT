@@ -26,9 +26,11 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
 namespace litert {
@@ -240,7 +242,7 @@ Expected<Tensor> Subgraph::Input(absl::string_view name) const {
       return Tensor(input);
     }
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Failed to find input");
+  return Unexpected(Status::kErrorNotFound, "Failed to find input");
 }
 
 Expected<Tensor> Subgraph::Output(absl::string_view name) const {
@@ -256,7 +258,7 @@ Expected<Tensor> Subgraph::Output(absl::string_view name) const {
       return Tensor(output);
     }
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Failed to find output");
+  return Unexpected(Status::kErrorNotFound, "Failed to find output");
 }
 
 SubgraphOutputs Subgraph::Outputs() const {
@@ -276,7 +278,7 @@ Expected<Tensor> Op::Input(size_t index) const {
   LiteRtParamIndex num_inputs;
   LITERT_RETURN_IF_ERROR(LiteRtGetNumOpInputs(Get(), &num_inputs));
   if (index >= num_inputs) {
-    return Unexpected(kLiteRtStatusErrorIndexOOB);
+    return Unexpected(Status::kErrorIndexOOB);
   }
   LiteRtTensor input;
   LITERT_RETURN_IF_ERROR(LiteRtGetOpInput(Get(), index, &input));
@@ -287,7 +289,7 @@ Expected<Tensor> Op::Output(size_t index) const {
   LiteRtParamIndex num_outputs;
   LITERT_RETURN_IF_ERROR(LiteRtGetNumOpOutputs(Get(), &num_outputs));
   if (index >= num_outputs) {
-    return Unexpected(kLiteRtStatusErrorIndexOOB);
+    return Unexpected(Status::kErrorIndexOOB);
   }
   LiteRtTensor output;
   LITERT_RETURN_IF_ERROR(LiteRtGetOpOutput(Get(), index, &output));
@@ -300,7 +302,7 @@ Expected<Op> Tensor::GetDefiningOp() const {
   LITERT_RETURN_IF_ERROR(
       LiteRtGetTensorDefiningOp(Get(), &has_defining_op, &defining_op));
   if (!has_defining_op) {
-    return Unexpected(kLiteRtStatusErrorNotFound);
+    return Unexpected(Status::kErrorNotFound);
   }
   return Op(defining_op.op);
 }
@@ -330,12 +332,12 @@ Expected<class Subgraph> ExtendedModel::Subgraph(
       LiteRtSubgraph subgraph;
       if (LiteRtGetSignatureSubgraph(lite_rt_signature, &subgraph) !=
           kLiteRtStatusOk) {
-        return Unexpected(kLiteRtStatusErrorNotFound, "Subgraph not found");
+        return Unexpected(Status::kErrorNotFound, "Subgraph not found");
       }
       return litert::Subgraph(subgraph);
     }
   }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
+  return Unexpected(Status::kErrorNotFound, "Signature not found");
 }
 
 }  // namespace litert

@@ -25,6 +25,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/test/matchers.h"
@@ -60,7 +61,7 @@ class SimpleOptions : public OpaqueOptions {
   static Expected<SimpleOptions> Create(OpaqueOptions& options) {
     const auto id = options.GetIdentifier();
     if (!id || *id != Discriminator()) {
-      return Error(kLiteRtStatusErrorInvalidArgument);
+      return Error(Status::kErrorInvalidArgument);
     }
     return SimpleOptions(options.Get(), OwnHandle::kNo);
   }

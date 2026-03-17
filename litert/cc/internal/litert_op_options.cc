@@ -22,6 +22,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -58,7 +59,7 @@ LiteRtStatus CompositeOptions::InitFromOp(LiteRtOp op) {
 }
 
 Expected<void> CompositeOptions::SetOpOptions(LiteRtBuilder builder) {
-  return Unexpected(kLiteRtStatusErrorUnsupported);
+  return Unexpected(Status::kErrorUnsupported);
 }
 
 LiteRtStatus RmsNormOpts::InitFromOp(LiteRtOp litert_op) {
@@ -77,7 +78,7 @@ LiteRtStatus RmsNormOpts::InitFromOp(LiteRtOp litert_op) {
 }
 
 Expected<void> RmsNormOpts::SetOpOptions(LiteRtBuilder builder) {
-  return Unexpected(kLiteRtStatusErrorUnsupported);
+  return Unexpected(Status::kErrorUnsupported);
 }
 
 LiteRtStatus AddOptions::InitFromOp(LiteRtOp op) {

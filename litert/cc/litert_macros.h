@@ -23,11 +23,13 @@
 #include <type_traits>
 #include <utility>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_source_location.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 /// @file
@@ -142,12 +144,12 @@ class ErrorStatusBuilder {
   /// `NDEBUG` is defined (typically in optimized builds).
   operator LiteRtStatus() const noexcept {
     PrintLog();
-    return error_.Status();
+    return static_cast<LiteRtStatus>(error_.StatusCC());
   }
 
   template <class T>
   operator litert::Expected<T>() const noexcept {
-    return litert::Unexpected(error_.Status(), LogMessage());
+    return litert::Unexpected(error_.StatusCC(), LogMessage());
   }
 
   operator absl::Status() const noexcept { return ToAbslStatus(); }
@@ -263,7 +265,7 @@ template <>
 struct ErrorStatusBuilder::ErrorConversion<bool> {
   static constexpr bool IsError(bool value) { return !value; };
   static litert::Error AsError(bool value) {
-    return litert::Error(kLiteRtStatusErrorUnknown);
+    return litert::Error(Status::kErrorUnknown);
   }
 };
 
@@ -282,7 +284,7 @@ struct ErrorStatusBuilder::ErrorConversion<LiteRtStatus> {
     return value != kLiteRtStatusOk;
   };
   static litert::Error AsError(LiteRtStatus value) {
-    return litert::Error(value);
+    return litert::Error(ToStatus(value));
   }
 };
 

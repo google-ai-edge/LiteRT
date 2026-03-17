@@ -51,9 +51,9 @@ class Event : public internal::BaseHandle<LiteRtEvent> {
                                                int sync_fence_fd,
                                                bool owns_fd) {
     LiteRtEvent event;
-      auto env_holder = env.GetHolder();
+    auto env_holder = env.GetHolder();
     LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateEventFromSyncFenceFd(
-        env.Get(), sync_fence_fd, owns_fd, &event));
+        env_holder.handle, sync_fence_fd, owns_fd, &event));
     return Event(env_holder, event, OwnHandle::kYes);
   }
 

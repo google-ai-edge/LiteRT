@@ -31,6 +31,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
@@ -159,7 +160,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
         Get(), &dma_buf.addr, &dma_buf.fd));
     return dma_buf;
 #else
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "DMA-BUF is not supported on this platform");
 #endif
   }
@@ -171,7 +172,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
         env_.runtime->GetTensorBufferOpenClMemory(Get(), &cl_mem));
     return cl_mem;
 #else
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "OpenCL is not supported on this platform");
 #endif
   }
@@ -183,7 +184,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
         env_.runtime->GetTensorBufferWebGpuBuffer(Get(), &hw_memory_handle));
     return hw_memory_handle;
 #else
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "WebGPU is not supported on this platform");
 #endif
   }
@@ -195,7 +196,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
         env_.runtime->GetTensorBufferMetalMemory(Get(), &hw_memory_handle));
     return hw_memory_handle;
 #else
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "Metal is not supported on this platform");
 #endif  // LITERT_HAS_METAL_SUPPORT
   }
@@ -207,7 +208,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
         env_.runtime->GetTensorBufferVulkanMemory(Get(), &hw_memory_handle));
     return hw_memory_handle;
 #else
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+    return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "Vulkan is not supported on this platform");
 #endif
   }
@@ -329,8 +330,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   /// This function takes ownership of the provided `Event` object.
   Expected<void> SetEvent(Event&& event) {
     if (!event.IsOwned()) {
-      return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Expected an owned event");
+      return Error(Status::kErrorInvalidArgument, "Expected an owned event");
     }
     LITERT_RETURN_IF_ERROR(
         env_.runtime->SetTensorBufferEvent(Get(), event.Release()));
