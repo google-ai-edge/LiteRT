@@ -472,8 +472,6 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetLogLevel(), QualcommOptions::LogLevel::kInfo);
   EXPECT_EQ(options.Value().GetProfiling(), QualcommOptions::Profiling::kOff);
-  EXPECT_FALSE(options.Value().GetUseHtpPreference());
-  EXPECT_FALSE(options.Value().GetUseQint16AsQuint16());
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());

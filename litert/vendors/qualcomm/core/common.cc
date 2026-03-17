@@ -98,18 +98,6 @@ void Options::SetProfiling(Profiling profiling) { profiling_ = profiling; }
 
 Profiling Options::GetProfiling() const { return profiling_; }
 
-void Options::SetUseHtpPreference(bool use_htp_preference) {
-  use_htp_preference_ = use_htp_preference;
-}
-
-bool Options::GetUseHtpPreference() const { return use_htp_preference_; }
-
-void Options::SetUseQint16AsQuint16(bool use_qint16_as_quint16) {
-  use_qint16_as_quint16_ = use_qint16_as_quint16;
-}
-
-bool Options::GetUseQint16AsQuint16() const { return use_qint16_as_quint16_; }
-
 void Options::SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32) {
   use_int64_bias_as_int32_ = use_int64_bias_as_int32;
 }
@@ -207,8 +195,6 @@ std::string Options::Dump() const {
 LogLevel: %d\n\
 BackendType: %d\n\
 Profiling: %d\n\
-UseHtpPreference: %v\n\
-UseQint16AsQuint16: %v\n\
 UseInt64BiasAsInt32: %v\n\
 EnableWeightSharing: %v\n\
 UseConvHMX: %v\n\
@@ -228,11 +214,10 @@ SaverOutputDir: %s\n";  // NOLINT
 
   return absl::StrFormat(
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
-      use_htp_preference_, use_qint16_as_quint16_, use_int64_bias_as_int32_,
-      enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
-      htp_performance_mode_, dsp_performance_mode_, dump_tensor_ids,
-      ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
-      graph_priority_, saver_output_dir_);
+      use_int64_bias_as_int32_, enable_weight_sharing_, use_conv_hmx_,
+      use_fold_relu_, htp_performance_mode_, dsp_performance_mode_,
+      dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
+      optimization_level_, graph_priority_, saver_output_dir_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

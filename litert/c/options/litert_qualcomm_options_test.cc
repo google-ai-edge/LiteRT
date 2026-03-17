@@ -93,32 +93,6 @@ TEST(LiteRtQualcommOptionsTest, LogLevel) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
-TEST(LiteRtQualcommOptionsTest, UseHtpPreference) {
-  LrtQualcommOptions qualcomm_options;
-  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
-
-  LITERT_ASSERT_OK(
-      LrtQualcommOptionsSetUseHtpPreference(qualcomm_options, true));
-
-  auto parsed = SerializeAndParse(qualcomm_options);
-  EXPECT_TRUE(parsed.GetUseHtpPreference());
-
-  LrtDestroyQualcommOptions(qualcomm_options);
-}
-
-TEST(LiteRtQualcommOptionsTest, UseQint16AsQuint16) {
-  LrtQualcommOptions qualcomm_options;
-  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
-
-  LITERT_ASSERT_OK(
-      LrtQualcommOptionsSetUseQint16AsQuint16(qualcomm_options, false));
-
-  auto parsed = SerializeAndParse(qualcomm_options);
-  EXPECT_FALSE(parsed.GetUseQint16AsQuint16());
-
-  LrtDestroyQualcommOptions(qualcomm_options);
-}
-
 TEST(LiteRtQualcommOptionsTest, UseInt64BiasAsInt32) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -334,14 +308,6 @@ TEST(QualcommOptionsTest, CppWrapper) {
 
   options->SetLogLevel(QualcommOptions::LogLevel::kWarn);
   EXPECT_EQ(options->GetLogLevel(), QualcommOptions::LogLevel::kWarn);
-
-  EXPECT_FALSE(options->GetUseHtpPreference());
-  options->SetUseHtpPreference(true);
-  EXPECT_TRUE(options->GetUseHtpPreference());
-
-  EXPECT_FALSE(options->GetUseQint16AsQuint16());
-  options->SetUseQint16AsQuint16(true);
-  EXPECT_TRUE(options->GetUseQint16AsQuint16());
 
   EXPECT_TRUE(options->GetUseInt64BiasAsInt32());
   options->SetUseInt64BiasAsInt32(false);

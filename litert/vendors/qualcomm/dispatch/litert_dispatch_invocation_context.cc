@@ -47,7 +47,6 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
 #include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
@@ -309,11 +308,6 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
-  for (int i = 0; i < inputs_.size(); ++i) {
-    if (inputs_[i].IsQuantU16()) {
-      ConvertToUint16(input_buffer_handles_[i], inputs_[i].GetTensorBytes());
-    }
-  }
   const size_t num_ins = inputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, inputs, num_ins, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_ins; ++i) {
@@ -343,11 +337,6 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     LITERT_RETURN_IF_ERROR(Profile());
   }
 
-  for (int i = 0; i < outputs_.size(); ++i) {
-    if (outputs_[i].IsQuantU16()) {
-      ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetTensorBytes());
-    }
-  }
   // TODO (chunhsue-qti): pass folder as option
   std::string dump_folder = "/data/local/tmp/dumped_tensors/";
   for (int i = 0; i < outputs_.size(); ++i) {
@@ -359,54 +348,6 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     }
   }
 
-  return {};
-}
-
-Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
-    LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes) {
-  auto tensor_buffer = device_context_->GetTensorBuffer(tensor_buffer_handle);
-  if (!tensor_buffer) {
-    return Unexpected(tensor_buffer.Error());
-  }
-  void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(
-          *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to lock the tensor buffer");
-  }
-  auto int16_data = absl::MakeSpan(static_cast<const std::int16_t*>(mem_addr),
-                                   bytes / sizeof(std::int16_t));
-  std::vector<std::uint16_t> uint16_data;
-  qnn::ConvertDataFromInt16toUInt16(int16_data, uint16_data);
-  std::memcpy(mem_addr, uint16_data.data(), bytes);
-  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to unlock the tensor buffer");
-  }
-  return {};
-}
-
-Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
-    LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes) {
-  auto tensor_buffer = device_context_->GetTensorBuffer(tensor_buffer_handle);
-  if (!tensor_buffer) {
-    return Unexpected(tensor_buffer.Error());
-  }
-  void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(
-          *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to lock the tensor buffer");
-  }
-  auto uint16_data = absl::MakeSpan(static_cast<const std::uint16_t*>(mem_addr),
-                                    bytes / sizeof(std::uint16_t));
-  std::vector<std::int16_t> int16_data;
-  qnn::ConvertDataFromUInt16toInt16(uint16_data, int16_data);
-  std::memcpy(mem_addr, int16_data.data(), bytes);
-  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to unlock the tensor buffer");
-  }
   return {};
 }
 
