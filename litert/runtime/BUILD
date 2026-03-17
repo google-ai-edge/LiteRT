@@ -859,6 +859,7 @@ cc_test(
     deps = [
         ":litert_cpu_options",
         "//litert/c:litert_common",
+        "//litert/c/options:litert_cpu_options",
         "@com_google_googletest//:gtest_main",
     ],
 )
