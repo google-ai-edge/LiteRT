@@ -219,9 +219,11 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_samsung_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
     ],
     alwayslink = True,
@@ -247,6 +249,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
     ],
 )
