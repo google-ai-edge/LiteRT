@@ -38,6 +38,12 @@ class CpuOptions {
   /// @brief Gets the number of threads for the CPU backend that was set.
   Expected<int> GetNumThreads() const;
 
+  /// @brief Selects which CPU kernel mode LiteRT should use.
+  Expected<void> SetKernelMode(LiteRtCpuKernelMode mode);
+
+  /// @brief Gets the configured CPU kernel mode.
+  Expected<LiteRtCpuKernelMode> GetKernelMode() const;
+
   /// @brief Sets the XNNPack flags.
   Expected<void> SetXNNPackFlags(uint32_t flags);
 

@@ -91,6 +91,24 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetNumThreads) {
   ASSERT_EQ(num_threads, expected_num_threads);
 }
 
+TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetKernelMode) {
+  LiteRtCpuKernelMode kernel_mode = kLiteRtCpuKernelModeXnnpack;
+
+  EXPECT_THAT(LrtGetCpuOptionsKernelMode(cpu_options_, &kernel_mode),
+              IsError(kLiteRtStatusErrorNotFound));
+
+  LITERT_EXPECT_OK(
+      LrtSetCpuOptionsKernelMode(cpu_options_, kLiteRtCpuKernelModeBuiltin));
+  LITERT_EXPECT_OK(LrtGetCpuOptionsKernelMode(cpu_options_, &kernel_mode));
+  ASSERT_EQ(kernel_mode, kLiteRtCpuKernelModeBuiltin);
+}
+
+TEST_F(LiteRtCpuOptionsFieldsTest, SetKernelModeRejectsInvalidValue) {
+  EXPECT_THAT(LrtSetCpuOptionsKernelMode(cpu_options_,
+                                         static_cast<LiteRtCpuKernelMode>(99)),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackFlags) {
   const uint32_t expected_flags = 4;
   uint32_t flags = 0;

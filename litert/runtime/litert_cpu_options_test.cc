@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_cpu_options.h"
 
 namespace litert {
 namespace internal {
@@ -31,12 +32,44 @@ TEST(LiteRtCpuOptionsTest, ParseNumThreads) {
   EXPECT_EQ(options.xnn.num_threads, 4);
 }
 
+TEST(LiteRtCpuOptionsTest, ParseKernelMode) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "kernel_mode = \"reference\"\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeReference);
+}
+
 TEST(LiteRtCpuOptionsTest, ParseFlags) {
   LiteRtCpuOptionsT options = {};
   std::string toml = "flags = 123\n";
   EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
             kLiteRtStatusOk);
   EXPECT_EQ(options.xnn.flags, 123);
+}
+
+TEST(LiteRtCpuOptionsTest, ParseBuiltinKernelMode) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "kernel_mode = \"builtin\"\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeBuiltin);
+}
+
+TEST(LiteRtCpuOptionsTest, ParseReferenceKernelMode) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "kernel_mode = \"reference\"\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeReference);
+}
+
+TEST(LiteRtCpuOptionsTest, ParseLegacyReferenceKernelMode) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "kernel_mode = 1\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeReference);
 }
 
 TEST(LiteRtCpuOptionsTest, ParseWeightCacheFilePath) {
@@ -59,12 +92,14 @@ TEST(LiteRtCpuOptionsTest, ParseWeightCacheFileDescriptor) {
 TEST(LiteRtCpuOptionsTest, ParseMultipleOptions) {
   LiteRtCpuOptionsT options = {};
   std::string toml =
+      "kernel_mode = \"reference\"\n"
       "num_threads = 8\n"
       "flags = 456\n"
       "weight_cache_file_path = \"/some/path\"\n"
       "weight_cache_file_descriptor = 10\n";
   EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
             kLiteRtStatusOk);
+  EXPECT_EQ(options.kernel_mode, kLiteRtCpuKernelModeReference);
   EXPECT_EQ(options.xnn.num_threads, 8);
   EXPECT_EQ(options.xnn.flags, 456);
   EXPECT_STREQ(options.xnn.weight_cache_file_path, "/some/path");

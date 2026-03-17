@@ -19,11 +19,54 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
 
 namespace litert {
 namespace internal {
+
+namespace {
+
+absl::string_view StripQuotes(absl::string_view value) {
+  if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+    return value.substr(1, value.size() - 2);
+  }
+  return value;
+}
+
+LiteRtStatus ParseCpuKernelMode(absl::string_view value,
+                                LiteRtCpuKernelMode* kernel_mode) {
+  value = StripQuotes(value);
+  if (value == "xnnpack") {
+    *kernel_mode = kLiteRtCpuKernelModeXnnpack;
+    return kLiteRtStatusOk;
+  }
+  if (value == "builtin") {
+    *kernel_mode = kLiteRtCpuKernelModeBuiltin;
+    return kLiteRtStatusOk;
+  }
+  if (value == "reference") {
+    *kernel_mode = kLiteRtCpuKernelModeReference;
+    return kLiteRtStatusOk;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto parsed, litert::internal::ParseTomlInt(value));
+  switch (parsed) {
+    case kLiteRtCpuKernelModeXnnpack:
+      *kernel_mode = kLiteRtCpuKernelModeXnnpack;
+      return kLiteRtStatusOk;
+    case kLiteRtCpuKernelModeBuiltin:
+      *kernel_mode = kLiteRtCpuKernelModeBuiltin;
+      return kLiteRtStatusOk;
+    case kLiteRtCpuKernelModeReference:
+      *kernel_mode = kLiteRtCpuKernelModeReference;
+      return kLiteRtStatusOk;
+  }
+  return kLiteRtStatusErrorInvalidArgument;
+}
+
+}  // namespace
 
 LiteRtStatus ParseLiteRtCpuOptions(const void* data, size_t size,
                                    LiteRtCpuOptionsT* options) {
@@ -37,7 +80,10 @@ LiteRtStatus ParseLiteRtCpuOptions(const void* data, size_t size,
       payload,
       [options](absl::string_view key,
                 absl::string_view value) -> LiteRtStatus {
-        if (key == "num_threads") {
+        if (key == "kernel_mode") {
+          LITERT_RETURN_IF_ERROR(
+              ParseCpuKernelMode(value, &options->kernel_mode));
+        } else if (key == "num_threads") {
           LITERT_ASSIGN_OR_RETURN(options->xnn.num_threads,
                                   litert::internal::ParseTomlInt(value));
         } else if (key == "flags") {
