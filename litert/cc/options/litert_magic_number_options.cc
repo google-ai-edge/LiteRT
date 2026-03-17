@@ -20,6 +20,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::options {
@@ -42,7 +43,7 @@ Expected<MagicNumberConfigsPtr> CreateMagicNumberConfigs(
 
       num_configs > (std::numeric_limits<std::size_t>::max() - kHeaderSize) /
                         kElementSize) {
-    return Unexpected(Error(kLiteRtStatusErrorInvalidArgument,
+    return Unexpected(Error(Status::kErrorInvalidArgument,
                             "Magic number configs allocation size overflow"));
   }
 
@@ -59,7 +60,7 @@ Expected<MagicNumberVerificationsPtr> CreateMagicNumberVerifications(
   if (num_verifications >
       static_cast<std::size_t>(std::numeric_limits<int64_t>::max())) {
     return Unexpected(
-        Error(kLiteRtStatusErrorInvalidArgument,
+        Error(Status::kErrorInvalidArgument,
               "Number of magic number verifications exceeds supported range"));
   }
 
@@ -71,7 +72,7 @@ Expected<MagicNumberVerificationsPtr> CreateMagicNumberVerifications(
           (std::numeric_limits<std::size_t>::max() - kHeaderSize) /
               kElementSize) {
     return Unexpected(
-        Error(kLiteRtStatusErrorInvalidArgument,
+        Error(Status::kErrorInvalidArgument,
               "Magic number verifications allocation size overflow"));
   }
 

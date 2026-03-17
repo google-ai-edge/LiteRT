@@ -16,6 +16,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_samsung_options.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -30,7 +31,7 @@ const char* SamsungOptions::Discriminator() {
 Expected<SamsungOptions> SamsungOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
-    return Error(kLiteRtStatusErrorInvalidArgument);
+    return Error(Status::kErrorInvalidArgument);
   }
   return SamsungOptions(options.Get(), OwnHandle::kNo);
 }
