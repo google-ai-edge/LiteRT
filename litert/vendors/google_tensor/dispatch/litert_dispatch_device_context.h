@@ -17,6 +17,9 @@
 
 #include <optional>
 
+#include <utility>
+#include <vector>
+
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
@@ -84,6 +87,12 @@ class LiteRtDispatchDeviceContextT {
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchDeviceContextT() = default;
 
+  struct MmapRegion {
+    LiteRtDispatchExecutableHandle exec_handle;
+    void* addr;
+    size_t length;
+  };
+
   const LiteRtRuntimeContext* runtime_context_;
   ThrContext* absl_nonnull thr_context_;
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
@@ -91,6 +100,11 @@ class LiteRtDispatchDeviceContextT {
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   // A device context cannot be destroyed with any registered graphs.
   absl::flat_hash_set<LiteRtDispatchGraph> registered_graphs_;
+  // Each region backs an executable's bytecode and must outlive any graph
+  // referencing that executable via AssignNodeFunction. Destroy refuses
+  // when non-empty; release order is graphs, then executables, then Destroy.
+  // std::vector (not hash set): expected N=1.
+  std::vector<MmapRegion> mmap_regions_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
