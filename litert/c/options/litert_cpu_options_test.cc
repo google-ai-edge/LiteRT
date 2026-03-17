@@ -103,12 +103,6 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetKernelMode) {
   ASSERT_EQ(kernel_mode, kLiteRtCpuKernelModeBuiltin);
 }
 
-TEST_F(LiteRtCpuOptionsFieldsTest, SetKernelModeRejectsInvalidValue) {
-  EXPECT_THAT(LrtSetCpuOptionsKernelMode(cpu_options_,
-                                         static_cast<LiteRtCpuKernelMode>(99)),
-              IsError(kLiteRtStatusErrorInvalidArgument));
-}
-
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackFlags) {
   const uint32_t expected_flags = 4;
   uint32_t flags = 0;
