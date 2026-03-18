@@ -36,6 +36,7 @@ py_library(
     ),
     deps = [
         # Dependency placeholder: gfile,
+        "//litert/python/mlir/_mlir_libs:converter_api_ext",
         "//litert/python/mlir/_mlir_libs:model_utils_ext",
         "@lark",
         "@ml_dtypes_py//ml_dtypes",
@@ -62,7 +63,6 @@ py_library(
 
 pytype_strict_library(
     name = "testing",
-    testonly = True,
     srcs = ["testing.py"],
     deps = [
         ":model_utils",
@@ -70,6 +70,7 @@ pytype_strict_library(
     ] + if_google(
         [
             "//third_party/py/mlir:ir",
+            "//litert/python/mlir/_mlir_libs:model_utils_ext",
         ],
         [
             "//litert/python/mlir",

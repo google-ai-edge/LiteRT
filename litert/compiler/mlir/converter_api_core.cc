@@ -16,6 +16,7 @@
 #include <Python.h>
 #include <stdlib.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -299,6 +300,10 @@ void RegisterPasses() {
       []() { return mlir::TFL::CreatePrepareQuantizePass(); });
   mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
       []() { return mlir::TFL::CreatePropagateQsvPass(); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
+      []() { return mlir::TFL::CreatePostQuantizePass(true); });
+  mlir::PassRegistration<mlir::OperationPass<mlir::ModuleOp>>(
+      []() { return mlir::TFL::CreateFuseQDQPass(); });
 }
 
 void PrepareMlirContext(mlir::MLIRContext* context) {
@@ -484,6 +489,57 @@ absl::Status ExportFlatbufferToFile(mlir::Operation* op,
     return module_op_or.status();
   }
   return ExportFlatbufferToFile(*module_op_or, output_path);
+}
+
+absl::StatusOr<NumpyArrayMeta> GetNumpyArrayMetaFromDenseResourceElementsAttr(
+    mlir::Attribute attr) {
+  auto resource_attr = mlir::dyn_cast<mlir::DenseResourceElementsAttr>(attr);
+  if (resource_attr == nullptr) {
+    return absl::InvalidArgumentError(
+        "Failed to cast the input to mlir::DenseResourceElementsAttr.");
+  }
+  auto shaped_type = mlir::dyn_cast<mlir::ShapedType>(resource_attr.getType());
+  if (shaped_type == nullptr) {
+    return absl::InvalidArgumentError(
+        "Failed to cast the input to mlir::ShapedType.");
+  }
+  auto element_type = shaped_type.getElementType();
+
+  auto mlir_shape = shaped_type.getShape();
+  std::vector<size_t> shape(mlir_shape.begin(), mlir_shape.end());
+
+  NumpyArrayMeta::DType dtype;
+  uint8_t bits = 0;
+  if (element_type.isF32()) {
+    dtype = NumpyArrayMeta::DType::kFloat;
+    bits = 32;
+  } else if (element_type.isF64()) {
+    dtype = NumpyArrayMeta::DType::kFloat;
+    bits = 64;
+  } else if (element_type.isInteger(32)) {
+    dtype = NumpyArrayMeta::DType::kInt;
+    bits = 32;
+  } else if (element_type.isInteger(64)) {
+    dtype = NumpyArrayMeta::DType::kInt;
+    bits = 64;
+  } else if (element_type.isInteger(8)) {
+    dtype = NumpyArrayMeta::DType::kInt;
+    bits = 8;
+  } else if (element_type.isInteger(1)) {
+    dtype = NumpyArrayMeta::DType::kBool;
+    bits = 8;
+  } else {
+    return absl::InvalidArgumentError("Unsupported MLIR element type.");
+  }
+
+  auto data = resource_attr.getData();
+
+  return NumpyArrayMeta{
+      .data = data.data(),
+      .shape = shape,
+      .dtype = dtype,
+      .bits = bits,
+  };
 }
 
 }  // namespace litert

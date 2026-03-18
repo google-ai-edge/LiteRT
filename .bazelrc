@@ -133,6 +133,7 @@ build --incompatible_enforce_config_setting_visibility
 # Compiler MLIR Builds
 common --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=ai_edge_litert.mlir.
 common --copt=-DNB_DOMAIN=litert
+common --copt=-DMLIR_BINDINGS_PYTHON_DOMAIN=LITERT_MLIR
 
 # Use GitHub mirror for BCR to work around bcr.bazel.build outages
 common --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main/

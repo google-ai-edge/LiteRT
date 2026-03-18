@@ -16,6 +16,7 @@
 
 #include <Python.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -58,6 +59,14 @@ struct ConvertToTFLConfig {
 
   // If false, downcast x64 tensors and inputs to x32.
   bool enable_x64 = true;
+};
+
+struct NumpyArrayMeta {
+  enum DType { kFloat, kInt, kBool };
+  const char* data;
+  std::vector<size_t> shape;
+  DType dtype;
+  uint8_t bits;
 };
 
 // Register passes to be used via MLIR pybindings pass manager.
@@ -109,6 +118,10 @@ absl::StatusOr<mlir::Attribute> GetPyChunkedCallbackResourceAttr(
 
 // Returns the bytes of the given callback resource attribute.
 absl::StatusOr<std::vector<uint8_t>> GetPyChunkedCallbackResourceAttrBytes(
+    mlir::Attribute attr);
+
+// Returns the NumpyArrayMeta of the given dense resource elements attribute.
+absl::StatusOr<NumpyArrayMeta> GetNumpyArrayMetaFromDenseResourceElementsAttr(
     mlir::Attribute attr);
 
 }  // namespace litert

@@ -141,6 +141,7 @@ ALL_PY_SRC_MODULES = [
     ":build_converter_enabled": [
         "//litert/python/mlir",
         "//litert/python/tools/model_utils",
+        "//litert/python/tools/model_utils:testing",
     ],
     "//conditions:default": [],
 })
