@@ -554,6 +554,16 @@ NUMERICS_CHECK_DEPS = [
     "//tflite/profiling:time",
 ]
 
+cc_library(
+    name = "gpu_numerics_threshold",
+    srcs = ["gpu_numerics_threshold.cc"],
+    hdrs = ["gpu_numerics_threshold.h"],
+    deps = [
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
@@ -582,11 +592,15 @@ cc_binary(
     ],
     data = litert_gpu_accelerator_prebuilts(),
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
         "//litert/cc:litert_common",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/core:filesystem",
         "//tflite/c:c_api_types",
         "//tflite/tools:utils",
+        "@com_google_absl//absl/strings",
     ] + litert_gpu_accelerator_deps(),
 )
 
@@ -597,6 +611,10 @@ cc_binary(
         "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
     ],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
@@ -616,6 +634,10 @@ cc_binary(
     ],
     tags = ["requires-gpu-nvidia"],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
@@ -646,6 +668,10 @@ cc_binary(
         "requires-gpu-nvidia",
     ],
     deps = NUMERICS_CHECK_DEPS + [
+        ":gpu_numerics_threshold",
+        "@com_google_absl//absl/strings",
+        "//litert/cc/internal:scoped_file",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc:litert_common",
         "//litert/core:filesystem",
