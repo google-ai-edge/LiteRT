@@ -36,9 +36,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "weight_loader/external_weight_loader_litert.h"
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/cache/compilation_cache.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -403,12 +401,10 @@ class LiteRtCompiledModelT {
   litert::Expected<bool> SignatureNeedsAllocation(
       const tflite::SignatureRunner* runner) const;
 
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   // Restores external weights into tensor for CPU execution.
   // This is called before delegates are applied so that XNNPack and other
   // CPU delegates can see the weight data in the tensors.
   litert::Expected<void> RestoreExternalWeightsForCpu();
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
 #if !defined(LITERT_DISABLE_NPU)
   // Applies the plugins to the model and caches the compiled model if
@@ -489,10 +485,11 @@ class LiteRtCompiledModelT {
   // `SetSchedulingInfo`.
   std::string model_debug_feature_id_;
 
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   // The loader that manages external weight metadata and bindings.
   std::unique_ptr<weight_loader::WeightLoader> weight_loader_;
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+
+  // Indicates whether this model actually uses external weights.
+  bool has_external_weights_ = false;
 
   // File system hints about the originating model location.
   std::optional<std::string> model_directory_;
