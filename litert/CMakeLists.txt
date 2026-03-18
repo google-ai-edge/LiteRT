@@ -13,8 +13,21 @@
 # limitations under the License.
 
 cmake_minimum_required(VERSION 3.20)
+
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
+if(POLICY CMP0169)
+  cmake_policy(SET CMP0169 OLD)
+endif()
+
 project(LiteRT VERSION 1.4.0 LANGUAGES CXX C)
 
+set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL
+    "Suppress deprecation warnings from vendored CMake dependencies" FORCE)
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL
+    "Suppress developer warnings from vendored CMake dependencies")
+set(ENV{PYTHONWARNINGS} "ignore::DeprecationWarning")
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
@@ -29,6 +42,11 @@ add_compile_options(
   -Wno-return-type
   -fpermissive
 )
+add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
+
+if(APPLE)
+  add_link_options(-Wl,-no_warn_duplicate_libraries)
+endif()
 
 if(CMAKE_SYSTEM_PROCESSOR)
   string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" LITERT_SYSTEM_PROCESSOR_LOWER)
