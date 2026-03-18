@@ -73,6 +73,10 @@ if(APPLE)
   target_link_libraries(litert_runtime PRIVATE "-framework Metal" "-framework Foundation" "-framework OpenGL")
 endif()
 
+target_compile_options(litert_runtime PRIVATE
+    -DLITERT_USE_XNNPACK
+)
+
 target_include_directories(litert_runtime
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>

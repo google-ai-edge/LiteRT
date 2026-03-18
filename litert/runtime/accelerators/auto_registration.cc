@@ -38,9 +38,10 @@
 
 extern "C" {
 
-// Define a data pointer to an accelerator definition. This pointer is updated
-// by statically linked CPU (XNNPack) accelerator.
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef = nullptr;
+// Externally defined CPU (XNNPack) accelerator definition.
+#if defined(LITERT_USE_XNNPACK)
+extern LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
+#endif  // defined(LITERT_USE_XNNPACK)
 
 // Define a data pointer to an accelerator definition. This pointer is updated
 // by statically linked GPU accelerator.
@@ -313,6 +314,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   LITERT_LOG(LITERT_VERBOSE, "GPU accelerator registration disabled.");
 #endif
 
+#if defined(LITERT_USE_XNNPACK)
   // Register the CPU accelerator.
   if (auto_register_accelerators & kLiteRtHwAcceleratorCpu) {
     if (LiteRtStaticLinkedAcceleratorCpuDef != nullptr) {
@@ -330,7 +332,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LITERT_LOG(LITERT_VERBOSE,
                "CPU accelerator registration skipped by environment options.");
   }
-
+#endif  // defined(LITERT_USE_XNNPACK)
   return {};
 };
 

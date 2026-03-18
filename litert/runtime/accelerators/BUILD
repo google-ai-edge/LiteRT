@@ -23,6 +23,12 @@ cc_library(
     name = "auto_registration",
     srcs = ["auto_registration.cc"],
     hdrs = ["auto_registration.h"],
+    copts = select({
+        "//litert/build_common:litert_disable_cpu": [],
+        "//conditions:default": [
+            "-DLITERT_USE_XNNPACK",
+        ],
+    }),
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -37,7 +43,12 @@ cc_library(
         "//litert/core:environment",
         "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
         "@com_google_absl//absl/strings",
-    ],
+    ] + select({
+        "//litert/build_common:litert_disable_cpu": [],
+        "//conditions:default": [
+            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
+        ],
+    }),
 )
 
 cc_library(
