@@ -233,6 +233,30 @@ def _ndarrays_to_lists(value: Any) -> Any:
   return value
 
 
+def _compact_buffers_array(model: ModelT):
+  """Make all empty buffers point to the zeroth buffer."""
+  if model.buffers is None:
+    return
+
+  # Initialize the mapping with all buffers pointing to a initial empty buffer.
+  new_bid_for_old = np.zeros(shape=[len(model.buffers)], dtype=np.int32)
+  buffers = [BufferT()]
+
+  # Collect all non-empty buffers.
+  for k, buffer in enumerate(model.buffers):
+    if buffer.data is not None or buffer.size:
+      new_bid_for_old[k] = len(buffers)
+      buffers.append(buffer)
+
+  # Update the buffer IDs in the model subgraphs and metadata.
+  model.buffers = buffers
+  for subgraph in model.subgraphs or []:
+    for tensor in subgraph.tensors or []:
+      tensor.buffer = new_bid_for_old[tensor.buffer]
+  for metadata in model.metadata or []:
+    metadata.buffer = new_bid_for_old[metadata.buffer]
+
+
 def read_model_from_bytearray(model_bytearray: BufferType) -> ModelT:
   """Reads a tflite model as a python object.
 
@@ -270,6 +294,10 @@ def read_model_from_bytearray(model_bytearray: BufferType) -> ModelT:
         ]
         op.largeCustomOptionsOffset = 0
         op.largeCustomOptionsSize = 0
+
+  # TODO: b/493863106 - Remove this once the converter no longer creates
+  # spurious empty buffers.
+  _compact_buffers_array(model)
 
   # Convert any non-buffer `np.ndarray`s to `list` to ensure they are mutable.
   buffers = model.buffers
