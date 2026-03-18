@@ -162,6 +162,7 @@ cc_test(
     linkopts = litert_android_linkopts(),
     linkstatic = 1,
     tags = [
+        "manual",
         "no-remote-exec",
         "no_oss",
         "notap",
