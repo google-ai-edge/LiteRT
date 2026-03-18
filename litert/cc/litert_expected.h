@@ -29,7 +29,6 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
-#include "litert/cc/internal/litert_detail.h"
 
 /// @file
 /// @brief Defines an `Expected` class for handling return values that may be
@@ -207,18 +206,19 @@ class Expected {
 
   Expected(Expected&& other) : has_value_(other.HasValue()) {
     if (HasValue()) {
-      ConstructAt(std::addressof(value_), std::move(other.value_));
+      ::new (std::addressof(value_)) StorageType(std::move(other.value_));
     } else {
-      ConstructAt(std::addressof(unexpected_), std::move(other.unexpected_));
+      ::new (std::addressof(unexpected_))
+          Unexpected(std::move(other.unexpected_));
     }
   }
 
   Expected(const Expected& other) : has_value_(other.has_value_) {
     if (HasValue()) {
-      ConstructAt(std::addressof(value_), other.value_);
+      ::new (std::addressof(value_)) StorageType(other.value_);
       value_ = other.value_;
     } else {
-      ConstructAt(std::addressof(unexpected_), other.unexpected_);
+      ::new (std::addressof(unexpected_)) Unexpected(other.unexpected_);
     }
   }
 
@@ -229,13 +229,13 @@ class Expected {
           value_ = std::move(other.value_);
         } else {
           value_.~StorageType();
-          ConstructAt(std::addressof(unexpected_),
-                      std::move(other.unexpected_));
+          ::new (std::addressof(unexpected_))
+              Unexpected(std::move(other.unexpected_));
         }
       } else {
         if (other.HasValue()) {
           unexpected_.~Unexpected();
-          ConstructAt(std::addressof(value_), std::move(other.value_));
+          ::new (std::addressof(value_)) StorageType(std::move(other.value_));
         } else {
           unexpected_ = std::move(other.unexpected_);
         }
@@ -252,12 +252,12 @@ class Expected {
           value_ = other.value_;
         } else {
           value_.~StorageType();
-          ConstructAt(std::addressof(unexpected_), other.unexpected_);
+          ::new (std::addressof(unexpected_)) Unexpected(other.unexpected_);
         }
       } else {
         if (other.HasValue()) {
           unexpected_.~Unexpected();
-          ConstructAt(std::addressof(value_), other.value_);
+          ::new (std::addressof(value_)) StorageType(other.value_);
         } else {
           unexpected_ = other.unexpected_;
         }
