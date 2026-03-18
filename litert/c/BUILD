@@ -208,6 +208,7 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_common",
         "//litert/core/model",
         "//litert/core/model:model_load",
         "//tflite/core/c:private_c_api_types",
@@ -478,6 +479,7 @@ litert_c_api_library(
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_common",
         "//litert/runtime:compiled_model",
     ],
     deps = [

@@ -58,6 +58,7 @@ cc_library(
     hdrs = ["litert_accelerator.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "//litert/runtime:accelerator",
@@ -137,6 +138,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
         "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "//litert/runtime:accelerator",
