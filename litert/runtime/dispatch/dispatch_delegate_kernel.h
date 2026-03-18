@@ -105,8 +105,7 @@ class DispatchDelegateKernel
   Expected<LiteRtTensorBufferPtr> AllocateTensorBuffer(
       TfLiteOpaqueTensor* tfl_tensor);
   Expected<void> RegisterBufferWithDispatchApi(
-      TfLiteOpaqueContext* context, TfLiteOpaqueTensor* tfl_tensor,
-      LiteRtTensorBufferPtr&& tensor_buffer);
+      int tensor_id, LiteRtTensorBufferPtr&& tensor_buffer);
 
   Expected<void> AttachBuffersToInvocationContextsIfNeeded(
       TfLiteOpaqueContext* context);
@@ -133,7 +132,8 @@ class DispatchDelegateKernel
   std::vector<int> output_tensor_ids_;
   std::vector<int> internal_tensor_ids_;
 
-  std::unordered_map<int, LiteRtTensorBufferHandle> tensor_idx_to_handle_;  // NOLINT
+  std::unordered_map<int, LiteRtTensorBufferHandle>
+      tensor_idx_to_handle_;  // NOLINT
 
   struct TensorInfo {
     LiteRtTensorBufferPtr tensor_buffer;
@@ -150,7 +150,10 @@ class DispatchDelegateKernel
     }
   };
 
-  absl::node_hash_map<TfLiteOpaqueTensor*, TensorInfo> tensor_buffer_infos_;
+  // Keep the mapping from tensor ID to tensor info. Using this map to avoid
+  // TfLiteOpaqueTensor* pointer being stale during reallocations.
+  // Tensor ID will be stable across reallocations.
+  absl::node_hash_map<int, TensorInfo> tensor_buffer_infos_;
 
   struct PortConnection {
     int node_idx;
@@ -159,7 +162,10 @@ class DispatchDelegateKernel
                          // node output.
   };
 
-  absl::flat_hash_map<TfLiteOpaqueTensor*, std::vector<PortConnection>>
+  // Keep the mapping from tensor ID to port connections. Using this map to
+  // avoid TfLiteOpaqueTensor* pointer being stale during reallocations.
+  // Tensor ID will be stable across reallocations.
+  absl::flat_hash_map<int, std::vector<PortConnection>>
       io_tensors_port_connections_;
 };
 
