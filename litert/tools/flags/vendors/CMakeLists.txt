@@ -86,3 +86,21 @@ target_link_libraries(litert_tool_flags_intel_openvino
     PUBLIC
         absl::flags
 )
+
+#Samsung flags
+add_library(litert_tool_flags_samsung STATIC
+	samsung_flags.cc
+)
+
+target_include_directories(litert_tool_flags_samsung
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../..>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(litert_tool_flags_samsung
+    PUBLIC
+        absl::flags
+)
