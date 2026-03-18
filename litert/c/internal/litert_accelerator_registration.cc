@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerator.h"
@@ -50,7 +51,7 @@ LiteRtStatus LiteRtRegisterAccelerator(LiteRtEnvironment environment,
       environment->GetAcceleratorRegistry().RegisterAccelerator(
           std::move(accelerator_guard));
   if (!registered_accelerator.HasValue()) {
-    return registered_accelerator.Error().Status();
+    return litert::ToLiteRtStatus(registered_accelerator.Error().StatusCC());
   }
   registered_accelerator.Value()->data = data_guard.release();
   registered_accelerator.Value()->ReleaseData = ReleaseData;
