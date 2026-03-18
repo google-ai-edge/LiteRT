@@ -104,7 +104,10 @@ def main():
     os.makedirs(sdist_temp_output_dir)
 
     py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
-    py_executable = f"python{py_version}" if py_version else sys.executable
+    if py_version and sys.platform != "darwin":
+      py_executable = f"python{py_version}"
+    else:
+      py_executable = sys.executable
     cmd = [
         py_executable,
         tmp_setup_py_path,
