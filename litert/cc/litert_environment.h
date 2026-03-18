@@ -90,6 +90,7 @@ class Environment {
     WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
     WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
     RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
+    AutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
   };
 
   struct [[deprecated("Use EnvironmentOptions::Option instead.")]] Option {
@@ -276,7 +277,7 @@ class Environment {
   Expected<EnvironmentOptions> FromCOptions(
       LiteRtEnvironmentOptions options) const {
     std::vector<EnvironmentOptions::Option> env_options;
-    for (int i = 0; i <= kLiteRtEnvOptionTagRuntimeLibraryDir; ++i) {
+    for (int i = 0; i <= kLiteRtEnvOptionTagAutoRegisterAccelerators; ++i) {
       LiteRtAny value;
       if (runtime_->GetEnvironmentOptionsValue(
               options, static_cast<LiteRtEnvOptionTag>(i), &value) ==

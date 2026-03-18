@@ -258,6 +258,27 @@ TEST_P(CompiledModelGpuTest, GpuEnvironment) {
                         std::get<int64_t>(opencl_command_queue));
 }
 
+TEST_P(CompiledModelGpuTest, GpuDisabledByEnvironmentOption) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kAutoRegisterAccelerators,
+          static_cast<int64_t>(kLiteRtHwAcceleratorCpu),
+      },
+  };
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+  ASSERT_TRUE(env);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compilation_options,
+      CreateGpuOptions(CompiledModelGpuTest::GetParam()));
+  auto compiled_model = CompiledModel::Create(
+      *env, testing::GetTestFilePath(kModelFileName), compilation_options);
+
+  EXPECT_FALSE(compiled_model.HasValue());
+  EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorCompilation);
+}
+
 TEST_P(CompiledModelGpuTest, Async) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);

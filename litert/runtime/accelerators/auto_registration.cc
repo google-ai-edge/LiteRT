@@ -55,6 +55,29 @@ LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
 namespace litert {
 namespace {
 
+constexpr LiteRtHwAcceleratorSet kDefaultAutoRegisterAccelerators =
+    kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorNpu
+#if defined(__EMSCRIPTEN__)
+    | kLiteRtHwAcceleratorWebNn
+#endif  // defined(__EMSCRIPTEN__)
+    ;
+
+LiteRtHwAcceleratorSet GetAutoRegisterAccelerators(
+    const LiteRtEnvironmentT& environment) {
+  auto option =
+      environment.GetOption(kLiteRtEnvOptionTagAutoRegisterAccelerators);
+  if (!option.has_value()) {
+    return kDefaultAutoRegisterAccelerators;
+  }
+  if (option->type != kLiteRtAnyTypeInt) {
+    LITERT_LOG(LITERT_WARNING,
+               "Auto-register accelerators option must be an integer bitmask. "
+               "Using default accelerator auto-registration.");
+    return kDefaultAutoRegisterAccelerators;
+  }
+  return static_cast<LiteRtHwAcceleratorSet>(option->int_value);
+}
+
 Expected<SharedLibrary> LoadSharedLibrary(absl::string_view shlib_path,
                                           bool try_default_on_failure) {
   auto result = SharedLibrary::Load(shlib_path, RtldFlags::Lazy().Local());
@@ -153,26 +176,36 @@ Expected<void> RegisterSharedObjectAcceleratorViaAcceleratorDef(
 
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
+  const LiteRtHwAcceleratorSet auto_register_accelerators =
+      GetAutoRegisterAccelerators(environment);
   // Register the NPU accelerator.
 #if !defined(LITERT_DISABLE_NPU)
-  if (auto npu_registration = LiteRtRegisterNpuAccelerator(&environment);
-      npu_registration == kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
+  if (auto_register_accelerators & kLiteRtHwAcceleratorNpu) {
+    if (auto npu_registration = LiteRtRegisterNpuAccelerator(&environment);
+        npu_registration == kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "NPU accelerator could not be loaded and registered: %s.",
+                 LiteRtGetStatusString(npu_registration));
+    }
   } else {
-    LITERT_LOG(LITERT_WARNING,
-               "NPU accelerator could not be loaded and registered: %s.",
-               LiteRtGetStatusString(npu_registration));
+    LITERT_LOG(LITERT_VERBOSE,
+               "NPU accelerator registration skipped by environment options.");
   }
 #else
   LITERT_LOG(LITERT_VERBOSE, "NPU accelerator accelerator is disabled.");
 #endif
 
   // Register the WebNN accelerator if statically linked.
-  if (LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
+#if defined(__EMSCRIPTEN__)
+  if ((auto_register_accelerators & kLiteRtHwAcceleratorWebNn) &&
+      LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
       LiteRtRegisterStaticLinkedAcceleratorWebNn(environment) ==
           kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "Statically linked WebNN accelerator registered.");
   }
+#endif  // defined(__EMSCRIPTEN__)
 
   // Register the GPU accelerator.
   // The following is list of plugins that are loaded in the order they are
@@ -186,106 +219,116 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #define SO_EXT ".so"
 #endif
 #if !defined(LITERT_DISABLE_GPU)
-  static constexpr absl::string_view kGpuAcceleratorLibs[] = {
-      "libLiteRtGpuAccelerator" SO_EXT,
-
+  if (auto_register_accelerators & kLiteRtHwAcceleratorGpu) {
+    static constexpr absl::string_view kGpuAcceleratorLibs[] = {
+        "libLiteRtGpuAccelerator" SO_EXT,
 #ifdef __ANDROID__
 #if LITERT_HAS_OPENCL_SUPPORT
-      "libLiteRtClGlAccelerator" SO_EXT,
-      "libLiteRtOpenClAccelerator" SO_EXT,
+        "libLiteRtClGlAccelerator" SO_EXT,
+        "libLiteRtOpenClAccelerator" SO_EXT,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
-      "libLiteRtWebGpuAccelerator" SO_EXT,
+        "libLiteRtWebGpuAccelerator" SO_EXT,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #elif TARGET_OS_IPHONE
 #if LITERT_HAS_METAL_SUPPORT
-      "libLiteRtMetalAccelerator" SO_EXT,
+        "libLiteRtMetalAccelerator" SO_EXT,
 #endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
-      "libLiteRtWebGpuAccelerator" SO_EXT,
+        "libLiteRtWebGpuAccelerator" SO_EXT,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #else  // !__ANDROID__ && !TARGET_OS_IPHONE
 #if LITERT_HAS_WEBGPU_SUPPORT
-      "libLiteRtWebGpuAccelerator" SO_EXT,
+        "libLiteRtWebGpuAccelerator" SO_EXT,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
-      "libLiteRtOpenClAccelerator" SO_EXT,
+        "libLiteRtOpenClAccelerator" SO_EXT,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
-      "libLiteRtMetalAccelerator" SO_EXT,
+        "libLiteRtMetalAccelerator" SO_EXT,
 #endif  // LITERT_HAS_METAL_SUPPORT
 #endif  // !__ANDROID__ && !TARGET_OS_IPHONE
 
 #if LITERT_HAS_VULKAN_SUPPORT
-      "libLiteRtVulkanAccelerator" SO_EXT,
+        "libLiteRtVulkanAccelerator" SO_EXT,
 #endif  // LITERT_HAS_VULKAN_SUPPORT
-  };
-  bool gpu_accelerator_registered = false;
-  if (LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
-      RegisterAccelerator(&environment, LiteRtStaticLinkedAcceleratorGpuDef) ==
-          kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
-    gpu_accelerator_registered = true;
-  }
-  if (!gpu_accelerator_registered) {
-    std::filesystem::path runtime_lib_path;
-    auto option = environment.GetOption(kLiteRtEnvOptionTagRuntimeLibraryDir);
-    if (option.has_value() && option->type == kLiteRtAnyTypeString) {
-      runtime_lib_path = option->str_value;
+    };
+    bool gpu_accelerator_registered = false;
+    if (LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
+        RegisterAccelerator(&environment,
+                            LiteRtStaticLinkedAcceleratorGpuDef) ==
+            kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+      gpu_accelerator_registered = true;
     }
 
-    for (auto plugin_path : kGpuAcceleratorLibs) {
-      std::filesystem::path full_plugin_path =
-          std::filesystem::path(runtime_lib_path) / std::string(plugin_path);
-      LITERT_LOG(LITERT_INFO, "Loading GPU accelerator(%s).",
-                 full_plugin_path.c_str());
-      // Try to load a GPU accelerator using `LiteRtAcceleratorImpl` symbol.
-      auto registration = RegisterSharedObjectAcceleratorViaAcceleratorDef(
-          environment, full_plugin_path.string(), "LiteRtAcceleratorImpl",
-          /*try_default_on_failure=*/false);
-      if (registration.HasValue()) {
-        LITERT_LOG(LITERT_INFO,
-                   "Dynamically loaded GPU accelerator(%s) registered.",
-                   plugin_path.data());
-        gpu_accelerator_registered = true;
-        break;
+    if (!gpu_accelerator_registered) {
+      std::filesystem::path runtime_lib_path;
+      auto option = environment.GetOption(kLiteRtEnvOptionTagRuntimeLibraryDir);
+      if (option.has_value() && option->type == kLiteRtAnyTypeString) {
+        runtime_lib_path = option->str_value;
       }
-      // Try to load a GPU accelerator using `LiteRtRegisterGpuAccelerator`
-      // symbol.
-      registration = RegisterSharedObjectAcceleratorViaFunctionPointer(
-          environment, full_plugin_path.string(),
-          "LiteRtRegisterGpuAccelerator",
-          /*try_default_on_failure=*/true);
-      if (registration.HasValue()) {
-        LITERT_LOG(LITERT_INFO,
-                   "Dynamically loaded GPU accelerator(%s) registered.",
-                   plugin_path.data());
-        gpu_accelerator_registered = true;
-        break;
+      for (auto plugin_path : kGpuAcceleratorLibs) {
+        std::filesystem::path full_plugin_path =
+            std::filesystem::path(runtime_lib_path) / std::string(plugin_path);
+        LITERT_LOG(LITERT_INFO, "Loading GPU accelerator(%s).",
+                   full_plugin_path.c_str());
+        // Try to load a GPU accelerator using `LiteRtAcceleratorImpl` symbol.
+        auto registration = RegisterSharedObjectAcceleratorViaAcceleratorDef(
+            environment, full_plugin_path.string(), "LiteRtAcceleratorImpl",
+            /*try_default_on_failure=*/false);
+        if (registration.HasValue()) {
+          LITERT_LOG(LITERT_INFO,
+                     "Dynamically loaded GPU accelerator(%s) registered.",
+                     plugin_path.data());
+          gpu_accelerator_registered = true;
+          break;
+        }
+        // Try to load a GPU accelerator using `LiteRtRegisterGpuAccelerator`
+        // symbol.
+        registration = RegisterSharedObjectAcceleratorViaFunctionPointer(
+            environment, full_plugin_path.string(),
+            "LiteRtRegisterGpuAccelerator",
+            /*try_default_on_failure=*/true);
+        if (registration.HasValue()) {
+          LITERT_LOG(LITERT_INFO,
+                     "Dynamically loaded GPU accelerator(%s) registered.",
+                     plugin_path.data());
+          gpu_accelerator_registered = true;
+          break;
+        }
       }
     }
-  }
-  if (!gpu_accelerator_registered) {
-    LITERT_LOG(LITERT_WARNING,
-               "GPU accelerator could not be loaded and registered.");
+    if (!gpu_accelerator_registered) {
+      LITERT_LOG(LITERT_WARNING,
+                 "GPU accelerator could not be loaded and registered.");
+    }
+  } else {
+    LITERT_LOG(LITERT_VERBOSE,
+               "GPU accelerator registration skipped by environment options.");
   }
 #else
   LITERT_LOG(LITERT_VERBOSE, "GPU accelerator registration disabled.");
 #endif
 
   // Register the CPU accelerator.
-  if (LiteRtStaticLinkedAcceleratorCpuDef != nullptr) {
-    if (auto status = RegisterAccelerator(&environment,
-                                          LiteRtStaticLinkedAcceleratorCpuDef);
-        status == kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
-    } else {
-      LITERT_LOG(LITERT_WARNING,
-                 "CPU accelerator could not be loaded and registered: %s.",
-                 LiteRtGetStatusString(status));
+  if (auto_register_accelerators & kLiteRtHwAcceleratorCpu) {
+    if (LiteRtStaticLinkedAcceleratorCpuDef != nullptr) {
+      if (auto status = RegisterAccelerator(
+              &environment, LiteRtStaticLinkedAcceleratorCpuDef);
+          status == kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
+      } else {
+        LITERT_LOG(LITERT_WARNING,
+                   "CPU accelerator could not be loaded and registered: %s.",
+                   LiteRtGetStatusString(status));
+      }
     }
+  } else {
+    LITERT_LOG(LITERT_VERBOSE,
+               "CPU accelerator registration skipped by environment options.");
   }
 
   return {};
