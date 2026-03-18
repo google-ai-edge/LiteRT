@@ -50,30 +50,6 @@ void ThrowIfFailed(absl::string_view prefix, const absl::Status& status) {
   }
 }
 
-static void GetDlpackType(mlir::Type type, uint8_t& code, uint8_t& bits) {
-  if (type.isF32()) {
-    code = (uint8_t)nb::dlpack::dtype_code::Float;
-    bits = 32;
-  } else if (type.isF64()) {
-    code = (uint8_t)nb::dlpack::dtype_code::Float;
-    bits = 64;
-  } else if (type.isInteger(32)) {
-    code = (uint8_t)nb::dlpack::dtype_code::Int;
-    bits = 32;
-  } else if (type.isInteger(64)) {
-    code = (uint8_t)nb::dlpack::dtype_code::Int;
-    bits = 64;
-  } else if (type.isInteger(8)) {
-    code = (uint8_t)nb::dlpack::dtype_code::Int;
-    bits = 8;
-  } else if (type.isInteger(1)) {
-    code = (uint8_t)nb::dlpack::dtype_code::Bool;
-    bits = 8;
-  } else {
-    throw nb::value_error("Unsupported MLIR element type.");
-  }
-}
-
 NB_MODULE(converter_api_ext, m) {
   m.doc() = "LiteRT Converter API Extensions";
 
@@ -188,30 +164,30 @@ NB_MODULE(converter_api_ext, m) {
   m.def(
       "dense_resource_elements_attr_to_numpy",
       [](MlirAttribute c_attr) {
-        auto attr =
-            mlir::dyn_cast<mlir::DenseResourceElementsAttr>(unwrap(c_attr));
-        if (attr == nullptr) {
-          throw nb::value_error(
-              "Failed to cast the input to mlir::DenseResourceElementsAttr.");
+        auto meta_or = litert::GetNumpyArrayMetaFromDenseResourceElementsAttr(
+            unwrap(c_attr));
+        ThrowIfFailed("Failed to convert dense resource elements attr to numpy",
+                      meta_or.status());
+
+        litert::NumpyArrayMeta& meta = meta_or.value();
+        uint8_t type_code;
+        switch (meta.dtype) {
+          case litert::NumpyArrayMeta::DType::kFloat:
+            type_code = (uint8_t)nb::dlpack::dtype_code::Float;
+            break;
+          case litert::NumpyArrayMeta::DType::kInt:
+            type_code = (uint8_t)nb::dlpack::dtype_code::Int;
+            break;
+          case litert::NumpyArrayMeta::DType::kBool:
+            type_code = (uint8_t)nb::dlpack::dtype_code::Bool;
+            break;
+          default:
+            throw nb::value_error("Unsupported dtype.");
         }
-        auto shaped_type = mlir::dyn_cast<mlir::ShapedType>(attr.getType());
-        if (shaped_type == nullptr) {
-          throw nb::value_error(
-              "Failed to cast the input to mlir::ShapedType.");
-        }
-        auto element_type = shaped_type.getElementType();
-
-        auto mlir_shape = shaped_type.getShape();
-        std::vector<size_t> shape(mlir_shape.begin(), mlir_shape.end());
-
-        uint8_t type_code, bits;
-        GetDlpackType(element_type, type_code, bits);
-
-        auto data = attr.getData();
-        return nb::ndarray<nb::numpy>(const_cast<char*>(data.data()),
-                                      shape.size(), shape.data(), nb::handle(),
-                                      nullptr,  // assume C-contiguous
-                                      {type_code, bits, 1});
+        return nb::ndarray<nb::numpy, const char, nb::ro>(
+            meta.data, meta.shape.size(), meta.shape.data(), nb::handle(),
+            nullptr,  // assume C-contiguous
+            {type_code, meta.bits, 1});
       },
       nb::arg("attr"),
       "Converts a dense resource elements attr to a numpy array.");

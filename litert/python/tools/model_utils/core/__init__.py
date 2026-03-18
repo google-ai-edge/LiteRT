@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ModelUtils core library."""
+
+from litert.python.mlir._mlir_libs import model_utils_ext
 from . import _op_building_context
 from . import dialect_base
 from . import pass_base
-from . import pybind
 from . import utils
 
 OpBuildingContext = _op_building_context.OpBuildingContext
