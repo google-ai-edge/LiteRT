@@ -264,4 +264,4 @@ static const LiteRtRuntimeCApiStruct kBuiltinStruct = {
         LiteRtRunCompiledModelAsyncWithSchedulingInfo,
 };
 
-const LiteRtRuntimeCApiStruct* kLiteRtRuntimeBuiltin = &kBuiltinStruct;
+const LiteRtRuntimeCApiStruct* const kLiteRtRuntimeBuiltin = &kBuiltinStruct;
