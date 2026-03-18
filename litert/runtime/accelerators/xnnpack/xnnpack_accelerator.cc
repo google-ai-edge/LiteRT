@@ -142,9 +142,8 @@ class CpuAccelerator final
 extern "C" {
 
 // Discovery C object for the CPU (Xnnpack) accelerator by LiteRT.
-// This object is used by the LiteRT environment constructor and the
-// object name is looked up by dlsym().
-LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
+// This object is used by the LiteRT environment constructor.
+static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .version = 1,  // LiteRtAcceleratorDefV1
     .get_name = litert::CpuAccelerator::GetName,
     .get_version = litert::CpuAccelerator::GetVersion,
@@ -162,20 +161,8 @@ LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .num_supported_buffer_types = 0,
 };
 
-// Accelerator definition pointer defined in auto_registration.cc.
-extern LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
+// Accelerator definition pointer referenced by auto_registration.cc.
+LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef =
+    &LiteRtCpuAcceleratorImpl;
 
 }  // extern "C"
-
-namespace {
-
-class StaticCpuAcceleratorInitializer {
- public:
-  StaticCpuAcceleratorInitializer() {
-    LiteRtStaticLinkedAcceleratorCpuDef = &LiteRtCpuAcceleratorImpl;
-  }
-};
-
-StaticCpuAcceleratorInitializer g_cpu_accelerator_initializer;
-
-}  // namespace

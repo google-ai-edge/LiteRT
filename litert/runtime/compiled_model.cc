@@ -244,7 +244,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtEnvironmentT* env, LiteRtHwAcceleratorSet hardware_accelerators,
     LiteRtOptions jit_compilation_options) {
   int num_threads = 1;
-  bool use_non_xnnpack_cpu_backend = false;
+  [[maybe_unused]] bool use_non_xnnpack_cpu_backend = false;
   bool use_reference_cpu_kernels = false;
 #if !defined(LITERT_DISABLE_CPU)
   LiteRtCpuOptionsT cpu_options;
