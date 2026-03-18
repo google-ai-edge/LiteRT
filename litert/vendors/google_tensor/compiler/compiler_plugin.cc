@@ -37,6 +37,7 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
@@ -137,6 +138,9 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeShloScatter,
     kLiteRtOpCodeShloWindow,
 };
+
+constexpr const char* kSupportedStableHloCompositeOps[] = {
+    "odml.rms_norm", "odml.group_norm", "odml.scaled_dot_product_attention"};
 // clang format on
 
 constexpr auto kNumPluginSocModels =
@@ -458,9 +462,32 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 }
 
 namespace google_tensor {
-//  TODO(abhirs): update the function to use the darwinn inbuilt way of
-//  finding supportedops
+bool IsShloCompositeOpSupported(const litert::Op& op) {
+  if (op.Code() == kLiteRtOpCodeShloComposite) {
+    const char* custom_op_name = nullptr;
+    if (LiteRtGetSHLOCompositeOpName(op.Get(), &custom_op_name) !=
+            kLiteRtStatusOk ||
+        custom_op_name == nullptr) {
+      return false;
+    }
+    // check if the name of the composite op is in the list of
+    // kSupportedStableHloCompositeOps.
+    for (auto supported_op : kSupportedStableHloCompositeOps) {
+      if (strcmp(supported_op, custom_op_name) == 0) {
+        return true;
+      }
+    }
+    LITERT_LOG(LITERT_INFO, "unsupported composite op: %s", custom_op_name);
+  }
+  return false;
+}
+
 bool IsOpSupported(const litert::Op& op) {
+  // Check if the composite op is supported.
+  if (op.Code() == kLiteRtOpCodeShloComposite) {
+    return IsShloCompositeOpSupported(op);
+  }
+  // Check if the op is in the list of unsupported ops.
   for (auto unsupported_op : kUnSupportedOps) {
     if (unsupported_op == op.Code()) {
       return false;

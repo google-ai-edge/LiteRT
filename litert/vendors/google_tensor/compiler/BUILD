@@ -59,6 +59,7 @@ litert_dynamic_lib(
     deps = [
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_options",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_google_tensor_options",
@@ -82,6 +83,7 @@ cc_test(
     ],
     data = [
         "//litert/test:mlir_test_data",
+        "//litert/test:mlir_test_data_stablehlo",
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
@@ -118,6 +120,7 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],

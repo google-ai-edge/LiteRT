@@ -18,12 +18,15 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -41,12 +44,12 @@ using ::testing::UnorderedElementsAre;
 TEST(TestGoogleTensorPlugin, GetConfigInfo) {
   ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Google");
 
-  auto plugin = CreatePlugin();
+  PluginPtr plugin = CreatePlugin();
 
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 4);
+  ASSERT_THAT(num_supported_soc_models, 4);
 
   std::vector<std::string> soc_model_names;
   for (int i = 0; i < num_supported_soc_models; ++i) {
@@ -60,27 +63,31 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
-  auto plugin = CreatePlugin();
-  auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
-  LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
+  PluginPtr plugin = CreatePlugin();
+  ExtendedModel model = testing::LoadTestFileModel("simple_multi_op.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
   LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
       plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
-  const auto selected_ops = selected_op_list.Values();
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
 
-  ASSERT_EQ(selected_ops.size(), 4);
-  ASSERT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
-  ASSERT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_THAT(selected_ops.size(), 4);
+  ASSERT_THAT(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
+  ASSERT_THAT(selected_ops[1].first->OpCode(), kLiteRtOpCodeTflMul);
 }
 
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
-  auto plugin = CreatePlugin();
-  auto model = testing::LoadTestFileModel("mul_simple.tflite");
+  PluginPtr plugin = CreatePlugin();
+  ExtendedModel model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
                                                model.Get(), &compiled));
+  absl::Cleanup compiled_cleanup = [&compiled] {
+    LiteRtDestroyCompiledResult(compiled);
+  };
 
   const void* byte_code;
   size_t byte_code_size;
@@ -97,26 +104,26 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
       compiled, 0, &op_data, &op_data_size, &byte_code_idx));
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
-  ASSERT_EQ("Partition_0", op_data_string);
-
-  LiteRtDestroyCompiledResult(compiled);
+  ASSERT_THAT(op_data_string, "subgraph_0_fn");
 }
 
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(GoogleTensorOptions& google_tensor_options,
                               options.GetGoogleTensorOptions());
   google_tensor_options.SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
 
-  auto plugin = CreatePlugin(env_options.Get(), options.Get());
+  PluginPtr plugin = CreatePlugin(/*env=*/nullptr, options.Get());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
                                                model.Get(), &compiled));
+  absl::Cleanup compiled_cleanup = [&compiled] {
+    LiteRtDestroyCompiledResult(compiled);
+  };
 
   const void* byte_code;
   size_t byte_code_size;
@@ -133,9 +140,38 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
       compiled, 0, &op_data, &op_data_size, &byte_code_idx));
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
-  ASSERT_EQ("Partition_0", op_data_string);
+  ASSERT_THAT(op_data_string, "subgraph_0_fn");
+}
 
-  LiteRtDestroyCompiledResult(compiled);
+TEST(TestCallGoogleTensorPlugin, PartitionRmsNormCompositeOp) {
+  PluginPtr plugin = CreatePlugin();
+  ExtendedModel model = testing::LoadTestFileModel(
+      "stablehlo/stablehlo_composite_rms_norm.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  ASSERT_THAT(selected_ops.size(), 1);
+  ASSERT_THAT(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
+  PluginPtr plugin = CreatePlugin();
+  ExtendedModel model = testing::LoadTestFileModel(
+      "stablehlo/stablehlo_composite_softmax.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  ASSERT_THAT(selected_ops.size(), 0);
 }
 
 }  // namespace
