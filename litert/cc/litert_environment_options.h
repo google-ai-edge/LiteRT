@@ -86,6 +86,9 @@ class EnvironmentOptions {
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     /// \internal This is for internal use only.
     kSystemRuntimeHandle = kLiteRtEnvOptionTagSystemRuntimeHandle,
+    /// Bitmask of LiteRtHwAccelerators to auto-register during environment
+    /// creation. If unset, LiteRT auto-registers all supported accelerators.
+    kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
   };
 
   struct Option {
