@@ -15,31 +15,20 @@
 # LiteRT C++ Options
 cmake_minimum_required(VERSION 3.20)
 
-# Options library
-add_library(litert_cc_options STATIC
-    ../litert_options.cc
-    litert_compiler_options.cc
-    litert_cpu_options.cc
-    litert_google_tensor_options.cc
-    litert_gpu_options.cc
-    litert_magic_number_options.cc
-    litert_intel_openvino_options.cc
-    litert_mediatek_options.cc
-    litert_qualcomm_options.cc
-    litert_runtime_options.cc
-)
+# Compatibility target: source-build CMake now compiles all public cc/options
+# sources directly into litert_cc_api so consumers only need the main API
+# library.
+add_library(litert_cc_options INTERFACE)
 
 target_include_directories(litert_cc_options
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(litert_cc_options
-    PUBLIC
+    INTERFACE
         litert_cc_api
         litert_c_options
         absl::status
