@@ -28,10 +28,14 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/scoped_file.h"
+#include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
@@ -39,11 +43,11 @@
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/filesystem.h"
+#include "litert/tools/gpu_numerics_threshold.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/tools/utils.h"
 
@@ -66,29 +70,32 @@ ABSL_FLAG(bool, print_outputs, false, "Whether to print the output tensors.");
 ABSL_FLAG(bool, enable_constant_tensors_sharing, false,
           "Whether to enable constant tensors sharing.");
 ABSL_FLAG(bool, use_fp16, false, "Whether to use FP32 precision.");
+ABSL_FLAG(bool, deterministic_inputs, true,
+          "If true, generate deterministic inputs for reproducibility.");
+ABSL_FLAG(uint64_t, random_seed, 12345,
+          "Seed used when deterministic_inputs is false.");
+ABSL_FLAG(bool, fail_on_threshold, true,
+          "Whether threshold violations fail the tool.");
+ABSL_FLAG(double, max_abs_diff_threshold, 1e-4,
+          "Maximum allowed absolute diff across all elements.");
+ABSL_FLAG(double, mean_abs_diff_threshold, 1e-6,
+          "Maximum allowed mean absolute diff.");
+ABSL_FLAG(double, diff_ratio_threshold, 1e-6,
+          "Maximum allowed ratio of elements with abs_diff > epsilon.");
+ABSL_FLAG(std::string, scoped_weight_file, "",
+          "Optional path to a scoped external weight file.");
+ABSL_FLAG(std::string, scoped_weight_group, "",
+          "External buffer group name mapped to --scoped_weight_file.");
+ABSL_FLAG(uint64_t, scoped_weight_offset, 0,
+          "Byte offset in --scoped_weight_file where --scoped_weight_group "
+          "starts.");
+ABSL_FLAG(int64_t, scoped_weight_length, -1,
+          "Byte length for --scoped_weight_group in --scoped_weight_file. "
+          "-1 means until EOF.");
 
 namespace litert {
 
 namespace {
-
-struct BufferDiffStats {
-  // Index of output buffer.
-  size_t buffer_idx;
-  // Total number of elements in the buffer.
-  size_t total_elements;
-  // Number of elements with absolute difference greater than epsilon.
-  size_t diff_elements;
-  // Epsilon value used for comparison.
-  double epsilon;
-  // Maximum absolute difference between CPU and GPU values.
-  double max_diff;
-  // Minimum absolute difference between CPU and GPU values.
-  double min_diff;
-  // Mean absolute difference between CPU and GPU values.
-  double mean_diff;
-  // Mean squared error between CPU and GPU values.
-  double mse;
-};
 
 struct ModelRunResult {
   std::string model_name;
@@ -100,6 +107,77 @@ Expected<Environment> GetEnvironment() {
 
   return Environment::Create(
       litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+}
+
+Expected<void> ConfigureScopedWeightSource(Options& options) {
+  const std::string scoped_weight_file =
+      absl::GetFlag(FLAGS_scoped_weight_file);
+  const std::string scoped_weight_group =
+      absl::GetFlag(FLAGS_scoped_weight_group);
+  const uint64_t scoped_weight_offset =
+      absl::GetFlag(FLAGS_scoped_weight_offset);
+  const int64_t scoped_weight_length =
+      absl::GetFlag(FLAGS_scoped_weight_length);
+
+  const bool any_scoped_weight_flag =
+      !scoped_weight_file.empty() || !scoped_weight_group.empty() ||
+      scoped_weight_offset != 0 || scoped_weight_length != -1;
+  if (!any_scoped_weight_flag) {
+    return {};
+  }
+
+  if (scoped_weight_file.empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_file must be set when scoped weights are "
+                 "configured.");
+  }
+  if (scoped_weight_group.empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_group must be set when scoped weights are "
+                 "configured.");
+  }
+  if (scoped_weight_length < -1) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_length must be -1 or a positive value.");
+  }
+  if (scoped_weight_length == 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_length must not be zero.");
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto scoped_file,
+                          ScopedFile::Open(scoped_weight_file));
+  LITERT_ASSIGN_OR_RETURN(const size_t scoped_file_size_bytes,
+                          scoped_file.GetSize());
+  const uint64_t scoped_file_size =
+      static_cast<uint64_t>(scoped_file_size_bytes);
+  if (scoped_weight_offset > scoped_file_size) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--scoped_weight_offset exceeds scoped file size.");
+  }
+
+  const uint64_t remaining_bytes = scoped_file_size - scoped_weight_offset;
+  const uint64_t resolved_length =
+      scoped_weight_length == -1 ? remaining_bytes
+                                 : static_cast<uint64_t>(scoped_weight_length);
+  if (resolved_length == 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Resolved scoped section length must be positive.");
+  }
+  if (resolved_length > remaining_bytes) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Resolved scoped section exceeds scoped file size.");
+  }
+
+  Options::ScopedWeightSectionMap sections;
+  sections.emplace(scoped_weight_group, ScopedWeightSection{
+                                            .offset = scoped_weight_offset,
+                                            .length = resolved_length,
+                                        });
+
+  LITERT_RETURN_IF_ERROR(
+      options.SetExternalWeightScopedFile(scoped_file, std::move(sections)));
+  return {};
 }
 
 Expected<Options> GetGpuOptions() {
@@ -122,16 +200,117 @@ Expected<Options> GetGpuOptions() {
   if (absl::GetFlag(FLAGS_enable_constant_tensors_sharing)) {
     gpu_options.EnableConstantTensorSharing(true);
   }
+  LITERT_RETURN_IF_ERROR(ConfigureScopedWeightSource(options));
   return options;
 }
 
 Expected<Options> GetCpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_RETURN_IF_ERROR(ConfigureScopedWeightSource(options));
   return options;
 }
 
-Expected<void> FillInputTensor(TensorBuffer& buffer) {
+template <typename T, typename Generator>
+Expected<void> FillBufferDeterministic(TensorBuffer& buffer,
+                                       size_t total_elements, Generator gen) {
+  std::vector<T> data(total_elements);
+  for (size_t i = 0; i < total_elements; ++i) {
+    data[i] = gen(i);
+  }
+  return buffer.Write<T>(absl::MakeSpan(data));
+}
+
+// Fills input tensors with deterministic values. Using different prime numbers
+// for each buffer index to ensure that the inputs are different.
+Expected<void> FillInputTensorDeterministic(TensorBuffer& buffer,
+                                            size_t buffer_index) {
+  LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
+  const auto& layout = type.Layout();
+  const size_t total_elements =
+      std::accumulate(layout.Dimensions().begin(), layout.Dimensions().end(), 1,
+                      std::multiplies<size_t>());
+  const auto element_type = type.ElementType();
+
+  if (element_type == ElementType::Float32) {
+    return FillBufferDeterministic<float>(
+        buffer, total_elements, [=](size_t i) {
+          const int centered =
+              static_cast<int>((i + buffer_index * 17) % 41) - 20;
+          return static_cast<float>(centered) * 0.05f;
+        });
+  }
+  if (element_type == ElementType::Float64) {
+    return FillBufferDeterministic<double>(
+        buffer, total_elements, [=](size_t i) {
+          const int centered =
+              static_cast<int>((i + buffer_index * 17) % 41) - 20;
+          return static_cast<double>(centered) * 0.05;
+        });
+  }
+  if (element_type == ElementType::Int64) {
+    return FillBufferDeterministic<int64_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<int64_t>((i + buffer_index * 31) % 101) - 50;
+        });
+  }
+  if (element_type == ElementType::UInt64) {
+    return FillBufferDeterministic<uint64_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<uint64_t>((i + buffer_index * 31) % 101);
+        });
+  }
+  if (element_type == ElementType::Int32) {
+    return FillBufferDeterministic<int32_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<int32_t>((i + buffer_index * 29) % 101) - 50;
+        });
+  }
+  if (element_type == ElementType::UInt32) {
+    return FillBufferDeterministic<uint32_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<uint32_t>((i + buffer_index * 29) % 101);
+        });
+  }
+  if (element_type == ElementType::Int16) {
+    return FillBufferDeterministic<int16_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<int16_t>((i + buffer_index * 23) % 67) - 33;
+        });
+  }
+  if (element_type == ElementType::UInt16) {
+    return FillBufferDeterministic<uint16_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<uint16_t>((i + buffer_index * 23) % 67);
+        });
+  }
+  if (element_type == ElementType::Int8) {
+    return FillBufferDeterministic<int8_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<int8_t>((i + buffer_index * 11) % 31) - 15;
+        });
+  }
+  if (element_type == ElementType::UInt8) {
+    return FillBufferDeterministic<uint8_t>(
+        buffer, total_elements, [=](size_t i) {
+          return static_cast<uint8_t>((i + buffer_index * 11) % 251);
+        });
+  }
+  if (element_type == ElementType::Bool) {
+    return FillBufferDeterministic<char>(buffer, total_elements, [=](size_t i) {
+      return ((i + buffer_index) % 2) == 0 ? 1 : 0;
+    });
+  }
+
+  // Fallback path for non-standard element types, e.g. float16/int4 packed
+  // tensors. We fill with zeros to keep a deterministic, safe input pattern.
+  LITERT_ASSIGN_OR_RETURN(size_t byte_size, buffer.Size());
+  std::vector<char> zeros(byte_size, 0);
+  return buffer.Write<char>(absl::MakeSpan(zeros));
+}
+
+Expected<void> FillInputTensorRandom(TensorBuffer& buffer,
+                                     size_t buffer_index) {
   LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
   const auto& layout = type.Layout();
   size_t total_elements =
@@ -149,14 +328,21 @@ Expected<void> FillInputTensor(TensorBuffer& buffer) {
       reinterpret_cast<char*>(tensor_data.data.get()), tensor_data.bytes));
 }
 
+Expected<void> FillInputTensor(TensorBuffer& buffer, size_t buffer_index) {
+  if (absl::GetFlag(FLAGS_deterministic_inputs)) {
+    return FillInputTensorDeterministic(buffer, buffer_index);
+  }
+  return FillInputTensorRandom(buffer, buffer_index);
+}
+
 // Creates and fills input buffers for a given compiled model.
 Expected<std::vector<TensorBuffer>> CreateAndFillInputBuffers(
     const CompiledModel& compiled_model, size_t signature_index) {
   LITERT_ASSIGN_OR_RETURN(auto input_buffers,
                           compiled_model.CreateInputBuffers(signature_index));
 
-  for (auto& buffer : input_buffers) {
-    LITERT_RETURN_IF_ERROR(FillInputTensor(buffer));
+  for (size_t i = 0; i < input_buffers.size(); ++i) {
+    LITERT_RETURN_IF_ERROR(FillInputTensor(input_buffers[i], i));
   }
   return input_buffers;
 }
@@ -229,27 +415,23 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
     if (element_type == ElementType::Float32) {
       std::vector<float> data(total_elements);
       LITERT_RETURN_IF_ERROR(buffer.Read<float>(absl::MakeSpan(data)));
-      copy_data_and_return(buffer_data, data, total_elements);
-    }
-    if (element_type == ElementType::Int32) {
+      return copy_data_and_return(buffer_data, data, total_elements);
+    } else if (element_type == ElementType::Int32) {
       std::vector<int32_t> data(total_elements);
       LITERT_RETURN_IF_ERROR(buffer.Read<int32_t>(absl::MakeSpan(data)));
-      copy_data_and_return(buffer_data, data, total_elements);
-    }
-    if (element_type == ElementType::Int16) {
+      return copy_data_and_return(buffer_data, data, total_elements);
+    } else if (element_type == ElementType::Int16) {
       std::vector<int16_t> data(total_elements);
       LITERT_RETURN_IF_ERROR(buffer.Read<int16_t>(absl::MakeSpan(data)));
-      copy_data_and_return(buffer_data, data, total_elements);
-    }
-    if (element_type == ElementType::Int8) {
+      return copy_data_and_return(buffer_data, data, total_elements);
+    } else if (element_type == ElementType::Int8) {
       std::vector<int8_t> data(total_elements);
       LITERT_RETURN_IF_ERROR(buffer.Read<int8_t>(absl::MakeSpan(data)));
-      copy_data_and_return(buffer_data, data, total_elements);
-    }
-    if (element_type == ElementType::UInt8) {
+      return copy_data_and_return(buffer_data, data, total_elements);
+    } else if (element_type == ElementType::UInt8) {
       std::vector<uint8_t> data(total_elements);
       LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(data)));
-      copy_data_and_return(buffer_data, data, total_elements);
+      return copy_data_and_return(buffer_data, data, total_elements);
     }
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Unsupported element type for reading tensor.");
@@ -257,8 +439,8 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
 
   std::vector<float> cpu_data(total_elements);
   std::vector<float> gpu_data(total_elements);
-  get_val(cpu_buffer, cpu_data);
-  get_val(gpu_buffer, gpu_data);
+  LITERT_RETURN_IF_ERROR(get_val(cpu_buffer, cpu_data));
+  LITERT_RETURN_IF_ERROR(get_val(gpu_buffer, gpu_data));
   bool print_outputs = absl::GetFlag(FLAGS_print_outputs);
   for (int element_index = 0; element_index < total_elements; ++element_index) {
     if (print_outputs) {
@@ -345,23 +527,44 @@ Expected<std::vector<BufferDiffStats>> CompareOutputBuffers(
         CompareSingleOutputBuffer(cpu_buffer, gpu_buffer, i, epsilon));
     diff_stats.push_back(std::move(diff_stat));
   }
+
+  const DiffThresholdConfig thresholds = {
+      .fail_on_threshold = absl::GetFlag(FLAGS_fail_on_threshold),
+      .max_abs_diff_threshold = absl::GetFlag(FLAGS_max_abs_diff_threshold),
+      .mean_abs_diff_threshold = absl::GetFlag(FLAGS_mean_abs_diff_threshold),
+      .diff_ratio_threshold = absl::GetFlag(FLAGS_diff_ratio_threshold),
+  };
+  const auto threshold_eval = EvaluateDiffThresholds(diff_stats, thresholds);
+  for (const auto& violation : threshold_eval.violation_messages) {
+    ABSL_LOG(ERROR) << violation;
+  }
+  if (threshold_eval.should_fail) {
+    return Error(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Numerical threshold check failed:\n",
+                     absl::StrJoin(threshold_eval.violation_messages, "\n")));
+  }
   return diff_stats;
 }
 
 Expected<std::vector<BufferDiffStats>> RunModel(absl::string_view model_path) {
   ABSL_LOG(INFO) << "Model: " << model_path;
 
-  LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
+  // Keep CPU and GPU compilation contexts independent.
+  // External-weight models can mutate interpreter-side tensor state during
+  // setup, so sharing one environment across both runs is brittle.
+  LITERT_ASSIGN_OR_RETURN(auto cpu_env, GetEnvironment());
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetEnvironment());
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_options, GetCpuOptions());
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model_cpu,
-      CompiledModel::Create(env, std::string(model_path), cpu_options));
+      CompiledModel::Create(cpu_env, std::string(model_path), cpu_options));
 
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GetGpuOptions());
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model_gpu,
-      CompiledModel::Create(env, std::string(model_path), gpu_options));
+      CompiledModel::Create(gpu_env, std::string(model_path), gpu_options));
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
