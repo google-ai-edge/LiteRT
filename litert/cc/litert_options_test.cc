@@ -22,12 +22,10 @@
 
 #include <gtest/gtest.h>
 #include "litert/cc/litert_common.h"
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/core/options.h"
-#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "litert/test/matchers.h"
 
 namespace litert {
@@ -45,7 +43,6 @@ TEST(OptionsTest, SetHardwareAccelerators) {
       HwAccelerators::kCpu | HwAccelerators::kGpu));
 }
 
-#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
@@ -76,6 +73,5 @@ TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   EXPECT_EQ(it->second.length, 8);
   std::remove(path.c_str());
 }
-#endif
 }  // namespace
 }  // namespace litert

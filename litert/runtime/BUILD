@@ -596,7 +596,7 @@ cc_library(
         "//litert/core/util:flatbuffer_tools",
         "//litert/runtime/dispatch:dispatch_opaque_options",
         # copybara:uncomment "//third_party/odml/litert/weight_loader:external_weight_loader",
-        # "//weight_loader:external_weight_loader",  # copybara:uncomment
+        "//weight_loader:external_weight_loader",  # copybara:comment
         "//tflite/converter:allocation",
         "//tflite:builtin_ops",
         "//tflite:framework",

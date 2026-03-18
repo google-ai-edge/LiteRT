@@ -83,5 +83,5 @@ litert/cc/options/litert_magic_number_options.h
 litert/cc/options/litert_mediatek_options.h
 litert/cc/options/litert_qualcomm_options.h
 litert/cc/options/litert_runtime_options.h
+litert/core/options.h
 litert/core/litert_toml_parser.h
-

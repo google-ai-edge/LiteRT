@@ -1276,6 +1276,33 @@ TEST(CompiledModelTest, BindExternalWeightBuffer) {
   LiteRtDestroyEnvironment(env_ptr);
 }
 
+TEST(CompiledModelTest, NonExternalModelKeepsWeightLoaderNull) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+  auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
+  ASSERT_NE(options_impl, nullptr);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, options));
+  EXPECT_EQ(options_impl->weight_loader, nullptr);
+
+  LiteRtDestroyOptions(options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
 TEST(CompiledModelTest, GetInterpreter) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
