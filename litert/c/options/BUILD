@@ -117,7 +117,6 @@ cc_library(
     deps = [
         ":litert_google_tensor_options_type",
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
