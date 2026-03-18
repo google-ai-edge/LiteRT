@@ -15,4 +15,4 @@
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/cc/internal/litert_runtime_builtin.h"
 
-const LiteRtRuntimeCApiStruct* kLiteRtRuntimeBuiltin = nullptr;
+const LiteRtRuntimeCApiStruct* const kLiteRtRuntimeBuiltin = nullptr;
