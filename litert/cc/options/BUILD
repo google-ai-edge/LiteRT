@@ -142,7 +142,6 @@ cc_library(
     hdrs = ["litert_google_tensor_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_expected",
