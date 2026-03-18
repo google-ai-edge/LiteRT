@@ -56,7 +56,22 @@ LiteRtStatus LiteRtSamsungInitialize(LiteRtEnvironment environment,
                                      LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
   LiteRtGetEnvironmentOptions(environment, &environment_options);
-  // TODO Make Exynos options
+
+  const char* dispatch_lib_dir = nullptr;
+  if (environment_options) {
+    LiteRtAny dispatch_lib_dir_any;
+    auto status = LiteRtGetEnvironmentOptionsValue(
+        environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
+        &dispatch_lib_dir_any);
+    if (status == kLiteRtStatusOk && dispatch_lib_dir_any.str_value) {
+      dispatch_lib_dir = dispatch_lib_dir_any.str_value;
+    }
+  }
+
+  std::optional<std::string> shared_library_dir_opt =
+      dispatch_lib_dir != nullptr
+          ? std::make_optional(std::string(dispatch_lib_dir))
+          : std::nullopt;
 
   if (auto enn_manager = ::litert::samsung::EnnManager::Create(); enn_manager) {
     static_enn_manager.reset(enn_manager->release());
@@ -97,8 +112,8 @@ LiteRtStatus LiteRtSamsungGetCapabilities(int *capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSamsungDeviceContextCreate(
-    LiteRtDispatchDeviceContext *device_context) {
+LiteRtStatus LiteRtSamsungDeviceContextCreate(LiteRtOptions options,
+                        LiteRtDispatchDeviceContext *device_context) {
   if (auto context =
           LiteRtDispatchDeviceContextT::Create(static_enn_manager.get());
       context) {
