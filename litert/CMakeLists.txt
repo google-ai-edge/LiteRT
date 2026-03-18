@@ -44,6 +44,10 @@ add_compile_options(
 )
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
 
+# Cmake flattens the transitive public and interface link to emit the final link
+# command. Which will trigger a warning on Apple platforms (ld64 still dedups
+# those archives correctly) For more details, see
+# https://gitlab.kitware.com/cmake/cmake/-/issues/25297
 if(APPLE)
   add_link_options(-Wl,-no_warn_duplicate_libraries)
 endif()
