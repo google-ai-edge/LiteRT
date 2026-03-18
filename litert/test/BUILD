@@ -31,6 +31,12 @@ package(
 #     name = "mlir_test_data",
 #     srcs = glob(["testdata/*.mlir"]),
 # )
+#
+# tfl_model_gen(
+#     name = "mlir_test_data_stablehlo",
+#     srcs = glob(["testdata/stablehlo/*.mlir"]),
+#     subdir = "testdata/stablehlo",
+# )
 # copybara:uncomment_end
 
 # copybara:comment_begin(external)
@@ -71,7 +77,10 @@ filegroup(
     srcs = glob([
         "testdata/*.tflite",
         "testdata/*.bin",
-    ]) + [":mlir_test_data"],
+    ]) + [
+        ":mlir_test_data",
+        ":mlir_test_data_stablehlo",
+    ],
 )
 
 filegroup(
