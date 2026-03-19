@@ -739,9 +739,9 @@ class ScopedCompilationOptionsModifier {
 
 }  // namespace
 
-Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
-    LiteRtEnvironmentT* env, LiteRtModel model,
-    LiteRtOptions jit_compilation_options) {
+LITERT_NO_CFI_CHECK Expected<LiteRtCompiledModelT::Ptr>
+LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
+                             LiteRtOptions jit_compilation_options) {
   if (!jit_compilation_options) {
     return litert::ErrorStatusBuilder::InvalidArgument()
            << "No compilation options passed.";
