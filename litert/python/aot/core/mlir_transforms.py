@@ -15,9 +15,9 @@
 
 """Wrapper for suite of MLIR passes."""
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import components
 from litert.python.aot.core import tflxx_util
-from litert.python.aot.core import types
 
 
 class MlirTransforms(components.MlirTransformsT):
@@ -25,8 +25,8 @@ class MlirTransforms(components.MlirTransformsT):
 
   def __call__(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
       pass_name: str,
   ):
     if not input_model.in_memory:

@@ -18,7 +18,7 @@ import dataclasses
 import sys
 from typing import Any
 
-from litert.python.aot.core import types
+from litert.python.aot.core import aot_types
 
 # pylint: disable=g-importing-member
 # pylint: disable=g-import-not-at-top
@@ -53,7 +53,7 @@ class SocManufacturer(StrEnum):
 
 
 @dataclasses.dataclass
-class Target(types.Target):
+class Target(aot_types.Target):
   """Compilation target for Google Tensor SOCs."""
 
   soc_model: SocModel

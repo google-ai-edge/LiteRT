@@ -14,19 +14,19 @@
 # ==============================================================================
 
 from absl.testing import absltest as googletest
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import mlir_transforms
 from litert.python.aot.core import test_common
-from litert.python.aot.core import types
 
 
 class MlirTransformsTest(test_common.TestWithTfliteModels):
 
   def test_call_mlir_transforms(self):
-    input_model = types.Model.create_from_path(
+    input_model = aot_types.Model.create_from_path(
         self.get_model_path("add_simple.tflite")
     )
-    output_model = types.Model.create_from_path(
+    output_model = aot_types.Model.create_from_path(
         self.output_dir() / "output.tflite"
     )
     mlir_transforms.MlirTransforms()(input_model, output_model, "")

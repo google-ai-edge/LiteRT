@@ -17,10 +17,10 @@ from unittest import mock
 
 from absl.testing import absltest as googletest
 from litert.python.aot import prepare_for_npu
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import components
 from litert.python.aot.core import test_common
-from litert.python.aot.core import types
 from litert.python.aot.vendors.example import example_backend
 
 
@@ -65,7 +65,7 @@ class PrepareForNpuTest(test_common.TestWithTfliteModels):
     )
     model_path = self.get_model_path("add_simple.tflite")
     output_model = prepare_for_npu.prepare_for_npu(
-        types.Model.create_from_path(model_path),
+        aot_types.Model.create_from_path(model_path),
         self.output_dir(),
         example_backend.ExampleBackend,
         {"backend_id": "example"},
@@ -83,7 +83,7 @@ class PrepareForNpuTest(test_common.TestWithTfliteModels):
     model_path = self.get_model_path("add_simple.tflite")
     with self.assertRaises(ValueError):
       prepare_for_npu.prepare_for_npu(
-          types.Model.create_from_path(model_path),
+          aot_types.Model.create_from_path(model_path),
           self.output_dir(),
           example_backend.ExampleBackend,
           {"backend_id": "something_else"},

@@ -24,7 +24,7 @@ pytype_strict_contrib_test(
     srcs = ["import_vendor_test.py"],
     deps = [
         ":import_vendor",
-        "//litert/python/aot/core:types",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/vendors/example:example_backend",
         "@absl_py//absl/testing:absltest",
     ],
@@ -36,7 +36,7 @@ pytype_strict_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fallback_backend",
-        "//litert/python/aot/core:types",
+        "//litert/python/aot/core:aot_types",
     ],
 )
 
@@ -57,7 +57,7 @@ pytype_strict_library(
     srcs = ["fallback_backend.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
     ],
 )
