@@ -580,7 +580,8 @@ TEST(TensorBuffer, WebGpu) {
       env, kTensorBufferType, LiteRtCreateWebGpuMemory,
       LiteRtDestroyWebGpuMemory, LiteRtLockWebGpuMemory,
       LiteRtUnlockWebGpuMemory, LiteRtClearWebGpuMemory,
-      LiteRtImportWebGpuMemory);
+      LiteRtImportWebGpuMemory, kLiteRtEnvOptionTagWebGpuDevice,
+      kLiteRtEnvOptionTagWebGpuQueue);
 
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
@@ -669,7 +670,8 @@ TEST(TensorBuffer, Vulkan) {
       env, kTensorBufferType, LiteRtCreateVulkanMemory,
       LiteRtDestroyVulkanMemory, LiteRtLockVulkanMemory,
       LiteRtUnlockVulkanMemory, LiteRtClearVulkanMemory,
-      /*import_handler=*/nullptr);
+      /*import_handler=*/nullptr, kLiteRtEnvOptionTagVulkanEnvironment,
+      (LiteRtEnvOptionTag)0);
 
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
