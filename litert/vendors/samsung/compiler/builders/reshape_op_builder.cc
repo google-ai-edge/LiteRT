@@ -28,7 +28,7 @@
 namespace litert::samsung {
 
 Expected<OpWrapper> BuildReshapeOp(const Op& op) {
-  OpWrapper op_wrapper("", "Reshape");
+  OpWrapper op_wrapper("Reshape");
 
   for (const auto& input : op.Inputs()) {
     op_wrapper.AddInput(input);

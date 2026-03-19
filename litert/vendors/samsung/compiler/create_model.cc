@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/strings/str_format.h" // from @com_google_absl
 #include "common-types.h"  // from @exynos_ai_litecore
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -33,9 +34,8 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
-#include "litert/vendors/samsung/compiler/builders/add_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/mul_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 
 namespace litert::samsung {
@@ -277,7 +277,6 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
   auto ops = partition.Ops();
   for (int op_idx = 0; op_idx < ops.size(); ++op_idx) {
     const auto& op = ops[op_idx];
-    LITERT_LOG(LITERT_INFO, "OP %d, ", op_idx);
     Expected<OpWrapper> op_wrapper =
         Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
     switch (op.Code()) {
@@ -293,9 +292,14 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
     }
+    if (!op_wrapper) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Fail to parse op's options.");
+    }
     if (auto status = graph_crt.CreateOpNode(op_wrapper.Value());
         status != kLiteRtStatusOk) {
-      return Error(static_cast<litert::Status>(status), "Fail to build op");
+      return Error(static_cast<litert::Status>(status),
+                   absl::StrFormat("Fail to build op (index:%d)", op_idx));
     }
   }
   if (auto status = graph_crt.Finish(); status != kLiteRtStatusOk) {
