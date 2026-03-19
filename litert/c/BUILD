@@ -336,7 +336,6 @@ litert_c_api_library(
     name = "litert_tensor_buffer",
     srcs = [
         "litert_tensor_buffer.cc",
-        "litert_tensor_buffer_requirements.cc",
     ],
     hdrs = [
         "litert_tensor_buffer.h",
@@ -351,6 +350,7 @@ litert_c_api_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",
+        "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
     ] + gles_deps(),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
@@ -360,8 +360,24 @@ litert_c_api_library(
         ":litert_gl_types",
         ":litert_model_types",
         ":litert_opencl_types",
+        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         ":litert_webgpu_types",
+    ],
+)
+
+litert_c_api_library(
+    name = "litert_tensor_buffer_requirements",
+    srcs = ["litert_tensor_buffer_requirements.cc"],
+    hdrs = ["litert_tensor_buffer_requirements.h"],
+    impl_deps = [
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:tensor_buffer_requirements",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_tensor_buffer_types",
     ],
 )
 
