@@ -120,3 +120,12 @@ def litert_runtime_prebuilts():
         ],
         "//conditions:default": [],
     })
+
+# `compatible_with` value to use for annotating certain build targets, specifically those that might
+# form part of the header dependencies of litert_runtime_c_api.h.  In the internal build environment,
+# whenever `compatible_with = get_compatible_with_portable()` is used on a build target, it MUST
+# also be applied to ALL other targets that that target depends on.  However, this restriction is
+# currently not enforced in the OSS build environment.  To minimize maintainence effort, this
+# annotation should be used as sparingly as possible.
+def get_compatible_with_portable():
+    return None

@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
-load("//litert/build_common:special_rule.bzl", "gles_headers", "gles_linkopts", "litert_android_linkopts")
+load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 # copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("@build_bazel_rules_apple//apple:macos.bzl", "macos_unit_test")
@@ -47,6 +47,7 @@ package(
 cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         ":litert_common",
         ":litert_expected",
@@ -98,6 +99,7 @@ cc_test(
 cc_library(
     name = "litert_common",
     hdrs = ["litert_common.h"],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         "//litert/c:litert_common",
     ],
@@ -107,6 +109,7 @@ cc_library(
     name = "litert_macros",
     srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         ":litert_common",
         ":litert_expected",
@@ -138,6 +141,7 @@ cc_test(
 cc_library(
     name = "litert_expected",
     hdrs = ["litert_expected.h"],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_common",

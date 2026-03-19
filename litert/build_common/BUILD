@@ -15,6 +15,7 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -157,11 +158,13 @@ genrule(
     }),
     outs = ["build_config.h"],
     cmd = "cp $< $@",
+    compatible_with = get_compatible_with_portable(),
 )
 
 cc_library(
     name = "build_config",
     hdrs = [":build_config_header"],
+    compatible_with = get_compatible_with_portable(),
     include_prefix = "third_party/odml/litert/litert/build_common",
     strip_include_prefix = "",
     visibility = ["//visibility:public"],

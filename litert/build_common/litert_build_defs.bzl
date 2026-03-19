@@ -517,6 +517,7 @@ def litert_c_api_library(
         header_deps = [],
         impl_deps = [],
         tags = [],
+        header_kwargs = {},
         **kwargs):
     """
     Defines a LiteRT C API library with separate header and implementation targets.
@@ -534,6 +535,7 @@ def litert_c_api_library(
       header_deps: Optional dependencies for the header target only.
       impl_deps: Optional dependencies for the implementation target only.
       tags: Tags for the implementation target.
+      header_kwargs: Additional arguments passed to the header target only.
       **kwargs: Additional arguments passed to the implementation cc_library.
     """
     cc_library(
@@ -542,6 +544,7 @@ def litert_c_api_library(
         visibility = ["//litert:litert_internal_users"],
         deps = deps + header_deps,
         tags = tags + ["avoid_dep"],
+        **header_kwargs
     )
 
     cc_library(
