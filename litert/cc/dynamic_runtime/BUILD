@@ -743,3 +743,43 @@ cc_library(
         ],
     }),
 )
+
+# -----------------------------------------------------------------------------
+# New / experimental features.
+# -----------------------------------------------------------------------------
+
+# Advanced CompiledModel with new / experimental features.
+
+next_library_visibility = [
+    # copybara:uncomment_begin(oss)
+    # "//litert:litert_friends",
+    # "//litert/runtime/dispatch:__subpackages__",
+    # copybara:uncomment_end_and_comment_begin
+    "//visibility:public",
+    # copybara:comment_end
+]
+
+cc_library(
+    name = "litert_compiled_model_next",
+    srcs = ["//litert/cc/internal:litert_compiled_model_next.cc"],
+    hdrs = ["//litert/cc/internal:litert_compiled_model_next.h"],
+    visibility = next_library_visibility,
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_model",
+        ":litert_options",
+        ":litert_profiler",
+        ":litert_tensor_buffer",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics",
+        "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
