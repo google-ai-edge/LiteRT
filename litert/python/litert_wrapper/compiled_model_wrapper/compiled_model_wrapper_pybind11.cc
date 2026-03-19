@@ -202,9 +202,29 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
              }
              return py::none();
            })
-      .def("Run", [](CompiledModelWrapper& self, py::object in_list,
-                     py::object out_list) {
-        PyObject* r = self.RunByIndex(0, in_list.ptr(), out_list.ptr());
+      .def("Run",
+           [](CompiledModelWrapper& self, py::object in_list,
+              py::object out_list) {
+             PyObject* r = self.RunByIndex(0, in_list.ptr(), out_list.ptr());
+             if (!r) {
+               throw py::error_already_set();
+             }
+             return py::none();
+           })
+      .def("ResizeInputTensor",
+           [](CompiledModelWrapper& self, int sig_idx, int input_idx,
+              const std::vector<int>& dims) {
+             PyObject* r =
+                 self.ResizeInputTensor(sig_idx, input_idx, dims, true);
+             if (!r) {
+               throw py::error_already_set();
+             }
+             return py::none();
+           })
+      .def("ResizeInputTensorNonStrict", [](CompiledModelWrapper& self,
+                                            int sig_idx, int input_idx,
+                                            const std::vector<int>& dims) {
+        PyObject* r = self.ResizeInputTensor(sig_idx, input_idx, dims, false);
         if (!r) {
           throw py::error_already_set();
         }

@@ -615,4 +615,19 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
   Py_RETURN_NONE;
 }
 
+PyObject* CompiledModelWrapper::ResizeInputTensor(int signature_index,
+                                                  int input_index,
+                                                  const std::vector<int>& dims,
+                                                  bool strict) {
+  auto resize_or =
+      strict ? compiled_model_.ResizeInputTensor(signature_index, input_index,
+                                                 absl::MakeConstSpan(dims))
+             : compiled_model_.ResizeInputTensorNonStrict(
+                   signature_index, input_index, absl::MakeConstSpan(dims));
+  if (!resize_or) {
+    return ConvertErrorToPyExc(resize_or.Error());
+  }
+  Py_RETURN_NONE;
+}
+
 }  // namespace litert::compiled_model_wrapper

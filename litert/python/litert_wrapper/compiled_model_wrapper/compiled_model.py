@@ -15,7 +15,7 @@
 """Python wrapper for LiteRT compiled models."""
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 # pylint: disable=g-import-not-at-top
 if not os.path.splitext(__file__)[0].endswith(
@@ -237,6 +237,51 @@ class CompiledModel:
     """
     capsule_list = self._model.CreateOutputBuffers(signature_index)
     return [TensorBuffer(c) for c in capsule_list]
+
+  def resize_input_tensor(
+      self,
+      input_index: int,
+      dims: Sequence[int],
+      signature_index: int = 0,
+      strict: bool = True,
+  ) -> None:
+    """Resizes an input tensor for dynamic-shape execution.
+
+    Args:
+      input_index: Signature-local input index to resize.
+      dims: New input dimensions.
+      signature_index: Signature index. Defaults to 0.
+      strict: When True, require dynamic dimensions in the model signature. When
+        False, use LiteRT's non-strict resize path.
+    """
+    dims = list(dims)
+    if strict:
+      self._model.ResizeInputTensor(signature_index, input_index, dims)
+    else:
+      self._model.ResizeInputTensorNonStrict(signature_index, input_index, dims)
+
+  def resize_input_tensor_by_name(
+      self,
+      signature_key: str,
+      input_name: str,
+      dims: Sequence[int],
+      strict: bool = True,
+  ) -> None:
+    """Resizes an input tensor identified by signature and input name."""
+    signature_index = self.get_signature_index(signature_key)
+    if signature_index < 0:
+      raise ValueError(f"Unknown signature: {signature_key}")
+
+    signature_list = self.get_signature_list()
+    if signature_key not in signature_list:
+      raise ValueError(f"Unknown signature: {signature_key}")
+    input_names = signature_list[signature_key]["inputs"]
+    if input_name not in input_names:
+      raise ValueError(
+          f"Unknown input '{input_name}' for signature '{signature_key}'"
+      )
+    input_index = input_names.index(input_name)
+    self.resize_input_tensor(input_index, dims, signature_index, strict)
 
   def run_by_name(
       self,
