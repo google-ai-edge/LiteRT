@@ -30,25 +30,27 @@ cc_library(
 )
 
 cc_library(
-    name = "add_op_builder",
-    srcs = ["add_op_builder.cc"],
-    hdrs = ["add_op_builder.h"],
+    name = "utils",
+    srcs = ["utils.cc"],
+    hdrs = ["utils.h"],
     deps = [
-        ":op_wrapper",
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
 cc_library(
-    name = "mul_op_builder",
-    srcs = ["mul_op_builder.cc"],
-    hdrs = ["mul_op_builder.h"],
+    name = "elementwise_op_builder",
+    srcs = ["elementwise_op_builder.cc"],
+    hdrs = ["elementwise_op_builder.h"],
     deps = [
         ":op_wrapper",
+        ":utils",
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
