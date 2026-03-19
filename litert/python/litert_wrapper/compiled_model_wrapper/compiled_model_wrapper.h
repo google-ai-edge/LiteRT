@@ -18,6 +18,7 @@
 #include <Python.h>
 
 #include <string>
+#include <vector>
 
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -142,6 +143,10 @@ class CompiledModelWrapper {
 
   // Returns input tensor details for a given signature.
   PyObject* GetInputTensorDetails(const char* signature_key);
+
+  // Resizes an input tensor by signature and input index.
+  PyObject* ResizeInputTensor(int signature_index, int input_index,
+                              const std::vector<int>& dims, bool strict);
 
  private:
   // Returns the size in bytes of a single element of the given data type.

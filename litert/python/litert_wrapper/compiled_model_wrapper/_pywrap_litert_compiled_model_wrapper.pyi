@@ -148,6 +148,14 @@ class CompiledModelWrapper:
         """
         ...
 
+    def ResizeInputTensor(self, sig_idx: int, input_idx: int, dims: List[int]) -> None:
+        """Resizes an input tensor using strict shape validation."""
+        ...
+
+    def ResizeInputTensorNonStrict(self, sig_idx: int, input_idx: int, dims: List[int]) -> None:
+        """Resizes an input tensor using non-strict shape validation."""
+        ...
+
 def CreateCompiledModelFromFile(
         model_path: str,
         runtime_path: str = ...,
