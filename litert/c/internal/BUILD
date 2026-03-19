@@ -15,7 +15,9 @@
 # copybara:uncomment_begin(google-only)
 # load("@rules_cc//cc:cc_library.bzl", "cc_library")
 # load("@rules_cc//cc:cc_test.bzl", "cc_test")
+#
 # copybara:uncomment_end
+load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -39,6 +41,7 @@ package(
 cc_library(
     name = "litert_scheduling_info",
     hdrs = ["litert_scheduling_info.h"],
+    compatible_with = get_compatible_with_portable(),
     visibility = [
         "//visibility:public",
     ],
@@ -328,6 +331,7 @@ cc_library(
     name = "litert_logging",
     srcs = ["litert_logging.cc"],
     hdrs = ["litert_logging.h"],
+    compatible_with = get_compatible_with_portable(),
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-llog"],
         "//conditions:default": [],
@@ -366,7 +370,9 @@ cc_test(
 cc_library(
     name = "litert_runtime_c_api",
     hdrs = ["litert_runtime_c_api.h"],
+    compatible_with = get_compatible_with_portable(),
     visibility = [
+        "//litert:litert_friends",
         "//litert/cc/internal:__pkg__",
     ],
     deps = [
