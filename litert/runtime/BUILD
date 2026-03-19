@@ -43,7 +43,6 @@ cc_library(
     copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
     deps = [
-        ":gpu_environment",
         "//litert/c:litert_common",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
@@ -51,9 +50,14 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@com_google_absl//absl/strings:str_format",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            ":gpu_environment",
+            "//tflite/delegates/gpu/cl:opencl_wrapper",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
@@ -297,7 +301,6 @@ cc_library(
     linkopts = litert_metal_linkopts(),
     deps = [
         ":event",
-        ":gpu_environment",
         ":tensor_buffer_registry",
         "//litert/c:litert_any",
         "//litert/c:litert_environment_options_header",
@@ -316,7 +319,12 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
-    ] + RUNTIME_TENSOR_BUFFER_HEADER_DEPS,
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            ":gpu_environment",
+        ],
+        "//conditions:default": [],
+    }) + RUNTIME_TENSOR_BUFFER_HEADER_DEPS,
 )
 
 cc_library(

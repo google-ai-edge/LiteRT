@@ -36,7 +36,6 @@ cc_library(
         "//litert/cc/internal:scoped_weight_source",
         "//litert/core:environment",
         "//litert/core/model:flatbuffer_to_litert",
-        "//litert/runtime:open_cl_sync",
         "//tflite:framework",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -45,8 +44,13 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@opencl_headers",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//litert/runtime:open_cl_sync",
+            "@opencl_headers",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(
