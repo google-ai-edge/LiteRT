@@ -35,6 +35,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 
@@ -282,6 +283,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
     switch (op.Code()) {
       case kLiteRtOpCodeTflAdd:
         op_wrapper = BuildAddOp(op);
+        break;
+      case kLiteRtOpCodeTflBatchMatmul:
+        op_wrapper = std::move(BuildBatchMatMulOp(op));
         break;
       case kLiteRtOpCodeTflMul:
         op_wrapper = BuildMulOp(op);
