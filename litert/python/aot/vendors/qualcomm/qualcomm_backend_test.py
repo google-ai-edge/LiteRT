@@ -16,9 +16,9 @@
 from unittest import mock
 
 from absl.testing import absltest as googletest
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import components
 from litert.python.aot.core import test_common
-from litert.python.aot.core import types
 from litert.python.aot.vendors.qualcomm import qualcomm_backend
 from litert.python.aot.vendors.qualcomm import target as target_lib
 
@@ -58,15 +58,15 @@ class MockMlirTransforms(components.MlirTransformsT):
 class QualcommBackendTest(test_common.TestWithTfliteModels):
 
   @property
-  def basic_config(self) -> types.Config:
+  def basic_config(self) -> aot_types.Config:
     return {
         "backend_id": qualcomm_backend.QualcommBackend.id(),
         "output_dir": self.output_dir(),
     }
 
   @property
-  def output_model(self) -> types.Model:
-    return types.Model(self.output_dir() / "output.tflite")
+  def output_model(self) -> aot_types.Model:
+    return aot_types.Model(self.output_dir() / "output.tflite")
 
   def test_unsupported_component(self):
     backend = qualcomm_backend.QualcommBackend.create(self.basic_config)
@@ -74,14 +74,14 @@ class QualcommBackendTest(test_common.TestWithTfliteModels):
         NotImplementedError,
         "qualcomm backend does not support mock_component component.",
     ):
-      model = types.Model("add_simple.tflite")
+      model = aot_types.Model("add_simple.tflite")
       component = MockComponent()
       backend.call_component(model, self.output_model, component)
 
   @mock.patch.object(MockApplyPlugin, "__call__")
   def test_apply_plugin(self, mck: mock.Mock):
     backend = qualcomm_backend.QualcommBackend.create(self.basic_config)
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     component = MockApplyPlugin()
     backend.call_component(model, self.output_model, component)
     mck.assert_called_once()
@@ -89,7 +89,7 @@ class QualcommBackendTest(test_common.TestWithTfliteModels):
   @mock.patch.object(MockAieQuantizer, "__call__")
   def test_aie_quantizer(self, mck: mock.Mock):
     backend = qualcomm_backend.QualcommBackend.create(self.basic_config)
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     component = MockAieQuantizer()
     backend.call_component(model, self.output_model, component)
     mck.assert_called_once()
@@ -97,7 +97,7 @@ class QualcommBackendTest(test_common.TestWithTfliteModels):
   @mock.patch.object(MockMlirTransforms, "__call__")
   def test_mlir_transforms(self, mck: mock.Mock):
     backend = qualcomm_backend.QualcommBackend.create(self.basic_config)
-    model = types.Model("add_simple.tflite")
+    model = aot_types.Model("add_simple.tflite")
     component = MockMlirTransforms()
     backend.call_component(model, self.output_model, component)
     mck.assert_called_once()

@@ -23,8 +23,8 @@ pytype_strict_library(
     name = "example_backend",
     srcs = ["example_backend.py"],
     deps = [
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:import_vendor",
     ],
 )
@@ -34,9 +34,9 @@ pytype_strict_contrib_test(
     srcs = ["example_backend_test.py"],
     deps = [
         ":example_backend",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
-        "//litert/python/aot/core:types",
         "@absl_py//absl/testing:absltest",
     ],
 )

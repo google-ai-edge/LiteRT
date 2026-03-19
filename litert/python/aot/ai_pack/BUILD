@@ -24,8 +24,8 @@ pytype_strict_library(
     srcs = ["export_lib.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:common",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:fallback_backend",
         "//litert/python/aot/vendors/google_tensor:target",
         "//litert/python/aot/vendors/mediatek:mediatek_backend",
@@ -40,7 +40,7 @@ pytype_strict_contrib_test(
     srcs = ["export_lib_test.py"],
     deps = [
         ":export_lib",
-        "//litert/python/aot/core:types",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/vendors:fallback_backend",
         "//litert/python/aot/vendors/google_tensor:target",
         "@absl_py//absl/testing:absltest",

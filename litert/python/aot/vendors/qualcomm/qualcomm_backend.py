@@ -21,9 +21,9 @@ import os
 import pathlib
 from typing import Iterable
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import components
-from litert.python.aot.core import types
 from litert.python.aot.vendors import import_vendor
 from litert.python.aot.vendors.qualcomm import target as target_lib
 
@@ -33,10 +33,10 @@ COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
 
 
 @import_vendor.register_backend
-class QualcommBackend(types.Backend):
+class QualcommBackend(aot_types.Backend):
   """Backend implementation for the example compiler plugin."""
 
-  def __init__(self, config: types.Config):
+  def __init__(self, config: aot_types.Config):
     super().__init__(config)
     self._compilation_config = config.get("compilation_config", None)
 
@@ -71,7 +71,7 @@ class QualcommBackend(types.Backend):
     return target_lib._QUALCOMM_BACKEND_ID  # pylint: disable=protected-access
 
   @classmethod
-  def create(cls, config: types.Config) -> "QualcommBackend":
+  def create(cls, config: aot_types.Config) -> "QualcommBackend":
     if config.get("backend_id", "") != cls.id():
       raise ValueError("Invalid backend id")
     return cls(config)
@@ -82,19 +82,19 @@ class QualcommBackend(types.Backend):
 
   def call_component(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
-      component: types.Component,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
+      component: aot_types.Component,
   ):
     return _call_component(component, self, input_model, output_model)
 
 
 @functools.singledispatch
 def _call_component(
-    component: types.Component,
+    component: aot_types.Component,
     backend: QualcommBackend,
-    unused_input_model: types.Model,
-    unused_output_model: types.Model,
+    unused_input_model: aot_types.Model,
+    unused_output_model: aot_types.Model,
 ):
   raise NotImplementedError(
       f"{backend.id()} backend does not support"
@@ -106,8 +106,8 @@ def _call_component(
 def _apply_plugin(
     component: components.ApplyPluginT,
     backend: QualcommBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   """Calls the apply plugin component."""
   try:
@@ -141,8 +141,8 @@ def _apply_plugin(
 def _aie_quantizer(
     component: components.AieQuantizerT,
     backend: QualcommBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(
       input_model,
@@ -155,7 +155,7 @@ def _aie_quantizer(
 def _mlir_transforms(
     component: components.MlirTransformsT,
     unused_backend: QualcommBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(input_model, output_model, [])

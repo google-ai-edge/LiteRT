@@ -19,7 +19,7 @@ import abc
 import sys
 from typing import Any
 
-from litert.python.aot.core import types
+from litert.python.aot.core import aot_types
 
 # pylint: disable=g-importing-member
 # pylint: disable=g-import-not-at-top
@@ -45,8 +45,8 @@ class AieQuantizerT(metaclass=abc.ABCMeta):
   @abc.abstractmethod
   def __call__(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
       quantization_recipe: QuantRecipe | None = None,
       *args,
       **kwargs,
@@ -69,8 +69,8 @@ class ApplyPluginT(metaclass=abc.ABCMeta):
   @abc.abstractmethod
   def __call__(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
       soc_manufacturer: str,
       soc_model: str,
       *args,
@@ -88,6 +88,10 @@ class MlirTransformsT(metaclass=abc.ABCMeta):
 
   @abc.abstractmethod
   def __call__(
-      self, input_model: types.Model, output_model: types.Model, *args, **kwargs
+      self,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
+      *args,
+      **kwargs,
   ):
     pass

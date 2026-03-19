@@ -18,17 +18,17 @@
 import functools
 from typing import Any
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import components
-from litert.python.aot.core import types
 
 
-class FallbackTarget(types.Target):
+class FallbackTarget(aot_types.Target):
   """A virtual Compilation target."""
 
   def __hash__(self) -> int:
     return hash(self.backend_id())
 
-  def __eq__(self, other: types.Target) -> bool:
+  def __eq__(self, other: aot_types.Target) -> bool:
     return self.backend_id() == other.backend_id()
 
   def __repr__(self) -> str:
@@ -42,7 +42,7 @@ class FallbackTarget(types.Target):
     return {"backend_id": self.backend_id()}
 
 
-class FallbackBackend(types.Backend):
+class FallbackBackend(aot_types.Backend):
   """Fallback backend for LITERT."""
 
   @property
@@ -58,7 +58,7 @@ class FallbackBackend(types.Backend):
     return "fallback"
 
   @classmethod
-  def create(cls, config: types.Config) -> "FallbackBackend":
+  def create(cls, config: aot_types.Config) -> "FallbackBackend":
     if config.get("backend_id", "") != cls.id():
       raise ValueError("Invalid backend id")
     return cls(config)
@@ -69,19 +69,19 @@ class FallbackBackend(types.Backend):
 
   def call_component(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
-      component: types.Component,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
+      component: aot_types.Component,
   ):
     return _call_component(component, self, input_model, output_model)
 
 
 @functools.singledispatch
 def _call_component(
-    component: types.Component,
+    component: aot_types.Component,
     backend: FallbackBackend,
-    unused_input_model: types.Model,
-    unused_output_model: types.Model,
+    unused_input_model: aot_types.Model,
+    unused_output_model: aot_types.Model,
 ):
   raise NotImplementedError(
       f"{backend.id()} backend does not support"
@@ -93,8 +93,8 @@ def _call_component(
 def _apply_plugin(
     component: components.ApplyPluginT,
     backend: FallbackBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   """A no-op component that just copies the input model to the output model."""
   del component, backend
@@ -108,8 +108,8 @@ def _apply_plugin(
 def _aie_quantizer(
     component: components.AieQuantizerT,
     backend: FallbackBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(
       input_model,
@@ -122,7 +122,7 @@ def _aie_quantizer(
 def _mlir_transforms(
     component: components.MlirTransformsT,
     unused_backend: FallbackBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(input_model, output_model, [])

@@ -24,9 +24,9 @@ pytype_strict_library(
     srcs = ["google_tensor_backend.py"],
     deps = [
         ":target",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:import_vendor",
     ],
 )
@@ -35,7 +35,7 @@ pytype_strict_library(
     name = "target",
     srcs = ["target.py"],
     deps = [
-        "//litert/python/aot/core:types",
+        "//litert/python/aot/core:aot_types",
     ],
 )
 
@@ -45,10 +45,10 @@ pytype_strict_contrib_test(
     deps = [
         ":google_tensor_backend",
         ":target",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
-        "//litert/python/aot/core:types",
         "@absl_py//absl/testing:absltest",
     ],
 )

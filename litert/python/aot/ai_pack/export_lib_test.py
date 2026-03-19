@@ -17,20 +17,20 @@ import os
 from unittest import mock
 from absl.testing import absltest as googletest
 from litert.python.aot.ai_pack import export_lib
-from litert.python.aot.core import types
+from litert.python.aot.core import aot_types
 from litert.python.aot.vendors import fallback_backend
 from litert.python.aot.vendors.google_tensor import target as google_tensor_target
 
 
 def _create_test_model():
-  test_model = types.Model(model_bytes=b"test_model")
+  test_model = aot_types.Model(model_bytes=b"test_model")
   return test_model
 
 
 def _create_mock_google_tensor_backend(
     soc_model: google_tensor_target.SocModel,
 ):
-  mock_backend = mock.Mock(spec=types.Backend)
+  mock_backend = mock.Mock(spec=aot_types.Backend)
   mock_backend.target = google_tensor_target.Target(soc_model=soc_model)
   mock_backend.target_id = str(mock_backend.target)
   mock_backend.id.return_value = google_tensor_target.Target.backend_id()
@@ -38,7 +38,7 @@ def _create_mock_google_tensor_backend(
 
 
 def _create_mock_fallback_backend():
-  mock_backend = mock.Mock(spec=types.Backend)
+  mock_backend = mock.Mock(spec=aot_types.Backend)
   mock_backend.target = fallback_backend.FallbackTarget()
   mock_backend.target_id = fallback_backend.FallbackBackend.id()
   mock_backend.id.return_value = fallback_backend.FallbackBackend.id()
@@ -48,7 +48,7 @@ def _create_mock_fallback_backend():
 class ExportLibTest(googletest.TestCase):
 
   def test_export_with_fallback_model_succeeds(self):
-    mock_compilation_result = types.CompilationResult(
+    mock_compilation_result = aot_types.CompilationResult(
         models_with_backend=[
             (
                 _create_mock_fallback_backend(),
@@ -95,7 +95,7 @@ class ExportLibTest(googletest.TestCase):
       )
 
   def test_export_without_fallback_model_fails(self):
-    mock_compilation_result = types.CompilationResult()
+    mock_compilation_result = aot_types.CompilationResult()
     with self.assertRaises(AssertionError):
       export_lib.export(
           compiled_models=mock_compilation_result,
@@ -106,7 +106,7 @@ class ExportLibTest(googletest.TestCase):
 
   def test_export_with_google_tensor_target_succeeds(self):
     output_dir = self.create_tempdir().full_path
-    mock_compilation_result = types.CompilationResult(
+    mock_compilation_result = aot_types.CompilationResult(
         models_with_backend=[
             (
                 _create_mock_google_tensor_backend(

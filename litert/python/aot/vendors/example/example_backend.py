@@ -18,12 +18,12 @@
 import functools
 from typing import Any
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import components
-from litert.python.aot.core import types
 from litert.python.aot.vendors import import_vendor
 
 
-class ExampleTarget(types.Target):
+class ExampleTarget(aot_types.Target):
   """Compilation target for the example backend."""
 
   def __init__(self, soc_manufacturer: str, soc_model: str):
@@ -56,10 +56,10 @@ class ExampleTarget(types.Target):
 # Note this is not a real target so not auto-registered unless the module is
 # imported.
 @import_vendor.register_backend
-class ExampleBackend(types.Backend):
+class ExampleBackend(aot_types.Backend):
   """Backend implementation for the example compiler plugin."""
 
-  def __init__(self, config: types.Config):
+  def __init__(self, config: aot_types.Config):
     super().__init__(config)
     self._compilation_config = config.get("compilation_config", None)
 
@@ -92,26 +92,26 @@ class ExampleBackend(types.Backend):
     return ["example-pass"]
 
   @classmethod
-  def create(cls, config: types.Config) -> "ExampleBackend":
+  def create(cls, config: aot_types.Config) -> "ExampleBackend":
     if config.get("backend_id", "") != cls.id():
       raise ValueError("Invalid backend id")
     return cls(config)
 
   def call_component(
       self,
-      input_model: types.Model,
-      output_model: types.Model,
-      component: types.Component,
+      input_model: aot_types.Model,
+      output_model: aot_types.Model,
+      component: aot_types.Component,
   ):
     return _call_component(component, self, input_model, output_model)
 
 
 @functools.singledispatch
 def _call_component(
-    component: types.Component,
+    component: aot_types.Component,
     backend: ExampleBackend,
-    unused_input_model: types.Model,
-    unused_output_model: types.Model,
+    unused_input_model: aot_types.Model,
+    unused_output_model: aot_types.Model,
 ):
   raise NotImplementedError(
       f"{backend.id()} backend does not support"
@@ -123,8 +123,8 @@ def _call_component(
 def _apply_plugin(
     component: components.ApplyPluginT,
     backend: ExampleBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(
       input_model,
@@ -138,8 +138,8 @@ def _apply_plugin(
 def _aie_quantizer(
     component: components.AieQuantizerT,
     unused_backend: ExampleBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(
       input_model,
@@ -151,7 +151,7 @@ def _aie_quantizer(
 def _mlir_transforms(
     component: components.MlirTransformsT,
     backend: ExampleBackend,
-    input_model: types.Model,
-    output_model: types.Model,
+    input_model: aot_types.Model,
+    output_model: aot_types.Model,
 ):
   return component(input_model, output_model, backend.shared_pass_names)

@@ -19,9 +19,9 @@ import subprocess
 from unittest import mock
 
 from absl.testing import absltest as googletest
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import apply_plugin
 from litert.python.aot.core import test_common
-from litert.python.aot.core import types
 
 
 class MockCompletedProcess:
@@ -66,8 +66,8 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
         self.output_model, MockCompletedProcess(0)
     )
     apply_plugin.ApplyPlugin()(
-        types.Model.create_from_path(self.input_model),
-        types.Model.create_from_path(self.output_model),
+        aot_types.Model.create_from_path(self.input_model),
+        aot_types.Model.create_from_path(self.output_model),
         self.soc_manufacturer,
         self.soc_model,
     )
@@ -82,8 +82,8 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
   def test_apply_plugin_no_file(self, unused_mock: mock.Mock):
     with self.assertRaises(ValueError):
       apply_plugin.ApplyPlugin()(
-          types.Model.create_from_path(self.input_model),
-          types.Model.create_from_path(self.output_model),
+          aot_types.Model.create_from_path(self.input_model),
+          aot_types.Model.create_from_path(self.output_model),
           self.soc_manufacturer,
           self.soc_model,
       )

@@ -26,15 +26,15 @@ except ImportError:
   from tqdm.tqdm import auto as autotqdm
 # pytype: enable=import-error
 
+from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import components
-from litert.python.aot.core import types
 from litert.python.aot.vendors import import_vendor
 
 # pylint: enable=g-import-not-at-top
 
 
-def resolve_backend(config: types.Config) -> types.BackendT:
+def resolve_backend(config: aot_types.Config) -> aot_types.BackendT:
   # Import the backend based on the ID.
   backend_id = config.get("backend_id", None)
   if backend_id is None:
@@ -43,36 +43,36 @@ def resolve_backend(config: types.Config) -> types.BackendT:
 
 
 def prepare_for_npu_multiple_configs(
-    flatbuffer: types.Model,
+    flatbuffer: aot_types.Model,
     output_dir: pathlib.Path,
-    configs: list[tuple[types.BackendT, types.Config]],
+    configs: list[tuple[aot_types.BackendT, aot_types.Config]],
     plugin: components.ApplyPluginT,
     transforms: components.MlirTransformsT | None = None,
     quantizer: components.AieQuantizerT | None = None,
     keep_going: bool = False,
-) -> types.CompilationResult:
+) -> aot_types.CompilationResult:
   """Prepares a TFLite model for NPU execution."""
   backends = []
   for backend_class, config in configs:
     backend = backend_class.create(config)
     backends += list(backend.specialize())
 
-  pipeline: list[types.Component] = [
+  pipeline: list[aot_types.Component] = [
       c for c in [transforms, quantizer, plugin] if c is not None
   ]
   return compile_model(flatbuffer, output_dir, backends, pipeline, keep_going)
 
 
 def prepare_for_npu(
-    flatbuffer: types.Model,
+    flatbuffer: aot_types.Model,
     output_dir: pathlib.Path,
-    backend_class: types.BackendT,
-    config: types.Config,
+    backend_class: aot_types.BackendT,
+    config: aot_types.Config,
     plugin: components.ApplyPluginT,
     transforms: components.MlirTransformsT | None = None,
     quantizer: components.AieQuantizerT | None = None,
     keep_going: bool = False,
-) -> types.CompilationResult:
+) -> aot_types.CompilationResult:
   """Prepares a TFLite model for NPU execution.
 
   High level command that erforms various backend specific pre-processing steps
@@ -97,7 +97,7 @@ def prepare_for_npu(
 
   backend = backend_class.create(config)
 
-  pipeline: list[types.Component] = [
+  pipeline: list[aot_types.Component] = [
       c for c in [transforms, quantizer, plugin] if c is not None
   ]
   backends = list(backend.specialize())
@@ -105,31 +105,31 @@ def prepare_for_npu(
 
 
 def compile_model(
-    flatbuffer: types.Model,
+    flatbuffer: aot_types.Model,
     output_dir: pathlib.Path,
-    backends: list[types.Backend],
-    pipeline: list[types.Component],
+    backends: list[aot_types.Backend],
+    pipeline: list[aot_types.Component],
     keep_going: bool = False,
-) -> types.CompilationResult:
+) -> aot_types.CompilationResult:
   """Compiles a TFLite model for NPU execution."""
   if flatbuffer.in_memory:
     base_name = "model"
   else:
     base_name = flatbuffer.path.name.removesuffix(common.DOT_TFLITE)
-  compile_models = types.CompilationResult()
+  compile_models = aot_types.CompilationResult()
   with autotqdm.tqdm(backends, desc="Backend") as t_backends:
     for backend in t_backends:
       component_input = flatbuffer
-      backend = cast(types.Backend, backend)
+      backend = cast(aot_types.Backend, backend)
       input_name_pref = base_name + backend.target_id_suffix
       t_backends.set_description(f"Compiling {backend.target_id}")
       try:
         for component in pipeline:
-          component = cast(types.Component, component)
+          component = cast(aot_types.Component, component)
           t_backends.set_description(
               f"Compiling {backend.target_id}: {component.component_name}"
           )
-          component_output = types.Model.create_from_path(
+          component_output = aot_types.Model.create_from_path(
               output_dir
               / f"{input_name_pref}_{component.component_name}{common.DOT_TFLITE}"
           )
