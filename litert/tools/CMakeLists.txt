@@ -185,6 +185,7 @@ if(ANDROID OR APPLE)
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
             litert_tool_flags_qualcomm
+            litert_tool_flags_samsung
             ${LITERT_TOOL_COMMON_LIBS}
             tensorflow-lite
             ${ABSEIL_TOOL_LIBS}
@@ -199,6 +200,7 @@ else()
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
             litert_tool_flags_qualcomm
+            litert_tool_flags_samsung
             Threads::Threads
             tensorflow-lite
             "-Wl,--start-group"
