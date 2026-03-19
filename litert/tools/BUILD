@@ -585,6 +585,14 @@ cc_binary(
 )
 
 cc_binary(
+    name = "compare_cpu_npu",
+    srcs = ["compare_cpu_npu.cc"],
+    deps = NUMERICS_CHECK_DEPS + [
+        ":tensor_utils",
+    ],
+)
+
+cc_binary(
     name = "gpu_numerics_check",
     srcs = ["gpu_numerics_check.cc"],
     copts = [
