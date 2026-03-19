@@ -23,6 +23,27 @@ import subprocess
 import sys
 
 
+def _get_python_subprocess_env():
+  """Returns the current Python runtime and import path for child processes."""
+  env = os.environ.copy()
+  pythonpath_entries = []
+
+  for entry in sys.path:
+    if entry and entry not in pythonpath_entries:
+      pythonpath_entries.append(entry)
+
+  existing_pythonpath = env.get("PYTHONPATH")
+  if existing_pythonpath:
+    for entry in existing_pythonpath.split(os.pathsep):
+      if entry and entry not in pythonpath_entries:
+        pythonpath_entries.append(entry)
+
+  if pythonpath_entries:
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
+  return sys.executable, env
+
+
 def main():
   parser = argparse.ArgumentParser(
       description="Wrapper to create sdist using setup.py."
@@ -103,8 +124,7 @@ def main():
       shutil.rmtree(sdist_temp_output_dir)
     os.makedirs(sdist_temp_output_dir)
 
-    py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
-    py_executable = f"python{py_version}" if py_version else sys.executable
+    py_executable, env = _get_python_subprocess_env()
     cmd = [
         py_executable,
         tmp_setup_py_path,
@@ -114,7 +134,13 @@ def main():
     ]
 
     print(f"Running command: {' '.join(cmd)}")
-    process = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    process = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
 
     if process.returncode != 0:
       print("Error running setup.py sdist:", file=sys.stderr)

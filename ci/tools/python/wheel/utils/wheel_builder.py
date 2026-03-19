@@ -108,6 +108,33 @@ def _join_posix(root: str, posix_relpath: str) -> str:
   return os.path.join(root, *posix_relpath.split("/"))
 
 
+def _get_python_subprocess_env():
+  """Returns the current Python runtime and import path for child processes.
+
+  Bazel's Python binaries resolve third-party deps like setuptools via the
+  parent's sys.path. When we spawn a plain Python subprocess for wheel
+  packaging, preserve that import path explicitly so the child can import the
+  same dependencies.
+  """
+  env = os.environ.copy()
+  pythonpath_entries = []
+
+  for entry in sys.path:
+    if entry and entry not in pythonpath_entries:
+      pythonpath_entries.append(entry)
+
+  existing_pythonpath = env.get("PYTHONPATH")
+  if existing_pythonpath:
+    for entry in existing_pythonpath.split(os.pathsep):
+      if entry and entry not in pythonpath_entries:
+        pythonpath_entries.append(entry)
+
+  if pythonpath_entries:
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
+  return sys.executable, env
+
+
 def _strip_bazel_out_prefix(path_posix: str) -> str:
   bazel_out = "bazel-out/"
   idx = path_posix.find(bazel_out)
@@ -282,10 +309,7 @@ def build_pyproject_wheel(
     buildtree_path: Path to the build tree.
     platform_name: Platform name to be passed to build module.
   """
-  env = os.environ.copy()
-
-  py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
-  py_executable = f"python{py_version}" if py_version else sys.executable
+  py_executable, env = _get_python_subprocess_env()
 
   command = [
       py_executable,
@@ -330,15 +354,13 @@ def build_setup_py_wheel(
     nightly_suffix: Suffix to be added to the name of the wheel for nightly
       builds. Does not affect the name of the module.
   """
-  env = os.environ.copy()
+  py_executable, env = _get_python_subprocess_env()
 
   env["PROJECT_NAME"] = (
       project_name + nightly_suffix if nightly_suffix else project_name
   )
   env["PACKAGE_VERSION"] = version
 
-  py_version = os.environ.get("HERMETIC_PYTHON_VERSION")
-  py_executable = f"python{py_version}" if py_version else sys.executable
   command = [
       py_executable,
       os.path.join(buildtree_path, "setup.py"),
