@@ -12,21 +12,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "litert/vendors/samsung/compiler/builders/mul_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 
-#include <cstdint>
 #include <string>
 
-#include "litert/c/litert_common.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/vendors/samsung/compiler/builders/utils.h"
+
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildMulOp(const Op& op) {
-  OpWrapper op_wrapper("", "MUL");
+Expected<OpWrapper> BuildElementwiseOp(const Op &op, const std::string &type,
+                                       uint32_t tfl_fused_activation) {
+  OpWrapper op_wrapper(type);
 
   for (const auto& input : op.Inputs()) {
     op_wrapper.AddInput(input);
@@ -34,21 +34,36 @@ Expected<OpWrapper> BuildMulOp(const Op& op) {
   for (const auto& output : op.Outputs()) {
     op_wrapper.AddOutput(output);
   }
+  auto activation = GetFusedActivationName(tfl_fused_activation);
+  if (!activation) {
+    return activation.Error();
+  }
+  op_wrapper.AddParam("activation", *activation);
 
+  return op_wrapper;
+}
+
+Expected<OpWrapper> BuildAddOp(const Op &op) {
   uint32_t tfl_fused_activation;
   if (auto status =
-          LiteRtGetMulFusedActivationOption(op.Get(), &tfl_fused_activation);
+          LiteRtGetAddFusedActivationOption(op.Get(), &tfl_fused_activation);
       status != kLiteRtStatusOk) {
     return Error(static_cast<litert::Status>(status),
                  "Fail to get fused activation");
   }
-  if (tfl_fused_activation == 1) {
-    op_wrapper.AddParam("activation", "Relu");
-  } else if (tfl_fused_activation != 0) {
-    return Error(litert::Status::kErrorRuntimeFailure,
-                 "Unsupported fused activation");
+
+  return BuildElementwiseOp(op, "ADD", tfl_fused_activation);
+}
+
+Expected<OpWrapper> BuildMulOp(const Op &op) {
+  uint32_t tfl_fused_activation;
+  if (auto status =
+          LiteRtGetMulFusedActivationOption(op.Get(), &tfl_fused_activation);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get fused activation");
   }
 
-  return op_wrapper;
+  return BuildElementwiseOp(op, "MUL", tfl_fused_activation);
 }
+
 }  // namespace litert::samsung
