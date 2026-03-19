@@ -141,11 +141,15 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
-        "//litert/runtime:gpu_environment",
         "//litert/runtime:tensor_buffer_registry_header",
         "//tflite/core/api:error_reporter",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//litert/runtime:gpu_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
