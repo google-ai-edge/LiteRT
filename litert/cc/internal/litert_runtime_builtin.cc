@@ -15,6 +15,7 @@
 #include "litert/cc/internal/litert_runtime_builtin.h"
 
 #include "litert/c/internal/litert_runtime_c_api.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
@@ -157,22 +158,32 @@ static const LiteRtRuntimeCApiStruct kBuiltinStruct = {
     .litert_create_tensor_buffer_from_host_memory =
         LiteRtCreateTensorBufferFromHostMemory,
     .litert_get_tensor_buffer_host_memory = LiteRtGetTensorBufferHostMemory,
+#if LITERT_HAS_AHWB_SUPPORT
     .litert_create_tensor_buffer_from_ahwb = LiteRtCreateTensorBufferFromAhwb,
     .litert_get_tensor_buffer_ahwb = LiteRtGetTensorBufferAhwb,
+#endif  // LITERT_HAS_AHWB_SUPPORT
+#if LITERT_HAS_ION_SUPPORT
     .litert_create_tensor_buffer_from_ion_buffer =
         LiteRtCreateTensorBufferFromIonBuffer,
     .litert_get_tensor_buffer_ion_buffer = LiteRtGetTensorBufferIonBuffer,
+#endif  // LITERT_HAS_ION_SUPPORT
+#if LITERT_HAS_DMABUF_SUPPORT
     .litert_create_tensor_buffer_from_dma_buf_buffer =
         LiteRtCreateTensorBufferFromDmaBufBuffer,
     .litert_get_tensor_buffer_dma_buf_buffer =
         LiteRtGetTensorBufferDmaBufBuffer,
+#endif  // LITERT_HAS_DMABUF_SUPPORT
+#if LITERT_HAS_FASTRPC_SUPPORT
     .litert_create_tensor_buffer_from_fast_rpc_buffer =
         LiteRtCreateTensorBufferFromFastRpcBuffer,
     .litert_get_tensor_buffer_fast_rpc_buffer =
         LiteRtGetTensorBufferFastRpcBuffer,
+#endif  // LITERT_HAS_FASTRPC_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
     .litert_create_tensor_buffer_from_opencl_memory =
         LiteRtCreateTensorBufferFromOpenClMemory,
     .litert_get_tensor_buffer_opencl_memory = LiteRtGetTensorBufferOpenClMemory,
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     .litert_get_tensor_buffer_custom_tensor_buffer_handle =
         LiteRtGetTensorBufferCustomTensorBufferHandle,
     .litert_create_tensor_buffer_from_gl_buffer =
@@ -181,16 +192,22 @@ static const LiteRtRuntimeCApiStruct kBuiltinStruct = {
     .litert_create_tensor_buffer_from_gl_texture =
         LiteRtCreateTensorBufferFromGlTexture,
     .litert_get_tensor_buffer_gl_texture = LiteRtGetTensorBufferGlTexture,
+#if LITERT_HAS_WEBGPU_SUPPORT
     .litert_create_tensor_buffer_from_web_gpu_buffer =
         LiteRtCreateTensorBufferFromWebGpuBuffer,
     .litert_get_tensor_buffer_web_gpu_buffer =
         LiteRtGetTensorBufferWebGpuBuffer,
     .litert_create_tensor_buffer_from_web_gpu_texture =
         LiteRtCreateTensorBufferFromWebGpuTexture,
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_METAL_SUPPORT
     .litert_create_tensor_buffer_from_metal_memory =
         LiteRtCreateTensorBufferFromMetalMemory,
     .litert_get_tensor_buffer_metal_memory = LiteRtGetTensorBufferMetalMemory,
+#endif  // LITERT_HAS_METAL_SUPPORT
+#if LITERT_HAS_VULKAN_SUPPORT
     .litert_get_tensor_buffer_vulkan_memory = LiteRtGetTensorBufferVulkanMemory,
+#endif  // LITERT_HAS_VULKAN_SUPPORT
     .litert_create_managed_tensor_buffer = LiteRtCreateManagedTensorBuffer,
     .litert_create_managed_tensor_buffer_from_requirements =
         LiteRtCreateManagedTensorBufferFromRequirements,
