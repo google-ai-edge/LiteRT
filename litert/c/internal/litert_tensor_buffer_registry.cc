@@ -16,6 +16,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
@@ -25,9 +26,9 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     CreateCustomTensorBuffer create_func,
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
-    UnlockCustomTensorBuffer unlock_func,
-    ClearCustomTensorBuffer clear_func,
-    ImportCustomTensorBuffer import_func) {
+    UnlockCustomTensorBuffer unlock_func, ClearCustomTensorBuffer clear_func,
+    ImportCustomTensorBuffer import_func, LiteRtEnvOptionTag device_tag,
+    LiteRtEnvOptionTag queue_tag) {
   auto& registry = env->GetTensorBufferRegistry();
   litert::internal::CustomTensorBufferHandlers handlers = {
       .create_func = create_func,
@@ -36,6 +37,8 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
       .unlock_func = unlock_func,
       .clear_func = clear_func,
       .import_func = import_func,
+      .device_tag = device_tag,
+      .queue_tag = queue_tag,
   };
   LITERT_RETURN_IF_ERROR(registry.RegisterHandlers(buffer_type, handlers));
   return kLiteRtStatusOk;
