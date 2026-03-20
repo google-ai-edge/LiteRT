@@ -44,6 +44,7 @@
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
 
 namespace litert::samsung {
 
@@ -327,6 +328,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflSoftmax:
         op_wrapper = std::move(BuildSoftmaxOp(op));
+        break;
+      case kLiteRtOpCodeTflTranspose:
+        op_wrapper = std::move(BuildTransposeOp(op));
         break;
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
