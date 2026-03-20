@@ -303,6 +303,7 @@ cc_library(
         ":event",
         ":tensor_buffer_registry",
         "//litert/c:litert_any",
+        "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context",
@@ -363,6 +364,7 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
@@ -384,6 +386,7 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",

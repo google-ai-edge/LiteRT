@@ -20,6 +20,7 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
 #ifdef __cplusplus
@@ -68,6 +69,9 @@ typedef struct {
   UnlockCustomTensorBuffer unlock_func;
   ClearCustomTensorBuffer clear_func;
   ImportCustomTensorBuffer import_func;
+
+  LiteRtEnvOptionTag device_tag;
+  LiteRtEnvOptionTag queue_tag;
 
   size_t num_supported_buffer_types;
   LiteRtTensorBufferType

@@ -38,7 +38,7 @@ namespace litert {
 namespace openvino {
 
 #if defined(LITERT_WINDOWS_OS)
-LiteRtStatus CreateRemoteTensorBuffer(LiteRtEnvironment env,
+LiteRtStatus CreateRemoteTensorBuffer(void* device_id, void* queue_id,
                                       const LiteRtRankedTensorType* tensor_type,
                                       LiteRtTensorBufferType buffer_type,
                                       size_t bytes, size_t packed_bytes,
@@ -56,8 +56,7 @@ LiteRtStatus CreateRemoteTensorBuffer(LiteRtEnvironment env,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DestroyRemoteTensorBuffer(LiteRtEnvironment env,
-                                       HwMemoryInfoPtr hw_memory_info) {
+LiteRtStatus DestroyRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   RemoteTensorBuffer* custom_tensor_buffer =
       reinterpret_cast<RemoteTensorBuffer*>(hw_memory_info->memory_handle);
   if (custom_tensor_buffer->GetZeroBufferPtr()) {
@@ -67,13 +66,11 @@ LiteRtStatus DestroyRemoteTensorBuffer(LiteRtEnvironment env,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus UnlockRemoteTensorBuffer(LiteRtEnvironment env,
-                                      HwMemoryInfoPtr hw_memory_info) {
+LiteRtStatus UnlockRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LockRemoteTensorBuffer(LiteRtEnvironment env,
-                                    HwMemoryInfoPtr hw_memory_info,
+LiteRtStatus LockRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info,
                                     LiteRtTensorBufferLockMode mode,
                                     void** host_memory_ptr) {
   RemoteTensorBuffer* custom_tensor_buffer =
@@ -103,7 +100,9 @@ LiteRtStatus DispatchInitialize(LiteRtEnvironment env, LiteRtOptions options) {
   LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
       env, kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
       CreateRemoteTensorBuffer, DestroyRemoteTensorBuffer,
-      LockRemoteTensorBuffer, UnlockRemoteTensorBuffer, nullptr, nullptr));
+      LockRemoteTensorBuffer, UnlockRemoteTensorBuffer, nullptr, nullptr,
+      /*device_tag=*/kLiteRtEnvOptionTagNull,
+      /*queue_tag=*/kLiteRtEnvOptionTagNull));
 #endif  // LITERT_WINDOWS_OS
 
   return kLiteRtStatusOk;
