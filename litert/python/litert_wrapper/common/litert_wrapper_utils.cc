@@ -19,9 +19,39 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
 namespace litert::litert_wrapper_utils {
+
+void DestroyEnvironmentFromCapsule(PyObject* capsule) {
+  if (absl::NullSafeStringView(PyCapsule_GetName(capsule)) ==
+      kLiteRtEnvironmentName) {
+    if (void* ptr =
+            PyCapsule_GetPointer(capsule, kLiteRtEnvironmentName.data());
+        ptr) {
+      delete static_cast<Environment*>(ptr);
+      PyCapsule_SetName(capsule, "");
+    }
+  }
+}
+
+Environment* GetEnvironmentFromCapsule(PyObject* capsule) {
+  if (!PyCapsule_CheckExact(capsule)) {
+    return nullptr;
+  }
+  Environment* environment = static_cast<Environment*>(
+      PyCapsule_GetPointer(capsule, kLiteRtEnvironmentName.data()));
+  if (environment == nullptr && PyErr_Occurred()) {
+    PyErr_Clear();
+  }
+  return environment;
+}
+
+PyObject* MakeEnvironmentCapsule(Environment* environment) {
+  return PyCapsule_New(environment, kLiteRtEnvironmentName.data(),
+                       &DestroyEnvironmentFromCapsule);
+}
 
 void DestroyTensorBufferFromCapsule(PyObject* capsule) {
   // TODO(b/414622532): Remove this check, using PyCapsule_GetPointer default

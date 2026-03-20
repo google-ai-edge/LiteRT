@@ -1,0 +1,69 @@
+# Copyright 2026 Google LLC.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Python wrapper for LiteRT environments."""
+
+import os
+from typing import Optional
+
+# pylint: disable=g-import-not-at-top
+if not os.path.splitext(__file__)[0].endswith(
+    os.path.join("ai_edge_litert", "environment")
+):
+  from litert.python.litert_wrapper.environment_wrapper import (
+      _pywrap_litert_environment_wrapper as _env,
+  )
+else:
+  from ai_edge_litert import _pywrap_litert_environment_wrapper as _env
+# pylint: enable=g-import-not-at-top
+
+
+class Environment:
+  """Python wrapper for a shared LiteRT environment."""
+
+  def __init__(self, capsule):
+    self._capsule = capsule
+
+  @classmethod
+  def create(
+      cls,
+      runtime_path: Optional[str] = None,
+      compiler_plugin_path: str = "",
+      dispatch_library_path: str = "",
+  ) -> "Environment":
+    """Creates a reusable LiteRT environment.
+
+    Args:
+      runtime_path: Optional path to the LiteRT runtime library directory.
+        Defaults to the directory containing the Python wheel modules.
+      compiler_plugin_path: Optional path to compiler plugin libraries.
+      dispatch_library_path: Optional path to dispatch libraries.
+
+    Returns:
+      A new Environment instance.
+    """
+    if runtime_path is None:
+      runtime_path = os.path.dirname(os.path.abspath(__file__))
+    capsule = _env.CreateEnvironment(
+        runtime_path=runtime_path,
+        compiler_plugin_path=compiler_plugin_path,
+        dispatch_library_path=dispatch_library_path,
+    )
+    return cls(capsule)
+
+  @property
+  def capsule(self):
+    if self._capsule is None:
+      raise ValueError("Environment is no longer valid")
+    return self._capsule
