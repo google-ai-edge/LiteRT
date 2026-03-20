@@ -15,16 +15,11 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/kernels/prelu.h"
 
-#include <algorithm>
 #include <any>
-#include <cstdint>
-#include <cstring>
 #include <memory>
-#include <string>
 #include <variant>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "tflite/delegates/gpu/common/convert.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/shape.h"

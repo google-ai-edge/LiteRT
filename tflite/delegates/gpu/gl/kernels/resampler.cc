@@ -15,15 +15,11 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/kernels/resampler.h"
 
-#include <algorithm>
-#include <cstdint>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/types.h"

@@ -15,10 +15,13 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/kernels/resampler.h"
 
+#include <cmath>
 #include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/gl/kernels/test_util.h"
 
