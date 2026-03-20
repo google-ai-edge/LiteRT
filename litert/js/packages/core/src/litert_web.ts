@@ -157,6 +157,7 @@ export class LiteRt {
       accelerator,
       cpuOptions,
       gpuOptions: compileOptions.gpuOptions ?? {},
+      webNNOptions: compileOptions.webNNOptions ?? {},
     };
 
     const ptr = this.liteRtWasm._malloc(modelData.byteLength);
