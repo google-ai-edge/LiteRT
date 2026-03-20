@@ -2784,4 +2784,25 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "force_fp16_test",
+    srcs = ["force_fp16_test.cc"],
+    deps = [
+        ":binary_elementwise_tester",
+        ":conv_2d_tester",
+        ":fully_connected_tester",
+        ":pool_2d_tester",
+        ":unary_elementwise_tester",
+        ":xnnpack_delegate",
+        "//tflite:framework_stable",
+        "//tflite:version",
+        "//tflite/c:common",
+        "//tflite/core:cc_api_stable",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
 tflite_portable_test_suite_combined(combine_conditions = {"deps": [":test_main"]})
