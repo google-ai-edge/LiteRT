@@ -26,5 +26,9 @@ Expected<OpWrapper> BuildReduceSumOp(const Op &op);
 
 Expected<OpWrapper> BuildReduceMeanOp(const Op &op);
 
+Expected<OpWrapper> BuildReduceMaxOp(const Op &op);
+
+Expected<OpWrapper> BuildReduceMinOp(const Op &op);
+
 }  // namespace litert::samsung
 #endif
