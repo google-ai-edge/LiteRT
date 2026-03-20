@@ -20,7 +20,6 @@ latency and a small binary size on Android, iOS, and other operating systems.
 """
 
 import os
-
 from setuptools import find_packages
 from setuptools import setup
 PACKAGE_NAME = os.environ['PROJECT_NAME']
