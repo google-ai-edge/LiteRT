@@ -186,6 +186,10 @@ class BaseFullyConnectedOpModel : public SingleOpModel {
           min = -63.5f;
           max = 64.f;
           break;
+        case TensorType_INT16:
+          min = -32768.f;
+          max = 32767.f;
+          break;
         default:
           break;
       }
@@ -1010,6 +1014,38 @@ TEST_P(QuantizedFullyConnectedOpTest, SimpleTestQuantizedInt16Bias32) {
               ElementsAre(12288, 12800, 13312, 29696, 30208, 30720));
 }
 
+TEST_P(QuantizedFullyConnectedOpTest, SimpleTestQuantizedInt16Bias32Weight16) {
+  const float scale = 128.0 / 65536;
+  QuantizedFullyConnectedOpModel m(
+      GetRegistration(), /*units=*/3, /*batches*/ 2,
+      /*input=*/{TensorType_INT16, {2, 10}, 0, 0, scale, 0},
+      /*output=*/{TensorType_INT16, {}, 0, 0, scale, 0},
+      /*bias_type=*/TensorType_INT32, /*keep_num_dims=*/false,
+      /*bias_tensor_optional=*/false,
+      /*activation_func=*/ActivationFunctionType_RELU,
+      /*weights_format=*/FullyConnectedOptionsWeightsFormat_DEFAULT,
+      /*input_size=*/-1, /*filter_type=*/TensorType_INT16);
+
+  m.SetWeights<int16_t>({
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 0
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 1
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 2
+  });
+  m.SetBias({1, 2, 3});
+
+  m.SetInput<int16_t>({
+      1, 2, 3, 4, 5, 6, 7, 8,  -9, -10,  // b = 0
+      1, 2, 3, 4, 5, 6, 7, -8, 9,  -10,  // b = 1
+  });
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(m.GetDequantizedOutput<int16_t>(),
+              ElementsAreArray(ArrayFloatNear({24, 25, 26, 58, 59, 60})));
+  EXPECT_THAT(m.GetOutput<int16_t>(),
+              ElementsAre(12288, 12800, 13312, 29696, 30208, 30720));
+}
+
 TEST_P(QuantizedFullyConnectedOpTest, SimpleTestQuantizedInt16Bias32Weight4) {
   const float scale = 128.0 / 65536;
   QuantizedFullyConnectedOpModel m(
@@ -1054,6 +1090,40 @@ TEST_P(QuantizedFullyConnectedOpTest,
 
   // input_product_scale < output_scale was not true.
   m.SetWeights<int8_t>({
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 0
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 1
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 2
+  });
+  m.SetBias({1, 2, 3});
+
+  m.SetInput<int16_t>({
+      1, 2, 3, 4, 5, 6, 7, 8,  -9, -10,  // b = 0
+      1, 2, 3, 4, 5, 6, 7, -8, 9,  -10,  // b = 1
+  });
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(m.GetDequantizedOutput<int16_t>(),
+              ElementsAreArray(ArrayFloatNear({24, 25, 26, 58, 59, 60})));
+  EXPECT_THAT(m.GetOutput<int16_t>(),
+              ElementsAre(12288, 12800, 13312, 29696, 30208, 30720));
+}
+
+TEST_P(QuantizedFullyConnectedOpTest,
+       SimpleTestPerChannelQuantizedInt16Bias32Weight16) {
+  const float scale = 128.0 / 65536;
+  PerChannelQuantizedFullyConnectedOpModel m(
+      GetRegistration(), /*units=*/3, /*batches*/ 2,
+      /*input=*/{TensorType_INT16, {2, 10}, 0, 0, scale, 0},
+      /*per_channel_quantization_scales=*/{1.0, 1.0, 1.0},
+      /*output=*/{TensorType_INT16, {}, 0, 0, scale, 0},
+      /*bias_type=*/TensorType_INT32, /*keep_num_dims=*/false,
+      /*bias_tensor_optional=*/false,
+      /*activation_func=*/ActivationFunctionType_RELU,
+      /*weights_format=*/FullyConnectedOptionsWeightsFormat_DEFAULT,
+      /*input_size=*/-1, /*filter_type=*/TensorType_INT16);
+
+  m.SetWeights<int16_t>({
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 0
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 1
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 2
@@ -1145,6 +1215,38 @@ TEST_P(QuantizedFullyConnectedOpTest, SimpleTestQuantizedInt16Bias64) {
 
   // input_product_scale < output_scale was not true.
   m.SetWeights<int8_t>({
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 0
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 1
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 2
+  });
+  m.SetBias({1, 2, 3});
+
+  m.SetInput<int16_t>({
+      1, 2, 3, 4, 5, 6, 7, 8,  -9, -10,  // b = 0
+      1, 2, 3, 4, 5, 6, 7, -8, 9,  -10,  // b = 1
+  });
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(m.GetDequantizedOutput<int16_t>(),
+              ElementsAreArray(ArrayFloatNear({24, 25, 26, 58, 59, 60})));
+  EXPECT_THAT(m.GetOutput<int16_t>(),
+              ElementsAre(12288, 12800, 13312, 29696, 30208, 30720));
+}
+
+TEST_P(QuantizedFullyConnectedOpTest, SimpleTestQuantizedInt16Bias64Weight16) {
+  const float scale = 128.0 / 65536;
+  QuantizedFullyConnectedOpModel m(
+      GetRegistration(), /*units=*/3, /*batches*/ 2,
+      /*input=*/{TensorType_INT16, {2, 10}, 0, 0, scale, 0},
+      /*output=*/{TensorType_INT16, {}, 0, 0, scale, 0},
+      /*bias_type=*/TensorType_INT64, /*keep_num_dims=*/false,
+      /*bias_tensor_optional=*/false,
+      /*activation_func=*/ActivationFunctionType_RELU,
+      /*weights_format=*/FullyConnectedOptionsWeightsFormat_DEFAULT,
+      /*input_size=*/-1, /*filter_type=*/TensorType_INT16);
+
+  m.SetWeights<int16_t>({
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 0
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 1
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // u = 2
