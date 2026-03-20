@@ -254,12 +254,36 @@ kt_android_library(
     ],
 )
 
+# copybara:uncomment_begin(google-only)
+# TFLITE_C_HEADERS_COPIED = [
+#     "src/copied_from_tflite/headers/external/org_tensorflow/tensorflow/compiler/mlir/lite/core/c/builtin_op_data.h",
+#     "src/copied_from_tflite/headers/external/org_tensorflow/tensorflow/compiler/mlir/lite/core/c/tflite_types.h",
+#     "src/copied_from_tflite/headers/tflite/builtin_ops.h",
+#     "src/copied_from_tflite/headers/tflite/c/builtin_op_data.h",
+#     "src/copied_from_tflite/headers/tflite/c/c_api.h",
+#     "src/copied_from_tflite/headers/tflite/c/c_api_experimental.h",
+#     "src/copied_from_tflite/headers/tflite/c/c_api_opaque.h",
+#     "src/copied_from_tflite/headers/tflite/c/c_api_types.h",
+#     "src/copied_from_tflite/headers/tflite/c/common.h",
+#     "src/copied_from_tflite/headers/tflite/core/async/c/types.h",
+#     "src/copied_from_tflite/headers/tflite/core/c/builtin_op_data.h",
+#     "src/copied_from_tflite/headers/tflite/core/c/c_api.h",
+#     "src/copied_from_tflite/headers/tflite/core/c/c_api_experimental.h",
+#     "src/copied_from_tflite/headers/tflite/core/c/c_api_opaque.h",
+#     "src/copied_from_tflite/headers/tflite/core/c/c_api_types.h",
+#     "src/copied_from_tflite/headers/tflite/core/c/common.h",
+#     "src/copied_from_tflite/headers/tflite/core/c/operator.h",
+# ]
+# copybara:uncomment_end
+
 # bazel build --config=android_arm64 --android_ndk_min_sdk_version=26 \
 #   --define=extra_kt_jvm_opts='-jvm-target 17' --define=public_maven_build=true \
 #   //litert/kotlin:litert
 aar_with_jni(
     name = "litert",
     android_library = ":litert_kotlin_api",
+    # copybara:uncomment headers = TFLITE_C_HEADERS_COPIED,
+    # copybara:uncomment strip_headers_prefix = ".*/litert/kotlin/src/copied_from_tflite/headers",
 )
 
 exports_files(
