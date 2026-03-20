@@ -82,11 +82,11 @@ Expected<OpWrapper> BuildExpOp(const Op &op) {
 }
 
 Expected<OpWrapper> BuildMaxOp(const Op &op) {
-  return BuildElementwiseOp(op, "MAXIMUM", 0);
+  return BuildElementwiseOp(op, "Maximum", 0);
 }
 
 Expected<OpWrapper> BuildMinOp(const Op &op) {
-  return BuildElementwiseOp(op, "MINIMUM", 0);
+  return BuildElementwiseOp(op, "Minimum", 0);
 }
 
 }  // namespace litert::samsung
