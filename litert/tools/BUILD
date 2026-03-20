@@ -191,6 +191,23 @@ litert_bin(
 
 # Apply plugin test tests the core logic of the tool (with a dummy plugin impl), while the
 # following tests the actual plugins will function correctly.
+tool_test(
+    name = "apply_google_tensor_plugin_test",
+    data = [
+        "//litert/test:testdata/simple_add_op.tflite",
+    ],
+    tool = ":apply_plugin_main_for_google_tensor",
+    tool_args = [
+        "--cmd=apply",
+        "--model={}".format(
+            runfile_path("//litert/test:testdata/simple_add_op.tflite"),
+        ),
+        "--soc_manufacturer=Google",
+        "--soc_model=Tensor_G5",
+        "--o=$$(mktemp)",
+    ],
+)
+
 [
     tool_test(
         name = "apply_vendor_plugin_test_{}_{}".format(
@@ -235,6 +252,7 @@ litert_bin(
 test_suite(
     name = "apply_vendor_plugin_tests",
     tests = [
+        ":apply_google_tensor_plugin_test",
         ":apply_vendor_plugin_test_mediatek_mt6991",
         ":apply_vendor_plugin_test_qualcomm_SA8295",
     ],
