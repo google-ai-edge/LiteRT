@@ -227,7 +227,7 @@ TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithInputLayerValueRange) {
   ASSERT_EQ(input_buffers.size(), 1);
   auto& buffer = input_buffers[0];
 
-  auto size_bytes_res = buffer.Size();
+  auto size_bytes_res = buffer.PackedSize();
   ASSERT_TRUE(size_bytes_res.HasValue());
   size_t size_bytes = size_bytes_res.Value();
   size_t num_elements = size_bytes / sizeof(float);

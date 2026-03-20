@@ -316,7 +316,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   uint64_t ComputeInputBytes() override {
     uint64_t total_bytes = 0;
     for (const auto& buffer : *input_buffers_) {
-      LITERT_ASSIGN_OR_ABORT(const size_t buffer_bytes, buffer.Size());
+      LITERT_ASSIGN_OR_ABORT(const size_t buffer_bytes, buffer.PackedSize());
       total_bytes += buffer_bytes;
     }
     return total_bytes;
@@ -329,7 +329,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     float low_range = 0;
     float high_range = 0;
     LITERT_ASSIGN_OR_ABORT(const auto t_tensor_type, t.TensorType());
-    LITERT_ASSIGN_OR_ABORT(const size_t t_size, t.Size());
+    LITERT_ASSIGN_OR_ABORT(const size_t t_size, t.PackedSize());
     size_t num_elements = t_size / *GetByteWidth(t_tensor_type.ElementType());
     tflite::utils::GetDataRangesForType(
         static_cast<TfLiteType>(t_tensor_type.ElementType()), &low_range,
