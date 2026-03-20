@@ -14,10 +14,12 @@
 # ==============================================================================
 """A collection of utility functions for reading/writing memory-mapped data."""
 
+import ctypes
 import logging
 import mmap
 import os
 import pathlib
+from typing import Any
 
 import os # import gfile
 
@@ -158,3 +160,93 @@ def set_file_contents(
       while finger < len(data):
         f.write(data[finger : finger + chunk_size])
         finger += chunk_size
+
+
+def _get_mmap_offset_and_length(
+    buffer: Any,
+) -> tuple[mmap.mmap | None, int, int]:
+  """Returns the underlying mmap, offset, and length for a buffer."""
+  if isinstance(buffer, mmap.mmap):
+    return buffer, 0, buffer.size()
+
+  # Find the root mmap object if it exists.
+  try:
+    mv = memoryview(buffer)
+  except TypeError:
+    return None, 0, 0
+
+  root = mv
+  while isinstance(root, memoryview):
+    root = root.obj
+
+  if not isinstance(root, mmap.mmap):
+    return None, 0, 0
+
+  try:
+    # We use ctypes to get the memory address of the buffers.
+    root_addr = ctypes.addressof(ctypes.c_char.from_buffer(root))
+    slice_addr = ctypes.addressof(ctypes.c_char.from_buffer(mv))
+    return root, slice_addr - root_addr, mv.nbytes
+  except (TypeError, ValueError):
+    return None, 0, 0
+
+
+def advise_sequential(buffer: Any, offset: int = 0, length: int = 0):
+  """Advises the kernel that the `buffer` will be read sequentially.
+
+  Args:
+    buffer: The buffer to set `MADV_SEQUENTIAL` on.
+    offset: The offset into the buffer to start from.
+    length: The length of the chunk to advise on. If 0, the entire buffer from
+      `offset` is used.
+  """
+  m, m_offset, m_length = _get_mmap_offset_and_length(buffer)
+  if  m is not None:
+    if length == 0:
+      length = m_length - offset
+
+    # Linux requires page alignment for madvise.
+    # For MADV_SEQUENTIAL, we can be more liberal and include partial pages.
+    start = m_offset + offset
+    end = start + length
+    aligned_start = start & ~(mmap.PAGESIZE - 1)
+    aligned_end = (end + mmap.PAGESIZE - 1) & ~(mmap.PAGESIZE - 1)
+
+    try:
+      m.madvise(
+          mmap.MADV_SEQUENTIAL, aligned_start, aligned_end - aligned_start
+      )
+    except (OSError, ValueError) as e:
+      logging.warning('Failed to set MADV_SEQUENTIAL: %s', e)
+
+
+def advise_dont_need(buffer: Any, offset: int = 0, length: int = 0):
+  """Advises the kernel that the `buffer` is no longer needed.
+
+  Args:
+    buffer: The buffer to set `MADV_DONTNEED` on.
+    offset: The offset into the buffer to start from.
+    length: The length of the chunk to advise on. If 0, the entire buffer from
+      `offset` is used.
+  """
+  m, m_offset, m_length = _get_mmap_offset_and_length(buffer)
+  if m is not None:
+    if length == 0:
+      length = m_length - offset
+
+    # Linux requires page alignment for madvise.
+    # For MADV_DONTNEED, we MUST stay within the requested range to avoid
+    # reclaiming memory that might still be needed by adjacent tensors sharing
+    # pages.
+    start = m_offset + offset
+    end = start + length
+    aligned_start = (start + mmap.PAGESIZE - 1) & ~(mmap.PAGESIZE - 1)
+    aligned_end = end & ~(mmap.PAGESIZE - 1)
+
+    if aligned_end > aligned_start:
+      try:
+        m.madvise(
+            mmap.MADV_DONTNEED, aligned_start, aligned_end - aligned_start
+        )
+      except (OSError, ValueError) as e:
+        logging.warning('Failed to set MADV_DONTNEED: %s', e)
