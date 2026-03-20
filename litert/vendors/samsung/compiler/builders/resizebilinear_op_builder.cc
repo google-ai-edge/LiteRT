@@ -24,8 +24,8 @@
 namespace litert::samsung {
 constexpr int32_t kInputIndex = 0;
 constexpr int32_t kOutputIndex = 0;
-constexpr int32_t kHeightIndex = 2;
-constexpr int32_t kWidthIndex = 3;
+constexpr int32_t kHeightIndex = 1;
+constexpr int32_t kWidthIndex = 2;
 
 Expected<OpWrapper> BuildResizeBilinearOp(const Op &op) {
   OpWrapper op_wrapper("ResizeBilinear");
