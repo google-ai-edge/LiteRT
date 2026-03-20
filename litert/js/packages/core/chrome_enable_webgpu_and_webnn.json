@@ -1,0 +1,24 @@
+{
+  "capabilities": {
+    "goog:chromeOptions": {
+      "args": [
+        "--enable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE,WebMachineLearningNeuralNetwork",
+        "--enable-unsafe-webgpu",
+        "--enable-logging",
+        "--disable-vulkan-fallback-to-gl-for-testing",
+        "--disable-vulkan-surface",
+        "--enable-blink-features=WebAssemblyJSPromiseIntegration"
+      ]
+    }
+  },
+  "extension": {
+    "forceCapabilities": {
+      "goog:chromeOptions": {
+        "args": [
+          "--use-angle=vulkan",
+          "--headless=new"
+        ]
+      }
+    }
+  }
+}

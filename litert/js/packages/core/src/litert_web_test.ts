@@ -173,8 +173,8 @@ describe('LiteRt', () => {
     it('compileModel returns a non-Promise without JSPI', async () => {
       if (await supportsFeature('jspi')) {
         pending('This test is for non-JSPI environments');
+        return;
       }
-
       await resetLiteRt();
       const modelData = await fetch('/testdata/add_10x10.tflite')
                             .then(response => response.arrayBuffer())
