@@ -227,5 +227,24 @@ TEST(LrtGoogleTensorOptionsTest, Enable4BitCompilationCAPINullArgs) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
+TEST(LrtGoogleTensorOptionsTest, PerformanceMode) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  LiteRtGoogleTensorOptionsPerformanceMode performance_mode;
+  EXPECT_EQ(
+      LrtGoogleTensorOptionsGetPerformanceMode(options, &performance_mode),
+      kLiteRtStatusErrorNotFound);
+
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsSetPerformanceMode(
+      options, kLiteRtGoogleTensorOptionsPerformanceModeHighPerformance));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetPerformanceMode(options, &performance_mode));
+  EXPECT_EQ(performance_mode,
+            kLiteRtGoogleTensorOptionsPerformanceModeHighPerformance);
+
+  LrtDestroyGoogleTensorOptions(options);
+}
+
 }  // namespace
 }  // namespace litert::google_tensor

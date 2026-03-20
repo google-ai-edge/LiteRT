@@ -79,6 +79,21 @@ class GoogleTensorOptions {
 
   void SetTestingFlags(const std::string& testing_flags);
 
+  enum class PerformanceMode {
+    kExtremePowerSaver =
+        kLiteRtGoogleTensorOptionsPerformanceModeExtremePowerSaver,
+    kPowerSaver = kLiteRtGoogleTensorOptionsPerformanceModePowerSaver,
+    kBalanced = kLiteRtGoogleTensorOptionsPerformanceModeBalanced,
+    kHighPerformance = kLiteRtGoogleTensorOptionsPerformanceModeHighPerformance,
+    kSustainedPerformance =
+        kLiteRtGoogleTensorOptionsPerformanceModeSustainedPerformance,
+    kBurst = kLiteRtGoogleTensorOptionsPerformanceModeBurst,
+  };
+
+  void SetPerformanceMode(PerformanceMode mode);
+
+  PerformanceMode GetPerformanceMode() const;
+
  private:
   explicit GoogleTensorOptions(LrtGoogleTensorOptions options);
 

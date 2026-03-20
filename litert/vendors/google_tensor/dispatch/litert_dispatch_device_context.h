@@ -20,6 +20,7 @@
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/google/litert_darwinn_runtime_options.h"
@@ -29,6 +30,12 @@
 // This class is thread-compatible.
 class LiteRtDispatchDeviceContextT {
  public:
+  // Stores Google Tensor Options for later annotation.
+  struct GoogleTensorOptionsData {
+    std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
+        std::nullopt;
+  };
+
   static LiteRtStatus Create(LiteRtOptions options,
                              LiteRtDispatchDeviceContext& device_context);
 
@@ -66,6 +73,13 @@ class LiteRtDispatchDeviceContextT {
   }
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
+  std::optional<GoogleTensorOptionsData>& google_tensor_options() {
+    return google_tensor_options_;
+  }
+
+  LiteRtStatus AnnotateSystemAttribute(const char* absl_nonnull key,
+                                       const char* absl_nonnull value);
+
  private:
   explicit LiteRtDispatchDeviceContextT(ThrContext* absl_nonnull thr_context)
       : thr_context_(thr_context) {}
@@ -77,6 +91,7 @@ class LiteRtDispatchDeviceContextT {
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   std::optional<litert::LiteRtDarwinnRuntimeOptionsT> darwinn_options_;
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+  std::optional<GoogleTensorOptionsData> google_tensor_options_;
   // A device context cannot be destroyed with any registered graphs.
   absl::flat_hash_set<LiteRtDispatchGraph> registered_graphs_;
 };

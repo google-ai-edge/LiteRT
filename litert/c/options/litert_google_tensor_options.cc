@@ -15,6 +15,7 @@
 #include "litert/c/options/litert_google_tensor_options.h"
 
 #include <cstddef>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -38,6 +39,8 @@ struct LrtGoogleTensorOptionsT {
       kLiteRtGoogleTensorShardingIntensityMinimal;
   bool enable_dynamic_range_quantization = false;
   std::vector<std::vector<std::string>> testing_flags = {};
+  std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
+      std::nullopt;
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -93,6 +96,10 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str,
                           "enable_dynamic_range_quantization = true\n");
   }
+  if (options->performance_mode.has_value()) {
+    absl::StrAppendFormat(&toml_str, "performance_mode = %d\n",
+                          static_cast<int>(*options->performance_mode));
+  }
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -144,6 +151,11 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
         } else if (key == "enable_dynamic_range_quantization") {
           LITERT_ASSIGN_OR_RETURN(options_ref.enable_dynamic_range_quantization,
                                   litert::internal::ParseTomlBool(value));
+        } else if (key == "performance_mode") {
+          LITERT_ASSIGN_OR_RETURN(auto val,
+                                  litert::internal::ParseTomlInt(value));
+          options_ref.performance_mode =
+              static_cast<LiteRtGoogleTensorOptionsPerformanceMode>(val);
         }
         return kLiteRtStatusOk;
       });
@@ -316,6 +328,31 @@ LiteRtStatus LrtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
   }
   *enable_dynamic_range_quantization =
       options->enable_dynamic_range_quantization;
+  return kLiteRtStatusOk;
+}
+
+// performance mode ----------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetPerformanceMode(
+    LrtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsPerformanceMode mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->performance_mode = mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetPerformanceMode(
+    LrtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsPerformanceMode* mode) {
+  if (options == nullptr || mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!options->performance_mode.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *mode = *options->performance_mode;
   return kLiteRtStatusOk;
 }
 
