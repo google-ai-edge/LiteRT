@@ -81,6 +81,14 @@ Expected<OpWrapper> BuildExpOp(const Op &op) {
   return BuildElementwiseOp(op, "EXP", 0);
 }
 
+Expected<OpWrapper> BuildGreaterOp(const Op &op) {
+  return BuildElementwiseOp(op, "Greater", 0);
+}
+
+Expected<OpWrapper> BuildGreaterEqualOp(const Op &op) {
+  return BuildElementwiseOp(op, "GreaterOrEqual", 0);
+}
+
 Expected<OpWrapper> BuildMaxOp(const Op &op) {
   return BuildElementwiseOp(op, "Maximum", 0);
 }
