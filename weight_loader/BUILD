@@ -59,6 +59,7 @@ cc_test(
     deps = [
         ":external_weight_loader",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment",  # buildcleaner: keep
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",

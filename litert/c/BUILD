@@ -463,6 +463,7 @@ cc_test(
     linkopts = litert_android_linkopts(),
     deps = [
         ":litert_common",
+        ":litert_environment",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",

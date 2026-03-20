@@ -92,6 +92,7 @@ cc_library(
         ":litert_runtime_context_header",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
     ],
 )
@@ -200,6 +201,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
@@ -226,6 +228,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
     ],
 )
