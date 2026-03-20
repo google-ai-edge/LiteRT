@@ -77,6 +77,8 @@ const char* MapToQuantTypeStr(ElementType element_type) {
     case ElementType::Int16:
     case ElementType::UInt16:
       return "AINT16";
+    case ElementType::Int32:
+      return "AINT32";
     default:
       return "";
   }
