@@ -128,6 +128,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
