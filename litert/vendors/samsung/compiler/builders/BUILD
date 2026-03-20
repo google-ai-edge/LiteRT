@@ -147,6 +147,31 @@ cc_library(
 )
 
 cc_library(
+    name = "reduce_op_builder",
+    srcs = ["reduce_op_builder.cc"],
+    hdrs = ["reduce_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "relu_op_builder",
+    srcs = ["relu_op_builder.cc"],
+    hdrs = ["relu_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
     name = "reshape_op_builder",
     srcs = ["reshape_op_builder.cc"],
     hdrs = ["reshape_op_builder.h"],
