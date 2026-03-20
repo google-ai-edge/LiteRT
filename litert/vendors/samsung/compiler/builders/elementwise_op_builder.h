@@ -33,6 +33,8 @@ Expected<OpWrapper> BuildMaxOp(const Op &op);
 
 Expected<OpWrapper> BuildMinOp(const Op &op);
 
+Expected<OpWrapper> BuildCosOp(const Op &op);
+
 Expected<OpWrapper> BuildRsqrtOp(const Op &op);
 
 Expected<OpWrapper> BuildSqrtOp(const Op &op);
@@ -41,6 +43,10 @@ Expected<OpWrapper> BuildSubOp(const Op &op);
 
 Expected<OpWrapper> BuildSquaredDifferenceOp(const Op &op);
 
-}  // namespace litert::samsung
+Expected<OpWrapper> BuildAbsOp(const Op &op);
+
+Expected<OpWrapper> BuildEqualOp(const Op &op);
+
+} // namespace litert::samsung
 
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_ADD_OP_BUILDER_H_
