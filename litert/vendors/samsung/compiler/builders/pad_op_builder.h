@@ -24,5 +24,7 @@ namespace litert::samsung {
 
 Expected<OpWrapper> BuildPadOp(const Op &op);
 
-}
+Expected<OpWrapper> BuildMirrorPadOp(const Op &op);
+
+}  // namespace litert::samsung
 #endif
