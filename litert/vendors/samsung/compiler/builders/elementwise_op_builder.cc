@@ -89,6 +89,10 @@ Expected<OpWrapper> BuildMinOp(const Op &op) {
   return BuildElementwiseOp(op, "Minimum", 0);
 }
 
+Expected<OpWrapper> BuildCosOp(const Op &op) {
+  return BuildElementwiseOp(op, "Cos", 0);
+}
+
 Expected<OpWrapper> BuildSubOp(const Op &op) {
   uint32_t tfl_fused_activation;
   if (auto status =
@@ -110,6 +114,14 @@ Expected<OpWrapper> BuildRsqrtOp(const Op &op) {
 
 Expected<OpWrapper> BuildSquaredDifferenceOp(const Op &op) {
   return BuildElementwiseOp(op, "SquaredDifference", 0);
+}
+
+Expected<OpWrapper> BuildAbsOp(const Op &op) {
+  return BuildElementwiseOp(op, "ABS", 0);
+}
+
+Expected<OpWrapper> BuildEqualOp(const Op &op) {
+  return BuildElementwiseOp(op, "Equal", 0);
 }
 
 }  // namespace litert::samsung
