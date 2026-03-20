@@ -943,6 +943,7 @@ cc_test(
         ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment",  # buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
@@ -1183,6 +1184,7 @@ cc_library(
 #     minimum_os_version = LITERT_MIN_IOS_VERSION,
 #     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
 #     tags = [
+#         "manual",
 #         "nobuilder",
 #         "notap",
 #     ],
@@ -1199,7 +1201,10 @@ cc_library(
 #     name = "litert_compiled_model_metal_test_cc_ios",
 #     minimum_os_version = LITERT_MIN_IOS_VERSION,
 #     # copybara:uncomment runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
-#     tags = ["notap"],
+#     tags = [
+#         "manual",
+#         "notap",
+#     ],
 #     deps = [":litert_compiled_model_metal_test"],
 # )
 # copybara:uncomment_end(google-only)
