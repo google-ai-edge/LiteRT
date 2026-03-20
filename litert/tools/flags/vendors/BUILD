@@ -135,6 +135,11 @@ cc_test(
         ":google_tensor_flags",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_google_tensor_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:marshalling",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
