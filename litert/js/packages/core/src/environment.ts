@@ -32,8 +32,7 @@ export interface EnvironmentOptions {
  */
 const DESIRED_WEBGPU_FEATURES = [
   'shader-f16',
-  'subgroups' as GPUFeatureName,      // In origin trial
-  'subgroups-f16' as GPUFeatureName,  // In origin trial
+  'subgroups' as GPUFeatureName,
 ] satisfies GPUFeatureName[];
 
 /**
