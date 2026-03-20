@@ -363,6 +363,12 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflReshape:
         op_wrapper = std::move(BuildReshapeOp(op));
         break;
+      case kLiteRtOpCodeTflReduceMax:
+        op_wrapper = std::move(BuildReduceMaxOp(op));
+        break;
+      case kLiteRtOpCodeTflReduceMin:
+        op_wrapper = std::move(BuildReduceMinOp(op));
+        break;
       case kLiteRtOpCodeTflRsqrt:
         op_wrapper = std::move(BuildRsqrtOp(op));
         break;
