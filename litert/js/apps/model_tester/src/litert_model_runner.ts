@@ -17,14 +17,14 @@
 import '@tensorflow/tfjs-backend-webgpu'; // Side-effect import for webgpu backend.
 import '@tensorflow/tfjs-backend-cpu'; // CPU backend is needed if WebGPU is not available.
 
-import {CompiledModel, getWebGpuDevice, loadAndCompile, loadLiteRt, SignatureRunner} from '@litertjs/core';
-import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
+import {CompiledModel, getWebGpuDevice, loadAndCompile, loadLiteRt, SignatureRunner, Tensor} from '@litertjs/core';
+import {litertToTfjs, runWithTfjsTensors, tfjsToLitert} from '@litertjs/tfjs-interop';
 import {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 // Placeholder for internal dependency on trusted resource url
 
 import {ConsoleMessage} from './console_renderer';
-import {BenchmarkSample, compareResults, just, LITERT_WASM_CPU, LITERT_WASM_GPU, Maybe, ModelResult, ModelRunner, RunResult, SerializableTensor, toMaybe} from './model_runner';
+import {BenchmarkSample, compareResults, just, LITERT_WASM_CPU, LITERT_WASM_GPU, LITERT_WASM_WEBNN, Maybe, ModelResult, ModelRunner, RunResult, SerializableTensor, toMaybe} from './model_runner';
 
 /**
  * A promise that resolves when LiteRt is loaded.
@@ -68,6 +68,7 @@ export class LiteRtModelRunner implements ModelRunner {
   constructor(
       private gpuModel: Maybe<CompiledModel>,
       private cpuModel: Maybe<CompiledModel>,
+      private webnnModel: Maybe<CompiledModel>,
       private readConsole?: () => ConsoleMessage[]) {}
 
   static async load(data: Uint8Array, readConsole?: () => ConsoleMessage[]):
@@ -77,12 +78,16 @@ export class LiteRtModelRunner implements ModelRunner {
         await toMaybe(() => loadAndCompile(data, {accelerator: 'webgpu'}));
     const cpuModel =
         await toMaybe(() => loadAndCompile(data, {accelerator: 'wasm'}));
+    const webnnModel = await toMaybe(
+        () => loadAndCompile(
+            data,
+            {accelerator: 'webnn', webNNOptions: {devicePreference: 'npu'}}));
 
-    if (gpuModel.error && cpuModel.error) {
-      console.error('Both GPU and CPU models failed to load');
+    if (gpuModel.error && cpuModel.error && webnnModel.error) {
+      console.error('GPU, CPU, and WebNN models failed to load');
     }
 
-    return new LiteRtModelRunner(gpuModel, cpuModel, readConsole);
+    return new LiteRtModelRunner(gpuModel, cpuModel, webnnModel, readConsole);
   }
 
   getSignatures() {
@@ -98,14 +103,15 @@ export class LiteRtModelRunner implements ModelRunner {
           },
         ];
 
-    if (!this.gpuModel.value) {
+    const existingModel =
+        this.gpuModel.value || this.cpuModel.value || this.webnnModel.value;
+    if (!existingModel) {
       return signatures;
     }
 
-    signatures[0].signature = this.gpuModel.value;
+    signatures[0].signature = existingModel;
 
-    for (const [id, signature] of Object.entries(
-             this.gpuModel.value.signatures)) {
+    for (const [id, signature] of Object.entries(existingModel.signatures)) {
       signatures.push({
         name: id,
         id,
@@ -117,61 +123,168 @@ export class LiteRtModelRunner implements ModelRunner {
 
   private async runModel(
       model: CompiledModel|SignatureRunner,
-      fakeInputs: Record<string, tf.Tensor>,
-      benchmarkRunCount: number): Promise<ModelResult> {
+      fakeInputs: Record<string, tf.Tensor>, benchmarkRunCount: number,
+      warmupRunCount: number,
+      convertTensorsPerRun: boolean): Promise<ModelResult> {
     const partialResult: Partial<ModelResult> = {};
 
-    const results = await runWithTfjsTensors(model, fakeInputs);
-
-    partialResult.tensors = {record: {}};
-    for (const [name, tensor] of Object.entries(results)) {
-      partialResult.tensors.record[name] = await serializeTfjsTensor(tensor);
-    }
-
-    if (benchmarkRunCount === 0) {
-      return partialResult as ModelResult;
-    }
-
-    const benchmarkSamples: BenchmarkSample[] = [];
-    for (let i = 0; i < benchmarkRunCount; i++) {
-      const start = performance.now();
-      console.log(`Benchmarking run ${i + 1} of ${benchmarkRunCount}`);
+    if (convertTensorsPerRun) {
       const results = await runWithTfjsTensors(model, fakeInputs);
-      for (const result of Object.values(results)) {
-        await result.data();  // Ensure data is synced to CPU
-        result.dispose();
+
+      partialResult.tensors = {record: {}};
+      for (const [name, tensor] of Object.entries(results)) {
+        partialResult.tensors.record[name] = await serializeTfjsTensor(tensor);
+        tensor.dispose();
       }
-      const end = performance.now();
-      benchmarkSamples.push({latency: end - start});
+
+      if (benchmarkRunCount === 0 && warmupRunCount === 0) {
+        return partialResult as ModelResult;
+      }
+
+      for (let i = 0; i < warmupRunCount; i++) {
+        console.log(`Warmup run ${i + 1} of ${warmupRunCount}`);
+        const results = await runWithTfjsTensors(model, fakeInputs);
+        for (const result of Object.values(results)) {
+          await result.data();
+          result.dispose();
+        }
+      }
+
+      const benchmarkSamples: BenchmarkSample[] = [];
+      for (let i = 0; i < benchmarkRunCount; i++) {
+        console.log(`Benchmarking run ${i + 1} of ${benchmarkRunCount}`);
+        const start = performance.now();
+        const results = await runWithTfjsTensors(model, fakeInputs);
+        for (const result of Object.values(results)) {
+          await result.data();  // Ensure data is synced to CPU
+          result.dispose();
+        }
+        const end = performance.now();
+        benchmarkSamples.push({latency: end - start});
+      }
+
+      partialResult.benchmark = {
+        samples: benchmarkSamples,
+      };
+
+      return partialResult as ModelResult;
+    } else {
+      const litertInputs: Record<string, Tensor> = {};
+      const litertInputDetails = model.getInputDetails();
+
+      for (const [name, tfjsTensor] of Object.entries(fakeInputs)) {
+        const inputDetails =
+            litertInputDetails.find(details => details.name === name);
+        const preferredBufferType =
+            inputDetails?.supportedBufferTypes.values().next().value;
+        const environment = model.options.environment;
+        litertInputs[name] =
+            tfjsToLitert(tfjsTensor, environment, preferredBufferType);
+      }
+
+      try {
+        let lastOutputs: Record<string, Tensor>|undefined;
+
+        console.log(`Initial evaluation run`);
+        const initialResults =
+            (await model.run(litertInputs)) as Record<string, Tensor>;
+        lastOutputs = initialResults;
+
+        if (benchmarkRunCount === 0 && warmupRunCount === 0) {
+          // Keep lastOutputs for serialization.
+        } else {
+          for (const tensor of Object.values(initialResults)) {
+            tensor.delete();
+          }
+          lastOutputs = undefined;
+
+          for (let i = 0; i < warmupRunCount; i++) {
+            console.log(`Warmup run ${i + 1} of ${warmupRunCount}`);
+            const results =
+                (await model.run(litertInputs)) as Record<string, Tensor>;
+            if (benchmarkRunCount === 0 && i === warmupRunCount - 1) {
+              lastOutputs = results;
+            } else {
+              for (const tensor of Object.values(results)) {
+                tensor.delete();
+              }
+            }
+          }
+
+          const benchmarkSamples: BenchmarkSample[] = [];
+          for (let i = 0; i < benchmarkRunCount; i++) {
+            console.log(`Benchmarking run ${i + 1} of ${benchmarkRunCount}`);
+            const start = performance.now();
+            const results =
+                (await model.run(litertInputs)) as Record<string, Tensor>;
+            await Promise.all(
+                Object.values(results).map(tensor => tensor.data()));
+            const end = performance.now();
+            benchmarkSamples.push({latency: end - start});
+
+            if (i === benchmarkRunCount - 1) {
+              lastOutputs = results;
+            } else {
+              for (const tensor of Object.values(results)) {
+                tensor.delete();
+              }
+            }
+          }
+
+          partialResult.benchmark = {
+            samples: benchmarkSamples,
+          };
+        }
+
+        partialResult.tensors = {record: {}};
+        if (lastOutputs) {
+          for (const [name, tensor] of Object.entries(lastOutputs)) {
+            const tfjsTensor = litertToTfjs(tensor);
+            partialResult.tensors.record[name] =
+                await serializeTfjsTensor(tfjsTensor);
+            tfjsTensor.dispose();
+            tensor.delete();
+          }
+        }
+
+        return partialResult as ModelResult;
+      } finally {
+        for (const tensor of Object.values(litertInputs)) {
+          tensor.delete();
+        }
+      }
     }
-
-    partialResult.benchmark = {
-      samples: benchmarkSamples,
-    };
-
-    return partialResult as ModelResult;
   }
 
-  async run(signatureName?: string, benchmarkRunCount = 0): Promise<RunResult> {
+  async run(
+      signatureName?: string, benchmarkRunCount = 0, warmupRunCount = 0,
+      convertTensorsPerRun = true): Promise<RunResult> {
     const gpuSignature = getSignature(this.gpuModel, signatureName);
     const cpuSignature = getSignature(this.cpuModel, signatureName);
+    const webnnSignature = getSignature(this.webnnModel, signatureName);
 
     let fakeInputs: Record<string, tf.Tensor>;
     try {
       if (!gpuSignature.value) {
         if (!cpuSignature.value) {
-          console.error(gpuSignature.error);
-          console.error(cpuSignature.error);
-          console.error(`GPU and CPU failed to load`);
-          return {
-            results: {
-              [LITERT_WASM_CPU]: cpuSignature,
-              [LITERT_WASM_GPU]: gpuSignature,
-            },
-            consoleMessages: this.readConsole?.(),
-          };
+          if (!webnnSignature.value) {
+            console.error(gpuSignature.error);
+            console.error(cpuSignature.error);
+            console.error(webnnSignature.error);
+            console.error(`GPU, CPU, and WebNN failed to load`);
+            return {
+              results: {
+                [LITERT_WASM_CPU]: cpuSignature,
+                [LITERT_WASM_GPU]: gpuSignature,
+                [LITERT_WASM_WEBNN]: webnnSignature,
+              },
+              consoleMessages: this.readConsole?.(),
+            };
+          }
+          fakeInputs = makeFakeInputs(webnnSignature.value);
+        } else {
+          fakeInputs = makeFakeInputs(cpuSignature.value);
         }
-        fakeInputs = makeFakeInputs(cpuSignature.value);
       } else {
         fakeInputs = makeFakeInputs(gpuSignature.value);
       }
@@ -182,6 +295,7 @@ export class LiteRtModelRunner implements ModelRunner {
         results: {
           [LITERT_WASM_CPU]: {error},
           [LITERT_WASM_GPU]: {error},
+          [LITERT_WASM_WEBNN]: {error},
         },
         consoleMessages: this.readConsole?.(),
       };
@@ -189,11 +303,13 @@ export class LiteRtModelRunner implements ModelRunner {
 
     let gpuResult: Maybe<ModelResult>;
     let cpuResult: Maybe<ModelResult>;
+    let webnnResult: Maybe<ModelResult>;
 
     if (gpuSignature.value) {
       gpuResult = await toMaybe(
           () => this.runModel(
-              gpuSignature.value!, fakeInputs, benchmarkRunCount));
+              gpuSignature.value!, fakeInputs, benchmarkRunCount,
+              warmupRunCount, convertTensorsPerRun));
     } else {
       gpuResult = gpuSignature;  // Pass forward the error
     }
@@ -203,9 +319,19 @@ export class LiteRtModelRunner implements ModelRunner {
       await Promise.all(Object.values(fakeInputs).map(tensor => tensor.data()));
       cpuResult = await toMaybe(
           () => this.runModel(
-              cpuSignature.value!, fakeInputs, benchmarkRunCount));
+              cpuSignature.value!, fakeInputs, benchmarkRunCount,
+              warmupRunCount, convertTensorsPerRun));
     } else {
       cpuResult = cpuSignature;  // Pass forward the error
+    }
+
+    if (webnnSignature.value) {
+      webnnResult = await toMaybe(
+          () => this.runModel(
+              webnnSignature.value!, fakeInputs, benchmarkRunCount,
+              warmupRunCount, convertTensorsPerRun));
+    } else {
+      webnnResult = webnnSignature;  // Pass forward the error
     }
 
     if (cpuResult.value && gpuResult.value) {
@@ -213,10 +339,20 @@ export class LiteRtModelRunner implements ModelRunner {
           compareResults(cpuResult.value, gpuResult.value);
     }
 
+    if (cpuResult.value && webnnResult.value) {
+      webnnResult.value.meanSquaredError =
+          compareResults(cpuResult.value, webnnResult.value);
+    }
+
+    for (const tensor of Object.values(fakeInputs)) {
+      tensor.dispose();
+    }
+
     return {
       results: {
         [LITERT_WASM_CPU]: cpuResult,
         [LITERT_WASM_GPU]: gpuResult,
+        [LITERT_WASM_WEBNN]: webnnResult,
       },
       consoleMessages: this.readConsole?.(),
     };

@@ -29,11 +29,18 @@ export const LITERT_WASM_CPU = 'LiteRT WASM CPU';
 export const LITERT_WASM_GPU = 'LiteRT WebGPU';
 
 /**
+ * Well-known name for the LiteRT WebNN accelerator.
+ * This should be unique. It is stored in JSON and displayed in the UI.
+ */
+export const LITERT_WASM_WEBNN = 'LiteRT WebNN';
+
+/**
  * A class that runs a model for testing.
  */
 export interface ModelRunner {
   getSignatures(): Array<{name: string}>;
-  run(signature?: string, benchmarkRunCount?: number): Promise<RunResult>;
+  run(signature?: string, benchmarkRunCount?: number, warmupRunCount?: number,
+      convertTensorsPerRun?: boolean): Promise<RunResult>;
 }
 
 /**
@@ -103,7 +110,7 @@ export interface RunResult {
 export function compareResults(
     firstResult: ModelResult, secondResult: ModelResult) {
   const firstKeys = new Set(Object.keys(firstResult.tensors.record!));
-  const secondKeys = new Set(Object.keys(firstResult.tensors.record!));
+  const secondKeys = new Set(Object.keys(secondResult.tensors.record!));
 
   const difference = symmetricDifference(firstKeys, secondKeys);
   if (difference.size) {

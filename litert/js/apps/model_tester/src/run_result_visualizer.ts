@@ -24,7 +24,7 @@ import {when} from 'lit/directives/when.js';
 
 import {cardStyles, hostStyles, typographyStyles} from './common_styles';
 import type {BenchmarkSample, Maybe, ModelResult, RunResult, SerializableTensor} from './model_runner';
-import {LITERT_WASM_CPU, LITERT_WASM_GPU} from './model_runner';
+import {LITERT_WASM_CPU, LITERT_WASM_GPU, LITERT_WASM_WEBNN} from './model_runner';
 
 interface BenchmarkChartData {
   name: string;
@@ -199,6 +199,7 @@ export class RunResultVisualizer extends LitElement {
   static AcceleratorColors: Record<string, string> = {
     [LITERT_WASM_CPU]: '#64b5f6',
     [LITERT_WASM_GPU]: '#81c784',
+    [LITERT_WASM_WEBNN]: '#ba68c8',
   };
 
   protected override willUpdate(

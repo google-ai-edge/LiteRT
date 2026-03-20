@@ -94,12 +94,20 @@ export class ModelTester extends LitElement {
   settingsDefinition: Settings = [
     {key: 'benchmark', label: 'Run Benchmark', dataType: 'boolean'},
     {key: 'benchmarkRuns', label: 'Number of Runs', dataType: 'number'},
+    {key: 'warmupRuns', label: 'Number of Warmup Runs', dataType: 'number'},
+    {
+      key: 'convertTensorsPerRun',
+      label: 'Convert Tensors Per Run',
+      dataType: 'boolean'
+    },
   ];
 
   @state()
   settingsValues: SettingValues = [
     {key: 'benchmark', value: true},
     {key: 'benchmarkRuns', value: 10},
+    {key: 'warmupRuns', value: 3},
+    {key: 'convertTensorsPerRun', value: true},
   ];
 
   @query('console-mirror') private consoleMirror!: ConsoleMirror;
@@ -112,6 +120,12 @@ export class ModelTester extends LitElement {
     // Only run benchmark if it is enabled.
     return this.getSetting('benchmark') ?
         (this.getSetting('benchmarkRuns') as number) :
+        0;
+  }
+
+  private getWarmupCount() {
+    return this.getSetting('benchmark') ?
+        (this.getSetting('warmupRuns') as number) :
         0;
   }
 
@@ -142,6 +156,8 @@ export class ModelTester extends LitElement {
       this.runResult = await this.modelRunner?.run(
           this.selectedSignatureId,
           this.getBenchmarkCount(),
+          this.getWarmupCount(),
+          this.getSetting('convertTensorsPerRun') as boolean,
       );
       return this.runResult;
     } finally {
@@ -188,8 +204,8 @@ export class ModelTester extends LitElement {
       <div class="header">
         <h1>LiteRT Web Model Tester</h1>
         <p>
-          This tool tests a LiteRT model running in WebGPU against a set of fake
-          inputs to check if there are any WebGPU errors when loading or
+          This tool tests a LiteRT model running in WebGPU and WebNN against a set of fake
+          inputs to check if there are any errors when loading or
           running the model.
         </p>
       </div>
