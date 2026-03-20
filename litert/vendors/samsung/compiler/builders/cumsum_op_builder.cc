@@ -1,0 +1,52 @@
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
+
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_model.h"
+
+namespace litert::samsung {
+
+constexpr int32_t kInputIndex = 0;
+constexpr int32_t kOutputIndex = 0;
+
+Expected<OpWrapper> BuildCumsumOp(const Op &op) {
+  OpWrapper op_wrapper("CumSum");
+
+  op_wrapper.AddInput(op.Inputs()[kInputIndex]);
+  op_wrapper.AddOutput(op.Outputs()[kOutputIndex]);
+
+  bool exclusive{};
+  bool reverse{};
+  int32_t axis = 0;
+  if (auto status = LiteRtGetCumsumExclusiveOption(op.Get(), &exclusive);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get exclusive.");
+  }
+  if (auto status = LiteRtGetCumsumReverseOption(op.Get(), &reverse);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get reverse.");
+  }
+
+  op_wrapper.AddParam("exclusive", static_cast<int32_t>(exclusive));
+  op_wrapper.AddParam("reverse", static_cast<int32_t>(reverse));
+  op_wrapper.AddParam("axis", axis);
+
+  return op_wrapper;
+}
+}  // namespace litert::samsung

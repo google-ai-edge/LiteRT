@@ -38,6 +38,7 @@
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
@@ -278,6 +279,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
     Expected<OpWrapper> op_wrapper =
         Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
     switch (op.Code()) {
+      case kLiteRtOpCodeTflAbs:
+        op_wrapper = std::move(BuildAbsOp(op));
+        break;
       case kLiteRtOpCodeTflAdd:
         op_wrapper = std::move(BuildAddOp(op));
         break;
@@ -296,11 +300,20 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflConv2d:
         op_wrapper = std::move(BuildConv2dOp(op));
         break;
+      case kLiteRtOpCodeTflCos:
+        op_wrapper = std::move(BuildCosOp(op));
+        break;
+      case kLiteRtOpCodeTflCumsum:
+        op_wrapper = std::move(BuildCumsumOp(op));
+        break;
       case kLiteRtOpCodeTflDepthwiseConv2d:
         op_wrapper = std::move(BuildDepthwiseConv2dOp(op));
         break;
       case kLiteRtOpCodeTflDiv:
         op_wrapper = std::move(BuildDivOp(op));
+        break;
+      case kLiteRtOpCodeTflEqual:
+        op_wrapper = std::move(BuildEqualOp(op));
         break;
       case kLiteRtOpCodeTflExp:
         op_wrapper = std::move(BuildExpOp(op));
