@@ -19,7 +19,6 @@
 
 namespace litert::samsung {
 
-constexpr int kParamsIndex = 0;
 constexpr int kOutIndex = 0;
 
 Expected<OpWrapper> BuildGatherOp(const Op &op) {
@@ -28,12 +27,6 @@ Expected<OpWrapper> BuildGatherOp(const Op &op) {
     op_wrapper.AddInput(input);
   }
   op_wrapper.AddOutput(op.Outputs()[kOutIndex]);
-
-  if (op.Inputs()[kParamsIndex].HasWeights()) {
-    op_wrapper.AddParam("input_type", "indices");
-  } else {
-    op_wrapper.AddParam("input_type", "params");
-  }
 
   int32_t axis = 0, batch_dims = 0;
   LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(op.Get(), &axis));
