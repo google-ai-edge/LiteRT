@@ -66,6 +66,14 @@ LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
 LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
                                   LiteRtCustomEvent custom_event);
 
+// Returns the custom event from the LiteRtEvent. Event type must be
+// LiteRtEventTypeCustom.
+LiteRtStatus LiteRtGetCustomEvent(LiteRtEvent event,
+                                  LiteRtCustomEvent* custom_event);
+
+// Returns the native event of the custom event if supported.
+LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native);
+
 LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type);
 
 LiteRtStatus LiteRtGetEventSyncFenceFd(LiteRtEvent event, int* sync_fence_fd);
@@ -75,9 +83,6 @@ LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event,
 
 LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event,
                                    LiteRtEglSyncKhr* egl_sync);
-
-// Returns the native event of the custom event if supported.
-LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native);
 
 // Pass -1 for timeout_in_ms for indefinite wait.
 LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms);

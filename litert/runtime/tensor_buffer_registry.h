@@ -18,6 +18,7 @@
 #include <unordered_map>
 
 #include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 
@@ -34,6 +35,11 @@ struct CustomTensorBufferHandlers {
   // Optional function to import an existing buffer.
   // TODO(b/446717438): Merge this with the create function.
   ::ImportCustomTensorBuffer import_func;
+
+  // The tag of the environment option that holds the GPU device.
+  LiteRtEnvOptionTag device_tag;
+  // The tag of the environment option that holds the GPU queue.
+  LiteRtEnvOptionTag queue_tag;
 };
 
 class TensorBufferRegistry {

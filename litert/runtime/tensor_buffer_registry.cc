@@ -33,7 +33,9 @@ litert::Expected<void> TensorBufferRegistry::RegisterHandlers(
         it->second.lock_func == handlers.lock_func &&
         it->second.unlock_func == handlers.unlock_func &&
         it->second.clear_func == handlers.clear_func &&
-        it->second.import_func == handlers.import_func) {
+        it->second.import_func == handlers.import_func &&
+        it->second.device_tag == handlers.device_tag &&
+        it->second.queue_tag == handlers.queue_tag) {
       LITERT_LOG(LITERT_INFO,
                  "Same custom tensor buffer handler has already been registered"
                  " for buffer type %s",
