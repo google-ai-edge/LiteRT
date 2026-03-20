@@ -12,31 +12,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
 
-#include "litert/c/litert_common.h"
+#include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
+
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
-constexpr int32_t kIOIndex = 0;
-constexpr int32_t kPermIndex = 1;
+constexpr int kKernelIndex = 1;
 
-Expected<OpWrapper> BuildTransposeOp(const Op &op) {
-  OpWrapper op_wrapper("Transpose");
+Expected<OpWrapper> BuildFullyConnectedOp(const Op &op) {
+  OpWrapper op_wrapper("FC");
 
-  const auto input = std::move(op.Inputs()[kIOIndex]);
-  op_wrapper.AddInput(input);
-  op_wrapper.AddOutput(op.Outputs()[kIOIndex]);
+  for (const auto &input : op.Inputs()) {
+    op_wrapper.AddInput(input);
+  }
+  for (const auto &output : op.Outputs()) {
+    op_wrapper.AddOutput(output);
+  }
 
-  LITERT_ASSIGN_OR_RETURN(auto perm,
-                          GetWeightDataAs<int32_t>(op.Inputs()[kPermIndex]));
-  op_wrapper.AddParam("perm", perm);
+  auto kernel_dimensions = GetDimensions(op.Inputs()[kKernelIndex]);
+  if (kernel_dimensions.size() != 2) {
+    return Error(
+        kLiteRtStatusErrorUnsupported,
+        absl::StrCat(
+            "Doesn't support Fully connected kernel dimension size : except "
+            "2, but get ",
+            kernel_dimensions.size()));
+  }
+  op_wrapper.AddParam("in_channels", kernel_dimensions[1]);
+  op_wrapper.AddParam("out_channels", kernel_dimensions[0]);
 
   return op_wrapper;
 }
-
 }  // namespace litert::samsung

@@ -82,6 +82,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:reshape_op_builder",
         "//litert/vendors/samsung/compiler/builders:softmax_op_builder",
         "//litert/vendors/samsung/compiler/builders:transpose_op_builder",
+        "//litert/vendors/samsung/compiler/builders:fully_connected_op_builder",
         "//litert/vendors/samsung:ai_litecore_api",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
