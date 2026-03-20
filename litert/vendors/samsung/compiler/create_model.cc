@@ -39,6 +39,7 @@
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
@@ -312,6 +313,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflExp:
         op_wrapper = std::move(BuildExpOp(op));
+        break;
+      case kLiteRtOpCodeTflFullyConnected:
+        op_wrapper = std::move(BuildFullyConnectedOp(op));
         break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = std::move(BuildLogisticOp(op));
