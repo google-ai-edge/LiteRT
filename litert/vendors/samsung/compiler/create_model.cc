@@ -52,6 +52,7 @@
 #include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/split_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/strided_slice_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
@@ -380,6 +381,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflSpaceToDepth:
         op_wrapper = std::move(BuildSpaceToDepthOp(op));
+        break;
+      case kLiteRtOpCodeTflSplit:
+        op_wrapper = std::move(BuildSplitOp(op));
         break;
       case kLiteRtOpCodeTflSqrt:
         op_wrapper = std::move(BuildSqrtOp(op));
