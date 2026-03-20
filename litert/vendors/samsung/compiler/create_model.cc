@@ -340,6 +340,12 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflGatherNd:
         op_wrapper = std::move(BuildGatherNdOp(op));
         break;
+      case kLiteRtOpCodeTflGreater:
+        op_wrapper = std::move(BuildGreaterOp(op));
+        break;
+      case kLiteRtOpCodeTflGreaterEqual:
+        op_wrapper = std::move(BuildGreaterEqualOp(op));
+        break;
       case kLiteRtOpCodeTflHardSwish:
         op_wrapper = std::move(BuildHardSwishOp(op));
         break;

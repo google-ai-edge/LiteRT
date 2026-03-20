@@ -29,6 +29,10 @@ Expected<OpWrapper> BuildDivOp(const Op &op);
 
 Expected<OpWrapper> BuildExpOp(const Op &op);
 
+Expected<OpWrapper> BuildGreaterOp(const Op &op);
+
+Expected<OpWrapper> BuildGreaterEqualOp(const Op &op);
+
 Expected<OpWrapper> BuildMaxOp(const Op &op);
 
 Expected<OpWrapper> BuildMinOp(const Op &op);
