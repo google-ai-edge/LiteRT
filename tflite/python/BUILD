@@ -413,7 +413,6 @@ py_library(
         ":tflite_keras_util",
         "//tflite/tools:flatbuffer_utils",
         "@absl_py//absl/logging",
-        "@flatbuffers//:runtime_py",
         "@org_tensorflow//tensorflow/core:protos_all_py",
         "@org_tensorflow//tensorflow/python/eager:function",
         "@org_tensorflow//tensorflow/python/framework:convert_to_constants",
@@ -422,6 +421,7 @@ py_library(
         "@org_tensorflow//tensorflow/python/grappler:tf_optimizer",
         "@org_tensorflow//tensorflow/python/training:saver",
         "@org_tensorflow//third_party/py/numpy",
+        "@pypi//flatbuffers",
     ],
 )
 
