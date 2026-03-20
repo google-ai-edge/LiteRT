@@ -79,6 +79,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:elementwise_op_builder",
         "//litert/vendors/samsung/compiler/builders:logistic_op_builder",
         "//litert/vendors/samsung/compiler/builders:pad_op_builder",
+        "//litert/vendors/samsung/compiler/builders:pool2d_op_builder",
         "//litert/vendors/samsung/compiler/builders:reduce_op_builder",
         "//litert/vendors/samsung/compiler/builders:relu_op_builder",
         "//litert/vendors/samsung/compiler/builders:reshape_op_builder",

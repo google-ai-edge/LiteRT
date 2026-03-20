@@ -43,6 +43,7 @@
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/pool2d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
@@ -295,6 +296,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflAdd:
         op_wrapper = std::move(BuildAddOp(op));
         break;
+      case kLiteRtOpCodeTflAveragePool2d:
+        op_wrapper = std::move(BuildAvgPool2dOp(op));
+        break;
       case kLiteRtOpCodeTflBatchMatmul:
         op_wrapper = std::move(BuildBatchMatMulOp(op));
         break;
@@ -321,6 +325,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = std::move(BuildLogisticOp(op));
+        break;
+      case kLiteRtOpCodeTflMaxPool2d:
+        op_wrapper = std::move(BuildMaxPool2dOp(op));
         break;
       case kLiteRtOpCodeTflMean:
         op_wrapper = std::move(BuildReduceMeanOp(op));
