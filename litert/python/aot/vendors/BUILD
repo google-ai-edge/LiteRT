@@ -16,7 +16,6 @@ load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_te
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_python_internal_users"],
 )
 
 pytype_strict_contrib_test(
