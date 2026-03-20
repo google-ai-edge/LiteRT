@@ -91,6 +91,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:gathernd_op_builder",
         "//litert/vendors/samsung/compiler/builders:slice_op_builder",
         "//litert/vendors/samsung/compiler/builders:spacetodepth_op_builder",
+        "//litert/vendors/samsung/compiler/builders:split_op_builder",
         "//litert/vendors/samsung/compiler/builders:strided_slice_op_builder",
 	"//litert/vendors/samsung:ai_litecore_api",
         "@com_google_absl//absl/algorithm:container",
