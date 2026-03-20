@@ -48,6 +48,7 @@
 #include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
 
@@ -354,6 +355,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflReshape:
         op_wrapper = std::move(BuildReshapeOp(op));
+        break;
+      case kLiteRtOpCodeTflSlice:
+        op_wrapper = std::move(BuildSliceOp(op));
         break;
       case kLiteRtOpCodeTflSoftmax:
         op_wrapper = std::move(BuildSoftmaxOp(op));
