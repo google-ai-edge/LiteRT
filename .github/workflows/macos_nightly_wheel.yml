@@ -12,7 +12,7 @@ concurrency:
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
-    runs-on: macos-15-large # Using an Apple Silicon runner
+    runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           # The month is used as a cache-buster.
-          CACHE_MONTH=$(date +%Y-%m)
+          CACHE_MONTH=$(TZ='America/Los_Angeles' date +%Y-%m)
           CACHE_RESTORE_KEY_2="${{ github.workflow }}-${{ matrix.python-version }}-$CACHE_MONTH"
           echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
 
@@ -106,6 +106,7 @@ jobs:
       - name: Run build script
         shell: bash
         run: |
+          export NIGHTLY_RELEASE_DATE=$(TZ='America/Los_Angeles' date +%Y%m%d)
           export CI_BUILD_PYTHON=python${{ matrix.python-version }}
           export HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}
           export USE_LOCAL_TF=false
@@ -131,7 +132,7 @@ jobs:
     name: "Upload Nightly Wheels to PyPI"
     runs-on: ubuntu-latest
     needs: build_wheels
-    if: success()
+    if: success() && github.ref == 'refs/heads/main'
     steps:
       - name: Set up Python
         uses: actions/setup-python@v5
