@@ -65,4 +65,25 @@ Expected<OpWrapper> BuildReduceMeanOp(const Op &op) {
 
   return BuildGeneralReduceOp(op, "ReduceMean", keep_dims);
 }
+
+Expected<OpWrapper> BuildReduceMaxOp(const Op &op) {
+  bool keep_dims{};
+  if (auto status = LiteRtGetReduceMaxKeepDimsOption(op.Get(), &keep_dims);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get keep_dims of max");
+  }
+
+  return BuildGeneralReduceOp(op, "ReduceMax", keep_dims);
+}
+
+Expected<OpWrapper> BuildReduceMinOp(const Op &op) {
+  bool keep_dims{};
+  if (auto status = LiteRtGetReduceMinKeepDimsOption(op.Get(), &keep_dims);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get keep_dims of min");
+  }
+
+  return BuildGeneralReduceOp(op, "ReduceMin", keep_dims);
+}
+
 }  // namespace litert::samsung
