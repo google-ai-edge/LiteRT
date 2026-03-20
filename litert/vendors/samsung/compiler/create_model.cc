@@ -349,6 +349,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflMinimum:
         op_wrapper = std::move(BuildMinOp(op));
         break;
+      case kLiteRtOpCodeTflMirrorPad:
+        op_wrapper = std::move(BuildMirrorPadOp(op));
+        break;
       case kLiteRtOpCodeTflMaxPool2d:
         op_wrapper = std::move(BuildMaxPool2dOp(op));
         break;

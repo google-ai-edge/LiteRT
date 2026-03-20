@@ -20,6 +20,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
+#include "tflite/schema/schema_generated.h"
 
 constexpr int32_t kIOIndex = 0;
 constexpr int32_t kPaddingIndex = 1;
@@ -43,11 +44,10 @@ Expected<std::vector<int32_t>> ConvertPaddings(int32_t num_of_pad_axes,
   return converted_paddings;
 }
 
-Expected<OpWrapper> BuildPadOp(const Op &op) {
+Expected<OpWrapper> BuildGeneralPadOp(const Op &op) {
   OpWrapper op_wrapper("Pad");
 
-  const auto input = std::move(op.Inputs()[kIOIndex]);
-  op_wrapper.AddInput(input);
+  op_wrapper.AddInput(op.Inputs()[kIOIndex]);
   op_wrapper.AddOutput(op.Outputs()[kIOIndex]);
 
   auto num_of_pad_axes = GetDimensions(op.Inputs()[kPaddingIndex]).at(0);
@@ -69,6 +69,13 @@ Expected<OpWrapper> BuildPadOp(const Op &op) {
   }
   op_wrapper.AddParam("pads", converted_paddings);
 
+  return op_wrapper;
+}
+
+Expected<OpWrapper> BuildPadOp(const Op &op) {
+  LITERT_ASSIGN_OR_RETURN(auto op_wrapper, BuildGeneralPadOp(op));
+
+  const auto input = std::move(op.Inputs()[kIOIndex]);
   float constant_pad_val = 0;
   if (op.Inputs().size() > kConstantValueIndex) {
     LITERT_ASSIGN_OR_RETURN(
@@ -85,6 +92,16 @@ Expected<OpWrapper> BuildPadOp(const Op &op) {
   }
 
   op_wrapper.AddParam("constant_value", constant_pad_val);
+  return op_wrapper;
+}
+
+Expected<OpWrapper> BuildMirrorPadOp(const Op &op) {
+  LITERT_ASSIGN_OR_RETURN(auto op_wrapper, BuildGeneralPadOp(op));
+
+  uint32_t mode = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetMirrorPadModeOption(op.Get(), &mode));
+  const char *pad_mode = tflite::EnumNamesMirrorPadMode()[mode];
+  op_wrapper.AddParam("mode", pad_mode);
 
   return op_wrapper;
 }
