@@ -169,4 +169,19 @@ std::vector<std::vector<std::string>> GoogleTensorOptions::GetTestingFlags()
   return testing_flags;
 }
 
+void GoogleTensorOptions::SetPerformanceMode(PerformanceMode mode) {
+  LrtGoogleTensorOptions options_data = Get();
+  LrtGoogleTensorOptionsSetPerformanceMode(
+      options_data,
+      static_cast<LiteRtGoogleTensorOptionsPerformanceMode>(mode));
+}
+
+GoogleTensorOptions::PerformanceMode GoogleTensorOptions::GetPerformanceMode()
+    const {
+  LrtGoogleTensorOptions options_data = Get();
+  LiteRtGoogleTensorOptionsPerformanceMode performance_mode;
+  LrtGoogleTensorOptionsGetPerformanceMode(options_data, &performance_mode);
+  return static_cast<PerformanceMode>(performance_mode);
+}
+
 }  // namespace litert::google_tensor

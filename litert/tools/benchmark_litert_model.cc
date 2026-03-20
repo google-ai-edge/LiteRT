@@ -41,6 +41,7 @@ limitations under the License.
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_cpu_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -125,6 +126,12 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     mtk_opts.SetPerformanceMode(
         kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost);
     mtk_opts.SetEnableL1CacheOptimizations(true);
+
+    // Google Tensor options
+    LITERT_ASSIGN_OR_ABORT(auto& google_tensor_opts,
+                           compilation_options.GetGoogleTensorOptions());
+    google_tensor_opts.SetPerformanceMode(
+        google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
     // TODO(yunandrew): Add options for other NPU backends.
   }
 

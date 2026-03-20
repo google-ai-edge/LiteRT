@@ -20,16 +20,22 @@
 #include <optional>
 #include <utility>
 
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+
 #if __ANDROID__
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
 
+#include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
@@ -41,6 +47,43 @@
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace gt = litert::google_tensor;
+
+namespace {
+std::optional<LiteRtDispatchDeviceContextT::GoogleTensorOptionsData>
+GetGoogleTensorOptions(LiteRtOptions options) {
+  if (options == nullptr) return std::nullopt;
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LiteRtGetOpaqueOptions(options, &opaque_opts);
+  if (opaque_opts == nullptr) return std::nullopt;
+
+  void* payload = nullptr;
+  if (LiteRtFindOpaqueOptionsData(opaque_opts,
+                                  LrtGoogleTensorOptionsGetIdentifier(),
+                                  &payload) != kLiteRtStatusOk) {
+    return std::nullopt;
+  }
+
+  // We assume the payload is a const char* pointing to a TOML string.
+  LrtGoogleTensorOptions google_tensor_options;
+  if (LrtCreateGoogleTensorOptionsFromToml(
+          reinterpret_cast<const char*>(payload), &google_tensor_options) !=
+      kLiteRtStatusOk) {
+    return std::nullopt;
+  }
+  LITERT_LOG(LITERT_INFO, "Found GoogleTensorOptions");
+
+  // Parse the performance mode.
+  LiteRtDispatchDeviceContextT::GoogleTensorOptionsData
+      google_tensor_options_data;
+  LiteRtGoogleTensorOptionsPerformanceMode performance_mode;
+  if (LrtGoogleTensorOptionsGetPerformanceMode(
+          google_tensor_options, &performance_mode) == kLiteRtStatusOk) {
+    google_tensor_options_data.performance_mode = performance_mode;
+  }
+
+  return google_tensor_options_data;
+}
+}  // namespace
 
 LiteRtStatus LiteRtDispatchDeviceContextT::Create(
     LiteRtOptions options, LiteRtDispatchDeviceContext& device_context) {
@@ -64,8 +107,12 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   std::optional<litert::LiteRtDarwinnRuntimeOptionsT> options_data =
       gt::GetDarwinnOptionsData(options);
+  LITERT_RETURN_IF_ERROR(
+      gt::ApplyDarwinnOptionsToDeviceContext(device_context, options_data));
   device_context->darwinn_options() = std::move(options_data);
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+
+  device_context->google_tensor_options() = GetGoogleTensorOptions(options);
 
   std::move(thr_context_cleanup).Cancel();
   return kLiteRtStatusOk;
@@ -236,5 +283,13 @@ LiteRtStatus LiteRtDispatchDeviceContextT::UnregisterGraph(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchDeviceContextT::AnnotateSystemAttribute(
+    const char* absl_nonnull key, const char* absl_nonnull value) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrVendorSetSystemAttributeStr(thr_context_, key, value),
+      "Failed to set system attribute %s to %s", key, value);
   return kLiteRtStatusOk;
 }
