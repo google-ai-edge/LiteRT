@@ -34,6 +34,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
@@ -41,8 +42,9 @@
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
@@ -320,6 +322,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = std::move(BuildLogisticOp(op));
         break;
+      case kLiteRtOpCodeTflMean:
+        op_wrapper = std::move(BuildReduceMeanOp(op));
+        break;
       case kLiteRtOpCodeTflMul:
         op_wrapper = std::move(BuildMulOp(op));
         break;
@@ -327,11 +332,17 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflPadv2:
         op_wrapper = std::move(BuildPadOp(op));
         break;
+      case kLiteRtOpCodeTflRelu:
+        op_wrapper = std::move(BuildReLUOp(op));
+        break;
       case kLiteRtOpCodeTflReshape:
         op_wrapper = std::move(BuildReshapeOp(op));
         break;
       case kLiteRtOpCodeTflSoftmax:
         op_wrapper = std::move(BuildSoftmaxOp(op));
+        break;
+      case kLiteRtOpCodeTflSum:
+        op_wrapper = std::move(BuildReduceSumOp(op));
         break;
       case kLiteRtOpCodeTflTranspose:
         op_wrapper = std::move(BuildTransposeOp(op));
