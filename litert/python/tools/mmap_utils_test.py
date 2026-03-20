@@ -15,6 +15,7 @@
 """Test mmap_utils with both local and non-local filesystems."""
 
 import logging
+import mmap
 import os
 import sys
 import tempfile
@@ -164,6 +165,88 @@ class MmapUtilsTest(googletest.TestCase):
     mmap_utils.set_file_contents(self._mappable_path, self._test_data)
     with open(self._mappable_path, 'rb') as f:
       self.assertEqual(self._test_data, f.read())
+
+  def test_advise_sequential_mmap(self):
+    buffer = mmap_utils.get_mapped_buffer(
+        self._mappable_path, len(self._test_data)
+    )
+    # This should not raise any exception.
+    mmap_utils.advise_sequential(buffer)
+
+  def test_advise_sequential_memoryview_mmap(self):
+    buffer = mmap_utils.get_file_contents(self._mappable_path)
+    self.assertIsInstance(buffer, memoryview)
+    # This should not raise any exception.
+    mmap_utils.advise_sequential(buffer)
+
+  def test_advise_sequential_non_mmap(self):
+    buffer = bytearray(self._test_data)
+    # This should not raise any exception and should just return.
+    mmap_utils.advise_sequential(buffer)
+
+  def test_advise_sequential_bytearray(self):
+    # bytearray supports the buffer protocol but is not a memoryview.
+    buffer = bytearray(self._test_data)
+    # This should not raise any exception.
+    mmap_utils.advise_sequential(buffer)
+
+  def test_advise_sequential_nested_memoryview(self):
+    buffer = mmap_utils.get_file_contents(self._mappable_path)
+    nested_buffer = memoryview(buffer)
+    # This should not raise any exception.
+    mmap_utils.advise_sequential(nested_buffer)
+
+  def test_advise_dont_need_mmap(self):
+    buffer = mmap_utils.get_mapped_buffer(
+        self._mappable_path, len(self._test_data)
+    )
+    # This should not raise any exception.
+    mmap_utils.advise_dont_need(buffer, 0, len(self._test_data))
+
+  def test_advise_dont_need_memoryview_mmap(self):
+    buffer = mmap_utils.get_file_contents(self._mappable_path)
+    self.assertIsInstance(buffer, memoryview)
+    # This should not raise any exception.
+    mmap_utils.advise_dont_need(buffer, 0, len(self._test_data))
+
+  def test_advise_dont_need_memoryview_slice(self):
+    content = b'0123456789' * 10
+    path = self.create_tempfile(content=content).full_path
+    mv = mmap_utils.get_file_contents(path)
+    # Create a slice
+    slice_offset = 25
+    slice_length = 10
+    mv_slice = mv[slice_offset : slice_offset + slice_length]
+
+    try:
+      # This should not raise any exceptions and should correctly call
+      # m.madvise with inferred offset=25 and length=10.
+      mmap_utils.advise_dont_need(mv_slice)
+
+      # Test with explicit offset relative to slice
+      # This should result in m.madvise(MADV_DONTNEED, 25 + 2, 5)
+      mmap_utils.advise_dont_need(mv_slice, offset=2, length=5)
+    finally:
+      mv_slice.release()
+      mv.release()
+
+  def test_advise_sequential_memoryview_slice(self):
+    content = b'0123456789' * 10
+    path = self.create_tempfile(content=content).full_path
+    mv = mmap_utils.get_file_contents(path)
+    slice_offset = 25
+    mv_slice = mv[slice_offset:]
+    try:
+      # This should not raise any exceptions.
+      mmap_utils.advise_sequential(mv_slice)
+    finally:
+      mv_slice.release()
+      mv.release()
+
+  def test_advise_dont_need_non_mmap(self):
+    buffer = bytearray(self._test_data)
+    # This should not raise any exception and should just return.
+    mmap_utils.advise_dont_need(buffer)
 
 
 if __name__ == '__main__':
