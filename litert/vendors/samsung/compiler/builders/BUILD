@@ -147,6 +147,19 @@ cc_library(
 )
 
 cc_library(
+    name = "pool2d_op_builder",
+    srcs = ["pool2d_op_builder.cc"],
+    hdrs = ["pool2d_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
     name = "reduce_op_builder",
     srcs = ["reduce_op_builder.cc"],
     hdrs = ["reduce_op_builder.h"],
