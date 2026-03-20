@@ -33,6 +33,7 @@
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers  // IWYU pragma: keep
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
@@ -148,8 +149,8 @@ void ExpectHostBufferEquals(const WeightAccess* access,
   ASSERT_NE(access, nullptr);
   const auto host_buffer = access->GetHostBuffer();
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(host_buffer, &host_mem_addr,
-                                   kLiteRtTensorBufferLockModeRead),
+  ASSERT_EQ(LrtGetRuntimeContext()->lock_tensor_buffer(
+                host_buffer, &host_mem_addr, kLiteRtTensorBufferLockModeRead),
             kLiteRtStatusOk);
   auto actual = absl::MakeSpan(static_cast<const uint8_t*>(host_mem_addr),
                                expected.size());
@@ -172,7 +173,8 @@ void ExpectHostBufferMetadata(const WeightAccess* access) {
   LiteRtTensorBuffer host_buffer = access->GetHostBuffer();
 
   LiteRtRankedTensorType tensor_type;
-  ASSERT_EQ(LiteRtGetTensorBufferTensorType(host_buffer, &tensor_type),
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_tensor_type(host_buffer,
+                                                                  &tensor_type),
             kLiteRtStatusOk);
 
   ASSERT_EQ(tensor_type.element_type, kLiteRtElementTypeUInt8);
@@ -182,7 +184,8 @@ void ExpectHostBufferMetadata(const WeightAccess* access) {
   ASSERT_EQ(layout.dimensions[0], kTensorElementCount);
 
   size_t packed_size;
-  ASSERT_EQ(LiteRtGetTensorBufferPackedSize(host_buffer, &packed_size),
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_packed_size(host_buffer,
+                                                                  &packed_size),
             kLiteRtStatusOk);
   EXPECT_EQ(packed_size, kSliceLengthBytes);
 }
@@ -194,7 +197,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromFilesystemPath) {
   WriteWeightsFile(kGroupName, payload);
 
   auto loader = CreateLiteRtWeightLoader(
-      model.model(),
+      LrtGetRuntimeContext(), model.model(),
       /*model_directory=*/std::string(::testing::TempDir()),
       /*scoped_weight_source=*/nullptr);
   ASSERT_NE(loader, nullptr);
@@ -229,7 +232,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   auto scoped_source = std::make_unique<ScopedWeightSource>(
       std::move(*scoped_file_or), std::move(sections));
 
-  auto loader = CreateLiteRtWeightLoader(model.model(),
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
                                          /*model_directory=*/std::nullopt,
                                          std::move(scoped_source));
   ASSERT_NE(loader, nullptr);
