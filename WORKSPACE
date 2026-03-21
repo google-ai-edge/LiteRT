@@ -209,9 +209,9 @@ maven_install(
         "androidx.lifecycle:lifecycle-common:2.8.7",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
         "com.google.guava:guava:33.4.6-android",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.0",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2",
     ],
     repositories = [
         "https://jcenter.bintray.com",
@@ -225,8 +225,8 @@ maven_install(
 # Kotlin rules
 http_archive(
     name = "rules_kotlin",
-    sha256 = "e1448a56b2462407b2688dea86df5c375b36a0991bd478c2ddd94c97168125e2",
-    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.1.3/rules_kotlin-v2.1.3.tar.gz",
+    sha256 = "411db26afb3492cc8351b5b5349931522afe2c54f2651b6d127730a1256d0f60",
+    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.2.2/rules_kotlin-v2.2.2.tar.gz",
 )
 
 # Sentencepiece
