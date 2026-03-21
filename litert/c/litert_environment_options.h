@@ -60,9 +60,6 @@ typedef enum {
   // Bitmask of LiteRtHwAccelerators to auto-register when the environment is
   // created. If unset, LiteRT auto-registers all supported accelerators.
   kLiteRtEnvOptionTagAutoRegisterAccelerators = 24,
-
-  // Internal use only. Virtual null tag for option that is not defined.
-  kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
 
 /// An object that holds option data for the LiteRtEnvironment.
