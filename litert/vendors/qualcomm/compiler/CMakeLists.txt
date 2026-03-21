@@ -24,9 +24,8 @@ target_include_directories(qnn_compiler_plugin
 )
 
 target_link_libraries(qnn_compiler_plugin
-    PUBLIC
-        qnn_core
     PRIVATE
+        qnn_core
         qnn_wrappers
         qnn_builders
         qnn_manager
@@ -67,4 +66,3 @@ elseif(UNIX)
         "-Wl,--end-group"
     )
 endif()
-

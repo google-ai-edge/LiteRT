@@ -19,9 +19,8 @@ target_include_directories(dispatch_api_qualcomm_so
 )
 
 target_link_libraries(dispatch_api_qualcomm_so
-    PUBLIC
-        qnn_core
     PRIVATE
+        qnn_core
         qnn_manager
         qnn_context_binary_info
         litert_runtime_c_api_static
