@@ -191,6 +191,7 @@ cc_test(
         "notsan",
     ],
     deps = [
+        ":example_common",
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -260,6 +261,7 @@ cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
     deps = [
+        ":example_common",
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",

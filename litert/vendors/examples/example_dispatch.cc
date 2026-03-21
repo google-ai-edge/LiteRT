@@ -93,13 +93,27 @@ class LiteRtDispatchInvocationContextT {
       return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
                              "Inputs are null");
     }
-    LITERT_ASSIGN_OR_RETURN(
-        auto global_graph,
-        ::litert::example::ExampleGlobalGraph::Parse(
-            ::litert::BufferRef<uint8_t>(
-                exec_bytecode_buffer->base_addr,
-                exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
-                exec_bytecode_buffer->offset)));
+
+    ::litert::example::ExampleGlobalGraph global_graph;
+
+    if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
+      auto* handle_graph =
+          reinterpret_cast<const ::litert::example::ExampleGlobalGraph*>(
+              exec_bytecode_buffer->base_addr);
+      if (!handle_graph) {
+        return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                             "Invalid JIT handle");
+      }
+      global_graph = *handle_graph;
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          global_graph,
+          ::litert::example::ExampleGlobalGraph::Parse(
+              ::litert::BufferRef<uint8_t>(
+                  exec_bytecode_buffer->base_addr,
+                  exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
+                  exec_bytecode_buffer->offset)));
+    }
 
     // Find the subgraph.
     if (global_graph.subgraphs_.find(function_name) ==

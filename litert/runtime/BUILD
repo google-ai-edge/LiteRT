@@ -690,6 +690,8 @@ cc_test(
     data = [
         "//litert/test:testdata/simple_add_dynamic_shape.tflite",
         "//litert/test:testdata/simple_model.tflite",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
     ],
     linkopts = litert_android_linkopts(),
     # require GPU to run OpenCL tests.

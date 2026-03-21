@@ -119,7 +119,22 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
 struct LiteRtCompiledResultT {
   std::string global_byte_code;
   std::vector<std::string> per_op_data;
+  std::unique_ptr<::litert::example::ExampleGlobalGraph> global_graph;
 };
+
+LiteRtStatus LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
+                                           LiteRtParamIndex call_idx,
+                                           const void** handle) {
+  if (!compiled_result) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!compiled_result->global_graph) {
+    *handle = nullptr;
+    return kLiteRtStatusOk;
+  }
+  *handle = compiled_result->global_graph.get();
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex byte_code_idx,
@@ -167,7 +182,8 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
-  *compiler_plugin = new LiteRtCompilerPluginT;
+  auto* plugin = new LiteRtCompilerPluginT;
+  *compiler_plugin = plugin;
   return kLiteRtStatusOk;
 }
 
@@ -333,17 +349,30 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->per_op_data.resize(num_partitions);
 
-  ::litert::example::ExampleGlobalGraph global_graph;
+  bool disable_jit_handle = false;
+  if (soc_model && absl::string_view(soc_model) == "AoT_Only") {
+    disable_jit_handle = true;
+  }
+
+  ::litert::example::ExampleGlobalGraph build_graph;
 
   for (auto i = 0; i < num_partitions; ++i) {
     LITERT_ASSIGN_OR_RETURN(litert::Subgraph subgraph, model.Subgraph(i));
     LITERT_RETURN_IF_ERROR(::litert::example::CompileSinglePartition(
-        i, subgraph.Get(), global_graph));
+        i, subgraph.Get(), build_graph));
     result->per_op_data[i] = absl::StrFormat("partition_%d", i);
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto serialized, global_graph.Serialize());
+  LITERT_ASSIGN_OR_RETURN(auto serialized, build_graph.Serialize());
   result->global_byte_code = std::string(serialized.StrView());
+
+  if (!disable_jit_handle) {
+    result->global_graph =
+        std::make_unique<::litert::example::ExampleGlobalGraph>(
+            std::move(build_graph));
+  } else {
+    result->global_graph = nullptr;
+  }
 
   // print the global graph
   LITERT_LOG(LITERT_INFO, "global_graph: %s", result->global_byte_code.c_str());

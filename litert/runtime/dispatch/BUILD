@@ -118,6 +118,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
