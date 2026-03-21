@@ -523,15 +523,23 @@ Expected<PartitionResult> PartitionModel(
   // * Ensuring the plugin can compile the entire partition, and inlining it if
   // not.
   //
-  // 2. Standard non npu_call composite ops.
+  // 2. The composite op is an "odml.cpu_call", in which case it represents an
+  // explicit request to leave a portion of the model on the CPU.
   //
-  // 2.1 Composite op is supported by the plugin. Since a plugin is capable of
+  // In this case, the composite itself is NEVER selected for partitioning. Its
+  // decomposition subgraph is inlined back into the main subgraph AFTER the
+  // partitioning phase is complete. This ensures that the operations within
+  // the decomposition are not available for acceleration.
+  //
+  // 3. Standard non npu_call or cpu_call composite ops.
+  //
+  // 3.1 Composite op is supported by the plugin. Since a plugin is capable of
   // directly compile the composite op, the composite op will be selected
   // during partitioning. Therefore, all ops in the decomposition subgraph will
   // be ignored, furthermore, the decomposition subgraph will be removed from
   // the model.
   //
-  // 2.2 Composite op is not supported by the plugin. In this case, the
+  // 3.2 Composite op is not supported by the plugin. In this case, the
   // composite op will not be selected during partitioning. To give best effort
   // compilation, we inline the decomposition subgraph into the main subgraph,
   // that is, replace the composite op with the ops in the decomposition
@@ -559,12 +567,18 @@ Expected<PartitionResult> PartitionModel(
   auto input_num_sgs = model.NumSubgraphs();
   std::vector<size_t> selected_composite_subgraph_indexes;
 
+  // Track all cpu_call ops and their decomposition subgraphs for late inlining.
+  std::vector<std::pair<LiteRtOp, uint32_t>> cpu_calls;
+
   ForEachIr(&model, [&](LiteRtOp op) {
     auto info = GetOptionsAs<CompositeOptions>(op);
     if (!info) {
       return;
     }
     decomp_subgraphs.insert(info->subgraph);
+    if (info->name == CompositeOptions::kCpuCall) {
+      cpu_calls.push_back({op, info->subgraph});
+    }
   });
 
   // Build partition result via calling plugin on non-decomposition subgraphs.
@@ -583,14 +597,27 @@ Expected<PartitionResult> PartitionModel(
     if (!selected_ops) {
       return selected_ops.Error();
     }
-    // Find all composite ops (except npu_calls) that are not selected.
+
+    // Shield odml.cpu_call from being selected by the plugin.
+    selected_ops->erase(
+        std::remove_if(selected_ops->begin(), selected_ops->end(),
+                       [](const auto& pair) {
+                         auto info = GetOptionsAs<CompositeOptions>(pair.first);
+                         return info &&
+                                info->name == CompositeOptions::kCpuCall;
+                       }),
+        selected_ops->end());
+
+    // Find all composite ops (except npu_calls and cpu_calls) that are not
+    // selected.
     std::vector<LiteRtOp> ops_to_inline;
     for (auto& op : subgraph->Ops()) {
       auto info = GetOptionsAs<CompositeOptions>(op);
       if (!info) {
         continue;
       }
-      if (info->name == CompositeOptions::kNpuCall) {
+      if (info->name == CompositeOptions::kNpuCall ||
+          info->name == CompositeOptions::kCpuCall) {
         continue;
       }
       auto is_composite_selected = std::any_of(
@@ -618,6 +645,16 @@ Expected<PartitionResult> PartitionModel(
       // Re-do partitioning only if inlining happened.
       selected_ops->clear();
       selected_ops = compiler_plugin.Partition(subgraph, soc_model);
+
+      // Re-shield odml.cpu_call from being selected by the plugin.
+      selected_ops->erase(
+          std::remove_if(
+              selected_ops->begin(), selected_ops->end(),
+              [](const auto& pair) {
+                auto info = GetOptionsAs<CompositeOptions>(pair.first);
+                return info && info->name == CompositeOptions::kCpuCall;
+              }),
+          selected_ops->end());
     }
 
     // Record all decomposition subgraph indexes, where its compositie op will
@@ -651,6 +688,15 @@ Expected<PartitionResult> PartitionModel(
                "ops, from a total of %lu ops. resulted in %lu partitions.",
                i, num_selected_ops, num_ops, num_partitions);
   }
+
+  // Late inline all odml.cpu_call ops.
+  for (auto& [op, sg_idx] : cpu_calls) {
+    auto status = InlineSubgraph(model, *op, model.Subgraphs()[sg_idx]);
+    if (status) {
+      selected_composite_subgraph_indexes.push_back(sg_idx);
+    }
+  }
+
   ABSL_DCHECK_EQ(dispatch_ops.size(), model.NumSubgraphs() - input_num_sgs);
 
   // Update input_num_sgs to account for removed decomposition subgraphs.

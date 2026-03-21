@@ -25,6 +25,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -38,10 +39,12 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/tools/dump.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
@@ -332,6 +335,83 @@ TEST(PartitionModelTest, MultiSubgraphWithSelectedSubgraphs) {
 
   EXPECT_EQ(new_model.NumSubgraphs(), 1);
   EXPECT_EQ(new_model.Subgraphs().front()->Ops().size(), 1);
+}
+
+TEST(PartitionModelTest, ProtectedCpuCall) {
+  // Construct a model with a mul op inside a cpu_call.
+  // The plugin should NOT take the cpu_call, and it should be inlined.
+  LiteRtModelT model;
+  auto& main_subgraph = model.EmplaceSubgraph();
+  auto& decomp_subgraph = model.EmplaceSubgraph();
+
+  // Create tensors for mul in decomp.
+  auto& t1 = decomp_subgraph.EmplaceTensor();
+  t1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  auto& t2 = decomp_subgraph.EmplaceTensor();
+  t2.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  auto& t3 = decomp_subgraph.EmplaceTensor();
+  t3.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+
+  decomp_subgraph.Inputs().push_back(&t1);
+  decomp_subgraph.Inputs().push_back(&t2);
+  decomp_subgraph.Outputs().push_back(&t3);
+
+  auto& mul_op = decomp_subgraph.EmplaceOp();
+  mul_op.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(&t1, mul_op);
+  AttachInput(&t2, mul_op);
+  AttachOutput(&t3, mul_op);
+
+  // Create tensors for composite in main.
+  auto& main_t1 = main_subgraph.EmplaceTensor();
+  main_t1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  auto& main_t2 = main_subgraph.EmplaceTensor();
+  main_t2.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  auto& main_t3 = main_subgraph.EmplaceTensor();
+  main_t3.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+
+  main_subgraph.Inputs().push_back(&main_t1);
+  main_subgraph.Inputs().push_back(&main_t2);
+  main_subgraph.Outputs().push_back(&main_t3);
+
+  auto& cpu_call_op = main_subgraph.EmplaceOp();
+  cpu_call_op.SetOpCode(kLiteRtOpCodeShloComposite);
+  AttachInput(&main_t1, cpu_call_op);
+  AttachInput(&main_t2, cpu_call_op);
+  AttachOutput(&main_t3, cpu_call_op);
+
+  // Set composite options.
+  // Use index 1 as decomp_subgraph is the second subgraph created.
+  tflite::StableHLOCompositeOptionsT options;
+  options.name = std::string(CompositeOptions::kCpuCall);
+  options.decomposition_subgraph_index = 1;
+
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions2(cpu_call_op, std::move(tfl_options));
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+
+  auto partition_result = PartitionModel(plugin, model);
+  ASSERT_TRUE(partition_result);
+
+  // The cpu_call should be inlined, so the main subgraph should have the mul op
+  // instead of a custom op.
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+  auto& final_subgraph = *model.MainSubgraph();
+
+  // The mul op should be there.
+  ASSERT_EQ(final_subgraph.Ops().size(), 1);
+  EXPECT_EQ(final_subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflMul);
+
+  // No custom ops should be in the partition result.
+  const auto& [ops, new_model] = *partition_result;
+  EXPECT_TRUE(ops.empty());
+  EXPECT_EQ(new_model.NumSubgraphs(), 0);
 }
 
 TEST(PartitionModelTest, CstMultiSubgraph) {
