@@ -15,6 +15,7 @@
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 
 #if defined(LITERT_DISABLE_NPU)
 
@@ -25,7 +26,6 @@ extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
 }
 
 #else  // defined(LITERT_DISABLE_NPU)
-
 #include <memory>
 
 #include "litert/c/internal/litert_accelerator_registration.h"
@@ -38,6 +38,7 @@ extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
+#include "litert/vendors/c/litert_dispatch_api.h"
 #include "tflite/c/c_api_types.h"
 
 namespace litert {
@@ -134,14 +135,41 @@ class NpuAccelerator final
 
 extern "C" {
 
+#if !defined(_WIN32)
+#if defined(__APPLE__) || defined(__clang__) || defined(__GNUC__)
+__attribute__((weak)) LiteRtStatus LiteRtDispatchGetApi(
+    LiteRtDispatchApi* api) {
+  return kLiteRtStatusErrorNotFound;
+}
+#else
+// Unsupported compiler for weak symbols.
+LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
+  return kLiteRtStatusErrorNotFound;
+}
+#endif
+#endif
+
 LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "environment handle is null";
-  LITERT_RETURN_IF_ERROR(
-      environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir).has_value(),
-      litert::ErrorStatusBuilder::InvalidArgument())
-      << "Dispatch library directory is not set.";
+
+  LiteRtStatus api_status = kLiteRtStatusErrorNotFound;
+#if !defined(_WIN32)
+  LiteRtDispatchApi dummy_api;
+  api_status = LiteRtDispatchGetApi(&dummy_api);
+#endif
+
+  if (api_status == kLiteRtStatusErrorNotFound) {
+    LITERT_LOG(LITERT_DEBUG, "Dispatch API is not statically linked.");
+    LITERT_RETURN_IF_ERROR(
+        environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir)
+            .has_value(),
+        litert::ErrorStatusBuilder::InvalidArgument())
+        << "Dispatch library directory is not set.";
+  } else {
+    LITERT_LOG(LITERT_DEBUG, "Dispatch API is statically linked.");
+  }
 
   LiteRtAccelerator accelerator_handle;
   LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));

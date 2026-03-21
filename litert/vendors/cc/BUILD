@@ -43,6 +43,18 @@ cc_library(
 )
 
 cc_library(
+    name = "options_helper_static",
+    hdrs = ["options_helper.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_handle",
+    ],
+)
+
+cc_library(
     name = "namespace_heuristics",
     srcs = ["namespace_heuristics.cc"],
     hdrs = ["namespace_heuristics.h"],
