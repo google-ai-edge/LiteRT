@@ -54,9 +54,15 @@ EXPORTS
   LiteRtCreateModelFromFile
   LiteRtCreateOpaqueOptions
   LiteRtCreateOptions
+  LiteRtCreateTensorBufferFromAhwb
+  LiteRtCreateTensorBufferFromDmaBufBuffer
+  LiteRtCreateTensorBufferFromFastRpcBuffer
   LiteRtCreateTensorBufferFromGlBuffer
   LiteRtCreateTensorBufferFromGlTexture
   LiteRtCreateTensorBufferFromHostMemory
+  LiteRtCreateTensorBufferFromIonBuffer
+  LiteRtCreateTensorBufferFromMetalMemory
+  LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtCreateTensorBufferFromWebGpuBuffer
   LiteRtCreateTensorBufferFromWebGpuTexture
   LiteRtCreateTensorBufferRequirements
@@ -115,13 +121,13 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
-  LiteRtGetOpCode
-  LiteRtGetOpInput
-  LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsData
   LiteRtGetOpaqueOptionsHash
   LiteRtGetOpaqueOptionsIdentifier
+  LiteRtGetOpCode
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
   LiteRtGetOptionsHardwareAccelerators
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
@@ -138,12 +144,18 @@ EXPORTS
   LiteRtGetSubgraphInput
   LiteRtGetSubgraphOp
   LiteRtGetSubgraphOutput
+  LiteRtGetTensorBufferAhwb
   LiteRtGetTensorBufferCustomTensorBufferHandle
+  LiteRtGetTensorBufferDmaBufBuffer
   LiteRtGetTensorBufferEvent
+  LiteRtGetTensorBufferFastRpcBuffer
   LiteRtGetTensorBufferGlBuffer
   LiteRtGetTensorBufferGlTexture
   LiteRtGetTensorBufferHostMemory
+  LiteRtGetTensorBufferIonBuffer
+  LiteRtGetTensorBufferMetalMemory
   LiteRtGetTensorBufferOffset
+  LiteRtGetTensorBufferOpenClMemory
   LiteRtGetTensorBufferPackedSize
   LiteRtGetTensorBufferRegistry
   LiteRtGetTensorBufferRequirementsAlignment
@@ -165,7 +177,6 @@ EXPORTS
   LiteRtGetWeightsBytes
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent
-
   LiteRtIsEventSignaled
   LiteRtJoinTensorBufferRequirements
   LiteRtLockTensorBuffer

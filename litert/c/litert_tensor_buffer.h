@@ -51,7 +51,6 @@ LiteRtStatus LiteRtCreateTensorBufferFromHostMemory(
 LiteRtStatus LiteRtGetTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
                                              void** host_memory_addr);
 
-#if LITERT_HAS_AHWB_SUPPORT
 // Create a tensor buffer from an existing AHardwareBuffer, with optional
 // AHardwareBuffer deallocator (it can be NULL). An non-zero `buffer_offset` can
 // be used to specify multiple tensor buffers sharing the same underlying AHWB,
@@ -62,17 +61,19 @@ LiteRtStatus LiteRtGetTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
 // calling LiteRtDestroyTensorBuffer() to release the object.
 // NULL deallocator means that the AHardwareBuffer is not managed by the tensor
 // buffer and therefore must be released separately by the caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if AHWB is not supported.
 LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     AHardwareBuffer* ahwb, size_t ahwb_offset,
     LiteRtAhwbDeallocator deallocator, LiteRtTensorBuffer* buffer);
 
 // Return an error if the backing buffer is not an AhardwareBuffer.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if AHWB is not supported.
 LiteRtStatus LiteRtGetTensorBufferAhwb(LiteRtTensorBuffer tensor_buffer,
                                        AHardwareBuffer** ahwb);
-#endif  // LITERT_HAS_AHWB_SUPPORT
 
-#if LITERT_HAS_ION_SUPPORT
 // Create a tensor buffer from an existing ION buffer of a given size, with
 // optional ION buffer deallocator (it can be NULL). An non-zero
 // `ion_buffer_offset` can be used to specify multiple tensor buffers sharing
@@ -84,18 +85,20 @@ LiteRtStatus LiteRtGetTensorBufferAhwb(LiteRtTensorBuffer tensor_buffer,
 // calling LiteRtDestroyTensorBuffer() to release the object.
 // NULL deallocator means that the ION buffer is not managed by the tensor
 // buffer and therefore must be released separately by the caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if ION is not supported.
 LiteRtStatus LiteRtCreateTensorBufferFromIonBuffer(
     const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
     int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
     LiteRtIonDeallocator deallocator, LiteRtTensorBuffer* buffer);
 
 // Return an error if the backing buffer is not an ION buffer.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if ION is not supported.
 LiteRtStatus LiteRtGetTensorBufferIonBuffer(LiteRtTensorBuffer buffer,
                                             void** ion_buffer_addr,
                                             int* ion_buffer_fd);
-#endif  // LITERT_HAS_ION_SUPPORT
 
-#if LITERT_HAS_DMABUF_SUPPORT
 // Create a tensor buffer from an existing DMA-BUF buffer of a given size, with
 // optional DMA-BUF buffer deallocator (it can be NULL). An non-zero
 // `dmabuf_buffer_offset` can be used to specify multiple tensor buffers sharing
@@ -107,6 +110,9 @@ LiteRtStatus LiteRtGetTensorBufferIonBuffer(LiteRtTensorBuffer buffer,
 // calling LiteRtDestroyTensorBuffer() to release the object.
 // NULL deallocator means that the DMA-BUF buffer is not managed by the tensor
 // buffer and therefore must be released separately by the caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if DMABUF is not
+// supported.
 LiteRtStatus LiteRtCreateTensorBufferFromDmaBufBuffer(
     const LiteRtRankedTensorType* tensor_type, void* dmabuf_buffer_addr,
     int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
@@ -114,12 +120,13 @@ LiteRtStatus LiteRtCreateTensorBufferFromDmaBufBuffer(
     LiteRtTensorBuffer* buffer);
 
 // Return an error if the backing buffer is not an DMA-BUF buffer.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if DMABUF is not
+// supported.
 LiteRtStatus LiteRtGetTensorBufferDmaBufBuffer(LiteRtTensorBuffer tensor_buffer,
                                                void** dmabuf_buffer_addr,
                                                int* dmabuf_buffer_fd);
-#endif  // LITERT_HAS_DMABUF_SUPPORT
 
-#if LITERT_HAS_FASTRPC_SUPPORT
 // Create a tensor buffer from an existing FastRPC memory buffer of a given
 // size, with optional FastRPC memory buffer deallocator (it can be NULL). An
 // non-zero `fastrpc_buffer_offset` can be used to specify multiple tensor
@@ -132,18 +139,23 @@ LiteRtStatus LiteRtGetTensorBufferDmaBufBuffer(LiteRtTensorBuffer tensor_buffer,
 // calling LiteRtDestroyTensorBuffer() to release the object.
 // NULL deallocator means that the FastRPC buffer is not managed by the tensor
 // buffer and therefore must be released separately by the caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if FASTRPC is not
+// supported.
 LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
     const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
-    int fastrpc_fd, size_t fastrpc_buffer_size, size_t fastrpc_buffer_offset,
-    LiteRtFastRpcDeallocator deallocator, LiteRtTensorBuffer* buffer);
+    int fastrpc_buffer_fd, size_t fastrpc_buffer_size,
+    size_t fastrpc_buffer_offset, LiteRtFastRpcDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer);
 
 // Return an error if the backing buffer is not a FastRPC memory buffer.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if FASTRPC is not
+// supported.
 LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
     LiteRtTensorBuffer tensor_buffer, void** fastrpc_buffer_addr,
     int* fastrpc_buffer_fd);
-#endif  // LITERT_HAS_FASTRPC_SUPPORT
 
-#if LITERT_HAS_OPENCL_SUPPORT
 // Create a tensor buffer from an existing OpenCL memory of a given size, with
 // optional opencl memory buffer deallocator (it can be NULL).
 //
@@ -151,6 +163,9 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 // calling LiteRtDestroyTensorBuffer() to release the object.
 // NULL deallocator means that the OpenCL buffer is not managed by the tensor
 // buffer and therefore must be released separately by the caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if OPENCL is not
+// supported.
 LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
@@ -158,9 +173,11 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     LiteRtTensorBuffer* buffer);
 
 // Return an error if the backing buffer is not a OpenCL memory.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if OPENCL is not
+// supported.
 LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                                LiteRtClMem* cl_mem_addr);
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 // Return an error if the backing buffer is not a custom tensor buffer.
 //
@@ -201,7 +218,6 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
     LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
     LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer);
 
-#if LITERT_HAS_WEBGPU_SUPPORT
 // Create a tensor buffer from an existing WebGPU memory of a given size, with
 // optional WebGPU memory buffer deallocator (it can be NULL).
 //
@@ -209,6 +225,9 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
 // releasing the object. NULL deallocator means that the Metal buffer is not
 // managed by the tensor buffer and therefore must be released separately by the
 // caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if WEBGPU is not
+// supported.
 LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
@@ -222,6 +241,9 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
 // releasing the object. NULL deallocator means that the WebGPU texture is not
 // managed by the tensor buffer and therefore must be released separately by the
 // caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if WEBGPU is not
+// supported.
 LiteRtStatus LiteRtCreateTensorBufferFromWebGpuTexture(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     void* webgpu_texture, size_t webgpu_texture_size,
@@ -229,11 +251,12 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuTexture(
     LiteRtTensorBuffer* tensor_buffer);
 
 // Return an error if the backing buffer is not a WebGpu buffer.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if WEBGPU is not
+// supported.
 LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
-#if LITERT_HAS_METAL_SUPPORT
 // Create a tensor buffer from an existing Metal memory of a given size, with
 // optional metal memory buffer deallocator (it can be NULL).
 //
@@ -241,6 +264,8 @@ LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
 // releasing the object. NULL deallocator means that the Metal buffer is not
 // managed by the tensor buffer and therefore must be released separately by the
 // caller.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if METAL is not supported.
 LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, void* metal_buffer,
@@ -248,15 +273,17 @@ LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
     LiteRtTensorBuffer* tensor_buffer);
 
 // Return an error if the backing buffer is not a Metal memory.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if METAL is not supported.
 LiteRtStatus LiteRtGetTensorBufferMetalMemory(LiteRtTensorBuffer tensor_buffer,
                                               HwMemoryHandle* hw_memory_handle);
-#endif  // LITERT_HAS_METAL_SUPPORT
 
-#if LITERT_HAS_VULKAN_SUPPORT
 // Return an error if the backing buffer is not a Vulkan device memory.
+//
+// @warning kLiteRtStatusErrorUnsupported is returned if VULKAN is not
+// supported.
 LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
-#endif  // LITERT_HAS_VULKAN_SUPPORT
 
 // Create a managed TensorBuffer for a given size and type.
 //
