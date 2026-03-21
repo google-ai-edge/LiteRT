@@ -175,6 +175,11 @@ jobs:
             //litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test `
             //litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_test
 
+      - name: Build tools for Windows
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+            //litert/tools:run_model
+
       - name: Build example plugin for Windows
         run: |
           bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `

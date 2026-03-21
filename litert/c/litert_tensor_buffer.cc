@@ -52,11 +52,11 @@ LiteRtStatus LiteRtCreateTensorBufferFromHostMemory(
   return kLiteRtStatusOk;
 }
 
-#if LITERT_HAS_AHWB_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     AHardwareBuffer* ahwb, size_t ahwb_offset,
     LiteRtAhwbDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_AHWB_SUPPORT
   if (!tensor_type || !ahwb || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -66,10 +66,14 @@ LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
                                           deallocator));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_AHWB_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferAhwb(LiteRtTensorBuffer tensor_buffer,
                                        AHardwareBuffer** ahwb) {
+#if LITERT_HAS_AHWB_SUPPORT
   if (!tensor_buffer || !ahwb) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -78,14 +82,16 @@ LiteRtStatus LiteRtGetTensorBufferAhwb(LiteRtTensorBuffer tensor_buffer,
 
   *ahwb = ahwb_buffer;
   return kLiteRtStatusOk;
-}
+#else
+  return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_AHWB_SUPPORT
+}
 
-#if LITERT_HAS_ION_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromIonBuffer(
     const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
     int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
     LiteRtIonDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_ION_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -95,11 +101,15 @@ LiteRtStatus LiteRtCreateTensorBufferFromIonBuffer(
                               ion_buffer_size, ion_buffer_offset, deallocator));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_ION_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferIonBuffer(LiteRtTensorBuffer tensor_buffer,
                                             void** ion_buffer_addr,
                                             int* ion_buffer_fd) {
+#if LITERT_HAS_ION_SUPPORT
   if (!tensor_buffer || !ion_buffer_addr || !ion_buffer_fd) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -109,15 +119,17 @@ LiteRtStatus LiteRtGetTensorBufferIonBuffer(LiteRtTensorBuffer tensor_buffer,
   *ion_buffer_addr = ion_buffer.first;
   *ion_buffer_fd = ion_buffer.second;
   return kLiteRtStatusOk;
-}
+#else
+  return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_ION_SUPPORT
+}
 
-#if LITERT_HAS_DMABUF_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromDmaBufBuffer(
     const LiteRtRankedTensorType* tensor_type, void* dmabuf_buffer_addr,
     int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
     size_t dmabuf_buffer_offset, LiteRtDmaBufDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_DMABUF_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -128,11 +140,15 @@ LiteRtStatus LiteRtCreateTensorBufferFromDmaBufBuffer(
           dmabuf_buffer_size, dmabuf_buffer_offset, deallocator));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_DMABUF_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferDmaBufBuffer(LiteRtTensorBuffer tensor_buffer,
                                                void** dmabuf_buffer_addr,
                                                int* dmabuf_buffer_fd) {
+#if LITERT_HAS_DMABUF_SUPPORT
   if (!tensor_buffer || !dmabuf_buffer_addr || !dmabuf_buffer_fd) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -142,15 +158,17 @@ LiteRtStatus LiteRtGetTensorBufferDmaBufBuffer(LiteRtTensorBuffer tensor_buffer,
   *dmabuf_buffer_addr = dmabuf_buffer.first;
   *dmabuf_buffer_fd = dmabuf_buffer.second;
   return kLiteRtStatusOk;
-}
+#else
+  return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_DMABUF_SUPPORT
+}
 
-#if LITERT_HAS_OPENCL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, LiteRtClMem cl_mem_addr,
     size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
     LiteRtTensorBuffer* buffer) {
+#if LITERT_HAS_OPENCL_SUPPORT
   if (!tensor_type || !buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -160,10 +178,14 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
                               opencl_buffer_size, deallocator));
   *buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                                LiteRtClMem* cl_mem_addr) {
+#if LITERT_HAS_OPENCL_SUPPORT
   if (!tensor_buffer || !cl_mem_addr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -172,8 +194,10 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 
   *cl_mem_addr = opencl_memory->GetMemoryPtr();
   return kLiteRtStatusOk;
-}
+#else
+  return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+}
 
 LiteRtStatus LiteRtGetTensorBufferCustomTensorBufferHandle(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
@@ -187,12 +211,12 @@ LiteRtStatus LiteRtGetTensorBufferCustomTensorBufferHandle(
   return kLiteRtStatusOk;
 }
 
-#if LITERT_HAS_METAL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, void* metal_buffer,
     size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_METAL_SUPPORT
   if (!tensor_type || !tensor_buffer || !metal_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -202,10 +226,14 @@ LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
           env, *tensor_type, buffer_type, metal_buffer, metal_buffer_size));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_METAL_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferMetalMemory(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+#if LITERT_HAS_METAL_SUPPORT
   if (!tensor_buffer || !hw_memory_handle) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -214,16 +242,17 @@ LiteRtStatus LiteRtGetTensorBufferMetalMemory(
 
   *hw_memory_handle = custom_buffer->raw_handle();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_METAL_SUPPORT
 }
 
-#endif  // LITERT_HAS_METAL_SUPPORT
-
-#if LITERT_HAS_FASTRPC_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
     const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
     int fastrpc_buffer_fd, size_t fastrpc_buffer_size,
     size_t fastrpc_buffer_offset, LiteRtFastRpcDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_FASTRPC_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -234,11 +263,15 @@ LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
           fastrpc_buffer_size, fastrpc_buffer_offset, deallocator));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_FASTRPC_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
     LiteRtTensorBuffer tensor_buffer, void** fastrpc_buffer_addr,
     int* fastrpc_buffer_fd) {
+#if LITERT_HAS_FASTRPC_SUPPORT
   if (!tensor_buffer || !fastrpc_buffer_addr || !fastrpc_buffer_fd) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -249,14 +282,16 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
   *fastrpc_buffer_addr = fastrpc_buffer.first;
   *fastrpc_buffer_fd = fastrpc_buffer.second;
   return kLiteRtStatusOk;
-}
+#else
+  return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
+}
 
-#if LITERT_HAS_OPENGL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
     LiteRtGlBufferDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_OPENGL_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -266,12 +301,16 @@ LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
                                               size_bytes, offset, deallocator));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
                                            LiteRtGLenum* target,
                                            LiteRtGLuint* id, size_t* size_bytes,
                                            size_t* offset) {
+#if LITERT_HAS_OPENGL_SUPPORT
   if (!tensor_buffer || !target || !id) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -283,29 +322,17 @@ LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
   *size_bytes = gl_buffer->size_bytes();
   *offset = gl_buffer->offset();
   return kLiteRtStatusOk;
-}
 #else
-LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-    LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
-    LiteRtGlBufferDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
   return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
-                                           LiteRtGLenum* target,
-                                           LiteRtGLuint* id, size_t* size_bytes,
-                                           size_t* offset) {
-  return kLiteRtStatusErrorUnsupported;
-}
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+}
 
-#if LITERT_HAS_OPENGL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
     size_t size_bytes, LiteRtGLint layer,
     LiteRtGlTextureDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_OPENGL_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -315,11 +342,15 @@ LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
                               layer, deallocator));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
 LiteRtStatus LiteRtGetTensorBufferGlTexture(
     LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
     LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer) {
+#if LITERT_HAS_OPENGL_SUPPORT
   if (!tensor_buffer || !target || !id || !format || !size_bytes || !layer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -330,29 +361,17 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
   *size_bytes = gl_texture->size_bytes();
   *layer = gl_texture->layer();
   return kLiteRtStatusOk;
-}
 #else
-LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-    LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
-    size_t size_bytes, LiteRtGLint layer,
-    LiteRtGlTextureDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
   return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus LiteRtGetTensorBufferGlTexture(
-    LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
-    LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer) {
-  return kLiteRtStatusErrorUnsupported;
-}
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+}
 
-#if LITERT_HAS_WEBGPU_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, LiteRtWGPUBuffer wgpu_buffer,
     size_t wgpu_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_WEBGPU_SUPPORT
   if (!tensor_type || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -362,6 +381,9 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
           env, *tensor_type, buffer_type, wgpu_buffer, wgpu_buffer_size));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
 }
 
 LiteRtStatus LiteRtCreateTensorBufferFromWebGpuTexture(
@@ -369,6 +391,7 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuTexture(
     void* webgpu_texture, size_t webgpu_texture_size,
     LiteRtWebGpuTextureDeallocator deallocator,
     LiteRtTensorBuffer* tensor_buffer) {
+#if LITERT_HAS_WEBGPU_SUPPORT
   if (!tensor_type || !tensor_buffer || !webgpu_texture) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -378,11 +401,15 @@ LiteRtStatus LiteRtCreateTensorBufferFromWebGpuTexture(
           env, *tensor_type, webgpu_texture, webgpu_texture_size));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
 }
 
 // Return an error if the backing buffer is not a WebGpu buffer.
 LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+#if LITERT_HAS_WEBGPU_SUPPORT
   if (!tensor_buffer || !hw_memory_handle) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -391,12 +418,14 @@ LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
 
   *hw_memory_handle = webgpu_buffer->hw_buffer_handle();
   return kLiteRtStatusOk;
-}
+#else
+  return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+}
 
-#if LITERT_HAS_VULKAN_SUPPORT
 LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+#if LITERT_HAS_VULKAN_SUPPORT
   if (!tensor_buffer || !hw_memory_handle) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -405,8 +434,10 @@ LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
 
   *hw_memory_handle = custom_buffer->hw_buffer_handle();
   return kLiteRtStatusOk;
-}
+#else
+  return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_VULKAN_SUPPORT
+}
 
 LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
