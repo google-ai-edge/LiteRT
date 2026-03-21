@@ -32,6 +32,8 @@ package(
         # "//litert/vendors/c:__subpackages__",
         # "//litert/kotlin:__subpackages__",
         # "//third_party/odml/litert/ml_drift/delegate:__subpackages__",
+        # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        # "//third_party/odml/litert/weight_loader:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -101,7 +103,14 @@ cc_library(
     name = "litert_runtime_context_header",
     hdrs = ["litert_runtime_context.h"],
     deps = [
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer_types",
         "//tflite/c:c_api_types",
     ],
@@ -112,25 +121,51 @@ cc_library(
     srcs = ["litert_runtime_context.cc"],
     hdrs = ["litert_runtime_context.h"],
     visibility = [
-        # copybara:uncomment_begin(google-only)
-        # "//litert/runtime:__pkg__",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
+        "//litert/runtime:__pkg__",
+        "//third_party/odml/litert/weight_loader:__subpackages__",
     ],
     deps = [
         ":litert_delegate_wrapper",
         ":litert_external_litert_buffer_context",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options",
+        "//litert/c:litert_opencl_types",
         "//litert/c:litert_options",
+        "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/c/options:litert_cpu_options",
         "//litert/c/options:litert_gpu_options",
         "//litert/c/options:litert_webnn_options",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+    ],
+)
+
+cc_library(
+    name = "litert_runtime_context_testonly",
+    testonly = 1,
+    hdrs = ["litert_runtime_context.h"],
+    deps = [
+        ":litert_runtime_context",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opencl_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//tflite/c:c_api_types",
     ],
 )
 

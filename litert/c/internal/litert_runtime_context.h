@@ -18,7 +18,14 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_event_type.h"
+#include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
 #ifdef __cplusplus
@@ -66,10 +73,84 @@ typedef struct LiteRtRuntimeContext {
   LiteRtStatus (*find_opaque_options_data)(LiteRtOpaqueOptions options,
                                            const char* payload_identifier,
                                            void** payload_data);
+  LiteRtStatus (*get_environment_options)(LiteRtEnvironment env,
+                                          LiteRtEnvironmentOptions* options);
+  LiteRtStatus (*get_environment_options_value)(
+      LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
+      LiteRtAny* option_value);
+  void (*environment_has_gpu_environment)(LiteRtEnvironment environment,
+                                          bool* has_gpu_environment);
+  LiteRtStatus (*add_environment_options)(LiteRtEnvironment environment,
+                                          int num_options,
+                                          const LiteRtEnvOption* options,
+                                          bool overwrite);
+  LiteRtStatus (*gpu_environment_create)(LiteRtEnvironment environment,
+                                         int num_options,
+                                         const LiteRtEnvOption* options);
+
   LiteRtStatus (*wrap_delegate)(TfLiteOpaqueDelegate* delegate,
                                 LiteRtDelegateWrapper* wrapper);
   LiteRtStatus (*unwrap_delegate)(LiteRtDelegateWrapper wrapper,
                                   TfLiteOpaqueDelegate** delegate);
+
+  // third_party/odml/litert/litert/c/litert_tensor_buffer.h
+  LiteRtStatus (*create_tensor_buffer_from_host_memory)(
+      const LiteRtRankedTensorType* tensor_type, void* host_buffer_addr,
+      size_t host_buffer_size, LiteRtHostMemoryDeallocator deallocator,
+      LiteRtTensorBuffer* buffer);
+  LiteRtStatus (*create_managed_tensor_buffer)(
+      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+      const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
+      LiteRtTensorBuffer* buffer);
+  void (*destroy_tensor_buffer)(LiteRtTensorBuffer buffer);
+  LiteRtStatus (*get_tensor_buffer_type)(LiteRtTensorBuffer tensor_buffer,
+                                         LiteRtTensorBufferType* buffer_type);
+  LiteRtStatus (*get_tensor_buffer_tensor_type)(
+      LiteRtTensorBuffer tensor_buffer, LiteRtRankedTensorType* tensor_type);
+  LiteRtStatus (*get_tensor_buffer_size)(LiteRtTensorBuffer tensor_buffer,
+                                         size_t* buffer_size);
+  LiteRtStatus (*get_tensor_buffer_packed_size)(
+      LiteRtTensorBuffer tensor_buffer, size_t* size);
+  LiteRtStatus (*get_tensor_buffer_offset)(LiteRtTensorBuffer tensor_buffer,
+                                           size_t* offset);
+  LiteRtStatus (*lock_tensor_buffer)(LiteRtTensorBuffer tensor_buffer,
+                                     void** host_mem_addr,
+                                     LiteRtTensorBufferLockMode mode);
+  LiteRtStatus (*unlock_tensor_buffer)(LiteRtTensorBuffer tensor_buffer);
+  LiteRtStatus (*get_tensor_buffer_host_memory)(
+      LiteRtTensorBuffer tensor_buffer, void** host_memory_addr);
+  LiteRtStatus (*get_tensor_buffer_opencl_memory)(
+      LiteRtTensorBuffer tensor_buffer, LiteRtClMem* cl_mem_addr);
+  LiteRtStatus (*get_tensor_buffer_gl_buffer)(LiteRtTensorBuffer tensor_buffer,
+                                              LiteRtGLenum* target,
+                                              LiteRtGLuint* id,
+                                              size_t* size_bytes,
+                                              size_t* offset);
+  LiteRtStatus (*get_tensor_buffer_custom_tensor_buffer_handle)(
+      LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
+  LiteRtStatus (*has_tensor_buffer_event)(LiteRtTensorBuffer tensor_buffer,
+                                          bool* has_event);
+  LiteRtStatus (*get_tensor_buffer_event)(LiteRtTensorBuffer tensor_buffer,
+                                          LiteRtEvent* event);
+  LiteRtStatus (*set_tensor_buffer_event)(LiteRtTensorBuffer tensor_buffer,
+                                          LiteRtEvent event);
+
+  // third_party/odml/litert/litert/c/litert_event.h
+  LiteRtStatus (*create_managed_event)(LiteRtEnvironment env,
+                                       LiteRtEventType event_type,
+                                       LiteRtEvent* event);
+  LiteRtStatus (*get_event_event_type)(LiteRtEvent event,
+                                       LiteRtEventType* type);
+  LiteRtStatus (*create_event_from_opencl_event)(LiteRtEnvironment env,
+                                                 LiteRtClEvent cl_event,
+                                                 LiteRtEvent* event);
+  LiteRtStatus (*get_event_opencl_event)(LiteRtEvent event,
+                                         LiteRtClEvent* cl_event);
+  LiteRtStatus (*set_custom_event)(LiteRtEvent event,
+                                   LiteRtCustomEvent custom_event);
+  LiteRtStatus (*get_custom_event)(LiteRtEvent event,
+                                   LiteRtCustomEvent* custom_event);
+  LiteRtStatus (*wait_event)(LiteRtEvent event, int64_t timeout_in_ms);
 } LiteRtRuntimeContext;
 
 LiteRtRuntimeContext* LrtGetRuntimeContext();

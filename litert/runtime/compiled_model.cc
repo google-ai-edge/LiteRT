@@ -447,7 +447,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     scoped_weight_source = std::move(options_impl->scoped_weight_source);
   }
   weight_loader_ = weight_loader::CreateLiteRtWeightLoader(
-      fb_model_->GetModel(), model_directory_, std::move(scoped_weight_source));
+      LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
+      std::move(scoped_weight_source));
   has_external_weights_ = false;
   if (weight_loader_) {
     auto weight_infos = weight_loader_->GetWeightInfo();
