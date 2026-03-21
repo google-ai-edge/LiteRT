@@ -16,14 +16,9 @@
 
 #include <stdlib.h>
 
-#include <utility>
-
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
-#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -42,33 +37,6 @@ Expected<litert::internal::TensorBufferRegistry*> GetTensorBufferRegistry(
   return registry;
 }
 
-Expected<std::pair<void*, void*>> GetCustomGpuResource(
-    LiteRtEnvironment env, const CustomTensorBufferHandlers& handlers) {
-  void* device_id = nullptr;
-  void* queue_id = nullptr;
-  LiteRtEnvironmentOptions options;
-  auto status = LiteRtGetEnvironmentOptions(env, &options);
-  if (status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to get environment options.");
-  }
-
-  LiteRtAny device_val;
-  if (handlers.device_tag != kLiteRtEnvOptionTagNull &&
-      LiteRtGetEnvironmentOptionsValue(options, handlers.device_tag,
-                                       &device_val) == kLiteRtStatusOk) {
-    device_id = reinterpret_cast<void*>(device_val.int_value);
-  }
-
-  LiteRtAny queue_val;
-  if (handlers.queue_tag != kLiteRtEnvOptionTagNull &&
-      LiteRtGetEnvironmentOptionsValue(options, handlers.queue_tag,
-                                       &queue_val) == kLiteRtStatusOk) {
-    queue_id = reinterpret_cast<void*>(queue_val.int_value);
-  }
-
-  return std::make_pair(device_id, queue_id);
-}
-
 }  // namespace
 
 CustomBuffer::~CustomBuffer() {
@@ -76,7 +44,7 @@ CustomBuffer::~CustomBuffer() {
   LITERT_ASSIGN_OR_ABORT(auto custom_buffer_handlers,
                          registry->GetCustomHandlers(buffer_type_));
   if (hw_memory_info_) {
-    custom_buffer_handlers.destroy_func(hw_memory_info_);
+    custom_buffer_handlers.destroy_func(env_, hw_memory_info_);
   }
 }
 
@@ -85,8 +53,8 @@ Expected<void*> CustomBuffer::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type_));
   void* host_memory_ptr = nullptr;
-  auto status =
-      custom_buffer_handlers.lock_func(hw_memory_info_, mode, &host_memory_ptr);
+  auto status = custom_buffer_handlers.lock_func(env_, hw_memory_info_, mode,
+                                                 &host_memory_ptr);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock custom tensor buffer.");
   }
@@ -97,7 +65,7 @@ Expected<void> CustomBuffer::Unlock() {
   LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env_));
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type_));
-  auto status = custom_buffer_handlers.unlock_func(hw_memory_info_);
+  auto status = custom_buffer_handlers.unlock_func(env_, hw_memory_info_);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock custom tensor buffer.");
   }
@@ -112,7 +80,7 @@ Expected<void> CustomBuffer::Clear() {
     return Unexpected(kLiteRtStatusErrorUnsupported,
                       "This buffer type does not support clearing.");
   }
-  auto status = custom_buffer_handlers.clear_func(hw_memory_info_);
+  auto status = custom_buffer_handlers.clear_func(env_, hw_memory_info_);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to clear custom tensor buffer.");
   }
@@ -126,13 +94,10 @@ Expected<CustomBuffer> CustomBuffer::Alloc(
   LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env));
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type));
-  LITERT_ASSIGN_OR_RETURN(auto gpu_resource,
-                          GetCustomGpuResource(env, custom_buffer_handlers));
-
   HwMemoryInfoPtr hw_memory_info = nullptr;
   auto status = custom_buffer_handlers.create_func(
-      gpu_resource.first, gpu_resource.second, &tensor_type, buffer_type,
-      buffer_size, packed_buffer_size, &hw_memory_info);
+      env, &tensor_type, buffer_type, buffer_size, packed_buffer_size,
+      &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to create custom tensor buffer.");
   }
@@ -153,15 +118,12 @@ Expected<CustomBuffer> CustomBuffer::Wrap(
                       "This buffer type does not support wrapping/importing.");
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto gpu_resource,
-                          GetCustomGpuResource(env, custom_buffer_handlers));
-
   HwMemoryInfoPtr hw_memory_info = nullptr;
   // The import_func is responsible for creating HwMemoryInfo
   // and setting its internal 'owns_handle' flag to false.
   auto status = custom_buffer_handlers.import_func(
-      gpu_resource.first, gpu_resource.second, &tensor_type, buffer_type,
-      hw_buffer_handle, buffer_size, packed_buffer_size, &hw_memory_info);
+      env, &tensor_type, buffer_type, hw_buffer_handle, buffer_size,
+      packed_buffer_size, &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to import custom tensor buffer.");
   }

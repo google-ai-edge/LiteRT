@@ -19,7 +19,6 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
 #ifdef __cplusplus
@@ -32,8 +31,7 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
     CreateCustomTensorBuffer create_func,
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
     UnlockCustomTensorBuffer unlock_func, ClearCustomTensorBuffer clear_func,
-    ImportCustomTensorBuffer import_func, LiteRtEnvOptionTag device_tag,
-    LiteRtEnvOptionTag queue_tag);
+    ImportCustomTensorBuffer import_func);
 
 // Retrieves a singleton instance of the tensor buffer registry.
 LiteRtStatus LiteRtGetTensorBufferRegistry(LiteRtEnvironment env,
