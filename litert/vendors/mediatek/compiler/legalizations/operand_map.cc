@@ -27,6 +27,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "tflite/kernels/internal/portable_tensor_utils.h"
 
 namespace litert::mediatek {
 
@@ -58,7 +59,7 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
     if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
       LITERT_ASSIGN_OR_RETURN(auto quant_param,
                               operand_type->GetPerChannelQuantParams());
-      if (neuron_adapter_api_.api().model_set_symm_per_channel_quant_params(
+      if (neuron_adapter_api_.api().model_set_per_channel_quant_params(
               model_, *operand_index, &quant_param) != NEURON_NO_ERROR) {
         return Error(kLiteRtStatusErrorRuntimeFailure,
                      "Failed to set param of per channel quant params");
@@ -67,20 +68,23 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
 
     LITERT_ASSIGN_OR_RETURN(auto tensor_type, t.RankedTensorType());
     if (tensor_type.ElementType() == ElementType::Int4 ||
-        tensor_type.ElementType() == ElementType::Int64) {
+        tensor_type.ElementType() == ElementType::Int64 ||
+        tensor_type.ElementType() == ElementType::Int2) {
       int num_element = static_cast<int>(operand_type->GetElementCount());
       int new_bytes = 0;
       int32_t extra_data_idx = -1;
 
-      if (tensor_type.ElementType() == ElementType::Int4) {
-        // Unpack Int4 into Int8
+      if (tensor_type.ElementType() == ElementType::Int4 ||
+          tensor_type.ElementType() == ElementType::Int2) {
+        // Unpack Int4/Int2 into Int8
+        int bits = (tensor_type.ElementType() == ElementType::Int4) ? 4 : 2;
         new_bytes = num_element * sizeof(int8_t);
         LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes));
-        LITERT_LOG(LITERT_INFO, "\nUnpack Int4 into Int8, new bytes: %d",
+        LITERT_LOG(LITERT_INFO, "Unpack Int%d into Int8, new bytes: %d", bits,
                    new_bytes);
-        LITERT_RETURN_IF_ERROR(UnpackDenseInt4IntoInt8(
-            reinterpret_cast<const int8_t*>(weights.data()), num_element,
-            reinterpret_cast<int8_t*>(GetExtraData(extra_data_idx))));
+        tflite::tensor_utils::UnpackPackedIntToInt8(
+            reinterpret_cast<const int8_t*>(weights.data()), num_element, bits,
+            reinterpret_cast<int8_t*>(GetExtraData(extra_data_idx)));
       } else if (tensor_type.ElementType() == ElementType::Int64) {
         // Cast Int64 into Int32
         new_bytes = num_element * sizeof(int32_t);
