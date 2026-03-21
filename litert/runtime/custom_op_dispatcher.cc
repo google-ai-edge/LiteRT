@@ -14,7 +14,11 @@
 
 #include "litert/runtime/custom_op_dispatcher.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -25,6 +29,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/options.h"
@@ -45,14 +50,48 @@ Expected<LiteRtTensorBufferPtr> CreateHostTensorBufferFromTflTensor(
     const TfLiteOpaqueTensor* tfl_opaque_tensor) {
   LITERT_ASSIGN_OR_RETURN(auto tensor_type,
                           ConvertTensorType(tfl_opaque_tensor));
-  void* host_mem_addr = TfLiteOpaqueTensorData(tfl_opaque_tensor);
-  size_t buffer_size = TfLiteOpaqueTensorByteSize(tfl_opaque_tensor);
+
+  // For string tensors, we must get the data pointer by casting directly,
+  // since TfLiteOpaqueTensorData returns an error for kTfLiteDynamic tensors.
+  void* host_mem_addr = nullptr;
+  const TfLiteTensor* tfl_tensor =
+      reinterpret_cast<const TfLiteTensor*>(tfl_opaque_tensor);
+  size_t buffer_size = 0;
+  if (tfl_tensor->allocation_type == kTfLiteDynamic) {
+    host_mem_addr = tfl_tensor->data.raw;
+    buffer_size = tfl_tensor->bytes;
+  } else {
+    host_mem_addr = tfl_tensor->data.data;
+    buffer_size = tfl_tensor->bytes;
+  }
+
   LiteRtRankedTensorType litert_tensor_type =
       static_cast<LiteRtRankedTensorType>(tensor_type);
   LiteRtTensorBufferT* tensor_buffer;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
-      &litert_tensor_type, host_mem_addr, buffer_size, /*deallocator=*/nullptr,
-      &tensor_buffer));
+
+  bool is_unaligned = reinterpret_cast<uintptr_t>(host_mem_addr) % 64 != 0;
+  void* aligned_addr = host_mem_addr;
+  void* allocated_addr = nullptr;
+
+  if (is_unaligned) {
+    if (posix_memalign(&allocated_addr, 64, buffer_size + 16) == 0) {
+      std::memcpy(allocated_addr, host_mem_addr, buffer_size);
+      aligned_addr = allocated_addr;
+    }
+  }
+
+  LiteRtHostMemoryDeallocator deallocator = allocated_addr ? free : nullptr;
+
+  auto status = LiteRtCreateTensorBufferFromHostMemory(
+      &litert_tensor_type, aligned_addr, buffer_size, deallocator,
+      &tensor_buffer);
+
+  if (status != kLiteRtStatusOk) {
+    if (allocated_addr) free(allocated_addr);
+    return Unexpected(status,
+                      "Failed to create tensor buffer from host memory");
+  }
+
   return LiteRtTensorBufferPtr(tensor_buffer);
 }
 
@@ -143,8 +182,24 @@ Expected<void> CustomOpDispatcher::PrepareHelper(void* user_data,
 
   for (auto i = 0; i < output_layouts.size(); ++i) {
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
-    LITERT_RETURN_IF_ERROR(
-        ResizeTensor(output_layouts[i], context, tfl_opaque_tensor));
+    bool shape_matches = true;
+    int num_dims = TfLiteOpaqueTensorNumDims(tfl_opaque_tensor);
+    if (num_dims == output_layouts[i].rank) {
+      for (int d = 0; d < num_dims; ++d) {
+        if (TfLiteOpaqueTensorDim(tfl_opaque_tensor, d) !=
+            output_layouts[i].dimensions[d]) {
+          shape_matches = false;
+          break;
+        }
+      }
+    } else {
+      shape_matches = false;
+    }
+
+    if (!shape_matches) {
+      LITERT_RETURN_IF_ERROR(
+          ResizeTensor(output_layouts[i], context, tfl_opaque_tensor));
+    }
   }
 
   return {};

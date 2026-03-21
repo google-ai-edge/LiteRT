@@ -15,7 +15,7 @@
 #include "litert/core/util/tensor_type_util.h"
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert {
@@ -29,6 +29,8 @@ Expected<Ratio> GetElementSize(LiteRtElementType element_type) {
       return Ratio{1, 1};
     case kLiteRtElementTypeInt8:
     case kLiteRtElementTypeUInt8:
+      return Ratio{1, 1};
+    case kLiteRtElementTypeTfString:
       return Ratio{1, 1};
     case kLiteRtElementTypeInt16:
     case kLiteRtElementTypeUInt16:
