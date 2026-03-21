@@ -103,6 +103,7 @@ cc_test(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_options_testonly",
+        "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/core:build_stamp",
         "//litert/core:filesystem",
         "//litert/core/model",
@@ -110,6 +111,7 @@ cc_test(
         "//litert/test:matchers",
         "//litert/tools:dump",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//tflite/converter/schema:schema_fbs",
     ],
 )
 

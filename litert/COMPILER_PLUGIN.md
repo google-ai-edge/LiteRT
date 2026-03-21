@@ -68,6 +68,33 @@ acceleration on another backend.
 
 -----
 
+## Device Placement
+
+LiteRt provides special composite operations that allow model authors to
+explicitly control which parts of the model should be executed on specific
+hardware.
+
+### 1. Manual NPU Partitioning (`odml.npu_call`)
+
+The `odml.npu_call` composite op represents a portion of the model that the
+author has manually identified for acceleration.
+*   **Behavior**: Any operations wrapped in an `odml.npu_call` are **automatically
+    selected** for compilation by the targeted compiler plugin.
+*   **Use Case**: When the model author wants to ensure a specific subgraph is
+    treated as a single optimized unit on the NPU.
+
+### 2. Explicit CPU Pinning (`odml.cpu_call`)
+
+The `odml.cpu_call` composite op allows authors to ensure specific operations
+are **never** offloaded to an accelerator.
+*   **Behavior**: Operations inside an `odml.cpu_call` are **shielded** from all
+    compiler plugins. After the partitioning phase is complete, the framework
+    inlines these operations back into the main graph for standard CPU execution.
+*   **Use Case**: Forcing operations to run on the CPU to preserve numerical
+    precision or when a specific CPU-only custom kernel is required.
+
+-----
+
 ## Implementing a Compiler Plugin
 
 A LiteRt compiler plugin is implemented as a shared library that exports a
