@@ -33,8 +33,6 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
-#include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
@@ -82,11 +80,9 @@ size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
 }
 
 // Constructor for CompiledModelWrapper.
-CompiledModelWrapper::CompiledModelWrapper(Environment env, ExtendedModel model,
+CompiledModelWrapper::CompiledModelWrapper(ExtendedModel model,
                                            CompiledModel compiled)
-    : environment_(std::move(env)),
-      model_(std::move(model)),
-      compiled_model_(std::move(compiled)) {}
+    : model_(std::move(model)), compiled_model_(std::move(compiled)) {}
 
 // Destructor for CompiledModelWrapper.
 CompiledModelWrapper::~CompiledModelWrapper() {
@@ -113,33 +109,14 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
-    const char* model_path, const char* runtime_path,
-    const char* compiler_plugin_path, const char* dispatch_library_path,
-    int hardware_accel, std::string* out_error) {
-  // Create an environment with options
-  std::vector<litert::EnvironmentOptions::Option> options;
-  std::string runtime_path_str = std::string(runtime_path);
-  if (!runtime_path_str.empty()) {
-    options.push_back(litert::EnvironmentOptions::Option{
-        litert::EnvironmentOptions::Tag::kRuntimeLibraryDir, runtime_path_str});
-  }
-  if (compiler_plugin_path && *compiler_plugin_path) {
-    options.push_back(litert::EnvironmentOptions::Option{
-        litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
-        std::string(compiler_plugin_path)});
-  }
-  if (dispatch_library_path && *dispatch_library_path) {
-    options.push_back(litert::EnvironmentOptions::Option{
-        litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-        std::string(dispatch_library_path)});
-  }
-  auto env_or = litert::Environment::Create(
-      litert::EnvironmentOptions(absl::MakeConstSpan(options)));
-  if (!env_or) {
-    if (out_error) *out_error = env_or.Error().Message();
+    PyObject* environment_capsule, const char* model_path, int hardware_accel,
+    std::string* out_error) {
+  auto* env =
+      litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
+  if (env == nullptr) {
+    if (out_error) *out_error = "Invalid LiteRT Environment capsule";
     return nullptr;
   }
-  Environment env = std::move(*env_or);
 
   // Load model from a file
   auto model_or = ExtendedModel::CreateFromFile(model_path);
@@ -151,14 +128,13 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
-      env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
+      *env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;
   }
 
-  return new CompiledModelWrapper(std::move(env), std::move(model),
-                                  std::move(*compiled_or));
+  return new CompiledModelWrapper(std::move(model), std::move(*compiled_or));
 }
 
 // Converts a Python string or bytes object to a C string.
@@ -172,9 +148,15 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
-    PyObject* model_data, const char* runtime_path,
-    const char* compiler_plugin_path, const char* dispatch_library_path,
-    int hardware_accel, std::string* out_error) {
+    PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
+    std::string* out_error) {
+  auto* env =
+      litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
+  if (env == nullptr) {
+    if (out_error) *out_error = "Invalid LiteRT Environment capsule";
+    return nullptr;
+  }
+
   // Extract buffer from Python object
   char* buf = nullptr;
   Py_ssize_t length = 0;
@@ -182,32 +164,6 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     if (out_error) *out_error = "Failed converting PyObject to buffer";
     return nullptr;
   }
-
-  // Create environment with options
-  std::vector<litert::EnvironmentOptions::Option> options;
-  std::string runtime_path_str = std::string(runtime_path);
-  if (!runtime_path_str.empty()) {
-    options.push_back(litert::EnvironmentOptions::Option{
-        litert::EnvironmentOptions::Tag::kRuntimeLibraryDir, runtime_path_str});
-  }
-  if (compiler_plugin_path && *compiler_plugin_path) {
-    options.push_back(litert::EnvironmentOptions::Option{
-        litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
-        std::string(compiler_plugin_path)});
-  }
-  if (dispatch_library_path && *dispatch_library_path) {
-    options.push_back(litert::EnvironmentOptions::Option{
-        litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-        std::string(dispatch_library_path)});
-  }
-
-  auto env_or = litert::Environment::Create(
-      litert::EnvironmentOptions(absl::MakeConstSpan(options)));
-  if (!env_or) {
-    if (out_error) *out_error = env_or.Error().Message();
-    return nullptr;
-  }
-  Environment env = std::move(*env_or);
 
   // Create model from buffer
   BufferRef<uint8_t> ref(reinterpret_cast<uint8_t*>(buf),
@@ -221,14 +177,14 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
-      env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
+      *env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;
   }
 
-  auto* wrapper = new CompiledModelWrapper(std::move(env), std::move(model),
-                                           std::move(*compiled_or));
+  auto* wrapper =
+      new CompiledModelWrapper(std::move(model), std::move(*compiled_or));
   // Keep the Python buffer alive for the lifetime of the wrapper
   Py_INCREF(model_data);
   wrapper->model_buffer_ = model_data;
@@ -399,21 +355,19 @@ PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
 }
 
 PyObject* CompiledModelWrapper::CreateInputBufferByName(
-    PyObject* self_wrapper, const char* signature_key, const char* input_name) {
+    const char* signature_key, const char* input_name) {
   auto buffer_or = compiled_model_.CreateInputBuffer(signature_key, input_name);
   if (!buffer_or) {
     return ConvertErrorToPyExc(buffer_or.Error());
   }
   auto buffer = std::move(*buffer_or);
 
-  PyObject* capsule =
-      litert_wrapper_utils::MakeTensorBufferCapsule(buffer, self_wrapper);
+  PyObject* capsule = litert_wrapper_utils::MakeTensorBufferCapsule(buffer);
   return capsule;
 }
 
 PyObject* CompiledModelWrapper::CreateOutputBufferByName(
-    PyObject* self_wrapper, const char* signature_key,
-    const char* output_name) {
+    const char* signature_key, const char* output_name) {
   auto buffer_or =
       compiled_model_.CreateOutputBuffer(signature_key, output_name);
   if (!buffer_or) {
@@ -421,13 +375,11 @@ PyObject* CompiledModelWrapper::CreateOutputBufferByName(
   }
   auto buffer = std::move(*buffer_or);
 
-  PyObject* capsule =
-      litert_wrapper_utils::MakeTensorBufferCapsule(buffer, self_wrapper);
+  PyObject* capsule = litert_wrapper_utils::MakeTensorBufferCapsule(buffer);
   return capsule;
 }
 
-PyObject* CompiledModelWrapper::CreateInputBuffers(PyObject* self_wrapper,
-                                                   int signature_index) {
+PyObject* CompiledModelWrapper::CreateInputBuffers(int signature_index) {
   auto buffers_or =
       compiled_model_.CreateInputBuffers(static_cast<size_t>(signature_index));
   if (!buffers_or) {
@@ -438,14 +390,13 @@ PyObject* CompiledModelWrapper::CreateInputBuffers(PyObject* self_wrapper,
   for (size_t i = 0; i < buffers.size(); i++) {
     // Python owns them. Destroy on capsule destructor.
     PyObject* capsule =
-        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i], self_wrapper);
+        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i]);
     PyList_SetItem(py_list, i, capsule);  // steal ref
   }
   return py_list;
 }
 
-PyObject* CompiledModelWrapper::CreateOutputBuffers(PyObject* self_wrapper,
-                                                    int signature_index) {
+PyObject* CompiledModelWrapper::CreateOutputBuffers(int signature_index) {
   auto buffers_or =
       compiled_model_.CreateOutputBuffers(static_cast<size_t>(signature_index));
   if (!buffers_or) {
@@ -455,7 +406,7 @@ PyObject* CompiledModelWrapper::CreateOutputBuffers(PyObject* self_wrapper,
   PyObject* py_list = PyList_New(buffers.size());
   for (size_t i = 0; i < buffers.size(); i++) {
     PyObject* capsule =
-        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i], self_wrapper);
+        litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i]);
     PyList_SetItem(py_list, i, capsule);
   }
   return py_list;

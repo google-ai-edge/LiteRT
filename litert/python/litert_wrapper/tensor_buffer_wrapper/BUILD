@@ -63,6 +63,11 @@ pybind_extension(
     common_lib_packages = ["litert/python"],
     copts = WINDOWS_PYBIND_UNDEFS,
     link_in_framework = True,
+    linkopts = select({
+        "@platforms//os:ios": ["-framework Metal"],
+        "@platforms//os:macos": ["-framework Metal"],
+        "//conditions:default": [],
+    }),
     pytype_srcs = [
         "_pywrap_litert_tensor_buffer_wrapper.pyi",
     ],

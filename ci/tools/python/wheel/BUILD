@@ -185,6 +185,7 @@ py_wheel(
         ":fixed_pydeps",
     ] + LITERT_RUNTIME_SHARED_LIB + [
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
+        "//litert/python/litert_wrapper/environment_wrapper:environment",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",

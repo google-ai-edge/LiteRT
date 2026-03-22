@@ -28,9 +28,6 @@ package(
 #         "testdata/simple_model_float.tflite",
 #         "testdata/simple_model_int.tflite",
 #     ],
-#     # Static linking is required because this loads a cc_binary as a shared
-#     # library, which would otherwise create ODR violations.
-#     # copybara:uncomment linking_mode = "static",
 #     tags = [
 #         "no_oss",  # TODO(b/190842754): Enable test in OSS.
 #     ],

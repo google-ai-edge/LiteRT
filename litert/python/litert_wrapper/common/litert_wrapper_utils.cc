@@ -65,29 +65,12 @@ void DestroyTensorBufferFromCapsule(PyObject* capsule) {
       PyCapsule_SetName(capsule, "");
     }
   }
-  // Release the model reference stored in context (if any).
-  // This ensures the model is not garbage collected before its buffers,
-  // fixing the use-after-free crash during Python cleanup.
-  if (Py_IsInitialized()) {
-    if (PyObject* model =
-            static_cast<PyObject*>(PyCapsule_GetContext(capsule))) {
-      Py_DECREF(model);
-      PyCapsule_SetContext(capsule, nullptr);
-    }
-  }
 }
 
-PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer,
-                                  PyObject* model_wrapper) {
+PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer) {
   PyObject* capsule =
       PyCapsule_New(buffer.Release(), kLiteRtTensorBufferName.data(),
                     &DestroyTensorBufferFromCapsule);
-  // Store a reference to the model wrapper in the capsule context.
-  // This keeps the model alive as long as any buffer exists.
-  if (capsule && model_wrapper) {
-    Py_INCREF(model_wrapper);
-    PyCapsule_SetContext(capsule, model_wrapper);
-  }
   return capsule;
 }
 
