@@ -3349,6 +3349,11 @@ class Subgraph {
 
     // Check the output tensor type.
     const TfLiteTensor& output_tensor = tensors[node->outputs->data[0]];
+
+    const bool static_quantized =
+        (input_a.type == kTfLiteInt8 && input_b.type == kTfLiteInt8 &&
+         output_tensor.type == kTfLiteInt8);
+
     TF_LITE_ENSURE_STATUS(
         CheckTensorFloat32OrQUInt8Type(delegate, logging_context, output_tensor,
                                        node->outputs->data[0], node_index));
@@ -3428,7 +3433,7 @@ class Subgraph {
       // If we're using dynamic quantization, we first need to convert the first
       // input `A` from `float32` to `int8`, and set up the quantization
       // parameters of the already-quantized input `B`.
-      if (dynamically_quantized) {
+      if (dynamically_quantized || static_quantized) {
         // Compute some shapes and sizes.
         const int32_t n = params->adj_y
                               ? SizeOfDimension(&input_b, num_dims_b - 2)
