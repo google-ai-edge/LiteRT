@@ -52,7 +52,7 @@ class GraphCreator {
   AiLiteCoreManager::Ptr ai_lite_core_;
   graph_handler_t handler_;
   // tensor map record the LiteRtTensor which is already registered
-  absl::flat_hash_map<LiteRtTensor, TENSOR_ID_T> tensors_map_;
+  absl::flat_hash_map<uint32_t, TENSOR_ID_T> tensors_map_;
   // graph inputs/outputs
   absl::InlinedVector<TENSOR_ID_T, kExpectedMaxNumOfSubgraphInputs>
       input_indices_;
