@@ -126,6 +126,7 @@ function test_import {
   # Test whether import is successful.
   echo "------ Test import -----"
   ${PYTHON_BIN} -c "import ai_edge_litert"
+  ${PYTHON_BIN} -c "import ai_edge_litert.environment"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_mediatek"
   echo
@@ -152,4 +153,3 @@ function test_ai_edge_litert_with_docker {
   ./ci/build_pip_package_with_docker.sh
   echo
 }
-

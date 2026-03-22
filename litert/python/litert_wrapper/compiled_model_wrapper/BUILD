@@ -68,6 +68,11 @@ pybind_extension(
     common_lib_packages = ["litert/python"],
     copts = WINDOWS_PYBIND_UNDEFS,
     link_in_framework = True,
+    linkopts = select({
+        "@platforms//os:ios": ["-framework Metal"],
+        "@platforms//os:macos": ["-framework Metal"],
+        "//conditions:default": [],
+    }),
     pytype_srcs = [
         "_pywrap_litert_compiled_model_wrapper.pyi",
     ],
@@ -92,6 +97,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_compiled_model_wrapper",
+        "//litert/python/litert_wrapper/environment_wrapper:environment",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
     ],
 )
@@ -100,9 +106,6 @@ py_library(
 # py_strict_test(
 #     name = "compiled_model_unit_test",
 #     srcs = ["compiled_model_unit_test.py"],
-#     # Static linking is required because this loads a cc_binary as a shared
-#     # library, which would otherwise create ODR violations.
-#     linking_mode = "static",
 #     tags = [
 #         "no_oss",  # TODO(b/190842754): Enable test in OSS.
 #     ],

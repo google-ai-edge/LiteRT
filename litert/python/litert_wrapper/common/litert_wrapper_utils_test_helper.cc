@@ -20,8 +20,7 @@
 #include "pybind11/pybind11.h"  // from @pybind11
 
 PYBIND11_MODULE(_litert_wrapper_utils_test_helper, m) {
-  m.def("make_testing_tensor_buffer_capsule", [](pybind11::object
-                                                     model_wrapper) {
+  m.def("make_testing_tensor_buffer_capsule", []() {
     std::vector dims = {1};
     litert::RankedTensorType tensor_type =
         litert::MakeRankedTensorType<float>(dims);
@@ -33,10 +32,8 @@ PYBIND11_MODULE(_litert_wrapper_utils_test_helper, m) {
     }
     litert::TensorBuffer buffer = std::move(buffer_or.Value());
 
-    PyObject* model_ptr =
-        model_wrapper.is_none() ? nullptr : model_wrapper.ptr();
-    PyObject* capsule = litert::litert_wrapper_utils::MakeTensorBufferCapsule(
-        buffer, model_ptr);
+    PyObject* capsule =
+        litert::litert_wrapper_utils::MakeTensorBufferCapsule(buffer);
     return pybind11::reinterpret_steal<pybind11::object>(capsule);
   });
 }

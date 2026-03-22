@@ -22,7 +22,6 @@
 
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_compiled_model.h"
-#include "litert/cc/litert_environment.h"
 
 namespace litert {
 namespace compiled_model_wrapper {
@@ -40,9 +39,7 @@ class CompiledModelWrapper {
    * Creates a wrapper from a model file path.
    *
    * @param model_path Path to the model file
-   * @param runtime_path Path to the LiteRT runtime library
-   * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
-   * @param dispatch_library_path Path to the dispatch library (can be nullptr)
+   * @param environment_capsule PyCapsule containing a LiteRT Environment
    * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
    *        These are bit flags that can be combined with bitwise OR:
    *        1 (kCpu)  - CPU acceleration (always works)
@@ -50,23 +47,19 @@ class CompiledModelWrapper {
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param out_error String to store error message if creation fails
-   * @return A new CompiledModelWrapper instance with environment_ created and
-   *         maintained within the wrapper, or nullptr on failure
+   * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromFile(
-      const char* model_path, const char* runtime_path,
-      const char* compiler_plugin_path, const char* dispatch_library_path,
-      int hardware_accel, std::string* out_error);
+      PyObject* environment_capsule, const char* model_path, int hardware_accel,
+      std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
    *
+   * @param environment_capsule PyCapsule containing a LiteRT Environment
    * @param model_data Python bytes object containing the model data
    *        (created from reading a model file or receiving serialized model
    * data)
-   * @param runtime_path Path to the LiteRT runtime library
-   * @param compiler_plugin_path Path to the compiler plugin (can be nullptr)
-   * @param dispatch_library_path Path to the dispatch library (can be nullptr)
    * @param hardware_accel Hardware acceleration option (LiteRtHwAccelerators).
    *        These are bit flags that can be combined with bitwise OR:
    *        1 (kCpu)  - CPU acceleration (always works)
@@ -74,15 +67,13 @@ class CompiledModelWrapper {
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param out_error String to store error message if creation fails
-   * @return A new CompiledModelWrapper instance with environment_ created and
-   *         maintained within the wrapper, or nullptr on failure
+   * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromBuffer(
-      PyObject* model_data, const char* runtime_path,
-      const char* compiler_plugin_path, const char* dispatch_library_path,
-      int hardware_accel, std::string* out_error);
+      PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
+      std::string* out_error);
 
-  CompiledModelWrapper(litert::Environment env, litert::ExtendedModel model,
+  CompiledModelWrapper(litert::ExtendedModel model,
                        litert::CompiledModel compiled);
 
   ~CompiledModelWrapper();
@@ -115,23 +106,21 @@ class CompiledModelWrapper {
 
   // Creates an input buffer for a tensor identified by signature key and input
   // name.
-  PyObject* CreateInputBufferByName(PyObject* self_wrapper,
-                                    const char* signature_key,
+  PyObject* CreateInputBufferByName(const char* signature_key,
                                     const char* input_name);
 
   // Creates an output buffer for a tensor identified by signature key and
   // output name.
-  PyObject* CreateOutputBufferByName(PyObject* self_wrapper,
-                                     const char* signature_key,
+  PyObject* CreateOutputBufferByName(const char* signature_key,
                                      const char* output_name);
 
   // Creates all input buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateInputBuffers(PyObject* self_wrapper, int signature_index);
+  PyObject* CreateInputBuffers(int signature_index);
 
   // Creates all output buffers for a signature and returns them as a list of
   // capsules.
-  PyObject* CreateOutputBuffers(PyObject* self_wrapper, int signature_index);
+  PyObject* CreateOutputBuffers(int signature_index);
 
   // Executes the model using a signature key and name-to-buffer mappings.
   PyObject* RunByName(const char* signature_key, PyObject* input_map,
@@ -159,7 +148,6 @@ class CompiledModelWrapper {
   static PyObject* ConvertErrorToPyExc(const litert::Error& error);
 
   // Member variables holding the LiteRT C++ objects.
-  litert::Environment environment_;
   ExtendedModel model_;
   litert::CompiledModel compiled_model_;
 

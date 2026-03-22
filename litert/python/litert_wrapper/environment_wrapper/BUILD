@@ -35,8 +35,8 @@ cc_library(
     srcs = ["environment_wrapper.cc"],
     hdrs = ["environment_wrapper.h"],
     deps = [
-        "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
+        "//litert/cc/dynamic_runtime:litert_environment",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
@@ -55,6 +55,11 @@ pybind_extension(
     common_lib_packages = ["litert/python"],
     copts = WINDOWS_PYBIND_UNDEFS,
     link_in_framework = True,
+    linkopts = select({
+        "@platforms//os:ios": ["-framework Metal"],
+        "@platforms//os:macos": ["-framework Metal"],
+        "//conditions:default": [],
+    }),
     pytype_srcs = [
         "_pywrap_litert_environment_wrapper.pyi",
     ],
