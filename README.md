@@ -1,5 +1,7 @@
 # LiteRT
 
+[![gitcgr](https://gitcgr.com/badge/google-ai-edge/LiteRT.svg)](https://gitcgr.com/google-ai-edge/LiteRT)
+
 <p align="center">
   <img src="./g3doc/sources/litert_logo.png" alt="LiteRT Logo"/>
 </p>
