@@ -704,6 +704,7 @@ cc_library(
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime/options:litert_samsung_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
