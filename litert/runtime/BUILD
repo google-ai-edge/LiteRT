@@ -941,6 +941,11 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_darwinn_options",
+    hdrs = ["litert_darwinn_options.h"],
+)
+
 cc_test(
     name = "profiler_test",
     srcs = ["profiler_test.cc"],
