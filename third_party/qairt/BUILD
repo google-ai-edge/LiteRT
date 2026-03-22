@@ -14,8 +14,15 @@
 
 # Dummy BUILD file to make this directory a package.
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
 # copybara:uncomment package(default_applicable_licenses = ["@org_tensorflow//tensorflow:license"])
 
-# copybara:uncomment_begin(google-only)
-# licenses(["reciprocal"])
-# copybara:uncomment_end
+bzl_library(
+    name = "workspace_bzl",
+    srcs = ["workspace.bzl"],
+    parse_tests = False,
+    tags = ["notap"],
+    visibility = ["//visibility:private"],
+    deps = ["//litert/sdk_util:repo_bzl"],
+)
