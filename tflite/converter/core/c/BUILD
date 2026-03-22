@@ -64,7 +64,6 @@ cc_library(
     visibility = [
         "//tflite/converter:__subpackages__",
         "//tflite/core/c:__subpackages__",
-        "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/utils:__pkg__",
     ],
     alwayslink = 1,  # Why?? TODO(b/161243354): eliminate this.
 )
