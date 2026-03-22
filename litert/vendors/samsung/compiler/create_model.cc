@@ -95,7 +95,8 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
   if (!t.Get()) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  if (tensors_map_.find(t.Get()) != tensors_map_.end()) {
+  uint32_t tensor_index = t.TensorIndex();
+  if (tensors_map_.find(tensor_index) != tensors_map_.end()) {
     return kLiteRtStatusOk;
   }
 
@@ -124,7 +125,7 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
   LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().DefineTensor(
       handler_, &tensor_id, t.Name().data(), tensor_shape.data(),
       tensor_shape.size(), element_type_mapping.Value(), layout_rep));
-  tensors_map_[t.Get()] = tensor_id;
+  tensors_map_[tensor_index] = tensor_id;
 
   if (t.HasQuantization()) {
     LITERT_RETURN_IF_ERROR(CreateQParam(t));
@@ -146,12 +147,12 @@ LiteRtStatus GraphCreator::CreateOpNode(const OpWrapper& op_wrapper) {
   std::vector<TENSOR_ID_T> output_indices;
   for (const auto& input : op_wrapper.GetInputs()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(input));
-    input_indices.push_back(tensors_map_.at(input.Get()));
+    input_indices.push_back(tensors_map_.at(input.TensorIndex()));
   }
 
   for (const auto& output : op_wrapper.GetOutputs()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(output));
-    output_indices.push_back(tensors_map_.at(output.Get()));
+    output_indices.push_back(tensors_map_.at(output.TensorIndex()));
   }
   LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().DefineOp(
       handler_, &op_id, op_wrapper.GetCName(), op_wrapper.GetCType(),
@@ -168,19 +169,21 @@ LiteRtStatus GraphCreator::CreateOpNode(const OpWrapper& op_wrapper) {
 }
 
 LiteRtStatus GraphCreator::AddInput(const Tensor& t_input) {
-  if (tensors_map_.find(t_input.Get()) == tensors_map_.end()) {
+  uint32_t tensor_input_index = t_input.TensorIndex();
+  if (tensors_map_.find(tensor_input_index) == tensors_map_.end()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(t_input));
   }
-  input_indices_.push_back(tensors_map_.at(t_input.Get()));
+  input_indices_.push_back(tensors_map_.at(tensor_input_index));
 
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus GraphCreator::AddOutput(const Tensor& t_output) {
-  if (tensors_map_.find(t_output.Get()) == tensors_map_.end()) {
+  uint32_t tensor_output_index = t_output.TensorIndex();
+  if (tensors_map_.find(tensor_output_index) == tensors_map_.end()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(t_output));
   }
-  output_indices_.push_back(tensors_map_.at(t_output.Get()));
+  output_indices_.push_back(tensors_map_.at(tensor_output_index));
 
   return kLiteRtStatusOk;
 }
@@ -253,7 +256,7 @@ LiteRtStatus GraphCreator::CreateQParam(const Tensor& t) {
   auto ranked_tensor_type = t.RankedTensorType();
   auto element_type = ranked_tensor_type->ElementType();
   LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(
-      ai_lite_core_->Api().SetTensorQParam(handler_, tensors_map_.at(t.Get()),
+      ai_lite_core_->Api().SetTensorQParam(handler_, tensors_map_.at(t.TensorIndex()),
                                            MapToQuantTypeStr(element_type),
                                            scale_info, zero_point_info));
 
