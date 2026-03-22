@@ -24,6 +24,12 @@
 #include "litert/c/litert_op_code.h"
 
 #ifdef __cplusplus
+#include <memory>
+
+namespace tflite {
+class Allocation;
+}  // namespace tflite
+
 extern "C" {
 #endif  // __cplusplus
 
@@ -307,7 +313,16 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   LiteRtModelSerializationOptions options);
 
 #ifdef __cplusplus
-}
+}  // extern "C"
+#endif  // __cplusplus
+
+#ifdef __cplusplus
+// Loading a model from an owned TFLite allocation.
+// This is an internal experimetal API which is not available through
+// libLiteRt.so. It's not part of the official LiteRT public C API.
+// TODO(b/493996317): Provide C linkage for the following method.
+LiteRtStatus LiteRtCreateModelFromAllocation(
+    std::unique_ptr<tflite::Allocation> allocation, LiteRtModel* model);
 #endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_MODEL_H_
