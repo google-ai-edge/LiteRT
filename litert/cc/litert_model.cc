@@ -31,6 +31,9 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+// copybara:uncomment_begin(google_only)
+// #include "litert/core/model/model_load.h"
+// copybara:uncomment_end
 
 namespace litert {
 
@@ -139,6 +142,19 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
 }
 
 }  // namespace
+
+// copybara:uncomment_begin(google_only)
+// Expected<Model> Model::CreateFromAllocation(
+//     std::unique_ptr<tflite::Allocation> allocation) {
+//   LiteRtModel model;
+//   if (auto status =
+//           LiteRtCreateModelFromAllocation(std::move(allocation), &model);
+//       status != kLiteRtStatusOk) {
+//     return Unexpected(status, "Failed to load model from allocation");
+//   }
+//   return CreateFromOwnedHandle(model);
+// }
+// copybara:uncomment_end
 
 Expected<std::vector<SimpleSignature>> Model::GetSignatures() const {
   size_t num_signatures = GetNumSignatures();

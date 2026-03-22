@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -328,6 +329,14 @@ class ExtendedModel : public litert::Model {
     }
     return CreateFromOwnedHandle(model);
   }
+
+  // copybara:uncomment_begin(google_only)
+  // /// @brief Creates a model from an owned TFLite allocation.
+  // ///
+  // /// LiteRT takes ownership of the allocation wrapper.
+  // static Expected<ExtendedModel> CreateFromAllocation(
+      // std::unique_ptr<tflite::Allocation> allocation);
+  // copybara:uncomment_end
 
   Expected<absl::Span<const uint8_t>> Metadata(
       const std::string& metadata_key) const {
