@@ -34,9 +34,7 @@ cc_library(
     srcs = ["utils.cc"],
     hdrs = ["utils.h"],
     deps = [
-        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//tflite/schema:schema_fbs",
@@ -44,47 +42,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "elementwise_op_builder",
-    srcs = ["elementwise_op_builder.cc"],
-    hdrs = ["elementwise_op_builder.h"],
-    deps = [
-        ":op_wrapper",
-        ":utils",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-    ],
-)
-
-cc_library(
-    name = "pad_op_builder",
-    srcs = ["pad_op_builder.cc"],
-    hdrs = ["pad_op_builder.h"],
-    deps = [
-        ":op_wrapper",
-        ":utils",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-    ],
-)
-
-cc_library(
-    name = "reshape_op_builder",
-    srcs = ["reshape_op_builder.cc"],
-    hdrs = ["reshape_op_builder.h"],
-    deps = [
-        ":op_wrapper",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-    ],
-)
 
 cc_library(
     name = "batch_matmul_op_builder",
@@ -124,12 +81,67 @@ cc_library(
 )
 
 cc_library(
+    name = "conv2d_op_builder",
+    srcs = ["conv2d_op_builder.cc"],
+    hdrs = ["conv2d_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "elementwise_op_builder",
+    srcs = ["elementwise_op_builder.cc"],
+    hdrs = ["elementwise_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
     name = "logistic_op_builder",
     srcs = ["logistic_op_builder.cc"],
     hdrs = ["logistic_op_builder.h"],
     deps = [
         ":op_wrapper",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "pad_op_builder",
+    srcs = ["pad_op_builder.cc"],
+    hdrs = ["pad_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "reshape_op_builder",
+    srcs = ["reshape_op_builder.cc"],
+    hdrs = ["reshape_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
