@@ -93,6 +93,10 @@ Expected<OpWrapper> BuildCosOp(const Op &op) {
   return BuildElementwiseOp(op, "Cos", 0);
 }
 
+Expected<OpWrapper> BuildSinOp(const Op &op) {
+  return BuildElementwiseOp(op, "Sin", 0);
+}
+
 Expected<OpWrapper> BuildSubOp(const Op &op) {
   uint32_t tfl_fused_activation;
   if (auto status =
