@@ -25,4 +25,4 @@ namespace litert::samsung {
 Expected<OpWrapper> BuildTransposeOp(const Op &op);
 
 }
-#endif
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_TRANSPOSE_OP_BUILDER_H_

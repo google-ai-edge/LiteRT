@@ -24,4 +24,4 @@ Expected<OpWrapper> BuildGatherNdOp(const Op &op);
 
 }
 
-#endif  // LITERT_BATCH_MATMUL_H
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_GATHERND_OP_BUILDER_H

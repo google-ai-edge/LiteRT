@@ -27,4 +27,4 @@ Expected<OpWrapper> BuildMaxPool2dOp(const Op &op);
 Expected<OpWrapper> BuildAvgPool2dOp(const Op &op);
 
 }  // namespace litert::samsung
-#endif
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_POOL2D_OP_BUILDER_H_

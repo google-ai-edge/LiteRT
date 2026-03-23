@@ -27,4 +27,4 @@ Expected<OpWrapper> BuildPadOp(const Op &op);
 Expected<OpWrapper> BuildMirrorPadOp(const Op &op);
 
 }  // namespace litert::samsung
-#endif
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_PAD_OP_BUILDER_H_

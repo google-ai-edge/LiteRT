@@ -18,36 +18,6 @@
 
 namespace litert::samsung {
 
-enum DATA_TYPE {
-  UNDEFINED = 0,
-  FLOAT32,
-  UINT8,
-  INT8,
-  UINT16,
-  INT16,
-  INT32,
-  INT64,
-  STRING,
-  BOOL,
-  FLOAT16,
-  DOUBLE,
-  UINT32,
-  UINT64,
-  COMPLEX64,
-  COMPLEX128,
-  BFLOAT16,
-  FLOAT8E4M3FN,
-  FLOAT8E4M3FNUZ,
-  FLOAT8E5M2,
-  FLOAT8E5M2FNUZ,
-  UINT4,
-  INT4,
-  FLOAT4E2M1,
-  FLOAT8E8M0,
-  UINT2,
-  INT2
-};
-
 Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation) {
   if (tfl_fused_activation > tflite::ActivationFunctionType_MAX) {
     return Error(kLiteRtStatusErrorIndexOOB, "Invalid activation");
@@ -72,28 +42,28 @@ absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
       dimensions.begin(), dimensions.end());
 }
 
-Expected<const uint32_t> ConvertElementTypeToInt(ElementType element_type) {
+Expected<const char *> MapToElementTypeStr(ElementType element_type) {
   switch (element_type) {
     case ElementType::Bool:
-      return DATA_TYPE::BOOL;
+      return "BOOL";
     case ElementType::Int4:
-      return DATA_TYPE::INT4;
+      return "INT4";
     case ElementType::Int8:
-      return DATA_TYPE::INT8;
+      return "INT8";
     case ElementType::UInt8:
-      return DATA_TYPE::UINT8;
+      return "UINT8";
     case ElementType::Int16:
-      return DATA_TYPE::UINT16;
+      return "UINT16";
     case ElementType::UInt16:
-      return DATA_TYPE::UINT16;
+      return "UINT16";
     case ElementType::Int32:
-      return DATA_TYPE::INT32;
+      return "INT32";
     case ElementType::Int64:
-      return DATA_TYPE::INT64;
+      return "INT64";
     case ElementType::Float16:
-      return DATA_TYPE::FLOAT16;
+      return "FLOAT16";
     case ElementType::Float32:
-      return DATA_TYPE::FLOAT32;
+      return "FLOAT32";
     default:
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Element Type not supported");

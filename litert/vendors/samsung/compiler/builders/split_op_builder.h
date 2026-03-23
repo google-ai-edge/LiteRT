@@ -24,4 +24,4 @@ Expected<OpWrapper> BuildSplitOp(const Op &op);
 
 }
 
-#endif  // LITERT_BATCH_MATMUL_H
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SPLIT_OP_BUILDER_H_

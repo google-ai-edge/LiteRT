@@ -42,7 +42,9 @@
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gathernd_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/gelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/hardswish_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
@@ -50,17 +52,16 @@
 #include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/split_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/strided_slice_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/gelu_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
@@ -77,34 +78,6 @@ const char* MapToQuantTypeStr(ElementType element_type) {
       return "AINT16";
     default:
       return "";
-  }
-}
-
-Expected<const char*> MapToElementTypeStr(ElementType element_type) {
-  switch (element_type) {
-    case ElementType::Bool:
-      return "BOOL";
-    case ElementType::Int4:
-      return "INT4";
-    case ElementType::Int8:
-      return "INT8";
-    case ElementType::UInt8:
-      return "UINT8";
-    case ElementType::Int16:
-      return "INT16";
-    case ElementType::UInt16:
-      return "UINT16";
-    case ElementType::Int32:
-      return "INT32";
-    case ElementType::Int64:
-      return "INT64";
-    case ElementType::Float16:
-      return "FLOAT16";
-    case ElementType::Float32:
-      return "FLOAT32";
-    default:
-      return Error(litert::Status::kErrorRuntimeFailure,
-                   "Element Type not supported");
   }
 }
 
