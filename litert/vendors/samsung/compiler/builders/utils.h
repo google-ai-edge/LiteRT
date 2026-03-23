@@ -29,6 +29,8 @@ Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation);
 absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
     const Tensor &t);
 
+Expected<const char *> MapToElementTypeStr(ElementType element_type);
+
 template <typename T>
 Expected<std::vector<T>> GetWeightDataAs(const Tensor &t) {
   LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type, t.RankedTensorType());
@@ -61,13 +63,12 @@ Expected<std::vector<T>> GetWeightDataAs(const Tensor &t) {
   }
 }
 
-Expected<const uint32_t> ConvertElementTypeToInt(ElementType element_type);
-
 std::pair<int32_t, int32_t> GetExplicitPadding(int32_t input_size,
                                                int32_t filter_size,
                                                int32_t output_size,
-                                               int32_t stride, int32_t dilation);
+                                               int32_t stride,
+                                               int32_t dilation);
 
-} // namespace litert::samsung
+}  // namespace litert::samsung
 
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_MUL_OP_BUILDER_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_UTILS_H_

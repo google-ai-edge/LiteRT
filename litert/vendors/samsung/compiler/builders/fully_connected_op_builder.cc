@@ -44,6 +44,18 @@ Expected<OpWrapper> BuildFullyConnectedOp(const Op &op) {
   op_wrapper.AddParam("in_channels", kernel_dimensions[1]);
   op_wrapper.AddParam("out_channels", kernel_dimensions[0]);
 
+  uint32_t tfl_fused_activation;
+  if (auto status = LiteRtGetFullyConnectedFusedActivationOption(
+          op.Get(), &tfl_fused_activation);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get fused activation");
+  }
+  auto activation = GetFusedActivationName(tfl_fused_activation);
+  if (!activation) {
+    return activation.Error();
+  }
+  op_wrapper.AddParam("activation", *activation);
+
   return op_wrapper;
 }
 }  // namespace litert::samsung

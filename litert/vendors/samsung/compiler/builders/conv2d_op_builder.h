@@ -27,4 +27,4 @@ Expected<OpWrapper> BuildConv2dOp(const Op &op);
 Expected<OpWrapper> BuildDepthwiseConv2dOp(const Op &op);
 
 }  // namespace litert::samsung
-#endif
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_CONV2D_OP_BUILDER_H_

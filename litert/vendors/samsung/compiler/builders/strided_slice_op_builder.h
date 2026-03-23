@@ -24,4 +24,4 @@ Expected<OpWrapper> BuildStridedSliceOp(const Op &op);
 
 }
 
-#endif  // LITERT_BATCH_MATMUL_H
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_STRIDED_SLICE_OP_BUILDER_H_

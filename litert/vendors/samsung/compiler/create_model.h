@@ -17,9 +17,9 @@
 
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"   // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
-#include "common-types.h"  // from @exynos_ai_litecore
+#include "common-types.h"                   // from @exynos_ai_litecore
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_extended_model.h"
