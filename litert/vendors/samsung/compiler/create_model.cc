@@ -34,7 +34,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
@@ -42,7 +41,9 @@
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gathernd_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/hardswish_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/pool2d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
@@ -50,6 +51,7 @@
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
 
 namespace litert::samsung {
@@ -328,6 +330,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflGatherNd:
         op_wrapper = std::move(BuildGatherNdOp(op));
         break;
+      case kLiteRtOpCodeTflHardSwish:
+        op_wrapper = std::move(BuildHardSwishOp(op));
+        break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = std::move(BuildLogisticOp(op));
         break;
@@ -356,11 +361,23 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflReshape:
         op_wrapper = std::move(BuildReshapeOp(op));
         break;
+      case kLiteRtOpCodeTflRsqrt:
+        op_wrapper = std::move(BuildRsqrtOp(op));
+        break;
       case kLiteRtOpCodeTflSlice:
         op_wrapper = std::move(BuildSliceOp(op));
         break;
       case kLiteRtOpCodeTflSoftmax:
         op_wrapper = std::move(BuildSoftmaxOp(op));
+        break;
+      case kLiteRtOpCodeTflSpaceToDepth:
+        op_wrapper = std::move(BuildSpaceToDepthOp(op));
+        break;
+      case kLiteRtOpCodeTflSqrt:
+        op_wrapper = std::move(BuildSqrtOp(op));
+        break;
+      case kLiteRtOpCodeTflSub:
+        op_wrapper = std::move(BuildSubOp(op));
         break;
       case kLiteRtOpCodeTflSum:
         op_wrapper = std::move(BuildReduceSumOp(op));
