@@ -336,6 +336,7 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
 )
+
 cc_library(
     name = "gelu_op_builder",
     srcs = ["gelu_op_builder.cc"],
@@ -348,10 +349,24 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
 )
+
 cc_library(
     name = "tanh_op_builder",
     srcs = ["tanh_op_builder.cc"],
     hdrs = ["tanh_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "resizebilinear_op_builder",
+    srcs = ["resizebilinear_op_builder.cc"],
+    hdrs = ["resizebilinear_op_builder.h"],
     deps = [
         ":op_wrapper",
         ":utils",

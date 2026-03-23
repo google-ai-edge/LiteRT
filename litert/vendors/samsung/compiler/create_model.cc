@@ -60,6 +60,7 @@
 #include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
 
 namespace litert::samsung {
 
@@ -379,6 +380,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflReduceMin:
         op_wrapper = std::move(BuildReduceMinOp(op));
+        break;
+      case kLiteRtOpCodeTflResizeBilinear:
+        op_wrapper = std::move(BuildResizeBilinearOp(op));
         break;
       case kLiteRtOpCodeTflRsqrt:
         op_wrapper = std::move(BuildRsqrtOp(op));
