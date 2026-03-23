@@ -20,13 +20,17 @@
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
-Expected<OpWrapper> BuildAddOp(const Op& op);
+Expected<OpWrapper> BuildAddOp(const Op &op);
 
 Expected<OpWrapper> BuildMulOp(const Op &op);
 
 Expected<OpWrapper> BuildDivOp(const Op &op);
 
 Expected<OpWrapper> BuildExpOp(const Op &op);
+
+Expected<OpWrapper> BuildMaxOp(const Op &op);
+
+Expected<OpWrapper> BuildMinOp(const Op &op);
 
 } // namespace litert::samsung
 
