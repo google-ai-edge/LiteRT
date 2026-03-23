@@ -12,42 +12,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "litert/vendors/samsung/compiler/builders/add_op_builder.h"
 
-#include <cstdint>
-#include <string>
+#include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/cc/litert_model.h"
+
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildAddOp(const Op& op) {
-  OpWrapper op_wrapper("", "ELTSUM");
+Expected<OpWrapper> BuildConcatOp(const Op &op) {
+  OpWrapper op_wrapper("Concat");
 
-  for (const auto& input : op.Inputs()) {
+  for (const auto &input : op.Inputs()) {
     op_wrapper.AddInput(input);
   }
-  for (const auto& output : op.Outputs()) {
+  for (const auto &output : op.Outputs()) {
     op_wrapper.AddOutput(output);
   }
-
-  uint32_t tfl_fused_activation;
-  if (auto status =
-          LiteRtGetAddFusedActivationOption(op.Get(), &tfl_fused_activation);
+  int32_t axis{};
+  if (auto status = LiteRtGetConcatenationAxisOption(op.Get(), &axis);
       status != kLiteRtStatusOk) {
-    return Error(static_cast<litert::Status>(status),
-                 "Failed to get fused activation");
+    return Error(status, "Fail to get axis.");
   }
-  if (tfl_fused_activation == 1) {
-    op_wrapper.AddParam("activation", "Relu");
-  } else if (tfl_fused_activation != 0) {
-    return Error(litert::Status::kErrorRuntimeFailure,
-                 "Unsupported fused activation");
-  }
+
+  op_wrapper.AddParam("axis", axis);
 
   return op_wrapper;
 }

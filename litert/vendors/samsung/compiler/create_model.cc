@@ -38,6 +38,11 @@
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
+
 
 namespace litert::samsung {
 
@@ -294,8 +299,26 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflPadv2:
         op_wrapper = std::move(BuildPadOp(op));
         break;
+      case kLiteRtOpCodeTflDiv:
+        op_wrapper = std::move(BuildDivOp(op));
+        break;
       case kLiteRtOpCodeTflReshape:
         op_wrapper = BuildReshapeOp(op);
+        break;
+      case kLiteRtOpCodeTflConcatenation:
+        op_wrapper = std::move(BuildConcatOp(op));
+        break;
+      case kLiteRtOpCodeTflCast:
+        op_wrapper = std::move(BuildCastOp(op));
+        break;
+      case kLiteRtOpCodeTflExp:
+        op_wrapper = std::move(BuildExpOp(op));
+        break;
+      case kLiteRtOpCodeTflLogistic:
+        op_wrapper = std::move(BuildLogisticOp(op));
+        break;
+      case kLiteRtOpCodeTflSoftmax:
+        op_wrapper = std::move(BuildSoftmaxOp(op));
         break;
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
