@@ -12,22 +12,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_ELEMENTWISE_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_ELEMENTWISE_OP_BUILDER_H_
 
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
+
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/cc/litert_model.h"
 
 namespace litert::samsung {
-Expected<OpWrapper> BuildAddOp(const Op& op);
 
-Expected<OpWrapper> BuildMulOp(const Op &op);
+Expected<OpWrapper> BuildLogisticOp(const Op &op) {
+  OpWrapper op_wrapper("Sigmoid");
 
-Expected<OpWrapper> BuildDivOp(const Op &op);
+  for (const auto &input : op.Inputs()) {
+    op_wrapper.AddInput(input);
+  }
+  for (const auto &output : op.Outputs()) {
+    op_wrapper.AddOutput(output);
+  }
 
-Expected<OpWrapper> BuildExpOp(const Op &op);
-
-} // namespace litert::samsung
-
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_ADD_OP_BUILDER_H_
+  return op_wrapper;
+}
+}  // namespace litert::samsung

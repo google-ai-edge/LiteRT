@@ -61,6 +61,8 @@ Expected<std::vector<T>> GetWeightDataAs(const Tensor &t) {
   }
 }
 
+Expected<const uint32_t> ConvertElementTypeToInt(ElementType element_type);
+
 } // namespace litert::samsung
 
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_MUL_OP_BUILDER_H_

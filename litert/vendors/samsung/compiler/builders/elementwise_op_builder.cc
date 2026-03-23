@@ -66,4 +66,19 @@ Expected<OpWrapper> BuildMulOp(const Op &op) {
   return BuildElementwiseOp(op, "MUL", tfl_fused_activation);
 }
 
+Expected<OpWrapper> BuildDivOp(const Op &op) {
+  uint32_t tfl_fused_activation;
+  if (auto status =
+          LiteRtGetDivFusedActivationOption(op.Get(), &tfl_fused_activation);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get fused activation");
+  }
+
+  return BuildElementwiseOp(op, "DIV", tfl_fused_activation);
+}
+
+Expected<OpWrapper> BuildExpOp(const Op &op) {
+  return BuildElementwiseOp(op, "EXP", 0);
+}
+
 }  // namespace litert::samsung

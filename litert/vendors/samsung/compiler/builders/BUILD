@@ -97,3 +97,52 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
 )
+
+cc_library(
+    name = "cast_op_builder",
+    srcs = ["cast_op_builder.cc"],
+    hdrs = ["cast_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "concat_op_builder",
+    srcs = ["concat_op_builder.cc"],
+    hdrs = ["concat_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "logistic_op_builder",
+    srcs = ["logistic_op_builder.cc"],
+    hdrs = ["logistic_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "softmax_op_builder",
+    srcs = ["softmax_op_builder.cc"],
+    hdrs = ["softmax_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
