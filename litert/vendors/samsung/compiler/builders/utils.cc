@@ -18,8 +18,7 @@
 
 namespace litert::samsung {
 
-Expected<std::string>
-GetFusedActivationName(uint32_t tfl_fused_activation) {
+Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation) {
   if (tfl_fused_activation > tflite::ActivationFunctionType_MAX) {
     return Error(kLiteRtStatusErrorIndexOOB, "Invalid activation");
   }
@@ -31,6 +30,16 @@ GetFusedActivationName(uint32_t tfl_fused_activation) {
   std::string activation_type =
       tflite::EnumNamesActivationFunctionType()[tfl_fused_activation];
   return activation_type;
+}
+
+absl::InlinedVector<int32_t, kExpectedMaxTensorRank>
+GetDimensions(const Tensor &t) {
+  auto tensor_type = t.RankedTensorType();
+  auto dimensions = tensor_type->Layout().Dimensions();
+  // TODO: Remove this comment
+  //  Have no idea why get incorrect dimensions when use Span.
+  return absl::InlinedVector<int32_t, kExpectedMaxTensorRank>(
+      dimensions.begin(), dimensions.end());
 }
 
 } // namespace litert::samsung

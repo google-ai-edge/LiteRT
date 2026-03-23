@@ -229,10 +229,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // Compile graph and return binary
     LITERT_ASSIGN_OR_RETURN(auto soc_model_id,
                             litert::samsung::GetSocModelID(soc_model));
-    LITERT_ASSIGN_OR_RETURN(
-        auto compiled_binary,
-        ::litert::samsung::Compile(ai_lite_core.get(), graph_buffer,
-                                   soc_model_id));
+    LITERT_ASSIGN_OR_RETURN(auto compiled_binary,
+                            ::litert::samsung::Compile(ai_lite_core.get(),
+                                                       graph_buffer,
+                                                       soc_model_id));
 
     result->byte_code[i] = std::move(compiled_binary);
     LITERT_LOG(LITERT_INFO, "Compile output: %ld bytes",
@@ -242,5 +242,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   *compiled_result = result.release();
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtTransformation **transformations, LiteRtParamIndex* num_patterns) {
+  *num_patterns = 0;
   return kLiteRtStatusOk;
 }
