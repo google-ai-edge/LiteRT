@@ -264,6 +264,15 @@ LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
 
 //==============================================================================
 //
+// Get option APIs for LiteRt OneHot op.
+//  Options:
+// - axis : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetOneHotAxisOption(LiteRtOp op, int32_t* axis);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt Unpack op.
 //  Options:
 // - axis : int32_t

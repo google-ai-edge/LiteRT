@@ -33,6 +33,7 @@ target_sources(qnn_builders
         l2_norm_op_builder.cc
         leaky_relu_op_builder.cc
         logistic_op_builder.cc
+        onehot_op_builder.cc
         matmul_op_builder.cc
         op_builder.cc
         pack_op_builder.cc
