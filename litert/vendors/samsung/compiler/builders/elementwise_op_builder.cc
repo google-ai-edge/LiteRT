@@ -18,8 +18,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -28,10 +28,10 @@ Expected<OpWrapper> BuildElementwiseOp(const Op &op, const std::string &type,
                                        uint32_t tfl_fused_activation) {
   OpWrapper op_wrapper(type);
 
-  for (const auto& input : op.Inputs()) {
+  for (const auto &input : op.Inputs()) {
     op_wrapper.AddInput(input);
   }
-  for (const auto& output : op.Outputs()) {
+  for (const auto &output : op.Outputs()) {
     op_wrapper.AddOutput(output);
   }
   auto activation = GetFusedActivationName(tfl_fused_activation);
@@ -79,6 +79,14 @@ Expected<OpWrapper> BuildDivOp(const Op &op) {
 
 Expected<OpWrapper> BuildExpOp(const Op &op) {
   return BuildElementwiseOp(op, "EXP", 0);
+}
+
+Expected<OpWrapper> BuildMaxOp(const Op &op) {
+  return BuildElementwiseOp(op, "MAXIMUM", 0);
+}
+
+Expected<OpWrapper> BuildMinOp(const Op &op) {
+  return BuildElementwiseOp(op, "MINIMUM", 0);
 }
 
 }  // namespace litert::samsung
