@@ -363,6 +363,9 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
   const auto align = builder.BytecodeAlignment();
   // Pad the original model to the next multiple of the alignment.
   auto align_offset = [align](size_t& cur_offset) {
+    if (align == 0) {
+      return;
+    }
     cur_offset = (cur_offset + align - 1) & ~(align - 1);
   };
 
@@ -497,16 +500,17 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
   // Copy offset tensor buffers.
   for (auto it = offset_tensor_offsets.Begin();
        it != offset_tensor_offsets.End(); ++it) {
-    const auto buf_id = it->first;
+    const auto tfl_buffer_ind = it->first;
+    const auto litert_buf_id = builder.OffsetTensorMap().at(tfl_buffer_ind);
 
-    auto offset_buf = litert_model.Buffers()->GetBuffer(buf_id);
-    if (!offset_buf) {
+    auto litert_buf = litert_model.Buffers()->GetBuffer(litert_buf_id);
+    if (!litert_buf) {
       LITERT_LOG(LITERT_ERROR, "Failed to find offset tensor buffer");
-      return offset_buf.Error();
+      return litert_buf.Error();
     }
 
     uint8_t* const offset = start + it->second.first;
-    std::memcpy(offset, offset_buf->Data(), offset_buf->Size());
+    std::memcpy(offset, litert_buf->Data(), litert_buf->Size());
   }
 
   return final_model;
