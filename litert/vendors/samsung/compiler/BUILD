@@ -87,6 +87,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:reduce_op_builder",
         "//litert/vendors/samsung/compiler/builders:relu_op_builder",
         "//litert/vendors/samsung/compiler/builders:reshape_op_builder",
+        "//litert/vendors/samsung/compiler/builders:resizebilinear_op_builder",
         "//litert/vendors/samsung/compiler/builders:softmax_op_builder",
         "//litert/vendors/samsung/compiler/builders:tanh_op_builder",
         "//litert/vendors/samsung/compiler/builders:transpose_conv_op_builder",
