@@ -371,6 +371,50 @@ else()
     )
 endif()
 
+# npu_numerics_check
+add_executable(npu_numerics_check
+    npu_numerics_check.cc
+)
+
+target_include_directories(npu_numerics_check
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        ${TENSORFLOW_SOURCE_DIR}
+)
+
+# Platform-aware linking
+if(ANDROID OR APPLE)
+    target_link_libraries(npu_numerics_check
+        PRIVATE
+            litert_tool_flags_qualcomm
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            ${LITERT_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+            litert_tensor_utils
+    )
+else()
+    target_link_libraries(npu_numerics_check
+        PRIVATE
+            litert_tool_flags_qualcomm
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            Threads::Threads
+            tensorflow-lite
+            "-Wl,--start-group"
+            ${ABSEIL_TOOL_LIBS}
+            ${LITERT_TOOL_COMMON_LIBS}
+            "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
+            litert_tensor_utils
+    )
+endif()
+
 # Platform-specific configurations for all executables
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(run_model PRIVATE ${LOG_LIB})
@@ -386,6 +430,6 @@ if(LITERT_PLATFORM_ANDROID)
 endif()
 
 # Install targets
-install(TARGETS run_model analyze_model apply_plugin_main extract_bytecode
+install(TARGETS run_model analyze_model apply_plugin_main extract_bytecode npu_numerics_check
     RUNTIME DESTINATION bin
 )
