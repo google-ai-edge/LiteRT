@@ -82,32 +82,6 @@ QualcommOptions::DspPerformanceMode QualcommOptions::GetDspPerformanceMode() {
   return static_cast<DspPerformanceMode>(val);
 }
 
-void QualcommOptions::SetUseHtpPreference(bool use_htp_preference) {
-  LrtQualcommOptionsSetUseHtpPreference(options_, use_htp_preference);
-}
-
-bool QualcommOptions::GetUseHtpPreference() {
-  bool val;
-  auto status = LrtQualcommOptionsGetUseHtpPreference(options_, &val);
-  if (status == kLiteRtStatusErrorNotFound) {
-    return false;
-  }
-  return val;
-}
-
-void QualcommOptions::SetUseQint16AsQuint16(bool use_qin16_as_quint16) {
-  LrtQualcommOptionsSetUseQint16AsQuint16(options_, use_qin16_as_quint16);
-}
-
-bool QualcommOptions::GetUseQint16AsQuint16() {
-  bool val;
-  auto status = LrtQualcommOptionsGetUseQint16AsQuint16(options_, &val);
-  if (status == kLiteRtStatusErrorNotFound) {
-    return false;
-  }
-  return val;
-}
-
 void QualcommOptions::SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32) {
   LrtQualcommOptionsSetUseInt64BiasAsInt32(options_, use_int64_bias_as_int32);
 }

@@ -273,56 +273,6 @@ void TensorWrapper::SetDataBy(std::uint32_t bytes, const void* data,
   }
 }
 
-void TensorWrapper::ConvertQint16ToQuint16() {
-  if (GetDataType() != QNN_DATATYPE_SFIXED_POINT_16) {
-    return;
-  }
-
-  // adjust static data
-  if (IsTensorStatic()) {
-    auto int16_data = GetTensorData<std::int16_t>();
-    if (!int16_data.has_value()) {
-      QNN_LOG_ERROR(
-          "Cannot convert static QInt16 data to QUint16 data failed since "
-          "GetTensorData failed.");
-      return;
-    }
-    QNN_LOG_DEBUG("Converting static tensor data from QInt16 to QUint16...");
-    std::vector<std::uint16_t> uint16_data;
-    ConvertDataFromInt16toUInt16((*int16_data), uint16_data);
-    std::memcpy(owned_data_.data(),
-                reinterpret_cast<const char*>(uint16_data.data()),
-                GetTensorBytes());
-    qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
-    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
-  }
-
-  // adjust quant param;
-  if (IsPerTensorQuant()) {
-    const auto& q_param =
-        std::get<ScaleOffsetQuantizeParamsWrapper>(GetQuantParams());
-    quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
-        q_param.GetScale(), q_param.GetZeroPoint() + kUint16ZeroPoint);
-
-  } else if (IsPerChannelQuant()) {
-    const auto& q_param =
-        std::get<AxisScaleOffsetQuantizeParamsWrapper>(GetQuantParams());
-    std::vector<int32_t> zero_points = q_param.GetZeroPoints();
-    std::for_each(zero_points.begin(), zero_points.end(),
-                  [](std::int32_t& val) { val += kUint16ZeroPoint; });
-    quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
-        q_param.GetAxis(), q_param.GetScales(), zero_points);
-  }
-
-  UpdateQnnQuantParams();
-
-  // change data type here since GetTensorData checks data type
-  qnn_tensor_.v2.dataType = QNN_DATATYPE_UFIXED_POINT_16;
-  QNN_LOG_DEBUG(
-      "QNN does not fully support QInt16 now, converting to QUint16 for better "
-      "compatibility.");
-}
-
 TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
     : qnn_tensor_{qnn_tensor} {
   if (qnn_tensor_.version == QNN_TENSOR_VERSION_1) {

@@ -291,15 +291,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
-        compiler_plugin->Options().GetUseHtpPreference(),
         compiler_plugin->Options().GetUseInt64BiasAsInt32(), op, tensor_pool,
         input_tensors, output_tensors, op_wrappers));
-
-    if (compiler_plugin->Options().GetUseQint16AsQuint16()) {
-      tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
-        tensor_wrapper.ConvertQint16ToQuint16();
-      });
-    }
 
     // Empty op_wrappers means the op is not supported by QNN.
     if (op_wrappers.empty()) {

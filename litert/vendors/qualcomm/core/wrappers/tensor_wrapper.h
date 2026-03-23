@@ -161,8 +161,6 @@ class TensorWrapper final {
 
   void ConvertAxisScaleOffsetToScaleOffset();
 
-  void ConvertQint16ToQuint16();
-
   void MarkDump() {
     if (!absl::EndsWith(name_, kDumpSuffix)) {
       name_ += kDumpSuffix;
