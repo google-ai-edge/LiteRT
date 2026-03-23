@@ -113,5 +113,6 @@ add_subdirectory(compiler)
 
 # Optionally add tests
 if(LITERT_BUILD_TESTS)
+    add_subdirectory(qnn_backend_test)
     add_subdirectory(tests)
 endif()

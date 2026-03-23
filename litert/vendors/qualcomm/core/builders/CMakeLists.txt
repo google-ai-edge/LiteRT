@@ -72,8 +72,9 @@ target_include_directories(qnn_builders
 )
 
 target_link_libraries(qnn_builders
-    PUBLIC
-        qnn_core
     PRIVATE
+        qnn_log
+        qnn_miscs
+        qnn_tensor_pool
         qnn_wrappers
 )
