@@ -1,38 +1,57 @@
 # Tensor Registration API
 
+## Introduction
+
+The primary goal of the Tensor Registration API is to provide a way for vendors
+to extend the LiteRT TensorBuffer API to support custom hardware memory
+allocation and operations natively.
+
+> [!NOTE] Recent refactoring efforts have decoupled the API slightly. The goal
+> of this refactoring was to limit direct LiteRT C API usage (such as reading
+> environment options directly) from Accelerator or Dispatch API
+> implementations. Now, accelerators can manage memory allocations and extract
+> required resources (like device contexts and command queues) via direct
+> parameters passed by the runtime.
+
 ## C API (litert/c/internal/litert_tensor_buffer_registry.h):
 
-```
+```c
 LiteRtStatus LiteRtRegisterTensorBufferHandlers(
-    LiteRtTensorBufferType buffer_type,     // e.g., kLiteRtTensorBufferTypeWebGpuBuffer
+    LiteRtEnvironment env,                   // The LiteRT environment
+    LiteRtTensorBufferType buffer_type,      // e.g., kLiteRtTensorBufferTypeWebGpuBuffer
     CreateCustomTensorBuffer create_func,    // Your custom buffer creation function
     DestroyCustomTensorBuffer destroy_func,  // Your custom destruction function
     LockCustomTensorBuffer lock_func,        // Your custom lock function
-    UnlockCustomTensorBuffer unlock_func     // Your custom unlock function
+    UnlockCustomTensorBuffer unlock_func,    // Your custom unlock function
+    ClearCustomTensorBuffer clear_func,      // Optional custom clear function
+    ImportCustomTensorBuffer import_func,    // Optional custom import function
+    LiteRtEnvOptionTag device_tag,           // Tag to read device_id from EnvironmentOptions
+    LiteRtEnvOptionTag queue_tag             // Tag to read queue_id from EnvironmentOptions
 );
 ```
 
-## C++ API (litert/runtime/tensor_buffer_registry.h):
-
-```
-litert::Expected<void> RegisterHandlers(
-    LiteRtTensorBufferType buffer_type,
-    const CustomTensorBufferHandlers& handlers
-);
-
-```
 
 ## How It Enables Custom Buffer Creation
 
 When one registers handlers for a buffer type, the system will use the custom
 create function whenever someone requests that buffer type:
 
+**Usage of `device_tag` and `queue_tag`:** The underlying buffer allocation
+(especially on GPUs) often requires a device handle (like an OpenCL context or
+WebGPU device) and a command queue. Instead of having buffer handlers directly
+fetch `LiteRtEnvironmentOptions`, the `TensorBufferRegistry` extracts these
+resources for you using `device_tag` and `queue_tag`. During creation or import,
+the runtime looks up these tags in `LiteRtEnvironmentOptions`, retrieves the
+values as raw `void*`, and passes them directly as `device_id` and `queue_id`
+over to your `create_func` and `import_func`. This isolates the environment
+lookup logic from the handlers and limits their reliance on the broader C API.
+
 ## Example from tests (litert/runtime/tensor_buffer_registry_test.cc):
 
-```
+```cpp
 // Define your custom creation function
 LiteRtStatus CreateMyCustomTensorBuffer(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    void* device_id, void* queue_id, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info) {
   // Your custom buffer creation logic here
@@ -48,7 +67,10 @@ registry.RegisterHandlers(kLiteRtTensorBufferTypeWebGpuBuffer, {
     .destroy_func = DestroyMyCustomTensorBuffer,
     .lock_func = LockMyCustomTensorBuffer,
     .unlock_func = UnlockMyCustomTensorBuffer,
-    .clear_func = ClearMyCustomTensorBuffer
+    .clear_func = ClearMyCustomTensorBuffer,
+    .import_func = ImportMyCustomTensorBuffer,
+    .device_tag = kLiteRtEnvOptionTagWebGpuDevice,
+    .queue_tag = kLiteRtEnvOptionTagWebGpuQueue,
 });
 ```
 
