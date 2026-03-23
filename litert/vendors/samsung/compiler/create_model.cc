@@ -378,6 +378,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflSqrt:
         op_wrapper = std::move(BuildSqrtOp(op));
         break;
+      case kLiteRtOpCodeTflSquaredDifference:
+        op_wrapper = std::move(BuildSquaredDifferenceOp(op));
+        break;
       case kLiteRtOpCodeTflSub:
         op_wrapper = std::move(BuildSubOp(op));
         break;
