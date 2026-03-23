@@ -24,6 +24,7 @@
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
 
+#include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -64,6 +65,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   std::optional<litert::LiteRtDarwinnRuntimeOptionsT> options_data =
       gt::GetDarwinnOptionsData(options);
+  LITERT_RETURN_IF_ERROR(
+      gt::ApplyDarwinnOptionsToDeviceContext(device_context, options_data));
   device_context->darwinn_options() = std::move(options_data);
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
@@ -236,5 +239,13 @@ LiteRtStatus LiteRtDispatchDeviceContextT::UnregisterGraph(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchDeviceContextT::AnnotateSystemAttribute(
+    const char* absl_nonnull key, const char* absl_nonnull value) {
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrVendorSetSystemAttributeStr(thr_context_, key, value),
+      "Failed to set system attribute %s to %s", key, value);
   return kLiteRtStatusOk;
 }

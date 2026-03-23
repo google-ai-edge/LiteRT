@@ -66,6 +66,9 @@ class LiteRtDispatchDeviceContextT {
   }
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
+  LiteRtStatus AnnotateSystemAttribute(const char* absl_nonnull key,
+                                       const char* absl_nonnull value);
+
  private:
   explicit LiteRtDispatchDeviceContextT(ThrContext* absl_nonnull thr_context)
       : thr_context_(thr_context) {}
