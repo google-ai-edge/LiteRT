@@ -477,7 +477,9 @@ class ExtendedModel : public litert::Model {
 
 struct SerializationOptions {
   static LiteRtModelSerializationOptions Defaults() {
-    return LiteRtModelSerializationOptions{};
+    LiteRtModelSerializationOptions opts{};
+    opts.bytecode_alignment = 1;
+    return opts;
   }
 };
 
