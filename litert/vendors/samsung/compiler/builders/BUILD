@@ -42,7 +42,6 @@ cc_library(
     ],
 )
 
-
 cc_library(
     name = "batch_matmul_op_builder",
     srcs = ["batch_matmul_op_builder.cc"],
@@ -242,6 +241,30 @@ cc_library(
     deps = [
         ":op_wrapper",
         ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "spacetodepth_op_builder",
+    srcs = ["spacetodepth_op_builder.cc"],
+    hdrs = ["spacetodepth_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "hardswish_op_builder",
+    srcs = ["hardswish_op_builder.cc"],
+    hdrs = ["hardswish_op_builder.h"],
+    deps = [
+        ":op_wrapper",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
