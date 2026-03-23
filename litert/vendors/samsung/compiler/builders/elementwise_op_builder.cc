@@ -108,4 +108,8 @@ Expected<OpWrapper> BuildRsqrtOp(const Op &op) {
   return BuildElementwiseOp(op, "RSQRT", 0);
 }
 
+Expected<OpWrapper> BuildSquaredDifferenceOp(const Op &op) {
+  return BuildElementwiseOp(op, "SquaredDifference", 0);
+}
+
 }  // namespace litert::samsung
