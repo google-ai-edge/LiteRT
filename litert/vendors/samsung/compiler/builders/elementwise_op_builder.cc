@@ -89,4 +89,23 @@ Expected<OpWrapper> BuildMinOp(const Op &op) {
   return BuildElementwiseOp(op, "Minimum", 0);
 }
 
+Expected<OpWrapper> BuildSubOp(const Op &op) {
+  uint32_t tfl_fused_activation;
+  if (auto status =
+          LiteRtGetSubFusedActivationOption(op.Get(), &tfl_fused_activation);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get fused activation");
+  }
+
+  return BuildElementwiseOp(op, "SUB", tfl_fused_activation);
+}
+
+Expected<OpWrapper> BuildSqrtOp(const Op &op) {
+  return BuildElementwiseOp(op, "SQRT", 0);
+}
+
+Expected<OpWrapper> BuildRsqrtOp(const Op &op) {
+  return BuildElementwiseOp(op, "RSQRT", 0);
+}
+
 }  // namespace litert::samsung
