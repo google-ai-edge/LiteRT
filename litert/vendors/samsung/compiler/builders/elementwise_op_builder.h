@@ -35,6 +35,8 @@ Expected<OpWrapper> BuildMinOp(const Op &op);
 
 Expected<OpWrapper> BuildCosOp(const Op &op);
 
+Expected<OpWrapper> BuildSinOp(const Op &op);
+
 Expected<OpWrapper> BuildRsqrtOp(const Op &op);
 
 Expected<OpWrapper> BuildSqrtOp(const Op &op);

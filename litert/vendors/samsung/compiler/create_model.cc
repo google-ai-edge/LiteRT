@@ -54,6 +54,8 @@
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/select_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
@@ -374,6 +376,15 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflRsqrt:
         op_wrapper = std::move(BuildRsqrtOp(op));
+        break;
+      case kLiteRtOpCodeTflSelect:
+        op_wrapper = std::move(BuildSelectOp(op));
+        break;
+      case kLiteRtOpCodeTflSelectV2:
+        op_wrapper = std::move(BuildSelectV2Op(op));
+        break;
+      case kLiteRtOpCodeTflSin:
+        op_wrapper = std::move(BuildSinOp(op));
         break;
       case kLiteRtOpCodeTflSlice:
         op_wrapper = std::move(BuildSliceOp(op));
