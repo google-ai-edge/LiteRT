@@ -53,6 +53,8 @@ const char* LiteRtGetStatusString(LiteRtStatus status) {
     LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnsupportedRuntimeVersion);
     LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnsupportedCompilerVersion);
     LITERT_STATUS_STR_CASE(kLiteRtStatusErrorIncompatibleByteCodeVersion);
+    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnsupportedOpShapeInferer);
+    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorShapeInferenceFailed);
 #undef LITERT_STATUS_STR_CASE
   }
 }

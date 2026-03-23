@@ -136,7 +136,12 @@ absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
       return absl::FailedPreconditionError(LogMessage());
     case Status::kErrorIncompatibleByteCodeVersion:
       return absl::FailedPreconditionError(LogMessage());
+    case kLiteRtStatusErrorUnsupportedOpShapeInferer:
+      return absl::UnimplementedError(LogMessage());
+    case kLiteRtStatusErrorShapeInferenceFailed:
+      return absl::InvalidArgumentError(LogMessage());
   }
+  return absl::UnknownError(LogMessage());
 }
 
 std::string ErrorStatusBuilder::LogMessage() const {
