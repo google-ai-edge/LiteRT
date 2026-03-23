@@ -22,8 +22,8 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
-#include "absl/strings/str_format.h" // from @com_google_absl
-#include "common-types.h"  // from @exynos_ai_litecore
+#include "absl/strings/str_format.h"   // from @com_google_absl
+#include "common-types.h"              // from @exynos_ai_litecore
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -34,15 +34,16 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
-
 
 namespace litert::samsung {
 
@@ -123,10 +124,11 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
     return static_cast<LiteRtStatus>(element_type_mapping.Error().StatusCC());
   }
 
+  const char* layout_rep = tensor_shape.size() == 4 ? "NHWC" : "UNDEFINED";
   TENSOR_ID_T tensor_id;
   LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().DefineTensor(
       handler_, &tensor_id, t.Name().data(), tensor_shape.data(),
-      tensor_shape.size(), element_type_mapping.Value(), "UNDEFINED"));
+      tensor_shape.size(), element_type_mapping.Value(), layout_rep));
   tensors_map_[t.Get()] = tensor_id;
 
   if (t.HasQuantization()) {
@@ -287,35 +289,41 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
     switch (op.Code()) {
       case kLiteRtOpCodeTflAdd:
-        op_wrapper = BuildAddOp(op);
+        op_wrapper = std::move(BuildAddOp(op));
         break;
       case kLiteRtOpCodeTflBatchMatmul:
         op_wrapper = std::move(BuildBatchMatMulOp(op));
         break;
-      case kLiteRtOpCodeTflMul:
-        op_wrapper = BuildMulOp(op);
-        break;
-      case kLiteRtOpCodeTflPad:
-      case kLiteRtOpCodeTflPadv2:
-        op_wrapper = std::move(BuildPadOp(op));
-        break;
-      case kLiteRtOpCodeTflDiv:
-        op_wrapper = std::move(BuildDivOp(op));
-        break;
-      case kLiteRtOpCodeTflReshape:
-        op_wrapper = BuildReshapeOp(op);
+      case kLiteRtOpCodeTflCast:
+        op_wrapper = std::move(BuildCastOp(op));
         break;
       case kLiteRtOpCodeTflConcatenation:
         op_wrapper = std::move(BuildConcatOp(op));
         break;
-      case kLiteRtOpCodeTflCast:
-        op_wrapper = std::move(BuildCastOp(op));
+      case kLiteRtOpCodeTflConv2d:
+        op_wrapper = std::move(BuildConv2dOp(op));
+        break;
+      case kLiteRtOpCodeTflDepthwiseConv2d:
+        op_wrapper = std::move(BuildDepthwiseConv2dOp(op));
+        break;
+      case kLiteRtOpCodeTflDiv:
+        op_wrapper = std::move(BuildDivOp(op));
         break;
       case kLiteRtOpCodeTflExp:
         op_wrapper = std::move(BuildExpOp(op));
         break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = std::move(BuildLogisticOp(op));
+        break;
+      case kLiteRtOpCodeTflMul:
+        op_wrapper = std::move(BuildMulOp(op));
+        break;
+      case kLiteRtOpCodeTflPad:
+      case kLiteRtOpCodeTflPadv2:
+        op_wrapper = std::move(BuildPadOp(op));
+        break;
+      case kLiteRtOpCodeTflReshape:
+        op_wrapper = std::move(BuildReshapeOp(op));
         break;
       case kLiteRtOpCodeTflSoftmax:
         op_wrapper = std::move(BuildSoftmaxOp(op));

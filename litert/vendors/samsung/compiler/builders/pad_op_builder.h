@@ -1,5 +1,5 @@
-// Copyright 2024 Google LLC.
-// Copyright (C) Samsung Electronics Co. LTD. All rights reserved
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
+// SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.

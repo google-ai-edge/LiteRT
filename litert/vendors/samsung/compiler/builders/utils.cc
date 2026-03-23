@@ -1,5 +1,5 @@
-// Copyright 2024 Google LLC.
-// Copyright (C) Samsung Electronics Co. LTD. All rights reserved
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
+// SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -99,6 +99,22 @@ Expected<const uint32_t> ConvertElementTypeToInt(ElementType element_type) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Element Type not supported");
   }
+}
+
+std::pair<int32_t, int32_t>
+GetExplicitPadding(int32_t input_size, int32_t filter_size, int32_t output_size,
+                   int32_t stride, int32_t dilation, bool is_transposed) {
+  int32_t padding_t_or_l = 0;
+  int32_t padding_b_or_r = 0;
+  int32_t dilated_filter_size = (filter_size - 1) * dilation + 1;
+  int32_t total_pad =
+      ((output_size - 1) * stride + dilated_filter_size - input_size);
+
+  padding_t_or_l = total_pad / 2;
+  padding_b_or_r =
+      is_transposed ? total_pad - padding_t_or_l : (total_pad + 1) / 2;
+
+  return {padding_t_or_l, padding_b_or_r};
 }
 
 } // namespace litert::samsung
