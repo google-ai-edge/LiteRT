@@ -74,6 +74,7 @@ cc_library(
         "//litert/vendors/samsung:ai_litecore_api",
         "//litert/vendors/samsung/compiler/builders:op_wrapper",
         "//litert/vendors/samsung/compiler/builders:elementwise_op_builder",
+        "//litert/vendors/samsung/compiler/builders:pad_op_builder",
         "//litert/vendors/samsung/compiler/builders:reshape_op_builder",
         "//litert/vendors/samsung/compiler/builders:batch_matmul_op_builder",
         "@com_google_absl//absl/algorithm:container",
