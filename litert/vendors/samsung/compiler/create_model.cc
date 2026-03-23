@@ -298,6 +298,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflCast:
         op_wrapper = std::move(BuildCastOp(op));
         break;
+      case kLiteRtOpCodeTflCeil:
+        op_wrapper = std::move(BuildCeilOp(op));
+        break;
       case kLiteRtOpCodeTflConcatenation:
         op_wrapper = std::move(BuildConcatOp(op));
         break;
@@ -321,6 +324,12 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflExp:
         op_wrapper = std::move(BuildExpOp(op));
+        break;
+      case kLiteRtOpCodeTflFloor:
+        op_wrapper = std::move(BuildFloorOp(op));
+        break;
+      case kLiteRtOpCodeTflFloorDiv:
+        op_wrapper = std::move(BuildFloorDivOp(op));
         break;
       case kLiteRtOpCodeTflFullyConnected:
         op_wrapper = std::move(BuildFullyConnectedOp(op));
