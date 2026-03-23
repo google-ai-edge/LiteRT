@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <cstring>
 #include <list>
 #include <memory>
 #include <optional>
@@ -22,19 +23,17 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
-#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
@@ -68,9 +67,8 @@ class LiteRtDispatchDeviceContextT {
     return {};
   }
 
-  ::litert::TensorBuffer Lookup(BufferHandle handle) {
-    return ::litert::TensorBuffer::WrapCObject(registered_buffers_[handle],
-                                               ::litert::OwnHandle::kNo);
+  LiteRtTensorBuffer Lookup(BufferHandle handle) {
+    return registered_buffers_[handle];
   }
 
  private:
@@ -182,19 +180,28 @@ class LiteRtDispatchInvocationContextT {
         continue;
       }
       auto* input = inputs_[i];
-      ::litert::TensorBuffer buffer = device_context_->Lookup(input);
-      std::vector<float> input_data(4);
-      buffer.Read(absl::MakeSpan(input_data));
-      const auto packed_size = buffer.PackedSize();
-      input->resize(*packed_size / sizeof(float));
-      buffer.Read(absl::MakeSpan(input->data(), input->size()));
+      LiteRtTensorBuffer buffer = device_context_->Lookup(input);
+      size_t packed_size;
+      LiteRtGetTensorBufferPackedSize(buffer, &packed_size);
+      input->resize(packed_size / sizeof(float));
+      void* host_mem;
+      LiteRtLockTensorBuffer(buffer, &host_mem,
+                             kLiteRtTensorBufferLockModeRead);
+      std::memcpy(input->data(), host_mem, packed_size);
+      LiteRtUnlockTensorBuffer(buffer);
     }
   }
 
   void Finish() {
     for (auto* output : outputs_) {
-      ::litert::TensorBuffer buffer = device_context_->Lookup(output);
-      buffer.Write(absl::MakeConstSpan(output->data(), output->size()));
+      LiteRtTensorBuffer buffer = device_context_->Lookup(output);
+      size_t packed_size;
+      LiteRtGetTensorBufferPackedSize(buffer, &packed_size);
+      void* host_mem;
+      LiteRtLockTensorBuffer(buffer, &host_mem,
+                             kLiteRtTensorBufferLockModeWrite);
+      std::memcpy(host_mem, output->data(), packed_size);
+      LiteRtUnlockTensorBuffer(buffer);
     }
   }
 
