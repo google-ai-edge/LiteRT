@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <string>
 
+#include "openvino/core/any.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -30,6 +31,7 @@
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
 
 namespace litert {
 namespace {
@@ -37,7 +39,7 @@ namespace {
 using ::testing::Values;
 
 const auto kSupportedOps = Values("add_simple.tflite");
-const auto kSupportedSocModels = Values("NPU2700");
+const auto kSupportedSocModels = Values("LNL", "PTL");
 
 TEST(TestOVPlugin, PartitionAddGraph) {
   auto plugin = CreatePlugin();
@@ -59,8 +61,8 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "NPU2700",
-                                               model.Get(), &compiled));
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginCompile(plugin.get(), "PTL", model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
@@ -83,6 +85,30 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
                                    op_data_size);
 
   LiteRtDestroyCompiledResult(compiled);
+}
+
+// Tests for GetSocModelConfig
+TEST(TestOVPlugin, GetSocModelConfigLNL) {
+  ov::AnyMap config_map;
+  EXPECT_EQ(litert::openvino::GetSocModelConfig("LNL", config_map),
+            kLiteRtStatusOk);
+  ASSERT_GT(config_map.count("NPU_PLATFORM"), 0u);
+  EXPECT_EQ(config_map.at("NPU_PLATFORM").as<std::string>(), "NPU4000");
+}
+
+TEST(TestOVPlugin, GetSocModelConfigPTL) {
+  ov::AnyMap config_map;
+  EXPECT_EQ(litert::openvino::GetSocModelConfig("PTL", config_map),
+            kLiteRtStatusOk);
+  ASSERT_GT(config_map.count("NPU_PLATFORM"), 0u);
+  EXPECT_EQ(config_map.at("NPU_PLATFORM").as<std::string>(), "NPU5010");
+}
+
+TEST(TestOVPlugin, GetSocModelConfigUnknownReturnsError) {
+  ov::AnyMap config_map;
+  EXPECT_EQ(litert::openvino::GetSocModelConfig("UNKNOWN_SOC", config_map),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(config_map.count("NPU_PLATFORM"), 0u);
 }
 
 }  // namespace

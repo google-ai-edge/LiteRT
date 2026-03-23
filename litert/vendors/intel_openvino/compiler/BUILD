@@ -19,6 +19,22 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
+litert_lib(
+    name = "openvino_soc_config",
+    srcs = ["openvino_soc_config.cc"],
+    hdrs = ["openvino_soc_config.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+        "@intel_openvino//:openvino",
+    ],
+)
+
 litert_dynamic_lib(
     name = "openvino_compiler_plugin",
     srcs = ["openvino_compiler_plugin.cc"],
@@ -44,6 +60,7 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":graph_iterator",
+        ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
@@ -72,6 +89,7 @@ litert_bin(
     deps = [
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
+        ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_options",
