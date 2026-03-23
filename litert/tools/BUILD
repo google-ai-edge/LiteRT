@@ -98,6 +98,7 @@ litert_bin(
             "//litert/vendors/examples:example_plugin_so",
             "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
             # copybara:uncomment "//litert/vendors/samsung/compiler:compiler_plugin_so",
+            "//litert/vendors/samsung/compiler:compiler_plugin_so",
             "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
             "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
             "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
@@ -141,6 +142,7 @@ litert_bin(
             "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         ],
     }),
 )
@@ -181,6 +183,7 @@ litert_bin(
         "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/functional:function_ref",
@@ -280,6 +283,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings:str_format",
@@ -491,6 +495,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "//tflite/profiling:time",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
@@ -590,6 +595,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             # copybara:uncomment_begin(google-only)

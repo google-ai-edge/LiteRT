@@ -12,14 +12,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
+#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
 
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"   // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
-#include "common-types.h"  // from @exynos_ai_litecore
+#include "common-types.h"                   // from @exynos_ai_litecore
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_extended_model.h"
@@ -52,7 +52,7 @@ class GraphCreator {
   AiLiteCoreManager::Ptr ai_lite_core_;
   graph_handler_t handler_;
   // tensor map record the LiteRtTensor which is already registered
-  absl::flat_hash_map<LiteRtTensor, TENSOR_ID_T> tensors_map_;
+  absl::flat_hash_map<uint32_t, TENSOR_ID_T> tensors_map_;
   // graph inputs/outputs
   absl::InlinedVector<TENSOR_ID_T, kExpectedMaxNumOfSubgraphInputs>
       input_indices_;
@@ -66,4 +66,4 @@ class GraphCreator {
 Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
                                         const Subgraph& partition);
 }  // namespace litert::samsung
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_

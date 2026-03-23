@@ -12,42 +12,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "litert/vendors/samsung/compiler/builders/mul_op_builder.h"
 
-#include <cstdint>
-#include <string>
+#include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/cc/litert_model.h"
+
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildMulOp(const Op& op) {
-  OpWrapper op_wrapper("", "MUL");
+Expected<OpWrapper> BuildLeakyReluOp(const Op &op) {
+  OpWrapper op_wrapper("LeakyRelu");
 
-  for (const auto& input : op.Inputs()) {
+  for (const auto &input : op.Inputs()) {
     op_wrapper.AddInput(input);
   }
-  for (const auto& output : op.Outputs()) {
+  for (const auto &output : op.Outputs()) {
     op_wrapper.AddOutput(output);
   }
-
-  uint32_t tfl_fused_activation;
-  if (auto status =
-          LiteRtGetMulFusedActivationOption(op.Get(), &tfl_fused_activation);
+  float alpha = 0.0;
+  if (auto status = LiteRtGetLeakyReluAlphaOption(op.Get(), &alpha);
       status != kLiteRtStatusOk) {
-    return Error(static_cast<litert::Status>(status),
-                 "Fail to get fused activation");
+    return Error(status, "Fail to get alpha.");
   }
-  if (tfl_fused_activation == 1) {
-    op_wrapper.AddParam("activation", "Relu");
-  } else if (tfl_fused_activation != 0) {
-    return Error(litert::Status::kErrorRuntimeFailure,
-                 "Unsupported fused activation");
-  }
+
+  op_wrapper.AddParam("alpha", alpha);
 
   return op_wrapper;
 }

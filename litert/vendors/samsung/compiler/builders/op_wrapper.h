@@ -12,9 +12,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
+#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -24,6 +25,7 @@
 
 #include "common-types.h"  // from @exynos_ai_litecore
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 
 namespace litert::samsung {
@@ -105,8 +107,9 @@ class OpParamWrapper {
 
 class OpWrapper {
  public:
-  OpWrapper(const std::string& name, const std::string& type)
-      : op_name_(name), op_type_(type) {}
+  OpWrapper(const std::string& type) : op_type_(type) {
+    op_name_ = "litert_" + type + std::to_string(GenId());
+  }
 
   OpWrapper& AddInput(const Tensor& t) {
     LiteRtTensor input = t.Get();
@@ -133,13 +136,13 @@ class OpWrapper {
             typename = std::enable_if_t<std::is_arithmetic<T>::value, void>>
   OpWrapper& AddParam(const std::string& key, const std::vector<T>& value) {
     op_params_.emplace_back(
-        OpParamWrapper::Create(key, value.data(), value.size(), true));
+        OpParamWrapper::Create(key, value.data(), value.size(), false));
     return *this;
   }
 
   OpWrapper& AddParam(const std::string& key, const std::string& value) {
     op_params_.emplace_back(
-        OpParamWrapper::Create(key, value.data(), value.size(), true));
+        OpParamWrapper::Create(key, value.data(), value.size(), false));
     return *this;
   }
 
@@ -164,7 +167,12 @@ class OpWrapper {
   std::vector<Tensor> outputs_;
 
   std::vector<OpParamWrapper> op_params_;
+
+  static uint32_t GenId() {
+    static std::atomic<uint32_t> id{0};
+    return id++;
+  }
 };
 
 }  // namespace litert::samsung
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
