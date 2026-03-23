@@ -389,3 +389,28 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "select_op_builder",
+    srcs = ["select_op_builder.cc"],
+    hdrs = ["select_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "selectv2_op_builder",
+    srcs = ["selectv2_op_builder.cc"],
+    hdrs = ["selectv2_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
