@@ -63,6 +63,12 @@ Expected<std::vector<T>> GetWeightDataAs(const Tensor &t) {
 
 Expected<const uint32_t> ConvertElementTypeToInt(ElementType element_type);
 
+std::pair<int32_t, int32_t> GetExplicitPadding(int32_t input_size,
+                                               int32_t filter_size,
+                                               int32_t output_size,
+                                               int32_t stride, int32_t dilation,
+                                               bool is_transposed = false);
+
 } // namespace litert::samsung
 
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_MUL_OP_BUILDER_H_
