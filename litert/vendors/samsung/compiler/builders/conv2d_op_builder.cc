@@ -34,12 +34,12 @@ constexpr int32_t kIOWidthIndex = 2;
 constexpr int32_t kIOChannelIndex = 3;
 constexpr int32_t kKernelHeightIndex = 1;
 constexpr int32_t kKernelWidthIndex = 2;
+constexpr int32_t kKernelChannelIndex = 3;
 
 Expected<OpWrapper> BuildGeneralConvOp(const Op &op, const std::string &type,
                                        int32_t stride_h, int32_t stride_w,
                                        int32_t dilation_h, int32_t dilation_w,
                                        int32_t padding,
-                                       int32_t depth_multiplier,
                                        uint32_t tfl_fused_activation = 0) {
   OpWrapper op_wrapper(type);
 
@@ -81,7 +81,6 @@ Expected<OpWrapper> BuildGeneralConvOp(const Op &op, const std::string &type,
   op_wrapper.AddParam("padding", "EXPLICIT");
   op_wrapper.AddParam("padding_type", "CONSTANT");
   op_wrapper.AddParam("explicit_padding", explicit_paddings);
-  op_wrapper.AddParam("group", depth_multiplier);
 
   auto activation = GetFusedActivationName(tfl_fused_activation);
   if (!activation) {
@@ -112,11 +111,15 @@ Expected<OpWrapper> BuildConv2dOp(const Op &op) {
   LITERT_RETURN_IF_ERROR(
       LiteRtGetConv2dFusedActivationOption(op.Get(), &tfl_fused_activation));
 
-  const int32_t depth_multiplier = 1;
-
-  return BuildGeneralConvOp(op, "CONV2D", stride_h, stride_w, dilation_h,
-                            dilation_w, padding, depth_multiplier,
-                            tfl_fused_activation);
+  LITERT_ASSIGN_OR_RETURN(
+      auto op_wrapper,
+      BuildGeneralConvOp(op, "CONV2D", stride_h, stride_w, dilation_h,
+                         dilation_w, padding, tfl_fused_activation));
+  auto in_channel = GetDimensions(op.Inputs()[kInputIndex]).at(kIOChannelIndex);
+  auto kernel_in_channel =
+      GetDimensions(op.Inputs()[kKernelIndex]).at(kKernelChannelIndex);
+  op_wrapper.AddParam("group", in_channel / kernel_in_channel);
+  return op_wrapper;
 }
 
 Expected<OpWrapper> BuildDepthwiseConv2dOp(const Op &op) {
@@ -140,17 +143,12 @@ Expected<OpWrapper> BuildDepthwiseConv2dOp(const Op &op) {
   LITERT_RETURN_IF_ERROR(
       LiteRtGetDepthwiseConv2dPaddingOption(op.Get(), &padding));
 
-  int32_t depth_multiplier = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDepthMultiplierOption(
-      op.Get(), &depth_multiplier));
-
   uint32_t tfl_fused_activation;
   LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dFusedActivationOption(
       op.Get(), &tfl_fused_activation));
 
   return BuildGeneralConvOp(op, "DWCONV2D", stride_h, stride_w, dilation_h,
-                            dilation_w, padding, depth_multiplier,
-                            tfl_fused_activation);
+                            dilation_w, padding, tfl_fused_activation);
 }
 
 }  // namespace litert::samsung

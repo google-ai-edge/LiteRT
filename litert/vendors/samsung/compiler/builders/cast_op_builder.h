@@ -25,4 +25,4 @@ namespace litert::samsung {
 Expected<OpWrapper> BuildCastOp(const Op &op);
 
 }
-#endif // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_CAST_OP_BUILDER_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_CAST_OP_BUILDER_H_

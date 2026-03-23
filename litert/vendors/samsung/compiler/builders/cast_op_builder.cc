@@ -22,29 +22,25 @@
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
+constexpr int32_t kInputIndex = 0;
+constexpr int32_t kOutputIndex = 0;
 
 Expected<OpWrapper> BuildCastOp(const Op &op) {
-  OpWrapper op_wrapper("Cast");
+  OpWrapper op_wrapper("CAST");
 
-  for (const auto &input : op.Inputs()) {
-    op_wrapper.AddInput(input);
+  op_wrapper.AddInput(op.Inputs()[kInputIndex]);
+  auto output = std::move(op.Outputs()[kOutputIndex]);
+  op_wrapper.AddOutput(output);
+
+  auto ranked_tensor_type = output.RankedTensorType();
+  if (!ranked_tensor_type) {
+    return ranked_tensor_type.Error();
   }
-  for (const auto &output : op.Outputs()) {
-    op_wrapper.AddOutput(output);
 
-    auto ranked_tensor_type = output.RankedTensorType();
-    if (!ranked_tensor_type) {
-      return ranked_tensor_type.Error();
-    }
-    auto element_type = ranked_tensor_type->ElementType();
-
-    auto element_type_mapping = ConvertElementTypeToInt(element_type);
-    if (!element_type_mapping.HasValue()) {
-      return element_type_mapping.Error();
-    }
-
-    op_wrapper.AddParam("to", element_type_mapping.Value());
-  }
+  auto element_type = ranked_tensor_type->ElementType();
+  LITERT_ASSIGN_OR_RETURN(auto element_type_mapping,
+                          MapToElementTypeStr(element_type));
+  op_wrapper.AddParam("to", element_type_mapping);
 
   return op_wrapper;
 }

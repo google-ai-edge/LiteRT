@@ -26,4 +26,4 @@ Expected<OpWrapper> BuildTransposeConvOp(const Op &op);
 
 }
 
-#endif
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SOFTMAX_OP_BUILDER_H_

@@ -15,9 +15,9 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <atomic>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -107,7 +107,7 @@ class OpParamWrapper {
 
 class OpWrapper {
  public:
-  OpWrapper(const std::string &type) : op_type_(type) {
+  OpWrapper(const std::string& type) : op_type_(type) {
     op_name_ = "litert_" + type + std::to_string(GenId());
   }
 
@@ -172,7 +172,6 @@ class OpWrapper {
     static std::atomic<uint32_t> id{0};
     return id++;
   }
-
 };
 
 }  // namespace litert::samsung

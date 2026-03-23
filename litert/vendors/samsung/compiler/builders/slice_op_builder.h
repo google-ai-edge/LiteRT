@@ -12,8 +12,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SLICE_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SLICE_OP_BUILDER_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SLIICE_OP_BUILDER_H_
+#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SLIICE_OP_BUILDER_H_
 
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
@@ -22,4 +22,4 @@ namespace litert::samsung {
 Expected<OpWrapper> BuildSliceOp(const Op &op);
 
 }
-#endif
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_SLICE_OP_BUILDER_H_

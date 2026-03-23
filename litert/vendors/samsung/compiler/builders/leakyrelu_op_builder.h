@@ -25,4 +25,4 @@ namespace litert::samsung {
 Expected<OpWrapper> BuildLeakyReluOp(const Op &op);
 
 }
-#endif
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_LEAKYRELU_OP_BUILDER_H_
