@@ -57,6 +57,9 @@
 #include "litert/vendors/samsung/compiler/builders/strided_slice_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/gelu_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
 
 namespace litert::samsung {
 
