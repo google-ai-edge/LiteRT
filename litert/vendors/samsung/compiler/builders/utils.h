@@ -66,8 +66,7 @@ Expected<const uint32_t> ConvertElementTypeToInt(ElementType element_type);
 std::pair<int32_t, int32_t> GetExplicitPadding(int32_t input_size,
                                                int32_t filter_size,
                                                int32_t output_size,
-                                               int32_t stride, int32_t dilation,
-                                               bool is_transposed = false);
+                                               int32_t stride, int32_t dilation);
 
 } // namespace litert::samsung
 

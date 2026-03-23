@@ -19,37 +19,36 @@
 namespace litert::samsung {
 
 enum DATA_TYPE {
-    UNDEFINED = 0,
-    FLOAT32,
-    UINT8,
-    INT8,
-    UINT16,
-    INT16,
-    INT32,
-    INT64,
-    STRING,
-    BOOL,
-    FLOAT16,
-    DOUBLE,
-    UINT32,
-    UINT64,
-    COMPLEX64,
-    COMPLEX128,
-    BFLOAT16,
-    FLOAT8E4M3FN,
-    FLOAT8E4M3FNUZ,
-    FLOAT8E5M2,
-    FLOAT8E5M2FNUZ,
-    UINT4,
-    INT4,
-    FLOAT4E2M1,
-    FLOAT8E8M0,
-    UINT2,
-    INT2
+  UNDEFINED = 0,
+  FLOAT32,
+  UINT8,
+  INT8,
+  UINT16,
+  INT16,
+  INT32,
+  INT64,
+  STRING,
+  BOOL,
+  FLOAT16,
+  DOUBLE,
+  UINT32,
+  UINT64,
+  COMPLEX64,
+  COMPLEX128,
+  BFLOAT16,
+  FLOAT8E4M3FN,
+  FLOAT8E4M3FNUZ,
+  FLOAT8E5M2,
+  FLOAT8E5M2FNUZ,
+  UINT4,
+  INT4,
+  FLOAT4E2M1,
+  FLOAT8E8M0,
+  UINT2,
+  INT2
 };
 
 Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation) {
-
   if (tfl_fused_activation > tflite::ActivationFunctionType_MAX) {
     return Error(kLiteRtStatusErrorIndexOOB, "Invalid activation");
   }
@@ -63,8 +62,8 @@ Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation) {
   return activation_type;
 }
 
-absl::InlinedVector<int32_t, kExpectedMaxTensorRank>
-GetDimensions(const Tensor &t) {
+absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
+    const Tensor &t) {
   auto tensor_type = t.RankedTensorType();
   auto dimensions = tensor_type->Layout().Dimensions();
   // TODO: Remove this comment
@@ -75,46 +74,51 @@ GetDimensions(const Tensor &t) {
 
 Expected<const uint32_t> ConvertElementTypeToInt(ElementType element_type) {
   switch (element_type) {
-  case ElementType::Bool:
-    return DATA_TYPE::BOOL;
-  case ElementType::Int4:
-    return DATA_TYPE::INT4;
-  case ElementType::Int8:
-    return DATA_TYPE::INT8;
-  case ElementType::UInt8:
-    return DATA_TYPE::UINT8;
-  case ElementType::Int16:
-    return DATA_TYPE::UINT16;
-  case ElementType::UInt16:
-    return DATA_TYPE::UINT16;
-  case ElementType::Int32:
-    return DATA_TYPE::INT32;
-  case ElementType::Int64:
-    return DATA_TYPE::INT64;
-  case ElementType::Float16:
-    return DATA_TYPE::FLOAT16;
-  case ElementType::Float32:
-    return DATA_TYPE::FLOAT32;
-  default:
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "Element Type not supported");
+    case ElementType::Bool:
+      return DATA_TYPE::BOOL;
+    case ElementType::Int4:
+      return DATA_TYPE::INT4;
+    case ElementType::Int8:
+      return DATA_TYPE::INT8;
+    case ElementType::UInt8:
+      return DATA_TYPE::UINT8;
+    case ElementType::Int16:
+      return DATA_TYPE::UINT16;
+    case ElementType::UInt16:
+      return DATA_TYPE::UINT16;
+    case ElementType::Int32:
+      return DATA_TYPE::INT32;
+    case ElementType::Int64:
+      return DATA_TYPE::INT64;
+    case ElementType::Float16:
+      return DATA_TYPE::FLOAT16;
+    case ElementType::Float32:
+      return DATA_TYPE::FLOAT32;
+    default:
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Element Type not supported");
   }
 }
 
-std::pair<int32_t, int32_t>
-GetExplicitPadding(int32_t input_size, int32_t filter_size, int32_t output_size,
-                   int32_t stride, int32_t dilation, bool is_transposed) {
+std::pair<int32_t, int32_t> GetExplicitPadding(int32_t input_size,
+                                               int32_t filter_size,
+                                               int32_t output_size,
+                                               int32_t stride,
+                                               int32_t dilation) {
   int32_t padding_t_or_l = 0;
   int32_t padding_b_or_r = 0;
   int32_t dilated_filter_size = (filter_size - 1) * dilation + 1;
   int32_t total_pad =
       ((output_size - 1) * stride + dilated_filter_size - input_size);
 
+  if (total_pad < 0) {
+    total_pad = 0;
+  }
+
   padding_t_or_l = total_pad / 2;
-  padding_b_or_r =
-      is_transposed ? total_pad - padding_t_or_l : (total_pad + 1) / 2;
+  padding_b_or_r = total_pad - padding_t_or_l;
 
   return {padding_t_or_l, padding_b_or_r};
 }
 
-} // namespace litert::samsung
+}  // namespace litert::samsung
