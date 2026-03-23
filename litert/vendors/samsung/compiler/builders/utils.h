@@ -26,6 +26,41 @@ namespace litert::samsung {
 
 Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation);
 
+absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
+    const Tensor &t);
+
+template <typename T>
+Expected<std::vector<T>> GetWeightDataAs(const Tensor &t) {
+  LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type, t.RankedTensorType());
+
+  std::vector<T> data;
+  switch (ranked_tensor_type.ElementType()) {
+#define GET_AND_FILL(element_type, arith_type)                        \
+  case element_type: {                                                \
+    LITERT_ASSIGN_OR_RETURN(auto value, t.WeightsData<arith_type>()); \
+                                                                      \
+    data.resize(value.size());                                        \
+    std::transform(value.begin(), value.end(), data.begin(),          \
+                   [](auto val) { return static_cast<T>(val); });     \
+    return data;                                                      \
+  }
+    GET_AND_FILL(ElementType::Bool, bool);
+    GET_AND_FILL(ElementType::Int8, int8_t);
+    GET_AND_FILL(ElementType::UInt8, uint8_t);
+    GET_AND_FILL(ElementType::Int16, int16_t);
+    GET_AND_FILL(ElementType::UInt16, uint16_t);
+    GET_AND_FILL(ElementType::Int32, int32_t);
+    GET_AND_FILL(ElementType::UInt32, uint32_t);
+    GET_AND_FILL(ElementType::Int64, int64_t);
+    GET_AND_FILL(ElementType::Float32, float);
+    GET_AND_FILL(ElementType::Float64, double);
+
+#undef GET_AND_FILL
+    default:
+      return Error(kLiteRtStatusErrorUnsupported, "Unsupported element type.");
+  }
+}
+
 } // namespace litert::samsung
 
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_MUL_OP_BUILDER_H_

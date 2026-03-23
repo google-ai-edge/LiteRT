@@ -290,6 +290,10 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflMul:
         op_wrapper = BuildMulOp(op);
         break;
+      case kLiteRtOpCodeTflPad:
+      case kLiteRtOpCodeTflPadv2:
+        op_wrapper = std::move(BuildPadOp(op));
+        break;
       case kLiteRtOpCodeTflReshape:
         op_wrapper = BuildReshapeOp(op);
         break;
