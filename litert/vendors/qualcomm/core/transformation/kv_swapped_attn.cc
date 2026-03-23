@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
-#include <iterator>
 #include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -104,11 +103,11 @@ size_t OptimizeKvSwappedFastVlmPrefill(
     return 1;
   }
   // build num_head SHAs
-  std::vector<TensorWrapperRef> sha_outputs;
+  std::vector<ConstTensorWrapperRef> sha_outputs;
   sha_outputs.reserve(num_attn_heads);
   for (size_t i = 0; i < num_kv_heads; ++i) {
     for (size_t j = 0; j < num_attn_per_kv_heads; ++j) {
-      auto& sha_output = BuildSingleSHAByUnpackAxis1(
+      const auto& sha_output = BuildSingleSHAByUnpackAxis1(
           new_ops, tensor_pool, num_attn_per_kv_heads,
           scale_mul_unpack_outputs[i * num_attn_per_kv_heads + j],
           k_cache_unpack_outputs[i], k_slice_unpack_outputs[i],
@@ -129,10 +128,7 @@ size_t OptimizeKvSwappedFastVlmPrefill(
   // Concat
   const auto& pattern_output =
       ops[start_index + pattern_size - 1].GetOutputTensor(0);
-  auto concat_op = BuildConcatenationOp(
-      tensor_pool, sha_outputs,
-      {const_cast<::qnn::TensorWrapper&>(pattern_output)}, 2);
-  std::move(concat_op.begin(), concat_op.end(), std::back_inserter(new_ops));
+  new_ops.emplace_back(CreateConcatenationOp(sha_outputs, pattern_output, 2));
 
   // Validate new graph.
   const bool is_valid =
