@@ -77,6 +77,7 @@ class VisionLiteRtCompiledModelExecutor;
 class LlmLiteRtCompiledModelExecutorDynamic;
 class LlmLiteRtCompiledModelExecutorStatic;
 class LlmLiteRtCompiledModelExecutorBase;
+class LlmLiteRtMtpDrafter;
 }  // namespace lm
 
 /// @brief A high-level inference API for LiteRT.
@@ -107,6 +108,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   friend class lm::LlmLiteRtCompiledModelExecutorStatic;
   friend class lm::LlmLiteRtNpuCompiledModelExecutor;
   friend class lm::VisionLiteRtCompiledModelExecutor;
+  friend class lm::LlmLiteRtMtpDrafter;
 
   CompiledModel() = default;
 
