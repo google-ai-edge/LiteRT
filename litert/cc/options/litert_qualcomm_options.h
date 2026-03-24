@@ -154,6 +154,13 @@ class QualcommOptions {
   void SetUseFoldReLU(bool use_fold_relu);
   bool GetUseFoldReLU();
 
+  /// @brief This option controls P point to change compiler configurations.
+  ///
+  /// P points are experimental (HTP backend with O3 only) and map to predefined
+  /// compiler configurations affecting latency and DRAM bandwidth.
+  void SetPPoint(std::int32_t p_point);
+  std::int32_t GetPPoint();
+
   /// @brief This option controls the profiling level.
   ///
   /// A higher level results in a more detailed report after execution.

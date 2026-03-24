@@ -187,6 +187,15 @@ TEST(QnnOptionTest, UseFoldReLU) {
   EXPECT_EQ(options.GetUseFoldReLU(), false);
 }
 
+TEST(QnnOptionTest, PPoint) {
+  Options options;
+  EXPECT_EQ(options.GetPPoint(), 0);
+  options.SetPPoint(2);
+  EXPECT_EQ(options.GetPPoint(), 2);
+  options.SetPPoint(0);
+  EXPECT_EQ(options.GetPPoint(), 0);
+}
+
 TEST(QnnOptionTest, SetIrJsonDir) {
   Options options;
   options.SetIrJsonDir("tmp/");
@@ -253,6 +262,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
+  EXPECT_EQ(options.GetPPoint(), 0);
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
   EXPECT_TRUE(options.GetIrJsonDir().empty());

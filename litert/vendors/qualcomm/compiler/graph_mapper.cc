@@ -73,9 +73,10 @@ Qnn_Priority_t GetGraphPriorityValue(::qnn::GraphPriority graph_priority) {
 
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 6> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 7> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 8> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 7> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 8> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 9> result;
+  size_t num_config = 5;
 
   // QNN suggest always enable relax precision.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
@@ -106,16 +107,33 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
       QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
   graph_custom_configs[4].shortDepthConvOnHmxOff = !options.GetUseConvHMX();
 
-  // Hvx Thread
-  bool has_hvx = options.GetNumHvxThreads() != 0;
-  if (has_hvx) {
-    graph_custom_configs[5] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    graph_custom_configs[5].option =
-        QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
-    graph_custom_configs[5].numHvxThreads = options.GetNumHvxThreads();
+  // P Point
+  const std::int32_t p_point = options.GetPPoint();
+  if (p_point > 0) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+    graph_custom_configs[num_config].finalizeConfig.key = "P";
+    graph_custom_configs[num_config].finalizeConfig.value = {
+        QNN_DATATYPE_INT_32, {.int32Value = p_point}};
+    num_config++;
+  } else if (p_point < 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "Invalid P point (%d): negative values not supported, skipping "
+               "P point config.",
+               p_point);
   }
 
-  size_t num_config = has_hvx ? 6 : 5;
+  // Hvx Thread
+  const std::uint32_t num_hvx_threads = options.GetNumHvxThreads();
+  if (num_hvx_threads > 0) {
+    graph_custom_configs[num_config] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[num_config].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
+    graph_custom_configs[num_config].numHvxThreads = num_hvx_threads;
+    num_config++;
+  }
+
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;

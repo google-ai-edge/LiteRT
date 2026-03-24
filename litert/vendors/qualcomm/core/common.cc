@@ -122,6 +122,12 @@ void Options::SetUseFoldReLU(bool use_fold_relu) {
 
 bool Options::GetUseFoldReLU() const { return use_fold_relu_; }
 
+void Options::SetPPoint(std::int32_t p_point) {
+  p_point_ = p_point;
+}
+
+std::int32_t Options::GetPPoint() const { return p_point_; }
+
 void Options::SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode) {
   htp_performance_mode_ = htp_performance_mode;
 }
@@ -199,6 +205,7 @@ UseInt64BiasAsInt32: %v\n\
 EnableWeightSharing: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
+PPoint: %d\n\
 HtpPerformanceMode: %d\n\
 DspPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
@@ -215,7 +222,7 @@ SaverOutputDir: %s\n";  // NOLINT
   return absl::StrFormat(
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
       use_int64_bias_as_int32_, enable_weight_sharing_, use_conv_hmx_,
-      use_fold_relu_, htp_performance_mode_, dsp_performance_mode_,
+      use_fold_relu_, p_point_, htp_performance_mode_, dsp_performance_mode_,
       dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
       optimization_level_, graph_priority_, saver_output_dir_);
 }
