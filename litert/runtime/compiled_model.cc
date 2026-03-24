@@ -1325,9 +1325,17 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                    tensor_name);
       }
       if (is_input) {
-        runner->SetCustomAllocationForInputTensor(tensor_name,
-                                                  custom_allocation,
-                                                  /*flags=*/0);
+        if (tensor->type == kTfLiteString) {
+          if (tensor->allocation_type != kTfLiteDynamic) {
+            tensor->allocation_type = kTfLiteDynamic;
+          }
+          TfLiteTensorRealloc(buffer->buffer_size(), tensor);
+          std::memcpy(tensor->data.raw, host_mem_addr, buffer->buffer_size());
+        } else {
+          runner->SetCustomAllocationForInputTensor(tensor_name,
+                                                    custom_allocation,
+                                                    /*flags=*/0);
+        }
         // TODO: b/419350199 - Ad-hoc solution to unlock input buffers.
         LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(buffer));
       } else {
@@ -1337,9 +1345,13 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         // TFLite doesn't allow custom allocation for read-only memory-mapped
         // tensors
         if (!is_constant_output) {
-          runner->SetCustomAllocationForOutputTensor(tensor_name,
-                                                     custom_allocation,
-                                                     /*flags=*/0);
+          if (tensor->type == kTfLiteString) {
+            // Cannot set custom allocation for string outputs.
+          } else {
+            runner->SetCustomAllocationForOutputTensor(tensor_name,
+                                                       custom_allocation,
+                                                       /*flags=*/0);
+          }
         }
       }
       return {};
