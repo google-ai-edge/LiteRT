@@ -74,6 +74,8 @@ int GetSubgraphIndex(const LiteRtModelT& model,
 // doesn't have a such input parameter.
 int GetInputIndexOfMagicNumber(const LiteRtOpT& op) {
   switch (op.OpCode()) {
+    case kLiteRtOpCodeTflFill:  // 1st input is the dim parameter.
+      return 0;
     case kLiteRtOpCodeTflReshape:      // 2nd input is the shape parameter.
     case kLiteRtOpCodeTflBroadcastTo:  // 2nd input is the shape parameter.
     case kLiteRtOpCodeTflRange:        // 2nd input is the limit parameter.
