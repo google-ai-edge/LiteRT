@@ -41,6 +41,7 @@
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/types/half.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert {
 namespace testing {
@@ -73,6 +74,16 @@ template <typename T>
 struct Relu6Reference {
   T operator()(T value) const {
     return std::min(static_cast<T>(6), std::max(static_cast<T>(0), value));
+  }
+};
+
+template <typename T>
+struct LeakyReluReference {
+  T operator()(T value) const {
+    constexpr float kAlpha = 0.25f;
+    return value >= static_cast<T>(0)
+               ? value
+               : static_cast<T>(static_cast<float>(value) * kAlpha);
   }
 };
 
@@ -196,12 +207,31 @@ struct SignReference {
   }
 };
 
+template <typename In, typename Out>
+struct CastReference {
+  Out operator()(In value) const { return static_cast<Out>(value); }
+};
+
+template <typename T>
+inline constexpr tflite::TensorType ToTensorType() {
+  if constexpr (std::is_same_v<T, float>) {
+    return tflite::TensorType_FLOAT32;
+  } else if constexpr (std::is_same_v<T, int32_t>) {
+    return tflite::TensorType_INT32;
+  } else if constexpr (std::is_same_v<T, int64_t>) {
+    return tflite::TensorType_INT64;
+  } else {
+    static_assert(!sizeof(T), "Unsupported TFLite tensor type");
+  }
+}
+
 // clang-format off
 template <
     typename Rank,
     typename T,
     typename OpCode,
-    typename MaxTensorSize = SizeC<1024>
+    typename MaxTensorSize = SizeC<1024>,
+    typename OutputT = T
 >
 // clang-format on
 class Unary : public TestGraph {
@@ -219,7 +249,8 @@ class Unary : public TestGraph {
   static_assert(
       kOpCode == kLiteRtOpCodeTflFloor || kOpCode == kLiteRtOpCodeTflLogistic ||
       kOpCode == kLiteRtOpCodeTflRelu || kOpCode == kLiteRtOpCodeTflReluN1To1 ||
-      kOpCode == kLiteRtOpCodeTflRelu6 || kOpCode == kLiteRtOpCodeTflTanh ||
+      kOpCode == kLiteRtOpCodeTflRelu6 ||
+      kOpCode == kLiteRtOpCodeTflLeakyRelu || kOpCode == kLiteRtOpCodeTflTanh ||
       kOpCode == kLiteRtOpCodeTflExp || kOpCode == kLiteRtOpCodeTflNeg ||
       kOpCode == kLiteRtOpCodeTflSin || kOpCode == kLiteRtOpCodeTflLog ||
       kOpCode == kLiteRtOpCodeTflSqrt || kOpCode == kLiteRtOpCodeTflRsqrt ||
@@ -228,7 +259,8 @@ class Unary : public TestGraph {
       kOpCode == kLiteRtOpCodeTflCeil || kOpCode == kLiteRtOpCodeTflCos ||
       kOpCode == kLiteRtOpCodeTflElu || kOpCode == kLiteRtOpCodeTflRound ||
       kOpCode == kLiteRtOpCodeTflHardSwish || kOpCode == kLiteRtOpCodeTflGelu ||
-      kOpCode == kLiteRtOpCodeTflRelu0To1 || kOpCode == kLiteRtOpCodeTflSign);
+      kOpCode == kLiteRtOpCodeTflRelu0To1 || kOpCode == kLiteRtOpCodeTflSign ||
+      kOpCode == kLiteRtOpCodeTflCast);
 
   static constexpr TensorNames<1> kInputNames = {"input"};
   static constexpr TensorNames<2> kOutputNames = {"output"};
@@ -247,6 +279,8 @@ class Unary : public TestGraph {
             ReluN1To1Reference<T>,
           std::bool_constant<kOpCode == kLiteRtOpCodeTflRelu6>,
             Relu6Reference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflLeakyRelu>,
+            LeakyReluReference<T>,
           std::bool_constant<kOpCode == kLiteRtOpCodeTflTanh>,
             TanhReference<T>,
           std::bool_constant<kOpCode == kLiteRtOpCodeTflExp>,
@@ -282,11 +316,15 @@ class Unary : public TestGraph {
           std::bool_constant<kOpCode == kLiteRtOpCodeTflRelu0To1>,
             Relu0To1Reference<T>,
           std::bool_constant<kOpCode == kLiteRtOpCodeTflSign>,
-            SignReference<T>
+            SignReference<T>,
+          std::bool_constant<kOpCode == kLiteRtOpCodeTflCast>,
+            CastReference<T, OutputT>
             >;
   // clang-format on
 
   static constexpr ElementType kElementType = GetElementType<T>();
+  static constexpr ElementType kOutputElementType = GetElementType<OutputT>();
+  static constexpr float kLeakyReluAlpha = 0.25f;
 
   using FbTypes = FbOpTypes<kOpCode>;
 
@@ -295,7 +333,10 @@ class Unary : public TestGraph {
   };
 
  public:
-  using Traits = TestLogicTraits<TypeList<T>, TypeList<T>, Params>;
+  static constexpr ElementType kInputElementType = kElementType;
+  static constexpr ElementType kOutputElementTypeValue = kOutputElementType;
+  static constexpr LiteRtOpCode kOperationCode = kOpCode;
+  using Traits = TestLogicTraits<TypeList<T>, TypeList<OutputT>, Params>;
   using Ptr = std::unique_ptr<Unary>;
 
   static constexpr absl::string_view Name() { return "Unary"; }
@@ -388,9 +429,15 @@ class Unary : public TestGraph {
     inputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
                               std::string(kInputNames[0])};
 
-    outputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
+    outputs[0] = TensorDetails{dims, LiteRtElementType(kOutputElementType),
                                std::string(kOutputNames[0])};
 
+    if constexpr (kOpCode == kLiteRtOpCodeTflLeakyRelu) {
+      return SingleOpModel<kOpCode>(inputs, outputs, kLeakyReluAlpha);
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflCast) {
+      return SingleOpModel<kOpCode>(inputs, outputs, ToTensorType<T>(),
+                                    ToTensorType<OutputT>());
+    }
     return SingleOpModel<kOpCode>(inputs, outputs);
   }
 

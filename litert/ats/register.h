@@ -17,8 +17,10 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <utility>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/c/internal/litert_logging.h"
@@ -88,6 +90,49 @@ class RegisterFunctor {
   Fixture::Capture& cap_;
 };
 
+template <typename Fixture>
+class RegisterNamedFunctor {
+ public:
+  template <typename Logic>
+  void operator()() {
+    DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
+    for (size_t i = 0; i < iters_; ++i) {
+      if (options_.AtLimit(test_id_)) {
+        return;
+      }
+      auto test_graph = Logic::Create(device);
+      if (!test_graph) {
+        LITERT_LOG(LITERT_WARNING, "Failed to create ATS test %lu, %s: %s",
+                   test_id_, Logic::Name().data(),
+                   test_graph.Error().Message().c_str());
+        continue;
+      }
+      auto names = NamesForNextTest(test_id_, options_, family_, Logic::Name(),
+                                    test_graph.Value()->Graph());
+      if (!names) {
+        continue;
+      }
+      Fixture::Register(std::move(*test_graph), options_, std::move(*names),
+                        cap_.NewEntry());
+    }
+  }
+
+  RegisterNamedFunctor(absl::string_view family, size_t iters, size_t& test_id,
+                       const AtsConf& options, Fixture::Capture& cap)
+      : family_(family),
+        iters_(iters),
+        test_id_(test_id),
+        options_(options),
+        cap_(cap) {}
+
+ private:
+  const std::string family_;
+  const size_t iters_;
+  size_t& test_id_;
+  const AtsConf& options_;
+  Fixture::Capture& cap_;
+};
+
 // Specializes the given test logic template with the cartesian product of
 // the given type lists and registers each specialization a given number
 // of times. Each of these registrations will yield a single test case with a
@@ -97,6 +142,15 @@ template <typename Fixture, template <typename...> typename Logic,
 void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
                           typename Fixture::Capture& cap) {
   RegisterFunctor<Fixture> f(iters, test_id, options, cap);
+  ExpandProduct<Logic, Lists...>(f);
+}
+
+template <typename Fixture, template <typename...> typename Logic,
+          typename... Lists>
+void RegisterCombinationsWithFamily(absl::string_view family, size_t iters,
+                                    size_t& test_id, const AtsConf& options,
+                                    typename Fixture::Capture& cap) {
+  RegisterNamedFunctor<Fixture> f(family, iters, test_id, options, cap);
   ExpandProduct<Logic, Lists...>(f);
 }
 
@@ -119,7 +173,7 @@ void RegisterExtraModels(size_t& test_id, const AtsConf& options,
                  file.c_str(), model.Error().Message().c_str());
       continue;
     }
-    auto test_name = internal::Filename(file);
+    auto test_name = ::litert::internal::Filename(file);
     auto names =
         NamesForNextTest(test_id, options, Fixture::Name(), ExtraModel::Name(),
                          *test_name, file, "user provided tflite");
