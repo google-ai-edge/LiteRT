@@ -56,6 +56,7 @@ pytype_strict_contrib_test(
         "//litert/python/aot/core:test_common",
         "//litert/python/aot/vendors/mediatek:target",
         "//litert/python/aot/vendors/qualcomm:target",
+        "//litert/python/aot/vendors/samsung:target",
         "@absl_py//absl/testing:absltest",
     ],
 )

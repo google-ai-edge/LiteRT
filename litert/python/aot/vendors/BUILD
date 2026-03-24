@@ -49,6 +49,7 @@ pytype_strict_library(
         "//litert/python/aot/vendors/google_tensor:google_tensor_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/mediatek:mediatek_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",  # buildcleaner: keep
+        "//litert/python/aot/vendors/samsung:samsung_backend",  # buildcleaner: keep
     ],
 )
 

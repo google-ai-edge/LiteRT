@@ -155,5 +155,12 @@ if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
   mv bazel-bin/ci/tools/python/vendor_sdk/google_tensor/ai_edge_litert_sdk_google_tensor*.tar.gz dist/
 fi
 
+## Samsung SDK
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_samsung_sdist
+
+mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_samsung*.tar.gz dist/
+
+
 echo "Output can be found here:"
 find "./dist/"

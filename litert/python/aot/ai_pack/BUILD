@@ -32,6 +32,8 @@ pytype_strict_library(
         "//litert/python/aot/vendors/mediatek:target",
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
         "//litert/python/aot/vendors/qualcomm:target",
+        "//litert/python/aot/vendors/samsung:samsung_backend",
+        "//litert/python/aot/vendors/samsung:target",
     ],
 )
 
