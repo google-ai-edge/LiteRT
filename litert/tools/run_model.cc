@@ -78,6 +78,10 @@ ABSL_FLAG(bool, language_model, false,
           "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
 
+ABSL_FLAG(std::string, cpu_kernel_mode, "xnnpack",
+          "Selects which CPU kernel mode LiteRT should use. Options: xnnpack, "
+          "builtin, reference");
+
 ABSL_FLAG(std::string, input_dir, "",
           "An input folder containing .raw files with model input signatures "
           "as their file names.");
@@ -221,6 +225,25 @@ Expected<void> ConfigureScopedWeightSource(Options& options) {
 Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(GetAccelerator());
+
+  const std::string kernel_mode_str = absl::GetFlag(FLAGS_cpu_kernel_mode);
+  if (!kernel_mode_str.empty()) {
+    LITERT_ASSIGN_OR_RETURN(auto& cpu_opts, options.GetCpuOptions());
+    if (kernel_mode_str == "xnnpack") {
+      LITERT_RETURN_IF_ERROR(
+          cpu_opts.SetKernelMode(kLiteRtCpuKernelModeXnnpack));
+    } else if (kernel_mode_str == "builtin") {
+      LITERT_RETURN_IF_ERROR(
+          cpu_opts.SetKernelMode(kLiteRtCpuKernelModeBuiltin));
+    } else if (kernel_mode_str == "reference") {
+      LITERT_RETURN_IF_ERROR(
+          cpu_opts.SetKernelMode(kLiteRtCpuKernelModeReference));
+    } else {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid cpu_kernel_mode flag value.");
+    }
+  }
+
   LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
   LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
   LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
