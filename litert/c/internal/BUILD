@@ -145,6 +145,26 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_runtime_context_testonly",
+    testonly = 1,
+    hdrs = ["litert_runtime_context.h"],
+    deps = [
+        ":litert_runtime_context",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opencl_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//tflite/c:c_api_types",
+    ],
+)
+
+cc_library(
     name = "litert_accelerator_registration",
     srcs = ["litert_accelerator_registration.cc"],
     hdrs = ["litert_accelerator_registration.h"],
