@@ -16,13 +16,8 @@
 
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_external_litert_buffer_context.h"
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_event.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 
 LiteRtRuntimeContext* LrtGetRuntimeContext() {
@@ -46,36 +41,8 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
           LiteRtDestroyExternalLiteRtBufferContext,
       .get_opaque_options = LiteRtGetOpaqueOptions,
       .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
-      .get_environment_options = LiteRtGetEnvironmentOptions,
-      .get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
-      .environment_has_gpu_environment = LiteRtEnvironmentHasGpuEnvironment,
-      .add_environment_options = LiteRtAddEnvironmentOptions,
-      .gpu_environment_create = LiteRtGpuEnvironmentCreate,
       .wrap_delegate = LiteRtWrapDelegate,
       .unwrap_delegate = LiteRtUnwrapDelegate,
-      .destroy_tensor_buffer = LiteRtDestroyTensorBuffer,
-      .get_tensor_buffer_type = LiteRtGetTensorBufferType,
-      .get_tensor_buffer_size = LiteRtGetTensorBufferSize,
-      .lock_tensor_buffer = LiteRtLockTensorBuffer,
-      .unlock_tensor_buffer = LiteRtUnlockTensorBuffer,
-#if LITERT_HAS_OPENCL_SUPPORT
-      .get_tensor_buffer_opencl_memory = LiteRtGetTensorBufferOpenClMemory,
-#endif  // LITERT_HAS_OPENCL_SUPPORT
-      .get_tensor_buffer_gl_buffer = LiteRtGetTensorBufferGlBuffer,
-      .get_tensor_buffer_custom_tensor_buffer_handle =
-          LiteRtGetTensorBufferCustomTensorBufferHandle,
-      .has_tensor_buffer_event = LiteRtHasTensorBufferEvent,
-      .get_tensor_buffer_event = LiteRtGetTensorBufferEvent,
-      .set_tensor_buffer_event = LiteRtSetTensorBufferEvent,
-      .create_managed_event = LiteRtCreateManagedEvent,
-      .get_event_event_type = LiteRtGetEventEventType,
-#if LITERT_HAS_OPENCL_SUPPORT
-      .create_event_from_opencl_event = LiteRtCreateEventFromOpenClEvent,
-      .get_event_opencl_event = LiteRtGetEventOpenClEvent,
-#endif  // LITERT_HAS_OPENCL_SUPPORT
-      .set_custom_event = LiteRtSetCustomEvent,
-      .get_custom_event = LiteRtGetCustomEvent,
-      .wait_event = LiteRtWaitEvent,
   };
   return &context;
 }
