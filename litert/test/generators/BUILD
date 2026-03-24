@@ -29,6 +29,7 @@ cc_library(
     hdrs = ["common.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/options:litert_cpu_options",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_detail",
@@ -159,6 +160,50 @@ cc_test(
 )
 
 cc_library(
+    name = "transpose",
+    testonly = True,
+    hdrs = ["transpose.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tflite/c:common",
+        "//tflite/kernels/internal:portable_tensor_utils",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "transpose_test",
+    srcs = ["transpose_test.cc"],
+    deps = [
+        ":common",
+        ":transpose",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_rng",
+        "//litert/test:matchers",
+        "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "extra_model",
     testonly = True,
     hdrs = ["extra_model.h"],
@@ -172,6 +217,50 @@ cc_library(
         "//litert/core/model:model_load",
         "//litert/test:simple_buffer",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "fully_connected",
+    testonly = True,
+    hdrs = ["fully_connected.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tflite/kernels/internal:common",
+        "//tflite/kernels/internal:quantization_util",
+        "//tflite/kernels/internal:reference_base",
+        "//tflite/kernels/internal:runtime_shape",
+        "//tflite/kernels/internal:tensor_utils",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "fully_connected_test",
+    srcs = ["fully_connected_test.cc"],
+    deps = [
+        ":fully_connected",
+        "//litert/ats:executor",
+        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_rng",
+        "//litert/test:matchers",
+        "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -216,7 +305,9 @@ cc_library(
         ":binary_no_bcast",
         ":common",
         ":extra_model",
+        ":fully_connected",
         ":no_op",
+        ":transpose",
         ":unary",
     ],
 )

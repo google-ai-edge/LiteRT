@@ -15,8 +15,10 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -111,7 +113,82 @@ class AtsInferenceTest : public RngTest {
   }
 
  private:
-  double Tol() const { return graph_->HasReference() ? 1e-4 : 1e2; }
+  ConformanceSpec Conformance() const { return graph_->GetConformanceSpec(); }
+
+  template <typename T>
+  static double MeanSquaredError(absl::Span<const T> actual,
+                                 absl::Span<const T> ref) {
+    if (actual.empty()) {
+      return 0.0;
+    }
+    double mse = 0.0;
+    for (size_t i = 0; i < actual.size(); ++i) {
+      const double diff =
+          static_cast<double>(actual[i]) - static_cast<double>(ref[i]);
+      mse += diff * diff;
+    }
+    return mse / static_cast<double>(actual.size());
+  }
+
+  template <typename T>
+  void CheckMseOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref,
+                          double tol) {
+    double mse = std::numeric_limits<double>::max();
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, tol, &mse));
+    cap_.numerics.NewMse(mse);
+  }
+
+  template <typename T>
+  void CheckExactOutputImpl(const BufferView<T>& actual,
+                            const BufferView<T>& ref) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      EXPECT_EQ(actual.data[i], ref.data[i]) << "index=" << i;
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  void CheckExactOutputBytesImpl(const SimpleBuffer& actual,
+                                 const SimpleBuffer& ref) {
+    const auto actual_bytes = actual.Span<uint8_t>();
+    const auto ref_bytes = ref.Span<uint8_t>();
+    ASSERT_EQ(actual_bytes.size(), ref_bytes.size());
+    for (size_t i = 0; i < actual_bytes.size(); ++i) {
+      EXPECT_EQ(actual_bytes[i], ref_bytes[i]) << "byte=" << i;
+    }
+    cap_.numerics.NewMse(0.0);
+  }
+
+  void CheckFloatAccumulationAwareOutputImpl(const BufferView<float>& actual,
+                                             const BufferView<float>& ref,
+                                             const ConformanceSpec& spec) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      const double expected = static_cast<double>(ref.data[i]);
+      const double diff =
+          std::abs(static_cast<double>(actual.data[i]) - expected);
+      const double tol =
+          spec.absolute_tolerance + spec.relative_tolerance * std::abs(expected);
+      EXPECT_LE(diff, tol) << "index=" << i << ", expected=" << expected
+                           << ", actual=" << actual.data[i];
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  template <typename T>
+  void CheckQuantizedBucketOutputImpl(const BufferView<T>& actual,
+                                      const BufferView<T>& ref,
+                                      int64_t bucket_tolerance) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      const int64_t diff = std::llabs(
+          static_cast<int64_t>(actual.data[i]) - static_cast<int64_t>(ref.data[i]));
+      EXPECT_LE(diff, bucket_tolerance)
+          << "index=" << i << ", expected=" << static_cast<int64_t>(ref.data[i])
+          << ", actual=" << static_cast<int64_t>(actual.data[i]);
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
 
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     CompiledModelExecutor::Ptr exec;
@@ -127,6 +204,11 @@ class AtsInferenceTest : public RngTest {
       return res;
     }
     if (conf_.IsCpu()) {
+      LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
+                                             Graph(), conf_.TargetOptions()));
+      return std::make_unique<CompiledModelExecutor>(std::move(exec));
+    }
+    if (conf_.IsGpu()) {
       LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
                                              Graph(), conf_.TargetOptions()));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
@@ -170,26 +252,87 @@ class AtsInferenceTest : public RngTest {
   }
 
   void CheckOutputs(const VarBuffers& actual, const VarBuffers& ref) {
+    const ConformanceSpec spec = Conformance();
     ASSERT_EQ(actual.size(), ref.size());
     for (size_t i = 0; i < actual.size(); ++i) {
       ASSERT_EQ(actual[i].Type(), ref[i].Type());
-      if (actual[i].Type().ElementType() == ElementType::Float32) {
-        CheckOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>());
-      } else if (actual[i].Type().ElementType() == ElementType::Int32) {
-        CheckOutputImpl(actual[i].AsView<int32_t>(), ref[i].AsView<int32_t>());
-      } else {
-        // TODO: Finish type support and pull specialization logic into
-        // generic helper.
-        FAIL() << "Unsupported element type";
+      switch (spec.comparator_kind) {
+        case ConformanceComparatorKind::kMse:
+          if (actual[i].Type().ElementType() == ElementType::Float32) {
+            CheckMseOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>(),
+                               spec.absolute_tolerance);
+          } else if (actual[i].Type().ElementType() == ElementType::Int8) {
+            CheckMseOutputImpl(actual[i].AsView<int8_t>(), ref[i].AsView<int8_t>(),
+                               spec.absolute_tolerance);
+          } else if (actual[i].Type().ElementType() == ElementType::UInt8) {
+            CheckMseOutputImpl(actual[i].AsView<uint8_t>(),
+                               ref[i].AsView<uint8_t>(),
+                               spec.absolute_tolerance);
+          } else if (actual[i].Type().ElementType() == ElementType::Int16) {
+            CheckMseOutputImpl(actual[i].AsView<int16_t>(),
+                               ref[i].AsView<int16_t>(),
+                               spec.absolute_tolerance);
+          } else if (actual[i].Type().ElementType() == ElementType::Int32) {
+            CheckMseOutputImpl(actual[i].AsView<int32_t>(),
+                               ref[i].AsView<int32_t>(),
+                               spec.absolute_tolerance);
+          } else {
+            FAIL() << "Unsupported element type";
+          }
+          break;
+        case ConformanceComparatorKind::kExact:
+          if (actual[i].Type().ElementType() == ElementType::Float32) {
+            CheckExactOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>());
+          } else if (actual[i].Type().ElementType() == ElementType::Int8) {
+            CheckExactOutputImpl(actual[i].AsView<int8_t>(), ref[i].AsView<int8_t>());
+          } else if (actual[i].Type().ElementType() == ElementType::UInt8) {
+            CheckExactOutputImpl(actual[i].AsView<uint8_t>(),
+                                 ref[i].AsView<uint8_t>());
+          } else if (actual[i].Type().ElementType() == ElementType::Int16) {
+            CheckExactOutputImpl(actual[i].AsView<int16_t>(),
+                                 ref[i].AsView<int16_t>());
+          } else if (actual[i].Type().ElementType() == ElementType::Int32) {
+            CheckExactOutputImpl(actual[i].AsView<int32_t>(),
+                                 ref[i].AsView<int32_t>());
+          } else if (actual[i].Type().ElementType() == ElementType::Bool ||
+                     actual[i].Type().ElementType() == ElementType::Int4 ||
+                     actual[i].Type().ElementType() == ElementType::UInt16 ||
+                     actual[i].Type().ElementType() == ElementType::UInt32 ||
+                     actual[i].Type().ElementType() == ElementType::Int64 ||
+                     actual[i].Type().ElementType() == ElementType::UInt64 ||
+                     actual[i].Type().ElementType() == ElementType::Float16 ||
+                     actual[i].Type().ElementType() == ElementType::BFloat16 ||
+                     actual[i].Type().ElementType() == ElementType::Float64 ||
+                     actual[i].Type().ElementType() == ElementType::Complex64) {
+            CheckExactOutputBytesImpl(actual[i], ref[i]);
+          } else {
+            FAIL() << "Unsupported element type";
+          }
+          break;
+        case ConformanceComparatorKind::kFloatAccumulationAware:
+          ASSERT_EQ(actual[i].Type().ElementType(), ElementType::Float32);
+          CheckFloatAccumulationAwareOutputImpl(actual[i].AsView<float>(),
+                                                ref[i].AsView<float>(), spec);
+          break;
+        case ConformanceComparatorKind::kQuantizedBucket:
+          if (actual[i].Type().ElementType() == ElementType::Int8) {
+            CheckQuantizedBucketOutputImpl(actual[i].AsView<int8_t>(),
+                                           ref[i].AsView<int8_t>(),
+                                           spec.bucket_tolerance);
+          } else if (actual[i].Type().ElementType() == ElementType::UInt8) {
+            CheckQuantizedBucketOutputImpl(actual[i].AsView<uint8_t>(),
+                                           ref[i].AsView<uint8_t>(),
+                                           spec.bucket_tolerance);
+          } else if (actual[i].Type().ElementType() == ElementType::Int16) {
+            CheckQuantizedBucketOutputImpl(actual[i].AsView<int16_t>(),
+                                           ref[i].AsView<int16_t>(),
+                                           spec.bucket_tolerance);
+          } else {
+            FAIL() << "Unsupported quantized output type";
+          }
+          break;
       }
     }
-  }
-
-  template <typename T>
-  void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
-    double mse = std::numeric_limits<double>::max();
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, Tol(), &mse));
-    cap_.numerics.NewMse(mse);
   }
 
   LiteRtModelT& Graph() const { return graph_->Graph(); }

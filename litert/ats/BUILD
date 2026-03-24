@@ -16,6 +16,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
+load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_prebuilts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 
@@ -156,6 +157,7 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     copts = commandline_flag_copts(),
+    data = litert_gpu_accelerator_prebuilts(),
     linkstatic = True,
     no_main = True,
     tags = [
@@ -174,6 +176,7 @@ litert_test(
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators",
         "//litert/test/generators:common",
+        "//tflite/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",

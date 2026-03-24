@@ -49,11 +49,139 @@ using ::litert::internal::TflOpCodePtr;
 using ::litert::internal::TflOptions;
 
 struct TensorDetails {
+  struct QuantizationDetails {
+    LiteRtQuantizationTypeId type = kLiteRtQuantizationNone;
+    float scale = 0.0f;
+    int64_t zero_point = 0;
+    int32_t quantized_dimension = 0;
+    std::vector<float> scales;
+    std::vector<int64_t> zero_points;
+
+    static QuantizationDetails PerTensor(float scale, int64_t zero_point) {
+      QuantizationDetails res;
+      res.type = kLiteRtQuantizationPerTensor;
+      res.scale = scale;
+      res.zero_point = zero_point;
+      return res;
+    }
+
+    static QuantizationDetails PerChannel(int32_t quantized_dimension,
+                                          std::vector<float> scales,
+                                          std::vector<int64_t> zero_points) {
+      QuantizationDetails res;
+      res.type = kLiteRtQuantizationPerChannel;
+      res.quantized_dimension = quantized_dimension;
+      res.scales = std::move(scales);
+      res.zero_points = std::move(zero_points);
+      return res;
+    }
+  };
+
   std::vector<int32_t> dims;
   LiteRtElementType element_type;
   std::string name;
   std::optional<OwningBufferRef<uint8_t>> data = std::nullopt;
+  std::optional<QuantizationDetails> quantization = std::nullopt;
 };
+
+inline void SetTensorQuantization(
+    LiteRtTensorT& tensor,
+    const std::optional<TensorDetails::QuantizationDetails>& quantization) {
+  if (!quantization.has_value() ||
+      quantization->type == kLiteRtQuantizationNone) {
+    return;
+  }
+  if (quantization->type == kLiteRtQuantizationPerTensor) {
+    tensor.SetQarams(
+        MakePerTensorQuantization(quantization->scale, quantization->zero_point));
+    return;
+  }
+  tensor.SetQarams(MakePerChannelQuantization(
+      quantization->scales, quantization->zero_points,
+      quantization->quantized_dimension, tensor));
+}
+
+template <LiteRtOpCode OpCode>
+inline int GetBuiltinOpVersion(
+    const std::vector<TensorDetails>& inputs,
+    const std::vector<TensorDetails>& outputs,
+    const typename FbOpTypes<OpCode>::OptionsT& options) {
+  (void)inputs;
+  (void)outputs;
+  (void)options;
+  return 1;
+}
+
+template <>
+inline int GetBuiltinOpVersion<kLiteRtOpCodeTflFullyConnected>(
+    const std::vector<TensorDetails>& inputs,
+    const std::vector<TensorDetails>& outputs,
+    const tflite::FullyConnectedOptionsT& options) {
+  if (inputs.size() < 2 || outputs.empty()) {
+    return 1;
+  }
+
+  const auto input_type = inputs[0].element_type;
+  const auto filter_type = inputs[1].element_type;
+  const auto output_type = outputs[0].element_type;
+  const bool is_per_channel_quantized =
+      inputs[1].quantization.has_value() &&
+      inputs[1].quantization->type == kLiteRtQuantizationPerChannel;
+
+  if (filter_type == kLiteRtElementTypeInt2) {
+    return 14;
+  }
+  if (input_type == kLiteRtElementTypeInt16 &&
+      filter_type == kLiteRtElementTypeInt4 &&
+      output_type == kLiteRtElementTypeInt16) {
+    return 13;
+  }
+  if (input_type == kLiteRtElementTypeFloat32 &&
+      filter_type == kLiteRtElementTypeInt8 &&
+      output_type == kLiteRtElementTypeFloat32 && is_per_channel_quantized) {
+    return 12;
+  }
+  if (input_type == kLiteRtElementTypeInt16 &&
+      filter_type == kLiteRtElementTypeInt8 &&
+      output_type == kLiteRtElementTypeInt16 &&
+      static_cast<int>(options.quantized_bias_type) != 0) {
+    return 11;
+  }
+  if (input_type == kLiteRtElementTypeInt16 &&
+      filter_type == kLiteRtElementTypeInt16 &&
+      output_type == kLiteRtElementTypeInt16) {
+    return 7;
+  }
+  if (inputs.size() == 2) {
+    return 6;
+  }
+  if (options.keep_num_dims) {
+    return 5;
+  }
+  if (input_type == kLiteRtElementTypeInt8 &&
+      filter_type == kLiteRtElementTypeInt8 &&
+      output_type == kLiteRtElementTypeInt8) {
+    return 4;
+  }
+  if (input_type == kLiteRtElementTypeInt8 &&
+      filter_type == kLiteRtElementTypeInt4 &&
+      output_type == kLiteRtElementTypeInt8) {
+    return 10;
+  }
+  if (input_type == kLiteRtElementTypeFloat32 &&
+      filter_type == kLiteRtElementTypeInt8 &&
+      output_type == kLiteRtElementTypeFloat32) {
+    if (options.asymmetric_quantize_inputs) {
+      return 9;
+    }
+    return 3;
+  }
+  if (options.weights_format ==
+      tflite::FullyConnectedOptionsWeightsFormat_SHUFFLED4x16INT8) {
+    return 2;
+  }
+  return 1;
+}
 
 template <LiteRtOpCode OpCode>
 struct OpDetails {
@@ -78,10 +206,15 @@ struct OpDetails {
     return res;
   }
 
-  TflOpCodePtr MakeTflCode() const {
+  int Version(const std::vector<TensorDetails>& inputs,
+              const std::vector<TensorDetails>& outputs) const {
+    return GetBuiltinOpVersion<OpCode>(inputs, outputs, options);
+  }
+
+  TflOpCodePtr MakeTflCode(int version) const {
     auto code = std::make_unique<TflOpCode>();
     code->builtin_code = FbTypes::kBuiltinOperator;
-    code->version = 1;
+    code->version = version;
     return code;
   }
 
@@ -93,9 +226,24 @@ struct OpDetails {
 // NOTE: `inputs` are op inputs. Only non constant inputs will be added
 // as subgraph inputs.
 template <LiteRtOpCode OpCode, typename... Args>
+Expected<LiteRtModelT::Ptr> SingleOpModelWithInternalOutputs(
+    const std::vector<TensorDetails>& inputs,
+    const std::vector<TensorDetails>& outputs,
+    const std::vector<TensorDetails>& internal_outputs, Args&&... args);
+
+template <LiteRtOpCode OpCode, typename... Args>
 Expected<LiteRtModelT::Ptr> SingleOpModel(
     const std::vector<TensorDetails>& inputs,
     const std::vector<TensorDetails>& outputs, Args&&... args) {
+  return SingleOpModelWithInternalOutputs<OpCode>(inputs, outputs, {},
+                                                  std::forward<Args>(args)...);
+}
+
+template <LiteRtOpCode OpCode, typename... Args>
+Expected<LiteRtModelT::Ptr> SingleOpModelWithInternalOutputs(
+    const std::vector<TensorDetails>& inputs,
+    const std::vector<TensorDetails>& outputs,
+    const std::vector<TensorDetails>& internal_outputs, Args&&... args) {
   using Op = OpDetails<OpCode>;
   Op op_details(std::forward<Args>(args)...);
 
@@ -106,11 +254,12 @@ Expected<LiteRtModelT::Ptr> SingleOpModel(
 
   auto& op = sg.EmplaceOp();
   {
+    const auto op_version = op_details.Version(inputs, outputs);
     op.SetOpCode(OpCode);
     auto options = op_details.MakeTflOptions();
-    internal::SetTflOptions(op, op_details.MakeTflOptions());
-    internal::SetTflOpCodeInd(op, tfl_codes.size());
-    tfl_codes.push_back(op_details.MakeTflCode());
+    SetTflOptions(op, op_details.MakeTflOptions());
+    SetTflOpCodeInd(op, tfl_codes.size());
+    tfl_codes.push_back(op_details.MakeTflCode(op_version));
   }
 
   std::vector<std::string> input_names;
@@ -119,6 +268,7 @@ Expected<LiteRtModelT::Ptr> SingleOpModel(
     auto& tensor = sg.EmplaceTensor();
     tensor.SetType(::MakeRankedTensorType(input.element_type, input.dims));
     tensor.SetName(input.name);
+    SetTensorQuantization(tensor, input.quantization);
 
     if (input.data) {
       ::SetWeightsFromUnownedBuffer(tensor.Weights(), *input.data);
@@ -137,9 +287,18 @@ Expected<LiteRtModelT::Ptr> SingleOpModel(
     auto& tensor = sg.EmplaceTensor();
     tensor.SetType(::MakeRankedTensorType(output.element_type, output.dims));
     tensor.SetName(output.name);
+    SetTensorQuantization(tensor, output.quantization);
     output_names.push_back(output.name);
     sg.Outputs().push_back(&tensor);
     output_tensors.push_back(&tensor);
+    AttachOutput(&tensor, op);
+  }
+
+  for (const auto& output : internal_outputs) {
+    auto& tensor = sg.EmplaceTensor();
+    tensor.SetType(::MakeRankedTensorType(output.element_type, output.dims));
+    tensor.SetName(output.name);
+    SetTensorQuantization(tensor, output.quantization);
     AttachOutput(&tensor, op);
   }
 

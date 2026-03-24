@@ -17,7 +17,9 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -41,6 +43,27 @@ namespace litert::testing {
 
 // Short hand for dynamic array of i/o buffers.
 using VarBuffers = std::vector<SimpleBuffer>;
+
+enum class ConformanceOracleKind {
+  kCpuRuntime,
+  kCustomImplementation,
+  kCustomSemantic,
+};
+
+enum class ConformanceComparatorKind {
+  kMse,
+  kExact,
+  kFloatAccumulationAware,
+  kQuantizedBucket,
+};
+
+struct ConformanceSpec {
+  ConformanceOracleKind oracle_kind = ConformanceOracleKind::kCpuRuntime;
+  ConformanceComparatorKind comparator_kind = ConformanceComparatorKind::kMse;
+  double absolute_tolerance = 0.0;
+  double relative_tolerance = 0.0;
+  int64_t bucket_tolerance = 0;
+};
 
 // Shorthand for specifying i/o tensor names as constexpr.
 template <size_t N>
@@ -69,8 +92,21 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflAdd>,
             FbOpTraits<tflite::AddOptionsT, tflite::BuiltinOperator_ADD,
                        tflite::BuiltinOptions_AddOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflDequantize>,
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_DEQUANTIZE>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflFullyConnected>,
+            FbOpTraits<tflite::FullyConnectedOptionsT,
+                       tflite::BuiltinOperator_FULLY_CONNECTED,
+                       tflite::BuiltinOptions_FullyConnectedOptions>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflFloor>,
             FbOpTraitsNoOptions<tflite::BuiltinOperator_FLOOR>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflCast>,
+            FbOpTraits<tflite::CastOptionsT, tflite::BuiltinOperator_CAST,
+                       tflite::BuiltinOptions_CastOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflTranspose>,
+            FbOpTraits<tflite::TransposeOptionsT,
+                       tflite::BuiltinOperator_TRANSPOSE,
+                       tflite::BuiltinOptions_TransposeOptions>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflLogistic>,
             FbOpTraitsNoOptions<tflite::BuiltinOperator_LOGISTIC>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflRelu>,
@@ -79,6 +115,10 @@ using FbOpTypes =
             FbOpTraitsNoOptions<tflite::BuiltinOperator_RELU_N1_TO_1>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflRelu6>,
             FbOpTraitsNoOptions<tflite::BuiltinOperator_RELU6>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflLeakyRelu>,
+            FbOpTraits<tflite::LeakyReluOptionsT,
+                       tflite::BuiltinOperator_LEAKY_RELU,
+                       tflite::BuiltinOptions_LeakyReluOptions>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflTanh>,
             FbOpTraitsNoOptions<tflite::BuiltinOperator_TANH>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflSub>,
@@ -144,21 +184,48 @@ struct TestLogicTraits {
   // Metaprogramming helper to grab the typed views from the tensor buffers
   // to pass to the reference implementation.
   template <typename ReferenceTensors, typename Buffers, size_t... Is>
-  static Expected<ReferenceTensors> MakeReferenceTensors(
+  static Expected<ReferenceTensors> MakeInputReferenceTensors(
       Buffers& inputs, std::index_sequence<Is...>) {
     const bool types_ok =
         (true && ... &&
-         (inputs[Is].ElementType() == GetElementType<InputDataType<Is>>()));
+         (inputs[Is].ElementType() ==
+          GetElementType<
+              typename std::tuple_element_t<Is, ReferenceInputs>::Type>()));
     if (!types_ok) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Input types do not match reference implementation types");
     }
-    return ReferenceTensors{inputs[Is].template AsView<InputDataType<Is>>()...};
+    return ReferenceTensors{
+        inputs[Is].template AsView<
+            typename std::tuple_element_t<Is, ReferenceInputs>::Type>()...};
+  }
+  template <typename ReferenceTensors, typename Buffers, size_t... Is>
+  static Expected<ReferenceTensors> MakeOutputReferenceTensors(
+      Buffers& outputs, std::index_sequence<Is...>) {
+    const bool types_ok =
+        (true && ... &&
+         (outputs[Is].ElementType() ==
+          GetElementType<
+              typename std::tuple_element_t<Is, ReferenceOutputs>::Type>()));
+    if (!types_ok) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Output types do not match reference implementation types");
+    }
+    return ReferenceTensors{
+        outputs[Is].template AsView<
+            typename std::tuple_element_t<Is, ReferenceOutputs>::Type>()...};
   }
   template <typename ReferenceTensors, typename Buffers>
-  static Expected<ReferenceTensors> MakeReferenceTensors(Buffers& inputs) {
-    return MakeReferenceTensors<ReferenceTensors>(
+  static Expected<ReferenceTensors> MakeInputReferenceTensors(Buffers& inputs) {
+    return MakeInputReferenceTensors<ReferenceTensors>(
         inputs,
+        std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
+  }
+  template <typename ReferenceTensors, typename Buffers>
+  static Expected<ReferenceTensors> MakeOutputReferenceTensors(
+      Buffers& outputs) {
+    return MakeOutputReferenceTensors<ReferenceTensors>(
+        outputs,
         std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
   }
 
@@ -195,7 +262,7 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumInputs,
                                    inputs.size()));
     }
-    return MakeReferenceTensors<ReferenceInputs>(inputs);
+    return MakeInputReferenceTensors<ReferenceInputs>(inputs);
   }
 
   // Get the typed reference output views from the output buffers.
@@ -205,7 +272,7 @@ struct TestLogicTraits {
                    absl::StrFormat("Expected %d inputs, got %d", kNumOutputs,
                                    outputs.size()));
     }
-    return MakeReferenceTensors<ReferenceOutputs>(outputs);
+    return MakeOutputReferenceTensors<ReferenceOutputs>(outputs);
   }
 };
 
@@ -248,6 +315,20 @@ class TestGraph {
   // Reference implementation of the graph under test.
   virtual Expected<void> Reference(const VarBuffers& inputs,
                                    VarBuffers& outputs) const = 0;
+
+  // Output comparison policy for the graph under test.
+  virtual ConformanceSpec GetConformanceSpec() const {
+    ConformanceSpec spec;
+    spec.oracle_kind = HasReference() ? ConformanceOracleKind::kCustomImplementation
+                                      : ConformanceOracleKind::kCpuRuntime;
+    spec.comparator_kind = ConformanceComparatorKind::kMse;
+    spec.absolute_tolerance =
+        ReferenceTolerance().value_or(HasReference() ? 1e-4 : 1e2);
+    return spec;
+  }
+
+  // Optional output-comparison tolerance override for custom references.
+  virtual std::optional<double> ReferenceTolerance() const { return std::nullopt; }
 
   virtual ~TestGraph() = default;
 
