@@ -43,6 +43,7 @@ struct LrtQualcommOptionsT {
   std::optional<bool> enable_weight_sharing;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
+  std::optional<std::int32_t> htp_p_point;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
@@ -111,6 +112,10 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
+        } else if (key == "htp_p_point") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpPPoint(parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -236,6 +241,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->use_fold_relu.has_value()) {
     toml << "use_fold_relu = " << (*options->use_fold_relu ? "true" : "false")
          << "\n";
+  }
+  if (options->htp_p_point.has_value()) {
+    toml << "htp_p_point = " << *options->htp_p_point << "\n";
   }
   if (options->htp_performance_mode.has_value()) {
     toml << "htp_performance_mode = "
@@ -533,7 +541,6 @@ LiteRtStatus LrtQualcommOptionsSetGraphIOTensorMemType(
   }
 
   options->graph_io_tensor_mem_type = graph_io_tensor_mem_type;
-
   return kLiteRtStatusOk;
 }
 
@@ -546,6 +553,27 @@ LiteRtStatus LrtQualcommOptionsGetGraphIOTensorMemType(
 
   *graph_io_tensor_mem_type = options->graph_io_tensor_mem_type.value_or(
       kLiteRtQualcommGraphIOTensorMemTypeMemHandle);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpPPoint(LrtQualcommOptions options,
+                                            std::int32_t htp_p_point) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_p_point = htp_p_point;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpPPoint(LrtQualcommOptions options,
+                                            std::int32_t* htp_p_point) {
+  if (htp_p_point == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_p_point = options->htp_p_point.value_or(0);
 
   return kLiteRtStatusOk;
 }

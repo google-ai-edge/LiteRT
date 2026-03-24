@@ -247,6 +247,22 @@ class QualcommOptions {
     return val;
   }
 
+  /// @brief This option controls P point to change compiler configurations.
+  ///
+  /// P points are experimental (HTP backend with O3 only) and map to predefined
+  /// compiler configurations affecting latency and DRAM bandwidth.
+  void SetHtpPPoint(std::int32_t p_point) {
+    LrtQualcommOptionsSetHtpPPoint(options_, p_point);
+  }
+  std::int32_t GetHtpPPoint() {
+    std::int32_t val;
+    auto status = LrtQualcommOptionsGetHtpPPoint(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
+
   /// @brief This option controls the profiling level.
   ///
   /// A higher level results in a more detailed report after execution.

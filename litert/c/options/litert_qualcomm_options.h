@@ -171,6 +171,15 @@ LiteRtStatus LrtQualcommOptionsGetGraphIOTensorMemType(
     LrtQualcommOptions options,
     LrtQualcommOptionsGraphIOTensorMemType* mem_type);
 
+// P points are experimental (HTP backend with O3 only) and map to predefined
+// compiler configurations affecting latency and DRAM bandwidth.
+
+LiteRtStatus LrtQualcommOptionsSetHtpPPoint(LrtQualcommOptions options,
+                                            int32_t htp_p_point);
+
+LiteRtStatus LrtQualcommOptionsGetHtpPPoint(LrtQualcommOptions options,
+                                            int32_t* htp_p_point);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 // htp_performance_mode
