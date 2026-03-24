@@ -45,6 +45,18 @@ message PromptTemplates {
   optional PromptAffixes system = 3;
 }
 
+// Definition of a channel for responses, e.g. thinking channel.
+message Channel {
+  // The channel name which will be used the key for the channel content.
+  string channel_name = 1;
+
+  // A string that marks the start of the channel, e.g. "<|channel>thought".
+  string start = 2;
+
+  // A string that marks the end of the channel, e.g. "<channel|>".
+  string end = 3;
+}
+
 // Parameters for Large Language Models (LLM).
 message LlmMetadata {
   // Start token prepended to the beginning of input sequence.
@@ -75,4 +87,7 @@ message LlmMetadata {
   // Jinja prompt template for backward compatibility. If the prompt_templates
   // field is also not set, the input will not be formatted with jinja template.
   optional string jinja_prompt_template = 7;
+
+  // Channels for the LLM model, e.g. thinking channel.
+  repeated Channel channels = 8;
 }
