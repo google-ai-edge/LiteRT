@@ -227,6 +227,7 @@ litert_c_api_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_common",
         "//litert/core/model",
+        "//tflite/converter:allocation",
         "//litert/core/model:model_load",
         "//tflite/core/c:private_c_api_types",
     ] + select({
@@ -246,14 +247,19 @@ litert_c_api_library(
 cc_test(
     name = "litert_model_test",
     srcs = ["litert_model_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+    ],
     deps = [
         ":litert_common",
         ":litert_model",
         ":litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
-        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:common",
         "//litert/test:matchers",
+        "//tflite:stderr_reporter",
+        "//tflite/converter:allocation",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
