@@ -35,6 +35,7 @@
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
@@ -224,8 +225,7 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
   // QUANTIZATION
 
   if (tfl_tensor.quantization()) {
-    auto quantization =
-        MapQuantization(tfl_tensor.quantization());
+    auto quantization = MapQuantization(tfl_tensor.quantization());
     if (!quantization) {
       return quantization.Error().Status();
     }
@@ -456,6 +456,16 @@ Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(
   return UnpackModel(std::move(**flatbuffer));
 }
 
+Expected<LiteRtModelT::Ptr> LoadModelFromAllocation(
+    tflite::Allocation::Ptr allocation) {
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
+  if (!flatbuffer) {
+    return flatbuffer.Error();
+  }
+  return UnpackModel(std::move(**flatbuffer));
+}
+
 Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(BufferRef<uint8_t> buffer) {
   auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(buffer);
   if (!flatbuffer) {
@@ -483,10 +493,9 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
         DispatchOpOptions dispatch_opts =
             GetDispatchOpOptions(op->CustomOptions());
         if (!buffer_id_map.contains(dispatch_opts.bytecode_offset)) {
-          BufferRef<uint8_t> byte_code(
-              GetTflFlatbuffer(*model).AllocBase() +
-                  dispatch_opts.bytecode_offset,
-              dispatch_opts.bytecode_size);
+          BufferRef<uint8_t> byte_code(GetTflFlatbuffer(*model).AllocBase() +
+                                           dispatch_opts.bytecode_offset,
+                                       dispatch_opts.bytecode_size);
           const BufferManager::BufferId buf_id =
               model->Buffers()->RegisterNonOwnedBuffer(byte_code);
           buffer_id_map.insert({dispatch_opts.bytecode_offset, buf_id});

@@ -107,6 +107,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter:allocation",
         "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",

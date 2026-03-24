@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,12 @@
 /// @file
 /// @brief Defines C++ wrappers for the LiteRT model, signature, and tensor
 /// types.
+
+// copybara:uncomment_begin(google_only)
+// namespace tflite {
+// class Allocation;
+// }  // namespace tflite
+// copybara:uncomment_end
 
 namespace litert {
 
@@ -77,6 +84,16 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     }
     return CreateFromOwnedHandle(model);
   }
+
+  // copybara:uncomment_begin(google_only)
+  // /// @internal
+  // /// @brief Creates a model from an owned TFLite allocation.
+  // ///
+  // /// @note This is an internal experimetal API which is not available through
+  // /// libLiteRt.so. It's not part of the official LiteRT public C++ API.
+  // static Expected<Model> CreateFromAllocation(
+      // std::unique_ptr<tflite::Allocation> allocation);
+  // copybara:uncomment_end
 
   Expected<absl::Span<const uint8_t>> Metadata(
       const std::string& metadata_key) const {
