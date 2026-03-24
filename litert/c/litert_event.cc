@@ -123,6 +123,17 @@ LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
 #endif
 }
 
+LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native) {
+#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
+  if (event->type == LiteRtEventTypeCustom && event->custom_event != nullptr &&
+      event->custom_event->GetNative != nullptr) {
+    *native = event->custom_event->GetNative(event->custom_event);
+    return kLiteRtStatusOk;
+  }
+#endif
+  return kLiteRtStatusErrorUnsupported;
+}
+
 LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
                                       LiteRtEventType type,
                                       LiteRtEvent* event) {
@@ -147,28 +158,6 @@ LiteRtStatus LiteRtSetCustomEvent(LiteRtEvent event,
     return kLiteRtStatusOk;
   }
 #endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus LiteRtGetCustomEvent(LiteRtEvent event,
-                                  LiteRtCustomEvent* custom_event) {
-#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
-  if (event->type == LiteRtEventTypeCustom && event->custom_event != nullptr) {
-    *custom_event = event->custom_event;
-    return kLiteRtStatusOk;
-  }
-#endif  // LITERT_HAS_CUSTOM_EVENT_SUPPORT
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus LiteRtGetEventCustomNativeEvent(LiteRtEvent event, void** native) {
-#if LITERT_HAS_CUSTOM_EVENT_SUPPORT
-  if (event->type == LiteRtEventTypeCustom && event->custom_event != nullptr &&
-      event->custom_event->GetNative != nullptr) {
-    *native = event->custom_event->GetNative(event->custom_event);
-    return kLiteRtStatusOk;
-  }
-#endif
   return kLiteRtStatusErrorUnsupported;
 }
 
