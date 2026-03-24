@@ -143,7 +143,11 @@ export class LiteRt {
     const accelerator = compileOptions.accelerator ??
         (environment.webGpuDevice ? 'webgpu' : 'wasm');
 
-    if (accelerator === 'webgpu' && !environment.webGpuDevice) {
+    const acceleratorIncludesWebGpu = Array.isArray(accelerator) ?
+        accelerator.includes('webgpu') :
+        accelerator === 'webgpu';
+
+    if (acceleratorIncludesWebGpu && !environment.webGpuDevice) {
       throw new Error(
           'WebGPU was requested but no WebGPU device is set in the ' +
           'environment.');

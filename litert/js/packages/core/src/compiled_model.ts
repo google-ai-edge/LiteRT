@@ -143,6 +143,11 @@ export class CompiledModel implements Deletable, SignatureRunner {
     }
   }
 
+  get isFullyAccelerated(): boolean {
+    this.ensureNotDeleted();
+    return this.liteRtCompiledModel.isFullyAccelerated();
+  }
+
   delete() {
     // For now, we enforce a 1:1 correspondence between models and compiled
     // models. If there's a need in the future, we can revise this.

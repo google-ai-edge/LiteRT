@@ -104,7 +104,7 @@ export declare interface LiteRtWebNNOptions {
  * Options for loading and compiling a LiteRt model.
  */
 export declare interface LiteRtCompileOptions {
-  accelerator?: 'wasm'|'webgpu'|'webnn';
+  accelerator?: 'wasm'|'webgpu'|'webnn'|Array<'wasm'|'webgpu'|'webnn'>;
   gpuOptions?: LiteRtGpuOptions;
   webNNOptions?: LiteRtWebNNOptions;
 }
@@ -190,6 +190,7 @@ export declare interface LiteRtCompiledModel extends Deletable {
       LiteRtTensorBufferRequirements;
   run(signatureIndex: number, inputTensors: LiteRtTensorBuffer[]):
       LiteRtTensorBuffer[]|Promise<LiteRtTensorBuffer[]>;
+  isFullyAccelerated(): boolean;
 }
 
 /**

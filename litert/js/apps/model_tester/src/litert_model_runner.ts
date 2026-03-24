@@ -38,10 +38,10 @@ export const liteRtPromise = (async () => {
 
   // TODO: b/445746846 - Add an option for threads / no threads.
   try {
-    await loadLiteRt('./wasm/', {threads: true});
+    await loadLiteRt('./wasm/', {threads: true, jspi: true});
     console.log('LiteRt loaded with threads');
   } catch (e) {
-    await loadLiteRt('./wasm/');
+    await loadLiteRt('./wasm/', {jspi: true});
     console.log('LiteRt loaded without threads');
   }
   try {
@@ -78,10 +78,10 @@ export class LiteRtModelRunner implements ModelRunner {
         await toMaybe(() => loadAndCompile(data, {accelerator: 'webgpu'}));
     const cpuModel =
         await toMaybe(() => loadAndCompile(data, {accelerator: 'wasm'}));
-    const webnnModel = await toMaybe(
-        () => loadAndCompile(
-            data,
-            {accelerator: 'webnn', webNNOptions: {devicePreference: 'npu'}}));
+    const webnnModel = await toMaybe(() => loadAndCompile(data, {
+                                       accelerator: ['webnn', 'wasm'],
+                                       webNNOptions: {devicePreference: 'npu'}
+                                     }));
 
     if (gpuModel.error && cpuModel.error && webnnModel.error) {
       console.error('GPU, CPU, and WebNN models failed to load');
@@ -385,7 +385,6 @@ function makeFakeInputs(model: CompiledModel|SignatureRunner) {
     if (dtype !== 'float32' && dtype !== 'int32') {
       throw new Error(`Unsupported dtype: ${dtype}`);
     }
-
     return [details.name, makeFakeInput({shape, dtype})];
   }));
 }
