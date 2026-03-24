@@ -27,6 +27,34 @@ http_archive(
     ],
 )
 
+# rules_swift 3.4.2
+http_archive(
+    name = "rules_swift",
+    sha256 = "03a5c2a93398f2fc4d6ddfb76cf80cd957483ec286d34f50cc22cda002aab445",
+    url = "https://github.com/bazelbuild/rules_swift/releases/download/3.4.2/rules_swift.3.4.2.tar.gz",
+)
+
+# apple_support 2.2.0
+http_archive(
+    name = "build_bazel_apple_support",
+    sha256 = "cd2b8896e0a6100a1a7b14cd6abe2275202b5a0f8b1e1548ed71fb81b8c19182",
+    url = "https://github.com/bazelbuild/apple_support/releases/download/2.2.0/apple_support.2.2.0.tar.gz",
+)
+
+# rules_apple 4.3.3
+http_archive(
+    name = "build_bazel_rules_apple",
+    sha256 = "fad623b4d0dbe7883fffc95a3275eaabfd13bd9336fca6788cb40bee96e5f131",
+    url = "https://github.com/bazelbuild/rules_apple/releases/download/4.3.3/rules_apple.4.3.3.tar.gz",
+)
+
+http_archive(
+    name = "bazel_features",
+    sha256 = "ccf85bbf0613d12bf6df2c8470ecec544a6fe8ceab684e970e8ed4dde4cb24ec",
+    strip_prefix = "bazel_features-1.44.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.44.0/bazel_features-v1.44.0.tar.gz",
+)
+
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
 # tensorflow is updated to do the same patchcmd.
 http_archive(
