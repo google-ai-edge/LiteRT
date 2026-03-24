@@ -27,12 +27,60 @@ http_archive(
     ],
 )
 
-# Lower the version from 1.24.5 that tensorflow uses to 1.23.1, the highest version which don't have
-# issues with missing LC_UUID, DEVELOPER_DIR or SDKROOT on MacOS Tahoe.
+# Added Bazel dependencies
+http_archive(
+    name = "bazel_features",
+    sha256 = "a660027f5a87f13224ab54b8dc6e191693c554f2692fcca46e8e29ee7dabc43b",
+    strip_prefix = "bazel_features-1.30.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.30.0/bazel_features-v1.30.0.tar.gz",
+)
+
+load("@bazel_features//:deps.bzl", "bazel_features_deps")
+
+bazel_features_deps()
+
+http_archive(
+    name = "rules_cc",
+    sha256 = "458b658277ba51b4730ea7a2020efdf1c6dcadf7d30de72e37f4308277fa8c01",
+    strip_prefix = "rules_cc-0.2.16",
+    url = "https://github.com/bazelbuild/rules_cc/releases/download/0.2.16/rules_cc-0.2.16.tar.gz",
+)
+
+load("@rules_cc//cc:repositories.bzl", "rules_cc_dependencies", "rules_cc_toolchains")
+
+rules_cc_dependencies()
+
+rules_cc_toolchains()
+
+load("@rules_cc//cc:extensions.bzl", "compatibility_proxy_repo")
+
+compatibility_proxy_repo()
+
 http_archive(
     name = "build_bazel_apple_support",
-    sha256 = "ee20cc5c0bab47065473c8033d462374dd38d172406ecc8de5c8f08487943f2f",
-    url = "https://github.com/bazelbuild/apple_support/releases/download/1.23.1/apple_support.1.23.1.tar.gz",
+    sha256 = "73c8dc6cdd7cea87956db9279a69c9e68bd2a5ec6a6a507e36d6e2d7da4d71a4",
+    url = "https://github.com/bazelbuild/apple_support/releases/download/1.21.1/apple_support.1.21.1.tar.gz",
+)
+
+load("@build_bazel_apple_support//lib:repositories.bzl", "apple_support_dependencies")
+
+apple_support_dependencies()
+
+http_archive(
+    name = "build_bazel_rules_apple",
+    sha256 = "fad623b4d0dbe7883fffc95a3275eaabfd13bd9336fca6788cb40bee96e5f131",
+    url = "https://github.com/bazelbuild/rules_apple/releases/download/4.3.3/rules_apple.4.3.3.tar.gz",
+)
+
+http_archive(
+    name = "build_bazel_rules_swift",
+    sha256 = "c98f201bc217d2ce28e01afc78b410d05c67b846c04a7095e4e701b37422ecb2",
+    url = "https://github.com/bazelbuild/rules_swift/releases/download/3.5.0/rules_swift.3.5.0.tar.gz",
+)
+
+load(
+    "@build_bazel_rules_swift//swift:repositories.bzl",
+    "swift_rules_dependencies",
 )
 
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
