@@ -26,7 +26,8 @@
 namespace litert::internal {
 namespace {
 
-const char* GetAcceleratorName(LiteRtAcceleratorT* accelerator) {
+LITERT_NO_CFI_CHECK const char* GetAcceleratorName(
+    LiteRtAcceleratorT* accelerator) {
   const char* name = nullptr;
   if (accelerator && accelerator->GetName) {
     accelerator->GetName(accelerator, &name);
