@@ -371,6 +371,9 @@ litert_c_api_library(
         "litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
+    header_deps = [
+        ":litert_tensor_buffer_requirements_header",
+    ],
     impl_deps = [
         ":litert_event",
         "@com_google_absl//absl/types:span",
@@ -381,6 +384,7 @@ litert_c_api_library(
         "//litert/runtime:tensor_buffer",
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
+        ":litert_tensor_buffer_requirements",
     ] + gles_deps(),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
@@ -389,7 +393,6 @@ litert_c_api_library(
         ":litert_gl_types",
         ":litert_model_types",
         ":litert_opencl_types",
-        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         ":litert_webgpu_types",
     ],
