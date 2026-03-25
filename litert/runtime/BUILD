@@ -924,7 +924,7 @@ cc_library(
     name = "litert_gpu_util",
     hdrs = ["litert_gpu_util.h"],
     deps = [
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//tflite/delegates/gpu/common:data_type",

@@ -330,6 +330,7 @@ class ExtendedModel : public litert::Model {
     return CreateFromOwnedHandle(model);
   }
 
+#if !defined(LITERT_DYNAMIC_RUNTIME)
   // copybara:uncomment_begin(google_only)
   // /// @brief Creates a model from an owned TFLite allocation.
   // ///
@@ -337,6 +338,7 @@ class ExtendedModel : public litert::Model {
   // static Expected<ExtendedModel> CreateFromAllocation(
       // std::unique_ptr<tflite::Allocation> allocation);
   // copybara:uncomment_end
+#endif  // !defined(LITERT_DYNAMIC_RUNTIME)
 
   Expected<absl::Span<const uint8_t>> Metadata(
       const std::string& metadata_key) const {

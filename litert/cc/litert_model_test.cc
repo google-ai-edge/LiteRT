@@ -112,6 +112,7 @@ TEST(CcModelTest, SimpleModelSignature) {
   EXPECT_EQ(output_names->at(1), "prod");
 }
 
+#if !defined(LITERT_DYNAMIC_RUNTIME)
 // copybara:uncomment_begin(google_only)
 // TEST(CcModelTest, CreateFromMemoryAllocation) {
 //   auto runtime = testing::MakeRuntimeFromTestFile("one_mul.tflite");
@@ -140,6 +141,7 @@ TEST(CcModelTest, SimpleModelSignature) {
 //   EXPECT_EQ(model.Error().Status(), kLiteRtStatusErrorFileIO);
 // }
 // copybara:uncomment_end
+#endif  // !defined(LITERT_DYNAMIC_RUNTIME)
 
 //===----------------------------------------------------------------------===//
 //                                CC Signature                                //
