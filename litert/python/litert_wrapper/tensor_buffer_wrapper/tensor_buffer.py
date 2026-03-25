@@ -164,10 +164,12 @@ class TensorBuffer:
 
     Args:
       num_elements: Number of elements to read.
-      output_dtype: NumPy dtype for the output (e.g., np.float32, np.int8).
+      output_dtype: NumPy dtype or supported PyTorch dtype for the output
+        (e.g., np.float32, np.int8, torch.float16).
 
     Returns:
-      A NumPy array containing the tensor data.
+      A NumPy array containing the tensor data, or a CPU PyTorch tensor when a
+      PyTorch dtype is requested.
 
     Example:
       # Get output as NumPy array
