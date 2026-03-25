@@ -256,6 +256,20 @@ cc_library(
     alwayslink = 1,
 )
 
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "litert_fabric_options",
+#     srcs = ["fabric/litert_fabric_options.cc"],
+#     hdrs = ["fabric/litert_fabric_options.h"],
+#     deps = [
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_opaque_options",
+#         "//litert/cc:litert_macros",
+#         "//litert/runtime:litert_fabric_options",
+#     ],
+# )
+# copybara:uncomment_end
+
 cc_library(
     name = "litert_google_tensor_options_type",
     hdrs = ["litert_google_tensor_options_type.h"],
