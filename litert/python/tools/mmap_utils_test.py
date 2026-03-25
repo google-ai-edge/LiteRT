@@ -133,8 +133,21 @@ class MmapUtilsTest(googletest.TestCase):
     )
 
   def test_get_file_contents_mappable_file(self):
+    # Get whole file.
     self.assertEqual(
         self._test_data, mmap_utils.get_file_contents(self._mappable_path)
+    )
+
+    # Get with an offset.
+    self.assertEqual(
+        self._test_data[10:],
+        mmap_utils.get_file_contents(self._mappable_path, offset=10),
+    )
+
+    # Get with offset and size.
+    self.assertEqual(
+        self._test_data[10:20],
+        mmap_utils.get_file_contents(self._mappable_path, offset=10, size=10),
     )
 
   def test_get_file_contents_non_mappable_file(self):
@@ -145,6 +158,20 @@ class MmapUtilsTest(googletest.TestCase):
         self._test_data, mmap_utils.get_file_contents(self._mappable_path)
     )
 
+    # Get with an offset.
+    self._raise_on_next_event('mmap.__new__', OSError())
+    self.assertEqual(
+        self._test_data[10:],
+        mmap_utils.get_file_contents(self._mappable_path, offset=10),
+    )
+
+    # Get with offset and size.
+    self._raise_on_next_event('mmap.__new__', OSError())
+    self.assertEqual(
+        self._test_data[10:20],
+        mmap_utils.get_file_contents(self._mappable_path, offset=10, size=10),
+    )
+
   def test_get_file_contents_os_open_fails_once(self):
     # Make the next call to `os.open` fail.
     self._raise_on_next_event('open', OSError())
@@ -153,9 +180,31 @@ class MmapUtilsTest(googletest.TestCase):
         self._test_data, mmap_utils.get_file_contents(self._mappable_path)
     )
 
+    # Get with an offset.
+    self._raise_on_next_event('open', OSError())
+    self.assertEqual(
+        self._test_data[10:],
+        mmap_utils.get_file_contents(self._mappable_path, offset=10),
+    )
+
+    # Get with offset and size.
+    self._raise_on_next_event('open', OSError())
+    self.assertEqual(
+        self._test_data[10:20],
+        mmap_utils.get_file_contents(self._mappable_path, offset=10, size=10),
+    )
+
   def test_set_file_contents_mappable_file(self):
     mmap_utils.set_file_contents(self._mappable_path, self._test_data)
     with open(self._mappable_path, 'rb') as f:
+      self.assertEqual(self._test_data, f.read())
+
+    # Set with an offset.
+    mmap_utils.set_file_contents(
+        self._mappable_path, self._test_data, offset=10
+    )
+    with open(self._mappable_path, 'rb') as f:
+      f.seek(10)
       self.assertEqual(self._test_data, f.read())
 
   def test_set_file_contents_non_mappable_file(self):
@@ -164,6 +213,15 @@ class MmapUtilsTest(googletest.TestCase):
 
     mmap_utils.set_file_contents(self._mappable_path, self._test_data)
     with open(self._mappable_path, 'rb') as f:
+      self.assertEqual(self._test_data, f.read())
+
+    # Set with an offset.
+    self._raise_on_next_event('mmap.__new__', OSError())
+    mmap_utils.set_file_contents(
+        self._mappable_path, self._test_data, offset=10
+    )
+    with open(self._mappable_path, 'rb') as f:
+      f.seek(10)
       self.assertEqual(self._test_data, f.read())
 
   def test_advise_sequential_mmap(self):

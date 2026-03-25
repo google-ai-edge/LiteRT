@@ -89,7 +89,9 @@ def get_mapped_buffer_or_none(
   return None
 
 
-def get_file_contents(path: Path) -> memoryview:
+def get_file_contents(
+    path: Path, *, offset: int = 0, size: int = 0
+) -> memoryview:
   """Creates a `mmap.mmap` or `bytearray` of the contents of the given file.
 
   If the file is memory mapped, then it will be mapped as `mmap.MAP_PRIVATE`
@@ -97,6 +99,8 @@ def get_file_contents(path: Path) -> memoryview:
 
   Args:
     path: The path of the new file.
+    offset: Optional offset in bytes within the file.
+    size: Optional number of bytes to read (until EOF if `0`).
 
   Returns:
     A `memoryview` wrapping either an `mmap.mmap` or `bytearray` of the contents
@@ -112,7 +116,11 @@ def get_file_contents(path: Path) -> memoryview:
   else:
     try:
       data = mmap.mmap(
-          fd, 0, flags=mmap.MAP_PRIVATE, prot=mmap.PROT_READ | mmap.PROT_WRITE
+          fd,
+          size,
+          flags=mmap.MAP_PRIVATE,
+          prot=mmap.PROT_READ | mmap.PROT_WRITE,
+          offset=offset,
       )
     except OSError as e:
       logging.info(
@@ -125,35 +133,40 @@ def get_file_contents(path: Path) -> memoryview:
   # If mapping failed (path might refer to a special file that either `os.open`
   # or `mmap.mmap` can't handle, go at it conventionally.
   if data is None:
-    size = os.stat(path).st_size
+    size = size or (os.stat(path).st_size - offset)
     data = bytearray(size)
     with open(path, 'rb') as f:
+      if offset:
+        f.seek(offset)
       assert f.readinto(data) == size
 
   return memoryview(data)
 
 
-def set_file_contents(
-    path: Path, data: BufferType
-):
+def set_file_contents(path: Path, data: BufferType, *, offset: int = 0):
   """Write the `data` to the given `path`.
 
   Args:
     path: The path of the new file.
     data: The binary data to write.
+    offset: Optional offset in bytes within the file.
 
   Raises:
     An `OSError` if creating/opening the file fails, or if `mmap.mmap` fails.
   """
   # Try to mmap the file first if it is local.
-  if (output_map := get_mapped_buffer_or_none(path, len(data))) is not None:
-    output_map[:] = data
+  if (
+      output_map := get_mapped_buffer_or_none(path, offset + len(data))
+  ) is not None:
+    output_map[offset:] = data
     output_map.close()
 
   else:
     # If mapping failed (path might refer to a special file that either
     # `os.open` or `mmap.mmap` can't handle, go at it conventionally.
     with open(path, 'wb') as f:
+      if offset:
+        f.seek(offset)
       # Write the file in chunks to avoid creating large internal buffers.
       finger = 0
       chunk_size = max(len(data) // 10, 10 * 1024 * 1024)
