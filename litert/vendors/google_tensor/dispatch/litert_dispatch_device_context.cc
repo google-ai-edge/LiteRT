@@ -58,6 +58,11 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
                                 thr_context, "edgetpu_use_tpu_tachyon", "1"),
                             "Failed to enable Tachyon SB");
 
+  GT_LOG_RETURN_IF_SB_ERROR(
+      thrVendorSetSystemAttributeStr(thr_context, "sq_container_load_method",
+                                     "dmabuf"),
+      "Failed to enable SB dmabuf SQ loading");
+
   // The returned instance must be allocated with `new`, as it will be
   // deallocated via `delete` in `Destroy`.
   device_context = new LiteRtDispatchDeviceContextT(thr_context);
