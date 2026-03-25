@@ -84,6 +84,7 @@ package_group(
         "//litert/test/...",
         "//litert/tools/...",
         "//litert/vendors/...",
+        "//third_party/odml/infra/fabric/...",
         "//third_party/odml/litert/ml_drift/...",
         "//third_party/odml/litert/weight_loader/...",
     ] + litert_friends(),
