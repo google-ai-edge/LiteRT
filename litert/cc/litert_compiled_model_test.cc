@@ -123,6 +123,54 @@ TEST(CompiledModelTest, Basic) {
   }
 }
 
+TEST(CompiledModelTest, WithProfilerAndMetrics) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  LITERT_ASSIGN_OR_ABORT(litert::Options compilation_options,
+                         litert::Options::Create());
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
+                         compilation_options.GetRuntimeOptions());
+  runtime_options.SetEnableProfiling(/*enable_profiling=*/true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
+  ASSERT_TRUE(profiler);
+  ASSERT_TRUE(profiler.StartProfiling());
+  LITERT_ASSERT_OK(compiled_model.StartMetricsCollection(/*detail_level=*/100));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto metrics, compiled_model.StopMetricsCollection());
+  EXPECT_THAT(metrics.metrics, SizeIs(0));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto events, profiler.GetEvents());
+  EXPECT_GT(events.size(), 2);
+  ASSERT_TRUE(profiler.Reset());
+  LITERT_ASSERT_OK_AND_ASSIGN(events, profiler.GetEvents());
+  EXPECT_THAT(events, SizeIs(0));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr, litert::TensorBufferScopedLock::Create<const float>(
+                              output_buffers[0], TensorBuffer::LockMode::kRead));
+  auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
+
 TEST(CompiledModelTest,
      ResizeInputTensorReflectsInCreatedInputBufferForSignature) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
@@ -459,6 +507,159 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
   }
 }
 
+TEST(CompiledModelTest, RunWithOptionsAndSchedulingInfoOverloads) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(Options run_options, Options::Create());
+
+  LiteRtSchedulingInfo scheduling_info = {};
+  scheduling_info.fields_mask = kLiteRtSchedulingInfoFieldJobPriority;
+  scheduling_info.job_priority = 42;
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers,
+                                      &run_options));
+  LITERT_ASSERT_OK(compiled_model.Run(
+      /*signature_index=*/size_t(0), input_buffers, output_buffers,
+      scheduling_info));
+  LITERT_ASSERT_OK(compiled_model.SetSchedulingInfo(scheduling_info));
+  LITERT_ASSERT_OK(compiled_model.ClearSchedulingInfo());
+
+  bool async = true;
+  LITERT_ASSERT_OK(compiled_model.RunAsync(
+      compiled_model.DefaultSignatureKey(), input_buffers, output_buffers,
+      async, &run_options));
+  EXPECT_FALSE(async);
+
+  async = true;
+  LITERT_ASSERT_OK(compiled_model.RunAsync(
+      /*signature_index=*/size_t(0), input_buffers, output_buffers, async,
+      scheduling_info));
+  EXPECT_FALSE(async);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input_buffer0,
+                              compiled_model.CreateInputBuffer("arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input_buffer1,
+                              compiled_model.CreateInputBuffer("arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer output_buffer,
+                              compiled_model.CreateOutputBuffer("tfl.add"));
+
+  ASSERT_TRUE(input_buffer0.Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffer1.Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> input_map;
+  input_map["arg0"] = std::move(input_buffer0);
+  input_map["arg1"] = std::move(input_buffer1);
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> output_map;
+  output_map["tfl.add"] = std::move(output_buffer);
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_map, output_map, &run_options));
+  LITERT_ASSERT_OK(compiled_model.Run(compiled_model.DefaultSignatureKey(),
+                                      input_map, output_map, scheduling_info));
+
+  async = true;
+  LITERT_ASSERT_OK(compiled_model.RunAsync(compiled_model.DefaultSignatureKey(),
+                                           input_map, output_map, async,
+                                           scheduling_info));
+  EXPECT_FALSE(async);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr, litert::TensorBufferScopedLock::Create<const float>(
+                              output_map["tfl.add"],
+                              TensorBuffer::LockMode::kRead));
+  auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
+
+TEST(CompiledModelTest, DispatchAnnotations) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK(compiled_model.SetDispatchAnnotation(0, "priority", "high"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto value_by_index, compiled_model.GetDispatchAnnotation(0, "priority"));
+  ASSERT_TRUE(value_by_index.has_value());
+  EXPECT_EQ(*value_by_index, "high");
+
+  LITERT_ASSERT_OK(
+      compiled_model.SetDispatchAnnotation("memory_type", "shared"));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto value_by_default_signature,
+                              compiled_model.GetDispatchAnnotation(
+                                  "memory_type"));
+  ASSERT_TRUE(value_by_default_signature.has_value());
+  EXPECT_EQ(*value_by_default_signature, "shared");
+
+  LITERT_ASSERT_OK(compiled_model.SetDispatchAnnotation(
+      compiled_model.DefaultSignatureKey(), "precision", "fp16"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto value_by_signature_name,
+      compiled_model.GetDispatchAnnotation(compiled_model.DefaultSignatureKey(),
+                                           "precision"));
+  ASSERT_TRUE(value_by_signature_name.has_value());
+  EXPECT_EQ(*value_by_signature_name, "fp16");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto missing_value, compiled_model.GetDispatchAnnotation(0, "missing"));
+  EXPECT_FALSE(missing_value.has_value());
+
+  LITERT_ASSERT_OK(
+      compiled_model.SetDispatchAnnotation(0, "to_remove", "value"));
+  LITERT_ASSERT_OK(compiled_model.RemoveDispatchAnnotation(0, "to_remove"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto removed_value,
+      compiled_model.GetDispatchAnnotation(0, "to_remove"));
+  EXPECT_FALSE(removed_value.has_value());
+
+  LITERT_ASSERT_OK(compiled_model.RemoveDispatchAnnotation("never_existed"));
+}
+
+TEST(CompiledModelTest, DispatchAnnotationsInvalidSignature) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  EXPECT_FALSE(
+      compiled_model.SetDispatchAnnotation(999, "key", "value").HasValue());
+  EXPECT_FALSE(compiled_model.GetDispatchAnnotation(999, "key").HasValue());
+  EXPECT_FALSE(compiled_model.RemoveDispatchAnnotation(999, "key").HasValue());
+
+  EXPECT_FALSE(compiled_model
+                   .SetDispatchAnnotation("nonexistent_signature", "key",
+                                          "value")
+                   .HasValue());
+  EXPECT_FALSE(compiled_model
+                   .GetDispatchAnnotation("nonexistent_signature", "key")
+                   .HasValue());
+  EXPECT_FALSE(compiled_model
+                   .RemoveDispatchAnnotation("nonexistent_signature", "key")
+                   .HasValue());
+}
+
 TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
@@ -522,6 +723,19 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
         /*input_index=*/size_t(0), absl::MakeConstSpan(exec_dims)));
     LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
         /*input_index=*/size_t(1), absl::MakeConstSpan(exec_dims)));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        Layout input_layout0,
+        compiled_model.GetInputTensorLayout(
+            /*signature_index=*/size_t(0), /*input_index=*/size_t(0)));
+    EXPECT_THAT(input_layout0.Dimensions(),
+                ElementsAre(exec_dims[0], exec_dims[1], exec_dims[2]));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        Layout input_layout1,
+        compiled_model.GetInputTensorLayout(
+            /*signature_index=*/size_t(0), /*input_index=*/size_t(1)));
+    EXPECT_THAT(input_layout1.Dimensions(),
+                ElementsAre(exec_dims[0], exec_dims[1], exec_dims[2]));
 
     // Create input and output buffers
     LITERT_ASSERT_OK_AND_ASSIGN(

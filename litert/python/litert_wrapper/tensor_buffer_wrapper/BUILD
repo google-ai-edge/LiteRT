@@ -44,6 +44,8 @@ cc_library(
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",
+        "//tflite/types:half",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ] + select({

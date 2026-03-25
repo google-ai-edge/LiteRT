@@ -1,0 +1,5 @@
+BUILD the code:
+
+TF_LOCAL_SOURCE_PATH="$PWD/third_party/tensorflow" XDG_CACHE_HOME="$PWD/.cache" BAZELISK_HOME="$PWD/.bazelisk-cache" bazelisk --output_base="$PWD/.bazel-output" build -c dbg --cxxopt=-std=gnu++17 --repo_env=USE_PYWRAP_RULES=True --repo_env=HERMETIC_PYTHON_VERSION=3.13 --action_env=HERMETIC_PYTHON_VERSION=3.13 --define=litert_link_capi_so=true --define=resolve_symbols_in_exec=false //litert/tools:benchmark_model_dynamic
+
+Then run the tool with the newly converted models and compare their performance with the ones from HF

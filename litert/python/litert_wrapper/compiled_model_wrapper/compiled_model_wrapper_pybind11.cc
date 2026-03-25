@@ -116,6 +116,14 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
              }
              return py::reinterpret_steal<py::object>(r);
            })
+      .def("IsFullyAccelerated",
+           [](CompiledModelWrapper& self) {
+             PyObject* r = self.IsFullyAccelerated();
+             if (!r) {
+               throw py::error_already_set();
+             }
+             return py::reinterpret_steal<py::object>(r);
+           })
       .def("CreateInputBufferByName",
            [](CompiledModelWrapper& self, const std::string& sig_key,
               const std::string& input_name) {
@@ -155,6 +163,14 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       .def("GetInputTensorDetails",
            [](CompiledModelWrapper& self, const std::string& sig_key) {
              PyObject* r = self.GetInputTensorDetails(sig_key.c_str());
+             if (!r) {
+               throw py::error_already_set();
+             }
+             return py::reinterpret_steal<py::object>(r);
+           })
+      .def("GetOutputTensorDetails",
+           [](CompiledModelWrapper& self, const std::string& sig_key) {
+             PyObject* r = self.GetOutputTensorDetails(sig_key.c_str());
              if (!r) {
                throw py::error_already_set();
              }

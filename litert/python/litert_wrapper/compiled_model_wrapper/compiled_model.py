@@ -171,9 +171,21 @@ class CompiledModel:
 
     Returns:
       Dictionary mapping input tensor names to their details (name, index,
-      dtype, shape, etc.).
+      dtype, shape, etc.). Shapes reflect the current compiled-model layout.
     """
     return self._model.GetInputTensorDetails(signature_key)
+
+  def get_output_tensor_details(self, signature_key: str) -> Dict[str, Any]:
+    """Returns details of output tensors for a given signature.
+
+    Args:
+      signature_key: Name of the signature.
+
+    Returns:
+      Dictionary mapping output tensor names to their details (name, index,
+      dtype, shape, etc.). Shapes reflect the current compiled-model layout.
+    """
+    return self._model.GetOutputTensorDetails(signature_key)
 
   def get_input_buffer_requirements(
       self, input_index: int, signature_index: int = 0
@@ -204,6 +216,10 @@ class CompiledModel:
     return self._model.GetOutputBufferRequirements(
         signature_index, output_index
     )
+
+  def is_fully_accelerated(self) -> bool:
+    """Returns whether the compiled model is fully accelerated."""
+    return bool(self._model.IsFullyAccelerated())
 
   def create_input_buffer_by_name(
       self, signature_key: str, input_name: str

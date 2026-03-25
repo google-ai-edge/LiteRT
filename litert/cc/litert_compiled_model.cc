@@ -18,11 +18,13 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -30,6 +32,7 @@
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_common.h"
@@ -380,6 +383,91 @@ Expected<std::vector<TensorBuffer>> CompiledModel::CreateInputOutputBuffers(
   }
 
   return tensor_buffers;
+}
+
+Expected<Profiler> CompiledModel::GetProfiler() {
+  LiteRtProfiler profiler = nullptr;
+  LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelGetProfiler(Get(),
+                                                                &profiler));
+  return Profiler(profiler, OwnHandle::kNo);
+}
+
+Expected<void> CompiledModel::StartMetricsCollection(int detail_level) {
+  if (auto status = env_.runtime->CompiledModelStartMetricsCollection(
+          Get(), detail_level);
+      status != kLiteRtStatusOk) {
+    return Unexpected(ToStatus(status), "Failed to start metrics collection");
+  }
+  return {};
+}
+
+Expected<CompiledModel::Metrics> CompiledModel::StopMetricsCollection() {
+  LiteRtMetrics metrics = nullptr;
+  LITERT_RETURN_IF_ERROR(env_.runtime->CreateMetrics(&metrics));
+  absl::Cleanup metrics_cleanup = [&metrics, runtime = env_.runtime] {
+    runtime->DestroyMetrics(metrics);
+  };
+  LITERT_RETURN_IF_ERROR(
+      env_.runtime->CompiledModelStopMetricsCollection(Get(), metrics));
+
+  int num_metrics = 0;
+  LITERT_RETURN_IF_ERROR(env_.runtime->GetNumMetrics(metrics, &num_metrics));
+
+  std::vector<Metrics::Metric> compiled_model_metrics;
+  compiled_model_metrics.reserve(num_metrics);
+  for (int i = 0; i < num_metrics; ++i) {
+    LiteRtMetric metric;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetMetric(metrics, i, &metric));
+    compiled_model_metrics.push_back({metric.name, metric.value});
+  }
+  return Metrics{.metrics = std::move(compiled_model_metrics)};
+}
+
+Expected<void> CompiledModel::SetSchedulingInfo(
+    const LiteRtSchedulingInfo& scheduling_info) const {
+  auto status =
+      env_.runtime->CompiledModelSetSchedulingInfo(Get(), &scheduling_info);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(ToStatus(status), "Failed to set scheduling info");
+  }
+  return {};
+}
+
+Expected<void> CompiledModel::ClearSchedulingInfo() const {
+  auto status = env_.runtime->CompiledModelSetSchedulingInfo(Get(), nullptr);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(ToStatus(status), "Failed to clear scheduling info");
+  }
+  return {};
+}
+
+Expected<void> CompiledModel::SetDispatchAnnotation(
+    size_t signature_index, absl::string_view key, absl::string_view value) {
+  const std::string key_string(key);
+  const std::string value_string(value);
+  LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelSetDispatchAnnotation(
+      Get(), signature_index, key_string.c_str(), value_string.c_str()));
+  return {};
+}
+
+Expected<std::optional<std::string>> CompiledModel::GetDispatchAnnotation(
+    size_t signature_index, absl::string_view key) {
+  const std::string key_string(key);
+  const char* value = nullptr;
+  LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelGetDispatchAnnotation(
+      Get(), signature_index, key_string.c_str(), &value));
+  if (value == nullptr) {
+    return std::optional<std::string>();
+  }
+  return std::optional<std::string>(std::string(value));
+}
+
+Expected<void> CompiledModel::RemoveDispatchAnnotation(
+    size_t signature_index, absl::string_view key) {
+  const std::string key_string(key);
+  LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelRemoveDispatchAnnotation(
+      Get(), signature_index, key_string.c_str()));
+  return {};
 }
 
 Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,

@@ -20,20 +20,70 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
+#include "tflite/types/half.h"
 
 namespace litert::tensor_buffer_wrapper {
 
 namespace {
+const char* ElementTypeToString(ElementType dtype) {
+  switch (dtype) {
+    case ElementType::Float32:
+      return "float32";
+    case ElementType::Float16:
+      return "float16";
+    case ElementType::Int32:
+      return "int32";
+    case ElementType::UInt8:
+      return "uint8";
+    case ElementType::Int64:
+      return "int64";
+    case ElementType::Bool:
+      return "bool";
+    case ElementType::Int16:
+      return "int16";
+    case ElementType::Int8:
+      return "int8";
+    case ElementType::Float64:
+      return "float64";
+    case ElementType::UInt32:
+      return "uint32";
+    case ElementType::UInt16:
+      return "uint16";
+    default:
+      return "unknown";
+  }
+}
+
+bool SetDictItemStringSteal(PyObject* dict, const char* key, PyObject* value) {
+  if (value == nullptr) {
+    return false;
+  }
+  const int status = PyDict_SetItemString(dict, key, value);
+  Py_DECREF(value);
+  return status == 0;
+}
+
+size_t ByteWidthOfDTypeImpl(const std::string& dtype) {
+  if (dtype == "float32") return 4;
+  if (dtype == "float16") return 2;
+  if (dtype == "int32") return 4;
+  if (dtype == "int8") return 1;
+  return 0;
+}
+
 // A deallocator that performs no operation, used when the memory is managed
 // externally.
 void NoopDeallocator(void*) {}
@@ -82,6 +132,29 @@ bool ConvertPyListToInt32Vector(PyObject* py_list, std::vector<int32_t>* out,
       return false;
     }
     out->push_back(static_cast<int32_t>(val));
+  }
+  return true;
+}
+
+// Converts a Python list of numeric values to float16 storage bits.
+// Returns true on success, false on failure with error message populated.
+bool ConvertPyListToFloat16BitsVector(PyObject* py_list,
+                                      std::vector<uint16_t>* out,
+                                      std::string* error) {
+  if (!PyList_Check(py_list)) {
+    *error = "Expected a Python list for float16 data";
+    return false;
+  }
+  Py_ssize_t length = PyList_Size(py_list);
+  out->reserve(length);
+  for (Py_ssize_t i = 0; i < length; ++i) {
+    PyObject* item = PyList_GetItem(py_list, i);
+    const double val = PyFloat_AsDouble(item);
+    if ((val == -1.0) && PyErr_Occurred()) {
+      *error = "Non-numeric value in float16 list.";
+      return false;
+    }
+    out->push_back(tflite::half(static_cast<float>(val)).to_bits());
   }
   return true;
 }
@@ -135,6 +208,17 @@ PyObject* BuildPyListFromInt32(absl::Span<const int32_t> data) {
   return py_list;
 }
 
+// Creates a Python list of float values from float16 storage bits.
+PyObject* BuildPyListFromFloat16(absl::Span<const uint16_t> data) {
+  PyObject* py_list = PyList_New(data.size());
+  for (size_t i = 0; i < data.size(); i++) {
+    PyList_SetItem(py_list, i,
+                   PyFloat_FromDouble(
+                       static_cast<float>(tflite::half::from_bits(data[i]))));
+  }
+  return py_list;
+}
+
 // Creates a Python list from a span of int8_t values.
 PyObject* BuildPyListFromInt8(absl::Span<const int8_t> data) {
   PyObject* py_list = PyList_New(data.size());
@@ -148,12 +232,134 @@ PyObject* BuildPyListFromInt8(absl::Span<const int8_t> data) {
 
 // Returns the size in bytes for the given data type.
 size_t TensorBufferWrapper::ByteWidthOfDType(const std::string& dtype) {
-  if (dtype == "float32") return 4;
-  if (dtype == "int32") return 4;
-  if (dtype == "int8") return 1;
-  // Return 0 for unsupported data types
-  return 0;
+  return ByteWidthOfDTypeImpl(dtype);
 }
+
+namespace {
+
+Expected<TensorBuffer> GetTensorBufferFromCapsule(PyObject* buffer_capsule) {
+  if (!PyCapsule_CheckExact(buffer_capsule)) {
+    return Unexpected(Status::kErrorInvalidArgument, "invalid capsule");
+  }
+  void* ptr = PyCapsule_GetPointer(
+      buffer_capsule, litert_wrapper_utils::kLiteRtTensorBufferName.data());
+  if (!ptr) {
+    return Unexpected(Status::kErrorInvalidArgument,
+                      "null pointer in capsule");
+  }
+  return TensorBuffer::WrapCObject(static_cast<LiteRtTensorBuffer>(ptr),
+                                   OwnHandle::kNo);
+}
+
+PyObject* CopyPythonBufferToTensorBuffer(PyObject* buffer_capsule,
+                                         PyObject* py_data,
+                                         const std::string& dtype) {
+  auto tb_or = GetTensorBufferFromCapsule(buffer_capsule);
+  if (!tb_or) {
+    return TensorBufferWrapper::ReportError("WriteTensorBuffer: " +
+                                            tb_or.Error().Message());
+  }
+  TensorBuffer tb = std::move(*tb_or);
+
+  const size_t dtype_size = ByteWidthOfDTypeImpl(dtype);
+  if (dtype_size == 0) {
+    return TensorBufferWrapper::ReportError(
+        "WriteTensorBuffer: unsupported dtype '" + dtype + "'");
+  }
+
+  Py_buffer py_buf;
+  if (PyObject_GetBuffer(py_data, &py_buf, PyBUF_CONTIG_RO) < 0) {
+    return nullptr;
+  }
+  auto release_py_buf = [&py_buf]() { PyBuffer_Release(&py_buf); };
+  absl::Cleanup py_buf_cleanup = release_py_buf;
+
+  if (py_buf.len < 0) {
+    return TensorBufferWrapper::ReportError(
+        "WriteTensorBuffer: invalid negative buffer size");
+  }
+  if (static_cast<size_t>(py_buf.len) % dtype_size != 0) {
+    return TensorBufferWrapper::ReportError(
+        "WriteTensorBuffer: buffer size is not aligned with dtype size");
+  }
+
+  auto host_mem_addr_or = tb.Lock(TensorBuffer::LockMode::kWrite);
+  if (!host_mem_addr_or) {
+    return TensorBufferWrapper::ConvertErrorToPyExc(host_mem_addr_or.Error());
+  }
+  void* host_mem_addr = *host_mem_addr_or;
+  absl::Cleanup unlock = [&tb] { (void)tb.Unlock(); };
+  auto packed_size_or = tb.PackedSize();
+  if (!packed_size_or) {
+    return TensorBufferWrapper::ConvertErrorToPyExc(packed_size_or.Error());
+  }
+  const size_t packed_size = *packed_size_or;
+  if (packed_size < static_cast<size_t>(py_buf.len)) {
+    return TensorBufferWrapper::ReportError(
+        "WriteTensorBuffer: source buffer is larger than the tensor buffer");
+  }
+
+  std::memcpy(host_mem_addr, py_buf.buf, py_buf.len);
+  Py_RETURN_NONE;
+}
+
+PyObject* CopyTensorBufferToPythonBuffer(PyObject* buffer_capsule,
+                                         PyObject* py_data,
+                                         const std::string& dtype) {
+  auto tb_or = GetTensorBufferFromCapsule(buffer_capsule);
+  if (!tb_or) {
+    return TensorBufferWrapper::ReportError("ReadTensorToBuffer: " +
+                                            tb_or.Error().Message());
+  }
+  TensorBuffer tb = std::move(*tb_or);
+
+  const size_t dtype_size = ByteWidthOfDTypeImpl(dtype);
+  if (dtype_size == 0) {
+    return TensorBufferWrapper::ReportError(
+        "ReadTensorToBuffer: unsupported dtype '" + dtype + "'");
+  }
+
+  Py_buffer py_buf;
+  if (PyObject_GetBuffer(py_data, &py_buf, PyBUF_CONTIG) < 0) {
+    return nullptr;
+  }
+  auto release_py_buf = [&py_buf]() { PyBuffer_Release(&py_buf); };
+  absl::Cleanup py_buf_cleanup = release_py_buf;
+
+  if (py_buf.readonly) {
+    return TensorBufferWrapper::ReportError(
+        "ReadTensorToBuffer: destination buffer must be writable");
+  }
+  if (py_buf.len < 0) {
+    return TensorBufferWrapper::ReportError(
+        "ReadTensorToBuffer: invalid negative buffer size");
+  }
+  if (static_cast<size_t>(py_buf.len) % dtype_size != 0) {
+    return TensorBufferWrapper::ReportError(
+        "ReadTensorToBuffer: buffer size is not aligned with dtype size");
+  }
+
+  auto host_mem_addr_or = tb.Lock(TensorBuffer::LockMode::kRead);
+  if (!host_mem_addr_or) {
+    return TensorBufferWrapper::ConvertErrorToPyExc(host_mem_addr_or.Error());
+  }
+  void* host_mem_addr = *host_mem_addr_or;
+  absl::Cleanup unlock = [&tb] { (void)tb.Unlock(); };
+  auto packed_size_or = tb.PackedSize();
+  if (!packed_size_or) {
+    return TensorBufferWrapper::ConvertErrorToPyExc(packed_size_or.Error());
+  }
+  const size_t packed_size = *packed_size_or;
+  if (packed_size < static_cast<size_t>(py_buf.len)) {
+    return TensorBufferWrapper::ReportError(
+        "ReadTensorToBuffer: destination buffer is larger than the tensor buffer");
+  }
+
+  std::memcpy(py_buf.buf, host_mem_addr, py_buf.len);
+  Py_RETURN_NONE;
+}
+
+}  // namespace
 
 // Creates a TensorBuffer from existing host memory.
 // The memory is referenced, not copied, so the original data must outlive
@@ -187,6 +393,8 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
   // Set the element type based on the dtype string
   if (dtype == "float32") {
     dummy_type.element_type = kLiteRtElementTypeFloat32;
+  } else if (dtype == "float16") {
+    dummy_type.element_type = kLiteRtElementTypeFloat16;
   } else if (dtype == "int8") {
     dummy_type.element_type = kLiteRtElementTypeInt8;
   } else if (dtype == "int32") {
@@ -252,16 +460,14 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
 PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
                                            PyObject* data_list,
                                            const std::string& dtype) {
-  if (!PyCapsule_CheckExact(buffer_capsule)) {
-    return ReportError("WriteTensor: invalid capsule");
+  if (!PyList_Check(data_list)) {
+    return WriteTensorBuffer(buffer_capsule, data_list, dtype);
   }
-  void* ptr = PyCapsule_GetPointer(
-      buffer_capsule, litert_wrapper_utils::kLiteRtTensorBufferName.data());
-  if (!ptr) {
-    return ReportError("WriteTensor: null pointer in capsule");
+  auto tb_or = GetTensorBufferFromCapsule(buffer_capsule);
+  if (!tb_or) {
+    return ReportError("WriteTensor: " + tb_or.Error().Message());
   }
-  TensorBuffer tb = TensorBuffer::WrapCObject(
-      static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+  TensorBuffer tb = std::move(*tb_or);
 
   // Convert the Python list to a C++ vector based on the data type
   std::string error;
@@ -272,6 +478,17 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
     }
     if (auto status = tb.Write<float>(absl::MakeConstSpan(host_data)); !status)
       return ConvertErrorToPyExc(status.Error());
+    Py_RETURN_NONE;
+  }
+  if (dtype == "float16") {
+    std::vector<uint16_t> host_data;
+    if (!ConvertPyListToFloat16BitsVector(data_list, &host_data, &error)) {
+      if (!error.empty()) return ReportError(error);
+    }
+    if (auto status = tb.Write<uint16_t>(absl::MakeConstSpan(host_data));
+        !status) {
+      return ConvertErrorToPyExc(status.Error());
+    }
     Py_RETURN_NONE;
   }
   if (dtype == "int32") {
@@ -301,22 +518,23 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
 PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
                                           int num_elements,
                                           const std::string& dtype) {
-  if (!PyCapsule_CheckExact(buffer_capsule)) {
-    return ReportError("ReadTensor: invalid capsule");
+  auto tb_or = GetTensorBufferFromCapsule(buffer_capsule);
+  if (!tb_or) {
+    return ReportError("ReadTensor: " + tb_or.Error().Message());
   }
-  void* ptr = PyCapsule_GetPointer(
-      buffer_capsule, litert_wrapper_utils::kLiteRtTensorBufferName.data());
-  if (!ptr) {
-    return ReportError("ReadTensor: null pointer in capsule");
-  }
-  TensorBuffer tb = TensorBuffer::WrapCObject(
-      static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+  TensorBuffer tb = std::move(*tb_or);
 
   if (dtype == "float32") {
     std::vector data(num_elements, 0.f);
     if (auto status = tb.Read<float>(absl::MakeSpan(data)); !status)
       return ConvertErrorToPyExc(status.Error());
     return BuildPyListFromFloat(data);
+  }
+  if (dtype == "float16") {
+    std::vector<uint16_t> data(num_elements, 0);
+    if (auto status = tb.Read<uint16_t>(absl::MakeSpan(data)); !status)
+      return ConvertErrorToPyExc(status.Error());
+    return BuildPyListFromFloat16(data);
   }
   if (dtype == "int32") {
     std::vector data(num_elements, 0);
@@ -331,6 +549,67 @@ PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
     return BuildPyListFromInt8(data);
   }
   return ReportError("ReadTensor: unsupported dtype '" + dtype + "'");
+}
+
+PyObject* TensorBufferWrapper::WriteTensorBuffer(PyObject* buffer_capsule,
+                                                 PyObject* py_data,
+                                                 const std::string& dtype) {
+  return CopyPythonBufferToTensorBuffer(buffer_capsule, py_data, dtype);
+}
+
+PyObject* TensorBufferWrapper::ReadTensorToBuffer(PyObject* buffer_capsule,
+                                                  PyObject* py_data,
+                                                  const std::string& dtype) {
+  return CopyTensorBufferToPythonBuffer(buffer_capsule, py_data, dtype);
+}
+
+PyObject* TensorBufferWrapper::GetTensorDetails(PyObject* buffer_capsule) {
+  if (!PyCapsule_CheckExact(buffer_capsule)) {
+    return ReportError("GetTensorDetails: invalid capsule");
+  }
+  void* ptr = PyCapsule_GetPointer(
+      buffer_capsule, litert_wrapper_utils::kLiteRtTensorBufferName.data());
+  if (!ptr) {
+    return ReportError("GetTensorDetails: null pointer in capsule");
+  }
+  TensorBuffer tb = TensorBuffer::WrapCObject(
+      static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+  auto tensor_type_or = tb.TensorType();
+  if (!tensor_type_or) {
+    return ConvertErrorToPyExc(tensor_type_or.Error());
+  }
+  const auto& tensor_type = *tensor_type_or;
+
+  PyObject* tensor_dict = PyDict_New();
+  if (tensor_dict == nullptr) {
+    return nullptr;
+  }
+  if (!SetDictItemStringSteal(
+          tensor_dict, "dtype",
+          PyUnicode_FromString(ElementTypeToString(tensor_type.ElementType())))) {
+    Py_DECREF(tensor_dict);
+    return nullptr;
+  }
+  const auto shape = tensor_type.Layout().Dimensions();
+  PyObject* shape_list = PyList_New(shape.size());
+  if (shape_list == nullptr) {
+    Py_DECREF(tensor_dict);
+    return nullptr;
+  }
+  for (size_t i = 0; i < shape.size(); ++i) {
+    PyObject* dim = PyLong_FromLong(shape[i]);
+    if (dim == nullptr) {
+      Py_DECREF(shape_list);
+      Py_DECREF(tensor_dict);
+      return nullptr;
+    }
+    PyList_SetItem(shape_list, i, dim);  // steal ref
+  }
+  if (!SetDictItemStringSteal(tensor_dict, "shape", shape_list)) {
+    Py_DECREF(tensor_dict);
+    return nullptr;
+  }
+  return tensor_dict;
 }
 
 // Explicitly destroys a TensorBuffer and releases associated resources.
