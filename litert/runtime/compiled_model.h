@@ -59,19 +59,21 @@ using TfLiteTensorIdentifier = litert::internal::TfLiteTensorIdentifier;
 using TensorIdentifierHash = litert::internal::TensorIdentifierHash;
 using TensorIdentifierEqual = litert::internal::TensorIdentifierEqual;
 
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+namespace litert::internal {
+struct FabricRuntimeState;
+}  // namespace litert::internal
+
+struct LiteRtFabricOptionsT;
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
  public:
   using Ptr = std::unique_ptr<LiteRtCompiledModelT>;
 
-  explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env) : env_(env) {}
-  ~LiteRtCompiledModelT() {
-    // If the profiler is set, delete it here.
-    if (profiler_ != nullptr) {
-      delete profiler_;
-      profiler_ = nullptr;
-    }
-  };
+  explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env);
+  ~LiteRtCompiledModelT();
 
   // Creates a LiteRtCompiledModelT from a LiteRtModel object.
   // The model is loaded into memory and the caller takes ownership of the
@@ -140,6 +142,11 @@ class LiteRtCompiledModelT {
     return GetOutputTensorShapes(*signature_keys_[signature_index],
                                  output_layouts, update_allocation);
   }
+
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  litert::Expected<LiteRtRankedTensorType> GetRuntimeOutputTensorType(
+      size_t signature_index, size_t output_index);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
   // Returns the layout for an input tensor identified by signature and index.
   litert::Expected<LiteRtLayout> GetInputTensorLayout(size_t signature_index,
@@ -389,6 +396,34 @@ class LiteRtCompiledModelT {
                                                absl::Span<const int> dims,
                                                bool strict_mode);
 
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // Initializes the Fabric runtime path when Fabric options are provided.
+  litert::Expected<void> InitializeFabricRuntime(
+      LiteRtOptions options, const LiteRtFabricOptionsT& fabric_options);
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetFabricInputBufferRequirements(absl::string_view signature_key,
+                                   size_t input_index);
+
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetFabricOutputBufferRequirements(absl::string_view signature_key,
+                                    size_t output_index);
+
+  litert::Expected<LiteRtLayout> GetFabricInputTensorLayout(
+      size_t signature_index, size_t input_index);
+
+  litert::Expected<LiteRtRankedTensorType> GetFabricRuntimeOutputTensorType(
+      absl::string_view signature_key, size_t output_index);
+
+  litert::Expected<void> GetFabricOutputTensorShapes(
+      absl::string_view signature_key,
+      absl::Span<LiteRtLayout>& output_layouts);
+
+  litert::Expected<void> RunWithFabric(
+      absl::string_view signature_key,
+      const std::vector<LiteRtTensorBuffer>& input_buffers,
+      const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async);
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
   // Marks that the given signature needs tensor allocation.
   litert::Expected<void> MarkSignatureNeedsAllocation(
       const tflite::SignatureRunner* runner);
@@ -484,6 +519,11 @@ class LiteRtCompiledModelT {
   // Owns model-level debug feature id storage when configured through
   // `SetSchedulingInfo`.
   std::string model_debug_feature_id_;
+
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // Fabric runtime path state (non-null when CompiledModel runs Fabric).
+  std::unique_ptr<litert::internal::FabricRuntimeState> fabric_runtime_;
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
   // The loader that manages external weight metadata and bindings.
   std::unique_ptr<weight_loader::WeightLoader> weight_loader_;
