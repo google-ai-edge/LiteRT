@@ -406,7 +406,7 @@ function getSignature(model: Maybe<CompiledModel>, signatureName?: string):
   if (!model.value) {
     return model;  // Pass forward the error
   }
-  if (signatureName) {
+  if (signatureName && typeof signatureName === 'string') {
     if (model.value.signatures[signatureName]) {
       return just(model.value.signatures[signatureName]);
     } else {
