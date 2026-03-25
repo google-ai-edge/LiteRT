@@ -84,7 +84,7 @@ build --define tsl_protobuf_header_only=true
 build --define=allow_oversize_protos=true
 
 build --spawn_strategy=standalone
-build -c opt
+build -c dbg
 
 # Make Bazel print out all options from rc files.
 build --announce_rc
@@ -244,16 +244,8 @@ build:monolithic --experimental_link_static_libraries_once=false  # b/229868128
 
 # Debug config
 build:dbg -c dbg
-# Only include debug info for files under tensorflow/, excluding kernels, to
-# reduce the size of the debug info in the binary. This is because if the debug
-# sections in the ELF binary are too large, errors can occur. See
-# https://github.com/tensorflow/tensorflow/issues/48919.
-# Users can still include debug info for a specific kernel, e.g. with:
-#     --config=dbg --per_file_copt=+tensorflow/core/kernels/identity_op.*@-g
-# Since this .bazelrc file is synced between the tensorflow/tensorflow repo and
-# the openxla/xla repo, also include debug info for files under xla/.
-build:dbg --per_file_copt=+.*,-tensorflow.*,-xla.*@-g0
-build:dbg --per_file_copt=+tensorflow/core/kernels.*@-g0
+# Opt config
+build:opt -c opt
 # for now, disable arm_neon. see: https://github.com/tensorflow/tensorflow/issues/33360
 build:dbg --cxxopt -DTF_LITE_DISABLE_X86_NEON
 # AWS SDK must be compiled in release mode. see: https://github.com/tensorflow/tensorflow/issues/37498

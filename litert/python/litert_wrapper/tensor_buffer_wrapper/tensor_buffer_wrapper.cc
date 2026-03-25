@@ -30,7 +30,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
@@ -39,6 +39,35 @@
 namespace litert::tensor_buffer_wrapper {
 
 namespace {
+const char* ElementTypeToString(ElementType dtype) {
+  switch (dtype) {
+    case ElementType::Float32:
+      return "float32";
+    case ElementType::Float16:
+      return "float16";
+    case ElementType::Int32:
+      return "int32";
+    case ElementType::UInt8:
+      return "uint8";
+    case ElementType::Int64:
+      return "int64";
+    case ElementType::Bool:
+      return "bool";
+    case ElementType::Int16:
+      return "int16";
+    case ElementType::Int8:
+      return "int8";
+    case ElementType::Float64:
+      return "float64";
+    case ElementType::UInt32:
+      return "uint32";
+    case ElementType::UInt16:
+      return "uint16";
+    default:
+      return "unknown";
+  }
+}
+
 bool SetDictItemStringSteal(PyObject* dict, const char* key, PyObject* value) {
   if (value == nullptr) {
     return false;
@@ -55,6 +84,7 @@ size_t ByteWidthOfDTypeImpl(const std::string& dtype) {
   if (dtype == "int8") return 1;
   return 0;
 }
+
 // A deallocator that performs no operation, used when the memory is managed
 // externally.
 void NoopDeallocator(void*) {}
@@ -215,7 +245,8 @@ Expected<TensorBuffer> GetTensorBufferFromCapsule(PyObject* buffer_capsule) {
   void* ptr = PyCapsule_GetPointer(
       buffer_capsule, litert_wrapper_utils::kLiteRtTensorBufferName.data());
   if (!ptr) {
-    return Unexpected(Status::kErrorInvalidArgument, "null pointer in capsule");
+    return Unexpected(Status::kErrorInvalidArgument,
+                      "null pointer in capsule");
   }
   return TensorBuffer::WrapCObject(static_cast<LiteRtTensorBuffer>(ptr),
                                    OwnHandle::kNo);
@@ -322,8 +353,7 @@ PyObject* CopyTensorBufferToPythonBuffer(PyObject* buffer_capsule,
   const size_t packed_size = *packed_size_or;
   if (packed_size < static_cast<size_t>(py_buf.len)) {
     return TensorBufferWrapper::ReportError(
-        "ReadTensorToBuffer: destination buffer is larger than the tensor "
-        "buffer");
+        "ReadTensorToBuffer: destination buffer is larger than the tensor buffer");
   }
 
   std::memcpy(py_buf.buf, host_mem_addr, py_buf.len);
@@ -557,8 +587,7 @@ PyObject* TensorBufferWrapper::GetTensorDetails(PyObject* buffer_capsule) {
   }
   if (!SetDictItemStringSteal(
           tensor_dict, "dtype",
-          PyUnicode_FromString(litert_wrapper_utils::ElementTypeToString(
-              tensor_type.ElementType())))) {
+          PyUnicode_FromString(ElementTypeToString(tensor_type.ElementType())))) {
     Py_DECREF(tensor_dict);
     return nullptr;
   }

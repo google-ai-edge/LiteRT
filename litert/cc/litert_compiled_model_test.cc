@@ -124,6 +124,54 @@ TEST(CompiledModelTest, Basic) {
   }
 }
 
+TEST(CompiledModelTest, WithProfilerAndMetrics) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  LITERT_ASSIGN_OR_ABORT(litert::Options compilation_options,
+                         litert::Options::Create());
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
+                         compilation_options.GetRuntimeOptions());
+  runtime_options.SetEnableProfiling(/*enable_profiling=*/true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
+  ASSERT_TRUE(profiler);
+  ASSERT_TRUE(profiler.StartProfiling());
+  LITERT_ASSERT_OK(compiled_model.StartMetricsCollection(/*detail_level=*/100));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto metrics, compiled_model.StopMetricsCollection());
+  EXPECT_THAT(metrics.metrics, SizeIs(0));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto events, profiler.GetEvents());
+  EXPECT_GT(events.size(), 2);
+  ASSERT_TRUE(profiler.Reset());
+  LITERT_ASSERT_OK_AND_ASSIGN(events, profiler.GetEvents());
+  EXPECT_THAT(events, SizeIs(0));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr, litert::TensorBufferScopedLock::Create<const float>(
+                              output_buffers[0], TensorBuffer::LockMode::kRead));
+  auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
+
 TEST(CompiledModelTest,
      ResizeInputTensorReflectsInCreatedInputBufferForSignature) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));

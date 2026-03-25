@@ -28,6 +28,8 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_scheduling_info.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_consts.h"
@@ -40,11 +42,13 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace mediapipe {
 class InferenceRunnerLiteRt;
@@ -97,6 +101,15 @@ class LlmLiteRtMtpDrafter;
 /// 6. Evaluate the output `TensorBuffer`s.
 class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
  public:
+  /// @brief Hardware-specific metrics collected by the `CompiledModel`.
+  struct Metrics {
+    struct Metric {
+      std::string name;
+      LiteRtAny value;
+    };
+    std::vector<Metric> metrics;
+  };
+
   friend class ::mediapipe::InferenceRunnerLiteRt;
   friend class benchmark::BenchmarkLiteRtModel;
   friend class compiled_model_wrapper::CompiledModelWrapper;
@@ -410,6 +423,19 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<std::vector<TensorBuffer>> CreateOutputBuffers() const {
     return CreateInputOutputBuffers(/*signature_index=*/0, /*is_input=*/false);
   }
+
+  /// @brief Returns the profiler used by the compiled model.
+  ///
+  /// The returned `Profiler` does not own the underlying `LiteRtProfiler`.
+  Expected<Profiler> GetProfiler();
+
+  /// @brief Starts the collection of hardware-specific metrics at a given
+  /// level of detail.
+  Expected<void> StartMetricsCollection(int detail_level);
+
+  /// @brief Stops the collection of hardware-specific metrics and reports the
+  /// collected data.
+  Expected<Metrics> StopMetricsCollection();
 
   /// @brief Sets model-level default scheduling info.
   Expected<void> SetSchedulingInfo(

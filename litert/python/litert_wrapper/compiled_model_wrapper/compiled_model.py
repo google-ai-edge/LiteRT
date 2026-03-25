@@ -175,7 +175,7 @@ class CompiledModel:
     """
     return self._model.GetInputTensorDetails(signature_key)
 
-  def get_output_tensor_details(self, signature_key: str) -> dict[str, Any]:
+  def get_output_tensor_details(self, signature_key: str) -> Dict[str, Any]:
     """Returns details of output tensors for a given signature.
 
     Args:

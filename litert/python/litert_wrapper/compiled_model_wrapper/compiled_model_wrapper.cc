@@ -129,6 +129,92 @@ bool SetTensorDetailsDictItem(PyObject* result_dict, absl::string_view key,
   Py_DECREF(value);
   return status == 0;
 }
+
+bool SetDictItemStringSteal(PyObject* dict, const char* key, PyObject* value) {
+  if (value == nullptr) {
+    return false;
+  }
+  const int status = PyDict_SetItemString(dict, key, value);
+  Py_DECREF(value);
+  return status == 0;
+}
+
+bool AppendUnicodeToList(PyObject* list, absl::string_view value) {
+  PyObject* unicode =
+      PyUnicode_FromStringAndSize(value.data(), value.size());
+  if (unicode == nullptr) {
+    return false;
+  }
+  const int status = PyList_Append(list, unicode);
+  Py_DECREF(unicode);
+  return status == 0;
+}
+
+PyObject* BuildShapeList(const Layout& layout) {
+  const auto dims = layout.Dimensions();
+  PyObject* shape_list = PyList_New(dims.size());
+  if (shape_list == nullptr) {
+    return nullptr;
+  }
+  for (size_t i = 0; i < dims.size(); ++i) {
+    PyObject* dim = PyLong_FromLong(dims[i]);
+    if (dim == nullptr) {
+      Py_DECREF(shape_list);
+      return nullptr;
+    }
+    PyList_SetItem(shape_list, i, dim);  // steal ref
+  }
+  return shape_list;
+}
+
+PyObject* BuildTensorDetailsDict(const SimpleTensor& tensor,
+                                const Layout* layout) {
+  PyObject* tensor_dict = PyDict_New();
+  if (tensor_dict == nullptr) {
+    return nullptr;
+  }
+
+  std::string tensor_name(tensor.Name());
+  if (!SetDictItemStringSteal(
+          tensor_dict, "name", PyUnicode_FromString(tensor_name.c_str())) ||
+      !SetDictItemStringSteal(
+          tensor_dict, "index",
+          PyLong_FromUnsignedLong(tensor.TensorIndex())) ||
+      !SetDictItemStringSteal(
+          tensor_dict, "dtype",
+          PyUnicode_FromString(ElementTypeToString(tensor.ElementType())))) {
+    Py_DECREF(tensor_dict);
+    return nullptr;
+  }
+
+  if (layout != nullptr) {
+    PyObject* shape_list = BuildShapeList(*layout);
+    if (shape_list == nullptr) {
+      Py_DECREF(tensor_dict);
+      return nullptr;
+    }
+    if (PyDict_SetItemString(tensor_dict, "shape", shape_list) != 0) {
+      Py_DECREF(shape_list);
+      Py_DECREF(tensor_dict);
+      return nullptr;
+    }
+    Py_DECREF(shape_list);
+  }
+
+  return tensor_dict;
+}
+
+bool SetTensorDetailsDictItem(PyObject* result_dict, absl::string_view key,
+                              PyObject* value) {
+  if (value == nullptr) {
+    return false;
+  }
+  std::string key_string(key);
+  const int status = PyDict_SetItemString(result_dict, key_string.c_str(),
+                                          value);
+  Py_DECREF(value);
+  return status == 0;
+}
 }  // namespace
 
 // Returns the byte width of a data type.
@@ -651,9 +737,9 @@ PyObject* CompiledModelWrapper::GetOutputTensorDetails(
       return ConvertErrorToPyExc(tensor_or.Error());
     }
     const SimpleTensor& tensor = *tensor_or;
-    const Layout* output_layout = tensor.TypeId() == kLiteRtRankedTensorType
-                                      ? &output_layouts[i]
-                                      : nullptr;
+    const Layout* output_layout =
+        tensor.TypeId() == kLiteRtRankedTensorType ? &output_layouts[i]
+                                                   : nullptr;
     PyObject* tensor_dict = BuildTensorDetailsDict(tensor, output_layout);
     if (!SetTensorDetailsDictItem(result_dict, output_names[i], tensor_dict)) {
       Py_DECREF(result_dict);
