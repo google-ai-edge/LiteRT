@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 
 using litert::internal::GetNumBytes;
 using litert::internal::GetNumElements;
@@ -50,6 +51,14 @@ TEST(TensorTypeUtil, GetNumPackedBytes) {
   auto num_bytes = GetNumPackedBytes(element_type, absl::MakeSpan(dimensions));
   EXPECT_TRUE(num_bytes);
   EXPECT_EQ(*num_bytes, sizeof(int32_t) * 6);
+}
+
+TEST(TensorTypeUtil, GetNumPackedBytesComplex64) {
+  LiteRtElementType element_type = kLiteRtElementTypeComplex64;
+  constexpr std::array<int, 2> dimensions = {3, 2};
+  auto num_bytes = GetNumPackedBytes(element_type, absl::MakeSpan(dimensions));
+  EXPECT_TRUE(num_bytes);
+  EXPECT_EQ(*num_bytes, 6 * 8);
 }
 
 TEST(TensorTypeUtil, GetNumBytes) {
