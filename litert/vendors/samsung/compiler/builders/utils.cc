@@ -53,7 +53,7 @@ Expected<const char *> MapToElementTypeStr(ElementType element_type) {
     case ElementType::UInt8:
       return "UINT8";
     case ElementType::Int16:
-      return "UINT16";
+      return "INT16";
     case ElementType::UInt16:
       return "UINT16";
     case ElementType::Int32:
