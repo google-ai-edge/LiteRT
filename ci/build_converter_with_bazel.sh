@@ -64,7 +64,7 @@ if [[ -n "${HERMETIC_PYTHON_VERSION}" ]]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --action_env=HERMETIC_PYTHON_VERSION=${HERMETIC_PYTHON_VERSION}"
 fi
 
-BAZEL_FLAGS="${BAZEL_FLAGS} --config=litert_converter"
+BAZEL_FLAGS="${BAZEL_FLAGS} --config=litert_converter --define=tflite_converter=true"
 
 if [[ "${OS_NAME}" == "Darwin" ]]; then
   # Ensure LiteRT runtime dylib is built and linked for macOS wheels.
