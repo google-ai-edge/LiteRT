@@ -698,7 +698,7 @@ TEST(MHAOptimization, Gemma3Decode) {
   ASSERT_EQ(op_wrappers[46].GetOpCode(), QnnOpCode::kReshape);
 }
 
-TEST(MaskTransformTest, Gemma3) {
+TEST(MaskTransformTest, Gemma3Mask) {
   // G2G Test case:
   //
   // ----- Before -----
@@ -767,7 +767,7 @@ TEST(MaskTransformTest, Gemma3) {
   auto& mul_const = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_SFIXED_POINT_16, mul_quant_param, {mul_val.size()},
       mul_val.size() * sizeof(mul_val[0]), mul_val.data());
-  auto mul_ops = BuildElementwiseMulOp(tensor_pool, {cast_output, mul_const},
+  auto mul_ops = BuildElementwiseMulOp(tensor_pool, {quant_output, mul_const},
                                        {pattern_output});
   std::move(mul_ops.begin(), mul_ops.end(), std::back_inserter(op_wrappers));
 
@@ -790,6 +790,63 @@ TEST(MaskTransformTest, Gemma3) {
       std::get<ScaleOffsetQuantizeParamsWrapper>(in_2.GetQuantParams());
   ASSERT_EQ(quant_param_2.GetScale(), mul_scale);
   ASSERT_EQ(quant_param_2.GetZeroPoint(), mul_zero_point);
+}
+
+TEST(MaskTransformTest, Gemma4Mask) {
+  // G2G Test case:
+  //
+  // ----- Before -----
+  //       In0
+  //        |
+  //     E-wise Not
+  //        |
+  //       Cast
+  //        |
+  //       Mul
+  //        |
+  //      Quant
+  //        |
+  //       Out0
+  //
+  // ----- After -----
+  //       In0
+  //        |
+  //     E-wise Select
+  //        |
+  //       Out0
+  //
+
+  // Prepare all tensors.
+  const std::vector<uint32_t> kDims{1, 1, 128, 4224};
+  TensorPool tensor_pool;
+  const auto& condition =
+      tensor_pool.CreateNativeTensor(QNN_DATATYPE_BOOL_8, {}, kDims);
+  const auto& logic_not_output = tensor_pool.CloneNativeTensorFrom(condition);
+  const auto& cast_output =
+      tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {}, kDims);
+  static constexpr float kMulVal{-100};
+  const auto& mul_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMulVal), &kMulVal);
+  const auto& mul_output = tensor_pool.CloneNativeTensorFrom(cast_output);
+  const auto& pattern_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_8,
+      ScaleOffsetQuantizeParamsWrapper{0.392156869f, 127}, kDims);
+
+  // Construct the masking graph.
+  std::vector<OpWrapper> op_wrappers =
+      MakeVector(CreateElementWiseNotOp(condition, logic_not_output),
+                 CreateCastOp(logic_not_output, cast_output),
+                 CreateElementWiseMulOp(cast_output, mul_const, mul_output),
+                 CreateQuantizeOp(mul_output, pattern_output));
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+  ASSERT_EQ(op_wrappers.size(), 1);
+  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseSelect));
+  ASSERT_EQ(pattern_output.GetQuantParams(),
+            op_wrappers[0].GetInputTensor(1).GetQuantParams());
+  ASSERT_EQ(pattern_output.GetQuantParams(),
+            op_wrappers[0].GetInputTensor(2).GetQuantParams());
 }
 
 TEST(MHASHATest, FastVlm) {

@@ -13,6 +13,15 @@
 
 namespace qnn {
 
+OpWrapper CreateQuantizeOp(const TensorWrapper& input,
+                           const TensorWrapper& output) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_QUANTIZE), QNN_OP_QUANTIZE,
+               QnnOpCode::kQuantize);
+  op.AddInputTensor(input);
+  op.AddOutputTensor(output);
+  return op;
+}
+
 std::vector<OpWrapper> BuildQuantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
@@ -27,7 +36,7 @@ std::vector<OpWrapper> BuildQuantizeOp(
               outputs[0].get().IsQuantI16() || outputs[0].get().IsQuantU16())) {
     qnn_op = QNN_OP_CONVERT;
   } else {
-    qnn_op = QNN_OP_QUANTIZE;
+    return MakeVector(CreateQuantizeOp(inputs[0], outputs[0]));
   }
 
   auto& quantize_op = CreateOpWrapper(res, qnn_op);

@@ -13,18 +13,24 @@
 
 namespace qnn {
 
+OpWrapper CreateSelectOp(const TensorWrapper& condition,
+                         const TensorWrapper& input_1,
+                         const TensorWrapper& input_2,
+                         const TensorWrapper& output) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_ELEMENT_WISE_SELECT),
+               QNN_OP_ELEMENT_WISE_SELECT, QnnOpCode::kElementWiseSelect);
+  op.AddInputTensor(condition);
+  op.AddInputTensor(input_1);
+  op.AddInputTensor(input_2);
+  op.AddOutputTensor(output);
+  return op;
+}
+
 std::vector<OpWrapper> BuildSelectOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
-  std::vector<OpWrapper> res;
-
-  auto& select_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
-  for (const auto& input : inputs) {
-    select_op.AddInputTensor(input);
-  }
-  select_op.AddOutputTensor(outputs[0]);
-
-  return res;
+  return MakeVector(
+      CreateSelectOp(inputs[0], inputs[1], inputs[2], outputs[0]));
 }
 
 }  // namespace qnn
