@@ -11,6 +11,11 @@
 
 namespace qnn {
 
+OpWrapper CreateSelectOp(const TensorWrapper& condition,
+                         const TensorWrapper& input_1,
+                         const TensorWrapper& input_2,
+                         const TensorWrapper& output);
+
 std::vector<OpWrapper> BuildSelectOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);

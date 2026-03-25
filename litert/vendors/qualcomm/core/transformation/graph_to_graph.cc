@@ -207,12 +207,20 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
 
   // Mask Gemma Optimization
   const std::vector<QnnOpCode> gemma3_mask = {
-      QnnOpCode::kElementWiseUnary,
+      QnnOpCode::kElementWiseUnary,  // Not
       QnnOpCode::kCast,
       QnnOpCode::kQuantize,
-      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseBinary,  // Mul
   };
   Transform(validate_op_config, ops, tensor_pool, gemma3_mask,
+            TransformQuantizeInMask);
+  const std::vector<QnnOpCode> gemma4_mask = {
+      QnnOpCode::kElementWiseUnary,  // Not
+      QnnOpCode::kCast,
+      QnnOpCode::kElementWiseBinary,  // Mul
+      QnnOpCode::kQuantize,
+  };
+  Transform(validate_op_config, ops, tensor_pool, gemma4_mask,
             TransformQuantizeInMask);
 
   // Embedding Gemma Optimization
