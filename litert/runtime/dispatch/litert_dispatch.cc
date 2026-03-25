@@ -367,6 +367,40 @@ LiteRtStatus LiteRtDispatchDetachOutput(
               tensor_buffer_handle);
 }
 
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+LiteRtStatus LiteRtDispatchAttachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (!invocation_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface || !TheApi.interface->attach_edge_buffer) {
+    LITERT_LOG(LITERT_ERROR, "attach_edge_buffer not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  return TheApi.interface->attach_edge_buffer(invocation_context, edge_id,
+                                              tensor_buffer_handle);
+}
+
+LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchEdgeId edge_id,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (!invocation_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface || !TheApi.interface->detach_edge_buffer) {
+    LITERT_LOG(LITERT_ERROR, "detach_edge_buffer not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  return TheApi.interface->detach_edge_buffer(invocation_context, edge_id,
+                                              tensor_buffer_handle);
+}
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+
 LiteRtStatus LiteRtDispatchInvoke(
     LiteRtDispatchInvocationContext invocation_context) {
   if (!invocation_context) {
@@ -567,6 +601,42 @@ LiteRtStatus LiteRtDispatchUnloadExecutable(
   }
   INVOKE_GRAPH_FUNC(unload_executable, device_context, exec_handle);
 }
+
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+LiteRtStatus LiteRtDispatchGetScratchpadRequirements(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferRequirements* scratchpad_requirements) {
+  if (!device_context || !scratchpad_requirements) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.graph_interface ||
+      !TheApi.graph_interface->get_scratchpad_requirements) {
+    LITERT_LOG(LITERT_ERROR, "get_scratchpad_requirements not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  INVOKE_GRAPH_FUNC(get_scratchpad_requirements, device_context, exec_handle,
+                    function_name, scratchpad_requirements);
+}
+
+LiteRtStatus LiteRtDispatchAttachScratchpadBuffer(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name,
+    LiteRtTensorBufferHandle scratchpad_buffer_handle) {
+  if (!device_context) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.graph_interface ||
+      !TheApi.graph_interface->attach_scratchpad_buffer) {
+    LITERT_LOG(LITERT_ERROR, "attach_scratchpad_buffer not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  INVOKE_GRAPH_FUNC(attach_scratchpad_buffer, device_context, exec_handle,
+                    function_name, scratchpad_buffer_handle);
+}
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
 LiteRtStatus LiteRtDispatchAssignNodeFunction(
     LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
