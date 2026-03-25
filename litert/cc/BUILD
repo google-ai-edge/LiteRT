@@ -832,6 +832,10 @@ cc_library(
     name = "litert_model",
     srcs = [":litert_model.cc"],
     hdrs = [":litert_model.h"],
+    defines = select({
+        "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
+        "//conditions:default": [],
+    }),
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_cc_users_static_link",
@@ -901,6 +905,10 @@ cc_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    defines = select({
+        "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_element_type",
         ":litert_layout",

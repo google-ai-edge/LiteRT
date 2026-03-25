@@ -143,6 +143,7 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
 
 }  // namespace
 
+#if !defined(LITERT_DYNAMIC_RUNTIME)
 // copybara:uncomment_begin(google_only)
 // Expected<Model> Model::CreateFromAllocation(
 //     std::unique_ptr<tflite::Allocation> allocation) {
@@ -155,6 +156,7 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
 //   return CreateFromOwnedHandle(model);
 // }
 // copybara:uncomment_end
+#endif  // !defined(LITERT_DYNAMIC_RUNTIME)
 
 Expected<std::vector<SimpleSignature>> Model::GetSignatures() const {
   size_t num_signatures = GetNumSignatures();

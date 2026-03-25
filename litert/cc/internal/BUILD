@@ -456,6 +456,10 @@ cc_library(
     name = "litert_extended_model",
     srcs = ["litert_extended_model.cc"],
     hdrs = ["litert_extended_model.h"],
+    defines = select({
+        "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
+        "//conditions:default": [],
+    }),
     visibility = internal_static_library_visibility,
     deps = [
         ":litert_consts",

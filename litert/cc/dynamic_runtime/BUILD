@@ -172,11 +172,11 @@ cc_library(
     name = "litert_model",
     srcs = ["//litert/cc:litert_model.cc"],
     hdrs = ["//litert/cc:litert_model.h"],
+    defines = ["LITERT_DYNAMIC_RUNTIME"],
     visibility = [
         "//litert:litert_public",
     ],
     deps = [
-        "//litert/c:litert_model",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
@@ -219,6 +219,7 @@ cc_library(
     name = "litert_extended_model",
     srcs = ["//litert/cc/internal:litert_extended_model.cc"],
     hdrs = ["//litert/cc/internal:litert_extended_model.h"],
+    defines = ["LITERT_DYNAMIC_RUNTIME"],
     visibility = [
         "//litert:litert_public",
     ],
@@ -301,6 +302,7 @@ cc_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    defines = ["LITERT_DYNAMIC_RUNTIME"],
     deps = [
         ":litert_model",
         "//litert/c:litert_common",
