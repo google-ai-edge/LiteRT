@@ -80,6 +80,13 @@ TEST(RankedTensorTypeTest, Bytes) {
   EXPECT_EQ(*bytes, 24);
 }
 
+TEST(RankedTensorTypeTest, BytesComplex64) {
+  RankedTensorType type(ElementType::Complex64, Layout(Dimensions{2, 3}));
+  auto bytes = type.Bytes();
+  ASSERT_TRUE(bytes.HasValue());
+  EXPECT_EQ(*bytes, 6 * 8);
+}
+
 TEST(RankedTensorTypeTest, BytesInvalidType) {
   RankedTensorType type(ElementType::None, Layout(Dimensions{10}));
   EXPECT_FALSE(type.Bytes().HasValue());

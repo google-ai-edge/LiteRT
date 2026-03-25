@@ -44,7 +44,7 @@ Expected<Ratio> GetElementSize(LiteRtElementType element_type) {
     case kLiteRtElementTypeFloat64:
       return Ratio{8, 1};
     case kLiteRtElementTypeComplex64:
-      return Ratio{16, 1};
+      return Ratio{8, 1};
     case kLiteRtElementTypeComplex128:
       return Ratio{32, 1};
     default:
