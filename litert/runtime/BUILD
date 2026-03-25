@@ -573,6 +573,23 @@ cc_test(
     ],
 )
 
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "fabric_execution_contract_resolver",
+#     srcs = ["fabric/execution_contract_resolver.cc"],
+#     hdrs = ["fabric/execution_contract_resolver.h"],
+#     deps = [
+#         "@com_google_absl//absl/container:flat_hash_map",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/status:statusor",
+#         "@com_google_absl//absl/strings:str_format",
+#         "@com_google_absl//absl/strings:string_view",
+#         "//third_party/gloop/util/status:status_macros",
+#         "//third_party/odml/infra/fabric/runtime:transmission_graph_cc_proto",
+#     ],
+# )
+# copybara:uncomment_end
+
 cc_library(
     name = "compiled_model",
     srcs = ["compiled_model.cc"],
