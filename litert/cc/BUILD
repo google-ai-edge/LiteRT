@@ -1198,6 +1198,7 @@ cc_library(
 #     minimum_os_version = LITERT_MIN_IOS_VERSION,
 #     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
 #     tags = [
+#         "manual",
 #         "nobuilder",
 #         "notap",
 #     ],
@@ -1214,7 +1215,10 @@ cc_library(
 #     name = "litert_compiled_model_metal_test_cc_ios",
 #     minimum_os_version = LITERT_MIN_IOS_VERSION,
 #     # copybara:uncomment runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
-#     tags = ["notap"],
+#     tags = [
+#         "manual",
+#         "notap",
+#     ],
 #     deps = [":litert_compiled_model_metal_test"],
 # )
 # copybara:uncomment_end(google-only)

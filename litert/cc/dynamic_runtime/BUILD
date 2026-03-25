@@ -637,7 +637,7 @@ cc_test(
         ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
