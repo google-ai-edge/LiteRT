@@ -227,6 +227,7 @@ py_wheel(
     py_srcs = [
         "//litert/python/mlir",
         "//litert/python/tools/model_utils",
+        "//litert/python/tools/model_utils:testing",
     ],
     setup_py = ":converter_setup_py",
     structured_deps = [],
