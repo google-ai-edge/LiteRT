@@ -739,6 +739,23 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_magic_number_options",
+    srcs = ["//litert/cc/options:litert_magic_number_options.cc"],
+    hdrs = ["//litert/cc/options:litert_magic_number_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_expected",
+    ] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_library(
     name = "litert_profiler",
     hdrs = ["//litert/cc:litert_profiler.h"],
     deps = [
