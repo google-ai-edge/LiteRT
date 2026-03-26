@@ -26,7 +26,8 @@
 namespace litert::internal {
 namespace {
 
-const char* GetAcceleratorName(LiteRtAcceleratorT* accelerator) {
+LITERT_NO_CFI_CHECK const char* GetAcceleratorName(
+    LiteRtAcceleratorT* accelerator) {
   const char* name = nullptr;
   if (accelerator && accelerator->GetName) {
     accelerator->GetName(accelerator, &name);
@@ -36,7 +37,8 @@ const char* GetAcceleratorName(LiteRtAcceleratorT* accelerator) {
 
 }  // namespace
 
-void AcceleratorRegistry::DestroyAccelerator(LiteRtAcceleratorT* accelerator) {
+LITERT_NO_CFI_CHECK void AcceleratorRegistry::DestroyAccelerator(
+    LiteRtAcceleratorT* accelerator) {
   LITERT_LOG(LITERT_INFO, "DestroyAccelerator: ptr=%p, name=%s", accelerator,
              GetAcceleratorName(accelerator));
   if (accelerator && accelerator->ReleaseData) {
@@ -46,8 +48,8 @@ void AcceleratorRegistry::DestroyAccelerator(LiteRtAcceleratorT* accelerator) {
   delete accelerator;
 }
 
-Expected<LiteRtAcceleratorT*> AcceleratorRegistry::RegisterAccelerator(
-    Ptr accelerator) {
+LITERT_NO_CFI_CHECK Expected<LiteRtAcceleratorT*>
+AcceleratorRegistry::RegisterAccelerator(Ptr accelerator) {
   LITERT_LOG(LITERT_INFO, "RegisterAccelerator: ptr=%p, name=%s",
              accelerator.get(), GetAcceleratorName(accelerator.get()));
   if (!accelerator) {
