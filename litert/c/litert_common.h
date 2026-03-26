@@ -43,6 +43,13 @@ extern "C" {
 #define LITERT_CAPI_EXPORT __attribute__((visibility("default")))
 #endif  // LITERT_WINDOWS_OS
 
+#if defined(__linux__)
+// Disable CFI check for calling shared library functions.
+#define LITERT_NO_CFI_CHECK __attribute__((no_sanitize("cfi-icall")))
+#else
+#define LITERT_NO_CFI_CHECK
+#endif  // __linux__
+
 // Declares canonical opaque type.
 
 #ifdef __cplusplus
