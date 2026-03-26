@@ -43,8 +43,46 @@ std::vector<OpWrapper> BuildEmbeddingLookupOp(
   const TensorWrapper& indices_tensor = inputs[kIndicesIdx];
   const TensorWrapper& output_tensor = outputs[kOutputIdx];
 
-  // Case: QInt8 table with QInt16 output
-  if (table_tensor->IsQuantI8() && output_tensor.IsQuantI16()) {
+  TensorWrapper& table_tensor = inputs[kTableIdx];
+  TensorWrapper& indices_tensor = inputs[kIndicesIdx];
+  TensorWrapper& output_tensor = outputs[kOutputIdx];
+
+  auto& gather_op = CreateOpWrapper(res, QNN_OP_GATHER);
+
+  if (table_tensor.IsQuantI8() && output_tensor.IsF32()) {
+    // Case: Bitwidth-scale-offset quantized Int8 table with FP32 output.
+    auto quant = std::get_if<BwAxisScaleOffsetQuantizeParamsWrapper>(
+        &table_tensor.GetQuantParams());
+    if (!quant) return {};
+    const auto scales = quant->GetScales();
+    const auto offsets = quant->GetOffsets();
+    if (!std::all_of(offsets.begin(), offsets.end(),
+                     [](int32_t x) { return x == 0; })) {
+      return {};
+    }
+    // Dequant whole table to FP32.
+    std::vector<float> table;
+    table.reserve(table_tensor.GetTensorNumElements());
+    auto quant_table = table_tensor.GetTensorData<int8_t>();
+    if (!quant_table.has_value()) return {};
+
+    for (size_t i = 0; i < table_tensor.GetDimension(0); ++i) {
+      float channel_scale = scales[i];
+      for (size_t j = 0; j < table_tensor.GetDimension(1); ++j) {
+        size_t index = i * table_tensor.GetDimension(1) + j;
+        table.emplace_back(channel_scale * quant_table.value()[index]);
+      }
+    }
+    TensorWrapper& float_table_tensor = tensor_pool.CreateStaticTensor(
+        output_tensor.GetDataType(), output_tensor.GetQuantParams(),
+        table_tensor.GetDimensions(), sizeof(table[0]) * table.size(),
+        table.data());
+    gather_op.AddInputTensor(float_table_tensor);
+    QNN_LOG_WARNING(
+        "Embedding lookup table is quantized, but the output data type is "
+        "FP32. The table will be dequantized to FP32.");
+  } else if (table_tensor.IsQuantI8() && output_tensor.IsQuantI16()) {
+    // Case: QInt8 table with QInt16 output
     QNN_LOG_WARNING(
         "The data type of embedding lookup table is int8, but output data type "
         "is int16. Int8 table will be cast to int16.");
