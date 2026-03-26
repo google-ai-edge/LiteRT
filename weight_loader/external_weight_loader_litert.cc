@@ -14,6 +14,7 @@
 
 #include "weight_loader/external_weight_loader_litert.h"
 
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 
@@ -46,7 +47,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
@@ -479,15 +479,16 @@ absl::StatusOr<std::vector<uint8_t>> ReadWeightSlice(
   return ReadFileSliceFromPath(info, source.path);
 }
 
-absl::Status EnsureCpuTensorBuffer(Entry& entry, const LiteRtWeightInfo& info,
+absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                   Entry& entry, const LiteRtWeightInfo& info,
                                    const WeightSource& source) {
   if (!entry.access.has_value()) {
     entry.access.emplace();
   }
   if (entry.access->GetHostBuffer() != nullptr) {
     LiteRtTensorBufferType buffer_type;
-    if (LiteRtGetTensorBufferType(entry.access->GetHostBuffer(),
-                                  &buffer_type) == kLiteRtStatusOk &&
+    if (runtime_context->get_tensor_buffer_type(
+            entry.access->GetHostBuffer(), &buffer_type) == kLiteRtStatusOk &&
         buffer_type == kLiteRtTensorBufferTypeHostMemory) {
       return absl::OkStatus();
     }
@@ -502,15 +503,17 @@ absl::Status EnsureCpuTensorBuffer(Entry& entry, const LiteRtWeightInfo& info,
   }
 
   LiteRtTensorBuffer host_buffer;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
+  LITERT_RETURN_IF_ERROR(runtime_context->create_tensor_buffer_from_host_memory(
       &info.tensor_type, static_cast<void*>(entry.cpu_mapping->data),
       entry.cpu_mapping->data_length, /*deallocator=*/nullptr, &host_buffer));
-  entry.access->SetHostBuffer(LiteRtTensorBufferPtr(host_buffer));
+  entry.access->SetHostBuffer(LiteRtTensorBufferPtr(
+      host_buffer, LiteRtTensorBufferDeleter{runtime_context}));
   return absl::OkStatus();
 }
 
 #if LITERT_HAS_OPENCL_SUPPORT
-absl::Status EnsureOpenClTensorBuffer(Entry& entry,
+absl::Status EnsureOpenClTensorBuffer(LiteRtRuntimeContext* runtime_context,
+                                      Entry& entry,
                                       const LiteRtWeightInfo& info,
                                       const WeightSource& path,
                                       LiteRtEnvironmentT* env) {
@@ -528,13 +531,14 @@ absl::Status EnsureOpenClTensorBuffer(Entry& entry,
                           ReadWeightSlice(info, path));
 
   LiteRtTensorBuffer device_buffer;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
+  LITERT_RETURN_IF_ERROR(runtime_context->create_managed_tensor_buffer(
       env, info.gpu_buffer_type, &info.tensor_type, info.length,
       &device_buffer));
-  entry.access->SetDeviceBuffer(LiteRtTensorBufferPtr(device_buffer));
+  entry.access->SetDeviceBuffer(LiteRtTensorBufferPtr(
+      device_buffer, LiteRtTensorBufferDeleter{runtime_context}));
 
   cl_mem cl_memory;
-  LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferOpenClMemory(
+  LITERT_RETURN_IF_ERROR(runtime_context->get_tensor_buffer_opencl_memory(
       entry.access->GetDeviceBuffer(), &cl_memory));
 
   LiteRtRankedTensorType tensor_type_c = info.tensor_type;
@@ -623,9 +627,11 @@ void ParseFlatBuffer(const tflite::Model& model,
 class LiteRtWeightLoader : public WeightLoader {
  public:
   LiteRtWeightLoader(
-      const tflite::Model* model, std::optional<std::string> model_directory,
+      LiteRtRuntimeContext* runtime_context, const tflite::Model* model,
+      std::optional<std::string> model_directory,
       std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source)
-      : model_directory_(std::move(model_directory)),
+      : runtime_context_(runtime_context),
+        model_directory_(std::move(model_directory)),
         scoped_weight_source_(std::move(scoped_weight_source)) {
     ParseFlatBuffer(*model, infos_, entries_, group_paths_);
     if (scoped_weight_source_) {
@@ -687,15 +693,16 @@ class LiteRtWeightLoader : public WeightLoader {
       }
 
       if (request.cpu) {
-        absl::Status status = EnsureCpuTensorBuffer(entry, info, source);
+        absl::Status status =
+            EnsureCpuTensorBuffer(runtime_context_, entry, info, source);
         if (!status.ok()) {
           return status;
         }
       }
       if (request.opencl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-        absl::Status status =
-            EnsureOpenClTensorBuffer(entry, info, source, env);
+        absl::Status status = EnsureOpenClTensorBuffer(runtime_context_, entry,
+                                                       info, source, env);
         if (!status.ok()) {
           return status;
         }
@@ -730,6 +737,7 @@ class LiteRtWeightLoader : public WeightLoader {
   }
 
  private:
+  LiteRtRuntimeContext* runtime_context_;
   std::optional<std::string> model_directory_;
   std::vector<LiteRtWeightInfo> infos_;
   absl::flat_hash_map<uint32_t, Entry> entries_;
@@ -742,10 +750,12 @@ class LiteRtWeightLoader : public WeightLoader {
 }  // namespace
 
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
-    const tflite::Model* flatbuffer, std::optional<std::string> model_directory,
+    LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
+    std::optional<std::string> model_directory,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source) {
-  return std::make_unique<LiteRtWeightLoader>(
-      flatbuffer, std::move(model_directory), std::move(scoped_weight_source));
+  return std::make_unique<LiteRtWeightLoader>(runtime_context, flatbuffer,
+                                              std::move(model_directory),
+                                              std::move(scoped_weight_source));
 }
 
 }  // namespace weight_loader
