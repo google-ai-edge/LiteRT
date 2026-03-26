@@ -1343,7 +1343,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   });
 
   bool is_constant_output = !is_input &&
-                            tensor->allocation_type == kTfLiteMmapRo &&
+                            (tensor->allocation_type == kTfLiteMmapRo ||
+                             tensor->allocation_type == kTfLitePersistentRo) &&
                             tensor->data.raw != nullptr;
 
   // Automatic shape detection for input tensors.
