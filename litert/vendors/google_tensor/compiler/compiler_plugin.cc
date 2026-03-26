@@ -578,7 +578,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Serialize model.
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
-  litert::OwningBufferRef buf;
+  litert::OwningBufferRef<uint8_t, litert::Mallocator<uint8_t>> buf;
   auto [data, size, offset] = buf.GetWeak();
   const auto opts = litert::SerializationOptions::Defaults();
   char** signatures =

@@ -475,7 +475,7 @@ class LiteRtCompiledModelT {
   // is destroyed.
 
   std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
-  litert::OwningBufferRef<uint8_t> model_buf_;
+  litert::OwningBufferRef<uint8_t, litert::Mallocator<uint8_t>> model_buf_;
   std::vector<const std::string*> signature_keys_;
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to
