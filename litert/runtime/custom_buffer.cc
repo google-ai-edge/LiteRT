@@ -71,7 +71,7 @@ Expected<std::pair<void*, void*>> GetCustomGpuResource(
 
 }  // namespace
 
-CustomBuffer::~CustomBuffer() {
+LITERT_NO_CFI_CHECK CustomBuffer::~CustomBuffer() {
   LITERT_ASSIGN_OR_ABORT(auto registry, GetTensorBufferRegistry(env_));
   LITERT_ASSIGN_OR_ABORT(auto custom_buffer_handlers,
                          registry->GetCustomHandlers(buffer_type_));
@@ -80,7 +80,8 @@ CustomBuffer::~CustomBuffer() {
   }
 }
 
-Expected<void*> CustomBuffer::Lock(LiteRtTensorBufferLockMode mode) {
+LITERT_NO_CFI_CHECK Expected<void*> CustomBuffer::Lock(
+    LiteRtTensorBufferLockMode mode) {
   LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env_));
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type_));
@@ -93,7 +94,7 @@ Expected<void*> CustomBuffer::Lock(LiteRtTensorBufferLockMode mode) {
   return host_memory_ptr;
 }
 
-Expected<void> CustomBuffer::Unlock() {
+LITERT_NO_CFI_CHECK Expected<void> CustomBuffer::Unlock() {
   LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env_));
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type_));
@@ -104,7 +105,7 @@ Expected<void> CustomBuffer::Unlock() {
   return {};
 }
 
-Expected<void> CustomBuffer::Clear() {
+LITERT_NO_CFI_CHECK Expected<void> CustomBuffer::Clear() {
   LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env_));
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type_));
@@ -119,7 +120,7 @@ Expected<void> CustomBuffer::Clear() {
   return {};
 }
 
-Expected<CustomBuffer> CustomBuffer::Alloc(
+LITERT_NO_CFI_CHECK Expected<CustomBuffer> CustomBuffer::Alloc(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size,
     size_t packed_buffer_size) {
