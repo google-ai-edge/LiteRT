@@ -53,11 +53,18 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .gpu_environment_create = LiteRtGpuEnvironmentCreate,
       .wrap_delegate = LiteRtWrapDelegate,
       .unwrap_delegate = LiteRtUnwrapDelegate,
+      .create_tensor_buffer_from_host_memory =
+          LiteRtCreateTensorBufferFromHostMemory,
+      .create_managed_tensor_buffer = LiteRtCreateManagedTensorBuffer,
       .destroy_tensor_buffer = LiteRtDestroyTensorBuffer,
       .get_tensor_buffer_type = LiteRtGetTensorBufferType,
+      .get_tensor_buffer_tensor_type = LiteRtGetTensorBufferTensorType,
       .get_tensor_buffer_size = LiteRtGetTensorBufferSize,
+      .get_tensor_buffer_packed_size = LiteRtGetTensorBufferPackedSize,
+      .get_tensor_buffer_offset = LiteRtGetTensorBufferOffset,
       .lock_tensor_buffer = LiteRtLockTensorBuffer,
       .unlock_tensor_buffer = LiteRtUnlockTensorBuffer,
+      .get_tensor_buffer_host_memory = LiteRtGetTensorBufferHostMemory,
 #if LITERT_HAS_OPENCL_SUPPORT
       .get_tensor_buffer_opencl_memory = LiteRtGetTensorBufferOpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT

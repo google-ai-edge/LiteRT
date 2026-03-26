@@ -24,6 +24,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
@@ -93,15 +94,31 @@ typedef struct LiteRtRuntimeContext {
                                   TfLiteOpaqueDelegate** delegate);
 
   // third_party/odml/litert/litert/c/litert_tensor_buffer.h
-  void (*destroy_tensor_buffer)(LiteRtTensorBuffer tensor_buffer);
+  LiteRtStatus (*create_tensor_buffer_from_host_memory)(
+      const LiteRtRankedTensorType* tensor_type, void* host_buffer_addr,
+      size_t host_buffer_size, LiteRtHostMemoryDeallocator deallocator,
+      LiteRtTensorBuffer* buffer);
+  LiteRtStatus (*create_managed_tensor_buffer)(
+      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+      const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
+      LiteRtTensorBuffer* buffer);
+  void (*destroy_tensor_buffer)(LiteRtTensorBuffer buffer);
   LiteRtStatus (*get_tensor_buffer_type)(LiteRtTensorBuffer tensor_buffer,
                                          LiteRtTensorBufferType* buffer_type);
+  LiteRtStatus (*get_tensor_buffer_tensor_type)(
+      LiteRtTensorBuffer tensor_buffer, LiteRtRankedTensorType* tensor_type);
   LiteRtStatus (*get_tensor_buffer_size)(LiteRtTensorBuffer tensor_buffer,
                                          size_t* buffer_size);
+  LiteRtStatus (*get_tensor_buffer_packed_size)(
+      LiteRtTensorBuffer tensor_buffer, size_t* size);
+  LiteRtStatus (*get_tensor_buffer_offset)(LiteRtTensorBuffer tensor_buffer,
+                                           size_t* offset);
   LiteRtStatus (*lock_tensor_buffer)(LiteRtTensorBuffer tensor_buffer,
                                      void** host_mem_addr,
                                      LiteRtTensorBufferLockMode mode);
   LiteRtStatus (*unlock_tensor_buffer)(LiteRtTensorBuffer tensor_buffer);
+  LiteRtStatus (*get_tensor_buffer_host_memory)(
+      LiteRtTensorBuffer tensor_buffer, void** host_memory_addr);
   LiteRtStatus (*get_tensor_buffer_opencl_memory)(
       LiteRtTensorBuffer tensor_buffer, LiteRtClMem* cl_mem_addr);
   LiteRtStatus (*get_tensor_buffer_gl_buffer)(LiteRtTensorBuffer tensor_buffer,

@@ -32,6 +32,8 @@ package(
         # "//litert/vendors/c:__subpackages__",
         # "//litert/kotlin:__subpackages__",
         # "//third_party/odml/litert/ml_drift/delegate:__subpackages__",
+        # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        # "//third_party/odml/litert/weight_loader:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -107,6 +109,7 @@ cc_library(
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer_types",
         "//tflite/c:c_api_types",
@@ -119,6 +122,7 @@ cc_library(
     hdrs = ["litert_runtime_context.h"],
     visibility = [
         "//litert/runtime:__pkg__",
+        "//third_party/odml/litert/weight_loader:__subpackages__",
     ],
     deps = [
         ":litert_delegate_wrapper",
@@ -131,6 +135,7 @@ cc_library(
         "//litert/c:litert_event",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_options",
