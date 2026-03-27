@@ -1,4 +1,5 @@
-# Copyright 2025 Google LLC.
+# Copyright (C) 2026 Samsung Electronics Co. LTD.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 
 package(
@@ -24,9 +26,9 @@ pytype_strict_library(
     srcs = ["samsung_backend.py"],
     deps = [
         ":target",
+        "//litert/python/aot/core:aot_types",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:import_vendor",
     ],
 )
@@ -34,5 +36,5 @@ pytype_strict_library(
 pytype_strict_library(
     name = "target",
     srcs = ["target.py"],
-    deps = ["//litert/python/aot/core:types"],
+    deps = ["//litert/python/aot/core:aot_types"],
 )

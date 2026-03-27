@@ -25,6 +25,11 @@ LITERT_SDK_MEDIATEK_FULL_VERSION = "0.2.0"
 # It contains Google Tensor ML SDK UNKNOWN VERSION
 LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = "0.1.0"
 
+# The next version of LiteRT SDK for MediaTek version.
+# The minor version code should be bumped after every release.
+# It contains Exynos AI LiteCore 1.1.0 VERSION
+LITERT_SDK_SAMSUNG_FULL_VERSION = "1.1.0"
+
 # The next version of LiteRT Converter version.
 # The minor version code should be bumped after every release.
 LITERT_CONVERTER_VERSION = "0.1.0"

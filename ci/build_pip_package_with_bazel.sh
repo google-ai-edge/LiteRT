@@ -157,10 +157,9 @@ fi
 
 ## Samsung SDK
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_samsung_sdist
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/samsung:ai_edge_litert_sdk_samsung_sdist
 
-mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_samsung*.tar.gz dist/
-
+mv bazel-bin/ci/tools/python/vendor_sdk/samsungai_edge_litert_sdk_samsung*.tar.gz dist/
 
 echo "Output can be found here:"
 find "./dist/"
