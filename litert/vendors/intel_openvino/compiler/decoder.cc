@@ -32,6 +32,7 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/vendors/intel_openvino/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -203,7 +204,7 @@ constexpr std::array<std::pair<LiteRtOpCode, const char*>, 161> kLitertOvMap{
      {kLiteRtOpCodeTflAtan2, "ATAN2"},
      {kLiteRtOpCodeTflUnsortedSegmentMin, "UNSORTED_SEGMENT_MIN"},
      {kLiteRtOpCodeTflSign, "SIGN"},
-     {kLiteRtOpCodeTflUnpack, "UNPACK"}}};
+     {kLiteRtOpCodeShloComposite, "STABLEHLO_COMPOSITE"}}};
 
 constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
   for (const auto& entry : kLitertOvMap) {
@@ -840,6 +841,30 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         // Using the default value as per TFLite and OV spec.
         int32_t axis = -1;
         return ov::Any(axis);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeShloComposite:
+      if (name == "composite_name") {
+        const char *composite_op_name = nullptr;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetSHLOCompositeOpName(litert_op_, &composite_op_name),
+            ERROR_LOG_STR("composite_op_name", op_name_.c_str()));
+        return ov::Any(std::string(composite_op_name));
+      } else if (name == "epsilon") {
+        auto info = GetOptionsAs<CompositeOptions>(litert_op_);
+        if (!info) {
+          return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "Failed to get composite options for " +
+                                        op_name_);
+        }
+        double epsilon = 1e-6; // Default value as per OV spec.
+        if (info->attributes_map.has_value()) {
+          auto epsilon_ref = info->attributes_map.value()["epsilon"];
+          if (!epsilon_ref.IsNull()) {
+            epsilon = epsilon_ref.AsDouble();
+          }
+        }
+        return ov::Any(epsilon);
       }
       break;
     default:
