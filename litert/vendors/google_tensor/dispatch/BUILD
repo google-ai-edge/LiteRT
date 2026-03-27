@@ -243,9 +243,8 @@ cc_library(
 #     name = "dispatch_api_static_test",
 #     srcs = ["dispatch_api_static_test.cc"],
 #     data = [
-#         "simple_model_reference_google_tensor.bin",
 #         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
-#         "//litert/test:testdata/simple_model_npu.tflite",
+#         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
 #     ],
 #     deps = [
 #         ":dispatch_api_static",
@@ -259,12 +258,7 @@ cc_library(
 #         "//litert/c:litert_options",
 #         "//litert/c:litert_tensor_buffer",
 #         "//litert/c:litert_tensor_buffer_types",
-#         "//litert/cc:litert_buffer_ref",
-#         "//litert/cc:litert_expected",
-#         "//litert/cc:litert_macros",
-#         "//litert/core/model:model_buffer",
 #         "//litert/test:common",
-#         "//litert/test:matchers",
 #     ],
 # )
 #
