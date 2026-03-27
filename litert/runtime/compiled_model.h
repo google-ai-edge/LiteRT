@@ -553,6 +553,9 @@ class LiteRtCompiledModelT {
   // Cancellation support
   bool (*check_cancelled_func_)(void*) = nullptr;
   absl::AnyInvocable<bool()> check_cancelled_func_cpp_;
+
+  // Indicates whether the model is fully delegated on GPU or NPU.
+  bool non_cpu_fully_delegated_ = false;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

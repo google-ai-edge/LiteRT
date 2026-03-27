@@ -893,6 +893,9 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
         "compilation accelerator set to allow using the CPU to run those.");
   }
+  compiled_model->non_cpu_fully_delegated_ =
+      !(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+      !has_non_delegated_ops;
   compiled_model->CheckCpuTensors();
   return compiled_model;
 }
@@ -1076,8 +1079,13 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
     if (auto requirements = buffer_context_->GetBufferRequirements(tensor)) {
       return *requirements;
     }
+    if (non_cpu_fully_delegated_) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to get buffer requirements for tensor `%s`.\n",
+                 tensor->name);
+    }
   } else {
-    LITERT_LOG(LITERT_DEBUG, "Tensor %s is shared with CPU.\n", tensor->name);
+    LITERT_LOG(LITERT_DEBUG, "Tensor `%s` is shared with CPU.\n", tensor->name);
   }
   // Check if we have a cached CPU buffer requirement.
   auto cached_req = cpu_buffer_requirements_.find(tensor_id);
