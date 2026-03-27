@@ -453,6 +453,75 @@ def litert_dynamic_lib(
 # )
 # copybara:uncomment_end
 
+def litert_dispatch_api(
+        name,
+        shared_lib_name,
+        so_name,
+        srcs = [],
+        hdrs = [],
+        deps = [],
+        static_srcs = [],
+        static_defines = ["LITERT_USE_STATIC_LINKED_DISPATCH_API"],
+        export_litert_only = True,
+        **kwargs):
+    """
+    LiteRT Dispatch API library rule.
+
+    This macro defines the following targets:
+    - `{name}_common`: The cc_library containing the common sources and dependencies.
+    - `{name}`: The cc_library for the dynamic dispatch API.
+    - `{name}_so`: The cc_shared_library for the dynamic dispatch API.
+    - `{name}_static`: The statically linked variant of the dispatch API (if provided).
+
+    Args:
+      name: The name of the library.
+      shared_lib_name: The name of the shared library.
+      so_name: The name of the shared object file.
+      srcs: Source files for the library.
+      hdrs: Header files for the library.
+      deps: Dependencies for the library.
+      static_srcs: Source files for the static library.
+      static_defines: Defines for the static library.
+      export_litert_only: Whether to export only LiteRT symbols.
+      **kwargs: Keyword arguments to pass to the underlying rule.
+    """
+    common_name = name + "_common"
+
+    dynamic_kwargs = dict(kwargs)
+
+    kwargs_no_linkopts = dict(kwargs)
+    if "linkopts" in kwargs_no_linkopts:
+        kwargs_no_linkopts.pop("linkopts")
+
+    litert_lib(
+        name = common_name,
+        srcs = srcs,
+        hdrs = hdrs,
+        deps = deps,
+        alwayslink = 1,
+        **kwargs_no_linkopts
+    )
+
+    litert_dynamic_lib(
+        name = name,
+        shared_lib_name = shared_lib_name,
+        so_name = so_name,
+        export_litert_only = export_litert_only,
+        deps = [":" + common_name],
+        **dynamic_kwargs
+    )
+
+    if static_srcs:
+        static_kwargs = dict(kwargs_no_linkopts)
+        static_kwargs["defines"] = kwargs.get("defines", []) + static_defines
+        litert_lib(
+            name = name + "_static",
+            srcs = static_srcs,
+            deps = [":" + common_name] + deps,
+            alwayslink = 1,
+            **static_kwargs
+        )
+
 def copy_file(name, src, target, visibility = None):
     input_path = "$(location %s)" % src
     output_path = "$(@D)/" + target
