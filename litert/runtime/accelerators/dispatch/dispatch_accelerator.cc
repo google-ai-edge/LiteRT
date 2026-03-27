@@ -15,6 +15,8 @@
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/vendors/c/litert_dispatch_api.h"
 
 #if defined(LITERT_DISABLE_NPU)
 
@@ -25,7 +27,6 @@ extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
 }
 
 #else  // defined(LITERT_DISABLE_NPU)
-
 #include <memory>
 
 #include "litert/c/internal/litert_accelerator_registration.h"
@@ -138,10 +139,17 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "environment handle is null";
-  LITERT_RETURN_IF_ERROR(
-      environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir).has_value(),
-      litert::ErrorStatusBuilder::InvalidArgument())
-      << "Dispatch library directory is not set.";
+
+  if (LiteRtStaticLinkedDispatchGetApi == nullptr) {
+    LITERT_LOG(LITERT_DEBUG, "Dispatch API is not statically linked.");
+    LITERT_RETURN_IF_ERROR(
+        environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir)
+            .has_value(),
+        litert::ErrorStatusBuilder::InvalidArgument())
+        << "Dispatch library directory is not set.";
+  } else {
+    LITERT_LOG(LITERT_DEBUG, "Dispatch API is statically linked.");
+  }
 
   LiteRtAccelerator accelerator_handle;
   LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));
