@@ -1,0 +1,2 @@
+graft ai_edge_litert_sdk_samsung/data
+include ai_edge_litert_sdk_samsung/__init__.py
