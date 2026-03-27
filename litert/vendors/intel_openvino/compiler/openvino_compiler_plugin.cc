@@ -34,9 +34,11 @@
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
@@ -90,6 +92,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflOneHot,
     kLiteRtOpCodeTflUnpack,
     kLiteRtOpCodeTflReduceAll,
+    kLiteRtOpCodeShloComposite,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -411,6 +414,21 @@ bool IsOpSupported(const litert::compiler::Op& op) {
   return false;
 }
 
+bool IsCompositeOpSupported(const litert::compiler::Op& op) {
+  if (op.Code() != kLiteRtOpCodeShloComposite) {
+    return true;
+  }
+
+  const char* composite_op_name = nullptr;
+  if (LiteRtGetSHLOCompositeOpName(op.Get(), &composite_op_name) !=
+      kLiteRtStatusOk) {
+    return false;
+  }
+
+  return std::string_view(composite_op_name) ==
+         litert::CompositeOptions::kRmsNorm;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -438,7 +456,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   // TODO(rjasuja): Enhance implementation for Partition() call
   for (const auto& op : graph.Ops()) {
-    if (!IsOpSupported(op)) {
+    if (!IsOpSupported(op) || !IsCompositeOpSupported(op)) {
       LITERT_LOG(LITERT_INFO, "op type %d is not supported", op.Code());
       continue;
     }
