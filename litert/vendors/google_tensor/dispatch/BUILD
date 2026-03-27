@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 # copybara:uncomment load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 # copybara:uncomment load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
@@ -78,7 +78,7 @@ cc_library(
     ],
 )
 
-litert_dynamic_lib(
+litert_dispatch_api(
     name = "dispatch_api",
     srcs = [
         "dispatch_api.cc",
@@ -116,6 +116,9 @@ litert_dynamic_lib(
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_GoogleTensor.so",
+    static_srcs = [
+        "dispatch_api_static.cc",
+    ],
     tags = [
         # Don't build/test in OSS until Southbound is available.
         "nobuilder",
@@ -148,7 +151,6 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_handle",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/vendors/cc:options_helper",
     ],
 )
 
@@ -235,4 +237,28 @@ cc_library(
 #         "INTERNAL_THREAD_PKG",
 #     ],
 # )
+#
+# cc_test(
+#     name = "dispatch_api_static_test",
+#     srcs = ["dispatch_api_static_test.cc"],
+#     data = [
+#         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
+#         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
+#     ],
+#     deps = [
+#         ":dispatch_api_static",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_compiled_model",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options",
+#         "//litert/c:litert_model",
+#         "//litert/c:litert_model_types",
+#         "//litert/c:litert_options",
+#         "//litert/c:litert_tensor_buffer",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/test:common",
+#     ],
+# )
+#
 # copybara:uncomment_end
