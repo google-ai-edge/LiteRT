@@ -563,11 +563,12 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
       }
 
       // Set the tensor data to point to the external weight buffer.
-      // We use kTfLiteCustom allocation type so TFLite doesn't try to manage
-      // this memory. The memory is owned by weight_loader_ and stays valid
-      // until weight_loader_ is destroyed.
+      // We use kTfLiteMmapRo allocation type so TFLite engine and delegates
+      // treat the external buffer as guaranteed, immutable read-only data.
+      // The memory is owned by weight_loader_ and stays valid until
+      // weight_loader_ is destroyed.
       tensor->data.raw = static_cast<char*>(host_memory_addr);
-      tensor->allocation_type = kTfLiteCustom;
+      tensor->allocation_type = kTfLiteMmapRo;
 
       LITERT_LOG(LITERT_DEBUG,
                  "Restored external weight: subgraph=%d, tensor=%zu, "
