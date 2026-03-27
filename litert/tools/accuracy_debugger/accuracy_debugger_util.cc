@@ -34,6 +34,7 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -843,7 +844,7 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
 
     if (!options.input_dir.empty() && global_op_counter == 0) {
       auto fill_status = tensor_utils::FillInputBuffersWithCustomData(
-          cpu_model, 0, cpu_inputs, options.input_dir);
+          cpu_model, options.signature_index, cpu_inputs, options.input_dir);
       if (!fill_status) {
         ABSL_LOG(WARNING) << "Failed to fill inputs from " << options.input_dir
                           << ": " << fill_status.Error().Message();
@@ -1008,16 +1009,22 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
       std::string base = absl::StrFormat(
           "%s/op_%04d_%s_i%d_o%d", options.output_dir, global_op_counter,
           sanitized_opcode, em.inputs.size(), em.outputs.size());
+      std::filesystem::create_directories(base);
       std::ofstream model_file(base + ".tflite", std::ios::binary);
       model_file.write(reinterpret_cast<const char*>(serialized.Data()),
                        serialized.Size());
+      LITERT_ASSIGN_OR_RETURN(
+          std::vector<absl::string_view> signature_input_names,
+          cpu_model.GetSignatureInputNames(options.signature_index));
       for (size_t i = 0; i < em.inputs.size(); ++i) {
         const auto* orig = em.inputs[i];
         const auto& source_map = options.use_accel_output_as_input
                                      ? accel_tensor_values
                                      : cpu_tensor_values;
         if (source_map.contains(orig)) {
-          std::ofstream in_file(base + absl::StrFormat("_in_%d.bin", i),
+          std::string file_name =
+              absl::StrCat((signature_input_names)[i], ".raw");
+          std::ofstream in_file(absl::StrFormat("%s/%s", base, file_name),
                                 std::ios::binary);
           in_file.write(source_map.at(orig).data(), source_map.at(orig).size());
         }
