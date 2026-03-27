@@ -368,18 +368,21 @@ class LiteRtCompiledModelT {
   struct ConstantOutputInfo {
     LiteRtTensorBuffer buffer;
     void* locked_address;
+    int tensor_index;
     const char* tensor_name;
     size_t data_size;
   };
 
   // Registers the TensorBuffer for the given tensor with the SignatureRunner.
+  // The `tensor_index` is the index of the tensor in the interpreter. It is
+  // used when the `runner` is not available.
   // If the TensorBuffer can be directly consumed as CPU Tensors, they'll be
   // locked and use it with CustomAllocation. The locked buffer is kept in the
   // `locked_buffers`. Caller is responsible for unlocking of these buffers.
   // If the TensorBuffer can be consumed by the delegate, then `tensor` will be
   // marked as non-CPU to avoid TFLite from allocating it.
   litert::Expected<void> RegisterBuffer(
-      tflite::SignatureRunner* runner, TfLiteTensor* tensor,
+      tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
       std::vector<LiteRtTensorBuffer>& locked_buffers,
       std::vector<ConstantOutputInfo>& constant_outputs);
