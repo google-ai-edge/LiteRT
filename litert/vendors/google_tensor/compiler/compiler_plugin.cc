@@ -41,8 +41,9 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 
