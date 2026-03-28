@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -810,4 +812,29 @@ cc_library(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
     ],
+)
+
+cc_binary(
+    name = "libdynamic_runtime_test.so",
+    linkshared = True,
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+    ],
+)
+
+sh_test(
+    name = "duplicate_symbols_test",
+    srcs = ["check_duplicate_symbols.sh"],
+    args = [
+        "$(location :libdynamic_runtime_test.so)",
+        "$(location //litert/c:litert_runtime_c_api_so)",
+    ],
+    data = [
+        ":libdynamic_runtime_test.so",
+        "//litert/c:litert_runtime_c_api_so",
+    ],
+    env = {
+        # TODO: Investigate why these symbols are duplicated.
+        "ALLOWLIST_REGEX": "^LiteRtGetNumLayoutElements$$|^LiteRtIsSameLayout$$",
+    },
 )
