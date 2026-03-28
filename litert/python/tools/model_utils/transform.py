@@ -32,7 +32,9 @@ from litert.python.tools.model_utils.dialect import mlir
 _Path = str | os.PathLike[str]
 
 
-def get_ir_context(ctx: ir.Context | None = None, allow_new=True):
+def get_ir_context(
+    ctx: ir.Context | None = None, allow_new=True
+) -> ir.Context | contextlib.nullcontext:
   if ctx is not None:
     return ctx
   if ir.Context.current is not None:
