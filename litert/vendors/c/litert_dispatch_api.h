@@ -292,6 +292,15 @@ typedef struct LiteRtDispatchApi {
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api);
 
+// Pointer to a statically linked dispatch API implementation.
+// Vendors that are statically linked can set this pointer to their
+// implementation of LiteRtDispatchGetApi during static initialization.
+// The storage for this pointer is defined in the internal runtime at
+// litert/runtime/dispatch/litert_dispatch.cc.
+// The runtime will invoke this function to get the API instead of loading a
+// dynamic library if it is not null.
+extern LiteRtStatus (*LiteRtStaticLinkedDispatchGetApi)(LiteRtDispatchApi*);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

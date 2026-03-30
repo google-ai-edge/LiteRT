@@ -100,7 +100,6 @@ litert_bin(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/vendors/cc:options_helper",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],

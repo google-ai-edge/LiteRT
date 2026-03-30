@@ -22,9 +22,37 @@ rules_shell_toolchains()
 http_archive(
     name = "rules_platform",
     sha256 = "0aadd1bd350091aa1f9b6f2fbcac8cd98201476289454e475b28801ecf85d3fd",
+    url = "https://github.com/bazelbuild/rules_platform/releases/download/0.1.0/rules_platform-0.1.0.tar.gz",
+)
+
+# Use recent platoforms version to support uefi platform.
+http_archive(
+    name = "platforms",
+    sha256 = "3384eb1c30762704fbe38e440204e114154086c8fc8a8c2e3e28441028c019a8",
     urls = [
-        "https://github.com/bazelbuild/rules_platform/releases/download/0.1.0/rules_platform-0.1.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz",
+        "https://github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz",
     ],
+)
+
+# Use 3.22.0 (from 3.5.1 of tensorflow) to fix binary signing issue on MacOS Tahoe.
+http_archive(
+    name = "build_bazel_rules_apple",
+    sha256 = "a78f26c22ac8d6e3f3fcaad50eace4d9c767688bd7254b75bdf4a6735b299f6a",
+    url = "https://github.com/bazelbuild/rules_apple/releases/download/3.22.0/rules_apple.3.22.0.tar.gz",
+)
+
+load(
+    "@build_bazel_rules_apple//apple:repositories.bzl",
+    "apple_rules_dependencies",
+)
+
+apple_rules_dependencies()
+
+http_archive(
+    name = "build_bazel_rules_swift",
+    sha256 = "f7a67197cd8a79debfe70b8cef4dc19d03039af02cc561e31e0718e98cad83ac",
+    url = "https://github.com/bazelbuild/rules_swift/releases/download/2.9.0/rules_swift.2.9.0.tar.gz",
 )
 
 # Lower the version from 1.24.5 that tensorflow uses to 1.23.1, the highest version which don't have
@@ -33,6 +61,13 @@ http_archive(
     name = "build_bazel_apple_support",
     sha256 = "ee20cc5c0bab47065473c8033d462374dd38d172406ecc8de5c8f08487943f2f",
     url = "https://github.com/bazelbuild/apple_support/releases/download/1.23.1/apple_support.1.23.1.tar.gz",
+)
+
+http_archive(
+    name = "bazel_features",
+    sha256 = "c26b4e69cf02fea24511a108d158188b9d8174426311aac59ce803a78d107648",
+    strip_prefix = "bazel_features-1.43.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.43.0/bazel_features-v1.43.0.tar.gz",
 )
 
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
@@ -56,9 +91,9 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.tf_xla_tsl_win_copts"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "7874a34f94059ba193a6482c8f5d0e93dbae18cbb2c0a9f25f95b22432abbc4d",
-    strip_prefix = "tensorflow-336096726d7707656a3700622436c21379c2b10b",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/336096726d7707656a3700622436c21379c2b10b.tar.gz"],
+    sha256 = "29537a5e96309384f3d897fbb52ace92c9a4c9ab3f1f624e0194c6641eed0478",
+    strip_prefix = "tensorflow-ebdc89b14098fa5f58f019dfeae52cfd109953df",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/ebdc89b14098fa5f58f019dfeae52cfd109953df.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.

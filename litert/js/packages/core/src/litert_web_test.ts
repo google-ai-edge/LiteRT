@@ -26,8 +26,9 @@ describe('LiteRt', () => {
     if (loadFromDirectory) {
       liteRt = await loadLiteRt('/wasm', options);
     } else {
-      liteRt = await loadLiteRt(
-          trustedResourceUrl`/wasm/litert_wasm_internal.js`, options);
+      // clang-format off
+      liteRt = await loadLiteRt('/wasm/litert_wasm_internal.js', options);
+      // clang-format on
     }
   }
 

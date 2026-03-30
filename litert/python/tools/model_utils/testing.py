@@ -48,18 +48,24 @@ def ir_text(
     The MLIR text of the module.
   """
   if isinstance(module, mlir.ModuleOp):
-    module = transform.convert_to_mlir(module)
+    ir_module = transform.convert_to_mlir(module)
+  else:
+    ir_module = module
 
-  if isinstance(module, ir.Module):
-    module = module.operation
+  if isinstance(ir_module, ir.Module):
+    op = ir_module.operation
+  else:
+    op = ir_module
 
-  if not isinstance(module, ir.Operation):
+  if not isinstance(op, ir.Operation):
     raise ValueError("Module must be an ir.Operation")
 
-  module.verify()
-  return module.get_asm(
-      enable_debug_info=enable_debug_info,
-      large_elements_limit=1000,
+  op.verify()
+  return str(
+      op.get_asm(
+          enable_debug_info=enable_debug_info,
+          large_elements_limit=1000,
+      )
   )
 
 
