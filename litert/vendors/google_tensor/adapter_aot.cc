@@ -66,11 +66,6 @@ litert::Expected<void> AdapterAot::LoadSymbols(
   for (const auto& path : so_paths) {
     dlib_handle_ = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
     if (dlib_handle_) {
-      void* init_func = dlsym(dlib_handle_, "GoogleTensorInitialize");
-      if (init_func) {
-        absl::LeakCheckDisabler disabler;
-        (*reinterpret_cast<void (*)()>(init_func))();
-      }
       break;  // Found the library
     }
   }
