@@ -25,6 +25,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "platforms/darwinn/devtools/power_stats/power_stats.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
@@ -60,6 +61,9 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
  private:
   std::string result_file_path_ = "";
   std::function<std::string()> summary_provider_;
+  std::unique_ptr<platforms::darwinn::devtools::PowerStats> power_stats_;
+  uint64_t start_energy_ = 0;
+  bool dump_power_metrics_ = false;
 
  public:
   explicit BenchmarkLoggingListener(
@@ -71,6 +75,17 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
     if (!params.Get<std::string>("result_file_path").empty()) {
       result_file_path_ =
           std::string(params.Get<std::string>("result_file_path"));
+    }
+    dump_power_metrics_ = params.Get<bool>("dump_power_metrics");
+    if (dump_power_metrics_) {
+      power_stats_ = platforms::darwinn::devtools::PowerStats::Create();
+      if (power_stats_) {
+        auto energy_or = power_stats_->GetEnergyConsumedUWs(
+            platforms::darwinn::devtools::power_stats::SUBSYSTEM_TPU);
+        if (energy_or.ok()) {
+          start_energy_ = *energy_or;
+        }
+      }
     }
   }
 
@@ -125,6 +140,23 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
                    "Peak memory usage not available. (peak_mem_mb <= 0)");
       }
     }
+
+    if (dump_power_metrics_ && power_stats_) {
+      auto energy_or = power_stats_->GetEnergyConsumedUWs(
+          platforms::darwinn::devtools::power_stats::SUBSYSTEM_TPU);
+      if (energy_or.ok() && inference_us.count() > 0) {
+        uint64_t end_energy = *energy_or;
+        uint64_t diff_energy = end_energy - start_energy_;
+        // Diff is in microwatt-seconds (uJ)
+        double avg_energy_uj =
+            static_cast<double>(diff_energy) / inference_us.count();
+        LITERT_LOG(LITERT_INFO, "------- Energy consumption stats ------\n");
+        LITERT_LOG(LITERT_INFO,
+                   "Average TPU Energy consumed per inference(uJ): %.3f",
+                   avg_energy_uj);
+      }
+    }
+
     LITERT_LOG(LITERT_INFO, "======================================\n");
     if (!result_file_path_.empty()) {
       BenchmarkResult result;
@@ -262,6 +294,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>("version8"));
     default_params.AddParam("input_layer_value_range",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("dump_power_metrics",
+                            BenchmarkParam::Create<bool>(false));
     return default_params;
   }
 
@@ -404,6 +438,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "input layers. Each item is separated by ':', and the item value "
         "consists of input layer name and range values (both low and high are "
         "inclusive) separated by ',', e.g. input1,1.0,2.0:input2,0,254"));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "dump_power_metrics", &params_, "Whether to dump power metrics."));
     return flags;
   }
 

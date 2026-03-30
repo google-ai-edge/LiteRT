@@ -404,6 +404,7 @@ cc_library(
         "//litert/cc/options:litert_samsung_options",
         "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
+        "//platforms/darwinn/devtools/power_stats",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
