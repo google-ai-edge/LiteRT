@@ -380,6 +380,17 @@ Expected<void> GpuEnvironment::Initialize(
     metal_info_ = std::move(metal_info_ptr);
     LITERT_LOG(LITERT_INFO, "Created default Metal device.");
   }
+  LITERT_ASSIGN_OR_RETURN(auto metal_device,
+                          ToLiteRtAny(LiteRtVariant(metal_info_->metal_info)));
+  generated_options_.push_back(LiteRtEnvOption{
+      .tag = kLiteRtEnvOptionTagMetalDevice, .value = metal_device});
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto metal_command_queue,
+      ToLiteRtAny(LiteRtVariant(metal_info_->metal_command_queue)));
+  generated_options_.push_back(
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagMetalCommandQueue,
+                      .value = metal_command_queue});
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
