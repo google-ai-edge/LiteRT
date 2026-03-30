@@ -1485,7 +1485,19 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", sub_opts);
       break;
     }
-    case tflite::BuiltinOptions_NONE: {
+    case tflite::BuiltinOptions_NONE:
+    case tflite::BuiltinOptions_TransposeOptions:
+    case tflite::BuiltinOptions_ExpOptions:
+    case tflite::BuiltinOptions_CosOptions:
+    case tflite::BuiltinOptions_LogOptions:
+    case tflite::BuiltinOptions_SinOptions:
+    case tflite::BuiltinOptions_SqrtOptions:
+    case tflite::BuiltinOptions_RsqrtOptions:
+    case tflite::BuiltinOptions_SquareOptions:
+    case tflite::BuiltinOptions_AbsOptions:
+    case tflite::BuiltinOptions_FloorOptions:
+    case tflite::BuiltinOptions_CeilOptions:
+    case tflite::BuiltinOptions_NegOptions: {
       absl::Format(&sink, "{}");
       break;
     }

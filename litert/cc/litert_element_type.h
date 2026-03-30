@@ -89,6 +89,10 @@ inline constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
     return ByteWidth(8);
   else if (ty == ElementType::Int2)
     return ByteWidth(1, 4);
+  else if (ty == ElementType::Complex64)
+    return ByteWidth(8);
+  else if (ty == ElementType::Complex128)
+    return ByteWidth(16);
   else
     return std::nullopt;
 }
