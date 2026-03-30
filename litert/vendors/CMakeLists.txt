@@ -18,6 +18,7 @@ include(FetchContent)
 
 set(NEUROPILOT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded NeuroPilot headers (root containing neuron/api)")
 set(QAIRT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded QAIRT/QNN headers (root containing Qnn*.h)")
+set(LITECORE_HEADERS_DIR "" CACHE PATH "Path to Samsung AI LiteCore headers (root containing graph_wrapper_api.h)")
 
 if(NOT NEUROPILOT_HEADERS_DIR)
   if(NOT NEUROPILOT_HEADERS_URL AND NOT NEUROPILOT_GIT_REPO)
@@ -106,6 +107,10 @@ endif()
 if(QAIRT_HEADERS_DIR)
   list(APPEND CMAKE_REQUIRED_INCLUDES ${QAIRT_HEADERS_DIR})
 endif()
+if(LITECORE_HEADERS_DIR)
+  list(APPEND CMAKE_REQUIRED_INCLUDES ${LITECORE_HEADERS_DIR})
+endif()
+
 
 function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${DIR}")
@@ -193,6 +198,13 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     endif()
   endif()
 
+  if(VENDOR STREQUAL "Samsung")
+    list(APPEND DISPATCH_SRCS
+      "${CMAKE_CURRENT_SOURCE_DIR}/samsung/ai_litecore_manager.cc"
+      "${CMAKE_CURRENT_SOURCE_DIR}/samsung/soc_model.cc"
+    )
+  endif()
+
   set(TGT "dispatch_api_${VENDOR}_so")
   add_library(${TGT} SHARED ${DISPATCH_SRCS})
   if(VENDOR STREQUAL "MediaTek")
@@ -208,6 +220,7 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${DIR}>
       $<$<BOOL:${NEUROPILOT_HEADERS_DIR}>:${NEUROPILOT_HEADERS_DIR}>
       $<$<BOOL:${QAIRT_HEADERS_DIR}>:${QAIRT_HEADERS_DIR}>
+      $<$<BOOL:${EXYNOS_HEADERS_DIR}>:${EXYNOS_HEADERS_DIR}>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils>
@@ -276,4 +289,19 @@ endif()
 if(LITERT_ENABLE_QUALCOMM)
   # Use modular CMake structure for Qualcomm
   add_subdirectory(qualcomm)
+endif()
+
+# Samsung
+option(LITERT_ENABLE_SAMSUNG "Enable Samsung NPU build" ON)
+if(LITECORE_HEADERS_DIR AND NOT LITERT_ENABLE_SAMSUNG)
+  message(STATUS "Enabling Samsung dispatch: Samsung headers detected at ${LITECORE_HEADERS_DIR}")
+  set(LITERT_ENABLE_SAMSUNG ON CACHE BOOL "" FORCE)
+endif()
+if(LITERT_ENABLE_SAMSUNG)
+  # Use modular CMake structure for Samsung
+  add_subdirectory(samsung)
+  # Build Samsung dispatch shared library
+  _litert_add_dispatch_so(Samsung "samsung/dispatch" "Samsung")
+else()
+  message(STATUS "Skipping Samsung dispatch: LITECORE_HEADERS_DIR not set")
 endif()
