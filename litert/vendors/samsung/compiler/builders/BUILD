@@ -24,7 +24,7 @@ cc_library(
     hdrs = ["op_wrapper.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/internal:litert_extended_model",
         "@exynos_ai_litecore//:ai_litecore_headers",
     ],
 )
@@ -39,7 +39,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/internal:litert_extended_model",
     ],
 )
 
@@ -53,7 +53,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/internal:litert_extended_model",
     ],
 )
 
@@ -67,6 +67,6 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/internal:litert_extended_model",
     ],
 )

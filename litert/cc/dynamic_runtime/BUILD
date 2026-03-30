@@ -218,40 +218,6 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_extended_model",
-    srcs = ["//litert/cc/internal:litert_extended_model.cc"],
-    hdrs = ["//litert/cc/internal:litert_extended_model.h"],
-    defines = ["LITERT_DYNAMIC_RUNTIME"],
-    visibility = [
-        "//litert:litert_public",
-    ],
-    deps = [
-        ":litert_model",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model_types",
-        "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc/internal:litert_consts",
-        "//litert/cc/internal:litert_detail",
-        "//litert/cc/internal:litert_handle",
-        "//tflite/converter:allocation",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_common",
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
-
-cc_library(
     name = "litert_builder",
     srcs = ["//litert/cc/internal:litert_builder.cc"],
     hdrs = ["//litert/cc/internal:litert_builder.h"],
@@ -259,7 +225,6 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
-        ":litert_extended_model",
         ":litert_op_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
@@ -267,6 +232,7 @@ cc_library(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
@@ -288,11 +254,11 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
-        ":litert_extended_model",
         ":litert_op_options",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_extended_model",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -333,13 +299,13 @@ cc_library(
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
-        ":litert_extended_model",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_extended_model",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/types:span",
     ],
@@ -350,10 +316,10 @@ cc_test(
     srcs = ["//litert/cc/internal:litert_model_predicates_test.cc"],
     data = ["//litert/test:mlir_test_data"],
     deps = [
-        ":litert_extended_model",
         ":litert_model_predicates",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/test:common",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
