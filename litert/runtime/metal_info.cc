@@ -24,6 +24,8 @@
 namespace {
 
 struct MetalInfoImpl : public MetalInfo {
+   // The following members are managed through ARC.
+   // Thus we don't need to explicitly release them in the destructor.
   id<MTLDevice> metal_device;
   id<MTLCommandQueue> metal_command_queue;
 };

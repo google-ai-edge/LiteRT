@@ -52,7 +52,10 @@ litert_dynamic_lib(
         "nobuilder",
         "notap",
     ],
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
