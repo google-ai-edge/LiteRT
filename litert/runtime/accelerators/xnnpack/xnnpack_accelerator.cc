@@ -17,6 +17,7 @@
 #include <cstring>
 
 #include "litert/c/internal/litert_accelerator_def.h"
+#include "litert/c/internal/litert_accelerator_registration.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -140,6 +141,32 @@ class CpuAccelerator final
 }  // namespace litert
 
 extern "C" {
+
+LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment) {
+  LITERT_RETURN_IF_ERROR(environment != nullptr,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "environment handle is null";
+
+  LiteRtAccelerator accelerator_handle;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));
+  litert::internal::AcceleratorGuard accelerator(accelerator_handle);
+
+  LITERT_RETURN_IF_ERROR(litert::internal::SetAcceleratorBoilerplateFunctions<
+                         litert::CpuAccelerator>(accelerator));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
+          accelerator.get(), litert::CpuAccelerator::
+                                 IsTfLiteDelegateResponsibleForJitCompilation));
+
+  LITERT_ASSIGN_OR_RETURN(auto accelerator_impl,
+                          litert::CpuAccelerator::Create());
+
+  LITERT_RETURN_IF_ERROR(LiteRtRegisterAccelerator(
+      environment, accelerator.release(), accelerator_impl.release(),
+      litert::CpuAccelerator::Destroy));
+
+  return kLiteRtStatusOk;
+}
 
 // Discovery C object for the CPU (Xnnpack) accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor.
