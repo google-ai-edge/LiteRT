@@ -120,9 +120,17 @@ QnnManager::~QnnManager() = default;
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
   if (saver_output_dir.empty()) {
+    // On Android, dlopen with bare filenames fails when called from within a
+    // dispatch .so that was itself loaded via dlopen, due to linker namespace
+    // isolation. Use the stored shared_library_dir_ to construct absolute
+    // paths that work across namespaces.
+    std::string resolved_path(path);
+    if (shared_library_dir_.has_value() && !path.empty() && path[0] != '/') {
+      resolved_path = absl::StrCat(*shared_library_dir_, "/", path);
+    }
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
-               path.data());
-    LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(path, GetRtldFlags()));
+               resolved_path.c_str());
+    LITERT_ASSIGN_OR_RETURN(lib_, SharedLibrary::Load(resolved_path, GetRtldFlags()));
   } else {
     path = kSaverLibraryName;
     LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
@@ -135,7 +143,12 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  auto lib_system_or = SharedLibrary::Load(path, GetRtldFlags());
+  // Use absolute path when shared_library_dir_ is available (see LoadLib).
+  std::string resolved_path(path);
+  if (shared_library_dir_.has_value() && !path.empty() && path[0] != '/') {
+    resolved_path = absl::StrCat(*shared_library_dir_, "/", path);
+  }
+  auto lib_system_or = SharedLibrary::Load(resolved_path, GetRtldFlags());
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
@@ -392,6 +405,9 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
+  // Store for LoadLib/LoadSystemLib to construct absolute paths for dlopen.
+  shared_library_dir_ = shared_library_dir;
+
   // If shared_library_dir is provided, add it to the path as it may contain
   // libs to be loaded.
   // TOOD: This should probably be done upstream in litert_dispatch.

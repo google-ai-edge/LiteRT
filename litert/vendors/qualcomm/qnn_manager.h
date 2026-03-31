@@ -186,6 +186,12 @@ class QnnManager {
                     std::optional<::qnn::SocInfo> soc_info,
                     const ::qnn::Options& options);
 
+  // Directory containing QNN shared libraries, stored during Init() for use
+  // by LoadLib/LoadSystemLib to construct absolute paths. On Android, dlopen
+  // with bare filenames fails when called from within a dispatch .so loaded
+  // via dlopen, due to linker namespace isolation.
+  std::optional<std::string> shared_library_dir_;
+
   //
   // Manage libQnn*.so Loading
   //
