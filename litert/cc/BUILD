@@ -957,7 +957,6 @@ cc_test(
         ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment",  # buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",

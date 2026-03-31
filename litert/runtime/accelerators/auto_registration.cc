@@ -131,8 +131,7 @@ LiteRtStatus RegisterAccelerator(LiteRtEnvironment env,
         env, accelerator_def->supported_buffer_types[i],
         accelerator_def->create_func, accelerator_def->destroy_func,
         accelerator_def->lock_func, accelerator_def->unlock_func,
-        accelerator_def->clear_func, accelerator_def->import_func,
-        accelerator_def->device_tag, accelerator_def->queue_tag));
+        accelerator_def->clear_func, accelerator_def->import_func));
   }
 
   return kLiteRtStatusOk;
