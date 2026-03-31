@@ -594,6 +594,7 @@ cc_test(
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
 #         "//third_party/odml/infra/fabric/runtime:executor",
+#         "//third_party/odml/infra/fabric/runtime:inference_program",
 #         "//third_party/odml/infra/northbound/aot:buffer_management",
 #         "//third_party/odml/infra/northbound/aot:emission_graph",
 #         "//third_party/odml/infra/northbound/aot:hardware_buffer",
