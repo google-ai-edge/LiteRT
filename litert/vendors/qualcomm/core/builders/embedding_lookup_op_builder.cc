@@ -120,4 +120,16 @@ std::vector<OpWrapper> BuildEmbeddingLookupOp(
                     CreateConvertOp(gather_output, output_tensor));
 }
 
+OpWrapper CreateGatherOp(const TensorWrapper& table,
+                         const TensorWrapper& indices,
+                         const TensorWrapper& output, std::int32_t axis) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_GATHER), QNN_OP_GATHER,
+               QnnOpCode::kGather);
+  op.AddInputTensor(table);
+  op.AddInputTensor(indices);
+  op.AddOutputTensor(output);
+  op.AddScalarParam<std::int32_t>(QNN_OP_GATHER_PARAM_AXIS, axis);
+  return op;
+}
+
 }  // namespace qnn
