@@ -57,7 +57,11 @@ cc_library(
 
 cc_binary(
     name = "libLiteRTCompilerMLIR.so",
-    linkopts = ["-Wl,-Bsymbolic"],
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-Wl,-Bsymbolic"],
+    }),
     linkshared = 1,
     tags = [
         "nobuilder",
