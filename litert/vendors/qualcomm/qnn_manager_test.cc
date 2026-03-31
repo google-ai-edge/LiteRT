@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
 namespace {
@@ -37,11 +38,17 @@ auto CreateQnnManager(const ::qnn::Options& options) {
 }
 
 TEST(QnnManagerTest, SetupQnnManager) {
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
   auto qnn = CreateQnnManager(::qnn::Options());
   ASSERT_TRUE(qnn);
 }
 
 TEST(QnnManagerTest, Dump) {
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
   auto qnn = CreateQnnManager(::qnn::Options());
   ASSERT_TRUE(qnn);
 
@@ -52,6 +59,9 @@ TEST(QnnManagerTest, Dump) {
 }
 
 TEST(QnnManagerTest, GetOptions) {
+  if (!::qnn::IsHtpBackend()) {
+    GTEST_SKIP() << "Skipping HTP test because TARGET_BACKEND is not HTP";
+  }
   auto options = ::qnn::Options();
   auto qnn = CreateQnnManager(options);
   ASSERT_TRUE(qnn);
