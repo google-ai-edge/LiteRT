@@ -44,6 +44,8 @@ cc_library(
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",
+        "//tflite/types:half",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ] + select({
@@ -76,8 +78,6 @@ pybind_extension(
         ":tensor_buffer_wrapper_lib",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//tflite:framework",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:string_view",
         "@pybind11",
         "@xla//third_party/python_runtime:headers",
     ],
@@ -90,7 +90,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
+        ":_pywrap_litert_tensor_buffer_wrapper",
         "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )

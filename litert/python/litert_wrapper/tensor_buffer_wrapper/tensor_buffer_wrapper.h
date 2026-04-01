@@ -59,6 +59,18 @@ class TensorBufferWrapper {
                                const std::string& dtype);
 
   /**
+   * Writes data from a contiguous Python buffer object to a TensorBuffer.
+   *
+   * @param buffer_capsule Python capsule containing the LiteRtTensorBuffer.
+   * @param py_data Python object exporting a contiguous readable buffer.
+   * @param dtype String representation of the data type.
+   * @return PyObject* indicating success (Py_None) or nullptr on error.
+   */
+  static PyObject* WriteTensorBuffer(PyObject* buffer_capsule,
+                                     PyObject* py_data,
+                                     const std::string& dtype);
+
+  /**
    * Reads data from a TensorBuffer into a new Python list.
    *
    * @param buffer_capsule Python capsule containing the LiteRtTensorBuffer.
@@ -68,6 +80,30 @@ class TensorBufferWrapper {
    */
   static PyObject* ReadTensor(PyObject* buffer_capsule, int num_elements,
                               const std::string& dtype);
+
+  /**
+   * Reads tensor data into a contiguous writable Python buffer object.
+   *
+   * @param buffer_capsule Python capsule containing the LiteRtTensorBuffer.
+   * @param py_data Python object exporting a contiguous writable buffer.
+   * @param dtype String representation of the data type.
+   * @return PyObject* indicating success (Py_None) or nullptr on error.
+   */
+  static PyObject* ReadTensorToBuffer(PyObject* buffer_capsule,
+                                      PyObject* py_data,
+                                      const std::string& dtype);
+
+  /**
+   * Returns tensor details for a TensorBuffer.
+   *
+   * The returned dictionary includes the host-visible tensor element dtype and
+   * shape associated with the buffer.
+   *
+   * @param buffer_capsule Python capsule containing the LiteRtTensorBuffer.
+   * @return A new Python dictionary containing tensor details, or nullptr on
+   * error.
+   */
+  static PyObject* GetTensorDetails(PyObject* buffer_capsule);
 
   /**
    * Explicitly destroys a TensorBuffer and releases associated resources.

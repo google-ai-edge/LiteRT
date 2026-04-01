@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,8 +43,8 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/c/internal/litert_scheduling_info.h"
 
-struct LiteRtSchedulingInfo;
 
 namespace mediapipe {
 class InferenceRunnerLiteRt;
@@ -249,6 +250,18 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return GetOutputBufferRequirements(signature_index, output_name);
   }
 
+  /// @brief Returns the layout of the given input tensor.
+  ///
+  /// This reflects the most recent shape requested via `ResizeInputTensor` or
+  /// automatic resize during execution.
+  Expected<Layout> GetInputTensorLayout(size_t signature_index,
+                                        size_t input_index) const {
+    LiteRtLayout input_layout;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetCompiledModelInputTensorLayout(
+        Get(), signature_index, input_index, &input_layout));
+    return Layout(input_layout);
+  }
+
   /// @brief Returns the layouts of all output tensors for a given signature
   /// index.
   ///
@@ -398,6 +411,13 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return CreateInputOutputBuffers(/*signature_index=*/0, /*is_input=*/false);
   }
 
+  /// @brief Sets model-level default scheduling info.
+  Expected<void> SetSchedulingInfo(
+      const LiteRtSchedulingInfo& scheduling_info) const;
+
+  /// @brief Clears model-level default scheduling info.
+  Expected<void> ClearSchedulingInfo() const;
+
   /// @brief Runs the model for a given signature index synchronously with the
   /// provided input/output `TensorBuffer`s.
   Expected<void> Run(size_t signature_index,
@@ -414,6 +434,51 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     bool async = false;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
                      async);
+  }
+
+  /// @brief Runs with per-run options for a given signature index.
+  Expected<void> Run(size_t signature_index,
+                     absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers,
+                     Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     run_options ? run_options->Get() : nullptr, nullptr);
+  }
+
+  /// @brief Runs with per-request scheduling info for a given signature index.
+  Expected<void> Run(size_t signature_index,
+                     absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers,
+                     const LiteRtSchedulingInfo& scheduling_info) const {
+    bool async = false;
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     nullptr, &scheduling_info);
+  }
+
+  /// @brief Runs default signature with per-run options.
+  Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers,
+                     Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
+                     async, run_options ? run_options->Get() : nullptr,
+                     nullptr);
+  }
+
+  /// @brief Runs default signature with per-request scheduling info.
+  Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers,
+                     const LiteRtSchedulingInfo& scheduling_info) const {
+    bool async = false;
+    return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
+                     async, nullptr, &scheduling_info);
   }
 
   /// @brief Runs the model for a given signature index asynchronously, if
@@ -442,6 +507,55 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                      async);
   }
 
+  /// @brief Runs asynchronously with per-run options for a given signature.
+  Expected<void> RunAsync(size_t signature_index,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async, Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    async = true;
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     run_options ? run_options->Get() : nullptr, nullptr);
+  }
+
+  /// @brief Runs asynchronously with per-request scheduling info for a given
+  /// signature.
+  Expected<void> RunAsync(size_t signature_index,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async,
+                          const LiteRtSchedulingInfo& scheduling_info) const {
+    async = true;
+    return RunHelper(signature_index, input_buffers, output_buffers, async,
+                     nullptr, &scheduling_info);
+  }
+
+  /// @brief Runs default signature asynchronously with per-run options.
+  Expected<void> RunAsync(const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async, Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    async = true;
+    return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
+                     async, run_options ? run_options->Get() : nullptr,
+                     nullptr);
+  }
+
+  /// @brief Runs default signature asynchronously with per-request scheduling
+  /// info.
+  Expected<void> RunAsync(const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async,
+                          const LiteRtSchedulingInfo& scheduling_info) const {
+    async = true;
+    return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
+                     async, nullptr, &scheduling_info);
+  }
+
   /// @brief Runs the model for a given signature key synchronously with the
   /// provided input/output `TensorBuffer`s.
   Expected<void> Run(absl::string_view signature_key,
@@ -450,6 +564,26 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             GetSignatureIndex(signature_key));
     return Run(signature_index, input_buffers, output_buffers);
+  }
+
+  /// @brief Runs by signature key with per-run options.
+  Expected<void> Run(absl::string_view signature_key,
+                     const std::vector<TensorBuffer>& input_buffers,
+                     const std::vector<TensorBuffer>& output_buffers,
+                     Options* run_options) const {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            GetSignatureIndex(signature_key));
+    return Run(signature_index, input_buffers, output_buffers, run_options);
+  }
+
+  /// @brief Runs by signature key with per-request scheduling info.
+  Expected<void> Run(absl::string_view signature_key,
+                     const std::vector<TensorBuffer>& input_buffers,
+                     const std::vector<TensorBuffer>& output_buffers,
+                     const LiteRtSchedulingInfo& scheduling_info) const {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            GetSignatureIndex(signature_key));
+    return Run(signature_index, input_buffers, output_buffers, scheduling_info);
   }
 
   /// @brief Runs the model for a given signature key asynchronously, if
@@ -467,6 +601,32 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return RunAsync(signature_index, input_buffers, output_buffers, async);
   }
 
+  /// @brief Runs by signature key asynchronously with per-run options.
+  Expected<void> RunAsync(absl::string_view signature_key,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async, Options* run_options) const {
+    async = true;
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            GetSignatureIndex(signature_key));
+    return RunAsync(signature_index, input_buffers, output_buffers, async,
+                    run_options);
+  }
+
+  /// @brief Runs by signature key asynchronously with per-request scheduling
+  /// info.
+  Expected<void> RunAsync(absl::string_view signature_key,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async,
+                          const LiteRtSchedulingInfo& scheduling_info) const {
+    async = true;
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            GetSignatureIndex(signature_key));
+    return RunAsync(signature_index, input_buffers, output_buffers, async,
+                    scheduling_info);
+  }
+
   /// @brief Runs the model for a given signature key synchronously with the
   /// provided input/output `TensorBuffer` map.
   ///
@@ -479,6 +639,32 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       const {
     bool async = false;
     return RunMapHelper(signature_key, input_map, output_map, async);
+  }
+
+  /// @brief Runs by signature key with per-run options using named maps.
+  Expected<void> Run(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunMapHelper(signature_key, input_map, output_map, async,
+                        run_options ? run_options->Get() : nullptr, nullptr);
+  }
+
+  /// @brief Runs by signature key with per-request scheduling info using named
+  /// maps.
+  Expected<void> Run(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      const LiteRtSchedulingInfo& scheduling_info) const {
+    bool async = false;
+    return RunMapHelper(signature_key, input_map, output_map, async, nullptr,
+                        &scheduling_info);
   }
 
   /// @brief Runs the model for the default signature synchronously with the
@@ -495,6 +681,31 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                  async);
   }
 
+  /// @brief Runs default signature with per-run options using named maps.
+  Expected<void> Run(
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    bool async = false;
+    return RunMapWithIndexHelper(
+        /*signature_index=*/0, input_map, output_map, async,
+        run_options ? run_options->Get() : nullptr, nullptr);
+  }
+
+  /// @brief Runs default signature with per-request scheduling info using
+  /// named maps.
+  Expected<void> Run(
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      const LiteRtSchedulingInfo& scheduling_info) const {
+    bool async = false;
+    return RunMapWithIndexHelper(/*signature_index=*/0, input_map, output_map,
+                                 async, nullptr, &scheduling_info);
+  }
+
   /// @brief Runs the model for a given signature key asynchronously, if
   /// possible, with the provided input/output `TensorBuffer` map.
   ///
@@ -507,6 +718,33 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       bool& async) const {
     async = true;
     return RunMapHelper(signature_key, input_map, output_map, async);
+  }
+
+  /// @brief Runs by signature key asynchronously with per-run options using
+  /// named maps.
+  Expected<void> RunAsync(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      bool& async, Options* run_options) const {
+    if (run_options) {
+      LITERT_RETURN_IF_ERROR(run_options->Build());
+    }
+    async = true;
+    return RunMapHelper(signature_key, input_map, output_map, async,
+                        run_options ? run_options->Get() : nullptr, nullptr);
+  }
+
+  /// @brief Runs by signature key asynchronously with per-request scheduling
+  /// info using named maps.
+  Expected<void> RunAsync(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      bool& async, const LiteRtSchedulingInfo& scheduling_info) const {
+    async = true;
+    return RunMapHelper(signature_key, input_map, output_map, async, nullptr,
+                        &scheduling_info);
   }
 
   /// @brief Returns `true` if the compiled model is fully accelerated with the
@@ -634,6 +872,72 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<void> ResizeInputTensorNonStrict(absl::string_view input_name,
                                             absl::Span<const int> dims) {
     return ResizeInputTensorNonStrict(/*signature_index=*/0, input_name, dims);
+  }
+
+  /// @brief Sets a dispatch annotation on the compiled model.
+  ///
+  /// These annotations are propagated to dispatch graphs during model
+  /// execution and provide runtime hints and metadata for hardware accelerator
+  /// optimization.
+  Expected<void> SetDispatchAnnotation(size_t signature_index,
+                                       absl::string_view key,
+                                       absl::string_view value);
+
+  /// @brief Gets a dispatch annotation from the compiled model.
+  ///
+  /// Returns `std::nullopt` if the key does not exist.
+  Expected<std::optional<std::string>> GetDispatchAnnotation(
+      size_t signature_index, absl::string_view key);
+
+  /// @brief Removes a dispatch annotation from the compiled model.
+  ///
+  /// This succeeds even if the key does not exist.
+  Expected<void> RemoveDispatchAnnotation(size_t signature_index,
+                                          absl::string_view key);
+
+  /// @brief Overloaded version for the default signature (index 0).
+  Expected<void> SetDispatchAnnotation(absl::string_view key,
+                                       absl::string_view value) {
+    return SetDispatchAnnotation(0, key, value);
+  }
+
+  /// @brief Overloaded version for the default signature (index 0).
+  Expected<std::optional<std::string>> GetDispatchAnnotation(
+      absl::string_view key) {
+    return GetDispatchAnnotation(0, key);
+  }
+
+  /// @brief Overloaded version for the default signature (index 0).
+  Expected<void> RemoveDispatchAnnotation(absl::string_view key) {
+    return RemoveDispatchAnnotation(0, key);
+  }
+
+  /// @brief Overloaded version that takes a signature name instead of an
+  /// index.
+  Expected<void> SetDispatchAnnotation(absl::string_view signature_name,
+                                       absl::string_view key,
+                                       absl::string_view value) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            GetSignatureIndex(signature_name));
+    return SetDispatchAnnotation(signature_index, key, value);
+  }
+
+  /// @brief Overloaded version that takes a signature name instead of an
+  /// index.
+  Expected<std::optional<std::string>> GetDispatchAnnotation(
+      absl::string_view signature_name, absl::string_view key) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            GetSignatureIndex(signature_name));
+    return GetDispatchAnnotation(signature_index, key);
+  }
+
+  /// @brief Overloaded version that takes a signature name instead of an
+  /// index.
+  Expected<void> RemoveDispatchAnnotation(absl::string_view signature_name,
+                                          absl::string_view key) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            GetSignatureIndex(signature_name));
+    return RemoveDispatchAnnotation(signature_index, key);
   }
 
   /// @brief Reports an error to the compiled model's error reporter.

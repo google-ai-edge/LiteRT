@@ -73,6 +73,18 @@ class CompiledModelWrapper:
         """
         ...
 
+    def GetInputTensorDetails(self, sig_key: str) -> Dict[str, Any]:
+        """Returns input tensor metadata for the specified signature."""
+        ...
+
+    def GetOutputTensorDetails(self, sig_key: str) -> Dict[str, Any]:
+        """Returns output tensor metadata for the specified signature."""
+        ...
+
+    def IsFullyAccelerated(self) -> bool:
+        """Returns whether the compiled model is fully accelerated."""
+        ...
+
     def CreateInputBufferByName(self, sig_key: str, in_name: str) -> object:
         """Creates an input buffer for the specified signature and input name.
 

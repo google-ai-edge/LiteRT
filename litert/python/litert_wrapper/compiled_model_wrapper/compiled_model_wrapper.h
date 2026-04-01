@@ -133,6 +133,12 @@ class CompiledModelWrapper {
   // Returns input tensor details for a given signature.
   PyObject* GetInputTensorDetails(const char* signature_key);
 
+  // Returns output tensor details for a given signature.
+  PyObject* GetOutputTensorDetails(const char* signature_key);
+
+  // Returns whether the model is fully accelerated with selected accelerators.
+  PyObject* IsFullyAccelerated();
+
   // Resizes an input tensor by signature and input index.
   PyObject* ResizeInputTensor(int signature_index, int input_index,
                               const std::vector<int>& dims, bool strict);

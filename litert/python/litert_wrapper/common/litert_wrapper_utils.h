@@ -20,6 +20,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_element_type.h"
 
 namespace litert::litert_wrapper_utils {
 
@@ -45,6 +46,8 @@ void DestroyTensorBufferFromCapsule(PyObject* capsule);
 
 // Creates a PyCapsule for a TensorBuffer with the appropriate destructor.
 PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer);
+
+const char* ElementTypeToString(litert::ElementType dtype);
 
 }  // namespace litert::litert_wrapper_utils
 
