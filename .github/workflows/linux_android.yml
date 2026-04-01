@@ -33,12 +33,6 @@ jobs:
             platform-tools
             cmdline-tools;latest
             
-      - name: Create stable /opt/android/sdk path
-        run: |
-          sudo mkdir -p /opt/android
-          sudo ln -sf "$ANDROID_HOME" /opt/android/sdk
-          ls -la /opt/android/sdk
-          ls -la /opt/android/sdk/ndk/26.1.10909125
           
       - name: Export Android NDK env
         run: |
@@ -55,26 +49,7 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.8.1
 
-      - name: Clean Bazel Cache
-        run: bazel clean --expunge
           
-      - name: Verify NDK path
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          test -d "$ANDROID_NDK_HOME" && echo "NDK OK" || (echo "NDK missing" && exit 1)
-
-      - name: Verify NDK clang supports bf16+dotprod
-        run: |
-          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" --version
-          echo "int main(){}" > /tmp/t.c
-          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" \
-          -target aarch64-linux-android30 -march=armv8.2-a+bf16+dotprod \
-          -c /tmp/t.c -o /tmp/t.o
-
-          echo "JAVA_HOME=$JAVA_HOME"
-          java -version
-          javac -version
       
       - name: Build Android Artifacts with Bazel
         run: |
