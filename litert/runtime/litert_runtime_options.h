@@ -32,6 +32,9 @@ struct LiteRtRuntimeOptionsT {
   // be stored as a single value to reduce memory usage.
   bool compress_quantization_zero_points = false;
 
+  // If true, the interpreter will disable delegate clustering.
+  bool disable_delegate_clustering = false;
+
   static const char* Identifier() { return "runtime_options_string"; }
 };
 

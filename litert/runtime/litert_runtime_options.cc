@@ -47,6 +47,9 @@ LiteRtStatus ParseLiteRtRuntimeOptions(const void* data, size_t size,
                                   litert::internal::ParseTomlInt(value));
           options->error_reporter_mode =
               static_cast<LiteRtErrorReporterMode>(val);
+        } else if (key == "disable_delegate_clustering") {
+          LITERT_ASSIGN_OR_RETURN(options->disable_delegate_clustering,
+                                  litert::internal::ParseTomlBool(value));
         }
         return kLiteRtStatusOk;
       });

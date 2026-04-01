@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 load("//litert/build_common:litert_build_defs.bzl", "if_google")
 load("//litert/build_common:symlink_files.bzl", "symlink_inputs")
+load("//litert/python:pytype.bzl", "pytype_strict_contrib_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],

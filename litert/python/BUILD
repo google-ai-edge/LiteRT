@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "pywrap_binaries", "pywrap_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/python:strict.bzl", "py_strict_library", "py_strict_test")
 
 WINDOWS_PYBIND_UNDEFS = select({
     "@platforms//os:windows": [

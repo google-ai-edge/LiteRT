@@ -24,6 +24,8 @@
 namespace {
 
 struct MetalInfoImpl : public MetalInfo {
+   // The following members are managed through ARC.
+   // Thus we don't need to explicitly release them in the destructor.
   id<MTLDevice> metal_device;
   id<MTLCommandQueue> metal_command_queue;
 };
@@ -39,7 +41,10 @@ LiteRtStatus LiteRtCreateMetalInfo(MetalInfoPtr* metal_info) {
   metal_info_impl->metal_device = MTLCreateSystemDefaultDevice();
   metal_info_impl->metal_command_queue =
       [metal_info_impl->metal_device newCommandQueue];
-  metal_info_impl->metal_info = (__bridge void*)metal_info_impl->metal_device;
+  metal_info_impl->MetalInfo::metal_info =
+      (__bridge void*)metal_info_impl->metal_device;
+  metal_info_impl->MetalInfo::metal_command_queue =
+      (__bridge void*)metal_info_impl->metal_command_queue;
   *metal_info = metal_info_impl.release();
   return kLiteRtStatusOk;
 }
@@ -49,7 +54,10 @@ LiteRtStatus LiteRtCreateWithDevice(void* device, MetalInfoPtr* metal_info) {
   metal_info_impl->metal_device = (__bridge id<MTLDevice>)device;
   metal_info_impl->metal_command_queue =
       [metal_info_impl->metal_device newCommandQueue];
-  metal_info_impl->metal_info = (__bridge void*)metal_info_impl->metal_device;
+  metal_info_impl->MetalInfo::metal_info =
+      (__bridge void*)metal_info_impl->metal_device;
+  metal_info_impl->MetalInfo::metal_command_queue =
+      (__bridge void*)metal_info_impl->metal_command_queue;
   *metal_info = metal_info_impl.release();
   return kLiteRtStatusOk;
 }
@@ -60,7 +68,10 @@ LiteRtStatus LiteRtCreateWithCommandQueue(void* command_queue, void* device,
   metal_info_impl->metal_device = (__bridge id<MTLDevice>)device;
   metal_info_impl->metal_command_queue =
       (__bridge id<MTLCommandQueue>)command_queue;
-  metal_info_impl->metal_info = (__bridge void*)metal_info_impl->metal_device;
+  metal_info_impl->MetalInfo::metal_info =
+      (__bridge void*)metal_info_impl->metal_device;
+  metal_info_impl->MetalInfo::metal_command_queue =
+      (__bridge void*)metal_info_impl->metal_command_queue;
   *metal_info = metal_info_impl.release();
   return kLiteRtStatusOk;
 }

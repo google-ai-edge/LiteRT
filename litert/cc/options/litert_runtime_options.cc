@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -70,6 +71,20 @@ Expected<bool> RuntimeOptions::GetCompressQuantizationZeroPoints() const {
   LITERT_RETURN_IF_ERROR(LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
       options_.get(), &compress_zero_points));
   return compress_zero_points;
+}
+
+Expected<void> RuntimeOptions::SetDisableDelegateClustering(
+    bool disable_delegate_clustering) {
+  LITERT_RETURN_IF_ERROR(LrtSetRuntimeOptionsDisableDelegateClustering(
+      options_.get(), disable_delegate_clustering));
+  return {};
+}
+
+Expected<bool> RuntimeOptions::GetDisableDelegateClustering() const {
+  bool disable_delegate_clustering;
+  LITERT_RETURN_IF_ERROR(LrtGetRuntimeOptionsDisableDelegateClustering(
+      options_.get(), &disable_delegate_clustering));
+  return disable_delegate_clustering;
 }
 
 }  // namespace litert

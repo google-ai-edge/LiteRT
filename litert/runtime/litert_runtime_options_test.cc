@@ -29,6 +29,7 @@ TEST(LiteRtRuntimeOptionsTest, ParseWorks) {
     enable_profiling = true
     compress_quantization_zero_points = false
     error_reporter_mode = 1
+    disable_delegate_clustering = false
   )";
 
   LiteRtRuntimeOptionsT options;
@@ -41,6 +42,7 @@ TEST(LiteRtRuntimeOptionsTest, ParseWorks) {
   EXPECT_FALSE(options.compress_quantization_zero_points);
   EXPECT_EQ(options.error_reporter_mode,
             static_cast<LiteRtErrorReporterMode>(1));
+  EXPECT_FALSE(options.disable_delegate_clustering);
 
   // Verify against tomlplusplus
   auto toml_tbl = toml::parse(toml_str);
@@ -51,6 +53,8 @@ TEST(LiteRtRuntimeOptionsTest, ParseWorks) {
       toml_tbl["compress_quantization_zero_points"].value<bool>().value());
   EXPECT_EQ(static_cast<int>(options.error_reporter_mode),
             toml_tbl["error_reporter_mode"].value<int>().value());
+  EXPECT_EQ(options.disable_delegate_clustering,
+            toml_tbl["disable_delegate_clustering"].value<bool>().value());
 }
 
 TEST(LiteRtRuntimeOptionsTest, ParseWorksWithCommentsAndWhitespace) {
@@ -59,6 +63,7 @@ TEST(LiteRtRuntimeOptionsTest, ParseWorksWithCommentsAndWhitespace) {
     enable_profiling = true
     compress_quantization_zero_points = true
     error_reporter_mode = 0
+    disable_delegate_clustering = true
   )";
 
   LiteRtRuntimeOptionsT options;
@@ -70,6 +75,7 @@ TEST(LiteRtRuntimeOptionsTest, ParseWorksWithCommentsAndWhitespace) {
   EXPECT_TRUE(options.compress_quantization_zero_points);
   EXPECT_EQ(options.error_reporter_mode,
             static_cast<LiteRtErrorReporterMode>(0));
+  EXPECT_TRUE(options.disable_delegate_clustering);
 }
 
 TEST(LiteRtRuntimeOptionsTest, ParseInvalidBool) {

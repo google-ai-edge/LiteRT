@@ -55,6 +55,14 @@ TEST(RuntimeOptionsTest, CompressQuantizationZeroPointsWorks) {
   EXPECT_TRUE(enabled);
 }
 
+TEST(RuntimeOptionsTest, DisableDelegateClusteringWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
+  EXPECT_THAT(options.SetDisableDelegateClustering(true), IsOk());
+  LITERT_ASSERT_OK_AND_ASSIGN(bool disabled,
+                              options.GetDisableDelegateClustering());
+  EXPECT_TRUE(disabled);
+}
+
 TEST(RuntimeOptionsTest, CreateOpaqueOptionsWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, RuntimeOptions::Create());
   EXPECT_THAT(options.SetEnableProfiling(true), IsOk());

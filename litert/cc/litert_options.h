@@ -25,6 +25,8 @@
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/scoped_file.h"
+#include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_expected.h"
@@ -38,8 +40,7 @@
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
-#include "litert/cc/internal/scoped_file.h"
-#include "litert/cc/internal/scoped_weight_source.h"
+#include "litert/cc/options/litert_samsung_options.h"
 
 namespace litert {
 
@@ -223,6 +224,11 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   /// Use this to configure Intel OpenVINO-specific settings.
   Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions();
 
+  /// Returns a reference to the Samsung options.
+  ///
+  /// Use this to configure Samsung-specific settings.
+  Expected<samsung::SamsungOptions&> GetSamsungOptions();
+
   /// Returns a reference to the runtime options.
   Expected<RuntimeOptions&> GetRuntimeOptions();
 
@@ -242,6 +248,7 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   std::optional<mediatek::MediatekOptions> mediatek_options_;
   std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
   std::optional<intel_openvino::IntelOpenVinoOptions> intel_openvino_options_;
+  std::optional<samsung::SamsungOptions> samsung_options_;
   std::optional<RuntimeOptions> runtime_options_;
   std::optional<CompilerOptions> compiler_options_;
 };

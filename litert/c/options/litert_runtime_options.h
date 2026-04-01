@@ -87,6 +87,14 @@ LiteRtStatus LrtSetRuntimeOptionsCompressQuantizationZeroPoints(
 LiteRtStatus LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
     const LrtRuntimeOptions* options, bool* compress_zero_points);
 
+// Sets whether to disable delegate clustering.
+LiteRtStatus LrtSetRuntimeOptionsDisableDelegateClustering(
+    LrtRuntimeOptions* options, bool disable_delegate_clustering);
+
+// Gets whether delegate clustering is disabled.
+LiteRtStatus LrtGetRuntimeOptionsDisableDelegateClustering(
+    const LrtRuntimeOptions* options, bool* disable_delegate_clustering);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

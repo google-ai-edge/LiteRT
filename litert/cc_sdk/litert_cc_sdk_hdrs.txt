@@ -37,6 +37,7 @@ litert/c/options/litert_intel_openvino_options.h
 litert/c/options/litert_mediatek_options.h
 litert/c/options/litert_qualcomm_options.h
 litert/c/options/litert_runtime_options.h
+litert/c/options/litert_samsung_options.h
 litert/cc/internal/litert_c_types_printing.h
 litert/cc/internal/litert_consts.h
 litert/cc/internal/litert_detail.h
@@ -83,5 +84,6 @@ litert/cc/options/litert_magic_number_options.h
 litert/cc/options/litert_mediatek_options.h
 litert/cc/options/litert_qualcomm_options.h
 litert/cc/options/litert_runtime_options.h
+litert/cc/options/litert_samsung_options.h
 litert/core/options.h
 litert/core/litert_toml_parser.h

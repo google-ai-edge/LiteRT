@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test")
+load("//litert/python:pytype.bzl", "pytype_strict_contrib_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],

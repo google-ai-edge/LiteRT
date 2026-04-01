@@ -1,3 +1,6 @@
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("//litert/build_common:litert_build_defs.bzl", "if_google")
+
 # Copyright 2025 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,9 +14,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_library")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
-load("//litert/build_common:litert_build_defs.bzl", "if_google")
+load("//litert/python:pytype.bzl", "pytype_strict_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],

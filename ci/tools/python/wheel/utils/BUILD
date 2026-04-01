@@ -1,4 +1,4 @@
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_binary")
+load("//litert/python:pytype.bzl", "pytype_strict_binary")
 
 package(
     default_visibility = ["//visibility:public"],

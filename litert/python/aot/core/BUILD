@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
+load("//litert/python:pytype.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 load("//litert/python/aot/core:build_defs.bzl", "tflxx_deps_if_enabled")
 
 package(
