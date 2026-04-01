@@ -580,6 +580,15 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "gpu_numerics_threshold_test",
+    srcs = ["gpu_numerics_threshold_test.cc"],
+    deps = [
+        ":gpu_numerics_threshold",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
