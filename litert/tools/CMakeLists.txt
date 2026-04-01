@@ -142,6 +142,7 @@ set(LITERT_TOOL_COMMON_LIBS
     litert_c_api
     litert_cc_api
     litert_cc_internal
+    litert_c_options
     litert_cc_options
     litert_compiler_plugin
     litert_core
@@ -186,6 +187,7 @@ if(ANDROID OR APPLE)
             litert_tool_flags_mediatek
             litert_tool_flags_qualcomm
             litert_tool_flags_samsung
+            litert_tool_flags_verisilicon
             ${LITERT_TOOL_COMMON_LIBS}
             tensorflow-lite
             ${ABSEIL_TOOL_LIBS}
@@ -201,6 +203,7 @@ else()
             litert_tool_flags_mediatek
             litert_tool_flags_qualcomm
             litert_tool_flags_samsung
+            litert_tool_flags_verisilicon
             Threads::Threads
             tensorflow-lite
             "-Wl,--start-group"
@@ -279,6 +282,7 @@ if(ANDROID OR APPLE)
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
             litert_tool_flags_qualcomm
+            litert_tool_flags_verisilicon
             ${LITERT_TOOL_COMMON_LIBS}
             tensorflow-lite
             ${ABSEIL_TOOL_LIBS}
@@ -293,6 +297,7 @@ else()
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
             litert_tool_flags_qualcomm
+            litert_tool_flags_verisilicon
             Threads::Threads
             tensorflow-lite
             "-Wl,--start-group"

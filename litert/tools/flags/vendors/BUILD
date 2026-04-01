@@ -292,3 +292,61 @@ cc_library(
     ],
     alwayslink = 1,
 )
+
+# VERISILICON ####################################################################################
+
+cc_library(
+    name = "verisilicon_flags",
+    srcs = ["verisilicon_flags.cc"],
+    hdrs = ["verisilicon_flags.h"],
+    copts = commandline_flag_copts() + [
+        "-DINCLUDE_VERISILICON_COMPILE_FLAGS",
+        "-DINCLUDE_VERISILICON_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/c/options:litert_verisilicon_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_verisilicon_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "verisilicon_flags_with_dynamic_runtime",
+    srcs = ["verisilicon_flags.cc"],
+    hdrs = ["verisilicon_flags.h"],
+    copts = [
+        "-DINCLUDE_VERISILICON_COMPILE_FLAGS",
+        "-DINCLUDE_VERISILICON_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "verisilicon_flags_test",
+    srcs = ["verisilicon_flags_test.cc"],
+    copts = [
+        "-DINCLUDE_VERISILICON_COMPILE_FLAGS",
+        "-DINCLUDE_VERISILICON_RUNTIME_FLAGS",
+    ],
+    deps = [
+        ":verisilicon_flags",
+        "//litert/c/options:litert_verisilicon_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_verisilicon_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:marshalling",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

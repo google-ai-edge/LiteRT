@@ -56,6 +56,7 @@ set(LITERT_C_PUBLIC_HEADERS
     options/litert_runtime_options.h
     options/litert_samsung_options.h
     options/litert_webnn_options.h
+    options/litert_verisilicon_options.h
 )
 
 set(LITERT_C_REQUIRED_INTERNAL_HEADERS
@@ -98,6 +99,7 @@ set(LITERT_C_PUBLIC_SOURCES
     options/litert_runtime_options.cc
     options/litert_samsung_options.cc
     options/litert_webnn_options.cc
+    options/litert_verisilicon_options.cc
 )
 
 file(GLOB LITERT_C_DISCOVERED_PUBLIC_HEADERS

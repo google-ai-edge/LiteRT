@@ -185,6 +185,24 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_verisilicon_options",
+    srcs = ["litert_verisilicon_options.cc"],
+    hdrs = ["litert_verisilicon_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_verisilicon_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
     name = "litert_intel_openvino_options",
     srcs = ["litert_intel_openvino_options.cc"],
     hdrs = ["litert_intel_openvino_options.h"],

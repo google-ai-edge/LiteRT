@@ -193,6 +193,10 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     endif()
   endif()
 
+  if(VENDOR STREQUAL "Verisilicon")
+    list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/verisilicon/dispatch/viplite_adapter_api.cc")
+  endif()
+
   set(TGT "dispatch_api_${VENDOR}_so")
   add_library(${TGT} SHARED ${DISPATCH_SRCS})
   if(VENDOR STREQUAL "MediaTek")
@@ -277,3 +281,6 @@ if(LITERT_ENABLE_QUALCOMM)
   # Use modular CMake structure for Qualcomm
   add_subdirectory(qualcomm)
 endif()
+
+# Verisilicon
+_litert_add_dispatch_so(Verisilicon "verisilicon/dispatch" "Verisilicon")
