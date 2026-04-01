@@ -23,6 +23,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 ####################################################################################################
 # Util
@@ -633,3 +634,87 @@ def litert_c_api_library(
             "//conditions:default": ":" + name + "_impl",
         }),
     )
+
+def litert_accelerator_library(
+        name,
+        srcs = [],
+        hdrs = [],
+        visibility = [],
+        deps = [],
+        tags = [],
+        shared_lib_name = "",
+        macos_dylib = False,
+        **kwargs):
+    """
+    Defines a LiteRT Accelerator library.
+
+    This macro defines four targets:
+    - `{name}`: A cc_library for static linking.
+    - `{name}_runtimecapi`: A internal cc_library for dynamic linking.
+    - `{name}_so`: A cc_shared_library for dynamic linking depends on `{name}_runtimecapi`.
+    - `{name}_shared_lib`: A cc_library for dynamic linking depends on `{name}_so`.
+
+    Args:
+      name: The name of the library.
+      srcs: Source files for the implementation.
+      hdrs: Public header files.
+      visibility: Visibility for the library.
+      deps: Dependencies for both header and implementation.
+      tags: Tags for the implementation target.
+      shared_lib_name: The name of the shared library.
+      macos_dylib: Whether to use for a macOS dylib.
+      **kwargs: Additional arguments passed to the implementation cc_library.
+    """
+    cc_library(
+        name = name,
+        srcs = srcs,
+        hdrs = hdrs,
+        defines = ["LITERT_USE_STATIC_LINKED_GPU_ACCELERATOR"],
+        visibility = visibility,
+        deps = deps,
+        tags = tags,
+        alwayslink = 1,
+        **kwargs
+    )
+
+    cc_library(
+        name = name + "_runtimecapi",
+        srcs = srcs,
+        hdrs = hdrs,
+        visibility = visibility,
+        deps = deps,
+        tags = tags,
+        **kwargs
+    )
+
+    # TODO b/495569152 - Add support for macOS dylib and Windows dll.
+    if macos_dylib == False:
+        cc_shared_library(
+            name = name + "_so",
+            additional_linker_inputs = export_lrt_runtime_only_script(),
+            features = select({
+                # Allow unresolved symbols which will be defined in the executable. There are no
+                # linker flags to allow unresolved symbols only of a given pattern like LiteRt*.
+                "//litert/c:resolve_symbols_in_exec": ["-no_undefined"],
+                "//conditions:default": [],
+            }),
+            shared_lib_name = shared_lib_name,
+            user_link_flags = export_lrt_runtime_only_linkopt() + [
+                "-Wl,-soname=" + shared_lib_name,
+            ] + litert_android_linkopts(),
+            visibility = [
+                "//third_party/odml/litert:__subpackages__",
+                "//litert:litert_internal_users",
+            ],
+            deps = [name + "_runtimecapi"],
+        )
+
+        cc_library(
+            name = name + "_shared_lib",
+            srcs = [name + "_so"],
+            linkstatic = 1,
+            visibility = [
+                "//third_party/odml/litert:__subpackages__",
+                "//litert:__subpackages__",
+            ],
+        )

@@ -23,6 +23,7 @@ litert_test(
     }),
     linkstatic = True,
     tags = [
+        "manual",
         # Don't build/test in OS until qnn is available.
         "no-remote-exec",
         "nobuilder",

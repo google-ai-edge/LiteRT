@@ -380,6 +380,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
           profiler_ =
               new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
         }
+        interpreter_options.SetDisableDelegateClustering(
+            runtime_options.disable_delegate_clustering);
 
         // Create error reporter based on mode
         switch (runtime_options.error_reporter_mode) {

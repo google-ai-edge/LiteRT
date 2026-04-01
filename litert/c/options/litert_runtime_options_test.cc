@@ -57,6 +57,11 @@ TEST(LiteRtRuntimeOptionsTest, CreateWorks) {
                 options, &compress_quantization_zero_points),
             kLiteRtStatusErrorNotFound);
 
+  bool disable_delegate_clustering;
+  EXPECT_EQ(LrtGetRuntimeOptionsDisableDelegateClustering(
+                options, &disable_delegate_clustering),
+            kLiteRtStatusErrorNotFound);
+
   LrtDestroyRuntimeOptions(options);
 }
 
@@ -67,6 +72,7 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
   const bool kEnableProfiling = true;
   const auto kErrorReporterMode = kLiteRtErrorReporterModeStderr;
   const bool kCompressZeroPoints = true;
+  const bool kDisableDelegateClustering = true;
 
   LITERT_ASSERT_OK(
       LrtSetRuntimeOptionsEnableProfiling(options, kEnableProfiling));
@@ -74,6 +80,8 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
       LrtSetRuntimeOptionsErrorReporterMode(options, kErrorReporterMode));
   LITERT_ASSERT_OK(LrtSetRuntimeOptionsCompressQuantizationZeroPoints(
       options, kCompressZeroPoints));
+  LITERT_ASSERT_OK(LrtSetRuntimeOptionsDisableDelegateClustering(
+      options, kDisableDelegateClustering));
 
   const char* identifier;
   void* payload = nullptr;
@@ -102,6 +110,8 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
             static_cast<int>(kErrorReporterMode));
   EXPECT_EQ(toml_tbl["compress_quantization_zero_points"].value<bool>().value(),
             kCompressZeroPoints);
+  EXPECT_EQ(toml_tbl["disable_delegate_clustering"].value<bool>().value(),
+            kDisableDelegateClustering);
 
   // Verify payload with our parser
   LiteRtRuntimeOptionsT runtime_options;
@@ -112,6 +122,8 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerialization) {
   EXPECT_EQ(runtime_options.error_reporter_mode, kErrorReporterMode);
   EXPECT_EQ(runtime_options.compress_quantization_zero_points,
             kCompressZeroPoints);
+  EXPECT_EQ(runtime_options.disable_delegate_clustering,
+            kDisableDelegateClustering);
 
   LiteRtDestroyOpaqueOptions(opaque_options);
   LrtDestroyRuntimeOptions(options);
@@ -149,6 +161,7 @@ TEST(LiteRtRuntimeOptionsTest, OpaqueOptionsSerializationOptionality) {
   // Verify other options are NOT present
   EXPECT_FALSE(toml_tbl["error_reporter_mode"]);
   EXPECT_FALSE(toml_tbl["compress_quantization_zero_points"]);
+  EXPECT_FALSE(toml_tbl["disable_delegate_clustering"]);
 
   LiteRtDestroyOpaqueOptions(opaque_options);
   LrtDestroyRuntimeOptions(options);

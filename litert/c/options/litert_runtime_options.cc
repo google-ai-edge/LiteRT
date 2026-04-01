@@ -28,6 +28,7 @@ struct LrtRuntimeOptions {
   std::optional<bool> enable_profiling;
   std::optional<LiteRtErrorReporterMode> error_reporter_mode;
   std::optional<bool> compress_quantization_zero_points;
+  std::optional<bool> disable_delegate_clustering;
 };
 
 LiteRtStatus LrtCreateRuntimeOptions(LrtRuntimeOptions** options) {
@@ -68,6 +69,11 @@ LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
     ss << "compress_quantization_zero_points = "
        << (options->compress_quantization_zero_points.value() ? "true"
                                                               : "false")
+       << "\n";
+  }
+  if (options->disable_delegate_clustering.has_value()) {
+    ss << "disable_delegate_clustering = "
+       << (options->disable_delegate_clustering.value() ? "true" : "false")
        << "\n";
   }
 
@@ -133,5 +139,23 @@ LiteRtStatus LrtGetRuntimeOptionsCompressQuantizationZeroPoints(
     return kLiteRtStatusErrorNotFound;
   }
   *compress_zero_points = options->compress_quantization_zero_points.value();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetRuntimeOptionsDisableDelegateClustering(
+    LrtRuntimeOptions* options, bool disable_delegate_clustering) {
+  if (!options) return kLiteRtStatusErrorInvalidArgument;
+  options->disable_delegate_clustering = disable_delegate_clustering;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetRuntimeOptionsDisableDelegateClustering(
+    const LrtRuntimeOptions* options, bool* disable_delegate_clustering) {
+  if (!options || !disable_delegate_clustering)
+    return kLiteRtStatusErrorInvalidArgument;
+  if (!options->disable_delegate_clustering.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *disable_delegate_clustering = options->disable_delegate_clustering.value();
   return kLiteRtStatusOk;
 }

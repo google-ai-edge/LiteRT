@@ -133,6 +133,7 @@ litert_test(
     }),
     linkstatic = True,
     tags = [
+        "manual",
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",

@@ -126,6 +126,8 @@ class DispatchDelegateKernel
   LiteRtExternalLiteRtBufferContextT* buffer_context_ = nullptr;
   std::vector<TfLiteOpaqueNode*> nodes_;
   std::vector<LiteRtDispatchInvocationContext> node_invocation_contexts_;
+  std::vector<std::vector<int>> node_input_tensor_indices_;
+  std::vector<std::vector<int>> node_output_tensor_indices_;
 
   // Store tensor IDs - get tensors on demand to avoid stale pointers
   std::vector<int> input_tensor_ids_;

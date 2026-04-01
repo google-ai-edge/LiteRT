@@ -53,6 +53,14 @@ class RuntimeOptions {
   /// @brief Gets the current flag for compressing quantization zero points.
   Expected<bool> GetCompressQuantizationZeroPoints() const;
 
+  /// @brief Sets the flag for disabling delegate clustering.
+  /// @param disable_delegate_clustering If true, delegate clustering will be
+  /// disabled.
+  Expected<void> SetDisableDelegateClustering(bool disable_delegate_clustering);
+
+  /// @brief Gets the current flag for disabling delegate clustering.
+  Expected<bool> GetDisableDelegateClustering() const;
+
   /// @brief Gets the underlying C options object.
   LrtRuntimeOptions* Get() { return options_.get(); }
 

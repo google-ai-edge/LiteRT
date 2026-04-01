@@ -1,6 +1,6 @@
 """ Macros for manylinux compliance verification test. """
 
-load("//litert/build_common:strict.default.bzl", "py_strict_test")
+load("//litert/python:strict.bzl", "py_strict_test")
 
 def verify_manylinux_compliance_test(
         name,
