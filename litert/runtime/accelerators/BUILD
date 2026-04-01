@@ -36,6 +36,7 @@ cc_library(
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_accelerator_registration",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_static_accelerator_registry",
         "//litert/c/internal:litert_tensor_buffer_registry_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

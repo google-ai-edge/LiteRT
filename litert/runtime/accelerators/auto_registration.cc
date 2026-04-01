@@ -19,7 +19,6 @@
 #include <string>
 #include <utility>
 
-#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_accelerator_registration.h"
@@ -31,27 +30,11 @@
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/c/internal/litert_static_accelerator_registry.h"
 #include "litert/core/environment.h"
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
-
-extern "C" {
-
-// Externally defined CPU (XNNPack) accelerator definition.
-#if defined(LITERT_USE_XNNPACK)
-extern LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
-#endif  // defined(LITERT_USE_XNNPACK)
-
-// Define a data pointer to an accelerator definition. This pointer is updated
-// by statically linked GPU accelerator.
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
-
-// Define a function pointer for the WebNN accelerator.
-LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
-    LiteRtEnvironmentT& environment) = nullptr;
-
-}  // extern "C"
 
 namespace litert {
 namespace {
