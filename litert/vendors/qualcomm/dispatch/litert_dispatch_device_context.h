@@ -15,12 +15,17 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
-#include "litert/c/litert_tensor_buffer.h"
+#include <cstddef>
+#include <map>
+#include <memory>
+#include <tuple>
+
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnInterface.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
 class LiteRtDispatchDeviceContextT {
@@ -58,6 +63,13 @@ class LiteRtDispatchDeviceContextT {
     invocation_context_ = invocation_context;
   }
 
+  using SharedContextHandle =
+      std::shared_ptr<litert::qnn::QnnManager::ContextHandle>;
+
+  litert::Expected<SharedContextHandle> GetOrCreateContext(
+      const void* bytecode_ptr, size_t bytecode_size,
+      Qnn_ProfileHandle_t profile_handle);
+
  private:
   struct TensorBufferRegistryEntry {
     LiteRtTensorBuffer tensor_buffer;
@@ -72,7 +84,7 @@ class LiteRtDispatchDeviceContextT {
   using TensorBufferRegistry = litert::qnn::Registry<LiteRtTensorBufferHandle,
                                                      TensorBufferRegistryEntry>;
 
-  LiteRtDispatchDeviceContextT(litert::qnn::QnnManager& qnn_manager)
+  explicit LiteRtDispatchDeviceContextT(litert::qnn::QnnManager& qnn_manager)
       : qnn_manager_(qnn_manager) {}
 
   litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
@@ -81,6 +93,15 @@ class LiteRtDispatchDeviceContextT {
   litert::qnn::QnnManager& qnn_manager_;
   TensorBufferRegistry tensor_buffer_registry_;
   LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
+
+  struct ContextCacheKey {
+    const void* ptr;
+    size_t size;
+    bool operator<(const ContextCacheKey& other) const {
+      return std::tie(ptr, size) < std::tie(other.ptr, other.size);
+    }
+  };
+  std::map<ContextCacheKey, SharedContextHandle> context_cache_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

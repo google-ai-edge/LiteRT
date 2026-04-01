@@ -26,6 +26,7 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <memory>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -81,7 +82,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
     LiteRtDispatchDeviceContextT& device_context,
-    QnnManager::ContextHandle&& context_handle,
+    std::shared_ptr<QnnManager::ContextHandle> context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
     Qnn_GraphHandle_t graph_handle)
     : qnn_manager_(qnn_manager),
@@ -152,8 +153,6 @@ LiteRtDispatchInvocationContextT::Create(
                       "Function name not found");
   }
 
-  auto configs = QnnManager::DefaultContextConfigs();
-
   auto profiling_level = qnn.GetOptions().GetProfiling();
   Qnn_ProfileHandle_t profile_handle = nullptr;
   if (profiling_level != ::qnn::Profiling::kOff) {
@@ -166,14 +165,10 @@ LiteRtDispatchInvocationContextT::Create(
     }
   }
 
-  auto context_handle = qnn.CreateContextHandle(
-      configs,
-      absl::MakeSpan(static_cast<const uint8_t*>(exec_bytecode_ptr),
-                     exec_bytecode_buffer->size),
-      profile_handle);
-  if (!context_handle) {
-    return Unexpected(context_handle.Error());
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto context_handle,
+      device_context.GetOrCreateContext(
+          exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
   if (auto status = qnn.Api()->graphRetrieve(context_handle->get(),
@@ -185,7 +180,7 @@ LiteRtDispatchInvocationContextT::Create(
 
   return Ptr(new LiteRtDispatchInvocationContextT(
       qnn, std::move(*context_binary_info), device_context,
-      std::move(*context_handle), profile_handle, graph_index, graph_handle));
+      std::move(context_handle), profile_handle, graph_index, graph_handle));
 }
 
 namespace {

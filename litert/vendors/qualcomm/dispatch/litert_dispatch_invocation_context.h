@@ -26,9 +26,7 @@
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
@@ -81,14 +79,14 @@ class LiteRtDispatchInvocationContextT {
     return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;
   }
 
-  Qnn_ContextHandle_t ContextHandle() { return context_handle_.get(); }
+  Qnn_ContextHandle_t ContextHandle() { return context_handle_->get(); }
 
  private:
   LiteRtDispatchInvocationContextT(
       litert::qnn::QnnManager& qnn_manager,
       const litert::qnn::ContextBinaryInfo& context_binary_info,
       LiteRtDispatchDeviceContextT& device_context,
-      litert::qnn::QnnManager::ContextHandle&& context_handle,
+      std::shared_ptr<litert::qnn::QnnManager::ContextHandle> context_handle,
       Qnn_ProfileHandle_t profile_handle, int graph_index,
       Qnn_GraphHandle_t graph_handle);
 
@@ -109,7 +107,7 @@ class LiteRtDispatchInvocationContextT {
 
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContextT& device_context_;
-  litert::qnn::QnnManager::ContextHandle context_handle_;
+  std::shared_ptr<litert::qnn::QnnManager::ContextHandle> context_handle_;
   Qnn_ProfileHandle_t profile_handle_;
   int graph_index_;
   Qnn_GraphHandle_t graph_handle_;

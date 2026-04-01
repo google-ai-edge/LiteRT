@@ -17,8 +17,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <utility>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -212,6 +215,36 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   }
 
   return mem_handle;
+}
+
+Expected<LiteRtDispatchDeviceContextT::SharedContextHandle>
+LiteRtDispatchDeviceContextT::GetOrCreateContext(
+    const void* bytecode_ptr, size_t bytecode_size,
+    Qnn_ProfileHandle_t profile_handle) {
+  ContextCacheKey key{bytecode_ptr, bytecode_size};
+  auto it = context_cache_.find(key);
+  if (it != context_cache_.end()) {
+    LITERT_LOG(LITERT_INFO,
+               "Reusing cached QNN context for bytecode %p (size %zu)",
+               bytecode_ptr, bytecode_size);
+    return it->second;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Creating new QNN context for bytecode %p (size %zu)",
+             bytecode_ptr, bytecode_size);
+  auto context_handle_expected = qnn_manager_.CreateContextHandle(
+      QnnManager::DefaultContextConfigs(),
+      absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size),
+      profile_handle);
+
+  if (!context_handle_expected) {
+    return Unexpected(context_handle_expected.Error());
+  }
+
+  auto shared_handle = std::make_shared<QnnManager::ContextHandle>(
+      std::move(*context_handle_expected));
+  context_cache_[key] = shared_handle;
+  return shared_handle;
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
