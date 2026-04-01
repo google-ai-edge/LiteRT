@@ -53,14 +53,14 @@ jobs:
       
       - name: Build Android Artifacts with Bazel
         run: |
-         bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert_kotlin_api
+         bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert
             
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-artifacts
           path: |
-            bazel-bin/litert/kotlin/liblitert_kotlin_api.jar
+            bazel-bin/litert/kotlin/litert.aar
             bazel-bin/tflite/java/tensorflow-lite-api.aar
             bazel-bin/tflite/java/tensorflow-lite.aar
             bazel-bin/tflite/java/tensorflow-lite-gpu-api.aar
