@@ -11,10 +11,10 @@
 
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
-#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 
 namespace qnn {
 namespace {
@@ -153,11 +153,25 @@ TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
 }
 
 TEST(MiscTests, DISABLED_LoadHtpBackendApiTest) {
+  if (!::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
   DLHandle handle = ::qnn::CreateDLHandle(::qnn::HtpBackend::GetLibraryName());
   auto api = ::qnn::ResolveQnnApi(
       handle.get(), ::qnn::HtpBackend::GetExpectedBackendVersion());
 
   ASSERT_TRUE(api);
+}
+
+TEST(MiscTests, IsTestHtpBackendTest) {
+  qnn::SetTestBackend(BackendType::kHtpBackend);
+  EXPECT_TRUE(qnn::IsTestHtpBackend());
+}
+
+TEST(MiscTests, IsTestDspBackendTest) {
+  qnn::SetTestBackend(BackendType::kDspBackend);
+  EXPECT_TRUE(qnn::IsTestDspBackend());
 }
 
 }  // namespace qnn

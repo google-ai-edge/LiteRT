@@ -349,9 +349,12 @@ litert_device_test(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/test:common",
-        "//litert/test:matchers",
+        "//litert/test:matchers_oss",
+        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/utils:test_utils",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest",
     ],
 )
 

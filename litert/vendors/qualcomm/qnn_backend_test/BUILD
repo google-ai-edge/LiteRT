@@ -1,7 +1,8 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_test", "litert_test_lib", "make_rpaths")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -22,6 +23,7 @@ litert_test(
         ],
     }),
     linkstatic = True,
+    no_main = True,
     tags = [
         "manual",
         # Don't build/test in OS until qnn is available.
@@ -34,14 +36,16 @@ litert_test(
     deps = [
         ":test_utils",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:test_main",
+        "@com_google_googletest//:gtest",
     ],
 )
 
-litert_test_lib(
+cc_library(
     name = "test_utils",
+    testonly = True,
     srcs = ["test_utils.cc"],
     hdrs = ["test_utils.h"],
-    ungrte = True,
     deps = [
         "//litert/test:common",
         "//litert/vendors/qualcomm:qnn_manager",
@@ -49,5 +53,7 @@ litert_test_lib(
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:qnn_model",
+        "//litert/vendors/qualcomm/core/utils:test_utils",
+        "@com_google_googletest//:gtest",
     ],
 )

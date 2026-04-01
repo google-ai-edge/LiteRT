@@ -7,6 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 # Common QNN library
 add_library(qnn_common STATIC
     common.cc
+    utils/test_utils.cc
 )
 
 target_include_directories(qnn_common

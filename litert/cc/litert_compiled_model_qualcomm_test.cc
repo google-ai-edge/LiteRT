@@ -17,16 +17,16 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "litert/vendors/qualcomm/core/utils/test_utils.h"
 
 namespace litert {
 namespace {
@@ -34,6 +34,10 @@ namespace {
 constexpr absl::string_view kDispatchLibraryDir = "vendors/qualcomm/dispatch";
 
 TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
+  if (!::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
   const std::string dispatch_library_dir =
       testing::GetLiteRtPath(kDispatchLibraryDir);
   absl::string_view dispatch_library_dir_view(dispatch_library_dir);
@@ -70,6 +74,10 @@ TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
 }
 
 TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
+  if (!::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
   const std::string dispatch_library_dir =
       testing::GetLiteRtPath(kDispatchLibraryDir);
   absl::string_view dispatch_library_dir_view(dispatch_library_dir);

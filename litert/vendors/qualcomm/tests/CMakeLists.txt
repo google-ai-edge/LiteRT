@@ -49,6 +49,7 @@ target_sources(qnn_manager_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_manager_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../tools/dump.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/utils/test_main.cc
 )
 
 target_link_libraries(qnn_manager_test
@@ -56,7 +57,7 @@ target_link_libraries(qnn_manager_test
         absl::log_internal_message
         qnn_manager
         litert_test_common
-        GTest::gtest_main
+        GTest::gtest
 )
 
 # QNN backend model test
@@ -201,6 +202,7 @@ add_executable(utils_test)
 target_sources(utils_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../core/utils/utils_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/utils/test_main.cc
 )
 
 target_link_libraries(utils_test
