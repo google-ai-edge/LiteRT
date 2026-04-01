@@ -25,6 +25,14 @@
 extern "C" {
 #endif  // __cplusplus
 
+// GPU HW Device ID. It could be specific HW object depends on the environment
+// such as `WGPUDevice` in WebGPU.
+typedef void* LiteRtGpuDeviceId;
+
+// GPU HW Command Queue ID. It could be specific HW object depends on the
+// environment such as `WGPUQueue` in WebGPU.
+typedef void* LiteRtGpuQueueId;
+
 // Generic hardware memory handle type. This could be a specific hardware
 // memory handle type such as cl_mem, WGPBuffer, etc.
 // It's created by `CreateCustomTensorBuffer` and destroyed by
@@ -46,7 +54,8 @@ typedef struct HwMemoryInfo* HwMemoryInfoPtr;
 
 // Custom TensorBuffer handler function to create a custom TensorBuffer.
 typedef LiteRtStatus (*CreateCustomTensorBuffer)(
-    void* device_id, void* queue_id, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info);
 
@@ -56,7 +65,8 @@ typedef LiteRtStatus (*CreateCustomTensorBuffer)(
 // or destroy the handle. The implementation should store an "owns_tensor =
 // false" flag inside its HwMemoryInfo-derived struct.
 typedef LiteRtStatus (*ImportCustomTensorBuffer)(
-    void* device_id, void* queue_id, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
     size_t bytes, size_t packed_bytes, HwMemoryInfoPtr* hw_memory_info);
 

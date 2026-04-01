@@ -38,7 +38,8 @@ namespace litert {
 namespace openvino {
 
 #if defined(LITERT_WINDOWS_OS)
-LiteRtStatus CreateRemoteTensorBuffer(void* device_id, void* queue_id,
+LiteRtStatus CreateRemoteTensorBuffer(LiteRtGpuDeviceId device_id,
+                                      LiteRtGpuQueueId queue_id,
                                       const LiteRtRankedTensorType* tensor_type,
                                       LiteRtTensorBufferType buffer_type,
                                       size_t bytes, size_t packed_bytes,
