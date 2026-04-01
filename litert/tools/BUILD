@@ -141,6 +141,7 @@ litert_bin(
             "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+            "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         ],
     }),
 )
@@ -181,6 +182,7 @@ litert_bin(
         "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/functional:function_ref",
@@ -280,6 +282,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:samsung_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings:str_format",
@@ -379,6 +382,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_mediatek_options",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/c/options:litert_samsung_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
@@ -396,6 +400,7 @@ cc_library(
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_samsung_options",
         "//litert/cc/options:litert_runtime_options",
         "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
@@ -491,6 +496,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "//tflite/profiling:time",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
@@ -590,6 +596,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             # copybara:uncomment_begin(google-only)
