@@ -21,6 +21,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_element_type.h"
 
 namespace litert::litert_wrapper_utils {
 
@@ -73,5 +74,34 @@ PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer) {
                     &DestroyTensorBufferFromCapsule);
   return capsule;
 }
+using litert::ElementType;
 
+const char* ElementTypeToString(ElementType dtype) {
+  switch (dtype) {
+    case ElementType::Float32:
+      return "float32";
+    case ElementType::Float16:
+      return "float16";
+    case ElementType::Int32:
+      return "int32";
+    case ElementType::UInt8:
+      return "uint8";
+    case ElementType::Int64:
+      return "int64";
+    case ElementType::Bool:
+      return "bool";
+    case ElementType::Int16:
+      return "int16";
+    case ElementType::Int8:
+      return "int8";
+    case ElementType::Float64:
+      return "float64";
+    case ElementType::UInt32:
+      return "uint32";
+    case ElementType::UInt16:
+      return "uint16";
+    default:
+      return "unknown";
+  }
+}
 }  // namespace litert::litert_wrapper_utils
