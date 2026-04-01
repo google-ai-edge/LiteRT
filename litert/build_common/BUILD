@@ -134,6 +134,37 @@ selects.config_setting_group(
     ],
 )
 
+config_setting(
+    name = "ios_arm64",
+    # copybara:uncomment_begin(google-only)
+    # constraint_values = [
+    # "@platforms//os:ios",
+    # "@platforms//cpu:arm64",
+    # ],
+    # copybara:uncomment_end_and_comment_begin
+    values = {
+        "apple_platform_type": "ios",
+        "cpu": "ios_arm64",
+    },
+    # copybara:comment_end
+)
+
+config_setting(
+    name = "ios_sim_arm64",
+    # copybara:uncomment_begin(google-only)
+    # constraint_values = [
+    # "@platforms//os:ios",
+    # "@platforms//cpu:arm64",
+    # "//third_party/bazel_rules/apple_support/constraints:simulator",
+    # ],
+    # copybara:uncomment_end_and_comment_begin
+    values = {
+        "apple_platform_type": "ios",
+        "cpu": "ios_sim_arm64",
+    },
+    # copybara:comment_end
+)
+
 exports_files(srcs = [
     "export_litert_only_darwin.lds",
     "export_litert_only_linux.lds",
