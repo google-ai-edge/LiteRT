@@ -44,8 +44,8 @@ Expected<litert::internal::TensorBufferRegistry*> GetTensorBufferRegistry(
 
 Expected<std::pair<void*, void*>> GetCustomGpuResource(
     LiteRtEnvironment env, const CustomTensorBufferHandlers& handlers) {
-  void* device_id = nullptr;
-  void* queue_id = nullptr;
+  LiteRtGpuDeviceId device_id = nullptr;
+  LiteRtGpuQueueId queue_id = nullptr;
   LiteRtEnvironmentOptions options;
   auto status = LiteRtGetEnvironmentOptions(env, &options);
   if (status != kLiteRtStatusOk) {

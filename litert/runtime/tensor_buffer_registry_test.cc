@@ -43,7 +43,8 @@ static int kDummyHandleStorage = 0;
 constexpr char kMockBufferValue = 0xaa;
 
 LiteRtStatus CreateMyCustomTensorBuffer(
-    void* device_id, void* queue_id, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info) {
   auto memory_info =

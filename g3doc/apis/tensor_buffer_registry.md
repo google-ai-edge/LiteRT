@@ -42,16 +42,18 @@ WebGPU device) and a command queue. Instead of having buffer handlers directly
 fetch `LiteRtEnvironmentOptions`, the `TensorBufferRegistry` extracts these
 resources for you using `device_tag` and `queue_tag`. During creation or import,
 the runtime looks up these tags in `LiteRtEnvironmentOptions`, retrieves the
-values as raw `void*`, and passes them directly as `device_id` and `queue_id`
-over to your `create_func` and `import_func`. This isolates the environment
-lookup logic from the handlers and limits their reliance on the broader C API.
+values as handles, and passes them directly as `LiteRtGpuDeviceId device_id` and
+`LiteRtGpuQueueId queue_id` over to your `create_func` and `import_func`. This
+isolates the environment lookup logic from the handlers and limits their
+reliance on the broader C API.
 
 ## Example from tests (litert/runtime/tensor_buffer_registry_test.cc):
 
 ```cpp
 // Define your custom creation function
 LiteRtStatus CreateMyCustomTensorBuffer(
-    void* device_id, void* queue_id, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info) {
   // Your custom buffer creation logic here
