@@ -252,6 +252,7 @@ maven_install(
         "androidx.lifecycle:lifecycle-common:2.8.7",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
         "com.google.guava:guava:33.4.6-android",
+        "org.jetbrains.kotlin:kotlin-stdlib:2.0.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0",
