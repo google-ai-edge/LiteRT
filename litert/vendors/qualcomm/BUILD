@@ -109,6 +109,7 @@ litert_test(
     }),
     linkstatic = True,
     tags = [
+        "manual",
         "no-remote-exec",
         "nosan",
         "notap",

@@ -222,10 +222,35 @@ Expected<void> DispatchDelegateKernel::InitHelper(
   LITERT_ASSIGN_OR_RETURN(auto nodes, GetNodes(context, params));
   std::swap(nodes_, nodes);
 
+  node_input_tensor_indices_.clear();
+  node_input_tensor_indices_.reserve(nodes_.size());
+  node_output_tensor_indices_.clear();
+  node_output_tensor_indices_.reserve(nodes_.size());
+
   for (auto& node : nodes_) {
     LITERT_ASSIGN_OR_RETURN(auto node_invocation_contexts,
                             CreateNodeInvocationContext(context, node));
     node_invocation_contexts_.push_back(node_invocation_contexts);
+
+    const int* input_indices = nullptr;
+    int num_inputs = 0;
+    TfLiteOpaqueNodeInputs(node, &input_indices, &num_inputs);
+    std::vector<int> node_input_indices;
+    node_input_indices.reserve(num_inputs);
+    for (int i = 0; i < num_inputs; ++i) {
+      node_input_indices.push_back(input_indices[i]);
+    }
+    node_input_tensor_indices_.push_back(std::move(node_input_indices));
+
+    const int* output_indices = nullptr;
+    int num_outputs = 0;
+    TfLiteOpaqueNodeOutputs(node, &output_indices, &num_outputs);
+    std::vector<int> node_output_indices;
+    node_output_indices.reserve(num_outputs);
+    for (int i = 0; i < num_outputs; ++i) {
+      node_output_indices.push_back(output_indices[i]);
+    }
+    node_output_tensor_indices_.push_back(std::move(node_output_indices));
   }
 
   // Store tensor IDs for later pointer refresh
@@ -311,8 +336,7 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
       continue;
     }
 
-    if (auto& tensor_buffer_info =
-            tensor_buffer_infos_.find(tensor_id)->second;
+    if (auto& tensor_buffer_info = tensor_buffer_infos_.find(tensor_id)->second;
         tensor_buffer_info.maybe_sync_with_cpu) {
       void* tensor_data = TfLiteOpaqueTensorData(tfl_tensor);
       // Note that tensor_data may be null if the TFL allocated decided to not
@@ -360,8 +384,7 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
       continue;
     }
 
-    if (auto& tensor_buffer_info =
-            tensor_buffer_infos_.find(tensor_id)->second;
+    if (auto& tensor_buffer_info = tensor_buffer_infos_.find(tensor_id)->second;
         tensor_buffer_info.maybe_sync_with_cpu) {
       void* tensor_data = TfLiteOpaqueTensorData(tfl_tensor);
       // Note that tensor_data may be null if the TFL allocated decided to not
@@ -549,22 +572,19 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
 
 Expected<void> DispatchDelegateKernel::ComputeTensorPortConnections(
     TfLiteOpaqueContext* context) {
-  for (auto node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
-    auto& node = nodes_[node_idx];
-
-    const int* input_indices = nullptr;
-    int num_node_inputs = 0;
-    TfLiteOpaqueNodeInputs(node, &input_indices, &num_node_inputs);
-    for (auto i = 0; i < num_node_inputs; ++i) {
-      io_tensors_port_connections_[input_indices[i]].push_back(
+  for (auto node_idx = 0; node_idx < node_invocation_contexts_.size();
+       ++node_idx) {
+    const auto& input_indices = node_input_tensor_indices_[node_idx];
+    for (auto i = 0; i < input_indices.size(); ++i) {
+      int tensor_idx = input_indices[i];
+      io_tensors_port_connections_[tensor_idx].push_back(
           {/*.node_idx=*/node_idx, /*port_idx*/ i, /*is_input_port=*/true});
     }
 
-    const int* output_indices = nullptr;
-    int num_node_outputs = 0;
-    TfLiteOpaqueNodeOutputs(node, &output_indices, &num_node_outputs);
-    for (auto i = 0; i < num_node_outputs; ++i) {
-      io_tensors_port_connections_[output_indices[i]].push_back(
+    const auto& output_indices = node_output_tensor_indices_[node_idx];
+    for (auto i = 0; i < output_indices.size(); ++i) {
+      int tensor_idx = output_indices[i];
+      io_tensors_port_connections_[tensor_idx].push_back(
           {/*.node_idx=*/node_idx, /*port_idx*/ i, /*is_input_port=*/false});
     }
   }
@@ -666,9 +686,9 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
 
 Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     TfLiteOpaqueContext* context) {
-  absl::flat_hash_set<int> io_tensors;
-  io_tensors.insert(input_tensor_ids_.begin(), input_tensor_ids_.end());
-  io_tensors.insert(output_tensor_ids_.begin(), output_tensor_ids_.end());
+  absl::flat_hash_set<int> io_tensor_ids;
+  io_tensor_ids.insert(input_tensor_ids_.begin(), input_tensor_ids_.end());
+  io_tensor_ids.insert(output_tensor_ids_.begin(), output_tensor_ids_.end());
 
   // First allocate I/O tensor buffers. However, note that if a tensor buffer is
   // already associated with a given I/O, we use that one; otherwise allocate a
@@ -684,7 +704,7 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
 
   auto allocate_and_register =
       [this, context, &unused_buffer_handles,
-       &io_tensors](int tensor_id) -> Expected<void> {
+       &io_tensor_ids](int tensor_id) -> Expected<void> {
     auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
     if (!tfl_tensor) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
@@ -697,7 +717,7 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
       // If a new tensor buffer was attached to an I/O TFL tensor (e.g., user
       // has supplied new inputs/outputs to the model, then we need to use that
       // one.
-      if (io_tensors.find(tensor_id) == io_tensors.end()) {
+      if (io_tensor_ids.find(tensor_id) == io_tensor_ids.end()) {
         return {};
       }
 
@@ -774,8 +794,8 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     }
 
     // Register the tensor buffer with the dispatch API.
-    LITERT_RETURN_IF_ERROR(
-        RegisterBufferWithDispatchApi(tensor_id, std::move(buffer_to_register)));
+    LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
+        tensor_id, std::move(buffer_to_register)));
     return {};
   };
 
@@ -886,15 +906,13 @@ Expected<void> DispatchDelegateKernel::RegisterBufferWithDispatchApi(
 Expected<void>
 DispatchDelegateKernel::AttachBuffersToInvocationContextsIfNeeded(
     TfLiteOpaqueContext* context) {
-  for (auto node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
-    auto* node = nodes_[node_idx];
+  for (auto node_idx = 0; node_idx < node_invocation_contexts_.size();
+       ++node_idx) {
     auto invocation_context = node_invocation_contexts_[node_idx];
 
-    // Process inputs using tensor ID to handle mapping
-    const int* input_indices = nullptr;
-    int num_node_inputs = 0;
-    TfLiteOpaqueNodeInputs(node, &input_indices, &num_node_inputs);
-    for (auto i = 0; i < num_node_inputs; ++i) {
+    // Process inputs
+    const auto& input_indices = node_input_tensor_indices_[node_idx];
+    for (auto i = 0; i < input_indices.size(); ++i) {
       int tensor_idx = input_indices[i];
 
       auto tensor_info_iter = tensor_buffer_infos_.find(tensor_idx);
@@ -920,11 +938,9 @@ DispatchDelegateKernel::AttachBuffersToInvocationContextsIfNeeded(
           LiteRtDispatchAttachInput(invocation_context, i, buffer_handle));
     }
 
-    // Process outputs using tensor ID to handle mapping
-    const int* output_indices = nullptr;
-    int num_node_outputs = 0;
-    TfLiteOpaqueNodeOutputs(node, &output_indices, &num_node_outputs);
-    for (auto i = 0; i < num_node_outputs; ++i) {
+    // Process outputs
+    const auto& output_indices = node_output_tensor_indices_[node_idx];
+    for (auto i = 0; i < output_indices.size(); ++i) {
       int tensor_idx = output_indices[i];
 
       auto tensor_info_iter = tensor_buffer_infos_.find(tensor_idx);
@@ -965,15 +981,13 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
   std::vector<LiteRtEvent> output_events;
 
   // Run NPU bytecodes asynchronously and in topological order.
-  for (auto node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
-    auto* node = nodes_[node_idx];
+  for (auto node_idx = 0; node_idx < node_invocation_contexts_.size();
+       ++node_idx) {
     auto invocation_context = node_invocation_contexts_[node_idx];
 
-    const int* input_indices = nullptr;
-    int num_node_inputs = 0;
-    TfLiteOpaqueNodeInputs(node, &input_indices, &num_node_inputs);
-    for (auto i = 0; i < num_node_inputs; ++i) {
-      int tensor_idx = input_indices[i];
+    const auto& input_indices = node_input_tensor_indices_[node_idx];
+    for (auto i = 0; i < input_indices.size(); ++i) {
+      auto tensor_idx = input_indices[i];
       auto& tensor_buffer_info = tensor_buffer_infos_.find(tensor_idx)->second;
       if (tensor_buffer_info.tensor_buffer->HasEvent()) {
         LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event,
@@ -983,10 +997,8 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
       }
     }
 
-    const int* output_indices = nullptr;
-    int num_node_outputs = 0;
-    TfLiteOpaqueNodeOutputs(node, &output_indices, &num_node_outputs);
-    output_events.resize(num_node_outputs);
+    const auto& output_indices = node_output_tensor_indices_[node_idx];
+    output_events.resize(output_indices.size());
 
     // Apply per-run options, if supported by the dispatch runtime.
     {
@@ -1007,8 +1019,8 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
     LITERT_RETURN_IF_ERROR(LiteRtDispatchInvokeAsync(
         invocation_context, output_events.size(), output_events.data()));
 
-    for (auto i = 0; i < num_node_outputs; ++i) {
-      int tensor_idx = output_indices[i];
+    for (auto i = 0; i < output_indices.size(); ++i) {
+      auto tensor_idx = output_indices[i];
       auto& tensor_buffer_info = tensor_buffer_infos_.find(tensor_idx)->second;
       tensor_buffer_info.tensor_buffer->SetEvent(output_events[i]);
     }
@@ -1035,16 +1047,12 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
       // main CPU, before we can dispatch the HW, which may lead to deadlocks,
       // based on how the user code is written.
       if (async_dispatch_) {
-        auto port_connections_it = io_tensors_port_connections_.find(tensor_id);
-        if (port_connections_it == io_tensors_port_connections_.end()) {
-          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                            "Tensor port connections not found");
-        }
-        const auto& port_connections = port_connections_it->second;
+        const auto& port_connections =
+            io_tensors_port_connections_.find(tensor_id)->second;
         for (const auto& [node_idx, port_idx, is_input_port] :
              port_connections) {
           if (is_input_port) {
-            auto* invocation_context = node_invocation_contexts_[node_idx];
+            auto invocation_context = node_invocation_contexts_[node_idx];
             (void)LiteRtDispatchAttachInputEvent(invocation_context, port_idx,
                                                  event);
           }
@@ -1060,7 +1068,9 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
   }
 
   // Run NPU bytecodes synchronously and in topological order.
-  for (auto* invocation_context : node_invocation_contexts_) {
+  for (auto node_idx = 0; node_idx < node_invocation_contexts_.size();
+       ++node_idx) {
+    auto invocation_context = node_invocation_contexts_[node_idx];
     // Apply per-run options, if supported by the dispatch runtime.
     LiteRtOptions run_options =
         buffer_context_ ? buffer_context_->GetRunOptions() : nullptr;

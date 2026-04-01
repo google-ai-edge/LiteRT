@@ -127,6 +127,51 @@ ModelBuffer BuildModel(absl::string_view group_name) {
   return result;
 }
 
+ModelBuffer BuildModelWithoutExternalWeights() {
+  flatbuffers::FlatBufferBuilder builder;
+
+  const std::vector<int32_t> tensor_shape = {
+      static_cast<int32_t>(kTensorElementCount)};
+  auto tensor = tflite::CreateTensor(
+      builder, builder.CreateVector(tensor_shape), tflite::TensorType_UINT8,
+      /*buffer=*/0, builder.CreateString("inline_tensor"),
+      /*quantization=*/0,
+      /*is_variable=*/false,
+      /*sparsity=*/0,
+      /*shape_signature=*/0,
+      /*has_rank=*/false,
+      /*variant_tensors=*/0, /*external_buffer=*/0);
+
+  auto tensors_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::Tensor>>{tensor});
+  auto empty_int_vec = builder.CreateVector<int32_t>(std::vector<int32_t>{});
+  auto empty_op_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::Operator>>{});
+
+  auto subgraph =
+      tflite::CreateSubGraph(builder, tensors_vec, empty_int_vec, empty_int_vec,
+                             empty_op_vec, builder.CreateString("main"));
+  auto subgraphs_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::SubGraph>>{subgraph});
+
+  auto buffer = tflite::CreateBuffer(builder);
+  auto buffers_vec = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::Buffer>>{buffer});
+
+  auto model = tflite::CreateModel(
+      builder, /*version=*/3,
+      /*operator_codes=*/0, subgraphs_vec, builder.CreateString("test_model"),
+      buffers_vec, /*metadata_buffer=*/0, /*metadata=*/0,
+      /*signature_defs=*/0, /*external_buffer_groups=*/0,
+      /*external_buffers=*/0);
+  tflite::FinishModelBuffer(builder, model);
+
+  ModelBuffer result;
+  result.data.assign(builder.GetBufferPointer(),
+                     builder.GetBufferPointer() + builder.GetSize());
+  return result;
+}
+
 std::string WriteWeightsFile(absl::string_view filename,
                              std::string_view payload) {
   std::string path =
@@ -248,6 +293,18 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   ExpectHostBufferMetadata(access);
   auto expected = ExpectedSlice(payload);
   ExpectHostBufferEquals(access, expected);
+}
+
+TEST(ExternalWeightLoaderTest, NoExternalWeightsIsNoOp) {
+  auto model = BuildModelWithoutExternalWeights();
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model());
+  ASSERT_NE(loader, nullptr);
+  EXPECT_TRUE(loader->GetWeightInfo().empty());
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  request.opencl = false;
+  EXPECT_TRUE(loader->PrepareAccess(request, /*env=*/nullptr).ok());
 }
 
 }  // namespace
