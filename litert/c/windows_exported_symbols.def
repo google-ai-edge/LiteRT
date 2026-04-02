@@ -109,7 +109,6 @@ EXPORTS
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
   LiteRtGetNextOpaqueOptions
-  LiteRtGetNumLayoutElements
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
   LiteRtGetNumModelSubgraphs
