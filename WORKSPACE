@@ -268,8 +268,8 @@ maven_install(
 # Kotlin rules
 http_archive(
     name = "rules_kotlin",
-    sha256 = "e1448a56b2462407b2688dea86df5c375b36a0991bd478c2ddd94c97168125e2",
-    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.1.3/rules_kotlin-v2.1.3.tar.gz",
+    sha256 = "13d5b767d697473ced9b55547a18a6ab65ab3fae5440555deee8a44c886b50aa",
+    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.3.20/rules_kotlin-v2.3.20.tar.gz",
 )
 
 # Sentencepiece
@@ -329,6 +329,26 @@ stblib()
 load("//third_party/models:workspace.bzl", "models")
 
 models()
+
+# Android rules. Need latest rules_android_ndk to use NDK 26+.
+http_archive(
+    name = "rules_android_ndk",
+    sha256 = "f3416a3f11e9389a11ac0b64af4c220199f1a5c6812d1b8492b9508d880d8d21",
+    strip_prefix = "rules_android_ndk-0.1.6",
+    url = "https://github.com/bazelbuild/rules_android_ndk/archive/refs/tags/v0.1.6.tar.gz",
+)
+
+load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
+
+android_ndk_repository(name = "androidndk")
+
+load("//:android_ndk_env.bzl", "check_android_ndk_env")
+
+check_android_ndk_env(name = "android_ndk_env")
+
+load("@android_ndk_env//:current_android_ndk_env.bzl", "ANDROID_NDK_HOME_IS_SET")
+
+register_toolchains("@androidndk//:all" if ANDROID_NDK_HOME_IS_SET else "@android_ndk_env//:all")
 
 # VENDOR SDKS ######################################################################################
 
