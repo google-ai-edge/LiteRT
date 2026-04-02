@@ -757,6 +757,7 @@ cc_test(
     linkopts = ["-ldl"],
     deps = LITERT_C_API_COMMON_DEPS + [
         ":litert_profiler_event",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/c/options:litert_webnn_options",
