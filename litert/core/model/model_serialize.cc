@@ -526,20 +526,21 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   // op code for the dispatch ops
   auto tfl_op_codes = litert::internal::TakeTflOpCodes(model);
   // don't push dispatch op code if it already exists
-  bool found_dispatch_op_code = false;
-  for (const auto& op_code : tfl_op_codes) {
-    if (op_code->builtin_code == tflite::BuiltinOperator_CUSTOM &&
-        op_code->custom_code == kLiteRtDispatchOpCustomName) {
-      found_dispatch_op_code = true;
+  int32_t dispatch_op_code_index = -1;
+  for (size_t i = 0; i < tfl_op_codes.size(); ++i) {
+    if (tfl_op_codes[i]->builtin_code == tflite::BuiltinOperator_CUSTOM &&
+        tfl_op_codes[i]->custom_code == kLiteRtDispatchOpCustomName) {
+      dispatch_op_code_index = i;
       break;
     }
   }
-  if (!found_dispatch_op_code) {
+  if (dispatch_op_code_index == -1) {
     tfl_op_codes.push_back(
         MakeCustomOpCode(std::string(kLiteRtDispatchOpCustomName)));
+    dispatch_op_code_index = tfl_op_codes.size() - 1;
   }
 
-  SerializationContext builder(tfl_op_codes.size() - 1, model,
+  SerializationContext builder(dispatch_op_code_index, model,
                                bytecode_alignment);
   builder.Model().operator_codes = std::move(tfl_op_codes);
 
