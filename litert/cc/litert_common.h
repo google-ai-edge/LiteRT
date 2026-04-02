@@ -63,6 +63,10 @@ enum class Status : int {
       kLiteRtStatusErrorUnsupportedCompilerVersion,
   kErrorIncompatibleByteCodeVersion =
       kLiteRtStatusErrorIncompatibleByteCodeVersion,
+  /// Shape inference related errors.
+  kErrorShapeInferenceUnsupportedOp =
+      kLiteRtStatusErrorUnsupportedOpShapeInferer,
+  kErrorShapeInferenceFailed = kLiteRtStatusErrorShapeInferenceFailed,
 };
 // LINT.ThenChange(../c/litert_common.h:status_codes)
 
