@@ -1280,5 +1280,49 @@ TEST(ModelLoadTest, IgnoreNonDispatchCustomOp) {
   EXPECT_FALSE(litert_model->get()->FindOpAsset(litert_op));
 }
 
+TEST(ModelSerializeTest, SerializeWithExistingDispatchOpCodeNotAtEnd) {
+  auto model = litert::testing::LoadTestFileModel(kAddSimple);
+  ASSERT_TRUE(model);
+  auto litert_model_val = std::move(*model.Get());
+  auto op = litert_model_val.MainSubgraph()->Ops().front();
+
+  OwningBufferRef<uint8_t> buffer("SOME_BYTE_CODE");
+  const auto buf_id =
+      litert_model_val.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+  litert_model_val.AttachAssetToOp(op, buf_id, "foo");
+
+  op->SetOpCode(kLiteRtOpCodeTflCustom);
+  litert::internal::SetTflOpCodeInd(*op,
+                                    litert::internal::kDispatchOpCodeTflInd);
+
+  auto serialized1 = SerializeModel(std::move(litert_model_val));
+  ASSERT_TRUE(serialized1);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized1);
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // Add another custom op code AFTER the dispatch op code
+  auto op_code = std::make_unique<tflite::OperatorCodeT>();
+  op_code->builtin_code = tflite::BuiltinOperator_CUSTOM;
+  op_code->custom_code = "OTHER_CUSTOM_OP";
+  tfl_model->operator_codes.push_back(std::move(op_code));
+
+  auto serialized2 = SerializeFlatbuffer(*tfl_model);
+  auto litert_model2 = LoadModelFromBuffer(serialized2);
+  ASSERT_TRUE(litert_model2);
+
+  // Now serialize it again
+  auto serialized3 = SerializeModel(std::move(*litert_model2->get()));
+  ASSERT_TRUE(serialized3);
+
+  // Verify the new flatbuffer uses the correct custom code
+  auto fb3 = FlatbufferWrapper::CreateFromBuffer(*serialized3);
+  auto tfl3 = fb3->get()->Unpack();
+
+  const auto& tfl_op = tfl3->subgraphs[0]->operators[0];
+  const auto& code = tfl3->operator_codes[tfl_op->opcode_index];
+  EXPECT_EQ(code->custom_code, "DISPATCH_OP");
+}
+
 }  // namespace
 }  // namespace litert::internal
