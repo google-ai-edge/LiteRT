@@ -20,6 +20,8 @@ set(LITERT_RUNTIME_SOURCES
     accelerators/auto_registration.cc
     accelerators/cpu_registry.cc
     accelerators/gpu_registry.cc
+    accelerators/npu_registry.cc
+    accelerators/webnn_registry.cc
     accelerators/registration_helper.cc
     accelerators/dispatch/dispatch_accelerator.cc
     accelerators/xnnpack/xnnpack_accelerator.cc
