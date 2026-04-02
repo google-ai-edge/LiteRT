@@ -30,6 +30,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/build_stamp.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
@@ -488,7 +489,9 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
   for (const LiteRtSubgraph& subgraph : model->Subgraphs()) {
     for (LiteRtOp op : subgraph->Ops()) {
-      if (op->OpCode() == kLiteRtOpCodeTflCustom &&
+      if (auto custom_code = op->CustomCode();
+          custom_code.HasValue() &&
+          *custom_code == litert::internal::kLiteRtDispatchOpCustomName &&
           op->CustomOptions().Size() > 0) {
         DispatchOpOptions dispatch_opts =
             GetDispatchOpOptions(op->CustomOptions());

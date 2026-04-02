@@ -42,8 +42,8 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
@@ -1238,6 +1238,47 @@ INSTANTIATE_TEST_SUITE_P(ModelSerializeOpCheckTest, ModelSerializeOpCheckTest,
 INSTANTIATE_TEST_SUITE_P(ModelSerializeQuantizedOpCheckTest,
                          ModelSerializeOpCheckTest,
                          ::testing::ValuesIn(kAllQModels));
+
+TEST(ModelLoadTest, IgnoreNonDispatchCustomOp) {
+  Expected<FlatbufferWrapper::Ptr> flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // Add a non-dispatch custom op with some dummy custom options
+  auto op_code = std::make_unique<tflite::OperatorCodeT>();
+  op_code->builtin_code = tflite::BuiltinOperator_CUSTOM;
+  op_code->custom_code = "NOT_DISPATCH_OP";
+  tfl_model->operator_codes.push_back(std::move(op_code));
+
+  auto op = std::make_unique<tflite::OperatorT>(
+      *tfl_model->subgraphs[0]->operators[0]);
+  op->opcode_index = tfl_model->operator_codes.size() - 1;
+  // A dummy custom_options that isn't a valid DispatchOpOptions
+  op->custom_options = {1, 2, 3, 4};
+
+  auto tensor = std::make_unique<tflite::TensorT>();
+  tensor->name = "dummy_tensor";
+  tensor->type = tflite::TensorType_FLOAT32;
+  tfl_model->subgraphs[0]->tensors.push_back(std::move(tensor));
+  // We just `push_back` a tensor into `tensor`, so the size of `tensors` should
+  // be non-zero.
+  int new_tensor_index = tfl_model->subgraphs[0]->tensors.size() - 1;
+
+  op->outputs.clear();
+  op->outputs.push_back(new_tensor_index);
+
+  tfl_model->subgraphs[0]->operators.push_back(std::move(op));
+
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  auto litert_model = LoadModelFromBuffer(serialized);
+  ASSERT_TRUE(litert_model);
+
+  // The model should load correctly but the custom op shouldn't have an asset
+  // attached
+  const auto litert_op = litert_model->get()->MainSubgraph()->Ops().back();
+  EXPECT_EQ(litert_op->OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_FALSE(litert_model->get()->FindOpAsset(litert_op));
+}
 
 }  // namespace
 }  // namespace litert::internal
