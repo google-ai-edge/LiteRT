@@ -13,39 +13,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
-
-#include <cstdint>
-#include <vector>
+#include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/cc/litert_model.h"
 
 namespace litert::samsung {
 
 constexpr int32_t kInputIndex = 0;
 constexpr int32_t kOutputIndex = 0;
 
-Expected<OpWrapper> BuildReshapeOp(const Op& op) {
-  OpWrapper op_wrapper("Reshape");
+Expected<OpWrapper> BuildCumsumOp(const Op& op) {
+  OpWrapper op_wrapper("CumSum");
 
   op_wrapper.AddInput(op.Inputs()[kInputIndex]);
   op_wrapper.AddOutput(op.Outputs()[kOutputIndex]);
 
-  const int32_t* reshape_new_shape;
-  int32_t new_shape_size;
-  if (auto status = LiteRtGetReshapeNewShapeOption(op.Get(), &reshape_new_shape,
-                                                   &new_shape_size);
+  bool exclusive{};
+  bool reverse{};
+  int32_t axis = 0;
+  if (auto status = LiteRtGetCumsumExclusiveOption(op.Get(), &exclusive);
       status != kLiteRtStatusOk) {
-    return Error(static_cast<litert::Status>(status), "Fail to get new shape.");
+    return Error(status, "Fail to get exclusive.");
   }
-  std::vector<int32_t> new_shape(reshape_new_shape,
-                                 reshape_new_shape + new_shape_size);
-  op_wrapper.AddParam("new_shape", new_shape);
+  if (auto status = LiteRtGetCumsumReverseOption(op.Get(), &reverse);
+      status != kLiteRtStatusOk) {
+    return Error(status, "Fail to get reverse.");
+  }
+
+  op_wrapper.AddParam("exclusive", static_cast<int32_t>(exclusive));
+  op_wrapper.AddParam("reverse", static_cast<int32_t>(reverse));
+  op_wrapper.AddParam("axis", axis);
 
   return op_wrapper;
 }

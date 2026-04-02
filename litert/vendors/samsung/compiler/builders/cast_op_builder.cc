@@ -13,39 +13,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 
-#include <cstdint>
-#include <vector>
-
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
-
 constexpr int32_t kInputIndex = 0;
 constexpr int32_t kOutputIndex = 0;
 
-Expected<OpWrapper> BuildReshapeOp(const Op& op) {
-  OpWrapper op_wrapper("Reshape");
+Expected<OpWrapper> BuildCastOp(const Op& op) {
+  OpWrapper op_wrapper("CAST");
 
   op_wrapper.AddInput(op.Inputs()[kInputIndex]);
-  op_wrapper.AddOutput(op.Outputs()[kOutputIndex]);
+  auto output = std::move(op.Outputs()[kOutputIndex]);
+  op_wrapper.AddOutput(output);
 
-  const int32_t* reshape_new_shape;
-  int32_t new_shape_size;
-  if (auto status = LiteRtGetReshapeNewShapeOption(op.Get(), &reshape_new_shape,
-                                                   &new_shape_size);
-      status != kLiteRtStatusOk) {
-    return Error(static_cast<litert::Status>(status), "Fail to get new shape.");
+  auto ranked_tensor_type = output.RankedTensorType();
+  if (!ranked_tensor_type) {
+    return ranked_tensor_type.Error();
   }
-  std::vector<int32_t> new_shape(reshape_new_shape,
-                                 reshape_new_shape + new_shape_size);
-  op_wrapper.AddParam("new_shape", new_shape);
+
+  auto element_type = ranked_tensor_type->ElementType();
+  LITERT_ASSIGN_OR_RETURN(auto element_type_mapping,
+                          MapToElementTypeStr(element_type));
+  op_wrapper.AddParam("to", element_type_mapping);
 
   return op_wrapper;
 }

@@ -12,16 +12,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESHAPE_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESHAPE_OP_BUILDER_H_
 
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
+
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/cc/litert_model.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildReshapeOp(const Op& op);
+Expected<OpWrapper> BuildTanhOp(const Op& op) {
+  OpWrapper op_wrapper("Tanh");
 
+  for (const auto& input : op.Inputs()) {
+    op_wrapper.AddInput(input);
+  }
+  for (const auto& output : op.Outputs()) {
+    op_wrapper.AddOutput(output);
+  }
+
+  return op_wrapper;
 }
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESHAPE_OP_BUILDER_H_
+}  // namespace litert::samsung

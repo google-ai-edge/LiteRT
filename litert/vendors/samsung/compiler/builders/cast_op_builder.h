@@ -12,8 +12,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESHAPE_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESHAPE_OP_BUILDER_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_CAST_OP_BUILDER_H_
+#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_CAST_OP_BUILDER_H_
 
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
@@ -21,7 +21,6 @@
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildReshapeOp(const Op& op);
-
+Expected<OpWrapper> BuildCastOp(const Op& op);
 }
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_RESHAPE_OP_BUILDER_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_CAST_OP_BUILDER_H_
