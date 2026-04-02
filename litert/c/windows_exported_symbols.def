@@ -109,6 +109,7 @@ EXPORTS
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
   LiteRtGetNextOpaqueOptions
+  LiteRtGetNumLayoutElements
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
   LiteRtGetNumModelSubgraphs
@@ -121,13 +122,13 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
+  LiteRtGetOpCode
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsData
   LiteRtGetOpaqueOptionsHash
   LiteRtGetOpaqueOptionsIdentifier
-  LiteRtGetOpCode
-  LiteRtGetOpInput
-  LiteRtGetOpOutput
   LiteRtGetOptionsHardwareAccelerators
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
@@ -190,6 +191,9 @@ EXPORTS
   LiteRtRunCompiledModelAsyncWithSchedulingInfo
   LiteRtRunCompiledModelWithOptions
   LiteRtRunCompiledModelWithSchedulingInfo
+  LiteRtSamsungOptionsCreate
+  LiteRtSamsungOptionsGet
+  LiteRtSamsungOptionsGetIdentifier
   LiteRtSerializeModel
   LiteRtSerializeModelWithSignatures
   LiteRtSetAcceleratorGetHardwareSupport
@@ -208,6 +212,3 @@ EXPORTS
   LiteRtUnwrapDelegate
   LiteRtWaitEvent
   LiteRtWrapDelegate
-  LiteRtSamsungOptionsCreate
-  LiteRtSamsungOptionsGetIdentifier
-  LiteRtSamsungOptionsGet
