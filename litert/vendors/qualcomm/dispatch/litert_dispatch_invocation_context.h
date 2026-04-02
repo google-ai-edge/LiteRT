@@ -79,14 +79,14 @@ class LiteRtDispatchInvocationContextT {
     return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;
   }
 
-  Qnn_ContextHandle_t ContextHandle() { return context_handle_->get(); }
+  Qnn_ContextHandle_t GetContextHandle() { return context_handle_.Get(); }
 
  private:
   LiteRtDispatchInvocationContextT(
       litert::qnn::QnnManager& qnn_manager,
       const litert::qnn::ContextBinaryInfo& context_binary_info,
       LiteRtDispatchDeviceContextT& device_context,
-      std::shared_ptr<litert::qnn::QnnManager::ContextHandle> context_handle,
+      const litert::qnn::QnnManager::ContextHandle& context_handle,
       Qnn_ProfileHandle_t profile_handle, int graph_index,
       Qnn_GraphHandle_t graph_handle);
 
@@ -107,7 +107,7 @@ class LiteRtDispatchInvocationContextT {
 
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContextT& device_context_;
-  std::shared_ptr<litert::qnn::QnnManager::ContextHandle> context_handle_;
+  const litert::qnn::QnnManager::ContextHandle& context_handle_;
   Qnn_ProfileHandle_t profile_handle_;
   int graph_index_;
   Qnn_GraphHandle_t graph_handle_;

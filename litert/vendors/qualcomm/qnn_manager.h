@@ -275,7 +275,7 @@ class QnnManager::ContextHandle {
 
   ContextHandle& operator=(const ContextHandle& other) = delete;
 
-  Qnn_ContextHandle_t get() const noexcept { return context_handle_; }
+  Qnn_ContextHandle_t Get() const noexcept { return context_handle_; }
   Qnn_ProfileHandle_t get_profile_handle() const noexcept { return profile_; }
   explicit operator bool() const noexcept { return context_handle_ != nullptr; }
 

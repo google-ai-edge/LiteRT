@@ -63,12 +63,9 @@ class LiteRtDispatchDeviceContextT {
     invocation_context_ = invocation_context;
   }
 
-  using SharedContextHandle =
-      std::shared_ptr<litert::qnn::QnnManager::ContextHandle>;
-
-  litert::Expected<SharedContextHandle> GetOrCreateContext(
-      const void* bytecode_ptr, size_t bytecode_size,
-      Qnn_ProfileHandle_t profile_handle);
+  litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
+  GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
+                     Qnn_ProfileHandle_t profile_handle);
 
  private:
   struct TensorBufferRegistryEntry {
@@ -101,7 +98,9 @@ class LiteRtDispatchDeviceContextT {
       return std::tie(ptr, size) < std::tie(other.ptr, other.size);
     }
   };
-  std::map<ContextCacheKey, SharedContextHandle> context_cache_;
+  using UniqueContextHandle =
+      std::unique_ptr<litert::qnn::QnnManager::ContextHandle>;
+  std::map<ContextCacheKey, UniqueContextHandle> context_cache_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

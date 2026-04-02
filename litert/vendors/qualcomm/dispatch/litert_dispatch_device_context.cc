@@ -197,7 +197,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                       "Missing invocation context");
   }
 
-  Qnn_ContextHandle_t context_handle = invocation_context_->ContextHandle();
+  Qnn_ContextHandle_t context_handle = invocation_context_->GetContextHandle();
 
   Qnn_MemHandle_t mem_handle = nullptr;
   if (auto status = qnn_manager_.Api()->memRegister(
@@ -217,7 +217,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   return mem_handle;
 }
 
-Expected<LiteRtDispatchDeviceContextT::SharedContextHandle>
+Expected<const litert::qnn::QnnManager::ContextHandle&>
 LiteRtDispatchDeviceContextT::GetOrCreateContext(
     const void* bytecode_ptr, size_t bytecode_size,
     Qnn_ProfileHandle_t profile_handle) {
@@ -227,7 +227,7 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
     LITERT_LOG(LITERT_INFO,
                "Reusing cached QNN context for bytecode %p (size %zu)",
                bytecode_ptr, bytecode_size);
-    return it->second;
+    return *(it->second);
   }
 
   LITERT_LOG(LITERT_INFO, "Creating new QNN context for bytecode %p (size %zu)",
@@ -241,10 +241,9 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
     return Unexpected(context_handle_expected.Error());
   }
 
-  auto shared_handle = std::make_shared<QnnManager::ContextHandle>(
+  context_cache_[key] = std::make_unique<QnnManager::ContextHandle>(
       std::move(*context_handle_expected));
-  context_cache_[key] = shared_handle;
-  return shared_handle;
+  return *(context_cache_[key]);
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(

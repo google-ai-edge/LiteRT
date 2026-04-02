@@ -82,12 +82,12 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
     LiteRtDispatchDeviceContextT& device_context,
-    std::shared_ptr<QnnManager::ContextHandle> context_handle,
+    const QnnManager::ContextHandle& context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
     Qnn_GraphHandle_t graph_handle)
     : qnn_manager_(qnn_manager),
       device_context_(device_context),
-      context_handle_(std::move(context_handle)),
+      context_handle_(context_handle),
       profile_handle_(profile_handle),
       graph_index_(graph_index),
       graph_handle_(graph_handle),
@@ -166,12 +166,12 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   LITERT_ASSIGN_OR_RETURN(
-      auto context_handle,
+      const auto& context_handle,
       device_context.GetOrCreateContext(
           exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
-  if (auto status = qnn.Api()->graphRetrieve(context_handle->get(),
+  if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),
                                              function_name, &graph_handle);
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -179,8 +179,8 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
-      qnn, std::move(*context_binary_info), device_context,
-      std::move(context_handle), profile_handle, graph_index, graph_handle));
+      qnn, std::move(*context_binary_info), device_context, context_handle,
+      profile_handle, graph_index, graph_handle));
 }
 
 namespace {
