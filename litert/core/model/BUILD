@@ -105,6 +105,7 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter:allocation",

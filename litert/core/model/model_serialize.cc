@@ -528,7 +528,8 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   // don't push dispatch op code if it already exists
   bool found_dispatch_op_code = false;
   for (const auto& op_code : tfl_op_codes) {
-    if (op_code->builtin_code == tflite::BuiltinOperator_CUSTOM) {
+    if (op_code->builtin_code == tflite::BuiltinOperator_CUSTOM &&
+        op_code->custom_code == kLiteRtDispatchOpCustomName) {
       found_dispatch_op_code = true;
       break;
     }
