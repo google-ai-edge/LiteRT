@@ -802,7 +802,7 @@ copy_file(
 
 # Target for windows libLiteRt.dll.
 cc_binary(
-    name = "libLiteRt_dll",
+    name = "libLiteRt",
     linkshared = 1,
     tags = [
         "nobuilder",
@@ -817,16 +817,7 @@ cc_binary(
 
 alias(
     name = "litert_runtime_c_api_dll",
-    actual = ":libLiteRt_dll",
-)
-
-alias(
-    name = "libLiteRt",
-    actual = select({
-        "@platforms//os:windows": ":libLiteRt_dll",
-        "@platforms//os:macos": ":litert_runtime_c_api_dylib",
-        "//conditions:default": ":libLiteRt.so",
-    }),
+    actual = ":libLiteRt",
 )
 
 filegroup(
