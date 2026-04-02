@@ -12,21 +12,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "litert/vendors/samsung/compiler/builders/mul_op_builder.h"
 
-#include <cstdint>
-#include <string>
+#include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_common.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildMulOp(const Op& op) {
-  OpWrapper op_wrapper("", "MUL");
+Expected<OpWrapper> BuildBatchMatMulOp(const Op& op) {
+  OpWrapper op_wrapper("BATCH_MATMUL");
 
   for (const auto& input : op.Inputs()) {
     op_wrapper.AddInput(input);
@@ -34,21 +28,15 @@ Expected<OpWrapper> BuildMulOp(const Op& op) {
   for (const auto& output : op.Outputs()) {
     op_wrapper.AddOutput(output);
   }
+  bool adj_x = false, adj_y = false, asymmetric_quantize_input = false;
+  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAdjXOption(op.Get(), &adj_x));
+  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAdjYOption(op.Get(), &adj_y));
+  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAsymmetricQuantizeInputOption(
+      op.Get(), &asymmetric_quantize_input));
 
-  uint32_t tfl_fused_activation;
-  if (auto status =
-          LiteRtGetMulFusedActivationOption(op.Get(), &tfl_fused_activation);
-      status != kLiteRtStatusOk) {
-    return Error(static_cast<litert::Status>(status),
-                 "Fail to get fused activation");
-  }
-  if (tfl_fused_activation == 1) {
-    op_wrapper.AddParam("activation", "Relu");
-  } else if (tfl_fused_activation != 0) {
-    return Error(litert::Status::kErrorRuntimeFailure,
-                 "Unsupported fused activation");
-  }
-
+  op_wrapper.AddParam("adj_x", adj_x);
+  op_wrapper.AddParam("adj_y", adj_y);
+  op_wrapper.AddParam("asymmetric_quantize_input", asymmetric_quantize_input);
   return op_wrapper;
 }
 }  // namespace litert::samsung

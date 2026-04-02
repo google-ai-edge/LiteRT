@@ -18,6 +18,20 @@ set -ex
 # Run this script under the root directory.
 export TF_LOCAL_SOURCE_PATH=${TF_LOCAL_SOURCE_PATH:-"$(pwd)/third_party/tensorflow"}
 
+# Build configuration: "opt" (default) or "dbg" for debug builds.
+LITERT_BUILD_MODE=${LITERT_BUILD_MODE:-opt}
+if [[ "${LITERT_BUILD_MODE}" == "dbg" ]]; then
+  OPTIMIZATION_COPT=""
+elif [[ "${LITERT_BUILD_MODE}" == "opt" ]]; then
+  OPTIMIZATION_COPT="--copt=-O3"
+  export CFLAGS="${CFLAGS:-} -O3"
+  export CXXFLAGS="${CXXFLAGS:-} -O3"
+else
+  echo "Unsupported LITERT_BUILD_MODE: ${LITERT_BUILD_MODE} (expected: opt or dbg)"
+  exit 1
+fi
+BAZEL_BUILD_MODE_FLAGS=(--config="${LITERT_BUILD_MODE}")
+
 ARCH="$(uname -m)"
 OS_NAME="$(uname -s)"
 TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-$1}
@@ -30,7 +44,7 @@ case "${TENSORFLOW_TARGET}" in
   armhf)
     BAZEL_FLAGS="--config=elinux_armhf
       --copt=-march=armv7-a --copt=-mfpu=neon-vfpv4
-      --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissive
+      ${OPTIMIZATION_COPT} --copt=-fno-tree-pre --copt=-fpermissive
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
       --repo_env=USE_PYWRAP_RULES=True"
@@ -38,7 +52,7 @@ case "${TENSORFLOW_TARGET}" in
   rpi0)
     BAZEL_FLAGS="--config=elinux_armhf
       --copt=-march=armv6 -mfpu=vfp -mfloat-abi=hard
-      --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissivec
+      ${OPTIMIZATION_COPT} --copt=-fno-tree-pre --copt=-fpermissivec
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
       --repo_env=USE_PYWRAP_RULES=True"
@@ -46,16 +60,16 @@ case "${TENSORFLOW_TARGET}" in
   aarch64)
     BAZEL_FLAGS="--config=release_arm64_linux
       --define tensorflow_mkldnn_contraction_kernel=0
-      --copt=-O3
+      ${OPTIMIZATION_COPT}
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
   native)
-    BAZEL_FLAGS="--copt=-O3
+    BAZEL_FLAGS="${OPTIMIZATION_COPT}
       --copt=-march=native
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
   *)
-    BAZEL_FLAGS="--copt=-O3
+    BAZEL_FLAGS="${OPTIMIZATION_COPT}
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
 esac

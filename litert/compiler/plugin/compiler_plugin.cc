@@ -965,5 +965,4 @@ Expected<bool> CompilerPlugin::CheckCompilerCompatibility(
       *plugin_api_version, plugin_handle_, env_, options_, soc_model_name));
   return true;
 }
-
 }  // namespace litert::internal

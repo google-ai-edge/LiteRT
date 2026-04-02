@@ -12,21 +12,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "litert/vendors/samsung/compiler/builders/add_op_builder.h"
 
-#include <cstdint>
-#include <string>
+#include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/cc/litert_model.h"
+
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildAddOp(const Op& op) {
-  OpWrapper op_wrapper("", "ELTSUM");
+Expected<OpWrapper> BuildSpaceToDepthOp(const Op& op) {
+  OpWrapper op_wrapper("SpaceToDepth");
 
   for (const auto& input : op.Inputs()) {
     op_wrapper.AddInput(input);
@@ -35,19 +32,13 @@ Expected<OpWrapper> BuildAddOp(const Op& op) {
     op_wrapper.AddOutput(output);
   }
 
-  uint32_t tfl_fused_activation;
-  if (auto status =
-          LiteRtGetAddFusedActivationOption(op.Get(), &tfl_fused_activation);
+  int32_t block_size{};
+  if (auto status = LiteRtGetSpaceToDepthBlockSizeOption(op.Get(), &block_size);
       status != kLiteRtStatusOk) {
-    return Error(static_cast<litert::Status>(status),
-                 "Failed to get fused activation");
+    return Error(status, "Fail to get block_size.");
   }
-  if (tfl_fused_activation == 1) {
-    op_wrapper.AddParam("activation", "Relu");
-  } else if (tfl_fused_activation != 0) {
-    return Error(litert::Status::kErrorRuntimeFailure,
-                 "Unsupported fused activation");
-  }
+
+  op_wrapper.AddParam("blocksize", block_size);
 
   return op_wrapper;
 }
