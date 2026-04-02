@@ -251,6 +251,7 @@ maven_install(
         "androidx.lifecycle:lifecycle-common:2.8.7",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
         "com.google.guava:guava:33.4.6-android",
+        "org.jetbrains.kotlin:kotlin-stdlib:2.0.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0",
@@ -267,8 +268,8 @@ maven_install(
 # Kotlin rules
 http_archive(
     name = "rules_kotlin",
-    sha256 = "e1448a56b2462407b2688dea86df5c375b36a0991bd478c2ddd94c97168125e2",
-    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.1.3/rules_kotlin-v2.1.3.tar.gz",
+    sha256 = "13d5b767d697473ced9b55547a18a6ab65ab3fae5440555deee8a44c886b50aa",
+    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.3.20/rules_kotlin-v2.3.20.tar.gz",
 )
 
 # Sentencepiece
@@ -369,3 +370,16 @@ openvino_configure()
 load("//third_party/exynos_ai_litecore:workspace.bzl", "exynos_ai_litecore")
 
 exynos_ai_litecore()
+
+# rules_android are needed for Bazel 7
+http_archive(
+    name = "rules_android",
+    sha256 = "a72c2f6360cd46a77d40cf6b7d6144a4c5faad1e6b3eb662b8cfb48998572ba6",
+    urls = ["https://github.com/bazelbuild/rules_android/releases/download/v0.6.0/rules_android-v0.6.0.tar.gz"],
+)
+
+load("@rules_android//android:rules.bzl", "android_ndk_repository", "android_sdk_repository")
+
+android_sdk_repository(name = "androidsdk")
+
+android_ndk_repository(name = "androidndk")
