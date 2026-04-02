@@ -24,6 +24,7 @@
 #include "litert/c/internal/litert_dispatch_delegate.h"  // NOLINT
 #include "litert/c/internal/litert_external_litert_buffer_context.h"  // NOLINT
 #include "litert/c/internal/litert_logging.h"  // NOLINT
+#include "litert/c/internal/litert_runtime_context.h"  // NOLINT
 #include "litert/c/internal/litert_tensor_buffer_registry.h"  // NOLINT
 #include "litert/c/litert_any.h"             // NOLINT
 #include "litert/c/litert_builder.h"         // NOLINT
