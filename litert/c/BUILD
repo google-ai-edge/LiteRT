@@ -758,6 +758,7 @@ cc_test(
     linkopts = ["-ldl"],
     deps = LITERT_C_API_COMMON_DEPS + [
         ":litert_profiler_event",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/c/options:litert_compiler_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/c/options:litert_webnn_options",
@@ -803,7 +804,7 @@ copy_file(
 
 # Target for windows libLiteRt.dll.
 cc_binary(
-    name = "libLiteRt_dll",
+    name = "libLiteRt",
     linkshared = 1,
     tags = [
         "nobuilder",
@@ -818,16 +819,7 @@ cc_binary(
 
 alias(
     name = "litert_runtime_c_api_dll",
-    actual = ":libLiteRt_dll",
-)
-
-alias(
-    name = "libLiteRt",
-    actual = select({
-        "@platforms//os:windows": ":libLiteRt_dll",
-        "@platforms//os:macos": ":litert_runtime_c_api_dylib",
-        "//conditions:default": ":libLiteRt.so",
-    }),
+    actual = ":libLiteRt",
 )
 
 filegroup(

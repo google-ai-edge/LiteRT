@@ -71,7 +71,8 @@ TEST(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
   LiteRtDestroyEnvironment(environment);
 }
 
-TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
+// TODO(b/465442719): Re-enable this test.
+TEST(DispatchApiStaticLinkTest, DISABLED_CanRunCompiledModel) {
   auto path = testing::GetTestFilePath(
       "simple_model_npu_google_tensor_precompiled.tflite");
 

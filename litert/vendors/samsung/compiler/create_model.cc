@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "common-types.h"  // from @exynos_ai_litecore
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -33,10 +34,34 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
-#include "litert/vendors/samsung/compiler/builders/add_op_builder.h"
-#include "litert/vendors/samsung/compiler/builders/mul_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/gathernd_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/hardswish_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/pool2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/select_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/softmax_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/split_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/strided_slice_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
@@ -51,36 +76,10 @@ const char* MapToQuantTypeStr(ElementType element_type) {
     case ElementType::Int16:
     case ElementType::UInt16:
       return "AINT16";
+    case ElementType::Int32:
+      return "AINT32";
     default:
       return "";
-  }
-}
-
-Expected<const char*> MapToElementTypeStr(ElementType element_type) {
-  switch (element_type) {
-    case ElementType::Bool:
-      return "BOOL";
-    case ElementType::Int4:
-      return "INT4";
-    case ElementType::Int8:
-      return "INT8";
-    case ElementType::UInt8:
-      return "UINT8";
-    case ElementType::Int16:
-      return "INT16";
-    case ElementType::UInt16:
-      return "UINT16";
-    case ElementType::Int32:
-      return "INT32";
-    case ElementType::Int64:
-      return "INT64";
-    case ElementType::Float16:
-      return "FLOAT16";
-    case ElementType::Float32:
-      return "FLOAT32";
-    default:
-      return Error(litert::Status::kErrorRuntimeFailure,
-                   "Element Type not supported");
   }
 }
 
@@ -93,7 +92,8 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
   if (!t.Get()) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  if (tensors_map_.find(t.Get()) != tensors_map_.end()) {
+  uint32_t tensor_index = t.TensorIndex();
+  if (tensors_map_.find(tensor_index) != tensors_map_.end()) {
     return kLiteRtStatusOk;
   }
 
@@ -117,11 +117,12 @@ LiteRtStatus GraphCreator::CreateTensor(const Tensor& t) {
     return static_cast<LiteRtStatus>(element_type_mapping.Error().StatusCC());
   }
 
+  const char* layout_rep = tensor_shape.size() == 4 ? "NHWC" : "UNDEFINED";
   TENSOR_ID_T tensor_id;
   LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().DefineTensor(
       handler_, &tensor_id, t.Name().data(), tensor_shape.data(),
-      tensor_shape.size(), element_type_mapping.Value(), "UNDEFINED"));
-  tensors_map_[t.Get()] = tensor_id;
+      tensor_shape.size(), element_type_mapping.Value(), layout_rep));
+  tensors_map_[tensor_index] = tensor_id;
 
   if (t.HasQuantization()) {
     LITERT_RETURN_IF_ERROR(CreateQParam(t));
@@ -143,12 +144,12 @@ LiteRtStatus GraphCreator::CreateOpNode(const OpWrapper& op_wrapper) {
   std::vector<TENSOR_ID_T> output_indices;
   for (const auto& input : op_wrapper.GetInputs()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(input));
-    input_indices.push_back(tensors_map_.at(input.Get()));
+    input_indices.push_back(tensors_map_.at(input.TensorIndex()));
   }
 
   for (const auto& output : op_wrapper.GetOutputs()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(output));
-    output_indices.push_back(tensors_map_.at(output.Get()));
+    output_indices.push_back(tensors_map_.at(output.TensorIndex()));
   }
   LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(ai_lite_core_->Api().DefineOp(
       handler_, &op_id, op_wrapper.GetCName(), op_wrapper.GetCType(),
@@ -165,19 +166,21 @@ LiteRtStatus GraphCreator::CreateOpNode(const OpWrapper& op_wrapper) {
 }
 
 LiteRtStatus GraphCreator::AddInput(const Tensor& t_input) {
-  if (tensors_map_.find(t_input.Get()) == tensors_map_.end()) {
+  uint32_t tensor_input_index = t_input.TensorIndex();
+  if (tensors_map_.find(tensor_input_index) == tensors_map_.end()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(t_input));
   }
-  input_indices_.push_back(tensors_map_.at(t_input.Get()));
+  input_indices_.push_back(tensors_map_.at(tensor_input_index));
 
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus GraphCreator::AddOutput(const Tensor& t_output) {
-  if (tensors_map_.find(t_output.Get()) == tensors_map_.end()) {
+  uint32_t tensor_output_index = t_output.TensorIndex();
+  if (tensors_map_.find(tensor_output_index) == tensors_map_.end()) {
     LITERT_RETURN_IF_ERROR(CreateTensor(t_output));
   }
-  output_indices_.push_back(tensors_map_.at(t_output.Get()));
+  output_indices_.push_back(tensors_map_.at(tensor_output_index));
 
   return kLiteRtStatusOk;
 }
@@ -250,9 +253,9 @@ LiteRtStatus GraphCreator::CreateQParam(const Tensor& t) {
   auto ranked_tensor_type = t.RankedTensorType();
   auto element_type = ranked_tensor_type->ElementType();
   LITERT_RETURN_STATUS_IF_AI_LITECORE_NOT_OK(
-      ai_lite_core_->Api().SetTensorQParam(handler_, tensors_map_.at(t.Get()),
-                                           MapToQuantTypeStr(element_type),
-                                           scale_info, zero_point_info));
+      ai_lite_core_->Api().SetTensorQParam(
+          handler_, tensors_map_.at(t.TensorIndex()),
+          MapToQuantTypeStr(element_type), scale_info, zero_point_info));
 
   return kLiteRtStatusOk;
 }
@@ -277,25 +280,171 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
   auto ops = partition.Ops();
   for (int op_idx = 0; op_idx < ops.size(); ++op_idx) {
     const auto& op = ops[op_idx];
-    LITERT_LOG(LITERT_INFO, "OP %d, ", op_idx);
     Expected<OpWrapper> op_wrapper =
         Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
     switch (op.Code()) {
+      case kLiteRtOpCodeTflAbs:
+        op_wrapper = BuildAbsOp(op);
+        break;
       case kLiteRtOpCodeTflAdd:
         op_wrapper = BuildAddOp(op);
+        break;
+      case kLiteRtOpCodeTflAveragePool2d:
+        op_wrapper = BuildAvgPool2dOp(op);
+        break;
+      case kLiteRtOpCodeTflBatchMatmul:
+        op_wrapper = BuildBatchMatMulOp(op);
+        break;
+      case kLiteRtOpCodeTflCast:
+        op_wrapper = BuildCastOp(op);
+        break;
+      case kLiteRtOpCodeTflCeil:
+        op_wrapper = BuildCeilOp(op);
+        break;
+      case kLiteRtOpCodeTflConcatenation:
+        op_wrapper = BuildConcatOp(op);
+        break;
+      case kLiteRtOpCodeTflConv2d:
+        op_wrapper = BuildConv2dOp(op);
+        break;
+      case kLiteRtOpCodeTflCos:
+        op_wrapper = BuildCosOp(op);
+        break;
+      case kLiteRtOpCodeTflCumsum:
+        op_wrapper = BuildCumsumOp(op);
+        break;
+      case kLiteRtOpCodeTflDepthwiseConv2d:
+        op_wrapper = BuildDepthwiseConv2dOp(op);
+        break;
+      case kLiteRtOpCodeTflDiv:
+        op_wrapper = BuildDivOp(op);
+        break;
+      case kLiteRtOpCodeTflEqual:
+        op_wrapper = BuildEqualOp(op);
+        break;
+      case kLiteRtOpCodeTflExp:
+        op_wrapper = BuildExpOp(op);
+        break;
+      case kLiteRtOpCodeTflFloor:
+        op_wrapper = BuildFloorOp(op);
+        break;
+      case kLiteRtOpCodeTflFloorDiv:
+        op_wrapper = BuildFloorDivOp(op);
+        break;
+      case kLiteRtOpCodeTflFullyConnected:
+        op_wrapper = BuildFullyConnectedOp(op);
+        break;
+      case kLiteRtOpCodeTflGather:
+        op_wrapper = BuildGatherOp(op);
+        break;
+      case kLiteRtOpCodeTflGatherNd:
+        op_wrapper = BuildGatherNdOp(op);
+        break;
+      case kLiteRtOpCodeTflGreater:
+        op_wrapper = BuildGreaterOp(op);
+        break;
+      case kLiteRtOpCodeTflGreaterEqual:
+        op_wrapper = BuildGreaterEqualOp(op);
+        break;
+      case kLiteRtOpCodeTflHardSwish:
+        op_wrapper = BuildHardSwishOp(op);
+        break;
+      case kLiteRtOpCodeTflLogistic:
+        op_wrapper = BuildLogisticOp(op);
+        break;
+      case kLiteRtOpCodeTflMaximum:
+        op_wrapper = BuildMaxOp(op);
+        break;
+      case kLiteRtOpCodeTflMinimum:
+        op_wrapper = BuildMinOp(op);
+        break;
+      case kLiteRtOpCodeTflMirrorPad:
+        op_wrapper = BuildMirrorPadOp(op);
+        break;
+      case kLiteRtOpCodeTflMaxPool2d:
+        op_wrapper = BuildMaxPool2dOp(op);
+        break;
+      case kLiteRtOpCodeTflMean:
+        op_wrapper = BuildReduceMeanOp(op);
         break;
       case kLiteRtOpCodeTflMul:
         op_wrapper = BuildMulOp(op);
         break;
+      case kLiteRtOpCodeTflPad:
+      case kLiteRtOpCodeTflPadv2:
+        op_wrapper = BuildPadOp(op);
+        break;
+      case kLiteRtOpCodeTflRelu:
+        op_wrapper = BuildReLUOp(op);
+        break;
       case kLiteRtOpCodeTflReshape:
         op_wrapper = BuildReshapeOp(op);
+        break;
+      case kLiteRtOpCodeTflReduceMax:
+        op_wrapper = BuildReduceMaxOp(op);
+        break;
+      case kLiteRtOpCodeTflReduceMin:
+        op_wrapper = BuildReduceMinOp(op);
+        break;
+      case kLiteRtOpCodeTflResizeBilinear:
+        op_wrapper = BuildResizeBilinearOp(op);
+        break;
+      case kLiteRtOpCodeTflRsqrt:
+        op_wrapper = BuildRsqrtOp(op);
+        break;
+      case kLiteRtOpCodeTflSelect:
+        op_wrapper = BuildSelectOp(op);
+        break;
+      case kLiteRtOpCodeTflSelectV2:
+        op_wrapper = BuildSelectV2Op(op);
+        break;
+      case kLiteRtOpCodeTflSin:
+        op_wrapper = BuildSinOp(op);
+        break;
+      case kLiteRtOpCodeTflSlice:
+        op_wrapper = BuildSliceOp(op);
+        break;
+      case kLiteRtOpCodeTflSoftmax:
+        op_wrapper = BuildSoftmaxOp(op);
+        break;
+      case kLiteRtOpCodeTflSpaceToDepth:
+        op_wrapper = BuildSpaceToDepthOp(op);
+        break;
+      case kLiteRtOpCodeTflSplit:
+        op_wrapper = BuildSplitOp(op);
+        break;
+      case kLiteRtOpCodeTflSqrt:
+        op_wrapper = BuildSqrtOp(op);
+        break;
+      case kLiteRtOpCodeTflSquaredDifference:
+        op_wrapper = BuildSquaredDifferenceOp(op);
+        break;
+      case kLiteRtOpCodeTflSub:
+        op_wrapper = BuildSubOp(op);
+        break;
+      case kLiteRtOpCodeTflSum:
+        op_wrapper = BuildReduceSumOp(op);
+        break;
+      case kLiteRtOpCodeTflStridedSlice:
+        op_wrapper = BuildStridedSliceOp(op);
+        break;
+      case kLiteRtOpCodeTflTranspose:
+        op_wrapper = BuildTransposeOp(op);
+        break;
+      case kLiteRtOpCodeTflTransposeConv:
+        op_wrapper = BuildTransposeConvOp(op);
         break;
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
     }
+    if (!op_wrapper) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Fail to parse op's options.");
+    }
     if (auto status = graph_crt.CreateOpNode(op_wrapper.Value());
         status != kLiteRtStatusOk) {
-      return Error(static_cast<litert::Status>(status), "Fail to build op");
+      return Error(static_cast<litert::Status>(status),
+                   absl::StrFormat("Fail to build op (index:%d)", op_idx));
     }
   }
   if (auto status = graph_crt.Finish(); status != kLiteRtStatusOk) {

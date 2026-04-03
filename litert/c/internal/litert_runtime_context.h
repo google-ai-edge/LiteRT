@@ -15,8 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_CONTEXT_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_RUNTIME_CONTEXT_H_
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"

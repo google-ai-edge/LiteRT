@@ -50,6 +50,8 @@ class TensorBuffer:
       np.dtype(np.int32): "int32",
       np.int8: "int8",
       np.dtype(np.int8): "int8",
+      np.uint8: "uint8",
+      np.dtype(np.uint8): "uint8",
   }
 
   def __init__(self, capsule, environment=None):

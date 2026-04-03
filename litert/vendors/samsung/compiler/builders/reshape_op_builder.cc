@@ -27,15 +27,15 @@
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildReshapeOp(const Op& op) {
-  OpWrapper op_wrapper("", "Reshape");
+constexpr int32_t kInputIndex = 0;
+constexpr int32_t kOutputIndex = 0;
 
-  for (const auto& input : op.Inputs()) {
-    op_wrapper.AddInput(input);
-  }
-  for (const auto& output : op.Outputs()) {
-    op_wrapper.AddOutput(output);
-  }
+Expected<OpWrapper> BuildReshapeOp(const Op& op) {
+  OpWrapper op_wrapper("Reshape");
+
+  op_wrapper.AddInput(op.Inputs()[kInputIndex]);
+  op_wrapper.AddOutput(op.Outputs()[kOutputIndex]);
+
   const int32_t* reshape_new_shape;
   int32_t new_shape_size;
   if (auto status = LiteRtGetReshapeNewShapeOption(op.Get(), &reshape_new_shape,

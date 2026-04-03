@@ -17,7 +17,6 @@
 #include <cstring>
 
 #include "litert/c/internal/litert_accelerator_def.h"
-#include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
@@ -139,11 +138,9 @@ class CpuAccelerator final
 }  // namespace
 }  // namespace litert
 
-extern "C" {
-
 // Discovery C object for the CPU (Xnnpack) accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor.
-static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
+extern "C" const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .version = 1,  // LiteRtAcceleratorDefV1
     .get_name = litert::CpuAccelerator::GetName,
     .get_version = litert::CpuAccelerator::GetVersion,
@@ -161,8 +158,18 @@ static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .num_supported_buffer_types = 0,
 };
 
-// Accelerator definition pointer referenced by auto_registration.cc.
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef =
-    &LiteRtCpuAcceleratorImpl;
+// Accelerator definition pointer defined in
+// runtime/accelerators/cpu_registry.cc
+extern "C" const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
 
-}  // extern "C"
+namespace {
+
+struct StaticCpuAcceleratorInitializer {
+  StaticCpuAcceleratorInitializer() {
+    LiteRtStaticLinkedAcceleratorCpuDef = &LiteRtCpuAcceleratorImpl;
+  }
+};
+
+StaticCpuAcceleratorInitializer g_initializer;
+
+}  // namespace
