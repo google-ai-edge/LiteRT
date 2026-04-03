@@ -366,7 +366,7 @@ class RandomTensorType {
 
   // `std::pow` is not constexpr until C++26, so this cannot be constexpr.
   static DimSize MaxDimSize() {
-    const double rank = std::max(1lu, Rank);
+    const double rank = std::max(static_cast<size_t>(1), Rank);
     const double exp = 1.0 / rank;
     const double max_flat = MaxSize;
     const double max_dim = std::pow(max_flat, exp);
