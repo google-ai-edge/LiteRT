@@ -379,6 +379,18 @@ cc_test(
 )
 
 cc_library(
+    name = "op_shape_inference_utils",
+    hdrs = ["ops/op_shape_inference_utils.h"],
+    deps = [
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "shape_inference_types",
     hdrs = ["shape_inference_types.h"],
     deps = [
@@ -432,6 +444,51 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "ops_convolution",
+    hdrs = ["ops/convolution.h"],
+    deps = [
+        ":model",
+        ":op_shape_inference_utils",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_convolution_test",
+    srcs = ["ops/convolution_test.cc"],
+    deps = [
+        ":model",
+        ":ops_convolution",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ops_depthwise_convolution_test",
+    srcs = ["ops/depthwise_convolution_test.cc"],
+    deps = [
+        ":model",
+        ":ops_convolution",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
