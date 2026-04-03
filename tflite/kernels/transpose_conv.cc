@@ -16,6 +16,7 @@ limitations under the License.
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cstring>
 #include <vector>
 
 #include "tflite/core/c/builtin_op_data.h"
@@ -222,7 +223,9 @@ TfLiteStatus ResizeCol2ImTensor(TfLiteContext* context,
 
   col2im->type = input->type == kTfLiteFloat32 ? kTfLiteFloat32 : kTfLiteInt32;
   col2im->allocation_type = kTfLiteDynamic;
-  return context->ResizeTensor(context, col2im, col2im_shape_array);
+  auto status = context->ResizeTensor(context, col2im, col2im_shape_array);
+  if (status == kTfLiteOk) memset(col2im->data.raw, 0, col2im->bytes);
+  return status;
 }
 
 TfLiteStatus ResizeAndTransposeWeights(TfLiteContext* context,
