@@ -31,13 +31,13 @@
 #include "openvino/runtime/properties.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -304,6 +304,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
   LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
+  LiteRtPropagateMinLoggerSeverity(env);
   auto* plugin = new LiteRtCompilerPluginT(env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;

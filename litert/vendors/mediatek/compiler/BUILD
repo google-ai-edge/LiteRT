@@ -42,6 +42,7 @@ litert_dynamic_lib(
         ":create_model",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

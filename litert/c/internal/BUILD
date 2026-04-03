@@ -393,6 +393,47 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_logging_helper",
+    srcs = ["litert_logging_helper.cc"],
+    hdrs = ["litert_logging_helper.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert/runtime/accelerators/gpu:__pkg__",
+        # "//litert/vendors:__subpackages__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_logging",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
+    ],
+)
+
+cc_library(
+    name = "litert_logging_helper_with_runtime_context",
+    srcs = ["litert_logging_helper_with_runtime_context.cc"],
+    hdrs = ["litert_logging_helper_with_runtime_context.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert/runtime/accelerators/gpu:__pkg__",
+        # "//litert/vendors:__subpackages__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_logging",
+        ":litert_runtime_context_header",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
+    ],
+)
+
 cc_test(
     name = "litert_logging_test",
     srcs = ["litert_logging_test.cc"],

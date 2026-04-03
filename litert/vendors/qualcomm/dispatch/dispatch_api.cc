@@ -21,6 +21,7 @@
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -66,7 +67,10 @@ char BuildId[256];
 
 LiteRtStatus Initialize(LiteRtEnvironment environment, LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  LiteRtGetEnvironmentOptions(environment, &environment_options);
+  if (LiteRtGetEnvironmentOptions(environment, &environment_options) ==
+      kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverity(environment_options);
+  }
   TheEnvironmentOptions = environment_options;
   TheOptions = options;
 

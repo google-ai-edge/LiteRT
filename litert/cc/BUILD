@@ -737,6 +737,7 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_runtime_proxy",
         "@com_google_absl//absl/types:span",

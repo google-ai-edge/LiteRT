@@ -58,6 +58,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",

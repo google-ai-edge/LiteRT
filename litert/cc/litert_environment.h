@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 #define ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <type_traits>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -117,6 +119,14 @@ class Environment {
   }
 
   static Expected<Environment> Create(const EnvironmentOptions& options) {
+    auto min_logger_severity =
+        options.GetOption(EnvironmentOptions::Tag::kMinLoggerSeverity);
+    if (min_logger_severity) {
+      LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(),
+                                 static_cast<LiteRtLogSeverity>(
+                                     std::get<int64_t>(*min_logger_severity)));
+    }
+
     auto c_options = ToCOptions(options.GetOptions());
     if (!c_options) {
       return c_options.Error();

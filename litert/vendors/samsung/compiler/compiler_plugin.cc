@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/internal/litert_extended_model.h"
@@ -184,6 +185,8 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
+  LiteRtPropagateMinLoggerSeverity(env);
+
   *compiler_plugin = new LiteRtCompilerPluginT(env, options);
   return kLiteRtStatusOk;
 }
