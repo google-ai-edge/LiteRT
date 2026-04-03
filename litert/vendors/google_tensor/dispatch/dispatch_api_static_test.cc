@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
@@ -26,11 +27,34 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/model/model_buffer.h"
 #include "litert/test/common.h"
-
+#include "litert/test/matchers.h"
 
 namespace litert {
 namespace {
+
+// Simulates a precompiled device model so that we can run tests on the x86
+// NPU Simulator.
+Expected<litert::OwningBufferRef<uint8_t>> CreateModelFromReferenceData(
+    LiteRtModel* model) {
+  auto tfl_path = testing::GetTestFilePath("simple_model_npu.tflite");
+  auto bin_path = testing::GetLiteRtPath(
+      "vendors/google_tensor/dispatch/"
+      "simple_model_reference_google_tensor.bin");
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto model_buf_with_bytecode,
+      litert::internal::GetModelBufWithByteCode(tfl_path, bin_path));
+
+  LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
+      model_buf_with_bytecode.Data(), model_buf_with_bytecode.Size(), model));
+
+  return model_buf_with_bytecode;
+}
 
 TEST(DispatchApiStaticLinkTest, RegistersStaticallyLinkedAccelerator) {
   // Create environment without setting kLiteRtEnvOptionTagDispatchLibraryDir.
@@ -43,11 +67,9 @@ TEST(DispatchApiStaticLinkTest, RegistersStaticallyLinkedAccelerator) {
 }
 
 TEST(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
-  auto path = testing::GetTestFilePath(
-      "simple_model_npu_google_tensor_precompiled.tflite");
-
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_holder,
+                              CreateModelFromReferenceData(&model));
 
   LiteRtOptions compilation_options;
   ASSERT_EQ(LiteRtCreateOptions(&compilation_options), kLiteRtStatusOk);
@@ -71,13 +93,10 @@ TEST(DispatchApiStaticLinkTest, CanCreateCompiledModel) {
   LiteRtDestroyEnvironment(environment);
 }
 
-// TODO(b/465442719): Re-enable this test.
-TEST(DispatchApiStaticLinkTest, DISABLED_CanRunCompiledModel) {
-  auto path = testing::GetTestFilePath(
-      "simple_model_npu_google_tensor_precompiled.tflite");
-
+TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
   LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_holder,
+                              CreateModelFromReferenceData(&model));
 
   LiteRtOptions compilation_options;
   ASSERT_EQ(LiteRtCreateOptions(&compilation_options), kLiteRtStatusOk);
