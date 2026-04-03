@@ -185,7 +185,7 @@ T GetValForSymUnavailable() {
 
 constexpr char kDefaultSouthBoundLibPath[] =
 #ifdef __ANDROID__
-    "/vendor/lib64/libedgetpu_litert.so";
+    "libedgetpu_litert.so";
 #else
     "third_party/darwinn/litert/dispatch/libedgetpu_litert.so";
 #endif  // __ANDROID__
