@@ -18,6 +18,9 @@ static const ov::element::Type MapLiteTypeToOV(
     case kLiteRtElementTypeBool:
       ov_type = ov::element::boolean;
       break;
+    case kLiteRtElementTypeInt2:
+      ov_type = ov::element::i2;
+      break;
     case kLiteRtElementTypeInt4:
       ov_type = ov::element::i4;
       break;

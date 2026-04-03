@@ -16,6 +16,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_GRAPH_ITERATOR_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_GRAPH_ITERATOR_H_
 
+#include <cstdint>
 #include <memory>
 #include <unordered_set>
 #include <vector>
@@ -96,6 +97,10 @@ class GraphIteratorDelegate
   size_t node_index_ = 0;
   const litert::Subgraph* subgraph_ptr_;
   struct OVGraphIndices iterator_indices_;
+  // Owns converted weight buffers for i2-to-u2 transformations. Each entry
+  // holds a copy of the original packed bytes with the MSB of every 2-bit
+  // pair flipped (XOR 0xAA), which shifts signed [-2,1] to unsigned [0,3].
+  mutable std::vector<std::vector<uint8_t>> converted_i2_buffers_;
 };
 
 }  // namespace openvino

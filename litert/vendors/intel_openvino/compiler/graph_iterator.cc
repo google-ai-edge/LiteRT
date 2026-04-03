@@ -15,9 +15,13 @@
 
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
 namespace litert {
@@ -130,6 +134,38 @@ GraphIteratorDelegate::get_decoder() const {
         LITERT_LOG(LITERT_VERBOSE, "Data is static or constant for op %d",
                    op.Code());
         tensor_meta_info.m_tensor_data = input.Weights().Bytes().data();
+
+        // Convert i2 weights to u2 for NPU friendliness in FullyConnected ops
+        // with per-channel quantization. For each packed 2-bit signed value,
+        // adding 2 maps [-2,-1,0,1] to [0,1,2,3]. XOR with 0xAA flips each
+        // 2-bit pair's MSB which is equivalent to adding 2 (mod 4). The zero
+        // points are adjusted by +2 to compensate, so dequantized values are
+        // unchanged.
+        if (op.Code() == kLiteRtOpCodeTflFullyConnected &&
+            tensor_meta_info.m_element_type == ov::element::i2 &&
+            input.QTypeId() == kLiteRtQuantizationPerChannel) {
+          auto weight_bytes = input.Weights().Bytes();
+          auto& buf = converted_i2_buffers_.emplace_back(
+              weight_bytes.data(), weight_bytes.data() + weight_bytes.size());
+          for (auto& byte : buf) {
+            byte ^= static_cast<uint8_t>(0xAA);
+          }
+          tensor_meta_info.m_tensor_data = buf.data();
+          tensor_meta_info.m_element_type = ov::element::u2;
+
+          auto adjusted_qi = std::make_shared<
+              ov::frontend::tensorflow_lite::QuantizationInfo>(
+              *tensor_meta_info.m_quantization_info);
+          auto zps = adjusted_qi->get_zero_point();
+          for (auto& zp : zps) {
+            zp += 2;
+          }
+          adjusted_qi->set_zero_point(zps);
+          tensor_meta_info.m_quantization_info = adjusted_qi;
+          LITERT_LOG(LITERT_INFO,
+                     "Converted i2 weights to u2 for tensor: %s",
+                     tensor_meta_info.m_tensor_name.c_str());
+        }
       }
       input_meta_info.push_back(tensor_meta_info);
     }
