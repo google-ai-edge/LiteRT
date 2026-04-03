@@ -17,7 +17,7 @@
 
 #include <string>
 
-#include "absl/flags/declare.h"  // from @com_google_absl
+#include "absl/flags/declare.h"        // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_verisilicon_options.h"
 #include "litert/cc/litert_expected.h"
@@ -56,5 +56,6 @@ Expected<void> UpdateVerisiliconOptionsFromFlags(VerisiliconOptions& options);
 
 }  // namespace litert::verisilicon
 
-#endif  // INCLUDE_VERISILICON_COMPILE_FLAGS || INCLUDE_VERISILICON_RUNTIME_FLAGS
+#endif  // INCLUDE_VERISILICON_COMPILE_FLAGS ||
+        // INCLUDE_VERISILICON_RUNTIME_FLAGS
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_VERISILICON_FLAGS_H_

@@ -13,10 +13,11 @@
 // limitations under the License.
 #include "litert/c/options/litert_verisilicon_options.h"
 
+#include <gtest/gtest.h>
+
 #include <string>
 
-#include <gtest/gtest.h>
-#include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/match.h"        // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/test/matchers.h"
@@ -46,8 +47,8 @@ TEST(LrtVerisiliconOptionsTest, GetOpaqueDataEmpty) {
   const char* identifier;
   void* payload = nullptr;
   void (*payload_deleter)(void*);
-  LITERT_ASSERT_OK(LrtGetOpaqueVerisiliconOptionsData(options, &identifier,
-                                                   &payload, &payload_deleter));
+  LITERT_ASSERT_OK(LrtGetOpaqueVerisiliconOptionsData(
+      options, &identifier, &payload, &payload_deleter));
 
   EXPECT_STREQ(identifier, "verisilicon");
   const char* toml_str = static_cast<const char*>(payload);
@@ -64,11 +65,11 @@ TEST(LrtVersiliconOptionsTest, DeviceIndex) {
   unsigned int device_index = 0;
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetDeviceIndex(options, &device_index));
 
-  EXPECT_EQ(device_index,0);
+  EXPECT_EQ(device_index, 0);
   LITERT_ASSERT_OK(LrtVerisiliconOptionsSetDeviceIndex(options, 1));
 
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetDeviceIndex(options, &device_index));
-  ASSERT_EQ(device_index,1);
+  ASSERT_EQ(device_index, 1);
 
   LrtVerisiliconOptions parsed;
   SerializeAndParse(options, &parsed);
@@ -87,11 +88,11 @@ TEST(LiteRtVersiliconOptionsTest, CoreIndex) {
   unsigned int core_index = 0;
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetCoreIndex(options, &core_index));
 
-  EXPECT_EQ(core_index,0);
+  EXPECT_EQ(core_index, 0);
   LITERT_ASSERT_OK(LrtVerisiliconOptionsSetCoreIndex(options, 1));
 
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetCoreIndex(options, &core_index));
-  ASSERT_EQ(core_index,1);
+  ASSERT_EQ(core_index, 1);
 
   LrtVerisiliconOptions parsed;
   SerializeAndParse(options, &parsed);
@@ -111,10 +112,10 @@ TEST(LiteRtVersiliconOptionsTest, TimeOut) {
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetTimeOut(options, &time_out));
 
   EXPECT_EQ(time_out, 0);
-  //LITERT_ASSERT_OK(LrtVerisiliconOptionsSetTimeOut(options, 1000));
+  // LITERT_ASSERT_OK(LrtVerisiliconOptionsSetTimeOut(options, 1000));
 
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetTimeOut(options, &time_out));
-  ASSERT_EQ(time_out,1000);
+  ASSERT_EQ(time_out, 1000);
 
   LrtVerisiliconOptions parsed;
   SerializeAndParse(options, &parsed);
@@ -131,12 +132,14 @@ TEST(LiteRtVersiliconOptionsTest, ProfileLevel) {
   LITERT_ASSERT_OK(LrtCreateVerisiliconOptions(&options));
 
   unsigned int profile_level = 10;
-  LITERT_ASSERT_OK(LrtVerisiliconOptionsGetProfileLevel(options, &profile_level));
+  LITERT_ASSERT_OK(
+      LrtVerisiliconOptionsGetProfileLevel(options, &profile_level));
 
-  EXPECT_EQ(profile_level,0);
-  //LITERT_ASSERT_OK(LrtVerisiliconOptionsSetProfileLevel(options, 2));
+  EXPECT_EQ(profile_level, 0);
+  // LITERT_ASSERT_OK(LrtVerisiliconOptionsSetProfileLevel(options, 2));
 
-  LITERT_ASSERT_OK(LrtVerisiliconOptionsGetProfileLevel(options, &profile_level));
+  LITERT_ASSERT_OK(
+      LrtVerisiliconOptionsGetProfileLevel(options, &profile_level));
   ASSERT_EQ(profile_level, 2);
 
   LrtVerisiliconOptions parsed;
@@ -157,7 +160,7 @@ TEST(LiteRtVersiliconOptionsTest, DumpNBG) {
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetDumpNBG(options, &enable));
 
   EXPECT_FALSE(enable);
-  //LITERT_ASSERT_OK(LrtVerisiliconOptionsSetDumpNBG(options, true));
+  // LITERT_ASSERT_OK(LrtVerisiliconOptionsSetDumpNBG(options, true));
 
   LITERT_ASSERT_OK(LrtVerisiliconOptionsGetDumpNBG(options, &enable));
   EXPECT_TRUE(enable);

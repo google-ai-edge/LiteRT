@@ -16,6 +16,7 @@
 
 #include <memory>
 #include <string>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_verisilicon_options.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -28,13 +29,15 @@ class VerisiliconOptions {
  public:
   VerisiliconOptions() : options_(nullptr) {}
 
-  explicit VerisiliconOptions(LrtVerisiliconOptions options): options_(options) {}
+  explicit VerisiliconOptions(LrtVerisiliconOptions options)
+      : options_(options) {}
   ~VerisiliconOptions() {
     if (options_) {
       LrtDestroyVerisiliconOptions(options_);
     }
   }
-  VerisiliconOptions(VerisiliconOptions&& other) noexcept : options_(other.options_) {
+  VerisiliconOptions(VerisiliconOptions&& other) noexcept
+      : options_(other.options_) {
     other.options_ = nullptr;
   }
   VerisiliconOptions& operator=(VerisiliconOptions&& other) noexcept {
@@ -50,12 +53,12 @@ class VerisiliconOptions {
   VerisiliconOptions(const VerisiliconOptions&) = delete;
   VerisiliconOptions& operator=(const VerisiliconOptions&) = delete;
 
-
   LrtVerisiliconOptions Get() const { return options_; }
   LrtVerisiliconOptions Release() {
     auto* res = options_;
     options_ = nullptr;
-    return res; }
+    return res;
+  }
   static const char* Discriminator() {
     return LrtVerisiliconOptionsGetIdentifier();
   }

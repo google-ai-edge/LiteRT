@@ -32,77 +32,60 @@ Expected<VerisiliconOptions> VerisiliconOptions::Create() {
 }
 
 Expected<void> VerisiliconOptions::SetDeviceIndex(unsigned int device_index) {
-  internal::AssertOk(LrtVerisiliconOptionsSetDeviceIndex, Get(),
-                     device_index);
+  internal::AssertOk(LrtVerisiliconOptionsSetDeviceIndex, Get(), device_index);
   return {};
 }
 
-Expected<unsigned int>
-VerisiliconOptions::GetDeviceIndex() const {
+Expected<unsigned int> VerisiliconOptions::GetDeviceIndex() const {
   unsigned int device_index = 0;
-  internal::AssertOk(LrtVerisiliconOptionsGetDeviceIndex, Get(),
-                     &device_index);
+  internal::AssertOk(LrtVerisiliconOptionsGetDeviceIndex, Get(), &device_index);
   return device_index;
 }
 
-Expected<void> VerisiliconOptions::SetCoreIndex(
-   unsigned int core_index) {
-  internal::AssertOk(LrtVerisiliconOptionsSetCoreIndex, Get(),
-                     core_index);
+Expected<void> VerisiliconOptions::SetCoreIndex(unsigned int core_index) {
+  internal::AssertOk(LrtVerisiliconOptionsSetCoreIndex, Get(), core_index);
   return {};
 }
 
-Expected<unsigned int>
-VerisiliconOptions::GetCoreIndex() const{
+Expected<unsigned int> VerisiliconOptions::GetCoreIndex() const {
   unsigned int core_index = 0;
-  internal::AssertOk(LrtVerisiliconOptionsGetCoreIndex, Get(),
-                     &core_index);
+  internal::AssertOk(LrtVerisiliconOptionsGetCoreIndex, Get(), &core_index);
   return core_index;
 }
 
-Expected<void>
-VerisiliconOptions::SetTimeOut(
-   unsigned int time_out) {
-  internal::AssertOk(LrtVerisiliconOptionsSetTimeOut, Get(),
-                     time_out);
+Expected<void> VerisiliconOptions::SetTimeOut(unsigned int time_out) {
+  internal::AssertOk(LrtVerisiliconOptionsSetTimeOut, Get(), time_out);
   return {};
 }
 
-Expected<unsigned int>
-VerisiliconOptions::GetTimeOut() const{
-  unsigned int time_out = 0;;
-  internal::AssertOk(LrtVerisiliconOptionsGetTimeOut, Get(),
-                     &time_out);
+Expected<unsigned int> VerisiliconOptions::GetTimeOut() const {
+  unsigned int time_out = 0;
+  ;
+  internal::AssertOk(LrtVerisiliconOptionsGetTimeOut, Get(), &time_out);
   return time_out;
 }
 
-Expected<void> VerisiliconOptions::SetProfileLevel(
-   unsigned int level) {
-  internal::AssertOk(LrtVerisiliconOptionsSetProfileLevel, Get(),
-                     level);
+Expected<void> VerisiliconOptions::SetProfileLevel(unsigned int level) {
+  internal::AssertOk(LrtVerisiliconOptionsSetProfileLevel, Get(), level);
   return {};
 }
 
-Expected<unsigned int>
-VerisiliconOptions::GetProfileLevel() const{
-  unsigned int level = 0;;
-  internal::AssertOk(LrtVerisiliconOptionsGetProfileLevel, Get(),
-                     &level);
+Expected<unsigned int> VerisiliconOptions::GetProfileLevel() const {
+  unsigned int level = 0;
+  ;
+  internal::AssertOk(LrtVerisiliconOptionsGetProfileLevel, Get(), &level);
   return level;
 }
 
-Expected<void> VerisiliconOptions::SetDumpNBG(
-   bool enable) {
-  internal::AssertOk(LrtVerisiliconOptionsSetDumpNBG, Get(),
-                     enable);
+Expected<void> VerisiliconOptions::SetDumpNBG(bool enable) {
+  internal::AssertOk(LrtVerisiliconOptionsSetDumpNBG, Get(), enable);
   return {};
 }
 
-Expected<bool>
-VerisiliconOptions::GetDumpNBG() const{
-  bool enable = 0;;
-  internal::AssertOk(LrtVerisiliconOptionsGetDumpNBG, Get(),
-                     &enable);
+Expected<bool> VerisiliconOptions::GetDumpNBG() const {
+  bool enable = 0;
+  ;
+  internal::AssertOk(LrtVerisiliconOptionsGetDumpNBG, Get(), &enable);
   return enable;
 }
 }  // namespace litert::verisilicon

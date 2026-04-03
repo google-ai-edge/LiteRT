@@ -264,7 +264,8 @@ Expected<Options> GetOptions() {
   LITERT_RETURN_IF_ERROR(UpdateSamsungOptionsFromFlags(samsung_opts));
   LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
   LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& verisislicon_opts, options.GetVerisiliconOptions());
+  LITERT_ASSIGN_OR_RETURN(auto& verisislicon_opts,
+                          options.GetVerisiliconOptions());
   LITERT_RETURN_IF_ERROR(UpdateVerisiliconOptionsFromFlags(verisislicon_opts));
   LITERT_RETURN_IF_ERROR(ConfigureScopedWeightSource(options));
   return options;

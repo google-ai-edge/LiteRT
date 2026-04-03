@@ -28,8 +28,8 @@ LiteRtStatus LrtCreateVerisiliconOptions(LrtVerisiliconOptions* options);
 
 #ifdef __cplusplus
 // Creates a verisilicon options object from a TOML payload.
-LiteRtStatus LrtCreateVerisiliconOptionsFromToml(const char* toml_payload,
-                                              LrtVerisiliconOptions* options);
+LiteRtStatus LrtCreateVerisiliconOptionsFromToml(
+    const char* toml_payload, LrtVerisiliconOptions* options);
 #endif  // __cplusplus
 
 // Destroys a verisilicon options object.
@@ -39,10 +39,9 @@ void LrtDestroyVerisiliconOptions(LrtVerisiliconOptions options);
 // opaque options. The caller is responsible for passing these to
 // `LiteRtCreateOpaqueOptions` and freeing the returned payload using
 // `payload_deleter`.
-LiteRtStatus LrtGetOpaqueVerisiliconOptionsData(const LrtVerisiliconOptions options,
-                                             const char** identifier,
-                                             void** payload,
-                                             void (**payload_deleter)(void*));
+LiteRtStatus LrtGetOpaqueVerisiliconOptionsData(
+    const LrtVerisiliconOptions options, const char** identifier,
+    void** payload, void (**payload_deleter)(void*));
 
 // The string identifier that discriminates verisilicon options within
 // type erased options.
@@ -50,58 +49,46 @@ const char* LrtVerisiliconOptionsGetIdentifier();
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-
 // DISPATCH OPTIONS /////////////////////////////////////////////////////////
 // viplite_adapter options --------------------------------------------
 
 // Specify the index of device for running the compiled model.
-LiteRtStatus LrtVerisiliconOptionsSetDeviceIndex(
-    LrtVerisiliconOptions options,
-    unsigned int device_index);
+LiteRtStatus LrtVerisiliconOptionsSetDeviceIndex(LrtVerisiliconOptions options,
+                                                 unsigned int device_index);
 
 LiteRtStatus LrtVerisiliconOptionsGetDeviceIndex(
-    const LrtVerisiliconOptions options,
-    unsigned int* device_index);
+    const LrtVerisiliconOptions options, unsigned int* device_index);
 
-//Specify the index of VIP-core for running the compiled model.
-LiteRtStatus LrtVerisiliconOptionsSetCoreIndex(
-    LrtVerisiliconOptions options,
-    unsigned int core_index);
+// Specify the index of VIP-core for running the compiled model.
+LiteRtStatus LrtVerisiliconOptionsSetCoreIndex(LrtVerisiliconOptions options,
+                                               unsigned int core_index);
 
 LiteRtStatus LrtVerisiliconOptionsGetCoreIndex(
-    const LrtVerisiliconOptions options,
-    unsigned int* core_index);
+    const LrtVerisiliconOptions options, unsigned int* core_index);
 
-//Specify milliseconds time out of network.
+// Specify milliseconds time out of network.
 LiteRtStatus LrtVerisiliconOptionsSetTimeOut(
-    const LrtVerisiliconOptions options,
-    unsigned int time);
+    const LrtVerisiliconOptions options, unsigned int time);
 
 LiteRtStatus LrtVerisiliconOptionsGetTimeOut(
-    const LrtVerisiliconOptions options,
-    unsigned int* time);
+    const LrtVerisiliconOptions options, unsigned int* time);
 
 /* 0: disable
    1: enable execute operations(commands) one by one
    2: enable execute operations(commands) one by one and show more log
 */
 LiteRtStatus LrtVerisiliconOptionsSetProfileLevel(
-    const LrtVerisiliconOptions options,
-    unsigned int level);
+    const LrtVerisiliconOptions options, unsigned int level);
 
 LiteRtStatus LrtVerisiliconOptionsGetProfileLevel(
-    const LrtVerisiliconOptions options,
-    unsigned int* level);
+    const LrtVerisiliconOptions options, unsigned int* level);
 
 /*dump NBG resource(nbg, input, output)*/
 LiteRtStatus LrtVerisiliconOptionsSetDumpNBG(
-    const LrtVerisiliconOptions options,
-    bool enable);
+    const LrtVerisiliconOptions options, bool enable);
 
 LiteRtStatus LrtVerisiliconOptionsGetDumpNBG(
-    const LrtVerisiliconOptions options,
-    bool* enable);
-
+    const LrtVerisiliconOptions options, bool* enable);
 
 #ifdef __cplusplus
 

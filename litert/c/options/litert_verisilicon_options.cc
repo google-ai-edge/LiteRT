@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"   // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
@@ -45,13 +45,14 @@ LiteRtStatus LrtCreateVerisiliconOptions(LrtVerisiliconOptions* options) {
   }
   *options = new LrtVerisiliconOptionsT;
   return kLiteRtStatusOk;
-
 }
 
-void LrtDestroyVerisiliconOptions(LrtVerisiliconOptions options) { delete options; }
+void LrtDestroyVerisiliconOptions(LrtVerisiliconOptions options) {
+  delete options;
+}
 
-LiteRtStatus LrtCreateVerisiliconOptionsFromToml(const char* toml_payload,
-                                              LrtVerisiliconOptions* options) {
+LiteRtStatus LrtCreateVerisiliconOptionsFromToml(
+    const char* toml_payload, LrtVerisiliconOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -65,33 +66,37 @@ LiteRtStatus LrtCreateVerisiliconOptionsFromToml(const char* toml_payload,
 
   auto status = ::litert::internal::ParseToml(
       toml_payload,
-      [&parsed_options](absl::string_view key, absl::string_view value) -> LiteRtStatus {
+      [&parsed_options](absl::string_view key,
+                        absl::string_view value) -> LiteRtStatus {
         if (key == "device_index") {
           LITERT_ASSIGN_OR_RETURN(auto device_index,
                                   ::litert::internal::ParseTomlInt(value));
-          return LrtVerisiliconOptionsSetDeviceIndex(parsed_options, static_cast<uint32_t>(device_index));
+          return LrtVerisiliconOptionsSetDeviceIndex(
+              parsed_options, static_cast<uint32_t>(device_index));
         }
         if (key == "core_index") {
           LITERT_ASSIGN_OR_RETURN(auto core_index,
                                   ::litert::internal::ParseTomlInt(value));
-          return LrtVerisiliconOptionsSetCoreIndex(parsed_options, static_cast<uint32_t>(core_index));
+          return LrtVerisiliconOptionsSetCoreIndex(
+              parsed_options, static_cast<uint32_t>(core_index));
         }
         if (key == "time_out") {
           LITERT_ASSIGN_OR_RETURN(auto time,
                                   ::litert::internal::ParseTomlInt(value));
-          return LrtVerisiliconOptionsSetTimeOut(parsed_options, static_cast<uint32_t>(time));
+          return LrtVerisiliconOptionsSetTimeOut(parsed_options,
+                                                 static_cast<uint32_t>(time));
         }
         if (key == "profile_level") {
           LITERT_ASSIGN_OR_RETURN(auto profile_level,
                                   ::litert::internal::ParseTomlInt(value));
-          return LrtVerisiliconOptionsSetProfileLevel(parsed_options, static_cast<uint32_t>(profile_level));
+          return LrtVerisiliconOptionsSetProfileLevel(
+              parsed_options, static_cast<uint32_t>(profile_level));
         }
         if (key == "dump_nbg") {
           LITERT_ASSIGN_OR_RETURN(auto dump_nbg,
                                   ::litert::internal::ParseTomlBool(value));
           return LrtVerisiliconOptionsSetDumpNBG(parsed_options, dump_nbg);
         }
-
 
         // Ignore unknown keys to allow for forward compatibility.
         return kLiteRtStatusOk;
@@ -105,10 +110,9 @@ LiteRtStatus LrtCreateVerisiliconOptionsFromToml(const char* toml_payload,
   return status;
 }
 
-LiteRtStatus LrtGetOpaqueVerisiliconOptionsData(const LrtVerisiliconOptions options,
-                                             const char** identifier,
-                                             void** payload,
-                                             void (**payload_deleter)(void*)) {
+LiteRtStatus LrtGetOpaqueVerisiliconOptionsData(
+    const LrtVerisiliconOptions options, const char** identifier,
+    void** payload, void (**payload_deleter)(void*)) {
   if (options == nullptr || identifier == nullptr || payload == nullptr ||
       payload_deleter == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -121,24 +125,20 @@ LiteRtStatus LrtGetOpaqueVerisiliconOptionsData(const LrtVerisiliconOptions opti
                           static_cast<unsigned int>(*options->device_index));
   }
   if (options->core_index.has_value()) {
-    absl::StrAppendFormat(
-        &toml_str, "core_index = %d\n",
-        static_cast<unsigned int>(*options->core_index));
+    absl::StrAppendFormat(&toml_str, "core_index = %d\n",
+                          static_cast<unsigned int>(*options->core_index));
   }
   if (options->time_out.has_value()) {
-    absl::StrAppendFormat(
-        &toml_str, "time_out = %d\n",
-        static_cast<unsigned int>(*options->time_out));
+    absl::StrAppendFormat(&toml_str, "time_out = %d\n",
+                          static_cast<unsigned int>(*options->time_out));
   }
   if (options->profile_level.has_value()) {
-    absl::StrAppendFormat(
-        &toml_str, "profile_level = %d\n",
-        static_cast<unsigned int>(*options->profile_level));
+    absl::StrAppendFormat(&toml_str, "profile_level = %d\n",
+                          static_cast<unsigned int>(*options->profile_level));
   }
   if (options->dump_nbg.has_value()) {
-    absl::StrAppendFormat(
-        &toml_str, "dump_nbg = %s\n",
-        (*options->dump_nbg ? "true" : "false"));
+    absl::StrAppendFormat(&toml_str, "dump_nbg = %s\n",
+                          (*options->dump_nbg ? "true" : "false"));
   }
 
   *identifier = LrtVerisiliconOptionsGetIdentifier();
@@ -149,9 +149,8 @@ LiteRtStatus LrtGetOpaqueVerisiliconOptionsData(const LrtVerisiliconOptions opti
 const char* LrtVerisiliconOptionsGetIdentifier() { return "verisilicon"; }
 
 // device index ----------------------------------------------------------
-LiteRtStatus LrtVerisiliconOptionsSetDeviceIndex(
-    LrtVerisiliconOptions options,
-    unsigned int device_index) {
+LiteRtStatus LrtVerisiliconOptionsSetDeviceIndex(LrtVerisiliconOptions options,
+                                                 unsigned int device_index) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -160,8 +159,7 @@ LiteRtStatus LrtVerisiliconOptionsSetDeviceIndex(
 }
 
 LiteRtStatus LrtVerisiliconOptionsGetDeviceIndex(
-    const LrtVerisiliconOptions options,
-    unsigned int* device_index) {
+    const LrtVerisiliconOptions options, unsigned int* device_index) {
   if (options == nullptr || device_index == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -170,9 +168,8 @@ LiteRtStatus LrtVerisiliconOptionsGetDeviceIndex(
 }
 
 // core index ----------------------------------------------------------
-LiteRtStatus LrtVerisiliconOptionsSetCoreIndex(
-    LrtVerisiliconOptions options,
-    unsigned int core_index) {
+LiteRtStatus LrtVerisiliconOptionsSetCoreIndex(LrtVerisiliconOptions options,
+                                               unsigned int core_index) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -181,8 +178,7 @@ LiteRtStatus LrtVerisiliconOptionsSetCoreIndex(
 }
 
 LiteRtStatus LrtVerisiliconOptionsGetCoreIndex(
-    const LrtVerisiliconOptions options,
-    unsigned int* core_index) {
+    const LrtVerisiliconOptions options, unsigned int* core_index) {
   if (options == nullptr || core_index == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -191,9 +187,8 @@ LiteRtStatus LrtVerisiliconOptionsGetCoreIndex(
 }
 
 // Time Out ----------------------------------------------------------
-LiteRtStatus LrtVerisiliconOptionsSetTimeOut(
-    LrtVerisiliconOptions options,
-    unsigned int time) {
+LiteRtStatus LrtVerisiliconOptionsSetTimeOut(LrtVerisiliconOptions options,
+                                             unsigned int time) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -202,8 +197,7 @@ LiteRtStatus LrtVerisiliconOptionsSetTimeOut(
 }
 
 LiteRtStatus LrtVerisiliconOptionsGetTimeOut(
-    const LrtVerisiliconOptions options,
-    unsigned int* time) {
+    const LrtVerisiliconOptions options, unsigned int* time) {
   if (options == nullptr || time == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -212,9 +206,8 @@ LiteRtStatus LrtVerisiliconOptionsGetTimeOut(
 }
 
 // profile level ----------------------------------------------------------
-LiteRtStatus LrtVerisiliconOptionsSetProfileLevel(
-    LrtVerisiliconOptions options,
-    unsigned int level) {
+LiteRtStatus LrtVerisiliconOptionsSetProfileLevel(LrtVerisiliconOptions options,
+                                                  unsigned int level) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -223,8 +216,7 @@ LiteRtStatus LrtVerisiliconOptionsSetProfileLevel(
 }
 
 LiteRtStatus LrtVerisiliconOptionsGetProfileLevel(
-    const LrtVerisiliconOptions options,
-    unsigned int* level) {
+    const LrtVerisiliconOptions options, unsigned int* level) {
   if (options == nullptr || level == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -233,9 +225,8 @@ LiteRtStatus LrtVerisiliconOptionsGetProfileLevel(
 }
 
 // Dump NBG ----------------------------------------------------------
-LiteRtStatus LrtVerisiliconOptionsSetDumpNBG(
-    LrtVerisiliconOptions options,
-    bool enable) {
+LiteRtStatus LrtVerisiliconOptionsSetDumpNBG(LrtVerisiliconOptions options,
+                                             bool enable) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -244,8 +235,7 @@ LiteRtStatus LrtVerisiliconOptionsSetDumpNBG(
 }
 
 LiteRtStatus LrtVerisiliconOptionsGetDumpNBG(
-    const LrtVerisiliconOptions options,
-    bool* enable) {
+    const LrtVerisiliconOptions options, bool* enable) {
   if (options == nullptr || enable == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }

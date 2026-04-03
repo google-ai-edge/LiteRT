@@ -40,8 +40,7 @@ class VipliteAdapterApi {
   VipliteAdapterApi& operator=(const VipliteAdapterApi&) = delete;
   VipliteAdapterApi& operator=(VipliteAdapterApi&&) = delete;
 
-  static Expected<Ptr> Create(
-      std::optional<std::string> shared_library_dir);
+  static Expected<Ptr> Create(std::optional<std::string> shared_library_dir);
 
   const Api& api() const { return *api_; }
 
@@ -61,7 +60,6 @@ class VipliteAdapterApi {
   unsigned int runtime_version_;
 };
 
-
 // A convenient struct for holding function pointers to VIPLite API
 // symbols. These function pointers will be loaded to the shared library on
 // device during runtime.
@@ -71,7 +69,7 @@ struct VipliteAdapterApi::Api {
   decltype(&vip_destroy) deinit = nullptr;
   decltype(&vip_query_hardware) query_hardware = nullptr;
   decltype(&vip_create_buffer) create_buffer = nullptr;
-  decltype(&vip_destroy_buffer)  destroy_buffer= nullptr;
+  decltype(&vip_destroy_buffer) destroy_buffer = nullptr;
   decltype(&vip_map_buffer) map_buffer = nullptr;
   decltype(&vip_unmap_buffer) unmap_buffer = nullptr;
   decltype(&vip_get_buffer_size) get_buffer_size = nullptr;
@@ -99,7 +97,6 @@ struct VipliteAdapterApi::Api {
   decltype(&vip_trigger_group) trigger_group = nullptr;
   decltype(&vip_wait_group) wait_group = nullptr;
   decltype(&vip_power_management) power_management = nullptr;
-
 };
 
 }  // namespace litert::verisilicon

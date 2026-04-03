@@ -99,7 +99,7 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
   }
 
   unsigned int version = get_version();
-  if ( version < 0x20000) {
+  if (version < 0x20000) {
     LITERT_LOG(LITERT_ERROR, "viplite version is to low");
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -107,8 +107,8 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
            "Verisilicon Dispatch API version %d.%d.%d, VIPLITE API version "
            "%d.%d.%d",
            LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
-           LITERT_API_VERSION_PATCH, version >> 16 & 0xFF,
-           version >> 8 & 0xFF, version & 0xFF);
+           LITERT_API_VERSION_PATCH, version >> 16 & 0xFF, version >> 8 & 0xFF,
+           version & 0xFF);
   BuildId[sizeof(BuildId) - 1] = 0;
 
   return kLiteRtStatusOk;
@@ -131,8 +131,8 @@ LiteRtStatus LiteRtGetCapabilities(int* capabilities) {
 
 LiteRtStatus LiteRtDeviceContextCreate(
     LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
-  if (auto context =
-          LiteRtDispatchDeviceContextT::Create(*static_viplite_adapter, options);
+  if (auto context = LiteRtDispatchDeviceContextT::Create(
+          *static_viplite_adapter, options);
       context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
@@ -327,7 +327,8 @@ LiteRtDispatchInterface TheInterface = {
     .get_input_requirements = litert::verisilicon::LiteRtGetInputRequirements,
     .get_output_requirements = litert::verisilicon::LiteRtGetOutputRequirements,
     .register_tensor_buffer = litert::verisilicon::LiteRtRegisterTensorBuffer,
-    .unregister_tensor_buffer = litert::verisilicon::LiteRtUnregisterTensorBuffer,
+    .unregister_tensor_buffer =
+        litert::verisilicon::LiteRtUnregisterTensorBuffer,
     .invocation_context_create =
         litert::verisilicon::LiteRtInvocationContextCreate,
     .invocation_context_destroy =
@@ -344,7 +345,8 @@ LiteRtDispatchInterface TheInterface = {
     .get_num_metrics = nullptr,
     .get_metric = nullptr,
     .destroy_metrics = nullptr,
-    .check_runtime_compatibility = litert::verisilicon::CheckRuntimeCompatibility,
+    .check_runtime_compatibility =
+        litert::verisilicon::CheckRuntimeCompatibility,
 };
 
 LiteRtDispatchApi TheApi = {

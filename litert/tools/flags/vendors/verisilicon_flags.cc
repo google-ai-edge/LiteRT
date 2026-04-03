@@ -16,7 +16,7 @@
 
 #include <string>
 
-#include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/flags/flag.h"           // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_verisilicon_options.h"
 #include "litert/cc/litert_expected.h"
@@ -46,16 +46,11 @@ ABSL_FLAG(bool, verisilicon_dump_nbg, false,
 namespace litert::verisilicon {
 
 Expected<void> UpdateVerisiliconOptionsFromFlags(VerisiliconOptions& options) {
-  options.SetDeviceIndex(
-      absl::GetFlag(FLAGS_verisilicon_device_index));
-  options.SetCoreIndex(
-      absl::GetFlag(FLAGS_verisilicon_core_index));
-  options.SetTimeOut(
-      absl::GetFlag(FLAGS_verisilicon_time_out));
-  options.SetProfileLevel(
-      absl::GetFlag(FLAGS_verisilicon_profile_level));
-  options.SetDumpNBG(
-      absl::GetFlag(FLAGS_verisilicon_dump_nbg));
+  options.SetDeviceIndex(absl::GetFlag(FLAGS_verisilicon_device_index));
+  options.SetCoreIndex(absl::GetFlag(FLAGS_verisilicon_core_index));
+  options.SetTimeOut(absl::GetFlag(FLAGS_verisilicon_time_out));
+  options.SetProfileLevel(absl::GetFlag(FLAGS_verisilicon_profile_level));
+  options.SetDumpNBG(absl::GetFlag(FLAGS_verisilicon_dump_nbg));
   return {};
 }
 

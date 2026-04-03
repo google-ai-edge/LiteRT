@@ -28,8 +28,8 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/vendors/c/litert_dispatch.h"
 #include "litert/core/util/tensor_type_util.h"
+#include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/verisilicon/dispatch/viplite_adapter_api.h"
 
 using litert::Error;
@@ -45,101 +45,105 @@ inline constexpr auto Pad(X x, Align align) {
 
 }  // namespace
 
-namespace litert{
-namespace verisilicon{
+namespace litert {
+namespace verisilicon {
 
-  litert::Expected<VipliteNetworkT::ModelPtr> VipliteNetworkT::CreateFromByteCode(
-      litert::verisilicon::VipliteAdapterApi &viplite_adapter_api,
-      const void* exec_bytecode_ptr,
-      size_t   exec_bytecode_size,
-      int num_inputs, int num_outputs, LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param) {
-     auto model_ptr = std::make_unique<VipliteNetworkT>(viplite_adapter_api, exec_bytecode_ptr,
-                                                        exec_bytecode_size);
-     LITERT_RETURN_IF_ERROR(model_ptr->Setup(vpm_param));
-     //Identify inputs and outputs
-     if (model_ptr->InputCount() != num_inputs ||
-         model_ptr->OutputCount() != num_inputs ) {
-          return Error(kLiteRtStatusErrorRuntimeFailure,
+litert::Expected<VipliteNetworkT::ModelPtr> VipliteNetworkT::CreateFromByteCode(
+    litert::verisilicon::VipliteAdapterApi& viplite_adapter_api,
+    const void* exec_bytecode_ptr, size_t exec_bytecode_size, int num_inputs,
+    int num_outputs, LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param) {
+  auto model_ptr = std::make_unique<VipliteNetworkT>(
+      viplite_adapter_api, exec_bytecode_ptr, exec_bytecode_size);
+  LITERT_RETURN_IF_ERROR(model_ptr->Setup(vpm_param));
+  // Identify inputs and outputs
+  if (model_ptr->InputCount() != num_inputs ||
+      model_ptr->OutputCount() != num_inputs) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to identify inputs and outputs");
-         }
-
-     return model_ptr;
   }
 
+  return model_ptr;
+}
+
 VipliteNetworkT::~VipliteNetworkT() {
-  if(network_){
+  if (network_) {
     viplite_adapter_api_.api().finish_network(network_);
     viplite_adapter_api_.api().destroy_network(network_);
   }
   network_ = NULL;
 }
-litert::Expected<void> VipliteNetworkT::Setup(LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param) {
-    // creat viplite network for memory
-    vip_create_network_param_t net_param;
-    uint32_t input_count = 0;
-    uint32_t output_count = 0;
-    unsigned int time_out;
-    unsigned int cnnprofile_level;
-    bool dump_nbg;
+litert::Expected<void> VipliteNetworkT::Setup(
+    LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param) {
+  // creat viplite network for memory
+  vip_create_network_param_t net_param;
+  uint32_t input_count = 0;
+  uint32_t output_count = 0;
+  unsigned int time_out;
+  unsigned int cnnprofile_level;
+  bool dump_nbg;
 
-    if(vpm_param) {
-      device_index_ = vpm_param->device_index;
-      core_index_ = vpm_param->core_index;
-      time_out = vpm_param->time_out;
-      cnnprofile_level = vpm_param->cnnprofile_level;
-      dump_nbg = vpm_param->dump_nbg;
-    }
-    memset(&net_param, 0, sizeof(net_param));
-    net_param.device_index = device_index_;
-    net_param.prop = VIP_NET_CREATE_PROP_FROM_NBG;
-    net_param.nbg.type = VIP_NET_CREATE_NBG_FROM_MEMORY;
-    net_param.nbg.memory.nbg_memory = (void *)exec_bytecode_ptr_;
-    net_param.nbg.memory.nbg_size = exec_bytecode_size_;
+  if (vpm_param) {
+    device_index_ = vpm_param->device_index;
+    core_index_ = vpm_param->core_index;
+    time_out = vpm_param->time_out;
+    cnnprofile_level = vpm_param->cnnprofile_level;
+    dump_nbg = vpm_param->dump_nbg;
+  }
+  memset(&net_param, 0, sizeof(net_param));
+  net_param.device_index = device_index_;
+  net_param.prop = VIP_NET_CREATE_PROP_FROM_NBG;
+  net_param.nbg.type = VIP_NET_CREATE_NBG_FROM_MEMORY;
+  net_param.nbg.memory.nbg_memory = (void*)exec_bytecode_ptr_;
+  net_param.nbg.memory.nbg_size = exec_bytecode_size_;
 
-    if (cnnprofile_level == 1) {
-        net_param.prop = (vip_net_create_prop_e)(net_param.prop | 0x00400000);
-    } else if (cnnprofile_level == 2) {
-        net_param.prop = (vip_net_create_prop_e)(net_param.prop | 0x00800000);
-    }
+  if (cnnprofile_level == 1) {
+    net_param.prop = (vip_net_create_prop_e)(net_param.prop | 0x00400000);
+  } else if (cnnprofile_level == 2) {
+    net_param.prop = (vip_net_create_prop_e)(net_param.prop | 0x00800000);
+  }
 
-    if (dump_nbg == 1) {
-        net_param.prop = (vip_net_create_prop_e)(net_param.prop | 0x01000000);
-    }
+  if (dump_nbg == 1) {
+    net_param.prop = (vip_net_create_prop_e)(net_param.prop | 0x01000000);
+  }
 
-    if (auto result = viplite_adapter_api_.api().create_network(&net_param,sizeof(net_param),&network_);
+  if (auto result = viplite_adapter_api_.api().create_network(
+          &net_param, sizeof(net_param), &network_);
       result != VIP_SUCCESS) {
-        return Error(kLiteRtStatusErrorRuntimeFailure,
+    return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to create viplite network");
-    }
-    LITERT_RETURN_IF_ERROR(Query(VIP_NETWORK_PROP_CORE_COUNT,&core_count_));
-    if(core_index_ >= core_count_) {
-        LITERT_LOG(LITERT_WARNING, "The core index is large than core count, using default 0");
-        core_index_ = 0;
-    }
-    LITERT_RETURN_IF_ERROR(Query(VIP_NETWORK_PROP_INPUT_COUNT,&input_count));
-    LITERT_RETURN_IF_ERROR(Query(VIP_NETWORK_PROP_INPUT_COUNT,&output_count));
-    LITERT_RETURN_IF_ERROR(Set(VIP_NETWORK_PROP_SET_CORE_INDEX,&core_index_));
-    if(time_out > 0) {
-      LITERT_RETURN_IF_ERROR(Set(VIP_NETWORK_PROP_SET_TIME_OUT,&time_out));
-    }
-    LITERT_RETURN_IF_ERROR(Prepare());
-    input_buffers_.resize(input_count, NULL);
-    output_buffers_.resize(output_count, NULL);
+  }
+  LITERT_RETURN_IF_ERROR(Query(VIP_NETWORK_PROP_CORE_COUNT, &core_count_));
+  if (core_index_ >= core_count_) {
+    LITERT_LOG(LITERT_WARNING,
+               "The core index is large than core count, using default 0");
+    core_index_ = 0;
+  }
+  LITERT_RETURN_IF_ERROR(Query(VIP_NETWORK_PROP_INPUT_COUNT, &input_count));
+  LITERT_RETURN_IF_ERROR(Query(VIP_NETWORK_PROP_INPUT_COUNT, &output_count));
+  LITERT_RETURN_IF_ERROR(Set(VIP_NETWORK_PROP_SET_CORE_INDEX, &core_index_));
+  if (time_out > 0) {
+    LITERT_RETURN_IF_ERROR(Set(VIP_NETWORK_PROP_SET_TIME_OUT, &time_out));
+  }
+  LITERT_RETURN_IF_ERROR(Prepare());
+  input_buffers_.resize(input_count, NULL);
+  output_buffers_.resize(output_count, NULL);
 
   return {};
 }
 
-litert::Expected<void> VipliteNetworkT::Query(VipEnum property, void *value) {
-  if (auto result = viplite_adapter_api_.api().query_network(network_,property,value);
+litert::Expected<void> VipliteNetworkT::Query(VipEnum property, void* value) {
+  if (auto result =
+          viplite_adapter_api_.api().query_network(network_, property, value);
       result != VIP_SUCCESS) {
-        return Error(kLiteRtStatusErrorRuntimeFailure,
+    return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to query viplite network");
-    }
-    return {};
+  }
+  return {};
 }
 
-litert::Expected<void> VipliteNetworkT::Set(VipEnum property, void *value) {
-  if (auto result = viplite_adapter_api_.api().set_network(network_, property, value);
+litert::Expected<void> VipliteNetworkT::Set(VipEnum property, void* value) {
+  if (auto result =
+          viplite_adapter_api_.api().set_network(network_, property, value);
       result != VIP_SUCCESS) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set viplite network");
@@ -192,109 +196,111 @@ litert::Expected<void> VipliteNetworkT::Cancel() {
   return {};
 }
 
-litert::Expected<void> VipliteNetworkT::QueryInput(uint32_t index, VipEnum property, void *value) {
+litert::Expected<void> VipliteNetworkT::QueryInput(uint32_t index,
+                                                   VipEnum property,
+                                                   void* value) {
   uint32_t input_count = input_buffers_.size();
   if (index >= input_count) {
     std::stringstream msgss("Failed to query viplite network input ");
-    msgss <<  std::to_string(index) << ". The index is large than input count("
-          <<std::to_string(input_count) << ") of the compiled model";
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index) << ". The index is large than input count("
+          << std::to_string(input_count) << ") of the compiled model";
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
-  if (auto result = viplite_adapter_api_.api().query_input(network_, index, property, value);
+  if (auto result = viplite_adapter_api_.api().query_input(network_, index,
+                                                           property, value);
       result != VIP_SUCCESS) {
     std::stringstream msgss("Failed to query viplite network input ");
-     msgss <<  std::to_string(index);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index);
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
   return {};
 }
 
-litert::Expected<void> VipliteNetworkT::QueryOutput(uint32_t index, VipEnum property, void *value) {
+litert::Expected<void> VipliteNetworkT::QueryOutput(uint32_t index,
+                                                    VipEnum property,
+                                                    void* value) {
   uint32_t output_count = output_buffers_.size();
   if (index >= output_count) {
     std::stringstream msgss("Failed to query viplite network output ");
-    msgss <<  std::to_string(index) << ". The index is large than output count("
-          <<std::to_string(output_count) << ") of the compiled model";
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index) << ". The index is large than output count("
+          << std::to_string(output_count) << ") of the compiled model";
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
-  if (auto result = viplite_adapter_api_.api().query_output(network_, index, property, value);
+  if (auto result = viplite_adapter_api_.api().query_output(network_, index,
+                                                            property, value);
       result != VIP_SUCCESS) {
     std::stringstream msgss("Failed to query viplite network output ");
-     msgss <<  std::to_string(index);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index);
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
   return {};
 }
 
-litert::Expected<void> VipliteNetworkT::SetInput(uint32_t index, VipBuffer buffer) {
+litert::Expected<void> VipliteNetworkT::SetInput(uint32_t index,
+                                                 VipBuffer buffer) {
   uint32_t input_count = input_buffers_.size();
   if (index >= input_count) {
     std::stringstream msgss("Failed to query viplite network input ");
-    msgss <<  std::to_string(index) << ". The index is large than input count("
-          <<std::to_string(input_count) << ") of the compiled model";
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index) << ". The index is large than input count("
+          << std::to_string(input_count) << ") of the compiled model";
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
-  if (auto result = viplite_adapter_api_.api().set_input(network_, index, buffer);
+  if (auto result =
+          viplite_adapter_api_.api().set_input(network_, index, buffer);
       result != VIP_SUCCESS) {
     std::stringstream msgss("Failed to set viplite network input ");
-     msgss <<  std::to_string(index);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index);
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
   input_buffers_.at(index) = buffer;
   return {};
 }
-litert::Expected<void> VipliteNetworkT::SetOutput(uint32_t index, VipBuffer buffer) {
+litert::Expected<void> VipliteNetworkT::SetOutput(uint32_t index,
+                                                  VipBuffer buffer) {
   uint32_t output_count = output_buffers_.size();
   if (index >= output_count) {
     std::stringstream msgss("Failed to query viplite network output ");
-    msgss <<  std::to_string(index) << ". The index is large than output count("
-          <<std::to_string(output_count) << ") of the compiled model";
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index) << ". The index is large than output count("
+          << std::to_string(output_count) << ") of the compiled model";
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
-  if (auto result = viplite_adapter_api_.api().set_output(network_, index, buffer);
-       result != VIP_SUCCESS) {
+  if (auto result =
+          viplite_adapter_api_.api().set_output(network_, index, buffer);
+      result != VIP_SUCCESS) {
     std::stringstream msgss("Failed to set viplite network output ");
-     msgss <<  std::to_string(index);
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index);
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
   input_buffers_.at(index) = buffer;
   return {};
 }
 
-litert::Expected<VipliteNetworkT::VipBuffer> VipliteNetworkT::GetInput(uint32_t index) {
+litert::Expected<VipliteNetworkT::VipBuffer> VipliteNetworkT::GetInput(
+    uint32_t index) {
   uint32_t input_count = input_buffers_.size();
   if (index >= input_count) {
     std::stringstream msgss("Failed to query viplite network input ");
-    msgss <<  std::to_string(index) << ". The index is large than input count("
-          <<std::to_string(input_count) << ") of the compiled model";
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index) << ". The index is large than input count("
+          << std::to_string(input_count) << ") of the compiled model";
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
   return input_buffers_.at(index);
 }
 
-litert::Expected<VipliteNetworkT::VipBuffer> VipliteNetworkT::GetOutput(uint32_t index) {
+litert::Expected<VipliteNetworkT::VipBuffer> VipliteNetworkT::GetOutput(
+    uint32_t index) {
   uint32_t output_count = output_buffers_.size();
   if (index >= output_count) {
     std::stringstream msgss("Failed to query viplite network output ");
-    msgss <<  std::to_string(index) << ". The index is large than output count("
-          <<std::to_string(output_count) << ") of the compiled model";
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 msgss.str());
+    msgss << std::to_string(index) << ". The index is large than output count("
+          << std::to_string(output_count) << ") of the compiled model";
+    return Error(kLiteRtStatusErrorRuntimeFailure, msgss.str());
   }
   return input_buffers_.at(index);
 }
 
-} //namespace verisilicon
-} //namespace litert
+}  // namespace verisilicon
+}  // namespace litert
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::Create(
@@ -303,7 +309,6 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs) {
-
   (void)function_name;
   const char* exec_bytecode_ptr =
       static_cast<const char*>(exec_bytecode_buffer->base_addr) +
@@ -312,15 +317,15 @@ LiteRtDispatchInvocationContextT::Create(
   LiteRtDispatchDeviceContextT::VpmNetworkParam vpm_param = {0};
   device_context->GetVpmNetworkParam(&vpm_param);
 
-  LITERT_ASSIGN_OR_RETURN(litert::verisilicon::VipliteNetworkT::ModelPtr model,
-              litert::verisilicon::VipliteNetworkT::CreateFromByteCode(viplite_adapter_api, exec_bytecode_ptr,
-                                        exec_bytecode_size, num_inputs, num_outputs, &vpm_param));
+  LITERT_ASSIGN_OR_RETURN(
+      litert::verisilicon::VipliteNetworkT::ModelPtr model,
+      litert::verisilicon::VipliteNetworkT::CreateFromByteCode(
+          viplite_adapter_api, exec_bytecode_ptr, exec_bytecode_size,
+          num_inputs, num_outputs, &vpm_param));
 
   return Ptr(new LiteRtDispatchInvocationContextT(
-      viplite_adapter_api,
-      device_context,
-      std::move(model),
-      num_inputs,num_outputs));
+      viplite_adapter_api, device_context, std::move(model), num_inputs,
+      num_outputs));
 }
 
 namespace {
@@ -341,18 +346,20 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
     return Unexpected(buffer_size.Error());
   }
   // Viplite maps host memory need memory size align cache line (64) .
-  size_t padded_buffer_size = Pad(*buffer_size, litert::verisilicon::kVipliteCacheLineAlignment);
-  //Viplite maps host memory need memory start address align with burst size(256).
+  size_t padded_buffer_size =
+      Pad(*buffer_size, litert::verisilicon::kVipliteCacheLineAlignment);
+  // Viplite maps host memory need memory start address align with burst
+  // size(256).
   LiteRtTensorBufferRequirements requirements;
   if (auto status = LiteRtCreateTensorBufferRequirementsWithAlignment(
-              num_supported_tensor_buffer_types,
-              LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes,
-              padded_buffer_size, /*num_strides=*/0, /*strides=*/nullptr,
-              litert::verisilicon::kVipliteAddressAlignment, &requirements);
-        status != kLiteRtStatusOk) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to create tensor buffer requirements");
-    }
+          num_supported_tensor_buffer_types,
+          LiteRtDispatchDeviceContextT::kSupportedTensorBufferTypes,
+          padded_buffer_size, /*num_strides=*/0, /*strides=*/nullptr,
+          litert::verisilicon::kVipliteAddressAlignment, &requirements);
+      status != kLiteRtStatusOk) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to create tensor buffer requirements");
+  }
 
   return requirements;
 }
@@ -377,8 +384,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
   if (!viplite_memory_info) {
     return litert::Error(viplite_memory_info.Error());
   }
-  LITERT_RETURN_IF_ERROR(model_->SetInput(graph_input_index,
-                                          viplite_memory_info->buffer));
+  LITERT_RETURN_IF_ERROR(
+      model_->SetInput(graph_input_index, viplite_memory_info->buffer));
   input_buffers_handles_.at(graph_input_index) = tensor_buffer_handle;
   return {};
 }
@@ -390,8 +397,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
   if (!viplite_memory_info) {
     return litert::Error(viplite_memory_info.Error());
   }
-  LITERT_RETURN_IF_ERROR(model_->SetOutput(graph_output_index,
-                                          viplite_memory_info->buffer));
+  LITERT_RETURN_IF_ERROR(
+      model_->SetOutput(graph_output_index, viplite_memory_info->buffer));
   output_buffers_handles_.at(graph_output_index) = tensor_buffer_handle;
   return {};
 }
@@ -409,36 +416,42 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  //When creating an input buffer in host memory,
-  //the CPU cache must be flushed to DDR to ensure the NPU receives the correct data.
+  // When creating an input buffer in host memory,
+  // the CPU cache must be flushed to DDR to ensure the NPU receives the correct
+  // data.
   for (size_t i = 0; i < model_->InputCount(); i++) {
-      auto viplite_memory_info =
-      device_context_->GetVipliteMemoryInfo(input_buffers_handles_[i]);
-      if(viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM) {
-        auto handle = viplite_adapter_api_.api().map_buffer(viplite_memory_info->buffer);
-        memcpy(handle, viplite_memory_info->host_addr, viplite_memory_info->size);
-        viplite_adapter_api_.api().unmap_buffer(viplite_memory_info->buffer);
-      }
-      if(viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM ||
-         viplite_memory_info->create_type == VIP_BUFFER_CREATE_FROM_USER_MEM ) {
-            viplite_adapter_api_.api().flush_buffer(viplite_memory_info->buffer,VIP_BUFFER_OPER_TYPE_FLUSH);
-         }
+    auto viplite_memory_info =
+        device_context_->GetVipliteMemoryInfo(input_buffers_handles_[i]);
+    if (viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM) {
+      auto handle =
+          viplite_adapter_api_.api().map_buffer(viplite_memory_info->buffer);
+      memcpy(handle, viplite_memory_info->host_addr, viplite_memory_info->size);
+      viplite_adapter_api_.api().unmap_buffer(viplite_memory_info->buffer);
+    }
+    if (viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM ||
+        viplite_memory_info->create_type == VIP_BUFFER_CREATE_FROM_USER_MEM) {
+      viplite_adapter_api_.api().flush_buffer(viplite_memory_info->buffer,
+                                              VIP_BUFFER_OPER_TYPE_FLUSH);
+    }
   }
   LITERT_RETURN_IF_ERROR(model_->Run());
-  //Once the output is written to DDR by the NPU,
-  //the CPU cache must be invalidated to ensure correct data is read by the CPU.
+  // Once the output is written to DDR by the NPU,
+  // the CPU cache must be invalidated to ensure correct data is read by the
+  // CPU.
   for (size_t i = 0; i < model_->OutputCount(); i++) {
     auto viplite_memory_info =
-      device_context_->GetVipliteMemoryInfo(output_buffers_handles_[i]);
-    if(viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM ||
-         viplite_memory_info->create_type == VIP_BUFFER_CREATE_FROM_USER_MEM ) {
-            viplite_adapter_api_.api().flush_buffer(viplite_memory_info->buffer,VIP_BUFFER_OPER_TYPE_INVALIDATE);
-         }
-      if(viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM) {
-        auto handle = viplite_adapter_api_.api().map_buffer(viplite_memory_info->buffer);
-        memcpy(viplite_memory_info->host_addr, handle, viplite_memory_info->size);
-        viplite_adapter_api_.api().unmap_buffer(viplite_memory_info->buffer);
-      }
+        device_context_->GetVipliteMemoryInfo(output_buffers_handles_[i]);
+    if (viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM ||
+        viplite_memory_info->create_type == VIP_BUFFER_CREATE_FROM_USER_MEM) {
+      viplite_adapter_api_.api().flush_buffer(viplite_memory_info->buffer,
+                                              VIP_BUFFER_OPER_TYPE_INVALIDATE);
+    }
+    if (viplite_memory_info->create_type == VIP_BUFFER_CREATE_ALLOC_MEM) {
+      auto handle =
+          viplite_adapter_api_.api().map_buffer(viplite_memory_info->buffer);
+      memcpy(viplite_memory_info->host_addr, handle, viplite_memory_info->size);
+      viplite_adapter_api_.api().unmap_buffer(viplite_memory_info->buffer);
+    }
   }
   return {};
 }

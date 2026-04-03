@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <any>
 #include <cstddef>
 #include <cstring>
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/log/log.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/log/log.h"       // from @com_google_absl
+#include "absl/types/span.h"    // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -46,7 +47,6 @@ litert::Expected<litert::Environment> CreateDefaultEnvironment() {
 }
 
 TEST(Verisilicon, DispatchApiWithHostMemory) {
-
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
@@ -352,7 +352,6 @@ TEST(Verisilicon, DispatchApiWithHostMemory) {
 }
 
 TEST(Verisilicon, DispatchApiWithDmaBuf) {
-
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
   EXPECT_EQ(LiteRtDispatchInitialize(/*options=*/nullptr, /*num_options=*/0),

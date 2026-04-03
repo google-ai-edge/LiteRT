@@ -31,56 +31,60 @@
 
 namespace litert::verisilicon {
 class VipliteNetworkT {
-public:
-    using ModelPtr = std::unique_ptr<VipliteNetworkT>;
-    using VipEnum = vip_enum;
-    using VipBuffer = vip_buffer;
-    using VipModel = vip_network;
-    static litert::Expected<ModelPtr> CreateFromByteCode(
-        litert::verisilicon::VipliteAdapterApi &viplite_adapter_api,
-        const void *exec_bytecode_ptr,
-        size_t exec_bytecode_size,
-        int num_inputs, int num_outputs,
-        LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param);
-    VipliteNetworkT(const VipliteNetworkT&) = delete;
-    VipliteNetworkT& operator=(const VipliteNetworkT&) = delete;
-    VipliteNetworkT(const litert::verisilicon::VipliteAdapterApi &viplite_adapter_api, const void *exec_bytecode_ptr,
-        size_t exec_bytecode_size)
-        : viplite_adapter_api_(viplite_adapter_api),
-          network_(NULL),
-          exec_bytecode_ptr_(exec_bytecode_ptr),
-          exec_bytecode_size_(exec_bytecode_size),
-          device_index_(0),
-          core_index_(0), core_count_(1){};
-    ~VipliteNetworkT();
-    litert::Expected<void> Setup(LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param);
+ public:
+  using ModelPtr = std::unique_ptr<VipliteNetworkT>;
+  using VipEnum = vip_enum;
+  using VipBuffer = vip_buffer;
+  using VipModel = vip_network;
+  static litert::Expected<ModelPtr> CreateFromByteCode(
+      litert::verisilicon::VipliteAdapterApi& viplite_adapter_api,
+      const void* exec_bytecode_ptr, size_t exec_bytecode_size, int num_inputs,
+      int num_outputs,
+      LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param);
+  VipliteNetworkT(const VipliteNetworkT&) = delete;
+  VipliteNetworkT& operator=(const VipliteNetworkT&) = delete;
+  VipliteNetworkT(
+      const litert::verisilicon::VipliteAdapterApi& viplite_adapter_api,
+      const void* exec_bytecode_ptr, size_t exec_bytecode_size)
+      : viplite_adapter_api_(viplite_adapter_api),
+        network_(NULL),
+        exec_bytecode_ptr_(exec_bytecode_ptr),
+        exec_bytecode_size_(exec_bytecode_size),
+        device_index_(0),
+        core_index_(0),
+        core_count_(1){};
+  ~VipliteNetworkT();
+  litert::Expected<void> Setup(
+      LiteRtDispatchDeviceContextT::VpmNetworkParam* vpm_param);
 
-    litert::Expected<void> Query(VipEnum property, void *value);
-    litert::Expected<void> Set(VipEnum property, void *value);
-    litert::Expected<void> Prepare();
-    litert::Expected<void> Run();
-    litert::Expected<void> Trigger();
-    litert::Expected<void> Wait();
-    litert::Expected<void> Cancel();
-    litert::Expected<void> QueryInput(uint32_t index, VipEnum property, void *value);
-    litert::Expected<void> QueryOutput(uint32_t index, VipEnum property, void *value);
-    litert::Expected<void> SetInput(uint32_t index, VipBuffer vip_buffer);
-    litert::Expected<void> SetOutput(uint32_t index, VipBuffer vip_buffer);
-    litert::Expected<VipBuffer> GetInput(uint32_t index);
-    litert::Expected<VipBuffer> GetOutput(uint32_t index);
-    const uint32_t InputCount() const { return input_buffers_.size(); }
-    const uint32_t OutputCount() const { return output_buffers_.size(); }
+  litert::Expected<void> Query(VipEnum property, void* value);
+  litert::Expected<void> Set(VipEnum property, void* value);
+  litert::Expected<void> Prepare();
+  litert::Expected<void> Run();
+  litert::Expected<void> Trigger();
+  litert::Expected<void> Wait();
+  litert::Expected<void> Cancel();
+  litert::Expected<void> QueryInput(uint32_t index, VipEnum property,
+                                    void* value);
+  litert::Expected<void> QueryOutput(uint32_t index, VipEnum property,
+                                     void* value);
+  litert::Expected<void> SetInput(uint32_t index, VipBuffer vip_buffer);
+  litert::Expected<void> SetOutput(uint32_t index, VipBuffer vip_buffer);
+  litert::Expected<VipBuffer> GetInput(uint32_t index);
+  litert::Expected<VipBuffer> GetOutput(uint32_t index);
+  const uint32_t InputCount() const { return input_buffers_.size(); }
+  const uint32_t OutputCount() const { return output_buffers_.size(); }
 
-private:
-    VipModel network_;
-    const litert::verisilicon::VipliteAdapterApi &viplite_adapter_api_;
-    uint32_t device_index_;
-    uint32_t core_index_;
-    uint32_t core_count_;
-    const void *exec_bytecode_ptr_;
-    size_t exec_bytecode_size_;
-    std::vector<VipBuffer> input_buffers_;
-    std::vector<VipBuffer> output_buffers_;
+ private:
+  VipModel network_;
+  const litert::verisilicon::VipliteAdapterApi& viplite_adapter_api_;
+  uint32_t device_index_;
+  uint32_t core_index_;
+  uint32_t core_count_;
+  const void* exec_bytecode_ptr_;
+  size_t exec_bytecode_size_;
+  std::vector<VipBuffer> input_buffers_;
+  std::vector<VipBuffer> output_buffers_;
 };
 }  // namespace litert::verisilicon
 
@@ -126,18 +130,19 @@ class LiteRtDispatchInvocationContextT {
   const LiteRtSchedulingInfo* GetSchedulingInfo() const {
     return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;
   }
+
  private:
   LiteRtDispatchInvocationContextT(
       const litert::verisilicon::VipliteAdapterApi& viplite_adapter_api,
       LiteRtDispatchDeviceContext device_context,
-      litert::verisilicon::VipliteNetworkT::ModelPtr model,
-      int num_inputs, int num_outputs)
+      litert::verisilicon::VipliteNetworkT::ModelPtr model, int num_inputs,
+      int num_outputs)
       : viplite_adapter_api_(viplite_adapter_api),
         device_context_(device_context),
-        model_(std::move(model)){
-            input_buffers_handles_.resize(num_inputs);
-            output_buffers_handles_.resize(num_outputs);
-        }
+        model_(std::move(model)) {
+    input_buffers_handles_.resize(num_inputs);
+    output_buffers_handles_.resize(num_outputs);
+  }
 
   const litert::verisilicon::VipliteAdapterApi& viplite_adapter_api_;
   LiteRtDispatchDeviceContext device_context_;

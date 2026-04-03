@@ -78,7 +78,8 @@ litert::Expected<void> VipliteAdapterApi::LoadSymbols(
   for (auto& so_path : so_paths) {
     auto maybe_dlib = SharedLibrary::Load(so_path, RtldFlags::Default());
     if (maybe_dlib.HasValue()) {
-      LITERT_LOG(LITERT_INFO, "Loading Verisilicon VIPLite adapter .so from: %s",
+      LITERT_LOG(LITERT_INFO,
+                 "Loading Verisilicon VIPLite adapter .so from: %s",
                  so_path.c_str());
       dlib_ = std::move(maybe_dlib.Value());
     }
@@ -99,7 +100,7 @@ litert::Expected<void> VipliteAdapterApi::LoadSymbols(
   LOAD_SYMB(vip_query_hardware, api_->query_hardware);
   LOAD_SYMB(vip_create_buffer, api_->create_buffer);
   LOAD_SYMB(vip_destroy_buffer, api_->destroy_buffer);
-  LOAD_SYMB(vip_map_buffer,api_->map_buffer);
+  LOAD_SYMB(vip_map_buffer, api_->map_buffer);
   LOAD_SYMB(vip_unmap_buffer, api_->unmap_buffer);
   LOAD_SYMB(vip_get_buffer_size, api_->get_buffer_size);
   LOAD_SYMB(vip_flush_buffer, api_->flush_buffer);
@@ -133,14 +134,13 @@ litert::Expected<void> VipliteAdapterApi::LoadSymbols(
 
 litert::Expected<void> VipliteAdapterApi::GetVipliteVersion() {
   runtime_version_ = api().get_version();
-  if(runtime_version_ < 0x20000){
+  if (runtime_version_ < 0x20000) {
     LITERT_LOG(LITERT_ERROR, "Viplite version is too low");
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Viplite version is too low");
   }
   LITERT_LOG(LITERT_INFO, "Viplite version: %d.%d.%d",
-             runtime_version_ >> 16 & 0xFF,
-             runtime_version_ >> 8 & 0xFF,
+             runtime_version_ >> 16 & 0xFF, runtime_version_ >> 8 & 0xFF,
              runtime_version_ & 0xFF);
   return {};
 }

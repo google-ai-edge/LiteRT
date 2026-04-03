@@ -18,13 +18,12 @@
 #include <memory>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/verisilicon/dispatch/viplite_adapter_api.h"
-#include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_options.h"
-
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -37,13 +36,13 @@ class LiteRtDispatchDeviceContextT {
     vip_buffer_create_type_e create_type;
   };
 
-struct VpmNetworkParam {
+  struct VpmNetworkParam {
     unsigned int time_out;
     unsigned int device_index;
     unsigned int core_index;
     unsigned int cnnprofile_level;
     bool dump_nbg;
-};
+  };
 
   static constexpr LiteRtTensorBufferType kSupportedTensorBufferTypes[] = {
       kLiteRtTensorBufferTypeHostMemory,
@@ -52,9 +51,7 @@ struct VpmNetworkParam {
 #endif
   };
 
-  ~LiteRtDispatchDeviceContextT() {
-    viplite_adapter_api_.api().deinit();
-  };
+  ~LiteRtDispatchDeviceContextT() { viplite_adapter_api_.api().deinit(); };
 
   static litert::Expected<Ptr> Create(
       const litert::verisilicon::VipliteAdapterApi& viplite_adapter_api,
@@ -80,13 +77,12 @@ struct VpmNetworkParam {
     }
   }
 
-  litert::Expected<void> GetVpmNetworkParam(VpmNetworkParam *vpm_param) {
-    if(!vpm_param)
-    {
+  litert::Expected<void> GetVpmNetworkParam(VpmNetworkParam* vpm_param) {
+    if (!vpm_param) {
       return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Invalid VpmNetworkParam handle");
+                                "Invalid VpmNetworkParam handle");
     } else {
-      memcpy(vpm_param,&vpm_param_,sizeof(vpm_param_));
+      memcpy(vpm_param, &vpm_param_, sizeof(vpm_param_));
       return {};
     }
   }
@@ -99,11 +95,13 @@ struct VpmNetworkParam {
         : viplite_adapter_api_(viplite_adapter_api) {}
     ~VipliteMemoryRegistry();
     LiteRtTensorBufferHandle Register(vip_buffer buffer, size_t size,
-                                      size_t offset, void* host_addr, vip_buffer_create_type_e create_type);
+                                      size_t offset, void* host_addr,
+                                      vip_buffer_create_type_e create_type);
     litert::Expected<void> Unregister(
         LiteRtTensorBufferHandle tensor_buffer_handle);
     litert::Expected<VipliteMemoryInfo*> Find(
         LiteRtTensorBufferHandle tensor_buffer_handle);
+
    private:
     const litert::verisilicon::VipliteAdapterApi& viplite_adapter_api_;
     std::vector<VipliteMemoryInfo> records_;
@@ -116,9 +114,9 @@ struct VpmNetworkParam {
         viplite_memory_registry_(viplite_adapter_api),
         lrt_options_(options),
         device_index_(0),
-        core_index_(0){
-          Init();
-        }
+        core_index_(0) {
+    Init();
+  }
 
   const litert::verisilicon::VipliteAdapterApi& viplite_adapter_api_;
   uint32_t device_index_;
