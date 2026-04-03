@@ -895,10 +895,9 @@ cc_shared_library(
     deps = [":litert_tflite_runtime_c_api_so_shim"],
 )
 
-SELECT_LITERT_RUNTIME_C_API_SO = select({
+SELECT_LITERT_RUNTIME_C_API_SHARED_LIB = select({
     ":resolve_symbols_in_exec": [],
     "@platforms//os:ios": [":litert_runtime_c_api_dylib"],
-    ":litert_macos_wheel_use_so": [":litert_runtime_c_api_so"],
     "@platforms//os:macos": [":litert_runtime_c_api_dylib"],
     "@platforms//os:windows": [],
     "//conditions:default": [":litert_runtime_c_api_so"],
@@ -907,7 +906,7 @@ SELECT_LITERT_RUNTIME_C_API_SO = select({
 # Allows referring to the above as a target with the name :libLiteRt.so.
 filegroup(
     name = "libLiteRt.so",
-    srcs = SELECT_LITERT_RUNTIME_C_API_SO,
+    srcs = SELECT_LITERT_RUNTIME_C_API_SHARED_LIB,
     visibility = ["//litert:litert_public"],
 )
 
@@ -932,12 +931,6 @@ selects.config_setting_group(
     ],
 )
 
-config_setting(
-    name = "litert_macos_wheel_use_so",
-    constraint_values = ["@platforms//os:macos"],
-    define_values = {"litert_macos_wheel_use_so": "true"},
-)
-
 filegroup(
     name = "c_api_headers",
     srcs = glob(
@@ -950,7 +943,7 @@ filegroup(
 # This is cc_library target based on `libLiteRt.so`.
 cc_library(
     name = "litert_runtime_c_api_shared_lib",
-    srcs = SELECT_LITERT_RUNTIME_C_API_SO,
+    srcs = SELECT_LITERT_RUNTIME_C_API_SHARED_LIB,
     hdrs = [
         ":c_api_headers",
         "//litert/c/internal:internal_headers",
