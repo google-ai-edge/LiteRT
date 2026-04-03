@@ -25,9 +25,7 @@ package(
 # copybara:uncomment_begin(google-only)
 # config_setting(
 #     name = "windows_msvc",
-#     constraint_values = [
-#         "@platforms//os:windows",
-#     ],
+#     constraint_values = ["@platforms//os:windows"],
 #     flag_values = {"//tools/cpp:compiler": "msvc"},
 # )
 # copybara:uncomment_end
@@ -45,9 +43,7 @@ config_setting(
 # copybara:uncomment_begin(google-only)
 # config_setting(
 #     name = "windows_lexan",
-#     constraint_values = [
-#         "@platforms//os:windows",
-#     ],
+#     constraint_values = ["@platforms//os:windows"],
 #     flag_values = {"//tools/cpp:compiler": "lexan"},
 # )
 # copybara:uncomment_end
@@ -66,9 +62,7 @@ config_setting(
 # API.
 cc_library(
     name = "dispatch",
-    srcs = select({
-        "//conditions:default": ["litert_dispatch.cc"],
-    }),
+    srcs = ["litert_dispatch.cc"],
     hdrs = [
         "//litert/vendors/c:litert_dispatch.h",
         "//litert/vendors/c:litert_dispatch_api.h",
@@ -105,12 +99,8 @@ cc_library(
 
 cc_library(
     name = "dispatch_opaque_options",
-    srcs = [
-        "dispatch_opaque_options.cc",
-    ],
-    hdrs = [
-        "dispatch_opaque_options.h",
-    ],
+    srcs = ["dispatch_opaque_options.cc"],
+    hdrs = ["dispatch_opaque_options.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
@@ -123,9 +113,7 @@ cc_library(
 
 cc_test(
     name = "dispatch_opaque_options_test",
-    srcs = [
-        "dispatch_opaque_options_test.cc",
-    ],
+    srcs = ["dispatch_opaque_options_test.cc"],
     deps = [
         ":dispatch_opaque_options",
         "//litert/cc:litert_opaque_options",
