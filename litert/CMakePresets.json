@@ -8,7 +8,8 @@
       "binaryDir": "${sourceDir}/cmake_build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "-fpermissive"
+        "CMAKE_CXX_FLAGS": "-fpermissive",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
       }
     },
     {
@@ -18,7 +19,8 @@
       "binaryDir": "${sourceDir}/cmake_build_debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fpermissive"
+        "CMAKE_CXX_FLAGS": "-fpermissive",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
       }
     },
     {
@@ -32,7 +34,8 @@
         "ANDROID_ABI": "arm64-v8a",
         "ANDROID_PLATFORM": "26",
         "CMAKE_BUILD_TYPE": "Release",
-        "LITERT_AUTO_BUILD_TFLITE": "ON"
+        "LITERT_AUTO_BUILD_TFLITE": "ON",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
       }
     },
     {
@@ -46,9 +49,9 @@
         "ANDROID_ABI": "arm64-v8a",
         "ANDROID_PLATFORM": "26",
         "CMAKE_BUILD_TYPE": "Debug",
-        "LITERT_AUTO_BUILD_TFLITE": "ON"
+        "LITERT_AUTO_BUILD_TFLITE": "ON",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
       }
     }
   ]
 }
-
