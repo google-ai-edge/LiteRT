@@ -32,8 +32,9 @@ else:
 class Environment:
   """Python wrapper for a shared LiteRT environment."""
 
-  def __init__(self, capsule):
+  def __init__(self, capsule, cpu_num_threads: int = 0):
     self._capsule = capsule
+    self.cpu_num_threads = cpu_num_threads
 
   @classmethod
   def create(
@@ -41,6 +42,7 @@ class Environment:
       runtime_path: Optional[str] = None,
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
+      cpu_num_threads: int = 1,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -49,6 +51,7 @@ class Environment:
         Defaults to the directory containing the Python wheel modules.
       compiler_plugin_path: Optional path to compiler plugin libraries.
       dispatch_library_path: Optional path to dispatch libraries.
+      cpu_num_threads: Number of threads for CPU execution.
 
     Returns:
       A new Environment instance.
@@ -60,7 +63,7 @@ class Environment:
         compiler_plugin_path=compiler_plugin_path,
         dispatch_library_path=dispatch_library_path,
     )
-    return cls(capsule)
+    return cls(capsule, cpu_num_threads)
 
   @property
   def capsule(self):

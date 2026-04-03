@@ -87,6 +87,7 @@ class CompiledModel:
         env.capsule,
         model_path,
         hardware_accel=hardware_accel,
+        cpu_num_threads=env.cpu_num_threads,
     )
     return cls(ptr, env)
 
@@ -117,6 +118,7 @@ class CompiledModel:
         env.capsule,
         model_data,
         hardware_accel=hardware_accel,
+        cpu_num_threads=env.cpu_num_threads,
     )
     return cls(ptr, env)
 
