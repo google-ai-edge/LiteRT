@@ -52,8 +52,8 @@ def litert_android_linkopts():
 
 def litert_metal_opts():
     return select({
-        "@platforms//os:ios": ["-ObjC++"],
-        "@platforms//os:macos": ["-ObjC++"],
+        "@platforms//os:ios": ["-ObjC++", "-fobjc-arc"],
+        "@platforms//os:macos": ["-ObjC++", "-fobjc-arc"],
         "//conditions:default": [],
     })
 
