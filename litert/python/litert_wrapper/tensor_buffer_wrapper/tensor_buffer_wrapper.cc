@@ -26,7 +26,6 @@
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -53,6 +52,7 @@ size_t ByteWidthOfDTypeImpl(const std::string& dtype) {
   if (dtype == "float16") return 2;
   if (dtype == "int32") return 4;
   if (dtype == "int8") return 1;
+  if (dtype == "uint8") return 1;
   return 0;
 }
 // A deallocator that performs no operation, used when the memory is managed
