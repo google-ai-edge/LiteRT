@@ -14,6 +14,8 @@
 
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
+#include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -23,7 +25,6 @@
 #include <optional>
 
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_metrics.h"
@@ -80,6 +81,7 @@ LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
   GT_LOG_RETURN_IF_SB_ERROR(thrInitialize(), "Failed to initialize SB");
   LiteRtEnvironmentOptions environment_options;
   LiteRtGetEnvironmentOptions(env, &environment_options);
+  LiteRtPropagateMinLoggerSeverity(environment_options);
   return InitializeDispatchApiConfig(environment_options, options);
 }
 

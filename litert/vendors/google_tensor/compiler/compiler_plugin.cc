@@ -30,16 +30,19 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
-#include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
@@ -451,6 +454,8 @@ class LiteRtCompilerPluginT {
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
+  LiteRtPropagateMinLoggerSeverity(env);
+
   *compiler_plugin = new LiteRtCompilerPluginT(env, options);
   return kLiteRtStatusOk;
 }

@@ -15,13 +15,14 @@
 
 #include "openvino/core/except.hpp"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -91,6 +92,12 @@ LiteRtStatus LockRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info,
 // This function should be called before calling any other Dispatch API
 // functions.
 LiteRtStatus DispatchInitialize(LiteRtEnvironment env, LiteRtOptions options) {
+  LiteRtEnvironmentOptions environment_options;
+  if (LiteRtGetEnvironmentOptions(env, &environment_options) ==
+      kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverity(environment_options);
+  }
+
   ov::Core core;
   std::vector<std::string> availableDevices = core.get_available_devices();
   for (auto&& device : availableDevices)

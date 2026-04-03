@@ -89,6 +89,8 @@ class EnvironmentOptions {
     /// Bitmask of LiteRtHwAccelerators to auto-register during environment
     /// creation. If unset, LiteRT auto-registers all supported accelerators.
     kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
+    /// Minimum logger severity for the environment.
+    kMinLoggerSeverity = kLiteRtEnvOptionTagMinLoggerSeverity,
   };
 
   struct Option {

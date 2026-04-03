@@ -32,6 +32,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_opaque_options.h"
@@ -242,6 +243,9 @@ LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                "QNN compiler plugin created with null options, these will be "
                "defaulted.");
   }
+  // Propagate the min logger severity from the environment.
+  LiteRtPropagateMinLoggerSeverity(env);
+
   auto* plugin = new LiteRtCompilerPluginT(env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;

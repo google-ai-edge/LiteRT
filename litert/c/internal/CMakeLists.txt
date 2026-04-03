@@ -22,6 +22,8 @@ set(LITERT_C_INTERNAL_HEADERS
     internal/litert_dispatch_delegate.h
     internal/litert_external_litert_buffer_context.h
     internal/litert_logging.h
+    internal/litert_logging_helper.h
+    internal/litert_logging_helper_with_runtime_context.h
     internal/litert_options_helper.h
     internal/litert_runtime_c_api.h
     internal/litert_runtime_context.h
@@ -41,6 +43,8 @@ set(LITERT_C_INTERNAL_SOURCES
 set(LITERT_C_INTERNAL_ALL_SOURCES
     ${LITERT_C_INTERNAL_SOURCES}
     internal/litert_logging.cc
+    internal/litert_logging_helper.cc
+    internal/litert_logging_helper_with_runtime_context.cc
 )
 
 file(GLOB LITERT_C_INTERNAL_DISCOVERED_HEADERS

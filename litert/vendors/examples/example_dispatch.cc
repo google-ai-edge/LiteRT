@@ -23,8 +23,10 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -305,6 +307,13 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
   the_environment = env;
   the_options = options;
+
+  LiteRtEnvironmentOptions environment_options;
+  if (LiteRtGetEnvironmentOptions(env, &environment_options) ==
+      kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverity(environment_options);
+  }
+
   return kLiteRtStatusOk;
 }
 

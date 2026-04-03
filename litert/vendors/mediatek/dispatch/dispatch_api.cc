@@ -25,6 +25,7 @@
 #endif
 
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
@@ -73,7 +74,10 @@ std::optional<std::string> GetSharedLibraryDir(
 LiteRtStatus LiteRtInitialize(LiteRtEnvironment environment,
                               LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  LiteRtGetEnvironmentOptions(environment, &environment_options);
+  if (LiteRtGetEnvironmentOptions(environment, &environment_options) ==
+      kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverity(environment_options);
+  }
   static_environment_options = environment_options;
   static_options = options;
 

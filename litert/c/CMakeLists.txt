@@ -147,7 +147,12 @@ set(LITERT_C_HEADERS
 )
 
 # Logging library (shared between core and C API)
-add_library(litert_logging STATIC internal/litert_logging.cc)
+add_library(litert_logging
+    STATIC
+        internal/litert_logging.cc
+        internal/litert_logging_helper.cc
+        internal/litert_logging_helper_with_runtime_context.cc
+)
 
 target_include_directories(litert_logging
     PUBLIC

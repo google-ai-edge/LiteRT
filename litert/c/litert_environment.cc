@@ -22,6 +22,7 @@
 #include "absl/base/const_init.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_macros.h"
@@ -48,6 +49,16 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
   // multi-threading.
   absl::MutexLock lock(environment_create_mutex);
 
+  auto min_logger_severity = std::find_if(
+      options, options + num_options, [](const LiteRtEnvOption& option) {
+        return option.tag == kLiteRtEnvOptionTagMinLoggerSeverity;
+      });
+  if (min_logger_severity != options + num_options) {
+    LiteRtSetMinLoggerSeverity(
+        LiteRtGetDefaultLogger(),
+        static_cast<LiteRtLogSeverity>(min_logger_severity->value.int_value));
+  }
+
   auto options_span = absl::MakeSpan(options, num_options);
   LITERT_ASSIGN_OR_RETURN(auto env,
                           LiteRtEnvironmentT::CreateWithOptions(options_span));
@@ -55,11 +66,16 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
 
   // Check if any GPU-related options are present using modern C++ algorithms
   constexpr std::array<LiteRtEnvOptionTag, 11> kGpuOptionTags = {
-      kLiteRtEnvOptionTagOpenClDeviceId, kLiteRtEnvOptionTagOpenClPlatformId,
-      kLiteRtEnvOptionTagOpenClContext,  kLiteRtEnvOptionTagOpenClCommandQueue,
-      kLiteRtEnvOptionTagEglContext,     kLiteRtEnvOptionTagEglDisplay,
-      kLiteRtEnvOptionTagWebGpuDevice,   kLiteRtEnvOptionTagWebGpuQueue,
-      kLiteRtEnvOptionTagMetalDevice,    kLiteRtEnvOptionTagMetalCommandQueue,
+      kLiteRtEnvOptionTagOpenClDeviceId,
+      kLiteRtEnvOptionTagOpenClPlatformId,
+      kLiteRtEnvOptionTagOpenClContext,
+      kLiteRtEnvOptionTagOpenClCommandQueue,
+      kLiteRtEnvOptionTagEglContext,
+      kLiteRtEnvOptionTagEglDisplay,
+      kLiteRtEnvOptionTagWebGpuDevice,
+      kLiteRtEnvOptionTagWebGpuQueue,
+      kLiteRtEnvOptionTagMetalDevice,
+      kLiteRtEnvOptionTagMetalCommandQueue,
       kLiteRtEnvOptionTagVulkanEnvironment};
 
   const bool has_gpu_options = std::any_of(
@@ -118,8 +134,8 @@ LiteRtStatus LiteRtAddEnvironmentOptions(LiteRtEnvironment environment,
   if (environment->HasGpuEnvironment()) {
     LITERT_ASSIGN_OR_RETURN(litert::internal::GpuEnvironment * gpu_env,
                             environment->GetGpuEnvironment());
-    LITERT_RETURN_IF_ERROR(gpu_env->AddEnvironmentOptions(
-        absl::MakeSpan(options, num_options)));
+    LITERT_RETURN_IF_ERROR(
+        gpu_env->AddEnvironmentOptions(absl::MakeSpan(options, num_options)));
   }
 #endif  // !defined(LITERT_DISABLE_GPU)
   return kLiteRtStatusOk;
@@ -166,7 +182,7 @@ LiteRtStatus LiteRtEnvironmentSupportsAhwbGlInterop(
 }
 
 void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
-                             bool* has_gpu_environment) {
+                                        bool* has_gpu_environment) {
   if (environment == nullptr) {
     *has_gpu_environment = false;
     return;
