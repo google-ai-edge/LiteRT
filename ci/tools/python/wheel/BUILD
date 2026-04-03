@@ -171,11 +171,6 @@ LITERT_RUNTIME_SHARED_LIB = select({
         "//litert/c:litert_runtime_c_api_dll",
     ],
     "//conditions:default": ["//litert/c:libLiteRt.so"],
-}) + select({
-    "@platforms//os:macos": [
-        "@litert_prebuilts//:macos_arm64/libLiteRt.dylib",
-    ],
-    "//conditions:default": [],
 })
 
 py_wheel(
