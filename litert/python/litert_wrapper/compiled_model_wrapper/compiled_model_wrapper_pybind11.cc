@@ -34,37 +34,38 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
   m.def(
       "CreateCompiledModelFromFile",
       [](py::object environment_capsule, const std::string& model_path,
-         int hardware_accel) {
+         int hardware_accel, int cpu_num_threads) {
         std::string error;
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
                 environment_capsule.ptr(), model_path.c_str(), hardware_accel,
-                &error);
+                cpu_num_threads, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
         return wrapper;  // Ownership transferred to pybind11
       },
       py::arg("environment_capsule"), py::arg("model_path"),
-      py::arg("hardware_accel") = 0);
+      py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0);
 
   // Factory method to create a CompiledModelWrapper from a model buffer.
   m.def(
       "CreateCompiledModelFromBuffer",
       [](py::object environment_capsule, py::bytes model_data,
-         int hardware_accel) {
+         int hardware_accel, int cpu_num_threads) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromBuffer(
-                environment_capsule.ptr(), data_obj, hardware_accel, &error);
+                environment_capsule.ptr(), data_obj, hardware_accel,
+                cpu_num_threads, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
         return wrapper;
       },
       py::arg("environment_capsule"), py::arg("model_data"),
-      py::arg("hardware_accel") = 0);
+      py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0);
 
   // Bindings for the CompiledModelWrapper class.
   py::class_<CompiledModelWrapper>(m, "CompiledModelWrapper")

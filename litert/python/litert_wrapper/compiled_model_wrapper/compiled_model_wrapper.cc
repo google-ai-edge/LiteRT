@@ -38,6 +38,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model_types.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
@@ -170,7 +171,7 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     PyObject* environment_capsule, const char* model_path, int hardware_accel,
-    std::string* out_error) {
+    int cpu_num_threads, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -186,9 +187,26 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
   }
   ExtendedModel model = std::move(*model_or);
 
+  // Create a compiled model options
+  auto options_or = litert::Options::Create();
+  if (!options_or) {
+    if (out_error) *out_error = options_or.Error().Message();
+    return nullptr;
+  }
+  auto& options = *options_or;
+  options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
+
+  if (cpu_num_threads > 0) {
+    auto cpu_options_or = options.GetCpuOptions();
+    if (!cpu_options_or) {
+      if (out_error) *out_error = cpu_options_or.Error().Message();
+      return nullptr;
+    }
+    cpu_options_or->SetNumThreads(cpu_num_threads);
+  }
+
   // Create a compiled model
-  auto compiled_or = CompiledModel::Create(
-      *env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
+  auto compiled_or = CompiledModel::Create(*env, model.Get(), options);
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;
@@ -209,7 +227,7 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-    std::string* out_error) {
+    int cpu_num_threads, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -235,9 +253,26 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   }
   ExtendedModel model = std::move(*model_or);
 
+  // Create a compiled model options
+  auto options_or = litert::Options::Create();
+  if (!options_or) {
+    if (out_error) *out_error = options_or.Error().Message();
+    return nullptr;
+  }
+  auto& options = *options_or;
+  options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
+
+  if (cpu_num_threads > 0) {
+    auto cpu_options_or = options.GetCpuOptions();
+    if (!cpu_options_or) {
+      if (out_error) *out_error = cpu_options_or.Error().Message();
+      return nullptr;
+    }
+    cpu_options_or->SetNumThreads(cpu_num_threads);
+  }
+
   // Create a compiled model
-  auto compiled_or = CompiledModel::Create(
-      *env, model.Get(), static_cast<HwAccelerators>(hardware_accel));
+  auto compiled_or = CompiledModel::Create(*env, model.Get(), options);
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;
