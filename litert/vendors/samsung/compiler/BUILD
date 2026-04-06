@@ -14,7 +14,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -25,11 +25,20 @@ litert_dynamic_lib(
     name = "compiler_plugin",
     srcs = ["compiler_plugin.cc"],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
+    copts = [
+        "-Os",
+        "-fno-exceptions",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+        "-ffunction-sections",
+        "-fdata-sections",
+    ],
     export_litert_only = True,
     linkopts = [
         # Wheel package places the shared library in the root directory.
         "-Wl,-rpath,$$ORIGIN/../../..",
     ],
+    linkstatic = 1,
     shared_lib_name = "compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Samsung.so",
     ungrte = True,
@@ -41,17 +50,14 @@ litert_dynamic_lib(
         ":compile_model",
         ":create_model",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/options:litert_samsung_options",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_samsung_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/samsung:ai_litecore_api",
         "//litert/vendors/samsung:soc_model",
@@ -66,12 +72,9 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_element_type",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/internal:litert_consts",
         "//litert/vendors/samsung:ai_litecore_api",
         "//litert/vendors/samsung/compiler/builders:batch_matmul_op_builder",
         "//litert/vendors/samsung/compiler/builders:cast_op_builder",
@@ -114,7 +117,8 @@ cc_library(
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
     deps = [
-        "//litert/cc:litert_common",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/vendors/samsung:ai_litecore_api",
         "@exynos_ai_litecore//:ai_litecore_headers",
