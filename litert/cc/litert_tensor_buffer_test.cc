@@ -42,6 +42,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/test/matchers.h"
@@ -319,6 +320,29 @@ TEST(TensorBuffer, HostMemory) {
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
   }
+}
+
+TEST(TensorBuffer, CreateManagedFromRequirements) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = TensorBufferType::kHostMemory;
+
+  const litert::TensorBufferType kSupportedTypes[] = {kTensorBufferType};
+  auto requirements = TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTypes, 1), sizeof(kTensorData));
+  ASSERT_TRUE(requirements);
+
+  auto tensor_buffer = TensorBuffer::CreateManagedFromRequirements(
+      env, kTensorType, *requirements);
+  ASSERT_TRUE(tensor_buffer);
+
+  auto tensor_buffer_type = tensor_buffer->BufferType();
+  ASSERT_TRUE(tensor_buffer_type);
+  ASSERT_EQ(*tensor_buffer_type, kTensorBufferType);
+
+  auto size = tensor_buffer->Size();
+  ASSERT_TRUE(size);
+  ASSERT_EQ(*size, sizeof(kTensorData));
 }
 
 bool CanLoadOpenCl() {

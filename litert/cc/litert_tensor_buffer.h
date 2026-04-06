@@ -44,6 +44,8 @@
 
 namespace litert {
 
+class TensorBufferRequirements;
+
 /// @brief A C++ wrapper for `LiteRtTensorBuffer`, representing a tensor and
 /// its associated backing buffer.
 class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
@@ -63,6 +65,14 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   static Expected<TensorBuffer> CreateManaged(
       const Environment& env, TensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
+
+  /// @brief Creates a managed `TensorBuffer` from requirements.
+  ///
+  /// The returned object is owned by the caller. It automatically selects
+  /// the best buffer type and applies required alignment and padding.
+  static Expected<TensorBuffer> CreateManagedFromRequirements(
+      const Environment& env, const RankedTensorType& tensor_type,
+      const TensorBufferRequirements& requirements);
 
   /// @brief Creates a managed host memory `TensorBuffer` using the default
   /// environment (if applicable).
