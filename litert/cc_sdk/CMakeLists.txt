@@ -119,3 +119,21 @@ target_link_libraries(run_model_simple
         absl::string_view
         absl::span
 )
+
+# dump_model_simple target for testing.
+add_executable(dump_model_simple
+    litert/tools/dump_model_simple.cc
+)
+
+target_include_directories(dump_model_simple
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(dump_model_simple
+    PRIVATE
+        litert_cc_api
+        absl::span
+        absl::log
+        absl::log_internal_check_op
+)
