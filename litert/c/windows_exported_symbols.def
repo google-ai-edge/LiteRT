@@ -211,3 +211,6 @@ EXPORTS
   LiteRtUnwrapDelegate
   LiteRtWaitEvent
   LiteRtWrapDelegate
+  LiteRtSamsungOptionsCreate
+  LiteRtSamsungOptionsGetIdentifier
+  LiteRtSamsungOptionsGet
