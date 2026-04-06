@@ -398,6 +398,22 @@ TEST_P(SliceOpTest, BeginNonZeroSizeMinus1Axis1BFloat16) {
                                 Eigen::bfloat16(8), Eigen::bfloat16(9)}));
 }
 
+TEST(SliceOpTest, NegativeBeginRejected) {
+  SliceOpModel<float, int32_t> m({4, 3}, {2}, {-1, 0}, {2}, {1, 2},
+                                 TensorType_INT32, TensorType_FLOAT32,
+                                 TestType::kDynamic);
+  m.SetInput({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+}
+
+TEST(SliceOpTest, NegativeBeginInt64Rejected) {
+  SliceOpModel<float, int64_t> m({4, 3}, {2}, {0, -2}, {2}, {2, 1},
+                                 TensorType_INT64, TensorType_FLOAT32,
+                                 TestType::kDynamic);
+  m.SetInput({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+}
+
 INSTANTIATE_TEST_SUITE_P(SliceOpTest, SliceOpTest,
                          ::testing::Values(TestType::kConst,
                                            TestType::kDynamic));
