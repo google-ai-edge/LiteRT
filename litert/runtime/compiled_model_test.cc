@@ -31,6 +31,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
@@ -1471,6 +1472,159 @@ TEST(CompiledModelTest, CheckResizeFail) {
   EXPECT_THAT(
       InputTensorNeedsResize(compiled_model.get(), input_tensor1, {2, 128, 4}),
       IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, DynamicResizeWithCustomAllocationsSimple) {
+  constexpr absl::string_view kSimpleAddDynamicShapeModel =
+      "simple_add_dynamic_shape.tflite";
+
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kSimpleAddDynamicShapeModel);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+  EXPECT_EQ(signature_key, litert::kDefaultSignatureKey);
+
+  const std::vector<std::string>& input_names = signatures[0]->InputNames();
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(const LiteRtSignatureT& signature,
+                              model->FindSignature(signature_key));
+  const LiteRtSubgraphT& subgraph = signature.GetSubgraph();
+  const LiteRtTensorT& tensor0 = *subgraph.Inputs()[0];
+  const LiteRtTensorT& tensor1 = *subgraph.Inputs()[1];
+  const LiteRtTensorT& tensor_out = *subgraph.Outputs()[0];
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  // 1. Resize to Shape A: {1, 128, 4}
+  std::vector<int> shape_a = {1, 128, 4};
+  for (size_t i = 0; i < input_names.size(); ++i) {
+    auto resize = compiled_model->ResizeInputTensor(
+        /*signature_index=*/0, /*input_index=*/i, shape_a);
+    ASSERT_TRUE(resize.HasValue()) << resize.Error().Message();
+  }
+
+  // 2. Create and Run with Shape A
+  LiteRtRankedTensorType type_a_0 = tensor0.Type().second.ranked_tensor_type;
+  type_a_0.layout.dimensions[0] = 1;
+  type_a_0.layout.dimensions[1] = 128;
+  type_a_0.layout.dimensions[2] = 4;
+  type_a_0.layout.rank = 3;
+
+  LiteRtRankedTensorType type_a_1 = tensor1.Type().second.ranked_tensor_type;
+  type_a_1.layout.dimensions[0] = 1;
+  type_a_1.layout.dimensions[1] = 128;
+  type_a_1.layout.dimensions[2] = 4;
+  type_a_1.layout.rank = 3;
+
+  LiteRtRankedTensorType type_out_a =
+      tensor_out.Type().second.ranked_tensor_type;
+  type_out_a.layout.dimensions[0] = 1;
+  type_out_a.layout.dimensions[1] = 128;
+  type_out_a.layout.dimensions[2] = 4;
+  type_out_a.layout.rank = 3;
+
+  size_t bytes_a = 1 * 128 * 4 * sizeof(float);
+
+  LiteRtTensorBuffer input_a_0, input_a_1, output_a;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_a_0, bytes_a, &input_a_0),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_a_1, bytes_a, &input_a_1),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_out_a, bytes_a, &output_a),
+            kLiteRtStatusOk);
+
+  std::vector<LiteRtTensorBuffer> inputs_a = {input_a_0, input_a_1};
+  std::vector<LiteRtTensorBuffer> outputs_a = {output_a};
+
+  bool async = false;
+  auto run_status_a =
+      compiled_model->Run(signature_key, inputs_a, outputs_a, async);
+  ASSERT_TRUE(run_status_a.HasValue()) << run_status_a.Error().Message();
+
+  // 3. Resize to Shape B: {2, 128, 4} (larger)
+  std::vector<int> shape_b = {2, 128, 4};
+  for (size_t i = 0; i < input_names.size(); ++i) {
+    auto resize = compiled_model->ResizeInputTensor(
+        /*signature_index=*/0, /*input_index=*/i, shape_b);
+    ASSERT_TRUE(resize.HasValue()) << resize.Error().Message();
+  }
+
+  // 4. Create and Run with Shape B
+  LiteRtRankedTensorType type_b_0 = tensor0.Type().second.ranked_tensor_type;
+  type_b_0.layout.dimensions[0] = 2;
+  type_b_0.layout.dimensions[1] = 128;
+  type_b_0.layout.dimensions[2] = 4;
+  type_b_0.layout.rank = 3;
+
+  LiteRtRankedTensorType type_b_1 = tensor1.Type().second.ranked_tensor_type;
+  type_b_1.layout.dimensions[0] = 2;
+  type_b_1.layout.dimensions[1] = 128;
+  type_b_1.layout.dimensions[2] = 4;
+  type_b_1.layout.rank = 3;
+
+  LiteRtRankedTensorType type_out_b =
+      tensor_out.Type().second.ranked_tensor_type;
+  type_out_b.layout.dimensions[0] = 2;
+  type_out_b.layout.dimensions[1] = 128;
+  type_out_b.layout.dimensions[2] = 4;
+  type_out_b.layout.rank = 3;
+
+  size_t bytes_b = 2 * 128 * 4 * sizeof(float);
+
+  LiteRtTensorBuffer input_b_0, input_b_1, output_b;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_b_0, bytes_b, &input_b_0),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_b_1, bytes_b, &input_b_1),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(env_ptr,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            &type_out_b, bytes_b, &output_b),
+            kLiteRtStatusOk);
+
+  std::vector<LiteRtTensorBuffer> inputs_b = {input_b_0, input_b_1};
+  std::vector<LiteRtTensorBuffer> outputs_b = {output_b};
+
+  auto run_status_b =
+      compiled_model->Run(signature_key, inputs_b, outputs_b, async);
+  ASSERT_TRUE(run_status_b.HasValue()) << run_status_b.Error().Message();
+
+  // Cleanup
+  for (auto& buf : inputs_a) LiteRtDestroyTensorBuffer(buf);
+  for (auto& buf : outputs_a) LiteRtDestroyTensorBuffer(buf);
+  for (auto& buf : inputs_b) LiteRtDestroyTensorBuffer(buf);
+  for (auto& buf : outputs_b) LiteRtDestroyTensorBuffer(buf);
 
   LiteRtDestroyOptions(jit_compilation_options);
   LiteRtDestroyModel(model);
