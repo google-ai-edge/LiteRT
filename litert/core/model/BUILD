@@ -483,6 +483,32 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_matmul",
+    hdrs = ["ops/matmul.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_matmul_test",
+    srcs = ["ops/matmul_test.cc"],
+    deps = [
+        ":model",
+        ":ops_matmul",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_pack_test",
     srcs = ["ops/pack_test.cc"],
