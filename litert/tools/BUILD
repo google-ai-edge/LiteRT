@@ -556,6 +556,20 @@ cc_binary(
     ],
 )
 
+# Simple dump_model that only requires the C++ API.
+cc_binary(
+    name = "dump_model_simple",
+    srcs = ["dump_model_simple.cc"],
+    deps = [
+        "//litert/c:litert_model_types",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_model_types",
+        "//litert/cc:litert_ranked_tensor_type",
+    ],
+)
+
 NUMERICS_CHECK_DEPS = [
     "@com_google_absl//absl/flags:flag",
     "@com_google_absl//absl/flags:parse",
