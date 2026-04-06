@@ -22,6 +22,8 @@
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
+#include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
@@ -52,8 +54,10 @@ LiteRtStatus LiteRtSamsungInitialize(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment environment,
     LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  LiteRtGetEnvironmentOptions(environment, &environment_options);
-
+  if (LiteRtGetEnvironmentOptions(environment, &environment_options) ==
+      kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverity(environment_options);
+  }
   const char* dispatch_lib_dir = nullptr;
   if (environment_options) {
     LiteRtAny dispatch_lib_dir_any;

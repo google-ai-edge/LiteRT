@@ -57,6 +57,7 @@ litert_dynamic_lib(
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
