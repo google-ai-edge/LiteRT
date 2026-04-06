@@ -125,6 +125,8 @@ typedef enum {
 // QUANTIZATION
 
 // Schema for tensors quantized with one set of q-params.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef struct {
   // Scaling factor.
   float scale;
@@ -132,16 +134,43 @@ typedef struct {
   // The value that float:0 maps to in q-space.
   int64_t zero_point;
 } LiteRtQuantizationPerTensor;
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtQuantizationPerTensor) == 16,
+              "LiteRtQuantizationPerTensor size mismatch");
+static_assert(offsetof(LiteRtQuantizationPerTensor, scale) == 0,
+              "LiteRtQuantizationPerTensor scale offset mismatch");
+static_assert(offsetof(LiteRtQuantizationPerTensor, zero_point) == 8,
+              "LiteRtQuantizationPerTensor zero_point offset mismatch");
+#endif  // __cplusplus
 
 // Schema for tensors quantized with one set of q-params per channel.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef struct {
   int32_t quantized_dimension;
   uint64_t num_channels;
   float* scales;
   int64_t* zero_points;
 } LiteRtQuantizationPerChannel;
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtQuantizationPerChannel) == 32,
+              "LiteRtQuantizationPerChannel size mismatch");
+static_assert(
+    offsetof(LiteRtQuantizationPerChannel, quantized_dimension) == 0,
+    "LiteRtQuantizationPerChannel quantized_dimension offset mismatch");
+static_assert(offsetof(LiteRtQuantizationPerChannel, num_channels) == 8,
+              "LiteRtQuantizationPerChannel num_channels offset mismatch");
+static_assert(offsetof(LiteRtQuantizationPerChannel, scales) == 16,
+              "LiteRtQuantizationPerChannel scales offset mismatch");
+static_assert(offsetof(LiteRtQuantizationPerChannel, zero_points) == 24,
+              "LiteRtQuantizationPerChannel zero_points offset mismatch");
+#endif  // __cplusplus
 
 // The identifier for quantization scheme type union.
+///
+/// @note This concrete type is part of the public API and is ABI stable.
 typedef enum {
   // Tag for tensors without quantization.
   kLiteRtQuantizationNone = 0,
@@ -155,7 +184,6 @@ typedef enum {
   // [NOT IMPLEMENTED YET] Q-params across blocks of fixed size (e.g. 2048).
   kLiteRtQuantizationBlockWise = 3,
 } LiteRtQuantizationTypeId;
-
 // Get the identifier for the type of quantization for a given tensor.
 LiteRtStatus LiteRtGetQuantizationTypeId(LiteRtTensor tensor,
                                          LiteRtQuantizationTypeId* q_type_id);
@@ -195,7 +223,6 @@ typedef struct LiteRtModelSerializationOptions {
   // Alignment is enforced relative to the first byte of the flatbuffer.
   size_t bytecode_alignment;
 } LiteRtModelSerializationOptions;
-
 
 #ifdef __cplusplus
 }

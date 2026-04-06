@@ -83,6 +83,38 @@ FetchTensorType(LiteRtTensor tensor, LiteRtTensorTypeId type_id) {
   }
 }
 
+LiteRtQuantizationTypeId FetchTensorQuantizationTypeId(LiteRtTensor tensor) {
+  if (tensor == nullptr) {
+    return kLiteRtQuantizationNone;
+  }
+  LiteRtQuantizationTypeId quantization_type_id;
+  internal::AssertOk(LiteRtGetQuantizationTypeId, tensor,
+                     &quantization_type_id);
+  return quantization_type_id;
+}
+
+LiteRtQuantizationPerTensor FetchTensorQuantizationPerTensor(
+    LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationPerTensor) {
+    return {};
+  }
+  LiteRtQuantizationPerTensor per_tensor_quantization;
+  internal::AssertOk(LiteRtGetPerTensorQuantization, tensor,
+                     &per_tensor_quantization);
+  return per_tensor_quantization;
+}
+
+LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
+    LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationPerChannel) {
+    return {};
+  }
+  LiteRtQuantizationPerChannel per_channel_quantization;
+  internal::AssertOk(LiteRtGetPerChannelQuantization, tensor,
+                     &per_channel_quantization);
+  return per_channel_quantization;
+}
+
 absl::string_view FetchSignatureKey(LiteRtSignature signature) {
   const char* key;
   internal::AssertOk(LiteRtGetSignatureKey, signature, &key);
@@ -172,8 +204,10 @@ Tensor::Tensor(LiteRtTensor tensor)
     : internal::NonOwnedHandle<LiteRtTensor>(tensor),
       litert::SimpleTensor(FetchTensorIndex(tensor), FetchTensorName(tensor),
                            FetchTensorTypeId(tensor),
-                           FetchTensorType(tensor, FetchTensorTypeId(tensor))) {
-}
+                           FetchTensorType(tensor, FetchTensorTypeId(tensor)),
+                           FetchTensorQuantizationTypeId(tensor),
+                           FetchTensorQuantizationPerTensor(tensor),
+                           FetchTensorQuantizationPerChannel(tensor)) {}
 
 bool Tensor::IsSubgraphInput() const {
   LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, RankedTensorType());

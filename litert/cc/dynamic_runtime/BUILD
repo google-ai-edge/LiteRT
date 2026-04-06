@@ -314,6 +314,7 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_layout",
+        "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_extended_model",
         "//litert/core/model",

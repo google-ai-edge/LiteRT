@@ -17,9 +17,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
-#include <memory>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -128,6 +128,38 @@ FetchTensorType(const internal::EnvironmentHolder& env, LiteRtTensor tensor,
   }
 }
 
+LiteRtQuantizationTypeId FetchTensorQuantizationTypeId(
+    const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
+  LiteRtQuantizationTypeId quantization_type_id;
+  LITERT_ABORT_IF_ERROR(
+      env.runtime->GetQuantizationTypeId(tensor, &quantization_type_id));
+  return quantization_type_id;
+}
+
+LiteRtQuantizationPerTensor FetchTensorQuantizationPerTensor(
+    const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(env, tensor) !=
+      kLiteRtQuantizationPerTensor) {
+    return {};
+  }
+  LiteRtQuantizationPerTensor per_tensor_quantization;
+  LITERT_ABORT_IF_ERROR(
+      env.runtime->GetPerTensorQuantization(tensor, &per_tensor_quantization));
+  return per_tensor_quantization;
+}
+
+LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
+    const internal::EnvironmentHolder& env, LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(env, tensor) !=
+      kLiteRtQuantizationPerChannel) {
+    return {};
+  }
+  LiteRtQuantizationPerChannel per_channel_quantization;
+  LITERT_ABORT_IF_ERROR(env.runtime->GetPerChannelQuantization(
+      tensor, &per_channel_quantization));
+  return per_channel_quantization;
+}
+
 absl::string_view FetchSignatureKey(const internal::EnvironmentHolder& env,
                                     LiteRtSignature signature) {
   const char* key;
@@ -181,7 +213,10 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureInputTensors(
     input_tensors.push_back(std::make_unique<SimpleTensor>(
         FetchTensorIndex(env, tensor), FetchTensorName(env, tensor),
         FetchTensorTypeId(env, tensor),
-        FetchTensorType(env, tensor, FetchTensorTypeId(env, tensor))));
+        FetchTensorType(env, tensor, FetchTensorTypeId(env, tensor)),
+        FetchTensorQuantizationTypeId(env, tensor),
+        FetchTensorQuantizationPerTensor(env, tensor),
+        FetchTensorQuantizationPerChannel(env, tensor)));
   }
   return input_tensors;
 }
@@ -200,7 +235,10 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
     output_tensors.push_back(std::make_unique<SimpleTensor>(
         FetchTensorIndex(env, tensor), FetchTensorName(env, tensor),
         FetchTensorTypeId(env, tensor),
-        FetchTensorType(env, tensor, FetchTensorTypeId(env, tensor))));
+        FetchTensorType(env, tensor, FetchTensorTypeId(env, tensor)),
+        FetchTensorQuantizationTypeId(env, tensor),
+        FetchTensorQuantizationPerTensor(env, tensor),
+        FetchTensorQuantizationPerChannel(env, tensor)));
   }
   return output_tensors;
 }
@@ -403,8 +441,9 @@ Expected<void> CompiledModel::ClearSchedulingInfo() const {
   return {};
 }
 
-Expected<void> CompiledModel::SetDispatchAnnotation(
-    size_t signature_index, absl::string_view key, absl::string_view value) {
+Expected<void> CompiledModel::SetDispatchAnnotation(size_t signature_index,
+                                                    absl::string_view key,
+                                                    absl::string_view value) {
   const std::string key_string(key);
   const std::string value_string(value);
   LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelSetDispatchAnnotation(
@@ -424,8 +463,8 @@ Expected<std::optional<std::string>> CompiledModel::GetDispatchAnnotation(
   return std::optional<std::string>(std::string(value));
 }
 
-Expected<void> CompiledModel::RemoveDispatchAnnotation(
-    size_t signature_index, absl::string_view key) {
+Expected<void> CompiledModel::RemoveDispatchAnnotation(size_t signature_index,
+                                                       absl::string_view key) {
   const std::string key_string(key);
   LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelRemoveDispatchAnnotation(
       Get(), signature_index, key_string.c_str()));
