@@ -15,7 +15,9 @@
 #include "litert/cc/litert_tensor_buffer.h"
 
 #include <cstddef>
+#include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model_types.h"
@@ -28,9 +30,43 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace litert {
+
+namespace {
+
+// Converts a `TensorBufferRequirements` C++ object to a
+// `LiteRtTensorBufferRequirements` C object. In compiled_model.cc, there is a
+// function named `ToTensorBufferRequirements` which converts a
+// `LiteRtTensorBufferRequirements` C object to a `TensorBufferRequirements`
+// C++ object.
+Expected<LiteRtTensorBufferRequirements> ToLiteRtTensorBufferRequirements(
+    const internal::EnvironmentHolder& env,
+    const TensorBufferRequirements& requirements) {
+  LITERT_ASSIGN_OR_RETURN(const auto supported_types,
+                          requirements.SupportedTypes());
+  LITERT_ASSIGN_OR_RETURN(const auto buffer_size, requirements.BufferSize());
+  LITERT_ASSIGN_OR_RETURN(const auto alignment, requirements.Alignment());
+  LITERT_ASSIGN_OR_RETURN(const auto strides, requirements.Strides());
+
+  std::vector<LiteRtTensorBufferType> litert_buffer_types;
+  litert_buffer_types.reserve(supported_types.size());
+  for (auto type : supported_types) {
+    litert_buffer_types.push_back(static_cast<LiteRtTensorBufferType>(type));
+  }
+
+  LiteRtTensorBufferRequirements litert_requirements;
+  LITERT_RETURN_IF_ERROR(
+      env.runtime->CreateTensorBufferRequirementsWithAlignment(
+          litert_buffer_types.size(), litert_buffer_types.data(), buffer_size,
+          strides.size(), strides.data(), alignment, &litert_requirements));
+
+  return litert_requirements;
+}
+
+}  // namespace
 
 Expected<TensorBuffer> TensorBuffer::Duplicate() const {
   if (!IsOwned()) {
@@ -50,6 +86,28 @@ Expected<TensorBuffer> TensorBuffer::CreateManaged(
   LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateManagedTensorBuffer(
       env_holder.handle, static_cast<LiteRtTensorBufferType>(buffer_type),
       &litert_tensor_type, buffer_size, &tensor_buffer));
+  return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
+}
+
+Expected<TensorBuffer> TensorBuffer::CreateManagedFromRequirements(
+    const Environment& env, const RankedTensorType& tensor_type,
+    const TensorBufferRequirements& requirements) {
+  LiteRtTensorBuffer tensor_buffer;
+  auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+  auto env_holder = env.GetHolder();
+
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtTensorBufferRequirements litert_requirements,
+      ToLiteRtTensorBufferRequirements(env_holder, requirements));
+
+  auto cleanup = absl::MakeCleanup([&env_holder, litert_requirements] {
+    env_holder.runtime->DestroyTensorBufferRequirements(litert_requirements);
+  });
+
+  LITERT_RETURN_IF_ERROR(
+      env_holder.runtime->CreateManagedTensorBufferFromRequirements(
+          env_holder.handle, &litert_tensor_type, litert_requirements,
+          &tensor_buffer));
   return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
 }
 

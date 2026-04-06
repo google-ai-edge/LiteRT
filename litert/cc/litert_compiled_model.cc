@@ -73,6 +73,10 @@ Expected<TensorBufferRequirements> ToTensorBufferRequirements(
   LITERT_RETURN_IF_ERROR(env.runtime->GetTensorBufferRequirementsBufferSize(
       litert_requirements, &buffer_size));
 
+  size_t alignment;
+  LITERT_RETURN_IF_ERROR(env.runtime->GetTensorBufferRequirementsAlignment(
+      litert_requirements, &alignment));
+
   int num_strides;
   const uint32_t* strides_ptr;
   LITERT_RETURN_IF_ERROR(env.runtime->GetTensorBufferRequirementsStrides(
@@ -82,10 +86,11 @@ Expected<TensorBufferRequirements> ToTensorBufferRequirements(
     strides.assign(strides_ptr, strides_ptr + num_strides);
   }
 
-  size_t alignment;
-  LITERT_RETURN_IF_ERROR(env.runtime->GetTensorBufferRequirementsAlignment(
-      litert_requirements, &alignment));
-
+  if (num_strides == 0 || strides[0] == 0) {
+    // Strides are not specified.
+    return TensorBufferRequirements::CreateWithAlignment(
+        absl::MakeConstSpan(supported_types), buffer_size, alignment);
+  }
   return TensorBufferRequirements::CreateWithAlignment(
       absl::MakeConstSpan(supported_types), buffer_size, alignment,
       absl::MakeConstSpan(strides));
@@ -347,20 +352,8 @@ Expected<size_t> CompiledModel::FindOutputIndex(
 Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
     const Environment& env, const TensorBufferRequirements& buffer_requirements,
     const RankedTensorType& tensor_type) {
-  LITERT_ASSIGN_OR_RETURN(const std::vector<TensorBufferType>& supported_types,
-                          buffer_requirements.SupportedTypes());
-  if (supported_types.empty()) {
-    return Unexpected(Status::kErrorRuntimeFailure,
-                      "Input doesn't support any tensor buffer types");
-  }
-  // For simplicity we just pick the first supported tensor buffer type.
-  TensorBufferType tensor_buffer_type = supported_types[0];
-  LITERT_ASSIGN_OR_RETURN(size_t buffer_size, buffer_requirements.BufferSize());
-
-  LITERT_ASSIGN_OR_RETURN(TensorBuffer buffer, TensorBuffer::CreateManaged(
-                                                   env, tensor_buffer_type,
-                                                   tensor_type, buffer_size));
-  return buffer;
+  return TensorBuffer::CreateManagedFromRequirements(env, tensor_type,
+                                                     buffer_requirements);
 }
 
 Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(

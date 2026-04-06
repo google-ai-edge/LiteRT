@@ -24,7 +24,6 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
@@ -84,6 +83,10 @@ class TensorBufferRequirements {
 
   Expected<size_t> BufferSize() const { return buffer_size_; }
 
+  /// @brief Returns the strides of the tensor buffer requirements.
+  ///
+  /// If the strides are not specified, either an empty span or a span with a
+  /// single element of 0 is returned, which is equivalent to no strides.
   Expected<absl::Span<const uint32_t>> Strides() const {
     return absl::MakeConstSpan(strides_);
   }
