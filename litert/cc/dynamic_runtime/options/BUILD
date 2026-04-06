@@ -34,26 +34,6 @@ LITERT_C_API_DEPS = [
     "//litert/c/options:litert_intel_openvino_options",
     "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_qualcomm_options",
+    "//litert/c/options:litert_samsung_options",
     "//litert/c/options:litert_runtime_options",
 ]
-
-cc_library(
-    name = "litert_samsung_options",
-    srcs = ["//litert/cc/options:litert_samsung_options.cc"],
-    hdrs = ["//litert/cc/options:litert_samsung_options.h"],
-    deps = [
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/internal:litert_detail",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_common",
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
