@@ -192,9 +192,8 @@ cc_library(
     hdrs = ["litert_samsung_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
+	"//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRtRuntimeCApi.dylib.

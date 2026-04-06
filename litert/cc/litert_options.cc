@@ -141,7 +141,8 @@ Expected<void> Options::Build() {
       Get(), google_tensor_options_, LrtGetOpaqueGoogleTensorOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
       Get(), intel_openvino_options_, LrtGetOpaqueIntelOpenVinoOptionsData));
-  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), samsung_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+      Get(), samsung_options_, LrtGetOpaqueSamsungOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
       Get(), runtime_options_, LrtGetOpaqueRuntimeOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(

@@ -43,13 +43,36 @@
 #include "litert/vendors/samsung/soc_model.h"
 
 class LiteRtCompilerPluginT {
-  // Plugins can hold state.
  public:
   using SamsungOptions = ::litert::samsung::SamsungOptions;
 
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
-    std::tie(opts_, opq_, samsung_opts_) =
-        litert::ParseOptions<SamsungOptions>(options);
+    if (options == nullptr) {
+      return;
+    }
+    auto cc_options = litert::Options(options, litert::OwnHandle::kNo);
+    auto opaques_status = cc_options.GetOpaqueOptions();
+    if (!opaques_status) {
+      return;
+    }
+
+    auto target_opq = litert::FindOpaqueOptions(
+        *opaques_status, LrtSamsungOptionsGetIdentifier());
+    if (!target_opq) {
+      return;
+    }
+    auto payload_status = target_opq->GetData<const char>();
+    if (!payload_status) {
+      return;
+    }
+    LrtSamsungOptions samsung_options;
+    auto status = LrtCreateSamsungOptionsFromToml(payload_status.Value(),
+                                                  &samsung_options);
+    if (status == kLiteRtStatusOk) {
+      samsung_opts_ = SamsungOptions(samsung_options);
+    } else {
+      LITERT_LOG(LITERT_ERROR, "Failed to parse samsung options: %d", status);
+    }
   }
 
   ::litert::Expected<SamsungOptions>& GetSamsungOptions() {
@@ -59,10 +82,6 @@ class LiteRtCompilerPluginT {
   ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
 
  private:
-  litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
-      litert::Status::kErrorInvalidArgument, "Null environment options");
-  litert::Expected<litert::Options> opts_ =
-      litert::Error(litert::Status::kErrorInvalidArgument, "Null options");
   litert::Expected<litert::OpaqueOptions> opq_ = litert::Error(
       litert::Status::kErrorInvalidArgument, "Null opaque options");
   litert::Expected<SamsungOptions> samsung_opts_ = litert::Error(
@@ -234,8 +253,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                             litert::samsung::GetSocModelID(soc_model));
     LITERT_ASSIGN_OR_RETURN(
         auto compiled_binary,
-        ::litert::samsung::Compile(ai_lite_core.get(), graph_buffer,
-                                   soc_model_id));
+        litert::samsung::Compile(ai_lite_core.get(), graph_buffer,
+                                 soc_model_id));
 
     result->byte_code[i] = std::move(compiled_binary);
     LITERT_LOG(LITERT_INFO, "Compile output: %ld bytes",
