@@ -26,6 +26,8 @@ from litert.python.aot.vendors.mediatek import mediatek_backend
 from litert.python.aot.vendors.mediatek import target as mtk_target
 from litert.python.aot.vendors.qualcomm import qualcomm_backend
 from litert.python.aot.vendors.qualcomm import target as qnn_target
+from litert.python.aot.vendors.samsung import samsung_backend
+from litert.python.aot.vendors.samsung import target as exynos_target
 
 # TODO: b/407453529 - Add unittests.
 
@@ -63,6 +65,11 @@ def _is_mobile_device_backend(backend: aot_types.Backend):
         mtk_target.SocModel.MT8189,
         mtk_target.SocModel.MT8171,
     ):
+      return False
+  if backend.id() == samsung_backend.SamsungBackend.id():
+    target = cast(exynos_target.Target, target)
+    # Non Android Phone Samsung targets.
+    if target.soc_model in (exynos_target.SocModel.E9965,):
       return False
   return True
 

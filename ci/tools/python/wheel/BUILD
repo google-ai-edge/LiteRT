@@ -137,6 +137,9 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot/vendors/mediatek:target",
     "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
     "//litert/python/aot/vendors/qualcomm:target",
+    "//litert/python/aot/vendors/samsung:samsung_backend",
+    "//litert/python/aot/vendors/samsung:target",
+
     # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
     "//litert/python/internal:litertlm_core",
     "//litert/python/internal:litertlm_header_schema_py",
@@ -160,6 +163,7 @@ PACKAGE_DATA = select({
         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+        "//litert/vendors/samsung/compiler:compiler_plugin_so",
     ],
     "//conditions:default": [],
 })
