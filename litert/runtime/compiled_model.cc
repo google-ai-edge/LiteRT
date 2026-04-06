@@ -2105,6 +2105,13 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
     }
   }
 
+  // Clears all custom memory allocations for the tensors in the signature.
+  const auto clear_status = runner->ClearCustomAllocations();
+  if (clear_status != kTfLiteOk) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to clear custom allocations");
+  }
+
   // Resize the input tensor using TFLite's SignatureRunner API
   const auto status = runner->ResizeInputTensor(
       input_name, std::vector(dims.begin(), dims.end()));
