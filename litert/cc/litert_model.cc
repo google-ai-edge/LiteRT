@@ -71,6 +71,35 @@ FetchTensorType(LiteRtTensor tensor, LiteRtTensorTypeId type_id) {
   }
 }
 
+LiteRtQuantizationTypeId FetchTensorQuantizationTypeId(LiteRtTensor tensor) {
+  LiteRtQuantizationTypeId quantization_type_id;
+  internal::AssertOk(LiteRtGetQuantizationTypeId, tensor,
+                     &quantization_type_id);
+  return quantization_type_id;
+}
+
+LiteRtQuantizationPerTensor FetchTensorQuantizationPerTensor(
+    LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationPerTensor) {
+    return {};
+  }
+  LiteRtQuantizationPerTensor per_tensor_quantization;
+  internal::AssertOk(LiteRtGetPerTensorQuantization, tensor,
+                     &per_tensor_quantization);
+  return per_tensor_quantization;
+}
+
+LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
+    LiteRtTensor tensor) {
+  if (FetchTensorQuantizationTypeId(tensor) != kLiteRtQuantizationPerChannel) {
+    return {};
+  }
+  LiteRtQuantizationPerChannel per_channel_quantization;
+  internal::AssertOk(LiteRtGetPerChannelQuantization, tensor,
+                     &per_channel_quantization);
+  return per_channel_quantization;
+}
+
 absl::string_view FetchSignatureKey(LiteRtSignature signature) {
   const char* key;
   internal::AssertOk(LiteRtGetSignatureKey, signature, &key);
@@ -118,7 +147,10 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureInputTensors(
     input_tensors.push_back(std::make_unique<SimpleTensor>(
         FetchTensorIndex(tensor), FetchTensorName(tensor),
         FetchTensorTypeId(tensor),
-        FetchTensorType(tensor, FetchTensorTypeId(tensor))));
+        FetchTensorType(tensor, FetchTensorTypeId(tensor)),
+        FetchTensorQuantizationTypeId(tensor),
+        FetchTensorQuantizationPerTensor(tensor),
+        FetchTensorQuantizationPerChannel(tensor)));
   }
   return input_tensors;
 }
@@ -136,7 +168,10 @@ std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
     output_tensors.push_back(std::make_unique<SimpleTensor>(
         FetchTensorIndex(tensor), FetchTensorName(tensor),
         FetchTensorTypeId(tensor),
-        FetchTensorType(tensor, FetchTensorTypeId(tensor))));
+        FetchTensorType(tensor, FetchTensorTypeId(tensor)),
+        FetchTensorQuantizationTypeId(tensor),
+        FetchTensorQuantizationPerTensor(tensor),
+        FetchTensorQuantizationPerChannel(tensor)));
   }
   return output_tensors;
 }

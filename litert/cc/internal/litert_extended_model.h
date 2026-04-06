@@ -89,6 +89,9 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
   }
   Tensor& operator=(Tensor&&) = default;
 
+  // We need to keep these functions in sync with the SimpleTensor class. These
+  // function are used when Tensor is used as a live handle, reflects the most
+  // up-to-date state of the underlying LiteRtTensor.
   LiteRtQuantizationTypeId QTypeId() const {
     LiteRtQuantizationTypeId q_type_id;
     internal::AssertOk(LiteRtGetQuantizationTypeId, Get(), &q_type_id);
@@ -98,8 +101,6 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
   bool HasQuantization() const { return QTypeId() != kLiteRtQuantizationNone; }
 
   LiteRtQuantizationPerTensor PerTensorQuantization() const {
-    internal::AssertEq([&]() { return QTypeId(); },
-                       kLiteRtQuantizationPerTensor);
     LiteRtQuantizationPerTensor per_tensor_quantization;
     internal::AssertOk(LiteRtGetPerTensorQuantization, Get(),
                        &per_tensor_quantization);
@@ -107,8 +108,6 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor>,
   }
 
   LiteRtQuantizationPerChannel PerChannelQuantization() const {
-    internal::AssertEq([&]() { return QTypeId(); },
-                       kLiteRtQuantizationPerChannel);
     LiteRtQuantizationPerChannel per_channel_quantization;
     internal::AssertOk(LiteRtGetPerChannelQuantization, Get(),
                        &per_channel_quantization);
