@@ -529,6 +529,34 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_reshape",
+    hdrs = ["ops/reshape.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_reshape_test",
+    srcs = ["ops/reshape_test.cc"],
+    deps = [
+        ":model",
+        ":ops_reshape",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_reductions_test",
     srcs = ["ops/reductions_test.cc"],
