@@ -195,6 +195,8 @@ Expected<Options> GetGpuOptions() {
     gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
   } else if (absl::GetFlag(FLAGS_gpu_backend) == "opengl") {
     gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
+  } else if (absl::GetFlag(FLAGS_gpu_backend) == "opencl") {
+    gpu_options.SetBackend(GpuOptions::Backend::kOpenCl);
   }
 
   if (absl::GetFlag(FLAGS_enable_constant_tensors_sharing)) {
