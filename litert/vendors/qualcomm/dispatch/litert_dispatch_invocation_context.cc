@@ -80,13 +80,13 @@ std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
-    LiteRtDispatchDeviceContextT& device_context,
-    QnnManager::ContextHandle&& context_handle,
+    LiteRtDispatchDeviceContext device_context,
+    const litert::qnn::QnnManager::ContextHandle* context_handle,
     Qnn_ProfileHandle_t profile_handle, int graph_index,
     Qnn_GraphHandle_t graph_handle)
     : qnn_manager_(qnn_manager),
       device_context_(device_context),
-      context_handle_(std::move(context_handle)),
+      context_handle_(*context_handle),
       profile_handle_(profile_handle),
       graph_index_(graph_index),
       graph_handle_(graph_handle),
@@ -152,8 +152,6 @@ LiteRtDispatchInvocationContextT::Create(
                       "Function name not found");
   }
 
-  auto configs = QnnManager::DefaultContextConfigs();
-
   auto profiling_level = qnn.GetOptions().GetProfiling();
   Qnn_ProfileHandle_t profile_handle = nullptr;
   if (profiling_level != ::qnn::Profiling::kOff) {
@@ -166,17 +164,13 @@ LiteRtDispatchInvocationContextT::Create(
     }
   }
 
-  auto context_handle = qnn.CreateContextHandle(
-      configs,
-      absl::MakeSpan(static_cast<const uint8_t*>(exec_bytecode_ptr),
-                     exec_bytecode_buffer->size),
-      profile_handle);
-  if (!context_handle) {
-    return Unexpected(context_handle.Error());
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      const auto& context_handle,
+      device_context.GetOrCreateContext(
+          exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
-  if (auto status = qnn.Api()->graphRetrieve(context_handle->get(),
+  if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),
                                              function_name, &graph_handle);
       status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -184,8 +178,8 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
-      qnn, std::move(*context_binary_info), device_context,
-      std::move(*context_handle), profile_handle, graph_index, graph_handle));
+      qnn, std::move(*context_binary_info), &device_context, &context_handle,
+      profile_handle, graph_index, graph_handle));
 }
 
 namespace {
@@ -278,12 +272,12 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
 
 Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  auto tensor_buffer = device_context_.GetTensorBuffer(tensor_buffer_handle);
+  auto tensor_buffer = device_context_->GetTensorBuffer(tensor_buffer_handle);
   if (!tensor_buffer) {
     return Unexpected(tensor_buffer.Error());
   }
 
-  auto mem_handle = device_context_.GetMemHandle(tensor_buffer_handle, tensor);
+  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor);
   if (!mem_handle) {
     return Unexpected(mem_handle.Error());
   }
@@ -310,7 +304,7 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
 Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
     Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
   LITERT_RETURN_IF_ERROR(
-      device_context_.UnregisterTensorBuffer(tensor_buffer_handle, tensor));
+      device_context_->UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
 }
 
@@ -370,7 +364,7 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
 
 Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
     LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes) {
-  auto tensor_buffer = device_context_.GetTensorBuffer(tensor_buffer_handle);
+  auto tensor_buffer = device_context_->GetTensorBuffer(tensor_buffer_handle);
   if (!tensor_buffer) {
     return Unexpected(tensor_buffer.Error());
   }
@@ -394,7 +388,7 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
 
 Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
     LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes) {
-  auto tensor_buffer = device_context_.GetTensorBuffer(tensor_buffer_handle);
+  auto tensor_buffer = device_context_->GetTensorBuffer(tensor_buffer_handle);
   if (!tensor_buffer) {
     return Unexpected(tensor_buffer.Error());
   }
