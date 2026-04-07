@@ -48,9 +48,7 @@ def get_mapped_buffer(path: Path, size: int) -> mmap.mmap:
   fd = os.open(path, flags=os.O_RDWR | os.O_CREAT)
   try:
     os.truncate(fd, size)
-    output_map = mmap.mmap(
-        fd, 0, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ | mmap.PROT_WRITE
-    )
+    output_map = mmap.mmap(fd, 0, access=mmap.ACCESS_WRITE)
   except OSError as e:
     os.close(fd)
     raise e
@@ -118,8 +116,7 @@ def get_file_contents(
       data = mmap.mmap(
           fd,
           size,
-          flags=mmap.MAP_PRIVATE,
-          prot=mmap.PROT_READ | mmap.PROT_WRITE,
+          access=mmap.ACCESS_COPY,
           offset=offset,
       )
     except OSError as e:
@@ -214,7 +211,7 @@ def advise_sequential(buffer: Any, offset: int = 0, length: int = 0):
       `offset` is used.
   """
   m, m_offset, m_length = _get_mmap_offset_and_length(buffer)
-  if  m is not None:
+  if m is not None and hasattr(m, 'madvise'):
     if length == 0:
       length = m_length - offset
 
@@ -243,7 +240,7 @@ def advise_dont_need(buffer: Any, offset: int = 0, length: int = 0):
       `offset` is used.
   """
   m, m_offset, m_length = _get_mmap_offset_and_length(buffer)
-  if m is not None:
+  if m is not None and hasattr(m, 'madvise'):
     if length == 0:
       length = m_length - offset
 
