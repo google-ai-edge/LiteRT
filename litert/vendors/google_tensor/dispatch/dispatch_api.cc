@@ -77,7 +77,8 @@ LiteRtStatus CreateTensorBufferRequirements(
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
+LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
+                        LiteRtEnvironment env, LiteRtOptions options) {
   GT_LOG_RETURN_IF_SB_ERROR(thrInitialize(), "Failed to initialize SB");
   LiteRtEnvironmentOptions environment_options;
   LiteRtGetEnvironmentOptions(env, &environment_options);
@@ -112,7 +113,8 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DeviceContextCreate(LiteRtOptions options,
+LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
+                                 LiteRtOptions options,
                                  LiteRtDispatchDeviceContext* device_context) {
   GT_LOG_RETURN_IF_NULL(device_context);
 
@@ -164,6 +166,7 @@ LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
 }
 
 LiteRtStatus InvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

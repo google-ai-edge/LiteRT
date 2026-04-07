@@ -29,8 +29,9 @@ extern "C" {
 
 // /////////////////////////////////////////////////////////////////////////////
 
-typedef LiteRtStatus (*LiteRtDispatchInitializeT)(LiteRtEnvironment environment,
-                                                  LiteRtOptions options);
+typedef LiteRtStatus (*LiteRtDispatchInitializeT)(
+    const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment environment,
+    LiteRtOptions options);
 
 typedef LiteRtStatus (*LiteRtDispatchGetVendorIdT)(const char** vendor_id);
 
@@ -39,7 +40,8 @@ typedef LiteRtStatus (*LiteRtDispatchGetBuildIdT)(const char** build_id);
 typedef LiteRtStatus (*LiteRtDispatchGetCapabilitiesT)(int* capabilities);
 
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextCreateT)(
-    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context);
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext* device_context);
 
 typedef LiteRtStatus (*LiteRtDispatchDeviceContextDestroyT)(
     LiteRtDispatchDeviceContext device_context);
@@ -64,6 +66,7 @@ typedef LiteRtStatus (*LiteRtDispatchUnregisterTensorBufferT)(
     LiteRtTensorBufferHandle handle);
 
 typedef LiteRtStatus (*LiteRtDispatchInvocationContextCreateT)(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

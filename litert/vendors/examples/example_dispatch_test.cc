@@ -13,12 +13,14 @@
 // limitations under the License.
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -87,6 +89,48 @@ class ExampleDispatchTest : public ::testing::Test {
 
   LiteRtDispatchInterface& Api() { return *api_.interface; }
 
+  // Creates a device context and invocation context for a simple mul operation.
+  std::pair<DevicePtr, InvocationContextPtr>
+  CreateDeviceContextInvocationContext() {
+    // clang-format off
+  static constexpr absl::string_view kSchema = R"(SUBGRAPH partition_0
+version:1
+inputs:0,1
+outputs:2
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2))";
+    // clang-format on
+    static constexpr absl::string_view kFunctionName = "partition_0";
+
+    static constexpr int kNumInputs = 2;
+    static constexpr int kNumOutputs = 1;
+
+    LiteRtMemBuffer exec_bytecode_buffer;
+    exec_bytecode_buffer.base_addr = kSchema.data();
+    exec_bytecode_buffer.size = kSchema.size();
+    exec_bytecode_buffer.fd = -1;
+    exec_bytecode_buffer.offset = 0;
+
+    static constexpr LiteRtDispatchExecutableType kExecType =
+        kLiteRtDispatchExecutableTypeMlModel;
+
+    LiteRtDispatchDeviceContext device_context;
+    Api().device_context_create(LrtGetRuntimeContext(),
+                                /*options=*/nullptr, &device_context);
+    auto device_context_ptr = CreateDevicePtr(Api(), device_context);
+
+    LiteRtDispatchInvocationContext invocation_context;
+    Api().invocation_context_create(LrtGetRuntimeContext(), device_context,
+                                    kExecType, &exec_bytecode_buffer,
+                                    kFunctionName.data(), kNumInputs,
+                                    kNumOutputs, &invocation_context);
+    auto invocation_context_ptr =
+        CreateInvocationContextPtr(Api(), invocation_context);
+
+    return std::make_pair(std::move(device_context_ptr),
+                          std::move(invocation_context_ptr));
+  }
+
  private:
   LiteRtDispatchApi api_;
 };
@@ -119,45 +163,18 @@ TEST_F(ExampleDispatchTest, GetCapabilities) {
 
 TEST_F(ExampleDispatchTest, DeviceContextCreate) {
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(
-      Api().device_context_create(/*options=*/nullptr, &device_context));
+  LITERT_ASSERT_OK(Api().device_context_create(LrtGetRuntimeContext(),
+                                               /*options=*/nullptr,
+                                               &device_context));
   LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
 }
 
 TEST_F(ExampleDispatchTest, InvocationContext) {
-  // clang-format off
-  static constexpr absl::string_view kSchema = R"(SUBGRAPH partition_0
-version:1
-inputs:0,1
-outputs:2
-tensors:[2x2],[2x2],[2x2]
-ops:mul(0,1)(2))";
-  // clang-format on
-  static constexpr absl::string_view kFunctionName = "partition_0";
-
-  static constexpr int kNumInputs = 2;
-  static constexpr int kNumOutputs = 1;
-
-  LiteRtMemBuffer exec_bytecode_buffer;
-  exec_bytecode_buffer.base_addr = kSchema.data();
-  exec_bytecode_buffer.size = kSchema.size();
-  exec_bytecode_buffer.fd = -1;
-  exec_bytecode_buffer.offset = 0;
-
-  static constexpr LiteRtDispatchExecutableType kExecType =
-      kLiteRtDispatchExecutableTypeMlModel;
-
-  LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(
-      Api().device_context_create(/*options=*/nullptr, &device_context));
-  auto device_context_ptr = CreateDevicePtr(Api(), device_context);
-
-  LiteRtDispatchInvocationContext invocation_context;
-  LITERT_ASSERT_OK(Api().invocation_context_create(
-      device_context, kExecType, &exec_bytecode_buffer, kFunctionName.data(),
-      kNumInputs, kNumOutputs, &invocation_context));
-  auto invocation_context_ptr =
-      CreateInvocationContextPtr(Api(), invocation_context);
+  auto [device_context_ptr, invocation_context_ptr] =
+      CreateDeviceContextInvocationContext();
+  LiteRtDispatchDeviceContext device_context = device_context_ptr.get();
+  LiteRtDispatchInvocationContext invocation_context =
+      invocation_context_ptr.get();
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input1,
@@ -194,8 +211,12 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
   const auto t = MakeRankedTensorType<float>({2, 2});
   LiteRtTensorBufferRequirements requirements = nullptr;
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
-  LITERT_ASSERT_OK(
-      Api().get_input_requirements(nullptr, 0, &litert_t, &requirements));
+
+  auto [device_context_ptr, invocation_context_ptr] =
+      CreateDeviceContextInvocationContext();
+
+  LITERT_ASSERT_OK(Api().get_input_requirements(invocation_context_ptr.get(), 0,
+                                                &litert_t, &requirements));
   int num_types;
   LITERT_ASSERT_OK(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
       requirements, &num_types));
@@ -211,8 +232,12 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
   const auto t = MakeRankedTensorType<float>({2, 2});
   LiteRtTensorBufferRequirements requirements = nullptr;
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
-  LITERT_ASSERT_OK(
-      Api().get_output_requirements(nullptr, 0, &litert_t, &requirements));
+
+  auto [device_context_ptr, invocation_context_ptr] =
+      CreateDeviceContextInvocationContext();
+
+  LITERT_ASSERT_OK(Api().get_output_requirements(invocation_context_ptr.get(),
+                                                 0, &litert_t, &requirements));
   int num_types;
   LITERT_ASSERT_OK(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
       requirements, &num_types));
@@ -226,8 +251,9 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
 
 TEST_F(ExampleDispatchTest, RegisterBuffer) {
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(
-      Api().device_context_create(/*options=*/nullptr, &device_context));
+  LITERT_ASSERT_OK(Api().device_context_create(LrtGetRuntimeContext(),
+                                               /*options=*/nullptr,
+                                               &device_context));
   auto device_context_ptr = CreateDevicePtr(Api(), device_context);
   LiteRtTensorBufferHandle handle;
   LITERT_ASSERT_OK(
@@ -259,15 +285,16 @@ ops:mul(0,1)(2))";
       kLiteRtDispatchExecutableTypeMlModel;
 
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(
-      Api().device_context_create(/*options=*/nullptr, &device_context));
+  LITERT_ASSERT_OK(Api().device_context_create(LrtGetRuntimeContext(),
+                                               /*options=*/nullptr,
+                                               &device_context));
 
   LiteRtDispatchInvocationContext invocation_context;
   EXPECT_EQ(kLiteRtStatusErrorUnsupportedCompilerVersion,
-            Api().invocation_context_create(device_context, kExecType,
-                                            &exec_bytecode_buffer,
-                                            kFunctionName.data(), kNumInputs,
-                                            kNumOutputs, &invocation_context));
+            Api().invocation_context_create(
+                LrtGetRuntimeContext(), device_context, kExecType,
+                &exec_bytecode_buffer, kFunctionName.data(), kNumInputs,
+                kNumOutputs, &invocation_context));
   LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
 }
 
@@ -299,15 +326,17 @@ ops:mul(0,1)(2)
   exec_bytecode_buffer.offset = 0;
 
   LiteRtDispatchDeviceContext device_context;
-  LITERT_ASSERT_OK(
-      Api().device_context_create(/*options=*/nullptr, &device_context));
+  LITERT_ASSERT_OK(Api().device_context_create(LrtGetRuntimeContext(),
+                                               /*options=*/nullptr,
+                                               &device_context));
   auto device_context_ptr = CreateDevicePtr(Api(), device_context);
 
   auto run_partition = [&](const char* name) {
     LiteRtDispatchInvocationContext invocation_context;
     LITERT_ASSERT_OK(Api().invocation_context_create(
-        device_context, kLiteRtDispatchExecutableTypeMlModel,
-        &exec_bytecode_buffer, name, 2, 1, &invocation_context));
+        LrtGetRuntimeContext(), device_context,
+        kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer, name, 2, 1,
+        &invocation_context));
     auto invocation_context_ptr =
         CreateInvocationContextPtr(Api(), invocation_context);
 

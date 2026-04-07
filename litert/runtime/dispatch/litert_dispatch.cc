@@ -14,6 +14,7 @@
 
 #include "litert/vendors/c/litert_dispatch.h"
 
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_model_types.h"
@@ -88,8 +89,9 @@ LiteRtDispatchApi TheApi = {
     /*.graph_interface=*/nullptr,
 };
 
-LiteRtStatus Initialize(LiteRtEnvironment env, LiteRtOptions options) {
-  INVOKE_FUNC(initialize, env, options);
+LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
+                        LiteRtEnvironment env, LiteRtOptions options) {
+  INVOKE_FUNC(initialize, runtime_context, env, options);
 }
 
 litert::Expected<std::string> GetSharedLibraryPath(
@@ -119,8 +121,9 @@ litert::Expected<std::string> GetSharedLibraryPath(
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
-                                      LiteRtOptions options) {
+LiteRtStatus LiteRtDispatchInitialize(
+    const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    LiteRtOptions options) {
   if (IsTheApiInitialized) {
     return kLiteRtStatusOk;
   }
@@ -170,7 +173,7 @@ LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
     return kLiteRtStatusErrorWrongVersion;
   }
 
-  auto status = Initialize(env, options);
+  auto status = Initialize(runtime_context, env, options);
   if (status == kLiteRtStatusOk) {
     IsTheApiInitialized = true;
   }
@@ -211,12 +214,13 @@ LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextCreate(
-    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext* device_context) {
   if (!device_context) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  INVOKE_FUNC(device_context_create, options, device_context);
+  INVOKE_FUNC(device_context_create, runtime_context, options, device_context);
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextDestroy(
@@ -275,6 +279,7 @@ LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
 }
 
 LiteRtStatus LiteRtDispatchInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -284,9 +289,9 @@ LiteRtStatus LiteRtDispatchInvocationContextCreate(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  INVOKE_FUNC(invocation_context_create, device_context, exec_type,
-              exec_bytecode_buffer, function_name, num_inputs, num_outputs,
-              invocation_context);
+  INVOKE_FUNC(invocation_context_create, runtime_context, device_context,
+              exec_type, exec_bytecode_buffer, function_name, num_inputs,
+              num_outputs, invocation_context);
 }
 
 LiteRtStatus LiteRtDispatchInvocationContextDestroy(

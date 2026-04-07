@@ -36,6 +36,8 @@ LITERT_DEFINE_HANDLE(LiteRtDispatchDeviceContext);
 LITERT_DEFINE_HANDLE(LiteRtDispatchInvocationContext);
 LITERT_DEFINE_HANDLE(LiteRtDispatchMetrics);
 
+typedef struct LiteRtRuntimeContext LiteRtRuntimeContext;
+
 typedef uint64_t LiteRtTensorBufferHandle;
 
 typedef enum LiteRtDispatchCapabilities {
@@ -70,7 +72,8 @@ typedef struct LiteRtMemBuffer {
 // This function should be called before calling any other Dispatch API
 // functions.
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchInitialize(LiteRtEnvironment environment, LiteRtOptions options);
+LiteRtDispatchInitialize(const LiteRtRuntimeContext* runtime_context,
+                         LiteRtEnvironment environment, LiteRtOptions options);
 
 // Return the version of the Dispatch API runtime.
 LITERT_CAPI_EXPORT LiteRtStatus
@@ -101,7 +104,8 @@ LiteRtDispatchGetCapabilities(int* capabilities);
 // LiteRtDispatchDeviceContextDestroy() to release it. Return NULL in case of
 // error.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextCreate(
-    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context);
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext* device_context);
 
 // Release a `LiteRtDispatchDeviceContext` object.
 //
@@ -147,6 +151,7 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
 // executable. Parameter `function_name` is required if the provided executable
 // includes multiple functions.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

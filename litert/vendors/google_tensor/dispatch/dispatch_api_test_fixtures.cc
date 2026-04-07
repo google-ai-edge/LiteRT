@@ -31,6 +31,7 @@
 #if defined(__ANDROID__)
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #endif
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
 namespace litert::google_tensor::testing {
@@ -57,7 +58,8 @@ void DispatchApiTest::SetUp() {
   LiteRtOptions options;
   LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
 
-  LITERT_ASSERT_OK(LiteRtDispatchInitialize(env_, options));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchInitialize(LrtGetRuntimeContext(), env_, options));
 
   const char* vendor_id;
   LITERT_ASSERT_OK(LiteRtDispatchGetVendorId(&vendor_id));
@@ -72,8 +74,8 @@ void DispatchApiTest::SetUp() {
   LITERT_LOG(LITERT_INFO, "API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
 
-  LITERT_ASSERT_OK(
-      LiteRtDispatchDeviceContextCreate(options, &device_context_));
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(
+      LrtGetRuntimeContext(), options, &device_context_));
   LiteRtDestroyOptions(options);
 }
 

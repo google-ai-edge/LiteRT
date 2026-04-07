@@ -29,7 +29,7 @@ package(
         # "//litert/runtime:__pkg__",
         # "//litert/runtime/accelerators:__subpackages__",
         # "//litert/runtime/dispatch:__subpackages__",
-        # "//litert/vendors/c:__subpackages__",
+        # "//litert/vendors:__subpackages__",
         # "//litert/kotlin:__subpackages__",
         # "//third_party/odml/litert/ml_drift/delegate:__subpackages__",
         # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
@@ -122,6 +122,7 @@ cc_library(
     hdrs = ["litert_runtime_context.h"],
     visibility = [
         "//litert/runtime:__pkg__",
+        "//litert/vendors:__subpackages__",
         "//third_party/odml/litert/weight_loader:__subpackages__",
     ],
     deps = [

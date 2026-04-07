@@ -23,6 +23,7 @@
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -55,7 +56,8 @@ TEST(OpenVino, DispatchApi) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env.Get(),
+                                     options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -76,7 +78,8 @@ TEST(OpenVino, DispatchApi) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(options.Get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   EXPECT_NE(device_context, nullptr);
 
@@ -93,8 +96,9 @@ TEST(OpenVino, DispatchApi) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/nullptr,
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/nullptr,
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   EXPECT_NE(invocation_context, nullptr);

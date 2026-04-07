@@ -27,6 +27,7 @@
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -77,7 +78,8 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.GetHolder().handle, options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -98,7 +100,8 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(options.Get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -119,8 +122,9 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/"simple",
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/"simple",
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "Invocation context: " << invocation_context;
@@ -343,7 +347,8 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.GetHolder().handle, options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -364,7 +369,8 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(options.Get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -385,8 +391,9 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/"simple",
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/"simple",
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "Invocation context: " << invocation_context;
@@ -635,7 +642,8 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.GetHolder().handle, options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -656,7 +664,8 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(options.Get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -677,8 +686,9 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/"qnn_partition_0",
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/"qnn_partition_0",
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "Invocation context: " << invocation_context;
@@ -936,7 +946,8 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.GetHolder().handle, options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -957,7 +968,8 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(options.Get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -978,8 +990,9 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/"qnn_partition_0",
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/"qnn_partition_0",
                 /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "Invocation context: " << invocation_context;
