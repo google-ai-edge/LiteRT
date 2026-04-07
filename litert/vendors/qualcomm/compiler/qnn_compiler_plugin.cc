@@ -467,7 +467,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
 
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
-        *qnn_manager, context_handles[context_handle_idx].get(),
+        *qnn_manager, context_handles[context_handle_idx].Get(),
         context_handles[context_handle_idx].get_profile_handle(),
         partition.Get(), entry_point_name, options));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
@@ -484,7 +484,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     for (int i = 0; i < next_context_handle_idx; ++i) {
       LITERT_LOG(LITERT_INFO, "%s", "Generating context binary");
       LITERT_RETURN_IF_ERROR(qnn_manager->GenerateContextBinary(
-          context_handles[i].get(), result->context_bin[i]));
+          context_handles[i].Get(), result->context_bin[i]));
       LITERT_LOG(LITERT_INFO, "Context binary %d generated", i);
     }
   }
