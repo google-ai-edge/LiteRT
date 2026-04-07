@@ -26,19 +26,15 @@ cc_library(
     deps = [
         ":cpu_registry",
         ":gpu_registry",
-        ":registration_helper",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
-        "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_accelerator_registration",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_tensor_buffer_registry_header",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -71,11 +67,23 @@ cc_library(
     name = "cpu_registry",
     srcs = ["cpu_registry.cc"],
     hdrs = ["cpu_registry.h"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "@platforms//os:emscripten": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        # -rdynamic is not supported by ndk_cc_dynamic_library merger tool.
+        # Symbols are typically exported by default in Android shared libraries.
+        "@platforms//os:android": [],
+        "//conditions:default": ["-rdynamic"],
+    }),
     deps = [
         ":registration_helper",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_shared_library",
+        "@com_google_absl//absl/base:core_headers",
     ] + select({
         "//litert/build_common:litert_disable_cpu": [],
         "//conditions:default": [
@@ -88,6 +96,16 @@ cc_library(
     name = "gpu_registry",
     srcs = ["gpu_registry.cc"],
     hdrs = ["gpu_registry.h"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "@platforms//os:emscripten": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        # -rdynamic is not supported by ndk_cc_dynamic_library merger tool.
+        # Symbols are typically exported by default in Android shared libraries.
+        "@platforms//os:android": [],
+        "//conditions:default": ["-rdynamic"],
+    }),
     deps = [
         ":registration_helper",
         "//litert/c:litert_any",
@@ -99,6 +117,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
         "//litert/core:environment",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )

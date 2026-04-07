@@ -158,18 +158,6 @@ extern "C" const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .num_supported_buffer_types = 0,
 };
 
-// Accelerator definition pointer defined in
-// runtime/accelerators/cpu_registry.cc
-extern "C" const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
-
-namespace {
-
-struct StaticCpuAcceleratorInitializer {
-  StaticCpuAcceleratorInitializer() {
+// Accelerator definition pointer searched by runtime/accelerators/cpu_registry.cc
+extern "C" LITERT_ATTRIBUTE_EXPORT const LiteRtAcceleratorDef*
     LiteRtStaticLinkedAcceleratorCpuDef = &LiteRtCpuAcceleratorImpl;
-  }
-};
-
-StaticCpuAcceleratorInitializer g_initializer;
-
-}  // namespace
