@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
 # copybara:uncomment_begin(google-only)
@@ -27,6 +26,9 @@ load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(
     "//litert/build_common:litert_build_defs.bzl",
     "copy_file",
@@ -786,6 +788,15 @@ cc_shared_library(
         "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
     }) + litert_android_linkopts(),
     deps = [":litert_runtime_c_api_so_shim"],
+)
+
+sh_test(
+    name = "litert_runtime_c_api_so_symbol_test",
+    srcs = ["litert_runtime_c_api_so_symbol_test.sh"],
+    data = [
+        "litert_runtime_c_api_so_symbols.txt",
+        ":libLiteRt.so",
+    ],
 )
 
 macos_dylib(
