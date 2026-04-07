@@ -505,6 +505,34 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_pooling",
+    hdrs = ["ops/pooling.h"],
+    deps = [
+        ":model",
+        ":op_shape_inference_utils",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_pooling_test",
+    srcs = ["ops/pooling_test.cc"],
+    deps = [
+        ":model",
+        ":ops_pooling",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_pad_test",
     srcs = ["ops/pad_test.cc"],
