@@ -65,7 +65,8 @@ char BuildId[256];
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus Initialize(LiteRtEnvironment environment, LiteRtOptions options) {
+LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
+                        LiteRtEnvironment environment, LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
   if (LiteRtGetEnvironmentOptions(environment, &environment_options) ==
       kLiteRtStatusOk) {
@@ -176,7 +177,8 @@ LiteRtStatus GetCapabilities(int* capabilities) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DeviceContextCreate(LiteRtOptions options,
+LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
+                                 LiteRtOptions options,
                                  LiteRtDispatchDeviceContext* device_context) {
   if (auto context = LiteRtDispatchDeviceContextT::Create(Qnn()); context) {
     *device_context = context->release();
@@ -250,6 +252,7 @@ LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
 }
 
 LiteRtStatus InvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

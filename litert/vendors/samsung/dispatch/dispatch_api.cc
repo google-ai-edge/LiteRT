@@ -48,8 +48,9 @@ char BuildId[256];
 //
 // This function should be called before calling any other Dispatch API
 // functions.
-LiteRtStatus LiteRtSamsungInitialize(LiteRtEnvironment environment,
-                                     LiteRtOptions options) {
+LiteRtStatus LiteRtSamsungInitialize(
+    const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment environment,
+    LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
   LiteRtGetEnvironmentOptions(environment, &environment_options);
 
@@ -111,7 +112,8 @@ LiteRtStatus LiteRtSamsungGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtSamsungDeviceContextCreate(
-    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext* device_context) {
   if (auto context =
           LiteRtDispatchDeviceContextT::Create(static_enn_manager.get());
       context) {
@@ -191,6 +193,7 @@ LiteRtStatus LiteRtSamsungUnregisterTensorBuffer(
 // executable. Parameter `function_name` is required if the provided executable
 // includes multiple functions.
 LiteRtStatus LiteRtSamsungInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

@@ -29,6 +29,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "third_party/darwinn/driver_shared/fence/fence_test_util.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -135,8 +136,9 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
   switch (icontext_create_mode) {
     case IContextCreateMode::kInterface:
       LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
-          device_context(), kLiteRtDispatchExecutableTypeMlModel,
-          &model_bytecode(), /*function_name=*/nullptr,
+          LrtGetRuntimeContext(), device_context(),
+          kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+          /*function_name=*/nullptr,
           /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context));
       break;
     case IContextCreateMode::kGraphInterface:

@@ -30,6 +30,7 @@
 #include "absl/container/node_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
@@ -535,9 +536,10 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
 
   LiteRtDispatchInvocationContext invocation_context;
   if (auto status = LiteRtDispatchInvocationContextCreate(
-          device_context_, kLiteRtDispatchExecutableTypeMlModel,
-          &exec_bytecode_buffer, function_name.data(), num_node_inputs,
-          num_node_outputs, &invocation_context);
+          LrtGetRuntimeContext(), device_context_,
+          kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+          function_name.data(), num_node_inputs, num_node_outputs,
+          &invocation_context);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to create invocation context");
   }

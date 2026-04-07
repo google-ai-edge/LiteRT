@@ -91,7 +91,8 @@ LiteRtStatus LockRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info,
 // Initialize the Dispatch API runtime.
 // This function should be called before calling any other Dispatch API
 // functions.
-LiteRtStatus DispatchInitialize(LiteRtEnvironment env, LiteRtOptions options) {
+LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
+                                LiteRtEnvironment env, LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
   if (LiteRtGetEnvironmentOptions(env, &environment_options) ==
       kLiteRtStatusOk) {
@@ -146,7 +147,8 @@ LiteRtStatus DispatchGetCapabilities(int* capabilities) {
 // LiteRtDispatchDeviceContextDestroy() to release it. Return NULL in case of
 // error.
 LiteRtStatus DispatchDeviceContextCreate(
-    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext* device_context) {
   try {
     if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
       *device_context = context->release();
@@ -263,6 +265,7 @@ LiteRtStatus DispatchUnregisterTensorBuffer(
 // executable. Parameter `function_name` is required if the provided executable
 // includes multiple functions.
 LiteRtStatus DispatchInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

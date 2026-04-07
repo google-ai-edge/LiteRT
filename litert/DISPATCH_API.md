@@ -23,7 +23,7 @@ Here is a snippet of Dispatch API. Full APIs are defined in [vendors/c/litert_di
 ```c
 // Initialize the Dispatch API runtime.
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchInitialize(LiteRtEnvironment environment, LiteRtOptions options);
+LiteRtDispatchInitialize(const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment environment, LiteRtOptions options);
 
 // Return the version of the Dispatch API runtime.
 LITERT_CAPI_EXPORT LiteRtStatus
@@ -143,6 +143,7 @@ This is a function that creates an opaque `LiteRtDispatchDeviceContext` object. 
 
 ```c
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -283,7 +284,7 @@ illustrate how it operates.
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env.Get(), options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env.Get(), options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -304,7 +305,8 @@ illustrate how it operates.
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(&device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -325,9 +327,10 @@ illustrate how it operates.
                                           /*.size=*/model->Size()};
   LiteRtDispatchInvocationContext invocation_context = nullptr;
   EXPECT_EQ(LiteRtDispatchInvocationContextCreate(
-                device_context, kLiteRtDispatchExecutableTypeMlModel,
-                &exec_bytecode_buffer, /*function_name=*/nullptr,
-                /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context),
+                LrtGetRuntimeContext(), device_context,
+                kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+                /*function_name=*/nullptr, /*num_inputs=*/2, /*num_outputs=*/1,
+                &invocation_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "Invocation context: " << invocation_context;
 

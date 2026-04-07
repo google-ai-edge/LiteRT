@@ -18,8 +18,9 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
-LiteRtStatus LiteRtDispatchInitialize(LiteRtEnvironment env,
-                                      LiteRtOptions options) {
+LiteRtStatus LiteRtDispatchInitialize(
+    const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+    LiteRtOptions options) {
   return kLiteRtStatusErrorUnsupported;
 }
 
@@ -40,7 +41,8 @@ LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus LiteRtDispatchDeviceContextCreate(
-    LiteRtOptions options, LiteRtDispatchDeviceContext* device_context) {
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext* device_context) {
   return kLiteRtStatusErrorUnsupported;
 }
 
@@ -77,6 +79,7 @@ LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
 }
 
 LiteRtStatus LiteRtDispatchInvocationContextCreate(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,

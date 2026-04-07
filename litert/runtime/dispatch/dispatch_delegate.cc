@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
@@ -171,7 +172,8 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
 }
 
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchInitialize(env_, options_));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtDispatchInitialize(LrtGetRuntimeContext(), env_, options_));
   // Check if Library needed by dispatch api is compatible.
   LITERT_RETURN_IF_ERROR(LiteRtDispatchCheckRuntimeCompatibility(
       LiteRtApiVersion{LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
@@ -209,8 +211,8 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
                         capabilities));
   }
 
-  LITERT_RETURN_IF_ERROR(
-      LiteRtDispatchDeviceContextCreate(options_, &device_context_));
+  LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(
+      LrtGetRuntimeContext(), options_, &device_context_));
 
   return {};
 }

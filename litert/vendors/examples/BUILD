@@ -261,6 +261,7 @@ cc_test(
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/test:matchers",
         "//litert/test:simple_buffer_runtimecapi",
