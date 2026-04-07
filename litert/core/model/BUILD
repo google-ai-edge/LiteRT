@@ -540,6 +540,31 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_select",
+    hdrs = ["ops/select.h"],
+    deps = [
+        ":model",
+        ":op_shape_inference_utils",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_select_test",
+    srcs = ["ops/select_test.cc"],
+    deps = [
+        ":model",
+        ":ops_select",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_reshape_test",
     srcs = ["ops/reshape_test.cc"],
