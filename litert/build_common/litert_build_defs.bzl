@@ -165,13 +165,16 @@ def export_lrt_only_script():
         "//conditions:default": [],
     })
 
+_LRT_ANDROID_PAGE_SIZE_LINKOPTS = [
+    "-Wl,-z,max-page-size=16384",
+    "-Wl,-z,common-page-size=16384",
+    "-Wl,-z,separate-loadable-segments",
+]
+
 def export_lrt_only_linkopt():
     return select({
         "@platforms//os:linux": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
-        "@platforms//os:android": [
-            "-Wl,-z,max-page-size=16384",
-            _EXPORT_LRT_ONLY_LINKOPT_LINUX,
-        ],
+        "@platforms//os:android": _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
         "@platforms//os:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
         "@platforms//os:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
         "@platforms//os:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
@@ -203,12 +206,7 @@ def export_lrt_runtime_only_script():
 def export_lrt_runtime_only_linkopt():
     return select({
         "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
-        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
-            "-Wl,-z,max-page-size=16384",
-            "-Wl,-z,common-page-size=16384",
-            "-Wl,-z,separate-loadable-segments",
-            _EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX,
-        ],
+        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
         "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
         "@platforms//os:macos": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
         "@platforms//os:ios": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
@@ -233,13 +231,35 @@ def export_lrt_tflite_runtime_script():
 def export_lrt_tflite_runtime_linkopt():
     return select({
         "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
-        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
-            "-Wl,-z,max-page-size=16384",
-            _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX,
-        ],
+        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
         "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
         "@platforms//os:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
         "@platforms//os:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "//conditions:default": [],
+    }) + symbol_opts()
+
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX = "//litert/build_common:export_litert_gpu_accelerator_linux.lds"
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN = "//litert/build_common:export_litert_gpu_accelerator_darwin.lds"
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX = make_linkopt("--version-script=$(location {})".format(_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX))
+_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(location {})".format(_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN))
+
+def gpu_accelerator_exported_symbols_script():
+    return select({
+        "@platforms//os:linux": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
+        "@platforms//os:android": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
+        "@platforms//os:chromiumos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_LINUX],
+        "@platforms//os:macos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN],
+        "@platforms//os:ios": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_SCRIPT_DARWIN],
+        "//conditions:default": [],
+    })
+
+def gpu_accelerator_exported_symbols_linkopt():
+    return select({
+        "@platforms//os:linux": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
+        "@platforms//os:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + _LRT_ANDROID_PAGE_SIZE_LINKOPTS + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
+        "@platforms//os:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_LINUX],
+        "@platforms//os:macos": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN],
+        "@platforms//os:ios": [_GPU_ACCELERATOR_EXPORTED_SYMBOLS_LINKOPT_DARWIN],
         "//conditions:default": [],
     }) + symbol_opts()
 
@@ -691,15 +711,9 @@ def litert_accelerator_library(
     if macos_dylib == False:
         cc_shared_library(
             name = name + "_so",
-            additional_linker_inputs = export_lrt_runtime_only_script(),
-            features = select({
-                # Allow unresolved symbols which will be defined in the executable. There are no
-                # linker flags to allow unresolved symbols only of a given pattern like LiteRt*.
-                "//litert/c:resolve_symbols_in_exec": ["-no_undefined"],
-                "//conditions:default": [],
-            }),
+            additional_linker_inputs = gpu_accelerator_exported_symbols_script(),
             shared_lib_name = shared_lib_name,
-            user_link_flags = export_lrt_runtime_only_linkopt() + [
+            user_link_flags = gpu_accelerator_exported_symbols_linkopt() + [
                 "-Wl,-soname=" + shared_lib_name,
             ] + litert_android_linkopts(),
             visibility = [
