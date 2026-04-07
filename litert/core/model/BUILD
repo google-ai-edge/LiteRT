@@ -494,6 +494,31 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_pad",
+    hdrs = ["ops/pad.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_pad_test",
+    srcs = ["ops/pad_test.cc"],
+    deps = [
+        ":model",
+        ":ops_pad",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_matmul_test",
     srcs = ["ops/matmul_test.cc"],
