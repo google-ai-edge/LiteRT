@@ -190,9 +190,6 @@ EXPORTS
   LiteRtRunCompiledModelAsyncWithSchedulingInfo
   LiteRtRunCompiledModelWithOptions
   LiteRtRunCompiledModelWithSchedulingInfo
-  LiteRtSamsungOptionsCreate
-  LiteRtSamsungOptionsGet
-  LiteRtSamsungOptionsGetIdentifier
   LiteRtSerializeModel
   LiteRtSerializeModelWithSignatures
   LiteRtSetAcceleratorGetHardwareSupport
