@@ -134,7 +134,6 @@ build --incompatible_enforce_config_setting_visibility
 build:litert_converter --copt=-Wno-macro-redefined --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=litert_converter.mlir.
 
 # Compiler MLIR Builds
-build --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=ai_edge_litert.mlir.
 common --copt=-DNB_DOMAIN=litert
 common --copt=-DMLIR_BINDINGS_PYTHON_DOMAIN=LITERT_MLIR
 
