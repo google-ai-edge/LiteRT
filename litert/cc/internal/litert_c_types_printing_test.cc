@@ -19,6 +19,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_logging.h"
 
 namespace litert {
 namespace {
@@ -58,6 +59,14 @@ TEST(LitertCTypesPrintingTest, LiteRtOpCode) {
   EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflAdd), "tfl.add");
   EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflMul), "tfl.mul");
   EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflCustom), "tfl.custom_op");
+}
+
+TEST(LitertCTypesPrintingTest, GetOpCodeStringView) {
+  EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeShloAbs), "shlo.abs");
+  EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflAdd), "tfl.add");
+  EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflMul), "tfl.mul");
+  EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflCustom), "tfl.custom_op");
+  EXPECT_EQ(GetOpCodeStringView(static_cast<LiteRtOpCode>(207)), kNoPrinterTag);
 }
 
 }  // namespace
