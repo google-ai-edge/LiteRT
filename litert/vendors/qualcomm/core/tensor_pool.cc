@@ -94,8 +94,10 @@ TensorWrapper* TensorPool::CreateStaticTensorWithValue(
   if (std::holds_alternative<UndefinedQuantizeParamsWrapper>(quant_params)) {
     switch (data_type) {
       case Qnn_DataType_t::QNN_DATATYPE_INT_32: {
-        if (fill_value < std::numeric_limits<std::int32_t>::min() ||
-            fill_value > std::numeric_limits<std::int32_t>::max()) {
+        if (static_cast<double>(fill_value) <
+                static_cast<double>(std::numeric_limits<std::int32_t>::min()) ||
+            static_cast<double>(fill_value) >
+                static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
           QNN_LOG_ERROR(
               "Fill value out of range when CreateStaticTensorWithValue.");
         }
@@ -104,8 +106,12 @@ TensorWrapper* TensorPool::CreateStaticTensorWithValue(
         break;
       }
       case Qnn_DataType_t::QNN_DATATYPE_UINT_32: {
-        if (fill_value < std::numeric_limits<std::uint32_t>::min() ||
-            fill_value > std::numeric_limits<std::uint32_t>::max()) {
+        if (static_cast<double>(fill_value) <
+                static_cast<double>(
+                    std::numeric_limits<std::uint32_t>::min()) ||
+            static_cast<double>(fill_value) >
+                static_cast<double>(
+                    std::numeric_limits<std::uint32_t>::max())) {
           QNN_LOG_ERROR(
               "Fill value out of range when CreateStaticTensorWithValue.");
         }
