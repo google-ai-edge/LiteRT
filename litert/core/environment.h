@@ -85,6 +85,7 @@ class LiteRtEnvironmentT {
   bool SupportsAhwbClInterop();
 
   bool SupportsAhwbGlInterop();
+  bool SupportsFP16();
 
  private:
   litert::internal::AcceleratorRegistry accelerators_;

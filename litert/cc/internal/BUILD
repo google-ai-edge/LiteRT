@@ -661,17 +661,8 @@ cc_library(
     # The visibility is for testing only, otherwise it would be private.
     visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
     deps = [
-        "//litert/c:litert_compiled_model_header",
-        "//litert/c:litert_environment_header",
-        "//litert/c:litert_environment_options_header",
-        "//litert/c:litert_event_header",
         "//litert/c:litert_layout",
-        "//litert/c:litert_metrics_header",
-        "//litert/c:litert_model_header",
-        "//litert/c:litert_opaque_options_header",
-        "//litert/c:litert_options_header",
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
-        "//litert/c:litert_tensor_buffer_header",
         "//litert/c/internal:litert_runtime_c_api",
     ],
 )

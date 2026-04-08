@@ -43,6 +43,7 @@ static const LiteRtRuntimeCApiStruct kBuiltinStruct = {
         LiteRtEnvironmentSupportsAhwbGlInterop,
     .litert_environment_has_gpu_environment =
         LiteRtEnvironmentHasGpuEnvironment,
+    .litert_environment_supports_fp16 = LiteRtEnvironmentSupportsFP16,
     // LiteRtEnvironmentOptions
     .litert_get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
     .litert_set_environment_options_value = LiteRtSetEnvironmentOptionsValue,

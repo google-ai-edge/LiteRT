@@ -45,6 +45,14 @@ TEST(LiteRtEnvironmentT, CreateWithOptions) {
   ASSERT_STREQ(option->str_value, "sample path");
 }
 
+TEST(LiteRtEnvironmentT, SupportsFP16) {
+  auto env = LiteRtEnvironmentT::CreateWithOptions({});
+  ASSERT_TRUE(env);
+  // Just ensure it's callable and returns a boolean.
+  bool supports_fp16 = (*env)->SupportsFP16();
+  (void)supports_fp16;
+}
+
 TEST(LiteRtEnvironmentT, CheckStringCopy) {
   LiteRtEnvironmentT::Ptr env;
 

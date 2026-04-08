@@ -190,6 +190,14 @@ void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
   *has_gpu_environment = environment->HasGpuEnvironment();
 }
 
+LiteRtStatus LiteRtEnvironmentSupportsFP16(LiteRtEnvironment environment,
+                                           bool* is_supported) {
+  LITERT_RETURN_IF_ERROR(environment != nullptr)
+      << "Environment pointer is null.";
+  *is_supported = environment->SupportsFP16();
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

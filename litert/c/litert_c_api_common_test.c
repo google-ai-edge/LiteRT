@@ -30,6 +30,7 @@
 #include "litert/c/litert_builder.h"         // NOLINT
 #include "litert/c/litert_common.h"          // NOLINT
 #include "litert/c/litert_compiled_model.h"  // NOLINT
+#include "litert/c/litert_environment.h"     // NOLINT
 #include "litert/c/litert_custom_tensor_buffer.h"  // NOLINT
 #include "litert/c/litert_event.h"           // NOLINT
 #include "litert/c/litert_layout.h"          // NOLINT

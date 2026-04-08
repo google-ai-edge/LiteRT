@@ -78,6 +78,9 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_environment.h: LiteRtEnvironmentHasGpuEnvironment
   void (*litert_environment_has_gpu_environment)(LiteRtEnvironment environment,
                                                  bool* has_gpu_environment);
+  // litert_environment.h: LiteRtEnvironmentSupportsFP16
+  LiteRtStatus (*litert_environment_supports_fp16)(
+      LiteRtEnvironment environment, bool* is_supported);
 
   //
   // LiteRtEnvironmentOptions

@@ -120,6 +120,12 @@ class RuntimeProxy {
     LITERT_PROXY_METHOD_STATUS(litert_environment_supports_ahwb_gl_interop,
                                environment, is_supported);
   }
+ 
+  LiteRtStatus EnvironmentSupportsFP16(LiteRtEnvironment environment,
+                                       bool* is_supported) {
+    LITERT_PROXY_METHOD_STATUS(litert_environment_supports_fp16, environment,
+                               is_supported);
+  }
 
   void EnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
                                     bool* has_gpu_environment) {
