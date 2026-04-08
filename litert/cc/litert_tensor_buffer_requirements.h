@@ -85,8 +85,7 @@ class TensorBufferRequirements {
 
   /// @brief Returns the strides of the tensor buffer requirements.
   ///
-  /// If the strides are not specified, either an empty span or a span with a
-  /// single element of 0 is returned, which is equivalent to no strides.
+  /// If the strides are not specified, an empty span is returned.
   Expected<absl::Span<const uint32_t>> Strides() const {
     return absl::MakeConstSpan(strides_);
   }

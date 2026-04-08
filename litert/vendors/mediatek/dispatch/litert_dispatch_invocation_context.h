@@ -78,7 +78,8 @@ class LiteRtDispatchInvocationContextT {
   class IoRequirementsBuilder {
    public:
     IoRequirementsBuilder(size_t buffer_size,
-                          const std::vector<uint32_t>& padded_dimensions);
+                          const std::vector<uint32_t>& padded_dimensions,
+                          const LiteRtRankedTensorType& tensor_type);
     litert::Expected<LiteRtTensorBufferRequirements> Create();
 
    private:

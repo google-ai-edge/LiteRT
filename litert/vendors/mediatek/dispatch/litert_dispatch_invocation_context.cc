@@ -25,8 +25,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
@@ -297,13 +297,25 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
 }
 
 LiteRtDispatchInvocationContextT::IoRequirementsBuilder::IoRequirementsBuilder(
-    size_t buffer_size, const std::vector<uint32_t>& padded_dimensions)
+    size_t buffer_size, const std::vector<uint32_t>& padded_dimensions,
+    const LiteRtRankedTensorType& tensor_type)
     : buffer_size_(buffer_size) {
   auto rank = padded_dimensions.size();
+  bool has_strides = false;
   strides_.resize(rank);
   strides_[0] = 1;
   for (auto i = 1; i < rank; ++i) {
     strides_[i] = padded_dimensions[i - 1];
+    if (i - 1 < tensor_type.layout.rank &&
+        padded_dimensions[i - 1] != tensor_type.layout.dimensions[i - 1]) {
+      has_strides = true;
+    }
+  }
+
+  // If the strides are all the same as the original dimensions, then we don't
+  // need to specify the strides.
+  if (!has_strides) {
+    strides_.clear();
   }
 }
 
@@ -383,7 +395,8 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
     padded_dimensions.resize(tensor_type.layout.rank);
 
     input_requirements_builders_[input_index] =
-        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions);
+        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions,
+                                                tensor_type);
   }
 
   return input_requirements_builders_[input_index]->Create();
@@ -443,7 +456,8 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
     padded_dimensions.resize(tensor_type.layout.rank);
 
     output_requirements_builders_[output_index] =
-        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions);
+        std::make_unique<IoRequirementsBuilder>(buffer_size, padded_dimensions,
+                                                tensor_type);
   }
 
   return output_requirements_builders_[output_index]->Create();

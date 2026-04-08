@@ -1154,10 +1154,7 @@ TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_strides, input_requirements.Strides());
 
-  EXPECT_LE(input_strides.size(), 1);
-  if (input_strides.size() == 1) {
-    EXPECT_EQ(input_strides[0], 0);
-  }
+  EXPECT_EQ(input_strides.size(), 0);
 
   // Check output buffer requirements.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -1178,10 +1175,7 @@ TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_strides,
                               output_requirements.Strides());
-  EXPECT_LE(output_strides.size(), 1);
-  if (output_strides.size() == 1) {
-    EXPECT_EQ(output_strides[0], 0);
-  }
+  EXPECT_EQ(output_strides.size(), 0);
 }
 
 }  // namespace

@@ -59,6 +59,9 @@ LiteRtStatus LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
 LiteRtStatus LiteRtGetTensorBufferRequirementsBufferSize(
     LiteRtTensorBufferRequirements requirements, size_t* buffer_size);
 
+// Returns the strides of the tensor buffer requirements.
+// If the strides are not specified, num_strides is 0 and strides is nullptr is
+// returned.
 LiteRtStatus LiteRtGetTensorBufferRequirementsStrides(
     LiteRtTensorBufferRequirements requirements, int* num_strides,
     const uint32_t** strides);
