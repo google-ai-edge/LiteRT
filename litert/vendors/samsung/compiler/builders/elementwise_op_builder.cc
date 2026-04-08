@@ -160,4 +160,12 @@ Expected<OpWrapper> BuildPowOp(const Op& op) {
   return BuildElementwiseOp(op, "Pow", 0);
 }
 
+Expected<OpWrapper> BuildLogicalAndOp(const Op& op) {
+  return BuildElementwiseOp(op, "And", 0);
+}
+
+Expected<OpWrapper> BuildNotEqualOp(const Op& op) {
+  return BuildElementwiseOp(op, "NotEqual", 0);
+}
+
 }  // namespace litert::samsung

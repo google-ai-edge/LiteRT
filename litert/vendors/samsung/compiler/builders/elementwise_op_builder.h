@@ -65,6 +65,10 @@ Expected<OpWrapper> BuildLogOp(const Op& op);
 
 Expected<OpWrapper> BuildPowOp(const Op& op);
 
+Expected<OpWrapper> BuildLogicalAndOp(const Op &op);
+
+Expected<OpWrapper> BuildNotEqualOp(const Op &op);
+
 }  // namespace litert::samsung
 
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_ADD_OP_BUILDER_H_

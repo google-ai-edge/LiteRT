@@ -54,6 +54,7 @@
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/resizenearestneighbor_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/rms_norm_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/select_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
@@ -361,6 +362,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflLog:
         op_wrapper = std::move(BuildLogOp(op));
         break;
+      case kLiteRtOpCodeTflLogicalAnd:
+        op_wrapper = std::move(BuildLogicalAndOp(op));
+        break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = BuildLogisticOp(op);
         break;
@@ -381,6 +385,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflMul:
         op_wrapper = BuildMulOp(op);
+        break;
+      case kLiteRtOpCodeTflNotEqual:
+        op_wrapper = std::move(BuildNotEqualOp(op));
         break;
       case kLiteRtOpCodeTflPad:
       case kLiteRtOpCodeTflPadv2:
@@ -403,6 +410,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflResizeBilinear:
         op_wrapper = BuildResizeBilinearOp(op);
+        break;
+      case kLiteRtOpCodeTflResizeNearestNeighbor:
+        op_wrapper = std::move(BuildResizeNearestNeighborOp(op));
         break;
       case kLiteRtOpCodeTflRsqrt:
         op_wrapper = BuildRsqrtOp(op);
