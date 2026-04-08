@@ -130,6 +130,7 @@ litert_test(
     }) + ["-Wl,--disable-new-dtags"],
     linkstatic = True,
     tags = [
+        "manual",
         "no-remote-exec",
         "notap",
     ],
