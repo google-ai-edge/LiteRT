@@ -63,6 +63,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   }
 
   int fd;
+  void* addr = nullptr;
 
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeDmaBuf:
