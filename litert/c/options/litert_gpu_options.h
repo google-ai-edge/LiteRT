@@ -110,6 +110,10 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
 LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
     LrtGpuOptions* gpu_options, bool enable);
 
+// Sets the GPU flush period (number of ops).
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+    LrtGpuOptions* gpu_options, int gpu_flush_period);
+
 // Sets the GPU accelerator precision. e.g. FP16, FP32, etc.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPrecision(
     LrtGpuOptions* gpu_options, LiteRtDelegatePrecision precision);
@@ -248,6 +252,9 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
     bool* enabled, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+    int* gpu_flush_period, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
     LiteRtDelegatePrecision* precision, const LrtGpuOptions* options);

@@ -63,6 +63,7 @@ class GpuOptions {
   LiteRtStatus EnableBenchmarkMode(bool enabled);
   LiteRtStatus EnableAllowSrcQuantizedFcConvOps(bool enabled);
   LiteRtStatus HintWaitingForCompletion(bool wait);
+  LiteRtStatus SetGpuFlushPeriod(int gpu_flush_period);
 
   enum class Precision : int {
     kDefault = kLiteRtDelegatePrecisionDefault,

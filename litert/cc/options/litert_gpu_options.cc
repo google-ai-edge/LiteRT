@@ -59,6 +59,11 @@ LiteRtStatus GpuOptions::HintWaitingForCompletion(bool wait) {
                                                                     wait);
 }
 
+LiteRtStatus GpuOptions::SetGpuFlushPeriod(int gpu_flush_period) {
+  return LrtSetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(options_,
+                                                          gpu_flush_period);
+}
+
 Expected<void> GpuOptions::SetPrecision(Precision precision) {
   LITERT_RETURN_IF_ERROR(LrtSetGpuAcceleratorCompilationOptionsPrecision(
       options_, static_cast<LiteRtDelegatePrecision>(precision)));
