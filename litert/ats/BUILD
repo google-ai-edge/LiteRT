@@ -28,6 +28,9 @@ package(
 
 # SUITES ###########################################################################################
 
+# Note: The `litert_define_ats` targets below define test suites that execute tests on-device
+# using the underlying base `ats` binary compiled further down in this file.
+
 litert_define_ats(
     name = "cpu_ats",
     backend = "cpu",
@@ -152,9 +155,18 @@ litert_define_ats(
 
 # SOURCE CODES #####################################################################################
 
+# Note: The `litert_test` target below (`ats`) is the base test binary executed directly on the host
+# machine. In contrast, the `litert_define_ats` targets defined above generate test
+# suites that wrap this binary and execute it on-device.
 litert_test(
     name = "ats",
     srcs = ["ats.cc"],
+    args = [
+        "--dont_register=.*tfl\\.log.*f16.*",
+        "--dont_register=.*tfl\\.zeros_like.*f16.*",
+        "--dont_register=.*tfl\\.sign.*f16.*",
+        "--dont_register=.*tfl\\.relu_0_to_1.*f16.*",
+    ],
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
@@ -175,6 +187,7 @@ litert_test(
         "//litert/test/generators",
         "//litert/test/generators:common",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
@@ -286,11 +299,13 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_c_types_printing",
+        "//litert/cc/internal:litert_numerics",
         "//litert/core/model",
         "//litert/test:matchers_oss",
         "//litert/test:rng_fixture_oss",
         "//litert/test:simple_buffer",
         "//litert/test/generators:common",
+        "//tflite/types:half",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",

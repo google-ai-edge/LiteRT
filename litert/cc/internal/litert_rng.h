@@ -16,9 +16,10 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
 
 #include <bitset>
+#include <cstdint>
 #include <cstdlib>
-#include <functional>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <ostream>
 #include <random>
@@ -29,13 +30,13 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_numerics.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+
 
 /// @file
 /// @brief Provides various utilities and types for random number generation.
@@ -197,6 +198,8 @@ class RangedGenerator final : public DataGenerator<D, Dist> {
   }
 };
 
+
+
 /// @brief A rangeless float generator that reinterprets random bits as the
 /// given float type.
 ///
@@ -236,6 +239,8 @@ class ReinterpretGenerator<D, Dist,
   ReinterpretGenerator(ReinterpretGenerator&&) = default;
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
 };
+
+
 
 template <typename D>
 class F16InF32Generator final {};
@@ -318,6 +323,8 @@ class DummyGenerator final : public DataGeneratorBase<D> {
  private:
   D val_ = 0;
 };
+
+
 
 // DEFAULTS FOR DATA GENERATORS ////////////////////////////////////////////////
 
@@ -504,7 +511,6 @@ template <typename D, template <typename> typename Generator>
 class RandomTensorData {
  private:
   /// @todo Support on standard types.
-  static_assert(std::is_integral_v<D> || std::is_floating_point_v<D>);
   using Gen = Generator<D>;
 
  public:
@@ -548,8 +554,11 @@ class RandomTensorData {
             typename = std::enable_if_t<std::is_constructible_v<Gen, DD, DD>>>
   explicit RandomTensorData(DD min, DD max) : gen_(min, max) {}
 
-  template <typename = std::enable_if<std::is_constructible_v<Gen>>::type>
-  explicit RandomTensorData() : gen_() {}
+  template <typename DummyType = void>
+  explicit RandomTensorData(
+      typename std::enable_if<std::is_constructible_v<Gen>, DummyType>::type* =
+          nullptr)
+      : gen_() {}
 
  private:
   Gen gen_;
@@ -586,6 +595,8 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
+
+
   RandomTensorDataBuilder& SetSin() {
     float_config_ = Sin();
     return *this;
@@ -594,6 +605,8 @@ class RandomTensorDataBuilder {
   bool IsFloatDummy() const {
     return std::holds_alternative<Dummy>(float_config_);
   }
+
+
 
   template <typename D>
   std::pair<double, double> Bounds() const {
@@ -631,8 +644,10 @@ class RandomTensorDataBuilder {
         auto [min, max] = std::get<std::pair<D, D>>(int64_config_);
         return {static_cast<double>(min), static_cast<double>(max)};
       }
+
     } else {
-      static_assert(kUnsupportedRandomTensorDataType<D>, "Unsupported type");
+      static_assert(kUnsupportedRandomTensorDataType<D>,
+                    "Unsupported type in Bounds");
     }
   }
 
@@ -680,8 +695,10 @@ class RandomTensorDataBuilder {
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
         return Functor()(data, std::forward<Args>(args)...);
       }
+
     } else {
-      static_assert(kUnsupportedRandomTensorDataType<D>, "Unsupported type");
+      static_assert(kUnsupportedRandomTensorDataType<D>,
+                    "Unsupported type in Call");
     }
   }
 

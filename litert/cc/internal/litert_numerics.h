@@ -17,10 +17,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <type_traits>
 
 #include "litert/cc/internal/litert_detail.h"
+
 
 /// @file
 /// @brief Provides numeric utilities, including a wrapper for
@@ -46,7 +48,11 @@ struct NumericLimits {
   static constexpr T Max() { return StdLimits::max(); }
   /// @brief Returns the largest-magnitude negative value.
   static constexpr T Lowest() { return StdLimits::lowest(); }
+  /// @brief Returns the machine epsilon.
+  static constexpr T Epsilon() { return StdLimits::epsilon(); }
 };
+
+
 
 /// @brief A type trait that provides a wider version of a numeric type
 /// (e.g., `i32` -> `i64`, `f32` -> `f64`).
@@ -83,6 +89,8 @@ static constexpr T GetOrFlush(T val) {
   }
   return static_cast<T>(0.0f);
 }
+
+
 
 /// @brief Represents a container element size that supports fractional byte
 /// widths.

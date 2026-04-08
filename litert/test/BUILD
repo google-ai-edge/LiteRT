@@ -320,9 +320,24 @@ cc_library(
 )
 
 cc_library(
+    name = "tflite_half_traits",
+    testonly = True,
+    hdrs = ["tflite_half_traits.h"],
+    deps = [
+        "//litert/cc:litert_element_type",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_numerics",
+        "//litert/cc/internal:litert_rng",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
     name = "simple_buffer",
+    testonly = True,
     hdrs = ["simple_buffer.h"],
     deps = [
+        ":tflite_half_traits",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_buffer_ref",
@@ -334,6 +349,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_rng",
+        "//tflite/types:half",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
@@ -344,6 +360,7 @@ cc_library(
     testonly = True,
     hdrs = ["simple_buffer.h"],
     deps = [
+        ":tflite_half_traits",
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
@@ -355,6 +372,7 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/internal:litert_rng",
+        "//tflite/types:half",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
