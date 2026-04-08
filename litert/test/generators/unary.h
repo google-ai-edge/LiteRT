@@ -19,7 +19,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -41,6 +40,7 @@
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/simple_buffer.h"
+#include "tflite/types/half.h"
 
 namespace litert {
 namespace testing {
@@ -139,7 +139,8 @@ struct CosReference {
 template <typename T>
 struct EluReference {
   T operator()(T value) const {
-    return value > 0 ? value : std::expm1(value);
+    return value > static_cast<T>(0) ? value
+                                     : static_cast<T>(std::expm1(value));
   }
 };
 
@@ -165,8 +166,9 @@ struct HardSwishReference {
 template <typename T>
 struct GeluReference {
   T operator()(T value) const {
-    return static_cast<T>(0.5) * value *
-           (static_cast<T>(1) + std::erf(value / std::sqrt(static_cast<T>(2))));
+    return static_cast<T>(0.5f) * value *
+           (static_cast<T>(1) +
+            static_cast<T>(std::erf(value / std::sqrt(static_cast<T>(2.0f)))));
   }
 };
 
@@ -318,14 +320,28 @@ class Unary : public TestGraph {
     VarBuffers inputs;
     LITERT_ASSIGN_OR_RETURN(auto input, SimpleBuffer::Create<T>(params_.shape));
 
-    if constexpr (kOpCode == kLiteRtOpCodeTflLog ||
-                  kOpCode == kLiteRtOpCodeTflSqrt ||
-                  kOpCode == kLiteRtOpCodeTflRsqrt) {
+    if constexpr (kOpCode == kLiteRtOpCodeTflExp ||
+                  kOpCode == kLiteRtOpCodeTflSin ||
+                  kOpCode == kLiteRtOpCodeTflCos ||
+                  kOpCode == kLiteRtOpCodeTflSquare ||
+                  kOpCode == kLiteRtOpCodeTflHardSwish) {
       auto constrained_builder = data_builder;
-      if constexpr (std::is_floating_point_v<T>) {
+      if constexpr (std::is_floating_point_v<T> ||
+                    std::is_same_v<T, tflite::half>) {
         if (!data_builder.IsFloatDummy()) {
-          constrained_builder.SetFloatRange(std::numeric_limits<T>::epsilon(),
-                                            1000.0);
+          constrained_builder.SetFloatRange(-5.0f, 5.0f);
+        }
+      }
+      LITERT_RETURN_IF_ERROR(
+          (input.template WriteRandom<T>(constrained_builder, device)));
+    } else if constexpr (kOpCode == kLiteRtOpCodeTflLog ||
+                         kOpCode == kLiteRtOpCodeTflSqrt ||
+                         kOpCode == kLiteRtOpCodeTflRsqrt) {
+      auto constrained_builder = data_builder;
+      if constexpr (std::is_floating_point_v<T> ||
+                    std::is_same_v<T, tflite::half>) {
+        if (!data_builder.IsFloatDummy()) {
+          constrained_builder.SetFloatRange(0.001f, 1000.0f);
         }
       }
       LITERT_RETURN_IF_ERROR(

@@ -179,6 +179,9 @@ using GetCCType =
             std::bool_constant<Ty == ElementType::UInt16>, uint16_t,
             std::bool_constant<Ty == ElementType::UInt32>, uint32_t,
             std::bool_constant<Ty == ElementType::UInt64>, uint64_t,
+            // uint16_t is the opaque representation of tflite::half to avoid
+            // leaking tflite headers into public SDK.
+            std::bool_constant<Ty == ElementType::Float16>, uint16_t,
             std::bool_constant<Ty == ElementType::Float32>, float,
             std::bool_constant<Ty == ElementType::Float64>, double>;
 // clang format on

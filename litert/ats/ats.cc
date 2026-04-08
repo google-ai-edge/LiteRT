@@ -34,6 +34,7 @@
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "tflite/schema/schema_generated.h"
+#include "tflite/types/half.h"
 
 namespace litert::testing {
 namespace {
@@ -81,7 +82,7 @@ void RegisterUnary(const AtsConf& options, size_t& test_id, size_t iters,
       Fixture,
       Unary,
       SizeListC<1, 2, 3, 4, 5, 6>,
-      TypeList<float>,
+      TypeList<float, tflite::half>,
       OpCodeListC<
           kLiteRtOpCodeTflFloor,
           kLiteRtOpCodeTflLogistic,

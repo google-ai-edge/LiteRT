@@ -1356,6 +1356,7 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
+        "//tflite/types:half",
     ] + select({
         # Windows excludes some options to avoid unnecessary dependencies.
         "@platforms//os:windows": [],

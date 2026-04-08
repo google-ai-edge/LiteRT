@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -35,6 +36,7 @@
 #include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/internal/litert_numerics.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -43,6 +45,7 @@
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 #include "litert/test/simple_buffer.h"
+#include "tflite/types/half.h"
 
 namespace litert::testing {
 
@@ -175,6 +178,9 @@ class AtsInferenceTest : public RngTest {
       ASSERT_EQ(actual[i].Type(), ref[i].Type());
       if (actual[i].Type().ElementType() == ElementType::Float32) {
         CheckOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>());
+      } else if (actual[i].Type().ElementType() == ElementType::Float16) {
+        CheckOutputImpl(actual[i].AsView<tflite::half>(),
+                        ref[i].AsView<tflite::half>());
       } else if (actual[i].Type().ElementType() == ElementType::Int32) {
         CheckOutputImpl(actual[i].AsView<int32_t>(), ref[i].AsView<int32_t>());
       } else {
@@ -188,7 +194,9 @@ class AtsInferenceTest : public RngTest {
   template <typename T>
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
     double mse = std::numeric_limits<double>::max();
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, Tol(), &mse));
+    double tol = std::max(
+        Tol(), static_cast<double>(NumericLimits<T>::Epsilon()) * 10.0);
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, tol, &mse));
     cap_.numerics.NewMse(mse);
   }
 
