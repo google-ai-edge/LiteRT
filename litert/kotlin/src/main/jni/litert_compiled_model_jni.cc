@@ -1028,9 +1028,15 @@ JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_CompiledModel_nativeRun(
   for (int i = 0; i < num_inputs; ++i) {
     auto* litert_tensor_buffer =
         reinterpret_cast<TensorBuffer*>(input_buffers_array[i]);
-    // TODO(niuchl): Use TensorBuffer* when it's possible.
-    input_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
+    auto input_buffer = litert_tensor_buffer->Duplicate();
+    if (!input_buffer) {
+      LITERT_LOG(LITERT_ERROR, "Failed to duplicate input buffer: %s",
+                 input_buffer.Error().Message().c_str());
+      ThrowLiteRtException(env, input_buffer.Error().Status(),
+                           input_buffer.Error().Message());
+      return;
+    }
+    input_buffer_vector.push_back(std::move(*input_buffer));
   }
 
   auto num_outputs = env->GetArrayLength(output_buffers);
@@ -1040,8 +1046,15 @@ JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_CompiledModel_nativeRun(
   for (int i = 0; i < num_outputs; ++i) {
     auto* litert_tensor_buffer =
         reinterpret_cast<TensorBuffer*>(output_buffers_array[i]);
-    output_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
+    auto output_buffer = litert_tensor_buffer->Duplicate();
+    if (!output_buffer) {
+      LITERT_LOG(LITERT_ERROR, "Failed to duplicate output buffer: %s",
+                 output_buffer.Error().Message().c_str());
+      ThrowLiteRtException(env, output_buffer.Error().Status(),
+                           output_buffer.Error().Message());
+      return;
+    }
+    output_buffer_vector.push_back(std::move(*output_buffer));
   }
   auto result = compiled_model.Run(signature_index, input_buffer_vector,
                                    output_buffer_vector);
@@ -1066,8 +1079,15 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignature(
   for (int i = 0; i < num_inputs; ++i) {
     auto* litert_tensor_buffer =
         reinterpret_cast<TensorBuffer*>(input_buffers_array[i]);
-    input_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
+    auto input_buffer = litert_tensor_buffer->Duplicate();
+    if (!input_buffer) {
+      LITERT_LOG(LITERT_ERROR, "Failed to duplicate input buffer: %s",
+                 input_buffer.Error().Message().c_str());
+      ThrowLiteRtException(env, input_buffer.Error().Status(),
+                           input_buffer.Error().Message());
+      return;
+    };
+    input_buffer_vector.push_back(std::move(*input_buffer));
   }
 
   auto num_outputs = env->GetArrayLength(output_buffers);
@@ -1077,8 +1097,15 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignature(
   for (int i = 0; i < num_outputs; ++i) {
     auto* litert_tensor_buffer =
         reinterpret_cast<TensorBuffer*>(output_buffers_array[i]);
-    output_buffer_vector.push_back(litert::TensorBuffer::WrapCObject(
-        litert_tensor_buffer->Get(), litert::OwnHandle::kNo));
+    auto output_buffer = litert_tensor_buffer->Duplicate();
+    if (!output_buffer) {
+      LITERT_LOG(LITERT_ERROR, "Failed to duplicate output buffer: %s",
+                 output_buffer.Error().Message().c_str());
+      ThrowLiteRtException(env, output_buffer.Error().Status(),
+                           output_buffer.Error().Message());
+      return;
+    }
+    output_buffer_vector.push_back(std::move(*output_buffer));
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
@@ -1112,8 +1139,15 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
   for (int i = 0; i < input_keys_size; ++i) {
     auto key = input_keys_vector[i];
     auto* buffer = reinterpret_cast<TensorBuffer*>(input_buffers_array[i]);
-    input_buffer_map[key] = litert::TensorBuffer::WrapCObject(
-        buffer->Get(), litert::OwnHandle::kNo);
+    auto input_buffer = buffer->Duplicate();
+    if (!input_buffer) {
+      LITERT_LOG(LITERT_ERROR, "Failed to duplicate input buffer: %s",
+                 input_buffer.Error().Message().c_str());
+      ThrowLiteRtException(env, input_buffer.Error().Status(),
+                           input_buffer.Error().Message());
+      return;
+    }
+    input_buffer_map[key] = std::move(*input_buffer);
   }
 
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, output_keys);
@@ -1124,8 +1158,15 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
   for (int i = 0; i < output_keys_size; ++i) {
     auto key = output_keys_vector[i];
     auto* buffer = reinterpret_cast<TensorBuffer*>(output_buffers_array[i]);
-    output_buffer_map[key] = litert::TensorBuffer::WrapCObject(
-        buffer->Get(), litert::OwnHandle::kNo);
+    auto output_buffer = buffer->Duplicate();
+    if (!output_buffer) {
+      LITERT_LOG(LITERT_ERROR, "Failed to duplicate output buffer: %s",
+                 output_buffer.Error().Message().c_str());
+      ThrowLiteRtException(env, output_buffer.Error().Status(),
+                           output_buffer.Error().Message());
+      return;
+    }
+    output_buffer_map[key] = std::move(*output_buffer);
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
