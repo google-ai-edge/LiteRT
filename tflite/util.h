@@ -258,176 +258,24 @@ class CheckedInt {
   // Helper constructor for operators.
   CheckedInt(T val, bool overflow) : value_(val), overflow_(overflow) {}
 
+  template <class V, class U>
+  friend CheckedInt<std::common_type_t<V, U>> operator+(
+      const CheckedInt<V>& a, const CheckedInt<U>& b) noexcept;
+
+  template <class V, class U>
+  friend CheckedInt<std::common_type_t<V, U>> operator-(
+      const CheckedInt<V>& a, const CheckedInt<U>& b) noexcept;
+
+  template <class V, class U>
+  friend CheckedInt<std::common_type_t<V, U>> operator*(
+      const CheckedInt<V>& a, const CheckedInt<U>& b) noexcept;
+
+  template <class V, class U>
+  friend CheckedInt<std::common_type_t<V, U>> operator/(
+      const CheckedInt<V>& a, const CheckedInt<U>& b) noexcept;
+
   template <class U>
   friend class CheckedInt;
-
-  template <class U>
-  using CommonType = CheckedInt<std::common_type_t<T, U>>;
-
-  template <class U>
-  friend CommonType<U> operator+(const CheckedInt<T>& a,
-                                 const CheckedInt<U>& b) noexcept {
-    CommonType<U> res;
-#if TFLITE_HAS_OVERFLOW_BUILTINS
-    res.overflow_ = __builtin_add_overflow(a.value_, b.value_, &res.value_) ||
-                    a.overflow_ || b.overflow_;
-#else
-    if constexpr (std::is_same_v<T, U>) {
-      if constexpr (std::is_unsigned_v<T>) {
-        res.value_ = a.value_ + b.value_;
-        res.overflow_ = a.overflow_ || b.overflow_ || a.value_ > res.value_;
-      } else {  // is_signed_v<T>
-        // Signed overflow is undefined behaviour. We can only have an overflow
-        // if the signs are the same. Because two's-complement arithmetic works
-        // the same for signed and unsigned, we compute as unsigned and check if
-        // the sign bit has changed.
-        using Unsigned = std::make_unsigned_t<T>;
-        const Unsigned ua = static_cast<Unsigned>(a.value_);
-        const Unsigned ub = static_cast<Unsigned>(b.value_);
-        const Unsigned tmp = ua + ub;
-        constexpr Unsigned mask = static_cast<Unsigned>(1)
-                                  << (sizeof(Unsigned) * 8 - 1);
-        const bool same_sign = ~(ua ^ ub) & mask;
-        const bool sign_changed = (tmp ^ ua) & mask;
-        res.value_ = static_cast<T>(tmp);
-        res.overflow_ =
-            a.overflow_ || b.overflow_ || (same_sign && sign_changed);
-      }
-    } else {
-      // Convert elements to the common type first to check for implicit
-      // conversion overflows.
-      return CommonType<U>(a) + CommonType<U>(b);
-    }
-#endif
-    return res;
-  }
-
-  template <class U>
-  friend CommonType<U> operator-(const CheckedInt<T>& a,
-                                 const CheckedInt<U>& b) noexcept {
-    CommonType<U> res;
-#if TFLITE_HAS_OVERFLOW_BUILTINS
-    res.overflow_ = __builtin_sub_overflow(a.value_, b.value_, &res.value_) ||
-                    a.overflow_ || b.overflow_;
-#else
-    if constexpr (std::is_same_v<T, U>) {
-      if constexpr (std::is_unsigned_v<T>) {
-        res.value_ = a.value_ - b.value_;
-        res.overflow_ = a.overflow_ || b.overflow_ || a.value_ < res.value_;
-      } else {  // is_signed_v<T>
-        // Signed overflow is undefined behaviour. We can only have an overflow
-        // if the sign opposite of b is the same as the sign of a. Because
-        // two's-complement arithmetic works the same for signed and unsigned,
-        // we compute as unsigned and check if the sign bit has changed.
-        using Unsigned = std::make_unsigned_t<T>;
-        const Unsigned ua = static_cast<Unsigned>(a.value_);
-        const Unsigned ub = static_cast<Unsigned>(b.value_);
-        const Unsigned tmp = ua - ub;
-        constexpr Unsigned mask = static_cast<Unsigned>(1)
-                                  << (sizeof(Unsigned) * 8 - 1);
-        const bool same_sign = ~(ua ^ ~ub) & mask;
-        const bool sign_changed = (tmp ^ ua) & mask;
-        res.value_ = static_cast<T>(tmp);
-        res.overflow_ =
-            a.overflow_ || b.overflow_ || (same_sign && sign_changed);
-      }
-    } else {
-      // Convert elements to the common type first to check for implicit
-      // conversion overflows.
-      return CommonType<U>(a) - CommonType<U>(b);
-    }
-#endif
-    return res;
-  }
-
-  template <class U>
-  friend CommonType<U> operator*(const CheckedInt<T>& a,
-                                 const CheckedInt<U>& b) noexcept {
-    CommonType<U> res;
-#if TFLITE_HAS_OVERFLOW_BUILTINS
-    res.overflow_ = __builtin_mul_overflow(a.value_, b.value_, &res.value_) ||
-                    a.overflow_ || b.overflow_;
-#else
-    if constexpr (std::is_same_v<T, U>) {
-      using C = decltype(res.value_);
-      if constexpr (CanWiden<C>::value) {
-        using W = typename Widen<C>::type;
-        const W wa = static_cast<W>(a.value_);
-        const W wb = static_cast<W>(b.value_);
-        const W tmp = wa * wb;
-        res = tmp;
-        res.overflow_ |= a.overflow_ || b.overflow_;
-      } else {
-        static_assert(sizeof(C) == sizeof(uint64_t));
-        const uint64_t ua = static_cast<uint64_t>(a.value_);
-        const uint64_t ub = static_cast<uint64_t>(b.value_);
-#define hi(x) (x >> 32)
-#define lo(x) (x & 0xffffffff)
-        const uint64_t hia = hi(ua);
-        const uint64_t loa = lo(ua);
-        const uint64_t hib = hi(ub);
-        const uint64_t lob = lo(ub);
-
-        const uint64_t lo_lo = loa * lob;
-        const uint64_t hi_lo = hia * lob;
-        const uint64_t lo_hi = loa * hib;
-        const uint64_t hi_hi = hia * hib;
-
-        const uint64_t cross = hi(lo_lo) + lo(hi_lo) + lo_hi;
-        uint64_t upper_64 = hi_hi + hi(hi_lo) + hi(cross);
-#undef hi
-#undef lo
-        if constexpr (std::is_signed_v<C>) {
-          // It took a while to understand this.
-          //
-          // If a < 0, then ua = a + 2^64.
-          // So ua * ub = (a + 2^64) * ub
-          //            = a * ub + ub * 2^64
-          //                       ~~~~~~~~~
-          // This means that the upper_64 that we compute above has an extra ub
-          // added to it that we need to remove.
-          //
-          // The same is applied to b below.
-          if (a.value_ < 0) {
-            upper_64 -= ub;
-          }
-          if (b.value_ < 0) {
-            upper_64 -= ua;
-          }
-          const uint64_t lower_64 = ua * ub;
-          const uint64_t sign_ext =
-              static_cast<uint64_t>(static_cast<int64_t>(lower_64) >> 63);
-          res.overflow_ = a.overflow_ || b.overflow_ || (upper_64 != sign_ext);
-        } else {
-          res.overflow_ = a.overflow_ || b.overflow_ || (upper_64 != 0);
-        }
-        res.value_ = a.value_ * b.value_;
-      }
-    } else {
-      return CommonType<U>(a) * CommonType<U>(b);
-    }
-#endif
-    return res;
-  }
-
-  template <class U>
-  friend CommonType<U> operator/(const CheckedInt<T>& a,
-                                 const CheckedInt<U>& b) noexcept {
-    using C = typename CommonType<U>::type;
-    using limits = std::numeric_limits<C>;
-    if constexpr (std::is_same_v<T, U>) {
-      if constexpr (std::is_signed_v<C>) {
-        if (a.value_ == limits::lowest() && b.value_ == -1) {
-          return {/*val=*/limits::max(), /*overflow=*/true};
-        }
-      }
-      return {/*val=*/b.value_ != 0 ? static_cast<C>(a.value_ / b.value_)
-                                    : limits::max(),
-              /*overflow=*/b.value_ == 0 || a.overflow_ || b.overflow_};
-    } else {
-      return CommonType<U>(a) / CommonType<U>(b);
-    }
-  }
 
   template <class U>
   friend bool operator==(const CheckedInt<T>& a,
@@ -526,6 +374,173 @@ class CheckedInt {
 
 template <class T>
 CheckedInt(T) -> CheckedInt<T>;
+
+template <class T, class U>
+CheckedInt<std::common_type_t<T, U>> operator+(
+    const CheckedInt<T>& a, const CheckedInt<U>& b) noexcept {
+  CheckedInt<std::common_type_t<T, U>> res;
+#if TFLITE_HAS_OVERFLOW_BUILTINS
+  res.overflow_ = __builtin_add_overflow(a.value_, b.value_, &res.value_) ||
+                  a.overflow_ || b.overflow_;
+#else
+  if constexpr (std::is_same_v<T, U>) {
+    if constexpr (std::is_unsigned_v<T>) {
+      res.value_ = a.value_ + b.value_;
+      res.overflow_ = a.overflow_ || b.overflow_ || a.value_ > res.value_;
+    } else {  // is_signed_v<T>
+      // Signed overflow is undefined behaviour. We can only have an overflow
+      // if the signs are the same. Because two's-complement arithmetic works
+      // the same for signed and unsigned, we compute as unsigned and check if
+      // the sign bit has changed.
+      using Unsigned = std::make_unsigned_t<T>;
+      const Unsigned ua = static_cast<Unsigned>(a.value_);
+      const Unsigned ub = static_cast<Unsigned>(b.value_);
+      const Unsigned tmp = ua + ub;
+      constexpr Unsigned mask = static_cast<Unsigned>(1)
+                                << (sizeof(Unsigned) * 8 - 1);
+      const bool same_sign = ~(ua ^ ub) & mask;
+      const bool sign_changed = (tmp ^ ua) & mask;
+      res.value_ = static_cast<T>(tmp);
+      res.overflow_ = a.overflow_ || b.overflow_ || (same_sign && sign_changed);
+    }
+  } else {
+    // Convert elements to the common type first to check for implicit
+    // conversion overflows.
+    return CheckedInt<std::common_type_t<T, U>>(a) +
+           CheckedInt<std::common_type_t<T, U>>(b);
+  }
+#endif
+  return res;
+}
+
+template <class T, class U>
+CheckedInt<std::common_type_t<T, U>> operator-(
+    const CheckedInt<T>& a, const CheckedInt<U>& b) noexcept {
+  CheckedInt<std::common_type_t<T, U>> res;
+#if TFLITE_HAS_OVERFLOW_BUILTINS
+  res.overflow_ = __builtin_sub_overflow(a.value_, b.value_, &res.value_) ||
+                  a.overflow_ || b.overflow_;
+#else
+  if constexpr (std::is_same_v<T, U>) {
+    if constexpr (std::is_unsigned_v<T>) {
+      res.value_ = a.value_ - b.value_;
+      res.overflow_ = a.overflow_ || b.overflow_ || a.value_ < res.value_;
+    } else {  // is_signed_v<T>
+      // Signed overflow is undefined behaviour. We can only have an overflow
+      // if the sign opposite of b is the same as the sign of a. Because
+      // two's-complement arithmetic works the same for signed and unsigned,
+      // we compute as unsigned and check if the sign bit has changed.
+      using Unsigned = std::make_unsigned_t<T>;
+      const Unsigned ua = static_cast<Unsigned>(a.value_);
+      const Unsigned ub = static_cast<Unsigned>(b.value_);
+      const Unsigned tmp = ua - ub;
+      constexpr Unsigned mask = static_cast<Unsigned>(1)
+                                << (sizeof(Unsigned) * 8 - 1);
+      const bool same_sign = ~(ua ^ ~ub) & mask;
+      const bool sign_changed = (tmp ^ ua) & mask;
+      res.value_ = static_cast<T>(tmp);
+      res.overflow_ = a.overflow_ || b.overflow_ || (same_sign && sign_changed);
+    }
+  } else {
+    // Convert elements to the common type first to check for implicit
+    // conversion overflows.
+    return CheckedInt<std::common_type_t<T, U>>(a) -
+           CheckedInt<std::common_type_t<T, U>>(b);
+  }
+#endif
+  return res;
+}
+
+template <class T, class U>
+CheckedInt<std::common_type_t<T, U>> operator*(
+    const CheckedInt<T>& a, const CheckedInt<U>& b) noexcept {
+  CheckedInt<std::common_type_t<T, U>> res;
+#if TFLITE_HAS_OVERFLOW_BUILTINS
+  res.overflow_ = __builtin_mul_overflow(a.value_, b.value_, &res.value_) ||
+                  a.overflow_ || b.overflow_;
+#else
+  if constexpr (std::is_same_v<T, U>) {
+    using C = decltype(res.value_);
+    if constexpr (CanWiden<C>::value) {
+      using W = typename Widen<C>::type;
+      const W wa = static_cast<W>(a.value_);
+      const W wb = static_cast<W>(b.value_);
+      const W tmp = wa * wb;
+      res = tmp;
+      res.overflow_ |= a.overflow_ || b.overflow_;
+    } else {
+      static_assert(sizeof(C) == sizeof(uint64_t));
+      const uint64_t ua = static_cast<uint64_t>(a.value_);
+      const uint64_t ub = static_cast<uint64_t>(b.value_);
+#define hi(x) (x >> 32)
+#define lo(x) (x & 0xffffffff)
+      const uint64_t hia = hi(ua);
+      const uint64_t loa = lo(ua);
+      const uint64_t hib = hi(ub);
+      const uint64_t lob = lo(ub);
+
+      const uint64_t lo_lo = loa * lob;
+      const uint64_t hi_lo = hia * lob;
+      const uint64_t lo_hi = loa * hib;
+      const uint64_t hi_hi = hia * hib;
+
+      const uint64_t cross = hi(lo_lo) + lo(hi_lo) + lo_hi;
+      uint64_t upper_64 = hi_hi + hi(hi_lo) + hi(cross);
+#undef hi
+#undef lo
+      if constexpr (std::is_signed_v<C>) {
+        // It took a while to understand this.
+        //
+        // If a < 0, then ua = a + 2^64.
+        // So ua * ub = (a + 2^64) * ub
+        //            = a * ub + ub * 2^64
+        //                       ~~~~~~~~~
+        // This means that the upper_64 that we compute above has an extra ub
+        // added to it that we need to remove.
+        //
+        // The same is applied to b below.
+        if (a.value_ < 0) {
+          upper_64 -= ub;
+        }
+        if (b.value_ < 0) {
+          upper_64 -= ua;
+        }
+        const uint64_t lower_64 = ua * ub;
+        const uint64_t sign_ext =
+            static_cast<uint64_t>(static_cast<int64_t>(lower_64) >> 63);
+        res.overflow_ = a.overflow_ || b.overflow_ || (upper_64 != sign_ext);
+      } else {
+        res.overflow_ = a.overflow_ || b.overflow_ || (upper_64 != 0);
+      }
+      res.value_ = a.value_ * b.value_;
+    }
+  } else {
+    return CheckedInt<std::common_type_t<T, U>>(a) *
+           CheckedInt<std::common_type_t<T, U>>(b);
+  }
+#endif
+  return res;
+}
+
+template <class T, class U>
+CheckedInt<std::common_type_t<T, U>> operator/(
+    const CheckedInt<T>& a, const CheckedInt<U>& b) noexcept {
+  using C = std::common_type_t<T, U>;
+  using limits = std::numeric_limits<C>;
+  if constexpr (std::is_same_v<T, U>) {
+    if constexpr (std::is_signed_v<C>) {
+      if (a.value_ == limits::lowest() && b.value_ == -1) {
+        return {/*val=*/limits::max(), /*overflow=*/true};
+      }
+    }
+    return {/*val=*/b.value_ != 0 ? static_cast<C>(a.value_ / b.value_)
+                                  : limits::max(),
+            /*overflow=*/b.value_ == 0 || a.overflow_ || b.overflow_};
+  } else {
+    return CheckedInt<std::common_type_t<T, U>>(a) /
+           CheckedInt<std::common_type_t<T, U>>(b);
+  }
+}
 
 }  // namespace tflite
 
