@@ -9,30 +9,14 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
-litert_test(
+cc_test(
     name = "qnn_model_test",
     srcs = [
         "qnn_model_test.cc",
     ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
-            ]),
-        ],
-    }),
-    linkstatic = True,
-    no_main = True,
     tags = [
-        "manual",
-        # Don't build/test in OS until qnn is available.
-        "no-remote-exec",
         "nobuilder",
-        "notap",
     ],
-    ungrte = True,
-    use_sys_malloc = True,
     deps = [
         ":test_utils",
         "//litert/vendors/qualcomm/core:common",
