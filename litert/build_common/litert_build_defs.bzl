@@ -651,6 +651,7 @@ def litert_c_api_library(
         name = name,
         actual = select({
             "//litert:litert_runtime_link_mode_dynamic": ":" + name + "_header",
+            "//litert:litert_runtime_link_mode_none": ":" + name + "_header",
             "//conditions:default": ":" + name + "_impl",
         }),
     )
