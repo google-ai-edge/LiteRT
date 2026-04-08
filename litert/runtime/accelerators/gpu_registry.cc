@@ -14,10 +14,15 @@
 
 #include "litert/runtime/accelerators/gpu_registry.h"
 
+#if !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+#include <dlfcn.h>
+#endif
+
 #include <filesystem>  // NOLINT
 #include <string>
 #include <utility>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_logging.h"
@@ -26,15 +31,34 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/registration_helper.h"
 
 extern "C" {
 
-// Define a data pointer to an accelerator definition. This pointer is updated
-// by statically linked GPU accelerator.
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
+// Weak declaration: resolved to NULL if not linked (on ELF)
+// or to a fallback implementation (on Windows).
+ABSL_ATTRIBUTE_WEAK LiteRtStatus LiteRtRegisterStaticLinkedAcceleratorGpu(
+    LiteRtEnvironment environment);
+
+#if defined(__APPLE__)
+// macOS ld64 does not support undefined weak symbols for data pointers,
+// and while these are functions, providing a local weak definition ensures
+// the symbol is always defined while still allowing strong override.
+ABSL_ATTRIBUTE_WEAK LiteRtStatus LiteRtRegisterStaticLinkedAcceleratorGpu(
+    LiteRtEnvironment environment) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif
+
+#if defined(LITERT_WINDOWS_OS)
+LiteRtStatus LiteRtRegisterStaticLinkedAcceleratorGpuFallback(
+    LiteRtEnvironment environment) {
+  return kLiteRtStatusErrorUnsupported;
+}
+// Linker redirection: use Fallback if the primary symbol is missing.
+#pragma comment(linker, "/alternatename:LiteRtRegisterStaticLinkedAcceleratorGpu=LiteRtRegisterStaticLinkedAcceleratorGpuFallback")
+#endif
 
 }  // extern "C"
 
@@ -142,10 +166,23 @@ LiteRtStatus LiteRtRegisterGpuAccelerator(LiteRtEnvironment environment) {
 #endif  // LITERT_HAS_VULKAN_SUPPORT
   };
 
-  if (LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
-      ::litert::internal::RegisterAcceleratorFromDef(
-          environment, LiteRtStaticLinkedAcceleratorGpuDef) ==
-          kLiteRtStatusOk) {
+  LiteRtStatus (*reg_func)(LiteRtEnvironment) = nullptr;
+
+#if !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+  // Layer 1: Dynamic Discovery (Linux/Android)
+  reg_func = (LiteRtStatus (*)(LiteRtEnvironment))dlsym(
+      RTLD_DEFAULT, "LiteRtRegisterStaticLinkedAcceleratorGpu");
+#endif
+
+  // Layer 2: Static Discovery (Weak Symbol Check)
+  if (reg_func == nullptr) {
+    void* volatile addr = (void*)&LiteRtRegisterStaticLinkedAcceleratorGpu;
+    if (addr != nullptr) {
+      reg_func = LiteRtRegisterStaticLinkedAcceleratorGpu;
+    }
+  }
+
+  if (reg_func != nullptr && reg_func(environment) == kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
     return kLiteRtStatusOk;
   }
