@@ -184,6 +184,47 @@ class IsOkMatcher {
 // ```
 inline IsOkMatcher IsOk() { return IsOkMatcher(); }
 
+namespace detail {
+
+template <class T>
+auto ReadStatusValue(T& status_or) -> decltype(status_or.Value()) {
+  return status_or.Value();
+}
+
+template <class T>
+auto ReadStatusValue(const T& status_or) -> decltype(status_or.Value()) {
+  return status_or.Value();
+}
+
+template <class T>
+T& ReadStatusValue(absl::StatusOr<T>& status_or) {
+  return status_or.value();
+}
+
+template <class T>
+const T& ReadStatusValue(const absl::StatusOr<T>& status_or) {
+  return status_or.value();
+}
+
+struct NoValue {};
+inline NoValue ReadStatusValue(...) { return {}; }
+
+template <typename T, typename MatcherType>
+bool MatchOkAndHolds(const T& arg, const MatcherType& matcher,
+                     testing::MatchResultListener* listener) {
+  if (!testing::ExplainMatchResult(testing::litert::IsOk(), arg, listener)) {
+    return false;
+  }
+  using ValueType = decltype(ReadStatusValue(arg));
+  if constexpr (!std::is_same_v<ValueType, NoValue>) {
+    return testing::ExplainMatchResult(matcher, ReadStatusValue(arg), listener);
+  } else {
+    return false;
+  }
+}
+
+}  // namespace detail
+
 // Matches `litert::Expected` values that hold a value and which value matches
 // `matcher`.
 //
@@ -199,7 +240,8 @@ inline IsOkMatcher IsOk() { return IsOkMatcher(); }
 MATCHER_P(IsOkAndHolds, matcher, "") {
   return testing::ExplainMatchResult(testing::litert::IsOk(), arg,
                                      result_listener) &&
-         testing::ExplainMatchResult(matcher, arg.Value(), result_listener);
+         testing::ExplainMatchResult(matcher, detail::ReadStatusValue(arg),
+                                     result_listener);
 }
 
 // Matches `litert::Expected` values that hold an error and
