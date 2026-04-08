@@ -182,7 +182,7 @@ Expected<void> ConfigureScopedWeightSource(Options& options) {
 
 Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-  options.SetHardwareAccelerators(HwAccelerators::kGpu);
+  options.SetHardwareAccelerators(HwAccelerators::kGpu|HwAccelerators::kCpu);
   LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
   gpu_options.EnableExternalTensorsMode(
       absl::GetFlag(FLAGS_external_tensor_mode));
