@@ -45,7 +45,7 @@ TEST(DumpTest, TestDump) {
     std::ostringstream in_tensor_dump;
     Dump(in_tensor, in_tensor_dump);
     EXPECT_EQ(in_tensor_dump.str(),
-              "LiteRtTensor : <2x2xf32> [ * ] (TFL_MUL)\n");
+              "LiteRtTensor : <2x2xf32> [ * ] (tfl.mul)\n");
   }
 
   {
@@ -53,7 +53,7 @@ TEST(DumpTest, TestDump) {
     std::ostringstream out_tensor_dump;
     Dump(out_tensor, out_tensor_dump);
     EXPECT_EQ(out_tensor_dump.str(),
-              "LiteRtTensor : <2x2xf32> [ TFL_MUL ] ()\n");
+              "LiteRtTensor : <2x2xf32> [ tfl.mul ] ()\n");
   }
 
   {
@@ -61,7 +61,7 @@ TEST(DumpTest, TestDump) {
     std::ostringstream op_dump;
     Dump(op, op_dump);
     EXPECT_EQ(op_dump.str(),
-              "LiteRtOp : [ TFL_MUL ] (<2x2xf32>, <2x2xf32>) -> <2x2xf32>\n");
+              "LiteRtOp : [ tfl.mul ] (<2x2xf32>, <2x2xf32>) -> <2x2xf32>\n");
   }
 
   {

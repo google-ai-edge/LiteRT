@@ -324,6 +324,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_c_types_printing",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model",
         "@com_google_absl//absl/strings:str_format",
