@@ -39,6 +39,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # The codebase has deprecated Error constructors that are still in use
 add_compile_options(
   -Wno-deprecated-declarations
+  -Wno-nullability-completeness
   -Wno-return-type
   -fpermissive
 )
