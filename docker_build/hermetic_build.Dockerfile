@@ -63,7 +63,6 @@ RUN mkdir -p /root/.android
 ENV ANDROID_SDK_FILENAME=commandlinetools-linux-13114758_latest.zip
 ENV ANDROID_SDK_URL=https://dl.google.com/android/repository/${ANDROID_SDK_FILENAME}
 ENV ANDROID_API_LEVEL=34
-ENV ANDROID_NDK_API_LEVEL=28
 ENV ANDROID_SDK_API_LEVEL=34
 ENV ANDROID_BUILD_TOOLS_VERSION=34.0.0
 ENV ANDROID_SDK_HOME=${ANDROID_DEV_HOME}/sdk
@@ -76,6 +75,8 @@ RUN cd ${ANDROID_DEV_HOME} && \
     rm ${ANDROID_SDK_FILENAME}
 
 # Install Android NDK
+ENV ANDROID_NDK_API_LEVEL=28
+ENV ANDROID_NDK_VERSION=28
 ENV ANDROID_NDK_FILENAME=android-ndk-r28b-linux.zip
 ENV ANDROID_NDK_URL=https://dl.google.com/android/repository/${ANDROID_NDK_FILENAME}
 ENV ANDROID_NDK_HOME=${ANDROID_DEV_HOME}/ndk
@@ -111,9 +112,6 @@ ENV TF_CONFIGURE_IOS=0
 ENV USE_BAZEL_VERSION=7.4.1
 ENV CLANG_COMPILER_PATH=/usr/lib/llvm-18/bin/clang
 ENV TF_NEED_CLANG=1
-
-# Set NDK version for configuration
-ENV ANDROID_NDK_VERSION=25
 
 RUN echo y | ${ANDROID_SDK_HOME}/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_HOME} "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" "platforms;android-${ANDROID_SDK_API_LEVEL}" "platform-tools"
 # Set up work directory
