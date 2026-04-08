@@ -1097,10 +1097,9 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
   LiteRtTensorBufferType cpu_buffer_type[] = {
       kLiteRtTensorBufferTypeHostMemory};
-  uint32_t cpu_buffer_strides[] = {0};
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
       /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, tensor->bytes,
-      /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements));
+      /*num_strides=*/0, /*strides=*/nullptr, &litert_cpu_buffer_requirements));
   cpu_buffer_requirements_[tensor_id] =
       LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
   return const_cast<LiteRtTensorBufferRequirementsT*>(
