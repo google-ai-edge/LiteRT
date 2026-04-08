@@ -349,6 +349,12 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflHardSwish:
         op_wrapper = BuildHardSwishOp(op);
         break;
+      case kLiteRtOpCodeTflLess:
+        op_wrapper = std::move(BuildLessOp(op));
+        break;
+      case kLiteRtOpCodeTflLog:
+        op_wrapper = std::move(BuildLogOp(op));
+        break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = BuildLogisticOp(op);
         break;
@@ -373,6 +379,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflPad:
       case kLiteRtOpCodeTflPadv2:
         op_wrapper = BuildPadOp(op);
+        break;
+      case kLiteRtOpCodeTflPow:
+        op_wrapper = std::move(BuildPowOp(op));
         break;
       case kLiteRtOpCodeTflRelu:
         op_wrapper = BuildReLUOp(op);
