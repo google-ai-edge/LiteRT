@@ -95,7 +95,7 @@ TEST(ReshapeOpTest, DynamicShapeTensor) {
   std::vector<Dims> output_shapes(1);
 
   EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorUnsupported);
+            kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, InvalidShapeTensorBufferSize) {
@@ -115,7 +115,7 @@ TEST(ReshapeOpTest, InvalidShapeTensorBufferSize) {
   std::vector<Dims> output_shapes(1);
 
   EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorInvalidArgument);
+            kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, NoOptionsAndNoShapeTensor) {
@@ -123,7 +123,7 @@ TEST(ReshapeOpTest, NoOptionsAndNoShapeTensor) {
   std::vector<Dims> input_shapes = {{1, 48}};
   std::vector<Dims> output_shapes(1);
   EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorInvalidArgument);
+            kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, MultipleMinusOne) {
@@ -139,7 +139,7 @@ TEST(ReshapeOpTest, MultipleMinusOne) {
   std::vector<Dims> output_shapes(1);
 
   EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorInvalidArgument);
+            kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, MinusOneWithDynamicInput) {
@@ -172,7 +172,7 @@ TEST(ReshapeOpTest, IncompatibleVolumesWithMinusOne) {
   std::vector<Dims> output_shapes(1);
 
   EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorInvalidArgument);
+            kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, ResolveMinusOne) {

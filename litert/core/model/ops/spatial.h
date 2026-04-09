@@ -133,11 +133,9 @@ inline LiteRtStatus InferResizeOp(const LiteRtOpT& op,
 
   Dims out_shape = input_shape;
 
-  if (size_tensor.Weights().Buffer().Size() > 0) {
+  if (size_tensor.Weights().Buffer().Size() == kResizeSizeTensorSize) {
     auto buf = size_tensor.Weights().Buffer();
     const int32_t* size_data = reinterpret_cast<const int32_t*>(buf.Data());
-    if (buf.Size() != kResizeSizeTensorSize)
-      return kLiteRtStatusErrorShapeInferenceFailed;
 
     out_shape[1] = size_data[0];  // New Height
     out_shape[2] = size_data[1];  // New Width

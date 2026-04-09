@@ -36,6 +36,7 @@ inline LiteRtStatus InferGenericReduction(const LiteRtOpT& op,
   constexpr size_t kReductionMinArgs = 2;
   constexpr size_t kInputArgIndex = 0;
   constexpr size_t kAxisArgIndex = 1;
+  constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
   if (input_shapes.size() < kReductionMinArgs) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -44,7 +45,7 @@ inline LiteRtStatus InferGenericReduction(const LiteRtOpT& op,
   const auto& axis_tensor = op.Input(kAxisArgIndex);
 
   // Axis must be constant.
-  if (axis_tensor.Weights().Buffer().Size() == 0) {
+  if (axis_tensor.Weights().Buffer().Size() < kShapeTensorSize) {
     return kLiteRtStatusErrorUnsupported;
   }
 
