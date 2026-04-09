@@ -245,13 +245,14 @@ inline LiteRtStatus InferTransposeConv(const LiteRtOpT& op,
   constexpr size_t kInputArgIndex = 2;
   constexpr size_t kTransposeConvMinArgs = 3;
   constexpr size_t kTransposeConvRank = 4;
+  constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
   if (input_shapes.size() < kTransposeConvMinArgs) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   // If output_shape tensor is constant, use it.
   const auto& output_size_tensor = op.Input(kOutputShapeArgIndex);
-  if (output_size_tensor.Weights().Buffer().Size() > 0) {
+  if (output_size_tensor.Weights().Buffer().Size() >= kShapeTensorSize) {
     auto buf = output_size_tensor.Weights().Buffer();
     const int32_t* dims = reinterpret_cast<const int32_t*>(buf.Data());
     int rank = buf.Size() / sizeof(int32_t);
@@ -396,7 +397,7 @@ inline LiteRtStatus InferConv3DTranspose(const LiteRtOpT& op,
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& output_size_tensor = op.Input(kOutputShapeArgIndex);
-  if (output_size_tensor.Weights().Buffer().Size() > 0) {
+  if (output_size_tensor.Weights().Buffer().Size() >= sizeof(int32_t)) {
     auto buf = output_size_tensor.Weights().Buffer();
     const int32_t* dims = reinterpret_cast<const int32_t*>(buf.Data());
     int rank = buf.Size() / sizeof(int32_t);

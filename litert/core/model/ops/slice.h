@@ -33,6 +33,7 @@ inline LiteRtStatus InferSlice(const LiteRtOpT& op,
   constexpr int kSliceMinArgs = 3;
   constexpr int kInputArgIndex = 0;
   constexpr int kSizeArgIndex = 2;
+  constexpr int kSizeTensorSize = sizeof(int32_t);
 
   // Inputs: Input, Begin, Size.
   if (input_shapes.size() < kSliceMinArgs) {
@@ -42,7 +43,7 @@ inline LiteRtStatus InferSlice(const LiteRtOpT& op,
   const auto& size_tensor = op.Input(kSizeArgIndex);
 
   // If size tensor is constant, use it.
-  if (size_tensor.Weights().Buffer().Size() > 0) {
+  if (size_tensor.Weights().Buffer().Size() >= kSizeTensorSize) {
     auto buf = size_tensor.Weights().Buffer();
     // Expect int32 or int64.
     Dims out_shape;

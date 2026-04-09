@@ -35,6 +35,7 @@ inline LiteRtStatus InferPad(const LiteRtOpT& op,
   constexpr size_t kInputArgIndex = 0;
   constexpr size_t kPaddingsArgIndex = 1;
   constexpr size_t kPairsPerDim = 2;
+  constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
   if (input_shapes.size() < kPadMinArgs) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -42,7 +43,7 @@ inline LiteRtStatus InferPad(const LiteRtOpT& op,
   const auto& input_shape = input_shapes[kInputArgIndex];
   const auto& paddings_tensor = op.Input(kPaddingsArgIndex);
 
-  if (paddings_tensor.Weights().Buffer().Size() == 0) {
+  if (paddings_tensor.Weights().Buffer().Size() < kShapeTensorSize) {
     // Dynamic padding.
     output_shapes[0] = Dims(input_shape.size(), -1);
     return kLiteRtStatusErrorUnsupported;

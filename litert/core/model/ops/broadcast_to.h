@@ -34,6 +34,7 @@ inline LiteRtStatus InferBroadcastTo(const LiteRtOpT& op,
                                      std::vector<Dims>& output_shapes) {
   constexpr size_t kBroadcastToMinArgs = 2;
   constexpr size_t kShapeTensorIndex = 1;
+  constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
   if (input_shapes.size() < kBroadcastToMinArgs) {
     return kLiteRtStatusErrorShapeInferenceFailed;
@@ -43,7 +44,7 @@ inline LiteRtStatus InferBroadcastTo(const LiteRtOpT& op,
   }
   const auto& shape_tensor = op.Input(kShapeTensorIndex);
 
-  if (shape_tensor.Weights().Buffer().Size() > 0) {
+  if (shape_tensor.Weights().Buffer().Size() >= kShapeTensorSize) {
     auto buf = shape_tensor.Weights().Buffer();
     // Ensure the shape tensor is a ranked tensor.
     if (shape_tensor.Type().first != kLiteRtRankedTensorType) {

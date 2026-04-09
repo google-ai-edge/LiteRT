@@ -574,6 +574,33 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_split",
+    hdrs = ["ops/split.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_split_test",
+    srcs = ["ops/split_test.cc"],
+    deps = [
+        ":model",
+        ":ops_split",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_spatial_test",
     srcs = ["ops/spatial_test.cc"],
