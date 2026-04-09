@@ -12,6 +12,9 @@
 
 namespace qnn {
 
+OpWrapper CreateConvertOp(const TensorWrapper& input,
+                          const TensorWrapper& output);
+
 std::vector<OpWrapper> BuildQuantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
