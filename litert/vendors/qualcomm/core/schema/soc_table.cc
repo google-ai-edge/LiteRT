@@ -72,6 +72,9 @@ constexpr SocInfo kSocInfos[] = {
     {SocInfo("SAR1130P", SnapdragonModel::SSG2125P, DspArch::V73,
              2  // vtcm_size_in_mb
              )},
+    {SocInfo("SW6100", SnapdragonModel::SW6100, DspArch::V81,
+             4  // vtcm_size_in_mb
+             )},
 };
 constexpr uint64_t kNumSocInfos = sizeof(kSocInfos) / sizeof(kSocInfos[0]);
 }  // namespace qnn
