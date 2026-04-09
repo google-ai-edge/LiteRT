@@ -120,7 +120,6 @@ cc_library(
         "//litert/c/options:litert_gpu_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_handle",
     ],
 )
 

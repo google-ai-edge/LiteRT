@@ -156,6 +156,9 @@ struct LrtGpuOptions {
   // Only for specific model and specific chipset, e.g. Open source models on
   // OpenCL on AMD and Mali GPUs, when lower quality is observed.
   std::optional<bool> hint_waiting_for_completion;
+  // Added in version 2.1.0.
+  // If > 0, specifies the period (number of ops) for GPU flushing.
+  std::optional<int> gpu_flush_period;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -201,6 +204,9 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     ss << "hint_waiting_for_completion = "
        << (options->hint_waiting_for_completion.value() ? "true" : "false")
        << "\n";
+  }
+  if (options->gpu_flush_period.has_value()) {
+    ss << "gpu_flush_period = " << options->gpu_flush_period.value() << "\n";
   }
   if (options->precision.has_value()) {
     ss << "precision = " << static_cast<int>(options->precision.value())
@@ -355,6 +361,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->hint_waiting_for_completion = *res;
+        } else if (key == "gpu_flush_period") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->gpu_flush_period = *res;
         } else if (key == "precision") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -539,6 +549,14 @@ LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->hint_waiting_for_completion = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+    LrtGpuOptions* gpu_options, int gpu_flush_period) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->gpu_flush_period = gpu_flush_period;
   return kLiteRtStatusOk;
 }
 
@@ -801,6 +819,17 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
   *enabled = options->hint_waiting_for_completion.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+    int* gpu_flush_period, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(gpu_flush_period,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`gpu_flush_period` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *gpu_flush_period = options->gpu_flush_period.value_or(-1);
   return kLiteRtStatusOk;
 }
 

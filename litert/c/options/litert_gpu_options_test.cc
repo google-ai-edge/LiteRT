@@ -561,6 +561,34 @@ TEST(GpuAcceleratorPayload, SetAndGetSyncExecutionModeWaitType) {
   LrtDestroyGpuOptions(payload);
 }
 
+TEST(GpuAcceleratorPayload, SetAndGetGpuFlushPeriod) {
+  LrtGpuOptions* payload = nullptr;
+  LITERT_ASSERT_OK(LrtCreateGpuOptions(&payload));
+
+  int gpu_flush_period;
+  // Check the default value.
+  LITERT_EXPECT_OK(LrtGetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+      &gpu_flush_period, payload));
+  EXPECT_THAT(gpu_flush_period, Eq(-1));
+
+  LITERT_EXPECT_OK(
+      LrtSetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(payload, 10));
+  LITERT_EXPECT_OK(LrtGetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+      &gpu_flush_period, payload));
+  EXPECT_EQ(gpu_flush_period, 10);
+
+  LrtGpuOptions* payload_from_toml = nullptr;
+  SerializeAndParse(payload, &payload_from_toml);
+
+  int gpu_flush_period_from_toml;
+  LITERT_EXPECT_OK(LrtGetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+      &gpu_flush_period_from_toml, payload_from_toml));
+  EXPECT_THAT(gpu_flush_period_from_toml, Eq(10));
+
+  LrtDestroyGpuOptions(payload_from_toml);
+  LrtDestroyGpuOptions(payload);
+}
+
 TEST(GpuAcceleratorPayload, SetAndGetAllowSrcQuantizedFcConvOps) {
   LrtGpuOptions* payload = nullptr;
   LITERT_ASSERT_OK(LrtCreateGpuOptions(&payload));

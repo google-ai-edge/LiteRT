@@ -305,5 +305,22 @@ TEST(GpuAcceleratorCompilationOptions, SetHintFullyDelegatedToSingleDelegate) {
   EXPECT_EQ(hint_fully_delegated_to_single_delegate, true);
 }
 
+TEST(GpuOptions, SetGpuFlushPeriodWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LrtGpuOptions* payload = options.Get();
+
+  // Check the default value.
+  int gpu_flush_period = 0;
+  LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+      &gpu_flush_period, payload));
+  EXPECT_THAT(gpu_flush_period, Eq(-1));
+
+  options.SetGpuFlushPeriod(10);
+
+  LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsGpuFlushPeriod(
+      &gpu_flush_period, payload));
+  EXPECT_THAT(gpu_flush_period, Eq(10));
+}
+
 }  // namespace
 }  // namespace litert::ml_drift
