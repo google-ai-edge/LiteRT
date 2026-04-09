@@ -178,7 +178,8 @@ const auto kSupportedSocModels = Values(
     "SM8550",
     "SM8650",
     "SM8750",
-    "SM8850"
+    "SM8850",
+    "SW6100"
 );
 // clang-format on
 #if defined(__x86_64__) || defined(_M_X64)
