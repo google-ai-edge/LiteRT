@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
@@ -94,6 +95,28 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
                           "enable_dynamic_range_quantization = true\n");
   }
 
+  if (!options->testing_flags.empty()) {
+    std::string testing_flags_str;
+    for (const auto& group : options->testing_flags) {
+      if (group.empty()) {
+        continue;
+      }
+      if (!testing_flags_str.empty()) {
+        testing_flags_str += ',';
+      }
+      if (group.size() >= 2) {
+        std::string escaped_value =
+            absl::StrReplaceAll(group[1], {{"\\", "\\\\"}, {"\"", "\\\""}});
+        absl::StrAppendFormat(&testing_flags_str, "%s=%s", group[0],
+                              escaped_value);
+      } else {
+        testing_flags_str += group[0];
+      }
+    }
+    absl::StrAppendFormat(&toml_str, "testing_flags = \"%s\"\n",
+                          testing_flags_str);
+  }
+
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
   return kLiteRtStatusOk;
@@ -144,6 +167,11 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
         } else if (key == "enable_dynamic_range_quantization") {
           LITERT_ASSIGN_OR_RETURN(options_ref.enable_dynamic_range_quantization,
                                   litert::internal::ParseTomlBool(value));
+        } else if (key == "testing_flags") {
+          std::string unescaped =
+              absl::StrReplaceAll(value, {{"\\\\", "\\"}, {"\\\"", "\""}});
+          LITERT_RETURN_IF_ERROR(
+              LrtGoogleTensorOptionsSetTestingFlags(&options_ref, unescaped));
         }
         return kLiteRtStatusOk;
       });

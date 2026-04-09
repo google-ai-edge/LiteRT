@@ -143,6 +143,24 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   ASSERT_THAT(op_data_string, "subgraph_0_fn");
 }
 
+TEST(TestCallGoogleTensorPlugin, CompileWithTestingFlags) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(GoogleTensorOptions & google_tensor_options,
+                              options.GetGoogleTensorOptions());
+
+  // Set testing flags. Use a safe flag that doesn't involve the filesystem.
+  google_tensor_options.SetTestingFlags("enable_reference=true");
+
+  PluginPtr plugin = CreatePlugin(/*env=*/nullptr, options.Get());
+  auto model = testing::LoadTestFileModel("mul_simple.tflite");
+
+  LiteRtCompiledResult compiled;
+  // Verify the plugin handles testing_flags without crashing.
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
+                                               model.Get(), &compiled));
+  LiteRtDestroyCompiledResult(compiled);
+}
+
 TEST(TestCallGoogleTensorPlugin, PartitionRmsNormCompositeOp) {
   PluginPtr plugin = CreatePlugin();
   ExtendedModel model = testing::LoadTestFileModel(
