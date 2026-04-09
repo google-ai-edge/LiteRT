@@ -127,11 +127,35 @@ LiteRtDispatchInvocationContextT::Create(
     LiteRtDispatchDeviceContextT& device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-    int num_inputs, int num_outputs) {
+    int num_inputs, int num_outputs,
+    const IntelOpenVinoOptions* intel_openvino_opts) {
   const void* exec_bytecode_ptr =
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;
   auto exec_bytecode_size = exec_bytecode_buffer->size;
+  std::string device = "NPU";  // Default device
+  if (intel_openvino_opts) {
+    const auto& intel_opts = *intel_openvino_opts;
+    // Configure device type
+    auto device_type = intel_opts.GetDeviceType();
+    switch (device_type) {
+      case kLiteRtIntelOpenVinoDeviceTypeCPU:
+        device = "CPU";
+        break;
+      case kLiteRtIntelOpenVinoDeviceTypeGPU:
+        device = "GPU";
+        break;
+      case kLiteRtIntelOpenVinoDeviceTypeNPU:
+        device = "NPU";
+        break;
+      case kLiteRtIntelOpenVinoDeviceTypeAUTO:
+        device = "AUTO";
+        break;
+    }
+  }
+#if defined(LITERT_WINDOWS_OS)
+  OpenVINOSharedCore::GetInstance()->SetDevice(device);
+#endif  // LITERT_WINDOWS_OS
 
   if (!exec_bytecode_ptr || exec_bytecode_size == 0) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -151,7 +175,7 @@ LiteRtDispatchInvocationContextT::Create(
   }
   ov::CompiledModel compiled_model;
   try {
-    compiled_model = core->import_model(model_stream, "NPU");
+    compiled_model = core->import_model(model_stream, device);
   } catch (const std::exception& e) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
   }

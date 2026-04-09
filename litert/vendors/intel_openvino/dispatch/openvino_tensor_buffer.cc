@@ -38,7 +38,8 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
 
   // TODO:: Release the shared OpenVINO Core.
   std::shared_ptr<ov::Core> core = OpenVINOSharedCore::GetInstance()->getCore();
-  auto context = core->get_default_context("NPU");
+  std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
+  auto context = core->get_default_context(device);
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
   std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
