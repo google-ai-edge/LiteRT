@@ -1441,7 +1441,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     bool buffer_is_cpu_compatible =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory ||
         IsUserCustomBuffer(buffer->buffer_type()) || buffer->is_opencl_memory();
-#if defined(__ANDROID__) || (defined(__linux__) && defined(__aarch64__))
+#if defined(__ANDROID__)
     if (buffer->buffer_type() == kLiteRtTensorBufferTypeAhwb) {
       if (__builtin_available(android 26, *)) {
         if (auto ahwb = buffer->GetAhwbBuffer()) {
