@@ -227,6 +227,46 @@ LoadModelAndCompilation(
   }
 }
 
+// Compatibility policy: Major version must match.
+// Minor/patch version differences are allowed for forward compatibility.
+Expected<void> CheckNeuronSdkVersionCompatibility(
+    const neuron::SchemaResolver& resolver,
+    const litert::mediatek::NeuronAdapterApi& neuron_adapter_api) {
+  auto bytecode_version = resolver.GetNeuronVersion();
+  const auto& runtime_version = neuron_adapter_api.RuntimeVersion();
+
+  if (!bytecode_version.has_value()) {
+    // Backward compatibility: old bytecode without version info
+    LITERT_LOG(LITERT_WARNING,
+               "Bytecode does not contain Neuron SDK version info (compiled "
+               "with older SDK). Current runtime version is %u.%u.%u. "
+               "Skipping version check for backward compatibility.",
+               runtime_version.major, runtime_version.minor,
+               runtime_version.patch);
+    return {};
+  }
+
+  auto [bc_major, bc_minor, bc_patch] = bytecode_version.value();
+
+  // Check major version compatibility
+  if (bc_major != runtime_version.major) {
+    LITERT_LOG(LITERT_ERROR,
+               "Incompatible Neuron SDK major version: bytecode compiled with "
+               "%u.%u.%u, but runtime is %u.%u.%u",
+               bc_major, bc_minor, bc_patch, runtime_version.major,
+               runtime_version.minor, runtime_version.patch);
+    return Error(kLiteRtStatusErrorIncompatibleByteCodeVersion,
+                 "Neuron SDK major version mismatch");
+  }
+
+  LITERT_LOG(LITERT_INFO,
+             "Neuron SDK version check passed: bytecode %u.%u.%u, "
+             "runtime %u.%u.%u",
+             bc_major, bc_minor, bc_patch, runtime_version.major,
+             runtime_version.minor, runtime_version.patch);
+  return {};
+}
+
 }  // namespace
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
@@ -245,6 +285,10 @@ LiteRtDispatchInvocationContextT::Create(
   auto res = resolver.Initialize((const uint8_t*)exec_bytecode_ptr,
                                  exec_bytecode_size);
   if (res.HasValue() && res.Value()) {
+    // Check Neuron SDK Compatibility
+    LITERT_RETURN_IF_ERROR(
+        CheckNeuronSdkVersionCompatibility(resolver, neuron_adapter_api));
+
     std::string func = function_name != nullptr ? function_name : "";
     auto graph = resolver.GetCompiledGraph(func);
     if (!graph.has_value()) {

@@ -35,6 +35,12 @@
 
 namespace neuron {
 
+// Type aliases for Neuron SDK version components
+using NeuronVersionMajor = uint32_t;
+using NeuronVersionMinor = uint32_t;
+using NeuronVersionPatch = uint32_t;
+using NeuronVersionTuple = std::tuple<NeuronVersionMajor, NeuronVersionMinor, NeuronVersionPatch>;
+
 inline bool IsNeuronSchema(const uint8_t* buffer, size_t size) {
   if (buffer == nullptr) {
     return false;
@@ -112,6 +118,21 @@ class SchemaResolver {
     return CompiledGraph(*graph_, *entry_points_[name]);
   };
 
+  std::optional<NeuronVersionTuple> GetNeuronVersion() const {
+    if (graph_ == nullptr) {
+      return std::nullopt;
+    }
+    const auto* version = graph_->neuron_sdk_version();
+    if (version == nullptr) {
+      // Backward compatibility: old bytecode without version info
+      return std::nullopt;
+    }
+    return NeuronVersionTuple{
+        static_cast<NeuronVersionMajor>(version->major()),
+        static_cast<NeuronVersionMinor>(version->minor()),
+        static_cast<NeuronVersionPatch>(version->patch())};
+  }
+
  private:
   const NeuronSchema::Graphs* graph_ = nullptr;
 
@@ -121,6 +142,12 @@ class SchemaResolver {
 class BytecodeBuilder {
  public:
   BytecodeBuilder() = default;
+
+  void SetNeuronVersion(NeuronVersionMajor major, NeuronVersionMinor minor,
+                        NeuronVersionPatch patch) {
+    neuron_version_ = NeuronSchema::NeuronVersion(major, minor, patch);
+    has_neuron_version_ = true;
+  }
 
   int32_t AddCompiledNetwork(std::string& entry_point,
                              NeuronSchema::CompiledType type,
@@ -152,8 +179,9 @@ class BytecodeBuilder {
   }
 
   bool Finish() {
-    auto graphs =
-        NeuronSchema::CreateGraphsDirect(fb_, 1, &subgraphs_, &graph_data_);
+    auto graphs = NeuronSchema::CreateGraphsDirect(
+        fb_, 1, &subgraphs_, &graph_data_, 0,
+        has_neuron_version_ ? &neuron_version_ : nullptr);
     fb_.Finish(graphs);
     raw_buffer_ = {fb_.GetBufferPointer(), fb_.GetSize()};
     return true;
@@ -177,6 +205,8 @@ class BytecodeBuilder {
 
   int32_t subgraphs_count_ = 0;
   int32_t buffer_count_ = 0;
+  NeuronSchema::NeuronVersion neuron_version_;
+  bool has_neuron_version_ = false;
 };
 
 };  // namespace neuron

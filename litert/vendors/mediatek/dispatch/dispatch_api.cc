@@ -38,6 +38,7 @@
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "litert/vendors/mediatek/schema/schema_resolver.h"
 
 namespace {
 
@@ -123,17 +124,8 @@ LiteRtStatus LiteRtInitialize(const LiteRtRuntimeContext* runtime_context,
 
   LrtDestroyMediatekOptions(mediatek_opts);
 
-  auto get_version = static_neuron_adapter->api().get_version;
-  if (!get_version) {
-    LITERT_LOG(LITERT_ERROR, "get_version not found");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-
-  NeuronRuntimeVersion version;
-  if (get_version(&version) != NEURON_NO_ERROR) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get version");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
+  // Get cached Neuron SDK version (populated during Create)
+  const auto& version = static_neuron_adapter->RuntimeVersion();
   LITERT_LOG(LITERT_INFO, "Neuron SDK version: %d.%d.%d", version.major,
              version.minor, version.patch);
 
@@ -251,6 +243,8 @@ LiteRtStatus LiteRtInvocationContextCreate(
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
+  // Neuron SDK version compatibility check is performed during context creation.
+  // Returns kLiteRtStatusErrorIncompatibleByteCodeVersion if major version mismatch.
   auto context = LiteRtDispatchInvocationContextT::Create(
       *static_neuron_adapter, device_context, exec_type, exec_bytecode_buffer,
       function_name, num_inputs, num_outputs);
@@ -259,6 +253,7 @@ LiteRtStatus LiteRtInvocationContextCreate(
                context.Error().Message().c_str());
     return context.Error().Status();
   }
+
   *invocation_context = context->release();
   return kLiteRtStatusOk;
 }
@@ -343,6 +338,27 @@ LiteRtStatus LiteRtInvoke(LiteRtDispatchInvocationContext invocation_context) {
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  if (LiteRtCompareApiVersion(api_version, kApiVersion) > 0) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "LiteRT API version too new for dispatch runtime. Caller version %d.%d.%d "
+        "requires runtime version <= %d.%d.%d.",
+        api_version.major, api_version.minor, api_version.patch,
+        kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+    return kLiteRtStatusErrorUnsupportedRuntimeVersion;
+  }
+
+  // Log Neuron SDK version for diagnostic purposes.
+  if (static_neuron_adapter != nullptr) {
+    const auto& version = static_neuron_adapter->RuntimeVersion();
+    LITERT_LOG(LITERT_INFO,
+               "Runtime compatibility check: Neuron SDK version %u.%u.%u",
+               version.major, version.minor, version.patch);
+  }
+
   return kLiteRtStatusOk;
 }
 
