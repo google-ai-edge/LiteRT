@@ -444,6 +444,61 @@ class QualcommOptions {
     return static_cast<GraphIOTensorMemType>(val);
   }
 
+  void SetCustomOpPackageName(const std::string& name) {
+    LrtQualcommOptionsSetCustomOpPackageName(options_, name.c_str());
+  }
+
+  std::string_view GetCustomOpPackageName() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetCustomOpPackageName(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
+  void SetCustomOpPackagePath(const std::string& path) {
+    LrtQualcommOptionsSetCustomOpPackagePath(options_, path.c_str());
+  }
+
+  std::string_view GetCustomOpPackagePath() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetCustomOpPackagePath(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
+  void SetCustomOpPackageTarget(const std::string& target) {
+    LrtQualcommOptionsSetCustomOpPackageTarget(options_, target.c_str());
+  }
+
+  std::string_view GetCustomOpPackageTarget() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetCustomOpPackageTarget(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
+  void SetCustomOpPackageInterfaceProvider(
+      const std::string& interface_provider) {
+    LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+        options_, interface_provider.c_str());
+  }
+
+  std::string_view GetCustomOpPackageInterfaceProvider() {
+    const char* val;
+    auto status =
+        LrtQualcommOptionsGetCustomOpPackageInterfaceProvider(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
  private:
   LrtQualcommOptions options_;
 };

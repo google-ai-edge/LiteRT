@@ -202,6 +202,19 @@ GraphIOTensorMemType Options::GetGraphIOTensorMemType() const {
   return graph_io_tensor_mem_type_;
 }
 
+void Options::SetCustomOpPackage(std::string_view name, std::string_view path,
+                                 std::string_view target,
+                                 std::string_view interface_provider) {
+  custom_op_package_.name = name;
+  custom_op_package_.path = path;
+  custom_op_package_.target = target;
+  custom_op_package_.interface_provider = interface_provider;
+}
+
+const CustomOpPackage& Options::GetCustomOpPackage() const {
+  return custom_op_package_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -224,7 +237,13 @@ HvxThread: %d\n\
 OptimizationLevel: %d\n\
 GraphPriority: %d\n\
 SaverOutputDir: %s\n\
-GraphIOTensorMemType: %d\n";  // NOLINT
+GraphIOTensorMemType: %d\n\
+CustomOpPackage: {\n\
+  name: %s\n\
+  path: %s\n\
+  target: %s\n\
+  interface_provider: %s\n\
+}";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
@@ -234,7 +253,9 @@ GraphIOTensorMemType: %d\n";  // NOLINT
       use_fold_relu_, htp_p_point_, htp_performance_mode_,
       dsp_performance_mode_, dump_tensor_ids, ir_json_dir_, dlc_dir_,
       vtcm_size_, num_hvx_threads_, optimization_level_, graph_priority_,
-      saver_output_dir_, graph_io_tensor_mem_type_);
+      saver_output_dir_, graph_io_tensor_mem_type_, custom_op_package_.name,
+      custom_op_package_.path, custom_op_package_.target,
+      custom_op_package_.interface_provider);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

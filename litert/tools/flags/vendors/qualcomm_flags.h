@@ -49,6 +49,14 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_name);
+
+ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_path);
+
+ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_target);
+
+ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_interface_provider);
+
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
 ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);

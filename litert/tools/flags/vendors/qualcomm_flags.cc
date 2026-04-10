@@ -524,6 +524,22 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options) {
 }
 
 }  // namespace litert::qualcomm
+
+ABSL_FLAG(std::string, qualcomm_custom_op_package_name, "",
+          "Custom op package name, e.g. LiteRtQualcommOpPackage");
+
+ABSL_FLAG(
+    std::string, qualcomm_custom_op_package_path, "",
+    "Path to the custom op package, e.g. libQnnLiteRtQualcommOpPackage.so");
+
+ABSL_FLAG(std::string, qualcomm_custom_op_package_target, "",
+          "The target platform on which the backend register the op package.");
+
+ABSL_FLAG(
+    std::string, qualcomm_custom_op_package_interface_provider, "",
+    "Symbol name of the interface provider in the custom op package, e.g. "
+    "LiteRtQualcommOpPackageInterfaceProvider");
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
@@ -592,6 +608,23 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto graph_io_tensor_mem_type =
       absl::GetFlag(FLAGS_qualcomm_graph_io_tensor_mem_type);
   opts.SetGraphIOTensorMemType(graph_io_tensor_mem_type);
+
+  const auto custom_op_package_name =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package_name);
+  opts.SetCustomOpPackageName(custom_op_package_name);
+
+  const auto custom_op_package_path =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package_path);
+  opts.SetCustomOpPackagePath(custom_op_package_path);
+
+  const auto custom_op_package_target =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package_target);
+  opts.SetCustomOpPackageTarget(custom_op_package_target);
+
+  const auto custom_op_package_interface_provider =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package_interface_provider);
+  opts.SetCustomOpPackageInterfaceProvider(
+      custom_op_package_interface_provider);
 
   return {};
 }
