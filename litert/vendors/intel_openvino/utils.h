@@ -18,6 +18,11 @@ static const ov::element::Type MapLiteTypeToOV(
     case kLiteRtElementTypeBool:
       ov_type = ov::element::boolean;
       break;
+    case kLiteRtElementTypeInt2:
+      // i2 weights are converted to u2 in graph_iterator before reaching
+      // OpenVINO, so map directly to u2 here as well.
+      ov_type = ov::element::u2;
+      break;
     case kLiteRtElementTypeInt4:
       ov_type = ov::element::i4;
       break;
