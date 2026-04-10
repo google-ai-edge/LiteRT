@@ -38,12 +38,37 @@
 extern "C" {
 #endif
 
+// LINT.IfChange(version_number)
+
+// LiteRT CompiledModels ABI version number, in semver 2 format
+// (see https://semver.org).  This is the ABI version number for
+// the methods in LiteRtRuntimeCApiStruct, which is defined below.
+#define LITERT_RUNTIME_ABI_VERSION "0.1.0"
+
+// LINT.ThenChange()
+
+// For any changes to this file that would affect the ABI,
+// don't forget to also bump the appropriate ABI version number(s).
+
+// LINT.IfChange(method_table)
+
 // A struct that contains all the LiteRT runtime C API functions.
 //
 // This struct is used to provide a unified interface for the LiteRT runtime
 // regardless of the underlying runtime implementation.
 //
 // NOTE: All new fields should be added to the end of the struct.
+//
+// For binary backwards compatibility, EXISTING ENTRIES IN THESE TABLES SHOULD
+// NEVER BE DELETED, and should not be modified until they are no longer used,
+// including the usage in already built app binaries -- verifying this may
+// require adding logging.  Entries that are really not longer used at all,
+// even by old code, can be replaced by a placeholder of the same signature,
+// e.g. a function pointer that is set to a no-op function, but should not be
+// deleted, to avoid affecting the offsets of entries later in the table.  Any
+// new methods should only be added at the END of the table (unless reusing a
+// slot occupied by a placeholder).
+
 typedef struct LiteRtRuntimeCApiStruct {
   //
   // LiteRtEnvironment
@@ -717,6 +742,8 @@ typedef struct LiteRtRuntimeCApiStruct {
       size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
       bool* async, const LiteRtSchedulingInfo* scheduling_info);
 } LiteRtRuntimeCApiStruct;
+
+// LINT.ThenChange(:version_number)
 
 #ifdef __cplusplus
 }  // extern "C"
