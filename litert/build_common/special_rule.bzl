@@ -22,6 +22,13 @@ def litert_friends():
 
     return []
 
+def friends_of_litert_runtime_builtin_static():
+    """Targets with access to litert_runtime_builtin_static target.
+
+    Return the targets outside of the LiteRT code location that nevertheless have
+    visibility into the internal `litert_runtime_builtin_static` target."""
+    return []
+
 def gl_native_deps():
     """This is a no-op outside of Google."""
     return []

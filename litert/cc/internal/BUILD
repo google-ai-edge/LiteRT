@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable")
+load("//litert/build_common:special_rule.bzl", "friends_of_litert_runtime_builtin_static", "get_compatible_with_portable")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -680,8 +680,8 @@ cc_library(
     name = "litert_runtime_builtin_static",
     srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
-    # The visibility is for testing only, otherwise it would be private.
-    visibility = [
+    visibility = friends_of_litert_runtime_builtin_static() + [
+        # This extra visibility is for testing only.
         "//litert/cc:__pkg__",
         "//litert/kotlin/src/tests/google:__pkg__",
     ],
