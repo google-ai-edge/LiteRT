@@ -1474,7 +1474,7 @@ template <class Sink>
 void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
   // NOTE: Printers for specific options will be added on an as needed basis.
   const auto type = opts.type;
-  switch (type) {
+  switch (static_cast<tflite::BuiltinOptions>(type)) {
     case tflite::BuiltinOptions_AddOptions: {
       const auto* add_opts = opts.AsAddOptions();
       absl::Format(&sink, "%v", add_opts);
@@ -1499,7 +1499,7 @@ template <class Sink>
 void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
   // NOTE: Printers for specific options will be added on an as needed basis.
   const auto type = opts.type;
-  switch (type) {
+  switch (static_cast<tflite::BuiltinOptions>(type)) {
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
