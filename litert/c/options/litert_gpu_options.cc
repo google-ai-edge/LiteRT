@@ -156,6 +156,9 @@ struct LrtGpuOptions {
   // Only for specific model and specific chipset, e.g. Open source models on
   // OpenCL on AMD and Mali GPUs, when lower quality is observed.
   std::optional<bool> hint_waiting_for_completion;
+  // Added in version 2.1.0.
+  // If > 0, specifies the kernel (op) batch size, for a flush.
+  std::optional<int> kernel_batch_size;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -201,6 +204,9 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     ss << "hint_waiting_for_completion = "
        << (options->hint_waiting_for_completion.value() ? "true" : "false")
        << "\n";
+  }
+  if (options->kernel_batch_size.has_value()) {
+    ss << "kernel_batch_size = " << options->kernel_batch_size.value() << "\n";
   }
   if (options->precision.has_value()) {
     ss << "precision = " << static_cast<int>(options->precision.value())
@@ -355,6 +361,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->hint_waiting_for_completion = *res;
+        } else if (key == "kernel_batch_size") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->kernel_batch_size = *res;
         } else if (key == "precision") {
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -539,6 +549,14 @@ LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->hint_waiting_for_completion = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    LrtGpuOptions* gpu_options, int kernel_batch_size) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->kernel_batch_size = kernel_batch_size;
   return kLiteRtStatusOk;
 }
 
@@ -801,6 +819,17 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
   *enabled = options->hint_waiting_for_completion.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    int* kernel_batch_size, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(kernel_batch_size,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`kernel_batch_size` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *kernel_batch_size = options->kernel_batch_size.value_or(-1);
   return kLiteRtStatusOk;
 }
 

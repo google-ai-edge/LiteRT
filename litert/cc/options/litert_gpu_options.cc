@@ -59,6 +59,11 @@ LiteRtStatus GpuOptions::HintWaitingForCompletion(bool wait) {
                                                                     wait);
 }
 
+LiteRtStatus GpuOptions::SetKernelBatchSize(int kernel_batch_size) {
+  return LrtSetGpuAcceleratorRuntimeOptionsKernelBatchSize(options_,
+                                                           kernel_batch_size);
+}
+
 Expected<void> GpuOptions::SetPrecision(Precision precision) {
   LITERT_RETURN_IF_ERROR(LrtSetGpuAcceleratorCompilationOptionsPrecision(
       options_, static_cast<LiteRtDelegatePrecision>(precision)));

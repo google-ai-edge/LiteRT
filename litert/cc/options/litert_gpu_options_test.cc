@@ -305,5 +305,22 @@ TEST(GpuAcceleratorCompilationOptions, SetHintFullyDelegatedToSingleDelegate) {
   EXPECT_EQ(hint_fully_delegated_to_single_delegate, true);
 }
 
+TEST(GpuOptions, SetKernelBatchSizeWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LrtGpuOptions* payload = options.Get();
+
+  // Check the default value.
+  int kernel_batch_size = 0;
+  LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+      &kernel_batch_size, payload));
+  EXPECT_THAT(kernel_batch_size, Eq(-1));
+
+  options.SetKernelBatchSize(10);
+
+  LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+      &kernel_batch_size, payload));
+  EXPECT_THAT(kernel_batch_size, Eq(10));
+}
+
 }  // namespace
 }  // namespace litert::ml_drift
