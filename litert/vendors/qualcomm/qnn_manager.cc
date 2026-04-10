@@ -465,6 +465,21 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   const char* build_id;
   Api()->backendGetBuildId(&build_id);
   LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
+
+  if (const auto& custom_op_package = options.GetCustomOpPackage();
+      !custom_op_package.path.empty()) {
+    if (auto status = Api()->backendRegisterOpPackage(
+            backend_->GetBackendHandle(), custom_op_package.path.data(),
+            custom_op_package.interface_provider.data(),
+            custom_op_package.target.data());
+        status != QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+                 status);
+    } else {
+      LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
+    }
+  }
+
   return kLiteRtStatusOk;
 }
 
