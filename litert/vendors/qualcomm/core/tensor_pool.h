@@ -104,8 +104,15 @@ bool FillData(const TensorWrapper& src_tensor, std::vector<Dst>& dst_data) {
   dst_data.clear();
   dst_data.reserve(src_data->size());
   for (size_t i = 0; i < src_data->size(); ++i) {
-    if ((*src_data)[i] > std::numeric_limits<Dst>::max() ||
-        (*src_data)[i] < std::numeric_limits<Dst>::lowest()) {
+    if (static_cast<double>((*src_data)[i]) >
+        static_cast<double>(std::numeric_limits<Dst>::max())) {
+      QNN_LOG_ERROR("Source data exceeds the range of destination data type.");
+
+      dst_data.clear();
+      return false;
+    }
+    if (static_cast<double>((*src_data)[i]) <
+        static_cast<double>(std::numeric_limits<Dst>::lowest())) {
       QNN_LOG_ERROR("Source data exceeds the range of destination data type.");
 
       dst_data.clear();
