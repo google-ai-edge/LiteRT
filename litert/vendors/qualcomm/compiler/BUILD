@@ -246,6 +246,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:conv3d_op_builder",
         "//litert/vendors/qualcomm/core/builders:cumsum_op_builder",
+        "//litert/vendors/qualcomm/core/builders:custom_op_builder",
         "//litert/vendors/qualcomm/core/builders:depthwise_conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:dynamic_update_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
@@ -304,6 +305,7 @@ litert_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 

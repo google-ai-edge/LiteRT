@@ -49,6 +49,19 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::CustomOpPackage,
+                  qualcomm_custom_op_package);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::CustomOpPackage* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::CustomOpPackage options);
+
+}  // namespace litert::qualcomm
+
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
 ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);
