@@ -23,7 +23,15 @@ class OpWrapper final {
   explicit OpWrapper() = default;
 
   explicit OpWrapper(std::string name, const char* op_type, QnnOpCode op_code)
-      : type_name_{op_type}, name_{std::move(name)}, op_code_{op_code} {}
+      : OpWrapper(std::move(name), QNN_OP_PACKAGE_NAME_QTI_AISW, op_type,
+                  op_code) {}
+
+  explicit OpWrapper(std::string name, const char* package_name,
+                     const char* op_type, QnnOpCode op_code)
+      : package_name_{package_name},
+        type_name_{op_type},
+        name_{std::move(name)},
+        op_code_{op_code} {}
 
   bool operator==(const OpWrapper& other) const;
 
@@ -72,6 +80,7 @@ class OpWrapper final {
   void AddSuffixToName(absl::string_view suffix);
 
  private:
+  const char* package_name_{nullptr};
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name
   std::vector<std::reference_wrapper<const TensorWrapper>> input_tensors_{};

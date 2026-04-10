@@ -167,6 +167,19 @@ void Options::SetSaverOutputDir(absl::string_view saver_output_dir) {
   saver_output_dir_ = saver_output_dir;
 }
 
+void Options::SetCustomOpPackage(std::string_view name, std::string_view path,
+                                 std::string_view target,
+                                 std::string_view interface_provider) {
+  custom_op_package_.name = name;
+  custom_op_package_.path = path;
+  custom_op_package_.target = target;
+  custom_op_package_.interface_provider = interface_provider;
+}
+
+const CustomOpPackage& Options::GetCustomOpPackage() const {
+  return custom_op_package_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -189,7 +202,13 @@ VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n\
 GraphPriority: %d\n\
-SaverOutputDir: %s\n";  // NOLINT
+SaverOutputDir: %s\n\
+CustomOpPackage: {\
+  name: %s\n\
+  path: %s\n\
+  target: %s\n\
+  interface_provider: %s\n\
+}";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
@@ -199,7 +218,9 @@ SaverOutputDir: %s\n";  // NOLINT
       enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
       htp_performance_mode_, dsp_performance_mode_, dump_tensor_ids,
       ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
-      graph_priority_, saver_output_dir_);
+      graph_priority_, saver_output_dir_, custom_op_package_.name,
+      custom_op_package_.path, custom_op_package_.target,
+      custom_op_package_.interface_provider);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }
