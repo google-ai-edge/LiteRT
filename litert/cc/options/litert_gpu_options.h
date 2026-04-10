@@ -175,6 +175,10 @@ class GpuOptions {
   /// sizes (and all compiled programs depending on backend) will be cached.
   LiteRtStatus CacheCompiledProgramsOnly(bool only);
 
+  /// @brief Sets the kernel (op) batch size, for a flush.
+  /// @note Only for OpenCL backend.
+  LiteRtStatus SetKernelBatchSize(int kernel_batch_size);
+
  private:
   LrtGpuOptions* options_;
 };
