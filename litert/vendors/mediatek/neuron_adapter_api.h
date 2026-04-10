@@ -109,6 +109,12 @@ class NeuronAdapterApi {
 
   litert::Expected<int32_t> GetNeuroPilotMagicNumber();
 
+  // Get the cached Neuron SDK runtime version.
+  // This is populated during Create() and remains constant.
+  const NeuronRuntimeVersion& RuntimeVersion() const {
+    return runtime_version_;
+  }
+
  private:
   NeuronAdapterApi();
   litert::Expected<void> LoadSymbols(

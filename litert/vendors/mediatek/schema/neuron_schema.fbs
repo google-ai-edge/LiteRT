@@ -20,6 +20,13 @@ enum CompiledType : byte {
   AdapterCache
 }
 
+// Neuron SDK version information
+struct NeuronVersion {
+  major: uint = 0;
+  minor: uint = 0;
+  patch: uint = 0;
+}
+
 table Index {
   value: int = -1;
 }
@@ -46,6 +53,7 @@ table Graphs {
   subgraphs: [Subgraph];    // List of subgraphs
   data: [Buffer];
   external: ExternalBuffer;
+  neuron_sdk_version: NeuronVersion (native_inline); // Neuron SDK version used for compilation (optional for backward compatibility)
 }
 
 table Buffer {
