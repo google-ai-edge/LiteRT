@@ -63,6 +63,7 @@ class GpuOptions {
   LiteRtStatus EnableBenchmarkMode(bool enabled);
   LiteRtStatus EnableAllowSrcQuantizedFcConvOps(bool enabled);
   LiteRtStatus HintWaitingForCompletion(bool wait);
+  LiteRtStatus SetKernelBatchSize(int kernel_batch_size);
 
   enum class Precision : int {
     kDefault = kLiteRtDelegatePrecisionDefault,

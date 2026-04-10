@@ -110,6 +110,10 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
 LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
     LrtGpuOptions* gpu_options, bool enable);
 
+// Sets the GPU kernel batch size for one flush.
+LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    LrtGpuOptions* gpu_options, int kernel_batch_size);
+
 // Sets the GPU accelerator precision. e.g. FP16, FP32, etc.
 LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsPrecision(
     LrtGpuOptions* gpu_options, LiteRtDelegatePrecision precision);
@@ -248,6 +252,9 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
     bool* enabled, const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+    int* kernel_batch_size, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
     LiteRtDelegatePrecision* precision, const LrtGpuOptions* options);
