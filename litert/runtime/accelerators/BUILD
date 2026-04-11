@@ -13,10 +13,16 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
+)
+
+py_binary(
+    name = "generate_registry",
+    srcs = ["generate_registry.py"],
 )
 
 cc_library(
@@ -67,21 +73,43 @@ cc_library(
     ],
 )
 
+genrule(
+    name = "generate_builtin_accelerators_cc",
+    outs = [
+        "builtin_accelerators.cc",
+        "builtin_accelerators.h",
+    ],
+    cmd = "$(location :generate_registry) $(location builtin_accelerators.cc) $(location builtin_accelerators.h) LiteRtCpuAccelerator --gpu " + select({
+        "@platforms//os:android": "LiteRtOpenClAccelerator LiteRtOpenClGlAccelerator LiteRtWebGpuAccelerator LiteRtVulkanAccelerator LiteRtGpuAccelerator",
+        "@platforms//os:ios": "",
+        "@platforms//os:macos": "",
+        "@platforms//os:emscripten": "LiteRtWebNnAccelerator LiteRtWebGpuAccelerator",
+        "@platforms//os:windows": "",
+        "//conditions:default": "LiteRtOpenClAccelerator LiteRtOpenClGlAccelerator LiteRtWebGpuAccelerator LiteRtVulkanAccelerator LiteRtGpuAccelerator",
+    }),
+    tools = [":generate_registry"],
+)
+
+cc_library(
+    name = "builtin_accelerators",
+    srcs = ["builtin_accelerators.cc"],
+    hdrs = ["builtin_accelerators.h"],
+    deps = [
+        "//litert/c/internal:litert_accelerator_def",
+    ],
+)
+
 cc_library(
     name = "cpu_registry",
     srcs = ["cpu_registry.cc"],
     hdrs = ["cpu_registry.h"],
     deps = [
+        ":builtin_accelerators",
         ":registration_helper",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_logging",
-    ] + select({
-        "//litert/build_common:litert_disable_cpu": [],
-        "//conditions:default": [
-            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -89,6 +117,7 @@ cc_library(
     srcs = ["gpu_registry.cc"],
     hdrs = ["gpu_registry.h"],
     deps = [
+        ":builtin_accelerators",
         ":registration_helper",
         "//litert/c:litert_any",
         "//litert/c:litert_common",

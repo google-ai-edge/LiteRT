@@ -140,7 +140,8 @@ class CpuAccelerator final
 
 // Discovery C object for the CPU (Xnnpack) accelerator by LiteRT.
 // This object is used by the LiteRT environment constructor.
-extern "C" const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
+extern "C" {
+extern const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .version = 1,  // LiteRtAcceleratorDefV1
     .get_name = litert::CpuAccelerator::GetName,
     .get_version = litert::CpuAccelerator::GetVersion,
@@ -158,18 +159,9 @@ extern "C" const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .num_supported_buffer_types = 0,
 };
 
-// Accelerator definition pointer defined in
-// runtime/accelerators/cpu_registry.cc
-extern "C" const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
-
-namespace {
-
-struct StaticCpuAcceleratorInitializer {
-  StaticCpuAcceleratorInitializer() {
-    LiteRtStaticLinkedAcceleratorCpuDef = &LiteRtCpuAcceleratorImpl;
-  }
-};
-
-StaticCpuAcceleratorInitializer g_initializer;
-
-}  // namespace
+#if defined(LITERT_DYNAMIC_ACCELERATOR)
+// Restore the well-known symbol for dynamic loading.
+// This is a simple pointer, it does not involve a static constructor.
+const LiteRtAcceleratorDef* LiteRtAcceleratorImpl = &LiteRtCpuAcceleratorImpl;
+#endif
+}

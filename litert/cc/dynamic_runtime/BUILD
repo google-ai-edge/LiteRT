@@ -690,7 +690,7 @@ cc_test(
 #         "//litert/c:litert_common",
 #         "//litert/cc:litert_api_with_dynamic_runtime",
 #         "//litert/cc:litert_ranked_tensor_type",
-#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
+#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
