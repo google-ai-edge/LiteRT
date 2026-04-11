@@ -98,6 +98,8 @@ ABSL_FLAG(uint64_t, scoped_weight_offset, 0,
 ABSL_FLAG(int64_t, scoped_weight_length, -1,
           "Byte length for --scoped_weight_group in --scoped_weight_file. "
           "-1 means until EOF.");
+ABSL_FLAG(int32_t, kernel_batch_size, -1, "Kernel batch size for the model.");
+
 namespace litert {
 namespace {
 
@@ -227,7 +229,16 @@ Expected<void> ConfigureScopedWeightSource(Options& options) {
 
 Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-  options.SetHardwareAccelerators(GetAccelerator());
+  auto accelerators = GetAccelerator();
+  options.SetHardwareAccelerators(accelerators);
+
+  if (accelerators & litert::HwAccelerators::kGpu) {
+    int kernel_batch_size = absl::GetFlag(FLAGS_kernel_batch_size);
+    if (kernel_batch_size > 0) {
+      LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+      LITERT_RETURN_IF_ERROR(gpu_opts.SetKernelBatchSize(kernel_batch_size));
+    }
+  }
 
   const std::string kernel_mode_str = absl::GetFlag(FLAGS_cpu_kernel_mode);
   if (!kernel_mode_str.empty()) {
