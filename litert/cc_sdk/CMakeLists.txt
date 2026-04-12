@@ -25,18 +25,19 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
 # The codebase has deprecated Error constructors that are still in use
-if(MSVC)
-  add_compile_options(
-    /wd4715
-    /D_CRT_SECURE_NO_WARNINGS
-    /EHsc
-  )
-elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+
+if(WIN32 AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   add_compile_options(
     -Wno-deprecated-declarations
     -Wno-nullability-completeness
     -Wno-return-type
     -permissive
+    /EHsc
+  )
+elseif(WIN32 AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+  add_compile_options(
+    /wd4715
+    /D_CRT_SECURE_NO_WARNINGS
     /EHsc
   )
 else()
