@@ -25,11 +25,39 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
 # The codebase has deprecated Error constructors that are still in use
-add_compile_options(
-  -Wno-deprecated-declarations
-  -Wno-return-type
-  -fpermissive
-)
+if(MSVC)
+  add_compile_options(
+    /wd4715
+    /D_CRT_SECURE_NO_WARNINGS
+    /EHsc
+  )
+elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-nullability-completeness
+    -Wno-return-type
+    -permissive
+    /EHsc
+  )
+else()
+  add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-nullability-completeness
+    -Wno-return-type
+    -fpermissive
+  )
+endif()
+
+add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
+
+# Cmake flattens the transitive public and interface link to emit the final link
+# command. Which will trigger a warning on Apple platforms (ld64 still dedups
+# those archives correctly) For more details, see
+# https://gitlab.kitware.com/cmake/cmake/-/issues/25297
+if(APPLE)
+  add_link_options(-Wl,-no_warn_duplicate_libraries)
+endif()
+
 
 set(LITERT_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/include")
 set(LITERT_BUILD_COMMON_GENERATED_DIR "${LITERT_GENERATED_INCLUDE_DIR}/litert/build_common")

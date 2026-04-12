@@ -37,12 +37,30 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
 # The codebase has deprecated Error constructors that are still in use
-add_compile_options(
-  -Wno-deprecated-declarations
-  -Wno-nullability-completeness
-  -Wno-return-type
-  -fpermissive
-)
+
+if(MSVC)
+  add_compile_options(
+    /wd4715
+    /D_CRT_SECURE_NO_WARNINGS
+    /EHsc
+  )
+elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-nullability-completeness
+    -Wno-return-type
+    -permissive
+    /EHsc
+  )
+else()
+  add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-nullability-completeness
+    -Wno-return-type
+    -fpermissive
+  )
+endif()
+
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
 
 # Cmake flattens the transitive public and interface link to emit the final link
