@@ -148,10 +148,14 @@ LiteRtStatus LiteRtDispatchInitialize(
       DispatchSharedLibrary = new litert::SharedLibrary();
     }
 
-    LITERT_ASSIGN_OR_RETURN(
-        *DispatchSharedLibrary,
-        litert::SharedLibrary::Load(shared_lib_path,
-                                    litert::RtldFlags::Now().Local()));
+    auto shared_library = litert::SharedLibrary::Load(
+        shared_lib_path, litert::RtldFlags::Now().Local());
+    if (!shared_library.HasValue()) {
+      LITERT_LOG(LITERT_ERROR, "%s",
+                 shared_library.Error().Message().c_str());
+      return litert::ToLiteRtStatus(shared_library.Error().StatusCC());
+    }
+    *DispatchSharedLibrary = std::move(shared_library.Value());
 
     using LiteRtDispatchGetApi_t = LiteRtStatus (*)(LiteRtDispatchApi*);
     LITERT_ASSIGN_OR_RETURN(
