@@ -26,15 +26,22 @@
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
 
+#if defined(__EMSCRIPTEN__)
+#include "absl/base/attributes.h"  // from @com_google_absl
 extern "C" {
-
-// Define a function pointer for the WebNN accelerator.
-LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
-    LiteRtEnvironmentT& environment) = nullptr;
-
+// For Emscripten, we use weak symbols to discover if an accelerator is linked.
+// This allows the linker to resolve the pointer at link-time without relying on
+// dlsym(RTLD_DEFAULT). On WASM environments using the Side Module (dynamic
+// linking) pattern, dlsym(RTLD_DEFAULT) may not reliably search the main
+// module's symbol table, whereas weak symbols are correctly resolved by the
+// Emscripten linker during the final link of the WASM binary.
+ABSL_ATTRIBUTE_WEAK LiteRtStatus LiteRtRegisterStaticLinkedAcceleratorWebNn(
+    LiteRtEnvironmentT& environment);
 }  // extern "C"
+#endif
 
 namespace litert {
+
 namespace {
 
 constexpr LiteRtHwAcceleratorSet kDefaultAutoRegisterAccelerators =
@@ -87,11 +94,12 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 
   // Register the WebNN accelerator if statically linked.
 #if defined(__EMSCRIPTEN__)
-  if ((auto_register_accelerators & kLiteRtHwAcceleratorWebNn) &&
-      LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
-      LiteRtRegisterStaticLinkedAcceleratorWebNn(environment) ==
-          kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "Statically linked WebNN accelerator registered.");
+  if (auto_register_accelerators & kLiteRtHwAcceleratorWebNn) {
+    if (LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
+        LiteRtRegisterStaticLinkedAcceleratorWebNn(environment) ==
+            kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "Statically linked WebNN accelerator registered.");
+    }
   }
 #endif  // defined(__EMSCRIPTEN__)
 

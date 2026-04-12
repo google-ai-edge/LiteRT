@@ -99,6 +99,7 @@ target_link_libraries(litert_runtime
         litert_cc_options
         litert_cc_internal
         litert_compiler_plugin
+        absl::base
         absl::status
         absl::statusor
         absl::strings
@@ -130,3 +131,17 @@ target_compile_definitions(litert_runtime
         $<$<BOOL:${LITERT_PLATFORM_ANDROID}>:LITERT_PLATFORM_ANDROID>
         $<$<BOOL:${LITERT_PLATFORM_WINDOWS}>:LITERT_PLATFORM_WINDOWS>
 )
+
+# Ensure discovery symbols are exported on POSIX for runtime lookup
+if(NOT MSVC AND NOT LITERT_PLATFORM_WINDOWS)
+  if(APPLE)
+    # macOS exports most symbols by default, but we can be explicit if needed.
+    # For now, standard behavior is sufficient.
+  else()
+    # Use -rdynamic to ensure that symbols are exported in the dynamic symbol
+    # table of executables, allowing runtime discovery of accelerators.
+    # We use this instead of the more surgical --export-dynamic-symbol because
+    # some older versions of the GNU linker do not support the latter.
+    target_link_options(litert_runtime PUBLIC "-rdynamic")
+  endif()
+endif()

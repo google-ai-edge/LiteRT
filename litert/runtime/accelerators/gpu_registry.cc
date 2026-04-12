@@ -30,13 +30,18 @@
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/registration_helper.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "absl/base/attributes.h"  // from @com_google_absl
 extern "C" {
-
-// Define a data pointer to an accelerator definition. This pointer is updated
-// by statically linked GPU accelerator.
-LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
-
+// For Emscripten, we use weak symbols to discover if an accelerator is linked.
+// This allows the linker to resolve the pointer at link-time without relying on
+// dlsym(RTLD_DEFAULT). On WASM environments using the Side Module (dynamic
+// linking) pattern, dlsym(RTLD_DEFAULT) may not reliably search the main
+// module's symbol table, whereas weak symbols are correctly resolved by the
+// Emscripten linker during the final link of the WASM binary.
+ABSL_ATTRIBUTE_WEAK LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef;
 }  // extern "C"
+#endif
 
 namespace {
 
@@ -142,10 +147,31 @@ LiteRtStatus LiteRtRegisterGpuAccelerator(LiteRtEnvironment environment) {
 #endif  // LITERT_HAS_VULKAN_SUPPORT
   };
 
-  if (LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
+  LiteRtAcceleratorDef* static_gpu_def = nullptr;
+#if defined(__EMSCRIPTEN__)
+  static_gpu_def = LiteRtStaticLinkedAcceleratorGpuDef;
+#else
+  // For standard platforms (Linux, Windows, Mac), we use process-wide symbol
+  // lookup via SharedLibrary. This avoids the use of static initializers
+  // (which are forbidden in Chrome) while still allowing runtime selection
+  // based on what code was linked into the binary.
+  //
+  // Note: On POSIX, this requires targeted linker flags (like
+  // --export-dynamic-symbol) to ensure the discovery pointers are present in
+  // the dynamic symbol table if they are in the main executable.
+  auto self = SharedLibrary::Load(RtldFlags::kDefault);
+  if (self.HasValue()) {
+    auto sym = self->LookupSymbol<LiteRtAcceleratorDef**>(
+        "LiteRtStaticLinkedAcceleratorGpuDef");
+    if (sym.HasValue()) {
+      static_gpu_def = **sym;
+    }
+  }
+#endif
+
+  if (static_gpu_def != nullptr &&
       ::litert::internal::RegisterAcceleratorFromDef(
-          environment, LiteRtStaticLinkedAcceleratorGpuDef) ==
-          kLiteRtStatusOk) {
+          environment, static_gpu_def) == kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
     return kLiteRtStatusOk;
   }
