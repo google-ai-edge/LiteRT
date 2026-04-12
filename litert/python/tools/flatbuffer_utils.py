@@ -295,10 +295,9 @@ def read_model_from_bytearray(model_bytearray: BufferType) -> ModelT:
         op.largeCustomOptionsOffset = 0
         op.largeCustomOptionsSize = 0
 
-  # TODO: b/493863106#comment4 - Remove this once the converter no longer
-  # creates spurious empty buffers. Currently disabled because this causes
-  # problems with some models when run via LiteRT.
-  # _compact_buffers_array(model)
+  # TODO: b/493863106 - Remove this once the converter no longer creates
+  # spurious empty buffers.
+  _compact_buffers_array(model)
 
   # Convert any non-buffer `np.ndarray`s to `list` to ensure they are mutable.
   buffers = model.buffers
