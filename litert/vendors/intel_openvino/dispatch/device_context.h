@@ -36,9 +36,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
-#if defined(LITERT_WINDOWS_OS)
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
-#endif  // LITERT_WINDOWS_OS
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -65,11 +63,7 @@ class LiteRtDispatchDeviceContextT {
 
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const {
-#if defined(LITERT_WINDOWS_OS)
     return OpenVINOSharedCore::GetInstance()->getCore();
-#else
-    return core_;
-#endif  // LITERT_WINDOWS_OS
   }
 
  private:
@@ -109,8 +103,7 @@ class LiteRtDispatchDeviceContextT {
   };
 
   explicit LiteRtDispatchDeviceContextT()
-      : core_(std::make_shared<ov::Core>()), next_handle_(0) {}
-  std::shared_ptr<ov::Core> core_;
+      : next_handle_(0) {}
   std::unordered_map<LiteRtTensorBufferHandle, RegisteredTensor>
       tensor_handle_map_;
   uint64_t next_handle_;

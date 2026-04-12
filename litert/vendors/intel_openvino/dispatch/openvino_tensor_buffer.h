@@ -28,7 +28,7 @@ class OpenVinoTensorBuffer {
   OpenVinoTensorBuffer(OpenVinoTensorBuffer&&) = default;
   OpenVinoTensorBuffer& operator=(OpenVinoTensorBuffer&&) = default;
 
-  OpenVinoTensorBuffer() : host_tensor_({}), allocated_(false) {};
+  OpenVinoTensorBuffer() : host_tensor_(), allocated_(false) {};
   ~OpenVinoTensorBuffer() = default;
 
   litert::Expected<void> Alloc(const LiteRtRankedTensorType& tensor_type,
