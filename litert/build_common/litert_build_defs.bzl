@@ -19,6 +19,7 @@
 # copybara:uncomment_end
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:copy_file.bzl", skylib_copy_file = "copy_file")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
@@ -146,6 +147,7 @@ _EXPORT_LRT_ONLY_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(locatio
 def symbol_opts():
     """Defines linker flags whether to include symbols or not."""
     return select({
+        "//litert:litert_keep_symbols": [],
         "//litert:debug": [],
         "//litert:macos": [],
         "//litert:ios": [],
@@ -549,15 +551,11 @@ def litert_dispatch_api(
         )
 
 def copy_file(name, src, target, visibility = None):
-    input_path = "$(location %s)" % src
-    output_path = "$(@D)/" + target
-
-    native.genrule(
+    skylib_copy_file(
         name = name,
-        srcs = [src],
-        outs = [target],
+        src = src,
+        out = target,
         visibility = visibility,
-        cmd = "cp %s %s" % (input_path, output_path),
     )
 
 def gtest_main_no_heapcheck_deps():

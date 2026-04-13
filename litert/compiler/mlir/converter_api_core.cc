@@ -59,7 +59,10 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Transforms/Passes.h"
+#include "litert/compiler/mlir/flatbuffer_export.h"
 #include "litert/compiler/mlir/status_scoped_diagnostic_handler.h"
+#include "litert/compiler/mlir/tf_tfl_flatbuffer_helpers.h"
+#include "litert/compiler/mlir/tf_to_tfl_flatbuffer.h"
 #include "stablehlo/dialect/Register.h"
 #include "stablehlo/dialect/StablehloOps.h"
 #include "stablehlo/dialect/VhloOps.h"
@@ -67,13 +70,10 @@
 #include "stablehlo/transforms/optimization/Passes.h"
 #include "tflite/converter/common/tfl_pass_config.h"
 #include "tflite/converter/converter_flags.pb.h"
-#include "tflite/converter/flatbuffer_export.h"
 #include "tflite/converter/metrics/converter_error_data.pb.h"
 #include "tflite/converter/model_flags.pb.h"
-#include "tflite/converter/python/tf_tfl_flatbuffer_helpers.h"
 #include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
 #include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
-#include "tflite/converter/tf_to_tfl_flatbuffer.h"
 #include "tflite/converter/transforms/optimize_pass.h"
 #include "tflite/converter/transforms/passes.h"
 #include "tflite/converter/types.pb.h"
@@ -109,12 +109,12 @@ absl::Status ExportFlatbuffer(mlir::ModuleOp module_op,
   }
 
   // Export module to flatbuffer.
-  tflite::FlatbufferExportOptions options;
+  litert::FlatbufferExportOptions options;
   options.serialize_stablehlo_ops = true;
   // tflite::kModelUseStablehloTensorKey
   options.metadata["keep_stablehlo_constant"] = "true";
 
-  return tflite::MlirToFlatBufferTranslateFunction(module_op, options,
+  return litert::MlirToFlatBufferTranslateFunction(module_op, options,
                                                    export_stream);
 }
 
@@ -194,7 +194,7 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
     std::vector<std::optional<std::vector<int>>> node_shapes;
     std::vector<std::optional<double>> node_mins;
     std::vector<std::optional<double>> node_maxs;
-    if (auto status = tensorflow::internal::PopulateQuantizationSpecs(
+    if (auto status = PopulateQuantizationSpecs(
             model_flags, converter_flags, &quant_specs, &node_names,
             &node_dtypes, &node_shapes, &node_mins, &node_maxs);
         !status.ok()) {
@@ -338,7 +338,7 @@ absl::Status RunConvertToTFLPasses(mlir::ModuleOp module_op,
   }
 
   auto [tfl_converter_flags, tfl_pass_config] = tfl_configs_or.value();
-  return tensorflow::RunConvertTFExecutorToTFLPasses(
+  return litert::RunConvertTFExecutorToTFLPasses(
       module_op, tfl_converter_flags, tfl_pass_config, pass_manager,
       /*saved_model_tags=*/{"serve"}, /*saved_model_dir=*/"");
 }

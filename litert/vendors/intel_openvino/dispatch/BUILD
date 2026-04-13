@@ -27,10 +27,14 @@ litert_dynamic_lib(
         "device_context.cc",
         "dispatch_api.cc",
         "invocation_context.cc",
+        "openvino_shared_core.cc",
+        "openvino_tensor_buffer.cc",
     ],
     hdrs = [
         "device_context.h",
         "invocation_context.h",
+        "openvino_shared_core.h",
+        "openvino_tensor_buffer.h",
     ],
     copts = [
         "-Os",

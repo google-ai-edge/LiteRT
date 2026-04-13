@@ -431,8 +431,8 @@ build:windows --strategy=Genrule=local
 build:windows --genrule_strategy=local
 build:windows --spawn_strategy=local
 
-# Use Git Bash for genrules
-build:windows --shell_executable="C:/Program Files/Git/bin/bash.exe"
+# Do not require Bash on Windows. Windows-aware rules should provide cmd_bat
+# or cmd_ps implementations instead of relying on a Unix shell.
 
 # Verbose failure logs when something goes wrong
 build:windows --verbose_failures
