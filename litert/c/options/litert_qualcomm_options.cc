@@ -165,6 +165,18 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "saver_output_dir") {
           LrtQualcommOptionsSetSaverOutputDir(parsed_options,
                                               std::string(value).c_str());
+        } else if (key == "custom_op_package_name") {
+          LrtQualcommOptionsSetCustomOpPackageName(parsed_options,
+                                                   std::string(value).c_str());
+        } else if (key == "custom_op_package_path") {
+          LrtQualcommOptionsSetCustomOpPackagePath(parsed_options,
+                                                   std::string(value).c_str());
+        } else if (key == "custom_op_package_target") {
+          LrtQualcommOptionsSetCustomOpPackageTarget(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "custom_op_package_interface_provider") {
+          LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+              parsed_options, std::string(value).c_str());
         }
 
         return kLiteRtStatusOk;
@@ -270,6 +282,22 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->saver_output_dir.has_value()) {
     toml << "saver_output_dir = \"" << *options->saver_output_dir << "\"\n";
+  }
+  if (options->custom_op_package_name.has_value()) {
+    toml << "custom_op_package_name = \"" << *options->custom_op_package_name
+         << "\"\n";
+  }
+  if (options->custom_op_package_path.has_value()) {
+    toml << "custom_op_package_path = \"" << *options->custom_op_package_path
+         << "\"\n";
+  }
+  if (options->custom_op_package_target.has_value()) {
+    toml << "custom_op_package_target = \""
+         << *options->custom_op_package_target << "\"\n";
+  }
+  if (options->custom_op_package_interface_provider.has_value()) {
+    toml << "custom_op_package_interface_provider = \""
+         << *options->custom_op_package_interface_provider << "\"\n";
   }
 
   *identifier = LrtQualcommOptionsGetIdentifier();
