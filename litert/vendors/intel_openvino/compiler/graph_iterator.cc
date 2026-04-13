@@ -15,9 +15,15 @@
 
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
+#include <vector>
 
+#include "openvino/core/type/element_type.hpp"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
 namespace litert {
@@ -90,6 +96,7 @@ bool fill_tensor_meta(
 
 std::shared_ptr<ov::frontend::tensorflow_lite::DecoderBase>
 GraphIteratorDelegate::get_decoder() const {
+  converted_weight_buffers_.clear();
   ov::frontend::tensorflow_lite::TensorMetaInfo tensor_meta_info;
   if (node_index_ < iterator_indices_.input_index_) {
     const auto& input_vec = subgraph_ptr_->Inputs();
@@ -130,6 +137,42 @@ GraphIteratorDelegate::get_decoder() const {
         LITERT_LOG(LITERT_VERBOSE, "Data is static or constant for op %d",
                    op.Code());
         tensor_meta_info.m_tensor_data = input.Weights().Bytes().data();
+
+        // Convert signed i2 weights to unsigned u2 for NPU friendliness.
+        // XOR flips each sub-byte element's MSB, which is equivalent to
+        // adding 2^(bits-1) mod 2^bits. The zero points are adjusted by the
+        // same offset to keep dequantized values unchanged.
+        // i2 → u2: for all ops, since MapLiteTypeToOV maps i2 to u2
+        //   globally and OpenVINO never sees ov::element::i2.
+        if (tensor_meta_info.m_quantization_info) {
+          const auto litert_type =
+              static_cast<LiteRtElementType>(input.ElementType());
+          if (litert_type == kLiteRtElementTypeInt2) {
+            constexpr uint8_t xor_mask = 0xAA;  // flip MSB of each 2-bit pair
+            constexpr int64_t zp_offset = 2;    // [-2..1] -> [0..3]
+
+            auto weight_bytes = input.Weights().Bytes();
+            auto& buf = converted_weight_buffers_.emplace_back(
+                weight_bytes.data(), weight_bytes.data() + weight_bytes.size());
+            for (auto& byte : buf) {
+              byte ^= xor_mask;
+            }
+            tensor_meta_info.m_tensor_data = buf.data();
+            tensor_meta_info.m_element_type = ov::element::u2;
+
+            auto adjusted_qi = std::make_shared<
+                ov::frontend::tensorflow_lite::QuantizationInfo>(
+                *tensor_meta_info.m_quantization_info);
+            auto zps = adjusted_qi->get_zero_point();
+            for (auto& zp : zps) {
+              zp += zp_offset;
+            }
+            adjusted_qi->set_zero_point(zps);
+            tensor_meta_info.m_quantization_info = adjusted_qi;
+            LITERT_LOG(LITERT_INFO, "Converted i2 weights to u2 for tensor: %s",
+                       tensor_meta_info.m_tensor_name.c_str());
+          }
+        }
       }
       input_meta_info.push_back(tensor_meta_info);
     }

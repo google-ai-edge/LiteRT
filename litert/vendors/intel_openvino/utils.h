@@ -6,6 +6,7 @@
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_extended_model.h"
 
 namespace litert {
@@ -17,6 +18,11 @@ static const ov::element::Type MapLiteTypeToOV(
   switch (element_type) {
     case kLiteRtElementTypeBool:
       ov_type = ov::element::boolean;
+      break;
+    case kLiteRtElementTypeInt2:
+      // i2 weights are converted to u2 in graph_iterator before reaching
+      // OpenVINO, so map directly to u2 here as well.
+      ov_type = ov::element::u2;
       break;
     case kLiteRtElementTypeInt4:
       ov_type = ov::element::i4;
