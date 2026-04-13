@@ -607,6 +607,31 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_topk",
+    hdrs = ["ops/topk.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_topk_test",
+    srcs = ["ops/topk_test.cc"],
+    deps = [
+        ":model",
+        ":ops_topk",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_unpack_test",
     srcs = ["ops/unpack_test.cc"],
