@@ -441,9 +441,6 @@ build:windows --verbose_failures
 # See: https://github.com/bazelbuild/bazel/issues/5163
 build:windows --features=compiler_param_file
 
-# Disable problematic features on Windows
-build:windows --define=tflite_with_xnnpack=false
-
 # Minimal build configuration
 build:windows --define=build_with_mkl=false
 build:windows --define=build_with_openmp=false
