@@ -32,25 +32,25 @@
 #if defined(LITERT_WINDOWS_OS)
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/vendors/intel_openvino/dispatch/remote_tensor_buffer.h"
+#include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 #endif  // LITERT_WINDOWS_OS
 
 namespace litert {
 namespace openvino {
 
 #if defined(LITERT_WINDOWS_OS)
-LiteRtStatus CreateRemoteTensorBuffer(LiteRtGpuDeviceId device_id,
-                                      LiteRtGpuQueueId queue_id,
-                                      const LiteRtRankedTensorType* tensor_type,
-                                      LiteRtTensorBufferType buffer_type,
-                                      size_t bytes, size_t packed_bytes,
-                                      HwMemoryInfoPtr* hw_memory_info) {
+LiteRtStatus CreateOpenVinoTensorBuffer(
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
+    HwMemoryInfoPtr* hw_memory_info) {
   auto memory_info = new HwMemoryInfo();
-  RemoteTensorBuffer* custom_tensor_buffer = new RemoteTensorBuffer();
+  OpenVinoTensorBuffer* custom_tensor_buffer = new OpenVinoTensorBuffer();
   litert::Expected<void> result =
       custom_tensor_buffer->Alloc(*tensor_type, bytes);
   if (!result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to alloc remote tensor buffer %d.", bytes);
+    LITERT_LOG(LITERT_ERROR, "Failed to alloc OpenVino tensor buffer %d.",
+               bytes);
     return kLiteRtStatusErrorMemoryAllocationFailure;
   }
   memory_info->memory_handle = custom_tensor_buffer;
@@ -58,26 +58,26 @@ LiteRtStatus CreateRemoteTensorBuffer(LiteRtGpuDeviceId device_id,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DestroyRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
-  RemoteTensorBuffer* custom_tensor_buffer =
-      reinterpret_cast<RemoteTensorBuffer*>(hw_memory_info->memory_handle);
-  if (custom_tensor_buffer->GetZeroBufferPtr()) {
+LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  OpenVinoTensorBuffer* custom_tensor_buffer =
+      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
+  if (custom_tensor_buffer->GetTensorData()) {
     delete custom_tensor_buffer;
   }
   delete hw_memory_info;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus UnlockRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+LiteRtStatus UnlockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LockRemoteTensorBuffer(HwMemoryInfoPtr hw_memory_info,
-                                    LiteRtTensorBufferLockMode mode,
-                                    void** host_memory_ptr) {
-  RemoteTensorBuffer* custom_tensor_buffer =
-      reinterpret_cast<RemoteTensorBuffer*>(hw_memory_info->memory_handle);
-  auto result = custom_tensor_buffer->GetZeroBufferPtr();
+LiteRtStatus LockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info,
+                                      LiteRtTensorBufferLockMode mode,
+                                      void** host_memory_ptr) {
+  OpenVinoTensorBuffer* custom_tensor_buffer =
+      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
+  auto result = custom_tensor_buffer->GetTensorData();
   if (!result) {
     LITERT_LOG(LITERT_ERROR, "Failed to lock tensor buffer: %s",
                result.Error().Message().c_str());
@@ -108,8 +108,8 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
 #if defined(LITERT_WINDOWS_OS)
   LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
       env, kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
-      CreateRemoteTensorBuffer, DestroyRemoteTensorBuffer,
-      LockRemoteTensorBuffer, UnlockRemoteTensorBuffer, nullptr, nullptr,
+      CreateOpenVinoTensorBuffer, DestroyOpenVinoTensorBuffer,
+      LockOpenVinoTensorBuffer, UnlockOpenVinoTensorBuffer, nullptr, nullptr,
       /*device_tag=*/kLiteRtEnvOptionTagNull,
       /*queue_tag=*/kLiteRtEnvOptionTagNull));
 #endif  // LITERT_WINDOWS_OS
