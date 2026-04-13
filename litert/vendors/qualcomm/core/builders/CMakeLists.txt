@@ -26,7 +26,6 @@ target_sources(qnn_builders
         elementwise_op_builder.cc
         embedding_lookup_op_builder.cc
         fully_connected_op_builder.cc
-        fully_connected_op_builder_htp.cc
         gather_op_builder.cc
         gathernd_op_builder.cc
         gelu_op_builder.cc

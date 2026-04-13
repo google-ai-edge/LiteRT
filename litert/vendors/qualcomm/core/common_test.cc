@@ -155,22 +155,6 @@ TEST(QnnOptionTest, DspPerformanceMode) {
   EXPECT_EQ(options.GetDspPerformanceMode(), kBalanced);
 }
 
-TEST(QnnOptionTest, UseHtpPreference) {
-  Options options;
-  options.SetUseHtpPreference(true);
-  EXPECT_EQ(options.GetUseHtpPreference(), true);
-  options.SetUseHtpPreference(false);
-  EXPECT_EQ(options.GetUseHtpPreference(), false);
-}
-
-TEST(QnnOptionTest, UseQint16AsQuint16) {
-  Options options;
-  options.SetUseQint16AsQuint16(true);
-  EXPECT_EQ(options.GetUseQint16AsQuint16(), true);
-  options.SetUseQint16AsQuint16(false);
-  EXPECT_EQ(options.GetUseQint16AsQuint16(), false);
-}
-
 TEST(QnnOptionTest, UseInt64BiasAsInt32) {
   Options options;
   options.SetUseInt64BiasAsInt32(true);
@@ -265,8 +249,6 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
   EXPECT_EQ(options.GetBackendType(), BackendType::kHtpBackend);
   EXPECT_EQ(options.GetProfiling(), Profiling::kOff);
-  EXPECT_FALSE(options.GetUseHtpPreference());
-  EXPECT_FALSE(options.GetUseQint16AsQuint16());
   EXPECT_TRUE(options.GetUseInt64BiasAsInt32());
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_TRUE(options.GetUseConvHMX());

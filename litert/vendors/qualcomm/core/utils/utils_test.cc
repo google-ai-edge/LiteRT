@@ -123,27 +123,6 @@ TEST(MiscTests, Dequantize) {
   EXPECT_FLOAT_EQ(val, 1);
 }
 
-TEST(MiscTests, ConvertDataFromInt16toUInt16) {
-  constexpr std::array<std::int16_t, 4> int16_data = {0, 1, 2, 3};
-  std::vector<std::uint16_t> uint16_data;
-  ConvertDataFromInt16toUInt16(int16_data, uint16_data);
-  EXPECT_EQ(uint16_data[0], 32768);
-  EXPECT_EQ(uint16_data[1], 32769);
-  EXPECT_EQ(uint16_data[2], 32770);
-  EXPECT_EQ(uint16_data[3], 32771);
-}
-
-TEST(MiscTests, ConvertDataFromUInt16toInt16) {
-  constexpr std::array<std::uint16_t, 4> uint16_data = {32768, 32769, 32770,
-                                                        32771};
-  std::vector<std::int16_t> int16_data;
-  ConvertDataFromUInt16toInt16(uint16_data, int16_data);
-  EXPECT_EQ(int16_data[0], 0);
-  EXPECT_EQ(int16_data[1], 1);
-  EXPECT_EQ(int16_data[2], 2);
-  EXPECT_EQ(int16_data[3], 3);
-}
-
 TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
   DLHandle handle = ::qnn::CreateDLHandle("/invalid/path/to/libQnn.so");
   auto api = ::qnn::ResolveQnnApi(
