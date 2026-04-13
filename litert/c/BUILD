@@ -163,6 +163,16 @@ litert_c_api_library(
     deps = [":litert_common"],
 )
 
+cc_test(
+    name = "litert_environment_test",
+    srcs = ["litert_environment_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_environment",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 litert_c_api_library(
     name = "litert_environment_options",
     srcs = ["litert_environment_options.cc"],

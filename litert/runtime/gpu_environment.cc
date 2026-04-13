@@ -46,6 +46,16 @@
 #include "tflite/delegates/gpu/cl/gl_interop.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+#include "ml_drift/webgpu/environment.h"  // from @ml_drift
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+#include "ml_drift/metal/environment.h"  // from @ml_drift
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 namespace litert {
 namespace internal {
 
@@ -405,6 +415,66 @@ Expected<void> GpuEnvironment::Initialize(
       options_.device_id, options_.platform_id, options_.context,
       options_.command_queue, options_.egl_context, options_.egl_display);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+  // Set up is_fp16_supported.
+#if defined(__APPLE__)
+  properties_.is_fp16_supported = true;
+#elif defined(__ANDROID__)
+  properties_.is_fp16_supported = false;
+#else
+  // Default to true on other platforms (e.g. Linux/Windows) as they usually
+  // support FP16 on modern GPUs through WebGPU or OpenCL (with extensions).
+  properties_.is_fp16_supported = true;
+#endif
+
+#if LITERT_HAS_OPENCL_SUPPORT
+  if (properties_.is_opencl_available) {
+#if defined(__ANDROID__)
+    properties_.is_fp16_supported = device_.GetInfo().SupportsFP16();
+#else
+    // On Desktop, only set to false if we are SURE it's not supported.
+    // OpenCL on NVIDIA might return false even if it's supported via WebGPU.
+    if (!device_.GetInfo().SupportsFP16()) {
+      // Don't overwrite if WebGPU might support it.
+    } else {
+      properties_.is_fp16_supported = true;
+    }
+#endif
+  }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+  if (options_.webgpu_device) {
+    wgpu::Device device = wgpu::Device(options_.webgpu_device);
+    wgpu::AdapterInfo info;
+    device.GetAdapterInfo(&info);
+
+    ml_drift::webgpu::Environment webgpu_env(
+#if defined(__APPLE__)
+        wgpu::BackendType::Metal
+#elif defined(_WIN32)
+        wgpu::BackendType::D3D12
+#elif defined(__EMSCRIPTEN__)
+        wgpu::BackendType::WebGPU
+#else
+        wgpu::BackendType::Vulkan
+#endif
+    );
+    webgpu_env.RequestExtension("shader_f16");
+    if (webgpu_env.Initialize(device, info).ok()) {
+      properties_.is_fp16_supported = webgpu_env.GetInfo().SupportsFP16();
+    }
+  }
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  if (metal_info_) {
+    ml_drift::metal::Environment metal_env(
+        (__bridge id<MTLDevice>)metal_info_->metal_info);
+    properties_.is_fp16_supported = metal_env.GetInfo().SupportsFP16();
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   return {};
 }
 

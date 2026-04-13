@@ -39,6 +39,14 @@ TEST(EnvironmentTest, Default) {
   EXPECT_TRUE(env);
 }
 
+TEST(EnvironmentTest, SupportsFP16) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  // SupportsFP16() should be callable and return a boolean.
+  // The actual value depends on the platform and GPU.
+  bool supports_fp16 = env.SupportsFP16();
+  (void)supports_fp16;
+}
+
 TEST(EnvironmentTest, HasRuntimeProxy) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);

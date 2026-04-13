@@ -430,7 +430,23 @@ GPU_ENVIRONMENT_DEPS = [
     "//tflite/delegates/gpu/cl:cl_context",
     "//tflite/delegates/gpu/cl:cl_device",
     "//tflite/delegates/gpu/cl:opencl_wrapper",
+    "@ml_drift//ml_drift/common:gpu_info",
 ] + select({
+    "@platforms//os:android": [
+        "@ml_drift//ml_drift/cl:environment",
+    ],
+    "@platforms//os:ios": [
+        "@ml_drift//ml_drift/metal:environment",
+    ],
+    "@platforms//os:macos": [
+        "@ml_drift//ml_drift/metal:environment",
+        "@ml_drift//ml_drift/webgpu:environment",
+    ],
+    "//conditions:default": [
+        "@ml_drift//ml_drift/cl:environment",
+        "@ml_drift//ml_drift/webgpu:environment",
+    ],
+}) + select({
     "@org_tensorflow//tensorflow:android": [
         "//tflite/delegates/gpu/cl:gl_interop",
         "//tflite/delegates/gpu/gl:egl_environment",
