@@ -46,12 +46,12 @@ void CopyToBuffer(const absl::Cord& src, char* dest) { src.CopyToArray(dest); }
 
 // Wrap Google file operations.
 
-#include "base/init_google.h"
 #include "file/base/file.h"
 #include "file/base/filesystem.h"
 #include "file/base/helpers.h"
 #include "file/base/options.h"
 #include "file/base/path.h"
+#include "third_party/gloop/base/init_google.h"
 
 namespace toco {
 namespace port {
