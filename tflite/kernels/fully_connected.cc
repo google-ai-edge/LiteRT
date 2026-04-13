@@ -59,28 +59,28 @@ namespace fully_connected {
 namespace {
 TfLiteStatus CheckedFlatSizeSkipDim(TfLiteContext* context,
                                     const RuntimeShape& shape, int skip_dim,
-                                    size_t* flat_size) {
+                                    CheckedInt<int>& flat_size) {
   const int dims_count = shape.DimensionsCount();
   TF_LITE_ENSURE(context, skip_dim >= 0 && skip_dim < dims_count);
-  *flat_size = 1;
+  flat_size = 1;
   for (int i = 0; i < dims_count; ++i) {
-    if (i == skip_dim) continue;
-    const int dim = shape.Dims(i);
+    if (i == skip_dim) {
+      continue;
+    }
+    const int32_t dim = shape.Dims(i);
     TF_LITE_ENSURE_MSG(context, dim >= 0,
                        "FullyConnected encountered a negative dimension.");
-    TF_LITE_ENSURE_MSG(
-        context,
-        MultiplyAndCheckOverflow(*flat_size, static_cast<size_t>(dim),
-                                 flat_size) == kTfLiteOk,
-        "FullyConnected shape product overflowed.");
+    flat_size *= dim;
   }
+  TF_LITE_ENSURE_MSG(context, !flat_size.Overflow(),
+                     "FullyConnected shape product overflowed.");
   return kTfLiteOk;
 }
 
 struct CheckedFullyConnectedIndexing {
   int batches;
-  int output_depth;
-  int accum_depth;
+  size_t output_depth;
+  size_t accum_depth;
 };
 
 TfLiteStatus GetCheckedFullyConnectedIndexing(
@@ -91,38 +91,33 @@ TfLiteStatus GetCheckedFullyConnectedIndexing(
   TF_LITE_ENSURE(context, output_dim_count >= 1);
   TF_LITE_ENSURE(context, filter_dim_count >= 2);
 
-  size_t batches = 0;
+  CheckedInt<int> batches = 0;
   TF_LITE_ENSURE_OK(context,
                     CheckedFlatSizeSkipDim(context, output_shape,
-                                           output_dim_count - 1, &batches));
-  const int output_depth = output_shape.Dims(output_dim_count - 1);
-  const int accum_depth = filter_shape.Dims(filter_dim_count - 1);
+                                           output_dim_count - 1, batches));
+  const CheckedInt<size_t> output_depth =
+      output_shape.Dims(output_dim_count - 1);
+  const CheckedInt<size_t> accum_depth =
+      filter_shape.Dims(filter_dim_count - 1);
   TF_LITE_ENSURE_MSG(context, output_depth >= 0 && accum_depth >= 0,
                      "FullyConnected encountered a negative dimension.");
   TF_LITE_ENSURE_MSG(
       context, batches <= static_cast<size_t>(std::numeric_limits<int>::max()),
       "FullyConnected batch count overflowed.");
 
-  size_t flat_size = 0;
-  TF_LITE_ENSURE_MSG(
-      context,
-      MultiplyAndCheckOverflow(batches, static_cast<size_t>(accum_depth),
-                               &flat_size) == kTfLiteOk,
-      "FullyConnected input indexing overflowed.");
-  TF_LITE_ENSURE_MSG(context,
-                     MultiplyAndCheckOverflow(static_cast<size_t>(output_depth),
-                                              static_cast<size_t>(accum_depth),
-                                              &flat_size) == kTfLiteOk,
+  CheckedInt<size_t> flat_size = batches * accum_depth;
+  TF_LITE_ENSURE_MSG(context, !flat_size.Overflow(),
+                     "FullyConnected input indexing overflowed.");
+  flat_size = output_depth * accum_depth;
+  TF_LITE_ENSURE_MSG(context, !flat_size.Overflow(),
                      "FullyConnected filter indexing overflowed.");
-  TF_LITE_ENSURE_MSG(
-      context,
-      MultiplyAndCheckOverflow(batches, static_cast<size_t>(output_depth),
-                               &flat_size) == kTfLiteOk,
-      "FullyConnected output indexing overflowed.");
+  flat_size = batches * output_depth;
+  TF_LITE_ENSURE_MSG(context, !flat_size.Overflow(),
+                     "FullyConnected output indexing overflowed.");
 
-  indexing->batches = static_cast<int>(batches);
-  indexing->output_depth = output_depth;
-  indexing->accum_depth = accum_depth;
+  indexing->batches = batches.Value();
+  indexing->output_depth = output_depth.Value();
+  indexing->accum_depth = accum_depth.Value();
   return kTfLiteOk;
 }
 
@@ -1367,8 +1362,8 @@ TfLiteStatus FullyConnectedInt16FilterInt16Impl(
   TF_LITE_ENSURE_OK(context,
                     GetCheckedFullyConnectedIndexing(context, filter_shape,
                                                      output_shape, &indexing));
-  const size_t output_depth = static_cast<size_t>(indexing.output_depth);
-  const size_t accum_depth = static_cast<size_t>(indexing.accum_depth);
+  const size_t output_depth = indexing.output_depth;
+  const size_t accum_depth = indexing.accum_depth;
 
   for (int b = 0; b < indexing.batches; ++b) {
     const size_t input_row_offset = static_cast<size_t>(b) * accum_depth;
@@ -1474,8 +1469,8 @@ TfLiteStatus FullyConnectedPerChannelInt16FilterInt16Impl(
   TF_LITE_ENSURE_OK(context,
                     GetCheckedFullyConnectedIndexing(context, filter_shape,
                                                      output_shape, &indexing));
-  const size_t output_depth = static_cast<size_t>(indexing.output_depth);
-  const size_t accum_depth = static_cast<size_t>(indexing.accum_depth);
+  const size_t output_depth = indexing.output_depth;
+  const size_t accum_depth = indexing.accum_depth;
 
   for (int b = 0; b < indexing.batches; ++b) {
     const size_t input_row_offset = static_cast<size_t>(b) * accum_depth;
