@@ -64,6 +64,7 @@ target_sources(qnn_builders
         scatter_nd_op_builder.cc
         topk_op_builder.cc
         group_norm_op_builder.cc
+        custom_op_builder.cc
 )
 
 target_include_directories(qnn_builders

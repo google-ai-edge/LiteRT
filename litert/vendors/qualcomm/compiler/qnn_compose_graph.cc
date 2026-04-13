@@ -53,6 +53,7 @@
 #include "litert/vendors/qualcomm/core/builders/conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/conv3d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/cumsum_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/custom_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/depthwise_conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/dynamic_update_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
@@ -1323,21 +1324,54 @@ constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> kOpBuilders =
     GetOpBuilders();
 static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
 
+LiteRtStatus BuildCustomOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers,
+    const ::qnn::CustomOpPackage& custom_op_package) {
+  // use tflite custom code as op type in QNN custom op pacakge.
+  auto custom_code = litert_op.CustomCode();
+  if (!custom_code.HasValue() || custom_code->empty()) {
+    LITERT_LOG(LITERT_ERROR, "Custom op missing custom code.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto custom_options = litert_op.CustomOptions();
+  if (!custom_options.HasValue()) {
+    LITERT_LOG(LITERT_ERROR, "Custom op missing custom options.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const char* package_name = custom_op_package.name.empty()
+                                 ? QNN_OP_PACKAGE_NAME_QTI_AISW
+                                 : custom_op_package.name.c_str();
+
+  op_wrappers =
+      ::qnn::BuildCustomOp(tensor_pool, package_name, custom_code->data(),
+                           input_tensors, output_tensors, *custom_options);
+  return kLiteRtStatusOk;
+}
+
 }  // namespace
 
-LiteRtStatus ConvertOp(const bool use_htp_preferences,
-                       bool use_int64_bias_as_int32,
-                       const litert::Op& litert_op,
-                       ::qnn::TensorPool& tensor_pool,
-                       std::vector<::qnn::TensorWrapperRef>& input_tensors,
-                       std::vector<::qnn::TensorWrapperRef>& output_tensors,
-                       std::vector<::qnn::OpWrapper>& op_wrappers) {
+LiteRtStatus ConvertOp(
+    const bool use_htp_preferences, bool use_int64_bias_as_int32,
+    const ::qnn::CustomOpPackage& custom_op_package, const litert::Op& litert_op,
+    ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
   const auto& builders = GetOpBuilders();
   const auto op_code = litert_op.Code();
   if (op_code < builders.size() && builders[op_code]) {
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers, use_htp_preferences,
                              use_int64_bias_as_int32);
+  }
+  if (op_code == kLiteRtOpCodeTflCustom) {
+    return BuildCustomOp(litert_op, tensor_pool, input_tensors, output_tensors,
+                         op_wrappers, custom_op_package);
   }
   LITERT_LOG(LITERT_ERROR,
              "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
@@ -1450,8 +1484,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(ConvertOp(
-        options.GetUseHtpPreference(), options.GetUseInt64BiasAsInt32(), op,
-        tensor_pool, input_tensors, output_tensors, op_wrappers));
+        options.GetUseHtpPreference(), options.GetUseInt64BiasAsInt32(),
+        options.GetCustomOpPackage(), op, tensor_pool, input_tensors,
+        output_tensors, op_wrappers));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
