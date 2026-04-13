@@ -176,7 +176,7 @@ class CheckedInt {
   CheckedInt& operator=(const CheckedInt&) = default;
   CheckedInt& operator=(CheckedInt&&) = default;
 
-  template <class U>
+  template <class U, class = std::enable_if_t<std::is_convertible_v<U, T>>>
   // NOLINTNEXTLINE(*-explicit-constructor)
   CheckedInt(U val) : value_(static_cast<T>(val)), overflow_(false) {
     if constexpr (std::is_same_v<T, U>) {
