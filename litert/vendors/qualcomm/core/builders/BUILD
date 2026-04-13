@@ -84,6 +84,7 @@ cc_library(
     hdrs = ["embedding_lookup_op_builder.h"],
     deps = [
         ":op_builder",
+        ":quantize_op_builder",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
