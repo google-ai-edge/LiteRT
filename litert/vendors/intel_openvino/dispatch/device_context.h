@@ -52,11 +52,7 @@ class LiteRtDispatchDeviceContextT {
   litert::Expected<void> UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
-#if defined(LITERT_WINDOWS_OS)
-  litert::Expected<ov::intel_npu::level_zero::ZeroBufferTensor> getOvTensor(
-#else
-  litert::Expected<ov::Tensor> getOvTensor(
-#endif
+  litert::Expected<ov::Tensor> getOVTensor(
       const LiteRtTensorBufferHandle& handle) const {
     auto it = tensor_handle_map_.find(handle);
     if (it != tensor_handle_map_.end()) {
@@ -108,21 +104,13 @@ class LiteRtDispatchDeviceContextT {
   };
 
   struct RegisteredTensor {
-#if defined(LITERT_WINDOWS_OS)
-    ov::intel_npu::level_zero::ZeroBufferTensor tensor;
-#else
     ov::Tensor tensor;
-#endif
     CleanupAction cleanup;
   };
 
-#if defined(LITERT_WINDOWS_OS)
-  explicit LiteRtDispatchDeviceContextT() : next_handle_(0) {}
-#else
   explicit LiteRtDispatchDeviceContextT()
       : core_(std::make_shared<ov::Core>()), next_handle_(0) {}
   std::shared_ptr<ov::Core> core_;
-#endif  // LITERT_WINDOWS_OS
   std::unordered_map<LiteRtTensorBufferHandle, RegisteredTensor>
       tensor_handle_map_;
   uint64_t next_handle_;
