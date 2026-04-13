@@ -1,0 +1,372 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "litert/core/model/shape_inference.h"
+
+#include <cstdint>
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_buffer_ref.h"
+#include "litert/core/model/model.h"
+#include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/converter/schema/schema_generated.h"
+
+namespace litert::internal {
+namespace {
+
+TEST(ShapeInferenceTest, AddStaticShapes) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& input0 = subgraph.EmplaceTensor();
+  input0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2, 3}));
+
+  auto& input1 = subgraph.EmplaceTensor();
+  input1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2, 3}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input0, op);
+  AttachInput(&input1, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferShapes(), kLiteRtStatusOk);
+
+  EXPECT_EQ(output.Type().first, kLiteRtRankedTensorType);
+  const auto& shape = output.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(shape.rank, 3);
+  EXPECT_EQ(shape.dimensions[0], 1);
+  EXPECT_EQ(shape.dimensions[1], 2);
+  EXPECT_EQ(shape.dimensions[2], 3);
+}
+
+TEST(ShapeInferenceTest, AddBroadcast) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& input0 = subgraph.EmplaceTensor();
+  input0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2, 3}));
+
+  auto& input1 = subgraph.EmplaceTensor();
+  input1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 1}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input0, op);
+  AttachInput(&input1, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferShapes(), kLiteRtStatusOk);
+
+  EXPECT_EQ(output.Type().first, kLiteRtRankedTensorType);
+  const auto& shape = output.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(shape.rank, 3);
+  EXPECT_EQ(shape.dimensions[0], 1);
+  EXPECT_EQ(shape.dimensions[1], 2);
+  EXPECT_EQ(shape.dimensions[2], 3);
+}
+
+TEST(ShapeInferenceTest, AddDynamic) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& input0 = subgraph.EmplaceTensor();
+  input0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+
+  auto& input1 = subgraph.EmplaceTensor();
+  input1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input0, op);
+  AttachInput(&input1, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferShapes(), kLiteRtStatusOk);
+
+  EXPECT_EQ(output.Type().first, kLiteRtRankedTensorType);
+  const auto& shape = output.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(shape.rank, 2);
+  EXPECT_EQ(shape.dimensions[0], -1);
+  EXPECT_EQ(shape.dimensions[1], 128);
+}
+
+TEST(ShapeInferenceTest, ReshapeWithOptions) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflReshape);
+
+  auto options = std::make_unique<tflite::ReshapeOptionsT>();
+  options->new_shape = {1, 4, 4, 3};
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 48}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferShapes(), kLiteRtStatusOk);
+
+  EXPECT_EQ(output.Type().first, kLiteRtRankedTensorType);
+  const auto& shape = output.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(shape.rank, 4);
+  EXPECT_EQ(shape.dimensions[0], 1);
+  EXPECT_EQ(shape.dimensions[1], 4);
+  EXPECT_EQ(shape.dimensions[2], 4);
+  EXPECT_EQ(shape.dimensions[3], 3);
+}
+
+TEST(ShapeInferenceTest, ReshapeWithShapeTensor) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflReshape);
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 48}));
+
+  auto& shape_tensor = subgraph.EmplaceTensor();
+  int32_t shape_data[] = {1, 4, 4, 3};
+  absl::string_view data_view(reinterpret_cast<const char*>(shape_data),
+                              sizeof(shape_data));
+  SetWeightsFromOwnedBuffer(shape_tensor.Weights(),
+                            OwningBufferRef<uint8_t>(data_view));
+  shape_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input, op);
+  AttachInput(&shape_tensor, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferShapes(), kLiteRtStatusOk);
+
+  EXPECT_EQ(output.Type().first, kLiteRtRankedTensorType);
+  const auto& shape = output.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(shape.rank, 4);
+  EXPECT_EQ(shape.dimensions[0], 1);
+  EXPECT_EQ(shape.dimensions[1], 4);
+  EXPECT_EQ(shape.dimensions[2], 4);
+  EXPECT_EQ(shape.dimensions[3], 3);
+}
+
+TEST(ShapeInferenceTest, ValidateShapes) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& input0 = subgraph.EmplaceTensor();
+  input0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2, 3}));
+
+  auto& input1 = subgraph.EmplaceTensor();
+  input1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2, 3}));
+
+  auto& output = subgraph.EmplaceTensor();
+  // Set incorrect shape.
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 2, 4}));
+
+  AttachInput(&input0, op);
+  AttachInput(&input1, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  LiteRtOp failing_op = nullptr;
+  ASSERT_EQ(engine.InferShapes(/*validation_only=*/true, &failing_op),
+            kLiteRtStatusErrorShapeInferenceFailed);
+  EXPECT_EQ(failing_op, &op);
+}
+
+TEST(ShapeInferenceTest, SpecializeSubgraph) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& input0 = subgraph.EmplaceTensor();
+  input0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 2, 3}));
+  subgraph.Inputs().push_back(&input0);
+
+  auto& input1 = subgraph.EmplaceTensor();
+  input1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 2, 3}));
+  subgraph.Inputs().push_back(&input1);
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 2, 3}));
+  subgraph.Outputs().push_back(&output);
+
+  AttachInput(&input0, op);
+  AttachInput(&input1, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  LiteRtSubgraphT* specialized_subgraph = nullptr;
+
+  std::vector<Dims> input_shapes = {{1, 2, 3}, {1, 2, 3}};
+
+  ASSERT_EQ(engine.SpecializeSubgraph(&subgraph, absl::MakeSpan(input_shapes),
+                                      &specialized_subgraph),
+            kLiteRtStatusOk);
+
+  ASSERT_NE(specialized_subgraph, nullptr);
+  EXPECT_EQ(specialized_subgraph->Inputs().size(), 2);
+
+  auto& spec_output = specialized_subgraph->Output(0);
+  EXPECT_EQ(spec_output.Type().first, kLiteRtRankedTensorType);
+  const auto& shape = spec_output.Type().second.ranked_tensor_type.layout;
+  EXPECT_EQ(shape.rank, 3);
+  EXPECT_EQ(shape.dimensions[0], 1);
+  EXPECT_EQ(shape.dimensions[1], 2);
+  EXPECT_EQ(shape.dimensions[2], 3);
+}
+
+TEST(ShapeInferenceTest, CheckSupportedOps) {
+  std::vector<LiteRtOpCode> supported_ops = {
+      kLiteRtOpCodeTflAbs,
+      kLiteRtOpCodeTflCeil,
+      kLiteRtOpCodeTflCos,
+      kLiteRtOpCodeTflDequantize,
+      kLiteRtOpCodeTflElu,
+      kLiteRtOpCodeTflExp,
+      kLiteRtOpCodeTflFloor,
+      kLiteRtOpCodeTflGelu,
+      kLiteRtOpCodeTflHardSwish,
+      kLiteRtOpCodeTflLeakyRelu,
+      kLiteRtOpCodeTflLog,
+      kLiteRtOpCodeTflLogicalNot,
+      kLiteRtOpCodeTflLogistic,
+      kLiteRtOpCodeTflNeg,
+      kLiteRtOpCodeTflQuantize,
+      kLiteRtOpCodeTflRelu,
+      kLiteRtOpCodeTflRelu0To1,
+      kLiteRtOpCodeTflRelu6,
+      kLiteRtOpCodeTflReluN1To1,
+      kLiteRtOpCodeTflRound,
+      kLiteRtOpCodeTflRsqrt,
+      kLiteRtOpCodeTflSign,
+      kLiteRtOpCodeTflSin,
+      kLiteRtOpCodeTflSoftmax,
+      kLiteRtOpCodeTflSqrt,
+      kLiteRtOpCodeTflSquare,
+      kLiteRtOpCodeTflTanh,
+      kLiteRtOpCodeTflEqual,
+      kLiteRtOpCodeTflFloorDiv,
+      kLiteRtOpCodeTflGreater,
+      kLiteRtOpCodeTflGreaterEqual,
+      kLiteRtOpCodeTflLess,
+      kLiteRtOpCodeTflLessEqual,
+      kLiteRtOpCodeTflLogicalAnd,
+      kLiteRtOpCodeTflLogicalOr,
+      kLiteRtOpCodeTflMaximum,
+      kLiteRtOpCodeTflMinimum,
+      kLiteRtOpCodeTflNotEqual,
+      kLiteRtOpCodeTflPow,
+      kLiteRtOpCodeTflPrelu,
+      kLiteRtOpCodeTflSquaredDifference,
+      kLiteRtOpCodeTflAdd,
+      kLiteRtOpCodeTflArgMax,
+      kLiteRtOpCodeTflArgMin,
+      kLiteRtOpCodeTflAveragePool2d,
+      kLiteRtOpCodeTflBatchMatmul,
+      kLiteRtOpCodeTflBroadcastTo,
+      kLiteRtOpCodeTflCast,
+      kLiteRtOpCodeTflConcatenation,
+      kLiteRtOpCodeTflConv2d,
+      kLiteRtOpCodeTflConv3d,
+      kLiteRtOpCodeTflConv3dTranspose,
+      kLiteRtOpCodeTflDepthToSpace,
+      kLiteRtOpCodeTflDepthwiseConv2d,
+      kLiteRtOpCodeTflDiv,
+      kLiteRtOpCodeTflDynamicUpdateSlice,
+      kLiteRtOpCodeTflEmbeddingLookup,
+      kLiteRtOpCodeTflFullyConnected,
+      kLiteRtOpCodeTflGather,
+      kLiteRtOpCodeTflGatherNd,
+      kLiteRtOpCodeTflL2Pool2d,
+      kLiteRtOpCodeTflMaxPool2d,
+      kLiteRtOpCodeTflMean,
+      kLiteRtOpCodeTflMirrorPad,
+      kLiteRtOpCodeTflMul,
+      kLiteRtOpCodeTflPack,
+      kLiteRtOpCodeTflPad,
+      kLiteRtOpCodeTflPadv2,
+      kLiteRtOpCodeTflReduceAll,
+      kLiteRtOpCodeTflReduceAny,
+      kLiteRtOpCodeTflReduceMax,
+      kLiteRtOpCodeTflReduceMin,
+      kLiteRtOpCodeTflSum,
+      kLiteRtOpCodeTflReshape,
+      kLiteRtOpCodeTflResizeBilinear,
+      kLiteRtOpCodeTflResizeNearestNeighbor,
+      kLiteRtOpCodeTflSelectV2,
+      kLiteRtOpCodeTflSpaceToDepth,
+      kLiteRtOpCodeTflTranspose,
+      kLiteRtOpCodeTflTransposeConv,
+      kLiteRtOpCodeTflUnpack,
+      kLiteRtOpCodeTflCumsum,
+      kLiteRtOpCodeTflL2Normalization,
+      kLiteRtOpCodeTflReverseV2,
+      kLiteRtOpCodeTflTopkV2,
+  };
+
+  ShapeInferenceEngine engine;
+  for (auto op_code : supported_ops) {
+    LiteRtOpT op;
+    op.SetOpCode(op_code);
+    std::vector<Dims> input_shapes;
+    std::vector<Dims> output_shapes;
+
+    // Passing empty inputs should trigger an invalid argument error if the op
+    // is registered. If it returns Ok, it means it's likely not registered.
+    auto status =
+        engine.InferOpShapes(op, absl::MakeSpan(input_shapes), output_shapes);
+    EXPECT_NE(status, kLiteRtStatusErrorUnsupportedOpShapeInferer)
+        << "Op code " << op_code << " is not supported.";
+  }
+}
+
+}  // namespace
+}  // namespace litert::internal
