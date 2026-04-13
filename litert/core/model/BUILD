@@ -304,6 +304,59 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "shape_inference",
+    srcs = ["shape_inference.cc"],
+    hdrs = ["shape_inference.h"],
+    deps = [
+        ":model",
+        ":ops_broadcast_to",
+        ":ops_concatenation",
+        ":ops_convolution",
+        ":ops_gather",
+        ":ops_matmul",
+        ":ops_pack",
+        ":ops_pad",
+        ":ops_pooling",
+        ":ops_reductions",
+        ":ops_reshape",
+        ":ops_select",
+        ":ops_simple_binary",
+        ":ops_simple_unary",
+        ":ops_slice",
+        ":ops_spatial",
+        ":ops_topk",
+        ":ops_transpose",
+        ":ops_unpack",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "shape_inference_test",
+    srcs = ["shape_inference_test.cc"],
+    deps = [
+        ":model",
+        ":shape_inference",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "model_graph_test",
     srcs = ["model_graph_test.cc"],
