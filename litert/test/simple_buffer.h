@@ -58,7 +58,7 @@ namespace testing {
 class SimpleBuffer {
  private:
   struct FreeDeleter {
-    void operator()(void* ptr) const { free(ptr); }
+    void operator()(void* ptr) const { litert_aligned_free(ptr); }
   };
   // TODO: Update litert::OwningBufferRef to use support aligned allocs.
   using LiteRtAlignedMem = std::unique_ptr<uint8_t, FreeDeleter>;
