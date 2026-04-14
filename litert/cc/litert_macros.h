@@ -472,4 +472,10 @@ class LogBeforeAbort {
     *e = init;                                  \
   }
 
+#if defined(_WIN32) || defined(_WIN64)
+#define LITERT_ATTRIBUTE_EXPORT __declspec(dllexport)
+#else
+#define LITERT_ATTRIBUTE_EXPORT __attribute__((visibility("default")))
+#endif
+
 #endif  // ODML_LITERT_LITERT_CC_LITERT_MACROS_H_

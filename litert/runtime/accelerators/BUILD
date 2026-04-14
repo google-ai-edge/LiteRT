@@ -38,6 +38,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -76,6 +77,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/base:core_headers",
     ] + select({
         "//litert/build_common:litert_disable_cpu": [],
         "//conditions:default": [
@@ -99,6 +102,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
         "//litert/core:environment",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )

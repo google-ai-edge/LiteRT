@@ -28,9 +28,21 @@
 
 extern "C" {
 
-// Define a function pointer for the WebNN accelerator.
-LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
-    LiteRtEnvironmentT& environment) = nullptr;
+// Weak declaration for WebNN accelerator.
+#if defined(__EMSCRIPTEN__)
+ABSL_ATTRIBUTE_WEAK LiteRtStatus LiteRtRegisterStaticLinkedAcceleratorWebNn(
+    LiteRtEnvironmentT& environment);
+#endif  // defined(__EMSCRIPTEN__)
+
+#if defined(__APPLE__)
+// macOS ld64 does not support undefined weak symbols for data pointers,
+// and while these are functions, providing a local weak definition ensures
+// the symbol is always defined while still allowing strong override.
+ABSL_ATTRIBUTE_WEAK LiteRtStatus LiteRtRegisterStaticLinkedAcceleratorWebNn(
+    LiteRtEnvironmentT& environment) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif
 
 }  // extern "C"
 
@@ -87,11 +99,13 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 
   // Register the WebNN accelerator if statically linked.
 #if defined(__EMSCRIPTEN__)
-  if ((auto_register_accelerators & kLiteRtHwAcceleratorWebNn) &&
-      LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
-      LiteRtRegisterStaticLinkedAcceleratorWebNn(environment) ==
-          kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "Statically linked WebNN accelerator registered.");
+  if (auto_register_accelerators & kLiteRtHwAcceleratorWebNn) {
+    void* volatile addr = (void*)&LiteRtRegisterStaticLinkedAcceleratorWebNn;
+    if (addr != nullptr &&
+        LiteRtRegisterStaticLinkedAcceleratorWebNn(environment) ==
+            kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "Statically linked WebNN accelerator registered.");
+    }
   }
 #endif  // defined(__EMSCRIPTEN__)
 

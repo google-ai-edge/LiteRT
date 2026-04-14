@@ -33,6 +33,7 @@ cc_library(
         "//litert/runtime:accelerator",
         "//litert/runtime:litert_cpu_options",
         "//litert/runtime/accelerators:accelerator_implementation_helper",
+        "//litert/runtime/accelerators:registration_helper",
         "//tflite/c:c_api_types",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
     ],

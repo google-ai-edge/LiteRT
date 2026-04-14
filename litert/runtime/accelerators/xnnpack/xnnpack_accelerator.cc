@@ -24,6 +24,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
+#include "litert/runtime/accelerators/registration_helper.h"
 #include "litert/runtime/litert_cpu_options.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
@@ -158,18 +159,12 @@ extern "C" const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
     .num_supported_buffer_types = 0,
 };
 
-// Accelerator definition pointer defined in
-// runtime/accelerators/cpu_registry.cc
-extern "C" const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
+extern "C" {
 
-namespace {
+LITERT_ATTRIBUTE_EXPORT LiteRtStatus LiteRtRegisterStaticLinkedAcceleratorCpu(
+    LiteRtEnvironment environment) {
+  return litert::internal::RegisterAcceleratorFromDef(
+      environment, &LiteRtCpuAcceleratorImpl);
+}
 
-struct StaticCpuAcceleratorInitializer {
-  StaticCpuAcceleratorInitializer() {
-    LiteRtStaticLinkedAcceleratorCpuDef = &LiteRtCpuAcceleratorImpl;
-  }
-};
-
-StaticCpuAcceleratorInitializer g_initializer;
-
-}  // namespace
+}  // extern "C"

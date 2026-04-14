@@ -367,6 +367,7 @@ LiteRtPopOpaqueOptions
 LiteRtPushOp
 LiteRtRegisterAccelerator
 LiteRtRegisterNpuAccelerator
+LiteRtRegisterStaticLinkedAcceleratorCpu
 LiteRtRegisterTensorBufferHandlers
 LiteRtResetProfiler
 LiteRtRunCompiledModel
