@@ -128,7 +128,8 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   if (auto qnn_manager = QnnManager::Create(
           /*options=*/qnn_options,
           /*shared_library_dir=*/shared_library_dir_opt,
-          /*soc_model*/ std::nullopt);
+          /*soc_model=*/std::nullopt,
+          /*role=*/litert::qnn::QnnManagerRole::kDispatch);
       !qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();

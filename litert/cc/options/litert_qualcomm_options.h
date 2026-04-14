@@ -214,18 +214,31 @@ class QualcommOptions {
   void SetSaverOutputDir(const std::string& saver_output_dir);
   absl::string_view GetSaverOutputDir();
 
-  void SetCustomOpPackageName(const std::string& name);
-  std::string_view GetCustomOpPackageName();
+  void SetCompileCustomOpPackageName(const std::string& name);
+  std::string_view GetCompileCustomOpPackageName();
 
-  void SetCustomOpPackagePath(const std::string& path);
-  std::string_view GetCustomOpPackagePath();
+  void SetCompileCustomOpPackagePath(const std::string& path);
+  std::string_view GetCompileCustomOpPackagePath();
 
-  void SetCustomOpPackageTarget(const std::string& target);
-  std::string_view GetCustomOpPackageTarget();
+  void SetCompileCustomOpPackageTarget(const std::string& target);
+  std::string_view GetCompileCustomOpPackageTarget();
 
-  void SetCustomOpPackageInterfaceProvider(
+  void SetCompileCustomOpPackageInterfaceProvider(
       const std::string& interface_provider);
-  std::string_view GetCustomOpPackageInterfaceProvider();
+  std::string_view GetCompileCustomOpPackageInterfaceProvider();
+
+  void SetDispatchCustomOpPackageName(const std::string& name);
+  std::string_view GetDispatchCustomOpPackageName();
+
+  void SetDispatchCustomOpPackagePath(const std::string& path);
+  std::string_view GetDispatchCustomOpPackagePath();
+
+  void SetDispatchCustomOpPackageTarget(const std::string& target);
+  std::string_view GetDispatchCustomOpPackageTarget();
+
+  void SetDispatchCustomOpPackageInterfaceProvider(
+      const std::string& interface_provider);
+  std::string_view GetDispatchCustomOpPackageInterfaceProvider();
 
  private:
   LrtQualcommOptions options_;

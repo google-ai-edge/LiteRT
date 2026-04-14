@@ -149,10 +149,15 @@ class Options {
   absl::string_view GetSaverOutputDir() const;
   void SetSaverOutputDir(absl::string_view saver_output_dir);
 
-  void SetCustomOpPackage(std::string_view name, std::string_view path,
+  void SetCompileCustomOpPackage(std::string_view name, std::string_view path,
                           std::string_view target,
                           std::string_view interface_provider);
-  const CustomOpPackage& GetCustomOpPackage() const;
+  const CustomOpPackage& GetCompileCustomOpPackage() const;
+
+  void SetDispatchCustomOpPackage(std::string_view name, std::string_view path,
+                                  std::string_view target,
+                                  std::string_view interface_provider);
+  const CustomOpPackage& GetDispatchCustomOpPackage() const;
 
  private:
   LogLevel log_level_ = LogLevel::kInfo;
@@ -176,8 +181,10 @@ class Options {
   GraphPriority graph_priority_ = GraphPriority::kDefault;
   std::string saver_output_dir_;
   
-  // Currently we only support one custom op package.
-  CustomOpPackage custom_op_package_;
+  // Custom op package for compilation (x86 or aarch64 .so).
+  CustomOpPackage compile_custom_op_package_;
+  // Custom op package for dispatch/runtime (vXX HTP .so).
+  CustomOpPackage dispatch_custom_op_package_;
 };
 
 // Gets a default logger implementation to stdout.

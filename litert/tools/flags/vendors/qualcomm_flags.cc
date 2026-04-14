@@ -478,20 +478,41 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options) {
 
 }  // namespace litert::qualcomm
 
-ABSL_FLAG(std::string, qualcomm_custom_op_package_name, "",
-          "Custom op package name, e.g. LiteRtQualcommOpPackage");
+ABSL_FLAG(std::string, qualcomm_compile_custom_op_package_name, "",
+          "Custom op package name for compilation, e.g., "
+          "ExampleOpPackage.");
 
 ABSL_FLAG(
-    std::string, qualcomm_custom_op_package_path, "",
-    "Path to the custom op package, e.g. libQnnLiteRtQualcommOpPackage.so");
+    std::string, qualcomm_compile_custom_op_package_path, "",
+    "Path to the custom op package .so for compilation (x86 or aarch64), "
+    "e.g., libQnnExampleOpPackage.so.");
 
-ABSL_FLAG(std::string, qualcomm_custom_op_package_target, "",
-          "The target platform on which the backend register the op package.");
+ABSL_FLAG(std::string, qualcomm_compile_custom_op_package_target, "",
+          "Target platform for the compile custom op package, "
+          "e.g., CPU.");
 
 ABSL_FLAG(
-    std::string, qualcomm_custom_op_package_interface_provider, "",
-    "Symbol name of the interface provider in the custom op package, e.g. "
-    "LiteRtQualcommOpPackageInterfaceProvider");
+    std::string, qualcomm_compile_custom_op_package_interface_provider, "",
+    "Symbol name of the interface provider in the compile custom op package, "
+    "e.g., ExampleOpPackageInterfaceProvider.");
+
+ABSL_FLAG(std::string, qualcomm_dispatch_custom_op_package_name, "",
+          "Custom op package name for dispatch/runtime, e.g., "
+          "ExampleOpPackage.");
+
+ABSL_FLAG(
+    std::string, qualcomm_dispatch_custom_op_package_path, "",
+    "Path to the custom op package .so for dispatch (vXX HTP), "
+    "e.g., libQnnExampleOpPackage.so.");
+
+ABSL_FLAG(std::string, qualcomm_dispatch_custom_op_package_target, "",
+          "Target platform for the dispatch custom op package, "
+          "e.g., HTP.");
+
+ABSL_FLAG(
+    std::string, qualcomm_dispatch_custom_op_package_interface_provider, "",
+    "Symbol name of the interface provider in the dispatch custom op package, "
+    "e.g., ExampleOpPackageInterfaceProvider.");
 
 // NOLINTEND(*alien-types*)
 
@@ -563,22 +584,39 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
       absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
   opts.SetSaverOutputDir(saver_output_dir);
 
-  const auto custom_op_package_name =
-      absl::GetFlag(FLAGS_qualcomm_custom_op_package_name);
-  opts.SetCustomOpPackageName(custom_op_package_name);
+  const auto compile_custom_op_package_name =
+      absl::GetFlag(FLAGS_qualcomm_compile_custom_op_package_name);
+  opts.SetCompileCustomOpPackageName(compile_custom_op_package_name);
 
-  const auto custom_op_package_path =
-      absl::GetFlag(FLAGS_qualcomm_custom_op_package_path);
-  opts.SetCustomOpPackagePath(custom_op_package_path);
+  const auto compile_custom_op_package_path =
+      absl::GetFlag(FLAGS_qualcomm_compile_custom_op_package_path);
+  opts.SetCompileCustomOpPackagePath(compile_custom_op_package_path);
 
-  const auto custom_op_package_target =
-      absl::GetFlag(FLAGS_qualcomm_custom_op_package_target);
-  opts.SetCustomOpPackageTarget(custom_op_package_target);
+  const auto compile_custom_op_package_target =
+      absl::GetFlag(FLAGS_qualcomm_compile_custom_op_package_target);
+  opts.SetCompileCustomOpPackageTarget(compile_custom_op_package_target);
 
-  const auto custom_op_package_interface_provider =
-      absl::GetFlag(FLAGS_qualcomm_custom_op_package_interface_provider);
-  opts.SetCustomOpPackageInterfaceProvider(
-      custom_op_package_interface_provider);
+  const auto compile_custom_op_package_interface_provider =
+      absl::GetFlag(FLAGS_qualcomm_compile_custom_op_package_interface_provider);
+  opts.SetCompileCustomOpPackageInterfaceProvider(
+      compile_custom_op_package_interface_provider);
+
+  const auto dispatch_custom_op_package_name =
+      absl::GetFlag(FLAGS_qualcomm_dispatch_custom_op_package_name);
+  opts.SetDispatchCustomOpPackageName(dispatch_custom_op_package_name);
+
+  const auto dispatch_custom_op_package_path =
+      absl::GetFlag(FLAGS_qualcomm_dispatch_custom_op_package_path);
+  opts.SetDispatchCustomOpPackagePath(dispatch_custom_op_package_path);
+
+  const auto dispatch_custom_op_package_target =
+      absl::GetFlag(FLAGS_qualcomm_dispatch_custom_op_package_target);
+  opts.SetDispatchCustomOpPackageTarget(dispatch_custom_op_package_target);
+
+  const auto dispatch_custom_op_package_interface_provider =
+      absl::GetFlag(FLAGS_qualcomm_dispatch_custom_op_package_interface_provider);
+  opts.SetDispatchCustomOpPackageInterfaceProvider(
+      dispatch_custom_op_package_interface_provider);
 
   return {};
 }

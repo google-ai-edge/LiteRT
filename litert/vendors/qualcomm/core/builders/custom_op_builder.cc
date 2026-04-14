@@ -9,7 +9,7 @@
 
 namespace qnn {
 
-static constexpr char kCustomOptionsParamName[] = "CustomOptions";
+static constexpr char kCustomOptionsParamName[] = "CustomInitialData";
 
 std::vector<OpWrapper> BuildCustomOp(
     TensorPool& tensor_pool, const char* package_name, const char* op_type,

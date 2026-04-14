@@ -416,5 +416,81 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetSaverOutputDir(), "tmp");
 }
 
+TEST(QualcommOptionsTest, CppWrapperDispatchCustomOpPackage) {
+  auto options = QualcommOptions::Create();
+  ASSERT_TRUE(options);
+
+  EXPECT_EQ(options->GetDispatchCustomOpPackageName(), "");
+  options->SetDispatchCustomOpPackageName("MyDispatchPkg");
+  EXPECT_EQ(options->GetDispatchCustomOpPackageName(), "MyDispatchPkg");
+
+  EXPECT_EQ(options->GetDispatchCustomOpPackagePath(), "");
+  options->SetDispatchCustomOpPackagePath("/path/to/htp_v75.so");
+  EXPECT_EQ(options->GetDispatchCustomOpPackagePath(), "/path/to/htp_v75.so");
+
+  EXPECT_EQ(options->GetDispatchCustomOpPackageTarget(), "");
+  options->SetDispatchCustomOpPackageTarget("hexagon-v75");
+  EXPECT_EQ(options->GetDispatchCustomOpPackageTarget(), "hexagon-v75");
+
+  EXPECT_EQ(options->GetDispatchCustomOpPackageInterfaceProvider(), "");
+  options->SetDispatchCustomOpPackageInterfaceProvider("MyDispatchProvider");
+  EXPECT_EQ(options->GetDispatchCustomOpPackageInterfaceProvider(),
+            "MyDispatchProvider");
+}
+
+TEST(LiteRtQualcommOptionsTest, DispatchCustomOpPackageName) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDispatchCustomOpPackageName(
+      qualcomm_options, "MyDispatchPkg"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDispatchCustomOpPackageName(), "MyDispatchPkg");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DispatchCustomOpPackagePath) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDispatchCustomOpPackagePath(
+      qualcomm_options, "/path/to/htp_v75.so"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDispatchCustomOpPackagePath(), "/path/to/htp_v75.so");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DispatchCustomOpPackageTarget) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDispatchCustomOpPackageTarget(
+      qualcomm_options, "hexagon-v75"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDispatchCustomOpPackageTarget(), "hexagon-v75");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DispatchCustomOpPackageInterfaceProvider) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetDispatchCustomOpPackageInterfaceProvider(
+          qualcomm_options, "MyDispatchProvider"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDispatchCustomOpPackageInterfaceProvider(),
+            "MyDispatchProvider");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 }  // namespace
 }  // namespace litert::qualcomm

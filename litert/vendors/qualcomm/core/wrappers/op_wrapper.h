@@ -80,7 +80,7 @@ class OpWrapper final {
   void AddSuffixToName(absl::string_view suffix);
 
  private:
-  const char* package_name_{nullptr};
+  const char* package_name_{QNN_OP_PACKAGE_NAME_QTI_AISW};
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name
   std::vector<std::reference_wrapper<const TensorWrapper>> input_tensors_{};

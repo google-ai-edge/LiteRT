@@ -53,10 +53,14 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
   std::optional<LrtQualcommOptionsGraphPriority> graph_priority;
   std::optional<std::string> saver_output_dir;
-  std::optional<std::string> custom_op_package_name = "";
-  std::optional<std::string> custom_op_package_path = "";
-  std::optional<std::string> custom_op_package_target = "";
-  std::optional<std::string> custom_op_package_interface_provider = "";
+  std::optional<std::string> compile_custom_op_package_name = "";
+  std::optional<std::string> compile_custom_op_package_path = "";
+  std::optional<std::string> compile_custom_op_package_target = "";
+  std::optional<std::string> compile_custom_op_package_interface_provider = "";
+  std::optional<std::string> dispatch_custom_op_package_name = "";
+  std::optional<std::string> dispatch_custom_op_package_path = "";
+  std::optional<std::string> dispatch_custom_op_package_target = "";
+  std::optional<std::string> dispatch_custom_op_package_interface_provider = "";
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -165,17 +169,29 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "saver_output_dir") {
           LrtQualcommOptionsSetSaverOutputDir(parsed_options,
                                               std::string(value).c_str());
-        } else if (key == "custom_op_package_name") {
-          LrtQualcommOptionsSetCustomOpPackageName(parsed_options,
+        } else if (key == "compile_custom_op_package_name") {
+          LrtQualcommOptionsSetCompileCustomOpPackageName(parsed_options,
                                                    std::string(value).c_str());
-        } else if (key == "custom_op_package_path") {
-          LrtQualcommOptionsSetCustomOpPackagePath(parsed_options,
+        } else if (key == "compile_custom_op_package_path") {
+          LrtQualcommOptionsSetCompileCustomOpPackagePath(parsed_options,
                                                    std::string(value).c_str());
-        } else if (key == "custom_op_package_target") {
-          LrtQualcommOptionsSetCustomOpPackageTarget(
+        } else if (key == "compile_custom_op_package_target") {
+          LrtQualcommOptionsSetCompileCustomOpPackageTarget(
               parsed_options, std::string(value).c_str());
-        } else if (key == "custom_op_package_interface_provider") {
-          LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+        } else if (key == "compile_custom_op_package_interface_provider") {
+          LrtQualcommOptionsSetCompileCustomOpPackageInterfaceProvider(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "dispatch_custom_op_package_name") {
+          LrtQualcommOptionsSetDispatchCustomOpPackageName(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "dispatch_custom_op_package_path") {
+          LrtQualcommOptionsSetDispatchCustomOpPackagePath(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "dispatch_custom_op_package_target") {
+          LrtQualcommOptionsSetDispatchCustomOpPackageTarget(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "dispatch_custom_op_package_interface_provider") {
+          LrtQualcommOptionsSetDispatchCustomOpPackageInterfaceProvider(
               parsed_options, std::string(value).c_str());
         }
 
@@ -283,21 +299,37 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->saver_output_dir.has_value()) {
     toml << "saver_output_dir = \"" << *options->saver_output_dir << "\"\n";
   }
-  if (options->custom_op_package_name.has_value()) {
-    toml << "custom_op_package_name = \"" << *options->custom_op_package_name
+  if (options->compile_custom_op_package_name.has_value()) {
+    toml << "compile_custom_op_package_name = \"" << *options->compile_custom_op_package_name
          << "\"\n";
   }
-  if (options->custom_op_package_path.has_value()) {
-    toml << "custom_op_package_path = \"" << *options->custom_op_package_path
+  if (options->compile_custom_op_package_path.has_value()) {
+    toml << "compile_custom_op_package_path = \"" << *options->compile_custom_op_package_path
          << "\"\n";
   }
-  if (options->custom_op_package_target.has_value()) {
-    toml << "custom_op_package_target = \""
-         << *options->custom_op_package_target << "\"\n";
+  if (options->compile_custom_op_package_target.has_value()) {
+    toml << "compile_custom_op_package_target = \""
+         << *options->compile_custom_op_package_target << "\"\n";
   }
-  if (options->custom_op_package_interface_provider.has_value()) {
-    toml << "custom_op_package_interface_provider = \""
-         << *options->custom_op_package_interface_provider << "\"\n";
+  if (options->compile_custom_op_package_interface_provider.has_value()) {
+    toml << "compile_custom_op_package_interface_provider = \""
+         << *options->compile_custom_op_package_interface_provider << "\"\n";
+  }
+  if (options->dispatch_custom_op_package_name.has_value()) {
+    toml << "dispatch_custom_op_package_name = \""
+         << *options->dispatch_custom_op_package_name << "\"\n";
+  }
+  if (options->dispatch_custom_op_package_path.has_value()) {
+    toml << "dispatch_custom_op_package_path = \""
+         << *options->dispatch_custom_op_package_path << "\"\n";
+  }
+  if (options->dispatch_custom_op_package_target.has_value()) {
+    toml << "dispatch_custom_op_package_target = \""
+         << *options->dispatch_custom_op_package_target << "\"\n";
+  }
+  if (options->dispatch_custom_op_package_interface_provider.has_value()) {
+    toml << "dispatch_custom_op_package_interface_provider = \""
+         << *options->dispatch_custom_op_package_interface_provider << "\"\n";
   }
 
   *identifier = LrtQualcommOptionsGetIdentifier();
@@ -384,101 +416,223 @@ LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackageName(
-    LrtQualcommOptions options, const char* custom_op_package_name) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->custom_op_package_name = custom_op_package_name;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackageName(
-    LrtQualcommOptions options, const char** custom_op_package_name) {
-  if (options == nullptr || custom_op_package_name == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *custom_op_package_name = options->custom_op_package_name.has_value()
-                                ? options->custom_op_package_name->c_str()
-                                : "";
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackagePath(
-    LrtQualcommOptions options, const char* custom_op_package_path) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->custom_op_package_path = custom_op_package_path;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackagePath(
-    LrtQualcommOptions options, const char** custom_op_package_path) {
-  if (options == nullptr || custom_op_package_path == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *custom_op_package_path = options->custom_op_package_path.has_value()
-                                ? options->custom_op_package_path->c_str()
-                                : "";
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackageTarget(
-    LrtQualcommOptions options, const char* custom_op_package_target) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->custom_op_package_target = custom_op_package_target;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackageTarget(
-    LrtQualcommOptions options, const char** custom_op_package_target) {
-  if (options == nullptr || custom_op_package_target == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *custom_op_package_target = options->custom_op_package_target.has_value()
-                                  ? options->custom_op_package_target->c_str()
-                                  : "";
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackageName(
     LrtQualcommOptions options,
-    const char* custom_op_package_interface_provider) {
+    const char* compile_custom_op_package_name) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  options->custom_op_package_interface_provider =
-      custom_op_package_interface_provider;
+  options->compile_custom_op_package_name = compile_custom_op_package_name;
 
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtQualcommOptionsGetCustomOpPackageInterfaceProvider(
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackageName(
     LrtQualcommOptions options,
-    const char** custom_op_package_interface_provider) {
-  if (options == nullptr || custom_op_package_interface_provider == nullptr) {
+    const char** compile_custom_op_package_name) {
+  if (options == nullptr || compile_custom_op_package_name == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  *custom_op_package_interface_provider =
-      options->custom_op_package_interface_provider.has_value()
-          ? options->custom_op_package_interface_provider->c_str()
+  *compile_custom_op_package_name =
+      options->compile_custom_op_package_name.has_value()
+          ? options->compile_custom_op_package_name->c_str()
+          : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackagePath(
+    LrtQualcommOptions options,
+    const char* compile_custom_op_package_path) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->compile_custom_op_package_path = compile_custom_op_package_path;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackagePath(
+    LrtQualcommOptions options,
+    const char** compile_custom_op_package_path) {
+  if (options == nullptr || compile_custom_op_package_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *compile_custom_op_package_path =
+      options->compile_custom_op_package_path.has_value()
+          ? options->compile_custom_op_package_path->c_str()
+          : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackageTarget(
+    LrtQualcommOptions options,
+    const char* compile_custom_op_package_target) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->compile_custom_op_package_target = compile_custom_op_package_target;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackageTarget(
+    LrtQualcommOptions options,
+    const char** compile_custom_op_package_target) {
+  if (options == nullptr || compile_custom_op_package_target == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *compile_custom_op_package_target =
+      options->compile_custom_op_package_target.has_value()
+          ? options->compile_custom_op_package_target->c_str()
+          : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char* compile_custom_op_package_interface_provider) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->compile_custom_op_package_interface_provider =
+      compile_custom_op_package_interface_provider;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char** compile_custom_op_package_interface_provider) {
+  if (options == nullptr ||
+      compile_custom_op_package_interface_provider == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *compile_custom_op_package_interface_provider =
+      options->compile_custom_op_package_interface_provider.has_value()
+          ? options->compile_custom_op_package_interface_provider->c_str()
+          : "";
+
+  return kLiteRtStatusOk;
+}
+
+// DISPATCH CUSTOM OP PACKAGE //////////////////////////////////////////////////
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackageName(
+    LrtQualcommOptions options,
+    const char* dispatch_custom_op_package_name) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dispatch_custom_op_package_name = dispatch_custom_op_package_name;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackageName(
+    LrtQualcommOptions options,
+    const char** dispatch_custom_op_package_name) {
+  if (options == nullptr || dispatch_custom_op_package_name == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dispatch_custom_op_package_name =
+      options->dispatch_custom_op_package_name.has_value()
+          ? options->dispatch_custom_op_package_name->c_str()
+          : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackagePath(
+    LrtQualcommOptions options,
+    const char* dispatch_custom_op_package_path) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dispatch_custom_op_package_path = dispatch_custom_op_package_path;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackagePath(
+    LrtQualcommOptions options,
+    const char** dispatch_custom_op_package_path) {
+  if (options == nullptr || dispatch_custom_op_package_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dispatch_custom_op_package_path =
+      options->dispatch_custom_op_package_path.has_value()
+          ? options->dispatch_custom_op_package_path->c_str()
+          : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackageTarget(
+    LrtQualcommOptions options,
+    const char* dispatch_custom_op_package_target) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dispatch_custom_op_package_target = dispatch_custom_op_package_target;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackageTarget(
+    LrtQualcommOptions options,
+    const char** dispatch_custom_op_package_target) {
+  if (options == nullptr || dispatch_custom_op_package_target == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dispatch_custom_op_package_target =
+      options->dispatch_custom_op_package_target.has_value()
+          ? options->dispatch_custom_op_package_target->c_str()
+          : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char* dispatch_custom_op_package_interface_provider) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dispatch_custom_op_package_interface_provider =
+      dispatch_custom_op_package_interface_provider;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char** dispatch_custom_op_package_interface_provider) {
+  if (options == nullptr ||
+      dispatch_custom_op_package_interface_provider == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dispatch_custom_op_package_interface_provider =
+      options->dispatch_custom_op_package_interface_provider.has_value()
+          ? options->dispatch_custom_op_package_interface_provider->c_str()
           : "";
 
   return kLiteRtStatusOk;
