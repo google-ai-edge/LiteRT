@@ -326,8 +326,7 @@ TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
 TEST(LiteRtErrorStatusBuilderTest, BacktraceWorks) {
   const int error_1_line = __LINE__ + 2;
   auto error_1 = []() -> Expected<void> {
-    LITERT_RETURN_IF_ERROR(
-        Unexpected(Status::kErrorUnknown, "An error message."));
+    LITERT_RETURN_IF_ERROR(Unexpected(Status::kErrorUnknown, "An error message."));
     return {};
   };
 

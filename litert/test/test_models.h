@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_TEST_TEST_MODELS_H_
 #define ODML_LITERT_LITERT_TEST_TEST_MODELS_H_
 
+#include <array>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 
@@ -118,7 +120,7 @@ static constexpr absl::string_view kQSDPAModel =
     "static_a8w8_quantized_sdpa.tflite";
 
 // All the quantized test models.
-static constexpr absl::string_view kAllQModelsArray[] = {
+static constexpr std::array<absl::string_view, 8> kAllQModelsArray = {
     kQSimpleMul16x16Model, kQMulAdd16x16Model, kQSingleDynAdd16x8Model,
     kQSingleDynAdd8x8Model, kQSingleDynMul16x8Model, kQSingleDynMul8x8Model,
     kQSingleDynRsqrt16x8Model, kQSingleDynRsqrt8x8Model,
