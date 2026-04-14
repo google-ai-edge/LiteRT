@@ -22,27 +22,15 @@
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/cpu_registry.h"
 #include "litert/runtime/accelerators/gpu_registry.h"
-#if !defined(LITERT_DISABLE_NPU)
-#include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
-#endif  // !defined(LITERT_DISABLE_NPU)
-
-extern "C" {
-
-// Define a function pointer for the WebNN accelerator.
-LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
-    LiteRtEnvironmentT& environment) = nullptr;
-
-}  // extern "C"
+#include "litert/runtime/accelerators/npu_registry.h"
+#include "litert/runtime/accelerators/webnn_registry.h"
 
 namespace litert {
 namespace {
 
 constexpr LiteRtHwAcceleratorSet kDefaultAutoRegisterAccelerators =
-    kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorNpu
-#if defined(__EMSCRIPTEN__)
-    | kLiteRtHwAcceleratorWebNn
-#endif  // defined(__EMSCRIPTEN__)
-    ;
+    kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
+    kLiteRtHwAcceleratorNpu | litert::internal::kLiteRtHwAcceleratorWebNnAlias;
 
 LiteRtHwAcceleratorSet GetAutoRegisterAccelerators(
     const LiteRtEnvironmentT& environment) {
@@ -66,34 +54,22 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
   const LiteRtHwAcceleratorSet auto_register_accelerators =
       GetAutoRegisterAccelerators(environment);
-  // Register the NPU accelerator.
-#if !defined(LITERT_DISABLE_NPU)
+
   if (auto_register_accelerators & kLiteRtHwAcceleratorNpu) {
-    if (auto npu_registration = LiteRtRegisterNpuAccelerator(&environment);
-        npu_registration == kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
-    } else {
-      LITERT_LOG(LITERT_WARNING,
-                 "NPU accelerator could not be loaded and registered: %s.",
-                 LiteRtGetStatusString(npu_registration));
-    }
+    litert::internal::LiteRtRegisterNpuAccelerator(&environment);
   } else {
     LITERT_LOG(LITERT_VERBOSE,
                "NPU accelerator registration skipped by environment options.");
   }
-#else
-  LITERT_LOG(LITERT_VERBOSE, "NPU accelerator accelerator is disabled.");
-#endif
 
-  // Register the WebNN accelerator if statically linked.
-#if defined(__EMSCRIPTEN__)
-  if ((auto_register_accelerators & kLiteRtHwAcceleratorWebNn) &&
-      LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
-      LiteRtRegisterStaticLinkedAcceleratorWebNn(environment) ==
-          kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "Statically linked WebNN accelerator registered.");
+  if (auto_register_accelerators &
+      litert::internal::kLiteRtHwAcceleratorWebNnAlias) {
+    litert::internal::LiteRtRegisterWebNnAccelerator(&environment);
+  } else {
+    LITERT_LOG(
+        LITERT_VERBOSE,
+        "WebNN accelerator registration skipped by environment options.");
   }
-#endif  // defined(__EMSCRIPTEN__)
 
   if (auto_register_accelerators & kLiteRtHwAcceleratorGpu) {
     litert::internal::LiteRtRegisterGpuAccelerator(&environment);
