@@ -26,7 +26,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/op_shape_inference_utils.h"
 #include "litert/core/model/shape_inference_types.h"
-#include "tflite/converter/schema/schema_generated.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
 

@@ -37,12 +37,53 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/reshape.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/simple_buffer.h"
 
 namespace litert {
 namespace testing {
+
+class DummyShapeInferenceContext
+    : public ::litert::internal::ShapeInferenceContext {
+ public:
+  explicit DummyShapeInferenceContext(const LiteRtOpT& op) : op_(op) {}
+
+  ::litert::internal::Dims GetInputShape(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Type().first == kLiteRtRankedTensorType) {
+      const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+      return ::litert::internal::Dims(layout.dimensions,
+                                      layout.dimensions + layout.rank);
+    }
+    return {};
+  }
+
+  absl::Span<const uint8_t> GetInputData(size_t index) const override {
+    if (index >= op_.Inputs().size() || op_.Inputs()[index] == nullptr) {
+      return {};
+    }
+    const auto& tensor = *op_.Inputs()[index];
+    if (tensor.Weights().Buffer().Size() > 0) {
+      auto weights = tensor.Weights().Buffer();
+      return absl::MakeConstSpan(weights.Data(), weights.Size());
+    }
+    return {};
+  }
+
+  const ::litert::internal::TflOptions& GetOptions() const override {
+    return ::litert::internal::GetTflOptions(op_);
+  }
+
+  LiteRtOpCode GetOpCode() const override { return op_.OpCode(); }
+
+ private:
+  const LiteRtOpT& op_;
+};
 
 template <typename InputRank, typename OutputRank, typename T,
           typename MaxTensorSize = SizeC<1024> >
@@ -183,14 +224,13 @@ class Reshape : public TestGraph {
     dummy_op.Inputs().push_back(&data_tensor);
     dummy_op.Inputs().push_back(&shape_tensor);
 
-    std::vector<internal::Dims> input_shapes = {input_dims, shape_dims};
-    std::vector<internal::Dims> output_shapes(1);
+    DummyShapeInferenceContext ctx(dummy_op);
+    ::litert::internal::InferenceResult result;
 
-    LITERT_RETURN_IF_ERROR(internal::InferReshape(
-        dummy_op, absl::MakeSpan(input_shapes), output_shapes));
+    LITERT_RETURN_IF_ERROR(::litert::internal::InferReshape(ctx, result));
 
-    std::vector<int32_t> resolved_output_dims(output_shapes[0].begin(),
-                                              output_shapes[0].end());
+    std::vector<int32_t> resolved_output_dims(result.output_shapes[0].begin(),
+                                              result.output_shapes[0].end());
 
     std::vector<TensorDetails> op_outputs(1);
     op_outputs[0] =
