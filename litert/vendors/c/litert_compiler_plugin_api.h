@@ -35,9 +35,11 @@ typedef LiteRtStatus (*LiteRtGetCompilerPluginVersionT)(LiteRtApiVersion*);
 
 typedef const char* (*LiteRtGetCompilerPluginSocManufacturerT)();
 
-typedef LiteRtStatus (*LiteRtCreateCompilerPluginT)(LiteRtCompilerPlugin*,
-                                                    LiteRtEnvironmentOptions,
-                                                    LiteRtOptions);
+typedef struct LiteRtCompilerContext LiteRtCompilerContext;
+
+typedef LiteRtStatus (*LiteRtCreateCompilerPluginT)(
+    const LiteRtCompilerContext*, LiteRtCompilerPlugin*,
+    LiteRtEnvironmentOptions, LiteRtOptions);
 
 typedef void (*LiteRtDestroyCompilerPluginT)(LiteRtCompilerPlugin);
 

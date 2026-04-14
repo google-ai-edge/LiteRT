@@ -18,6 +18,7 @@ set(LITERT_C_INTERNAL_HEADERS
     internal/litert_accelerator.h
     internal/litert_accelerator_def.h
     internal/litert_accelerator_registration.h
+    internal/litert_compiler_context.h
     internal/litert_delegate_wrapper.h
     internal/litert_dispatch_delegate.h
     internal/litert_external_litert_buffer_context.h
@@ -35,6 +36,7 @@ set(LITERT_C_INTERNAL_HEADERS
 set(LITERT_C_INTERNAL_SOURCES
     internal/litert_accelerator.cc
     internal/litert_accelerator_registration.cc
+    internal/litert_compiler_context.cc
     internal/litert_delegate_wrapper.cc
     internal/litert_external_litert_buffer_context.cc
     internal/litert_runtime_context.cc

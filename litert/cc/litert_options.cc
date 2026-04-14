@@ -28,6 +28,7 @@
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/c/options/litert_runtime_options.h"
+#include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"

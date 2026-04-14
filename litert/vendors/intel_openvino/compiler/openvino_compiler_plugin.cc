@@ -300,9 +300,10 @@ struct LiteRtCompilerPluginT {
       kLiteRtStatusErrorInvalidArgument, "Null Intel OpenVINO options");
 };
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
   LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
   LiteRtPropagateMinLoggerSeverity(env);
   auto* plugin = new LiteRtCompilerPluginT(env, options);

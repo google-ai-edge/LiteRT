@@ -468,9 +468,10 @@ class LiteRtCompilerPluginT {
                                    LITERT_API_VERSION_PATCH};
 };
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
   LiteRtPropagateMinLoggerSeverity(env);
 
   *compiler_plugin = new LiteRtCompilerPluginT(env, options);

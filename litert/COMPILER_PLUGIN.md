@@ -90,9 +90,10 @@ The core functionality revolves around two key compilation steps:
 LITERT_CAPI_EXPORT const char* LiteRtGetCompilerPluginSocManufacturer();
 
 // Create and initialize the plugin instance.
-LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                           LiteRtEnvironmentOptions env, LiteRtOptions options);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options);
 
 // Select desired ops for compilation.
 // This is the PARTITION step.

@@ -260,7 +260,8 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   qnn_opts->SetLogLevel(qualcomm::QualcommOptions::LogLevel::kError);
   qnn_opts->SetEnableWeightSharing(false);
 
-  auto plugin = CreatePlugin(/*env=*/nullptr, opts->Get());
+  auto plugin =
+      CreatePlugin(/*runtime_context=*/nullptr, /*env=*/nullptr, opts->Get());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;
