@@ -566,7 +566,15 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   auto& [opt_soc_model, api] = soc_and_api.Value();
 
+  // Record Neuron SDK version in bytecode schema for runtime compatibility
+  // check.
+  const auto& neuron_version = api->RuntimeVersion();
+  LITERT_LOG(LITERT_INFO, "Recording Neuron SDK version in bytecode: %u.%u.%u",
+             neuron_version.major, neuron_version.minor, neuron_version.patch);
+
   auto result = std::make_unique<LiteRtCompiledResultT>();
+  result->bytebuilder.SetNeuronVersion(
+      neuron_version.major, neuron_version.minor, neuron_version.patch);
 
   for (auto i = 0; i < num_partitions; ++i) {
     auto graph_name = absl::StrFormat("Partition_%d", i);
@@ -605,5 +613,31 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  // Check LiteRt API version for backward compatibility.
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  if (LiteRtCompareApiVersion(api_version, kApiVersion) > 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "LiteRT API version too new for compiler plugin. Caller version "
+               "%d.%d.%d "
+               "requires plugin version <= %d.%d.%d.",
+               api_version.major, api_version.minor, api_version.patch,
+               kApiVersion.major, kApiVersion.minor, kApiVersion.patch);
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
+
+  // Check if the SoC model is supported.
+  if (soc_model_name != nullptr) {
+    auto soc_model = FindSocModel(soc_model_name);
+    if (!soc_model.has_value()) {
+      LITERT_LOG(LITERT_ERROR, "Unsupported SoC model: %s", soc_model_name);
+      return kLiteRtStatusErrorUnsupportedCompilerVersion;
+    }
+    LITERT_LOG(LITERT_INFO, "SoC model %s is supported", soc_model_name);
+  } else {
+    LITERT_LOG(LITERT_INFO, "SoC model name is not specified");
+  }
+
   return kLiteRtStatusOk;
 }
