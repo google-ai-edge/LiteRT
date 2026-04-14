@@ -188,6 +188,15 @@ void CloneNamespace(const OpWrapper& source, std::vector<OpWrapper>& ops) {
   }
 }
 
+void CloneNamespace(const OpWrapper& source, OpWrapper& op) {
+  absl::string_view start_op_name = source.GetName();
+  size_t pos = start_op_name.rfind('/');
+  if (pos == absl::string_view::npos) {
+    return;
+  }
+  op.AddPrefixToName(absl::StrCat(start_op_name.substr(0, pos), "/"));
+}
+
 std::vector<OpWrapper> TransformToSHA(
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     const qnn::TensorWrapper& mha_input, const qnn::TensorWrapper& mha_output,
@@ -319,6 +328,7 @@ TensorWrapper& BuildSingleSHAByUnpackAxis1(
   auto concat_op = BuildConcatenationOp(
       tensor_pool, {q_kcache_matmul_output, q_kslice_matmul_output},
       {concat_output}, adjusted_axis);
+  CloneNamespace(q_kslice_matmul, concat_op);
   std::move(concat_op.begin(), concat_op.end(), std::back_inserter(new_ops));
 
   // Mask Add
@@ -373,8 +383,9 @@ TensorWrapper& BuildSingleSHAByUnpackAxis1(
   qk_vcache_slice_output_dims[1] /= num_attn_per_kv_heads;
   auto& qk_vcache_slice_output = tensor_pool.CloneNativeTensorFrom(
       qk_vcache_slice.GetOutputTensor(0), qk_vcache_slice_output_dims);
-  new_ops.emplace_back(CreateSliceOp(softmax_output, qk_vcache_slice_output,
-                                     qk_vcache_slice_param_tensor));
+  auto& v_cache_slice_op = new_ops.emplace_back(CreateSliceOp(
+      softmax_output, qk_vcache_slice_output, qk_vcache_slice_param_tensor));
+  CloneNamespace(softmax, v_cache_slice_op);
 
   // QK VSlice Slice
   auto qk_vslice_slice_param = qk_vslice_slice.GetTensorParam(0).GetTensor();
@@ -399,8 +410,9 @@ TensorWrapper& BuildSingleSHAByUnpackAxis1(
   qk_vslice_slice_output_dims[1] /= num_attn_per_kv_heads;
   auto& qk_vslice_slice_output = tensor_pool.CloneNativeTensorFrom(
       qk_vslice_slice.GetOutputTensor(0), qk_vslice_slice_output_dims);
-  new_ops.emplace_back(CreateSliceOp(softmax_output, qk_vslice_slice_output,
-                                     qk_vslice_slice_param_tensor));
+  auto& v_slice_slice_op = new_ops.emplace_back(CreateSliceOp(
+      softmax_output, qk_vslice_slice_output, qk_vslice_slice_param_tensor));
+  CloneNamespace(softmax, v_slice_slice_op);
 
   // QK VCache Matmul
   auto qk_vcache_matmul_output_dims =
