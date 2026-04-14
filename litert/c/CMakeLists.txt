@@ -282,6 +282,11 @@ set(_litert_runtime_c_api_public_deps
 set(_litert_runtime_c_api_private_archives
     litert_c_api
     litert_runtime
+    # Public C++ headers inline the default builtin-runtime path, for example,
+    # it references kLiteRtRuntimeBuiltin from litert_cc_internal. Keep that
+    # archive in the shared runtime so downstream users linking libLiteRt.so
+    # can resolve the symbol without also linking litert_cc_internal.a.
+    litert_cc_internal
     tensorflow-lite
     Threads::Threads
 )
