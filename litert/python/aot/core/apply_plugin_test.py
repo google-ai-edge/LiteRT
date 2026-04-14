@@ -65,12 +65,17 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
     mck.side_effect = self.get_touch_side_effect(
         self.output_model, MockCompletedProcess(0)
     )
-    apply_plugin.ApplyPlugin()(
-        aot_types.Model.create_from_path(self.input_model),
-        aot_types.Model.create_from_path(self.output_model),
-        self.soc_manufacturer,
-        self.soc_model,
-    )
+    with mock.patch.object(
+        apply_plugin.common,
+        "get_resource",
+        return_value=pathlib.Path("apply_plugin_main"),
+    ):
+      apply_plugin.ApplyPlugin()(
+          aot_types.Model.create_from_path(self.input_model),
+          aot_types.Model.create_from_path(self.output_model),
+          self.soc_manufacturer,
+          self.soc_model,
+      )
     cmd_str = " ".join(mck.call_args_list[0][0][0])
     self.assertIn(str(self.input_model), cmd_str)
     self.assertIn(str(self.output_model), cmd_str)
@@ -80,13 +85,18 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
 
   @mock.patch.object(subprocess, "run", return_value=MockCompletedProcess(1))
   def test_apply_plugin_no_file(self, unused_mock: mock.Mock):
-    with self.assertRaises(ValueError):
-      apply_plugin.ApplyPlugin()(
-          aot_types.Model.create_from_path(self.input_model),
-          aot_types.Model.create_from_path(self.output_model),
-          self.soc_manufacturer,
-          self.soc_model,
-      )
+    with mock.patch.object(
+        apply_plugin.common,
+        "get_resource",
+        return_value=pathlib.Path("apply_plugin_main"),
+    ):
+      with self.assertRaises(ValueError):
+        apply_plugin.ApplyPlugin()(
+            aot_types.Model.create_from_path(self.input_model),
+            aot_types.Model.create_from_path(self.output_model),
+            self.soc_manufacturer,
+            self.soc_model,
+        )
 
 
 if __name__ == "__main__":

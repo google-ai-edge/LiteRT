@@ -323,6 +323,8 @@ litert_test(
     ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": [],
+        "//litert/build_common:ios": [],
+        "//litert/build_common:macos": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",

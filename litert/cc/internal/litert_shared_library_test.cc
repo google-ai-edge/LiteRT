@@ -49,12 +49,20 @@ TEST(RtldFlagsTest, FlagFactoryWorks) {
               Eq(RTLD_LAZY | RTLD_NODELETE));
   EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().NoLoad()),
               Eq(RTLD_LAZY | RTLD_NOLOAD));
+<<<<<<< HEAD
 #if defined(RTLD_DEEPBIND)
+=======
+#if defined(RTLD_DEEPBIND) && !defined(_WIN32)
+>>>>>>> b207e6139 (Fix macOS presubmit failures)
   EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().DeepBind()),
               Eq(RTLD_LAZY | RTLD_DEEPBIND));
 #else
   EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().DeepBind()), Eq(RTLD_LAZY));
+<<<<<<< HEAD
 #endif  // defined(RTLD_DEEPBIND)
+=======
+#endif
+>>>>>>> b207e6139 (Fix macOS presubmit failures)
 }
 
 TEST(SharedLibraryTest, LoadRtldDefaultWorks) {
