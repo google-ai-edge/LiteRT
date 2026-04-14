@@ -295,6 +295,7 @@ def _litert_base(
             linkopts = selects.with_or({
                 ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
                 "//litert/build_common:macos": [],
+                "//litert/build_common:ios": [],
                 "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
             }),
         )
@@ -302,7 +303,11 @@ def _litert_base(
     else:
         append_rule_kwargs(
             cc_rule_kwargs,
-            linkopts = _DEFAULT_LINK_OPTS,
+            linkopts = select({
+                "//litert/build_common:macos": [],
+                "//litert/build_common:ios": [],
+                "//conditions:default": _DEFAULT_LINK_OPTS,
+            }),
         )
 
     rule(**cc_rule_kwargs)

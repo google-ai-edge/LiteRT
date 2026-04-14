@@ -49,10 +49,12 @@ TEST(RtldFlagsTest, FlagFactoryWorks) {
               Eq(RTLD_LAZY | RTLD_NODELETE));
   EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().NoLoad()),
               Eq(RTLD_LAZY | RTLD_NOLOAD));
-  #if !defined(__ANDROID__)
+#if defined(RTLD_DEEPBIND) && !defined(_WIN32)
   EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().DeepBind()),
               Eq(RTLD_LAZY | RTLD_DEEPBIND));
-  #endif  // !defined(__ANDROID__)
+#else
+  EXPECT_THAT(static_cast<int>(RtldFlags::Lazy().DeepBind()), Eq(RTLD_LAZY));
+#endif
 }
 
 TEST(SharedLibraryTest, LoadRtldDefaultWorks) {

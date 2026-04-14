@@ -24,6 +24,9 @@ namespace litert {
 namespace {
 
 TEST(Event, DupFdOnNegativeFd) {
+  if (!HasSyncFenceSupport()) {
+    GTEST_SKIP() << "Sync fences are not supported on this platform.";
+  }
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(Event event,
                               Event::CreateFromSyncFenceFd(env, -1, true));
@@ -31,6 +34,9 @@ TEST(Event, DupFdOnNegativeFd) {
 }
 
 TEST(Event, IsSignaledOnNegativeFd) {
+  if (!HasSyncFenceSupport()) {
+    GTEST_SKIP() << "Sync fences are not supported on this platform.";
+  }
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(Event event,
                               Event::CreateFromSyncFenceFd(env, -1, true));
