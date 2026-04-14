@@ -174,7 +174,7 @@ LITERT_RUNTIME_SHARED_LIB = select({
     "@bazel_tools//src/conditions:windows": [
         "//litert/c:litert_runtime_c_api_dll",
     ],
-    "@platforms//os:macos": [
+    "//litert/build_common:macos": [
         "//litert/c:litert_runtime_c_api_dylib",
     ],
     "//conditions:default": ["//litert/c:libLiteRt.so"],

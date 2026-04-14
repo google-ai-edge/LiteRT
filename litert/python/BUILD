@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//litert/python:strict.bzl", "py_strict_library", "py_strict_test")
 
 WINDOWS_PYBIND_UNDEFS = select({
-    "@platforms//os:windows": [
+    "//litert/build_common:windows": [
         "/UPROTOBUF_USE_DLLS",
         "/UABSL_CONSUME_DLL",
     ],

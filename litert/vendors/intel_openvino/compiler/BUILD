@@ -127,7 +127,7 @@ litert_lib(
         "graph_iterator.h",
     ],
     copts = ["-fexceptions"] + select({
-        "@platforms//os:windows": [],
+        "//litert/build_common:windows": [],
         "//conditions:default": ["-Wno-unused-variable"],
     }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
@@ -210,9 +210,9 @@ litert_test(
         "nobuilder",
     ],
     target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
-        "@platforms//os:windows": [],
+        "//litert/build_common:android": [],
+        "//litert/build_common:linux": [],
+        "//litert/build_common:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,

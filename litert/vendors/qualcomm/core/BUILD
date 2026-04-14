@@ -54,7 +54,7 @@ cc_library(
     srcs = ["common.cc"],
     hdrs = ["common.h"],
     linkopts = select({
-        "@platforms//os:android": ["-llog"],
+        "//litert/build_common:android": ["-llog"],
         "//conditions:default": [],
     }),
     deps = [

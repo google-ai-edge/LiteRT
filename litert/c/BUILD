@@ -771,8 +771,8 @@ cc_test(
 cc_library(
     name = "litert_runtime_c_api_so_shim",
     linkopts = select({
-        "@platforms//os:macos": [],
-        "@platforms//os:ios": [],
+        "//litert/build_common:macos": [],
+        "//litert/build_common:ios": [],
         "//conditions:default": ["-Wl,--undefined-glob=LiteRt*"],
     }),
     deps = LITERT_C_API_COMMON_DEPS,
@@ -784,7 +784,7 @@ cc_shared_library(
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRt.so",
     user_link_flags = export_lrt_runtime_only_linkopt() + select({
-        "@platforms//os:macos": ["-Wl,-install_name,@rpath/libLiteRt.so"],
+        "//litert/build_common:macos": ["-Wl,-install_name,@rpath/libLiteRt.so"],
         "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
     }) + litert_android_linkopts(),
     deps = [":litert_runtime_c_api_so_shim"],
@@ -882,8 +882,8 @@ exports_files(srcs = ["windows_exported_symbols.def"])
 cc_library(
     name = "litert_tflite_runtime_c_api_so_shim",
     linkopts = select({
-        "@platforms//os:macos": [],
-        "@platforms//os:ios": [],
+        "//litert/build_common:macos": [],
+        "//litert/build_common:ios": [],
         "//conditions:default": ["-Wl,--undefined-glob=LiteRt*"],
     }),
     deps = LITERT_C_API_COMMON_DEPS + [
@@ -908,9 +908,9 @@ cc_shared_library(
 
 SELECT_LITERT_RUNTIME_C_API_SHARED_LIB = select({
     ":resolve_symbols_in_exec": [],
-    "@platforms//os:ios": [":litert_runtime_c_api_dylib"],
-    "@platforms//os:macos": [":litert_runtime_c_api_dylib"],
-    "@platforms//os:windows": [],
+    "//litert/build_common:ios": [":litert_runtime_c_api_dylib"],
+    "//litert/build_common:macos": [":litert_runtime_c_api_dylib"],
+    "//litert/build_common:windows": [],
     "//conditions:default": [":litert_runtime_c_api_so"],
 })
 
@@ -964,8 +964,8 @@ cc_library(
         "//tflite/core/c:headers_filegroup",
     ],
     linkopts = select({
-        "@platforms//os:ios": ["-Wl,-rpath,@loader_path"],
-        "@platforms//os:macos": ["-Wl,-rpath,@loader_path"],
+        "//litert/build_common:ios": ["-Wl,-rpath,@loader_path"],
+        "//litert/build_common:macos": ["-Wl,-rpath,@loader_path"],
         "//conditions:default": [],
     }),
     linkstatic = 1,
@@ -986,7 +986,7 @@ cc_library(
         "//litert/build_common:build_config",
     ] + gles_headers() + select({
         ":resolve_symbols_in_exec": [],
-        "@platforms//os:windows": [":litert_runtime_c_api_import"],
+        "//litert/build_common:windows": [":litert_runtime_c_api_import"],
         "//conditions:default": [],
     }),
 )
