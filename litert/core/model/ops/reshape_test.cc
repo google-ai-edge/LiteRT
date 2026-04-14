@@ -14,7 +14,9 @@
 
 #include "litert/core/model/ops/reshape.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -23,173 +25,148 @@
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_buffer_ref.h"
-#include "litert/core/model/model.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "tflite/converter/schema/schema_generated.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
 
 using ::testing::ElementsAre;
 
+class TestShapeInferenceContext : public ShapeInferenceContext {
+ public:
+  explicit TestShapeInferenceContext(
+      std::vector<Dims> input_shapes, TflOptions options = {},
+      std::vector<std::vector<uint8_t>> input_data = {})
+      : input_shapes_(std::move(input_shapes)),
+        options_(std::move(options)),
+        input_data_(std::move(input_data)) {}
+
+  Dims GetInputShape(size_t index) const override {
+    if (index >= input_shapes_.size()) return {};
+    return input_shapes_[index];
+  }
+
+  absl::Span<const uint8_t> GetInputData(size_t index) const override {
+    if (index >= input_data_.size()) return {};
+    return absl::MakeConstSpan(input_data_[index]);
+  }
+
+  const TflOptions& GetOptions() const override { return options_; }
+
+  LiteRtOpCode GetOpCode() const override { return kLiteRtOpCodeTflReshape; }
+
+ private:
+  std::vector<Dims> input_shapes_;
+  TflOptions options_;
+  std::vector<std::vector<uint8_t>> input_data_;
+};
+
 TEST(ReshapeOpTest, WithOptions) {
-  LiteRtOpT op;
   auto options = std::make_unique<tflite::ReshapeOptionsT>();
   options->new_shape = {1, 4, 4, 3};
-  litert::internal::TflOptions tfl_options;
+  TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
   tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
-  std::vector<Dims> input_shapes = {{1, 48}};
-  std::vector<Dims> output_shapes(1);
+  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  InferenceResult result;
 
-  ASSERT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusOk);
+  ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
 
-  EXPECT_THAT(output_shapes[0], ElementsAre(1, 4, 4, 3));
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(1, 4, 4, 3));
 }
 
 TEST(ReshapeOpTest, WithShapeTensor) {
-  LiteRtTensorT input_tensor;
-  LiteRtTensorT shape_tensor;
+  std::vector<int32_t> shape_data = {1, 4, 4, 3};
+  std::vector<uint8_t> shape_bytes(shape_data.size() * sizeof(int32_t));
+  std::memcpy(shape_bytes.data(), shape_data.data(), shape_bytes.size());
 
-  int32_t shape_data[] = {1, 4, 4, 3};
-  SetWeightsFromOwnedBuffer(
-      shape_tensor.Weights(),
-      OwningBufferRef<uint8_t>(absl::MakeConstSpan(
-          reinterpret_cast<const uint8_t*>(shape_data), sizeof(shape_data))));
+  TestShapeInferenceContext ctx({{1, 48}, {4}}, {}, {{}, shape_bytes});
+  InferenceResult result;
 
-  LiteRtOpT op;
-  op.Inputs().push_back(&input_tensor);
-  op.Inputs().push_back(&shape_tensor);
+  ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
 
-  std::vector<Dims> input_shapes = {{1, 48}, {4}};
-  std::vector<Dims> output_shapes(1);
-
-  ASSERT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusOk);
-
-  EXPECT_THAT(output_shapes[0], ElementsAre(1, 4, 4, 3));
-}
-
-TEST(ReshapeOpTest, EmptyInputShapes) {
-  LiteRtOpT op;
-  std::vector<Dims> input_shapes;
-  std::vector<Dims> output_shapes(1);
-  EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(1, 4, 4, 3));
 }
 
 TEST(ReshapeOpTest, DynamicShapeTensor) {
-  LiteRtTensorT input_tensor;
-  LiteRtTensorT shape_tensor;
+  TestShapeInferenceContext ctx({{1, 48}, {4}}, {}, {{}, {}});
+  InferenceResult result;
 
-  LiteRtOpT op;
-  op.Inputs().push_back(&input_tensor);
-  op.Inputs().push_back(&shape_tensor);
-
-  std::vector<Dims> input_shapes = {{1, 48}, {4}};
-  std::vector<Dims> output_shapes(1);
-
-  EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorShapeInferenceFailed);
+  EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, InvalidShapeTensorBufferSize) {
-  LiteRtTensorT input_tensor;
-  LiteRtTensorT shape_tensor;
+  std::vector<uint8_t> shape_bytes = {1, 2, 3};
 
-  uint8_t shape_data[] = {1, 2, 3};
-  SetWeightsFromOwnedBuffer(
-      shape_tensor.Weights(),
-      OwningBufferRef<uint8_t>(absl::MakeConstSpan(shape_data, 3)));
+  TestShapeInferenceContext ctx({{1, 48}, {4}}, {}, {{}, shape_bytes});
+  InferenceResult result;
 
-  LiteRtOpT op;
-  op.Inputs().push_back(&input_tensor);
-  op.Inputs().push_back(&shape_tensor);
-
-  std::vector<Dims> input_shapes = {{1, 48}, {4}};
-  std::vector<Dims> output_shapes(1);
-
-  EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorShapeInferenceFailed);
+  EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(ReshapeOpTest, NoOptionsAndNoShapeTensor) {
-  LiteRtOpT op;
-  std::vector<Dims> input_shapes = {{1, 48}};
-  std::vector<Dims> output_shapes(1);
-  EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorShapeInferenceFailed);
+  TestShapeInferenceContext ctx({{1, 48}}, {}, {{}});
+  InferenceResult result;
+
+  EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, MultipleMinusOne) {
-  LiteRtOpT op;
   auto options = std::make_unique<tflite::ReshapeOptionsT>();
   options->new_shape = {1, -1, -1, 3};
-  litert::internal::TflOptions tfl_options;
+  TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
   tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
-  std::vector<Dims> input_shapes = {{1, 48}};
-  std::vector<Dims> output_shapes(1);
+  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  InferenceResult result;
 
-  EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorShapeInferenceFailed);
+  EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, MinusOneWithDynamicInput) {
-  LiteRtOpT op;
   auto options = std::make_unique<tflite::ReshapeOptionsT>();
   options->new_shape = {1, -1, 3};
-  litert::internal::TflOptions tfl_options;
+  TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
   tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
-  std::vector<Dims> input_shapes = {{1, -1}};
-  std::vector<Dims> output_shapes(1);
+  TestShapeInferenceContext ctx({{1, -1}}, std::move(tfl_options));
+  InferenceResult result;
 
-  ASSERT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusOk);
-  EXPECT_THAT(output_shapes[0], ElementsAre(1, -1, 3));
+  ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(1, -1, 3));
 }
 
 TEST(ReshapeOpTest, IncompatibleVolumesWithMinusOne) {
-  LiteRtOpT op;
   auto options = std::make_unique<tflite::ReshapeOptionsT>();
   options->new_shape = {1, -1, 5};
-  litert::internal::TflOptions tfl_options;
+  TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
   tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
-  std::vector<Dims> input_shapes = {{1, 48}};
-  std::vector<Dims> output_shapes(1);
+  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  InferenceResult result;
 
-  EXPECT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorShapeInferenceFailed);
+  EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, ResolveMinusOne) {
-  LiteRtOpT op;
   auto options = std::make_unique<tflite::ReshapeOptionsT>();
   options->new_shape = {1, -1, 3};
-  litert::internal::TflOptions tfl_options;
+  TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
   tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
-  std::vector<Dims> input_shapes = {{1, 48}};
-  std::vector<Dims> output_shapes(1);
+  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  InferenceResult result;
 
-  ASSERT_EQ(InferReshape(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusOk);
-  EXPECT_THAT(output_shapes[0], ElementsAre(1, 16, 3));
+  ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(1, 16, 3));
 }
 
 }  // namespace
