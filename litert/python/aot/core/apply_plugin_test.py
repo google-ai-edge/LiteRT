@@ -23,6 +23,8 @@ from litert.python.aot.core import aot_types
 from litert.python.aot.core import apply_plugin
 from litert.python.aot.core import test_common
 
+_REAL_GET_RESOURCE = apply_plugin.common.get_resource
+
 
 class MockCompletedProcess:
 
@@ -60,6 +62,13 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
   def soc_model(self) -> str:
     return "ExampleSocModel"
 
+  def _get_resource_for_test(
+      self, litert_relative_path: pathlib.Path, is_dir: bool = False
+  ) -> pathlib.Path:
+    if litert_relative_path == apply_plugin._BINARY:
+      return pathlib.Path("apply_plugin_main")
+    return _REAL_GET_RESOURCE(litert_relative_path, is_dir=is_dir)
+
   @mock.patch.object(subprocess, "run")
   def test_apply_plugin(self, mck: mock.Mock):
     mck.side_effect = self.get_touch_side_effect(
@@ -68,7 +77,7 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
     with mock.patch.object(
         apply_plugin.common,
         "get_resource",
-        return_value=pathlib.Path("apply_plugin_main"),
+        side_effect=self._get_resource_for_test,
     ):
       apply_plugin.ApplyPlugin()(
           aot_types.Model.create_from_path(self.input_model),
@@ -88,7 +97,7 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
     with mock.patch.object(
         apply_plugin.common,
         "get_resource",
-        return_value=pathlib.Path("apply_plugin_main"),
+        side_effect=self._get_resource_for_test,
     ):
       with self.assertRaises(ValueError):
         apply_plugin.ApplyPlugin()(
