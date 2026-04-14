@@ -202,6 +202,24 @@ cc_library(
     alwayslink = 1,
 )
 
+# VERISILICON ####################################################################################
+
+cc_library(
+    name = "litert_verisilicon_options",
+    srcs = ["litert_verisilicon_options.cc"],
+    hdrs = ["litert_verisilicon_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_options_helper",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    # Keep the symbols in libLiteRt.dylib.
+    alwayslink = 1,
+)
+
 cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
@@ -304,6 +322,19 @@ cc_test(
         "//litert/test:matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "litert_verisilicon_options_test",
+    srcs = ["litert_verisilicon_options_test.cc"],
+    deps = [
+        ":litert_verisilicon_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc/options:litert_verisilicon_options",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

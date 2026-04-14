@@ -750,6 +750,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_intel_openvino_options",
     "//litert/c/options:litert_samsung_options",
+    "//litert/c/options:litert_verisilicon_options",
 ]
 
 # This test verifies that the C API header files can build via C compiler.

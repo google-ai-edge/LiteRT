@@ -28,6 +28,7 @@
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/c/options/litert_runtime_options.h"
+#include "litert/c/options/litert_verisilicon_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -42,6 +43,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
+#include "litert/cc/options/litert_verisilicon_options.h"
 #include "litert/core/options.h"
 
 namespace litert {
@@ -120,6 +122,10 @@ Expected<samsung::SamsungOptions&> Options::GetSamsungOptions() {
   return EnsureOption(samsung_options_);
 }
 
+Expected<verisilicon::VerisiliconOptions&> Options::GetVerisiliconOptions() {
+  return EnsureOption(verisilicon_options_);
+}
+
 Expected<RuntimeOptions&> Options::GetRuntimeOptions() {
   return EnsureOption(runtime_options_);
 }
@@ -142,6 +148,8 @@ Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
       Get(), intel_openvino_options_, LrtGetOpaqueIntelOpenVinoOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), samsung_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+      Get(), verisilicon_options_, LrtGetOpaqueVerisiliconOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
       Get(), runtime_options_, LrtGetOpaqueRuntimeOptionsData));
   LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(

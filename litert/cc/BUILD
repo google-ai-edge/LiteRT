@@ -1110,6 +1110,7 @@ cc_library_with_testonly_vis(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/c/options:litert_mediatek_options",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/c/options:litert_verisilicon_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/c/options:litert_samsung_options",
         "//litert/cc/internal:litert_handle",
@@ -1122,6 +1123,7 @@ cc_library_with_testonly_vis(
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_verisilicon_options",
         "//litert/cc/options:litert_runtime_options",
         "//litert/cc/options:litert_samsung_options",
         "//litert/core:options",
@@ -1272,6 +1274,7 @@ cc_library(
         "//litert/cc/options:litert_mediatek_options.h",
         "//litert/cc/options:litert_qualcomm_options.h",
         "//litert/cc/options:litert_samsung_options.h",
+	    "//litert/cc/options:litert_verisilicon_options.h",
         "//litert/cc/options:litert_runtime_options.h",
         "//litert/cc/options:litert_intel_openvino_options.h",
         "//litert/cc/options:litert_magic_number_options.h",
@@ -1367,6 +1370,7 @@ cc_library(
             # C++ NPU Options API targets.
             "//litert/cc/options:litert_google_tensor_options",
             "//litert/cc/options:litert_mediatek_options",
+            "//litert/cc/options:litert_verisilicon_options",
         ],
     }) + gles_headers(),
 )

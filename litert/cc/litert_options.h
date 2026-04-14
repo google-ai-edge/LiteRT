@@ -41,6 +41,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
+#include "litert/cc/options/litert_verisilicon_options.h"
 
 namespace litert {
 
@@ -229,6 +230,11 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   /// Use this to configure Samsung-specific settings.
   Expected<samsung::SamsungOptions&> GetSamsungOptions();
 
+  /// Returns a reference to the Verisilicon options.
+  ///
+  /// Use this to configure Verisilicon-specific settings.
+  Expected<verisilicon::VerisiliconOptions&> GetVerisiliconOptions();
+
   /// Returns a reference to the runtime options.
   Expected<RuntimeOptions&> GetRuntimeOptions();
 
@@ -249,6 +255,7 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
   std::optional<intel_openvino::IntelOpenVinoOptions> intel_openvino_options_;
   std::optional<samsung::SamsungOptions> samsung_options_;
+  std::optional<verisilicon::VerisiliconOptions> verisilicon_options_;
   std::optional<RuntimeOptions> runtime_options_;
   std::optional<CompilerOptions> compiler_options_;
 };
