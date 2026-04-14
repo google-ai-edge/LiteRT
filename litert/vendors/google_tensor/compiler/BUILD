@@ -45,8 +45,8 @@ litert_dynamic_lib(
         "notap",
     ],
     target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "@platforms//os:android": [],
+        "//litert/build_common:linux": [],
+        "//litert/build_common:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -112,8 +112,8 @@ cc_test(
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "@platforms//os:android": [],
+        "//litert/build_common:linux": [],
+        "//litert/build_common:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

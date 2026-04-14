@@ -59,8 +59,8 @@ def litert_android_linkopts():
 
 def litert_metal_opts():
     return select({
-        "@platforms//os:ios": ["-ObjC++", "-fobjc-arc"],
-        "@platforms//os:macos": ["-ObjC++", "-fobjc-arc"],
+        "//litert/build_common:ios": ["-ObjC++", "-fobjc-arc"],
+        "//litert/build_common:macos": ["-ObjC++", "-fobjc-arc"],
         "//conditions:default": [],
     })
 
@@ -70,15 +70,15 @@ def litert_metal_linkopts():
 
 def litert_metal_deps_without_gpu_environment():
     return select({
-        "@platforms//os:ios": ["//tflite/delegates/gpu/metal:metal_device"],
-        "@platforms//os:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert/build_common:ios": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert/build_common:macos": ["//tflite/delegates/gpu/metal:metal_device"],
         "//conditions:default": [],
     })
 
 def litert_metal_deps():
     return litert_metal_deps_without_gpu_environment() + select({
-        "@platforms//os:ios": ["//litert/runtime:metal_info"],
-        "@platforms//os:macos": ["//litert/runtime:metal_info"],
+        "//litert/build_common:ios": ["//litert/runtime:metal_info"],
+        "//litert/build_common:macos": ["//litert/runtime:metal_info"],
         "//conditions:default": [],
     })
 
@@ -104,7 +104,7 @@ def litert_gpu_accelerator_prebuilts():
         "//litert/build_common:ios_sim_arm64": [
             "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
         ],
-        "@platforms//os:windows": [
+        "//litert/build_common:windows": [
             "@litert_prebuilts//:windows_x86_64/libLiteRtWebGpuAccelerator.dll",  # copybara:comment
         ],
         "@org_tensorflow//tensorflow:android_arm64": [

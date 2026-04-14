@@ -1064,8 +1064,8 @@ cc_test(
 cc_library(
     name = "metal_info",
     srcs = select({
-        "@platforms//os:ios": ["metal_info.cc"],
-        "@platforms//os:macos": ["metal_info.cc"],
+        "//litert/build_common:ios": ["metal_info.cc"],
+        "//litert/build_common:macos": ["metal_info.cc"],
         "//conditions:default": [],
     }),
     hdrs = ["metal_info.h"],

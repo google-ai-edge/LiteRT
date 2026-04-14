@@ -93,6 +93,42 @@ config_setting(
     flag_values = {":build_include": "cpu_only"},
 )
 
+config_setting(
+    name = "android",
+    constraint_values = ["@platforms//os:android"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "chromiumos",
+    constraint_values = ["@platforms//os:chromiumos"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "ios",
+    constraint_values = ["@platforms//os:ios"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "linux",
+    constraint_values = ["@platforms//os:linux"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "macos",
+    constraint_values = ["@platforms//os:macos"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "windows",
+    constraint_values = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)
+
 selects.config_setting_group(
     name = "linux_x86_64_grte",
     match_all = [

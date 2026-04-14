@@ -88,7 +88,7 @@ litert_bin(
     name = "apply_plugin_main",
     srcs = ["apply_plugin_main.cc"],
     data = select({
-        "@platforms//os:windows": [],
+        "//litert/build_common:windows": [],
         "//conditions:default": [
             # copybara:uncomment_begin(google-only)
             # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
@@ -114,8 +114,8 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "@platforms//os:windows": [],
+        "//litert/build_common:linux": [],
+        "//litert/build_common:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -136,7 +136,7 @@ litert_bin(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@platforms//os:windows": [],
+        "//litert/build_common:windows": [],
         "//conditions:default": [
             "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
@@ -162,7 +162,7 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "@platforms//os:linux": [],
+        "//litert/build_common:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = [
