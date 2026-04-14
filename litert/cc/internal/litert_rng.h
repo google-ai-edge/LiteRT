@@ -356,7 +356,7 @@ class RandomTensorType {
  private:
   using DimSize = int32_t;
   using DimGenerator = DefaultRangedGenerator<DimSize>;
-  using ElementTypeInt = uint8_t;
+  using ElementTypeInt = unsigned int;
   using ElementTypeGenerator = DefaultRangedGenerator<ElementTypeInt>;
   static constexpr auto kNumElementTypes = sizeof...(ElementType);
   static_assert(kNumElementTypes > 0);
