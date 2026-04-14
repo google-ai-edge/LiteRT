@@ -1,0 +1,107 @@
+name: "cmake-linux-x86_64"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  presubmit:
+    name: "Presubmit-CMake-Linux"
+    runs-on: LiteRT_Linux_x64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup CMake 3.28.3
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.28.3"
+
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            libc++-dev \
+            libc++abi-dev
+
+      - name: Show toolchain versions
+        run: |
+          clang --version
+          clang++ --version
+          cmake --version
+
+      - name: Configure host release build
+        run: cmake --preset default -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        working-directory: litert
+
+      - name: Build host release artifacts
+        run: cmake --build cmake_build --parallel
+        working-directory: litert
+
+      - name: Configure host debug build
+        run: cmake --preset default-debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        working-directory: litert
+
+      - name: Build host debug artifacts
+        run: cmake --build cmake_build_debug --parallel
+        working-directory: litert
+
+  codeql:
+    name: "CodeQL-CMake-Linux"
+    runs-on: LiteRT_Linux_x64
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup CMake 3.28.3
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.28.3"
+
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            libc++-dev \
+            libc++abi-dev
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: cpp
+          build-mode: manual
+
+      - name: Configure host release build for CodeQL
+        run: cmake --preset default -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        working-directory: litert
+
+      - name: Build host release artifacts for CodeQL
+        run: cmake --build cmake_build --parallel
+        working-directory: litert
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
