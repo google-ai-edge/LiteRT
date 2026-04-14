@@ -473,6 +473,9 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
 }
 
 TEST(CompiledModelTest, UseOpenCLBuffer) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#else
   // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported In msan";
@@ -608,6 +611,7 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
 
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
+#endif
 }
 
 TEST(CompiledModelTest, WithProfiler) {

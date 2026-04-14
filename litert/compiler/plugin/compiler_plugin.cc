@@ -14,14 +14,11 @@
 
 #include "litert/compiler/plugin/compiler_plugin.h"
 
-#include <stdlib.h>
-
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <optional>
 #include <queue>
 #include <string>
 #include <utility>
@@ -216,6 +213,64 @@ void SortPlugins(std::vector<CompilerPlugin>& compiler_plugins) {
             });
 }
 
+#if LITERT_WINDOWS_OS
+Expected<SharedLibrary> LoadBundledLiteRtRuntime(absl::string_view lib_path) {
+  static constexpr absl::string_view kLiteRtRuntimeDll = "libLiteRt.dll";
+
+  std::vector<std::string> candidate_paths;
+  const auto add_candidate_path = [&](std::string candidate_path) {
+    if (std::find(candidate_paths.begin(), candidate_paths.end(),
+                  candidate_path) == candidate_paths.end()) {
+      candidate_paths.push_back(std::move(candidate_path));
+    }
+  };
+  if (auto plugin_dir = Parent(lib_path); plugin_dir) {
+    add_candidate_path(Join({*plugin_dir, kLiteRtRuntimeDll}));
+
+    std::string current_dir = *plugin_dir;
+    while (!current_dir.empty()) {
+      add_candidate_path(
+          Join({current_dir, "c", std::string(kLiteRtRuntimeDll)}));
+
+      auto parent_dir = Parent(current_dir);
+      if (!parent_dir || *parent_dir == current_dir) {
+        break;
+      }
+      current_dir = std::move(*parent_dir);
+    }
+  }
+
+  if (candidate_paths.empty()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Could not derive plugin directory for libLiteRt.dll");
+  }
+
+  std::string first_error;
+  for (const auto& candidate_path : candidate_paths) {
+    if (!Exists(candidate_path)) {
+      continue;
+    }
+
+    auto runtime_lib =
+        SharedLibrary::Load(candidate_path, RtldFlags::Now().Local());
+    if (runtime_lib) {
+      LITERT_LOG(LITERT_INFO, "Preloaded LiteRT runtime from: %s",
+                 candidate_path.c_str());
+      return std::move(*runtime_lib);
+    }
+
+    if (first_error.empty()) {
+      first_error = runtime_lib.Error().Message();
+    }
+  }
+
+  if (!first_error.empty()) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure, std::move(first_error));
+  }
+  return Unexpected(kLiteRtStatusErrorNotFound);
+}
+#endif
+
 }  // namespace
 
 Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
@@ -223,6 +278,15 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
     LiteRtOptions options) {
   CompilerPlugin plugin;
   LITERT_LOG(LITERT_INFO, "Loading plugin at: %s", lib_path.data());
+
+#if LITERT_WINDOWS_OS
+  auto runtime_lib = LoadBundledLiteRtRuntime(lib_path);
+  if (runtime_lib) {
+    plugin.runtime_lib_ = std::move(*runtime_lib);
+  } else if (runtime_lib.Error().Status() != kLiteRtStatusErrorNotFound) {
+    return runtime_lib.Error();
+  }
+#endif
 
 #ifdef __ANDROID__
   // Unloading the library on android can lead to crashes.
@@ -298,6 +362,7 @@ Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
 
 CompilerPlugin::CompilerPlugin(CompilerPlugin&& other)
     : soc_models_(std::move(other.soc_models_)),
+      runtime_lib_(std::move(other.runtime_lib_)),
       lib_(std::move(other.lib_)),
       options_(other.options_),
       env_(std::move(other.env_)),
@@ -314,6 +379,7 @@ CompilerPlugin::CompilerPlugin(CompilerPlugin&& other)
 CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
   if (this != &other) {
     std::swap(soc_models_, other.soc_models_);
+    std::swap(runtime_lib_, other.runtime_lib_);
     std::swap(lib_, other.lib_);
     std::swap(env_, other.env_);
     std::swap(plugin_api_, other.plugin_api_);

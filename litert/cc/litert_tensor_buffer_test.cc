@@ -702,10 +702,16 @@ TEST(TensorBuffer, CreateFromExternalHostMemory) {
       std::max<int>(sizeof(kTensorData), LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
   const RankedTensorType kTensorType(kTestTensorType);
   void* host_memory_ptr;
+#ifdef _WIN32
+  host_memory_ptr =
+      _aligned_malloc(kTensorBufferSize, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+  ASSERT_NE(host_memory_ptr, nullptr);
+#else
   ASSERT_EQ(
       ::posix_memalign(&host_memory_ptr, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
                        kTensorBufferSize),
       0);
+#endif
 
   std::memcpy(host_memory_ptr, kTensorData, sizeof(kTensorData));
 

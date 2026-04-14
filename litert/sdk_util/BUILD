@@ -134,6 +134,7 @@ litert_test(
         "no-remote-exec",
         "notap",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     ungrte = True,
     deps = [
         "//litert/cc/internal:litert_logging",

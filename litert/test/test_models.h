@@ -118,9 +118,11 @@ static constexpr absl::string_view kQSDPAModel =
     "static_a8w8_quantized_sdpa.tflite";
 
 // All the quantized test models.
-static constexpr auto kAllQModels = absl::MakeConstSpan((absl::string_view[]){
+static constexpr absl::string_view kAllQModelsArray[] = {
     kQSimpleMul16x16Model, kQMulAdd16x16Model, kQSingleDynAdd16x8Model,
     kQSingleDynAdd8x8Model, kQSingleDynMul16x8Model, kQSingleDynMul8x8Model,
-    kQSingleDynRsqrt16x8Model, kQSingleDynRsqrt8x8Model});
+    kQSingleDynRsqrt16x8Model, kQSingleDynRsqrt8x8Model,
+};
+static constexpr auto kAllQModels = absl::MakeConstSpan(kAllQModelsArray);
 
 #endif  // ODML_LITERT_LITERT_TEST_TEST_MODELS_H_

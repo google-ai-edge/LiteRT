@@ -31,6 +31,11 @@ litert_test(
         "nobuilder",
         "notap",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [

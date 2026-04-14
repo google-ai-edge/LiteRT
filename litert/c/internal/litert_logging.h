@@ -27,6 +27,7 @@ extern "C" {
 
 // WARNING: The values of the following enum are to be kept in sync with
 // tflite::LogSeverity.
+#ifdef __cplusplus
 typedef enum : int8_t {
   kLiteRtLogSeverityDebug = -1,
   kLiteRtLogSeverityVerbose = 0,
@@ -35,6 +36,17 @@ typedef enum : int8_t {
   kLiteRtLogSeverityError = 3,
   kLiteRtLogSeveritySilent = 4,
 } LiteRtLogSeverity;
+#else
+typedef int8_t LiteRtLogSeverity;
+enum {
+  kLiteRtLogSeverityDebug = -1,
+  kLiteRtLogSeverityVerbose = 0,
+  kLiteRtLogSeverityInfo = 1,
+  kLiteRtLogSeverityWarning = 2,
+  kLiteRtLogSeverityError = 3,
+  kLiteRtLogSeveritySilent = 4,
+};
+#endif  // __cplusplus
 
 #define LITERT_DEBUG kLiteRtLogSeverityDebug
 #define LITERT_VERBOSE kLiteRtLogSeverityVerbose

@@ -53,6 +53,12 @@ using ::testing::litert::IsOkAndHolds;
 namespace litert {
 namespace {
 
+#if defined(_WIN32)
+constexpr bool kSupportsErrorReporterApi = false;
+#else
+constexpr bool kSupportsErrorReporterApi = true;
+#endif
+
 TEST(CompiledModelTest, Basic) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
@@ -774,6 +780,9 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 }
 // Test error reporter with BufferErrorReporter mode
 TEST(CompiledModelTest, ErrorReporterBufferMode) {
+  if constexpr (!kSupportsErrorReporterApi) {
+    GTEST_SKIP() << "ReportError is not implemented on Windows.";
+  }
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
@@ -837,6 +846,9 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
 
 // Test error reporter with default StderrReporter mode
 TEST(CompiledModelTest, ErrorReporterStderrMode) {
+  if constexpr (!kSupportsErrorReporterApi) {
+    GTEST_SKIP() << "ReportError is not implemented on Windows.";
+  }
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
@@ -860,6 +872,9 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
 
 // Test error reporter with edge cases
 TEST(CompiledModelTest, ErrorReporterEdgeCases) {
+  if constexpr (!kSupportsErrorReporterApi) {
+    GTEST_SKIP() << "ReportError is not implemented on Windows.";
+  }
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
@@ -913,6 +928,9 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
 
 // Test error reporter with None mode (no error reporting)
 TEST(CompiledModelTest, ErrorReporterNoneMode) {
+  if constexpr (!kSupportsErrorReporterApi) {
+    GTEST_SKIP() << "ReportError is not implemented on Windows.";
+  }
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
