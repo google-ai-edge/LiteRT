@@ -36,6 +36,19 @@ def _tensorflow_source_repo_impl(ctx):
             stripPrefix = ctx.attr.strip_prefix,
         )
 
+    _patch_xla_windows_copts(ctx)
+    _apply_repo_patches(ctx)
+
+def _patch_xla_windows_copts(ctx):
+    """Switch XLA Windows copts to MSVC-style flags to avoid -Wno-sign-compare."""
+    tsl_bzl = "third_party/xla/xla/tsl/tsl.bzl"
+    content = ctx.read(tsl_bzl)
+    old = 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = False),'
+    new = 'clean_dep("//xla/tsl:windows"): get_win_copts(is_external, is_msvc = True),'
+    if old in content:
+        ctx.file(tsl_bzl, content.replace(old, new))
+
+def _apply_repo_patches(ctx):
     # Apply patches after extraction/symlinking.
     for patch in ctx.attr.patches:
         ctx.patch(ctx.path(patch), strip = 1)

@@ -13,6 +13,5 @@
 # limitations under the License.
 
 exports_files([
-    "PATCH.tf_xla_tsl_win_copts",
     "PATCH.protobuf_port_msvc_compat",
 ])
