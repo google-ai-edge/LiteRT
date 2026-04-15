@@ -26,19 +26,6 @@
 extern "C" {
 #endif  // __cplusplus
 
-//
-// LiteRtTensor + Types
-//
-
-// Get the string name associated with this tensor. This is an optional
-// attribute and if not set will return a zero-length string.
-// The returned string pointer is owned by the LiteRtModel to which the given
-// Tensor belongs. It becomes invalid when the LiteRtModel is destroyed.
-LiteRtStatus LiteRtGetTensorName(LiteRtTensor tensor, const char** name);
-
-// Get the index associated with this tensor.
-LiteRtStatus LiteRtGetTensorIndex(LiteRtTensor tensor, uint32_t* tensor_index);
-
 // TENSOR TYPES
 
 // Primitive types for elements in a tensor.
