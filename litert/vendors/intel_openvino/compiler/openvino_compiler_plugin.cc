@@ -444,8 +444,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       LITERT_LOG(LITERT_INFO, "Using default configuration (LATENCY mode)");
     }
 
-    LITERT_RETURN_IF_ERROR(
-        litert::openvino::ConfigureCompilationParams(soc_model, configs_map));
+    // Configure the NPU platform string used by OpenVINO.
+    if (device == "NPU") {
+      LITERT_RETURN_IF_ERROR(
+          litert::openvino::ConfigureCompilationParams(soc_model, configs_map));
+    }
 
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);

@@ -23,6 +23,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 
@@ -31,6 +32,7 @@ class LiteRtDispatchDeviceContextT;
 class LiteRtDispatchInvocationContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
+  using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
 
   ~LiteRtDispatchInvocationContextT() = default;
 
@@ -38,7 +40,8 @@ class LiteRtDispatchInvocationContextT {
       LiteRtDispatchDeviceContextT& device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-      int num_inputs, int num_outputs);
+      int num_inputs, int num_outputs,
+      IntelOpenVinoOptions* intel_openvino_opts);
 
   litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
       const LiteRtRankedTensorType& tensor_type);
