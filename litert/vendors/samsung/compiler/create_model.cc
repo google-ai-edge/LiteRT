@@ -29,6 +29,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -52,6 +53,7 @@
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/rms_norm_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/select_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
@@ -443,6 +445,16 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflTransposeConv:
         op_wrapper = BuildTransposeConvOp(op);
         break;
+      case kLiteRtOpCodeShloComposite: {
+        auto composite_opt = GetOptionsAs<CompositeOptions>(op.Get());
+        if (composite_opt && composite_opt->name == CompositeOptions::kRmsNorm) {
+          op_wrapper = BuildRmsNormOp(op);
+        } else {
+          LITERT_LOG(LITERT_ERROR,
+                     "Unsupported composite operator : ", composite_opt->name);
+        }
+        break;
+      }
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
     }

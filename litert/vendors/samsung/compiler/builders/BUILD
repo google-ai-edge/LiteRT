@@ -222,6 +222,21 @@ cc_library(
 )
 
 cc_library(
+    name = "rms_norm_op_builder",
+    srcs = ["rms_norm_op_builder.cc"],
+    hdrs = ["rms_norm_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_op_options",
+        "@flatbuffers",
+    ],
+)
+
+cc_library(
     name = "softmax_op_builder",
     srcs = ["softmax_op_builder.cc"],
     hdrs = ["softmax_op_builder.h"],
