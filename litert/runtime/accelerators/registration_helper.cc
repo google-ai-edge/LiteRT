@@ -61,12 +61,16 @@ LiteRtStatus RegisterAcceleratorFromDef(
       LiteRtRegisterAccelerator(env, accelerator, nullptr, nullptr));
 
   for (size_t i = 0; i < accelerator_def->num_supported_buffer_types; ++i) {
-    LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
+    auto handler_status = LiteRtRegisterTensorBufferHandlers(
         env, accelerator_def->supported_buffer_types[i],
         accelerator_def->create_func, accelerator_def->destroy_func,
         accelerator_def->lock_func, accelerator_def->unlock_func,
         accelerator_def->clear_func, accelerator_def->import_func,
-        accelerator_def->device_tag, accelerator_def->queue_tag));
+        accelerator_def->device_tag, accelerator_def->queue_tag);
+    if (handler_status != kLiteRtStatusOk &&
+        handler_status != kLiteRtStatusErrorAlreadyExists) {
+      return handler_status;
+    }
   }
 
   return kLiteRtStatusOk;

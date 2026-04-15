@@ -14,6 +14,10 @@
 
 #include "litert/runtime/accelerators/gpu_registry.h"
 
+#if !defined(LITERT_WINDOWS_OS)
+#include <dlfcn.h>
+#endif
+#include <cstddef>
 #include <filesystem>  // NOLINT
 #include <string>
 #include <utility>
@@ -28,12 +32,14 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/accelerators/builtin_accelerators.h"
 #include "litert/runtime/accelerators/registration_helper.h"
 
 extern "C" {
 
 // Define a data pointer to an accelerator definition. This pointer is updated
 // by statically linked GPU accelerator.
+// TODO: Remove this once all GPU accelerators are migrated to the new registry.
 LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 
 }  // extern "C"
@@ -43,6 +49,70 @@ namespace {
 using ::litert::Expected;
 using ::litert::RtldFlags;
 using ::litert::SharedLibrary;
+
+using GetBuiltinAcceleratorsFunc = const LiteRtAcceleratorDef* const* (*)();
+using GetBuiltinAcceleratorsSizeFunc = size_t (*)();
+
+// Helper to find and call the registry functions, supporting discovery across
+// shared library boundaries via dlsym(RTLD_DEFAULT).
+void DiscoverAndRegisterBuiltinAccelerators(
+    LiteRtEnvironment environment, const char* get_accels_name,
+    const char* get_size_name, GetBuiltinAcceleratorsFunc local_get_accels,
+    GetBuiltinAcceleratorsSizeFunc local_get_size, bool exclusive,
+    bool* registered_any) {
+  GetBuiltinAcceleratorsFunc get_accels = local_get_accels;
+  GetBuiltinAcceleratorsSizeFunc get_size = local_get_size;
+
+#if !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__) && \
+    !defined(__EMSCRIPTEN__)
+  // On Linux/Android, try to find the registry functions in the main executable
+  // or other shared libraries if the runtime is in a shared library.
+  void* symbol = dlsym(RTLD_DEFAULT, get_accels_name);
+  if (symbol != nullptr) {
+    get_accels = reinterpret_cast<GetBuiltinAcceleratorsFunc>(symbol);
+  }
+  symbol = dlsym(RTLD_DEFAULT, get_size_name);
+  if (symbol != nullptr) {
+    get_size = reinterpret_cast<GetBuiltinAcceleratorsSizeFunc>(symbol);
+  }
+#endif
+
+  if (get_accels == nullptr || get_size == nullptr) {
+    return;
+  }
+
+  const LiteRtAcceleratorDef* const* builtin_accelerators = get_accels();
+  size_t size = get_size();
+  LiteRtHwAcceleratorSet registered_hw_types = kLiteRtHwAcceleratorNone;
+
+  for (size_t i = 0; i < size; ++i) {
+    const LiteRtAcceleratorDef* accel_def = builtin_accelerators[i];
+    if (accel_def == nullptr) {
+      continue;
+    }
+
+    LiteRtHwAcceleratorSet hw_types;
+    if (accel_def->get_hardware_support(nullptr, &hw_types) !=
+        kLiteRtStatusOk) {
+      continue;
+    }
+
+    // If exclusive mode is enabled, only register the first backend for each
+    // hardware type (GPU, NPU, etc).
+    if (exclusive && (registered_hw_types & hw_types)) {
+      continue;
+    }
+
+    if (::litert::internal::RegisterAcceleratorFromDef(
+            environment, accel_def) == kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "Statically linked accelerator registered.");
+      registered_hw_types |= hw_types;
+      if (registered_any != nullptr) {
+        *registered_any = true;
+      }
+    }
+  }
+}
 
 Expected<SharedLibrary> LoadSharedLibrary(absl::string_view shlib_path,
                                           bool try_default_on_failure) {
@@ -142,11 +212,24 @@ LiteRtStatus LiteRtRegisterGpuAccelerator(LiteRtEnvironment environment) {
 #endif  // LITERT_HAS_VULKAN_SUPPORT
   };
 
+  bool registered_any = false;
+
+  // 1. Try statically linked accelerators from the new registry.
+  DiscoverAndRegisterBuiltinAccelerators(
+      environment, "GetBuiltinGpuAccelerators", "GetBuiltinGpuAcceleratorsSize",
+      GetBuiltinGpuAccelerators, GetBuiltinGpuAcceleratorsSize,
+      /*exclusive=*/true, &registered_any);
+
+  // 2. Try the legacy static pointer (for backwards compatibility).
   if (LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
       ::litert::internal::RegisterAcceleratorFromDef(
           environment, LiteRtStaticLinkedAcceleratorGpuDef) ==
           kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+    registered_any = true;
+  }
+
+  if (registered_any) {
     return kLiteRtStatusOk;
   }
 

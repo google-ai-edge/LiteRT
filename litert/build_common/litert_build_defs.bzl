@@ -707,6 +707,7 @@ def litert_accelerator_library(
         name = name + "_runtimecapi",
         srcs = srcs,
         hdrs = hdrs,
+        defines = ["LITERT_DYNAMIC_ACCELERATOR"],
         visibility = visibility,
         deps = deps,
         tags = tags,
