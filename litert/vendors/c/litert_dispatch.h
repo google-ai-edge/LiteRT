@@ -58,6 +58,7 @@ typedef enum LiteRtDispatchExecutableType {
   kLiteRtDispatchExecutableTypeUnknown = 0,
   kLiteRtDispatchExecutableTypeDspLibrary = 1,  // DSP library
   kLiteRtDispatchExecutableTypeMlModel = 2,     // Vendor-specific ML model
+  kLiteRtDispatchExecutableTypeJitHandle = 3,
 } LiteRtDispatchExecutableType;
 
 typedef struct LiteRtMemBuffer {

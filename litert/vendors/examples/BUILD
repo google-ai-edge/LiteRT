@@ -187,10 +187,12 @@ cc_test(
         "notsan",
     ],
     deps = [
+        ":example_common",
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
@@ -255,6 +257,7 @@ cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
     deps = [
+        ":example_common",
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
