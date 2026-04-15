@@ -130,12 +130,50 @@ EXPORTS
   LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
   LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer
   LiteRtFindOpaqueOptionsData
+  LiteRtFullyConnectedGetQuantizedBiasTypeOption
   LiteRtGetAcceleratorEnvironment
+  LiteRtGetAddFusedActivationOption
+  LiteRtGetAveragePool2dFilterHeightOption
+  LiteRtGetAveragePool2dFilterWidthOption
+  LiteRtGetAveragePool2dFusedActivationOption
+  LiteRtGetAveragePool2dPaddingOption
+  LiteRtGetAveragePool2dStrideHOption
+  LiteRtGetAveragePool2dStrideWOption
+  LiteRtGetBatchMatmulAdjXOption
+  LiteRtGetBatchMatmulAdjYOption
+  LiteRtGetBatchMatmulAsymmetricQuantizeInputOption
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
+  LiteRtGetConcatenationAxisOption
+  LiteRtGetConcatenationFusedActivationOption
+  LiteRtGetConv2dDilationHOption
+  LiteRtGetConv2dDilationWOption
+  LiteRtGetConv2dFusedActivationOption
+  LiteRtGetConv2dPaddingOption
+  LiteRtGetConv2dStrideHOption
+  LiteRtGetConv2dStrideWOption
+  LiteRtGetConv3dDilationDOption
+  LiteRtGetConv3dDilationHOption
+  LiteRtGetConv3dDilationWOption
+  LiteRtGetConv3dFusedActivationOption
+  LiteRtGetConv3dPaddingOption
+  LiteRtGetConv3dStrideDOption
+  LiteRtGetConv3dStrideHOption
+  LiteRtGetConv3dStrideWOption
+  LiteRtGetCumsumExclusiveOption
+  LiteRtGetCumsumReverseOption
+  LiteRtGetDepthToSpaceBlockSizeOption
+  LiteRtGetDepthwiseConv2dDepthMultiplierOption
+  LiteRtGetDepthwiseConv2dDilationHOption
+  LiteRtGetDepthwiseConv2dDilationWOption
+  LiteRtGetDepthwiseConv2dFusedActivationOption
+  LiteRtGetDepthwiseConv2dPaddingOption
+  LiteRtGetDepthwiseConv2dStrideHOption
+  LiteRtGetDepthwiseConv2dStrideWOption
+  LiteRtGetDivFusedActivationOption
   LiteRtGetEnvironmentOptions
   LiteRtGetEnvironmentOptionsValue
   LiteRtGetEventCustomNativeEvent
@@ -144,11 +182,34 @@ EXPORTS
   LiteRtGetEventOpenClEvent
   LiteRtGetEventSyncFenceFd
   LiteRtGetExternalLiteRtBufferContextTensorBuffer
+  LiteRtGetFullyConnectedAsymmetricQuantizeInputOption
+  LiteRtGetFullyConnectedFusedActivationOption
+  LiteRtGetFullyConnectedKeepNumDimsOption
+  LiteRtGetFullyConnectedWeightsFormatOption
+  LiteRtGetGatherAxisOption
+  LiteRtGetGatherBatchDimsOption
+  LiteRtGetGeluApproximateOption
+  LiteRtGetL2Pool2dFilterHeightOption
+  LiteRtGetL2Pool2dFilterWidthOption
+  LiteRtGetL2Pool2dFusedActivationOption
+  LiteRtGetL2Pool2dPaddingOption
+  LiteRtGetL2Pool2dStrideHOption
+  LiteRtGetL2Pool2dStrideWOption
+  LiteRtGetLeakyReluAlphaOption
   LiteRtGetMainModelSubgraphIndex
+  LiteRtGetMaxPool2dFilterHeightOption
+  LiteRtGetMaxPool2dFilterWidthOption
+  LiteRtGetMaxPool2dFusedActivationOption
+  LiteRtGetMaxPool2dPaddingOption
+  LiteRtGetMaxPool2dStrideHOption
+  LiteRtGetMaxPool2dStrideWOption
+  LiteRtGetMeanKeepDimsOption
   LiteRtGetMetric
+  LiteRtGetMirrorPadModeOption
   LiteRtGetModelMetadata
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
+  LiteRtGetMulFusedActivationOption
   LiteRtGetNextOpaqueOptions
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
@@ -162,6 +223,7 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
+  LiteRtGetOneHotAxisOption
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsData
   LiteRtGetOpaqueOptionsHash
@@ -170,10 +232,25 @@ EXPORTS
   LiteRtGetOpInput
   LiteRtGetOpOutput
   LiteRtGetOptionsHardwareAccelerators
+  LiteRtGetPackAxisOption
+  LiteRtGetPackValuesCountOption
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
   LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
+  LiteRtGetReduceAllKeepDimsOption
+  LiteRtGetReduceAnyKeepDimsOption
+  LiteRtGetReduceMaxKeepDimsOption
+  LiteRtGetReduceMinKeepDimsOption
+  LiteRtGetReshapeNewShapeOption
+  LiteRtGetResizeBilinearAlignCornersOption
+  LiteRtGetResizeBilinearHalfPixelCenterOption
+  LiteRtGetResizeNearestNeighborAlignCornersOption
+  LiteRtGetResizeNearestNeighborHalfPixelCenterOption
+  LiteRtGetSHLOCompositeOpAttributes
+  LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex
+  LiteRtGetSHLOCompositeOpName
+  LiteRtGetSHLOCompositeOpVersion
   LiteRtGetSignatureInputName
   LiteRtGetSignatureInputTensor
   LiteRtGetSignatureInputTensorByIndex
@@ -182,9 +259,21 @@ EXPORTS
   LiteRtGetSignatureOutputTensor
   LiteRtGetSignatureOutputTensorByIndex
   LiteRtGetSignatureSubgraph
+  LiteRtGetSoftmaxBetaOption
+  LiteRtGetSpaceToDepthBlockSizeOption
+  LiteRtGetSplitNumSplitsOption
+  LiteRtGetSqueezeDimsOption
+  LiteRtGetStridedSliceBeginMaskOption
+  LiteRtGetStridedSliceEllipsisMaskOption
+  LiteRtGetStridedSliceEndMaskOption
+  LiteRtGetStridedSliceNewAxisMaskOption
+  LiteRtGetStridedSliceOffsetOption
+  LiteRtGetStridedSliceShrinkAxisMaskOption
+  LiteRtGetSubFusedActivationOption
   LiteRtGetSubgraphInput
   LiteRtGetSubgraphOp
   LiteRtGetSubgraphOutput
+  LiteRtGetSumKeepDimsOption
   LiteRtGetTensorBufferAhwb
   LiteRtGetTensorBufferCustomTensorBufferHandle
   LiteRtGetTensorBufferDmaBufBuffer
@@ -214,7 +303,14 @@ EXPORTS
   LiteRtGetTensorTypeId
   LiteRtGetTensorUse
   LiteRtGetTensorWeights
+  LiteRtGetTransposeConvFusedActivationOption
+  LiteRtGetTransposeConvPaddingOption
+  LiteRtGetTransposeConvStrideHOption
+  LiteRtGetTransposeConvStrideWOption
+  LiteRtGetUnpackAxisOption
+  LiteRtGetUnpackNumOption
   LiteRtGetUnrankedTensorType
+  LiteRtGetWeightsBufferId
   LiteRtGetWeightsBytes
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent

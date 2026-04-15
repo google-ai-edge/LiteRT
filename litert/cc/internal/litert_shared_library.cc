@@ -73,6 +73,7 @@ RtldFlags SanitizeFlagsInCaseOfAsan(RtldFlags flags) {
 #include <windows.h>
 
 #include <cctype>
+#include <filesystem>
 #include <string>
 
 // Windows implementation of dlfcn.h functions
@@ -105,6 +106,10 @@ std::string GetWindowsErrorString(DWORD error_code) {
   return message;
 }
 
+bool IsAbsolutePath(const std::string& path) {
+  return std::filesystem::path(path).is_absolute();
+}
+
 const char* dlerror() {
   return g_last_error.empty() ? nullptr : g_last_error.c_str();
 }
@@ -118,19 +123,39 @@ void* dlopen(const char* filename, int flags) {
     return GetModuleHandle(NULL);
   }
 
-  // Convert .so extension to .dll if present
-  std::string dll_name(filename);
-  size_t pos = dll_name.rfind(".so");
-  if (pos != std::string::npos && pos == dll_name.length() - 3) {
-    dll_name.replace(pos, 3, ".dll");
+  std::filesystem::path requested_path(filename);
+  requested_path.make_preferred();
+  std::string requested_name = requested_path.string();
+  std::string fallback_name = requested_name;
+  size_t pos = fallback_name.rfind(".so");
+  if (pos != std::string::npos && pos == fallback_name.length() - 3) {
+    fallback_name.replace(pos, 3, ".dll");
   }
 
-  // Load the library
-  HMODULE handle = LoadLibraryA(dll_name.c_str());
+  // When loading by absolute path, ask Windows to also search that DLL's
+  // directory for dependencies. This lets packaged sibling libLiteRt.dll
+  // resolve without mutating PATH.
+  const auto load_with_search_path = [](const std::string& path) {
+    if (IsAbsolutePath(path)) {
+      return LoadLibraryExA(path.c_str(), nullptr,
+                            LOAD_WITH_ALTERED_SEARCH_PATH);
+    }
+    return LoadLibraryA(path.c_str());
+  };
+
+  // Bazel on Windows may still emit shared libraries with a .so suffix. Try
+  // the requested path first, then fall back to a .dll spelling.
+  HMODULE handle = load_with_search_path(requested_name);
+  if (!handle && fallback_name != requested_name) {
+    handle = load_with_search_path(fallback_name);
+  }
   if (!handle) {
     DWORD error = GetLastError();
-    g_last_error = "Failed to load library '" + dll_name +
-                   "': " + GetWindowsErrorString(error);
+    g_last_error = "Failed to load library '" + requested_name + "'";
+    if (fallback_name != requested_name) {
+      g_last_error += " or fallback '" + fallback_name + "'";
+    }
+    g_last_error += ": " + GetWindowsErrorString(error);
   }
 
   return handle;
