@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -21,11 +22,13 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/examples/example_common.h"
 
 namespace litert {
 namespace {
@@ -148,6 +151,57 @@ TEST(TestCallDummyPlugin, CompileMultiSubgraphWithSharedWeights) {
   EXPECT_THAT(byte_code_string, ::testing::HasSubstr("const_map:"));
 
   LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestCallDummyPlugin, CompileAoT) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("mul_simple.tflite");
+
+  LiteRtCompiledResult result;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "AoT_Only",
+                                               model.Get(), &result));
+
+  const void* handle = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(result, 0, &handle));
+  EXPECT_EQ(handle, nullptr);
+
+  const void* byte_code;
+  size_t byte_code_size;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompiledResultByteCode(result, 0, &byte_code, &byte_code_size));
+
+  auto byte_code_buf = litert::BufferRef<uint8_t>(
+      reinterpret_cast<const uint8_t*>(byte_code), byte_code_size);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto example_global_graph,
+      litert::example::ExampleGlobalGraph::Parse(byte_code_buf));
+
+  EXPECT_EQ(example_global_graph.subgraphs_.size(), 1);
+  EXPECT_EQ(example_global_graph.subgraphs_.count("partition_0"), 1u);
+
+  LiteRtDestroyCompiledResult(result);
+}
+
+TEST(TestCallDummyPlugin, CompileJitHandle) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("mul_simple.tflite");
+
+  LiteRtCompiledResult result;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "JustInTime",
+                                               model.Get(), &result));
+
+  const void* handle = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(result, 0, &handle));
+  ASSERT_NE(handle, nullptr);
+
+  auto* example_global_graph_ptr =
+      reinterpret_cast<const litert::example::ExampleGlobalGraph*>(handle);
+
+  EXPECT_EQ(example_global_graph_ptr->subgraphs_.size(), 1);
+  EXPECT_EQ(example_global_graph_ptr->subgraphs_.count("partition_0"), 1u);
+
+  LiteRtDestroyCompiledResult(result);
 }
 
 }  // namespace

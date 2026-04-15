@@ -46,6 +46,7 @@ class LiteRtDispatchInvocationContextT {
   static litert::Expected<Ptr> Create(
       litert::qnn::QnnManager& qnn_manager,
       LiteRtDispatchDeviceContextT& device_context,
+      LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name);
 
   litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
@@ -79,7 +80,8 @@ class LiteRtDispatchInvocationContextT {
     return scheduling_info_.has_value() ? &scheduling_info_.value() : nullptr;
   }
 
-  Qnn_ContextHandle_t GetContextHandle() { return context_handle_.Get(); }
+  Qnn_ContextHandle_t GetContextHandle() { return raw_context_handle_; }
+  Qnn_ContextHandle_t ContextHandle() { return raw_context_handle_; }
 
  private:
   LiteRtDispatchInvocationContextT(
@@ -89,6 +91,15 @@ class LiteRtDispatchInvocationContextT {
       const litert::qnn::QnnManager::ContextHandle* context_handle,
       Qnn_ProfileHandle_t profile_handle, int graph_index,
       Qnn_GraphHandle_t graph_handle);
+
+  LiteRtDispatchInvocationContextT(
+      litert::qnn::QnnManager& qnn_manager,
+      LiteRtDispatchDeviceContext device_context,
+      const litert::qnn::QnnManager::ContextHandle* context_handle,
+      Qnn_ContextHandle_t raw_context_handle,
+      Qnn_ProfileHandle_t profile_handle, int graph_index,
+      Qnn_GraphHandle_t graph_handle, std::vector<::qnn::TensorWrapper> inputs,
+      std::vector<::qnn::TensorWrapper> outputs);
 
   litert::Expected<void> AttachBuffer(
       Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle);
@@ -108,6 +119,7 @@ class LiteRtDispatchInvocationContextT {
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContext device_context_;
   const litert::qnn::QnnManager::ContextHandle& context_handle_;
+  Qnn_ContextHandle_t raw_context_handle_;
   Qnn_ProfileHandle_t profile_handle_;
   int graph_index_;
   Qnn_GraphHandle_t graph_handle_;

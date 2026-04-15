@@ -87,6 +87,9 @@ ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
           "platforms.");
 
+ABSL_FLAG(bool, qualcomm_enable_just_in_time, false,
+          "Whether to enable Just-In-Time in QNN, bypassing serialization.");
+
 ABSL_FLAG(bool, qualcomm_use_htp_preference, false,
           "Whether to transform a litert op into the HTP prefered pattern.");
 
@@ -484,6 +487,9 @@ namespace litert::qualcomm {
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto weight_share = absl::GetFlag(FLAGS_qualcomm_enable_weight_sharing);
   opts.SetEnableWeightSharing(weight_share);
+
+  const auto just_in_time = absl::GetFlag(FLAGS_qualcomm_enable_just_in_time);
+  opts.SetEnableJustInTime(just_in_time);
 
   const auto log_level = absl::GetFlag(FLAGS_qualcomm_log_level);
   opts.SetLogLevel(log_level);

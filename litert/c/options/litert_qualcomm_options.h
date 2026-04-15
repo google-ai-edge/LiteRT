@@ -123,6 +123,18 @@ LiteRtStatus LrtQualcommOptionsSetEnableWeightSharing(
 LiteRtStatus LrtQualcommOptionsGetEnableWeightSharing(
     LrtQualcommOptions options, bool* enable_weight_sharing);
 
+// enable_just_in_time
+
+// Just-In-Time allows passing the QNN Context directly from the compiler plugin
+// to the dispatcher in-memory, bypassing graph finalization and serialization.
+// Defaults to false.
+
+LiteRtStatus LrtQualcommOptionsSetEnableJustInTime(LrtQualcommOptions options,
+                                                   bool enable_just_in_time);
+
+LiteRtStatus LrtQualcommOptionsGetEnableJustInTime(LrtQualcommOptions options,
+                                                   bool* enable_just_in_time);
+
 LiteRtStatus LrtQualcommOptionsSetDumpTensorIds(LrtQualcommOptions options,
                                                 const int32_t* ids,
                                                 size_t number_of_ids);
