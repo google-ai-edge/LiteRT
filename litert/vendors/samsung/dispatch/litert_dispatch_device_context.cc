@@ -67,6 +67,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeDmaBuf:
 #if LITERT_HAS_DMABUF_SUPPORT
+      void* addr = nullptr;
       if (auto status =
               LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &addr, &fd);
           status != kLiteRtStatusOk) {

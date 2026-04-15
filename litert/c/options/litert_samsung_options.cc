@@ -18,47 +18,102 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_toml_parser.h"
 
-struct LiteRtSamsungOptionsT {
-  //
+struct LrtSamsungOptionsT {
+  // Set to true when compile LLM.
+  std::optional<bool> enable_large_model_support;
 };
 
-LiteRtStatus LiteRtSamsungOptionsCreate(LiteRtOpaqueOptions* options) {
+const char* LrtSamsungOptionsGetIdentifier() { return "samsung"; }
+
+LiteRtStatus LrtCreateSamsungOptions(LrtSamsungOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-
-  auto options_data = std::make_unique<LiteRtSamsungOptionsT>();
-
-  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      LiteRtSamsungOptionsGetIdentifier(), options_data.get(),
-      [](void* payload) {
-        delete reinterpret_cast<LiteRtSamsungOptions>(payload);
-      },
-      options));
-
-  options_data.release();
+  *options = new LrtSamsungOptionsT;
   return kLiteRtStatusOk;
 }
 
-const char* LiteRtSamsungOptionsGetIdentifier() { return "samsung"; }
+void LrtDestroySamsungOptions(LrtSamsungOptions options) {
+  if (options != nullptr) {
+    delete options;
+  }
+}
 
-LiteRtStatus LiteRtSamsungOptionsGet(LiteRtOpaqueOptions options,
-                                     LiteRtSamsungOptions* options_data) {
-  if (options_data == nullptr || options == nullptr) {
+LiteRtStatus LrtCreateSamsungOptionsFromToml(const char* toml_payload,
+                                             LrtSamsungOptions* options) {
+  if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  const char* identifier;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetOpaqueOptionsIdentifier(options, &identifier));
-  if (absl::NullSafeStringView(identifier) !=
-      LiteRtSamsungOptionsGetIdentifier()) {
+  LITERT_RETURN_IF_ERROR(LrtCreateSamsungOptions(options));
+
+  if (toml_payload == nullptr || toml_payload[0] == '\0') {
+    return kLiteRtStatusOk;
+  }
+
+  LrtSamsungOptionsT& options_ref = **options;
+  auto status = litert::internal::ParseToml(
+      toml_payload,
+      [&options_ref](absl::string_view key,
+                     absl::string_view value) -> LiteRtStatus {
+        if (key == "enable_large_model_support") {
+          LITERT_ASSIGN_OR_RETURN(options_ref.enable_large_model_support,
+                                  litert::internal::ParseTomlBool(value));
+          return kLiteRtStatusOk;
+        }
+        return kLiteRtStatusOk;
+      });
+
+  if (status != kLiteRtStatusOk) {
+    LrtDestroySamsungOptions(*options);
+    *options = nullptr;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
+                                            const char** identifier,
+                                            void** payload,
+                                            void (**payload_deleter)(void*)) {
+  if (options == nullptr || identifier == nullptr || payload == nullptr ||
+      payload_deleter == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  void* payload;
-  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(options, &payload));
-  *options_data = reinterpret_cast<LiteRtSamsungOptions>(payload);
+
+  *identifier = LrtSamsungOptionsGetIdentifier();
+
+  std::ostringstream toml;
+  if (options->enable_large_model_support.has_value()) {
+    toml << "enable_large_model_support = "
+         << (*options->enable_large_model_support ? "true" : "false") << "\n";
+  }
+
+  std::string toml_str = toml.str();
+  *payload = new char[toml_str.size() + 1];
+  memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
+  *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };
+  return kLiteRtStatusOk;
+}
+
+// enable_large_model_support ------------------------------------------------
+LiteRtStatus LrtSamsungOptionsSetEnableLargeModelSupport(
+    LrtSamsungOptions options, bool enable_large_model_support) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->enable_large_model_support = enable_large_model_support;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSamsungOptionsGetEnableLargeModelSupport(
+    LrtSamsungOptions options, bool* enable_large_model_support) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *enable_large_model_support =
+      options->enable_large_model_support.value_or(false);
   return kLiteRtStatusOk;
 }

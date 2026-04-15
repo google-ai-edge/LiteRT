@@ -14,16 +14,18 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/vendors/samsung:samsung_build_defs.bzl", "litert_cc_lib_with_litecore")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert/vendors/samsung:__subpackages__"],
 )
 
-cc_library(
+litert_cc_lib_with_litecore(
     name = "ai_litecore_api",
     srcs = ["ai_litecore_manager.cc"],
     hdrs = ["ai_litecore_manager.h"],
+    ungrte = True,
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",

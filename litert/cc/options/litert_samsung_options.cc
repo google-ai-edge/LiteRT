@@ -20,32 +20,38 @@
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert::samsung {
 
 const char* SamsungOptions::Discriminator() {
-  return LiteRtSamsungOptionsGetIdentifier();
-}
-
-Expected<SamsungOptions> SamsungOptions::Create(OpaqueOptions& options) {
-  const auto id = options.GetIdentifier();
-  if (!id || *id != Discriminator()) {
-    return Error(Status::kErrorInvalidArgument);
-  }
-  return SamsungOptions(options.Get(), OwnHandle::kNo);
+  return LrtSamsungOptionsGetIdentifier();
 }
 
 Expected<SamsungOptions> SamsungOptions::Create() {
-  LiteRtOpaqueOptions options;
-  LITERT_RETURN_IF_ERROR(LiteRtSamsungOptionsCreate(&options));
-  return SamsungOptions(options, OwnHandle::kYes);
+  LrtSamsungOptions options = nullptr;
+  LITERT_RETURN_IF_ERROR(LrtCreateSamsungOptions(&options));
+  return SamsungOptions(options);
 }
 
-LiteRtSamsungOptions SamsungOptions::Data() const {
-  LiteRtSamsungOptions options;
-  internal::AssertOk(LiteRtSamsungOptionsGet, Get(), &options);
-  return options;
+LiteRtStatus SamsungOptions::GetOpaqueOptionsData(
+    const char** identifier, void** payload,
+    void (**payload_deleter)(void*)) const {
+  return LrtGetOpaqueSamsungOptionsData(Get(), identifier, payload,
+                                        payload_deleter);
+}
+
+Expected<void> SamsungOptions::SetEnableLargeModelSupport(
+    bool large_model_support) {
+  LITERT_RETURN_IF_ERROR(
+      LrtSamsungOptionsSetEnableLargeModelSupport(Get(), large_model_support));
+  return {};
+}
+
+Expected<bool> SamsungOptions::GetEnableLargeModelSupport() const {
+  bool large_model_support;
+  LITERT_RETURN_IF_ERROR(
+      LrtSamsungOptionsGetEnableLargeModelSupport(Get(), &large_model_support));
+  return large_model_support;
 }
 
 }  // namespace litert::samsung

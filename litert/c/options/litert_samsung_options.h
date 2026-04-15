@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
+#ifndef ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
+#define ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
 
 #include <stdint.h>
 
@@ -25,17 +25,37 @@
 extern "C" {
 #endif  // __cplusplus
 
-LITERT_DEFINE_HANDLE(LiteRtSamsungOptions);
+LITERT_DEFINE_HANDLE(LrtSamsungOptions);
 
-LiteRtStatus LiteRtSamsungOptionsCreate(LiteRtOpaqueOptions* options);
+// The string identifier that discriminates samsung options.
+const char* LrtSamsungOptionsGetIdentifier();
 
-const char* LiteRtSamsungOptionsGetIdentifier();
+// Create a samsung options object.
+LiteRtStatus LrtCreateSamsungOptions(LrtSamsungOptions* options);
 
-LiteRtStatus LiteRtSamsungOptionsGet(LiteRtOpaqueOptions options,
-                                     LiteRtSamsungOptions* options_data);
+#ifdef __cplusplus
+// Create a qualcomm options object mapped from a TOML payload.
+LiteRtStatus LrtCreateSamsungOptionsFromToml(const char* toml_payload,
+                                             LrtSamsungOptions* options);
+#endif  // __cplusplus
 
+// Destroy a samsung options object.
+void LrtDestroySamsungOptions(LrtSamsungOptions options);
+
+LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
+                                            const char** identifier,
+                                            void** payload,
+                                            void (**payload_deleter)(void*));
+
+// COMPILATION OPTIONS ////////////////////////////////////////////////////////
+
+LiteRtStatus LrtSamsungOptionsSetEnableLargeModelSupport(
+    LrtSamsungOptions options, bool enable_large_model_support);
+
+LiteRtStatus LrtSamsungOptionsGetEnableLargeModelSupport(
+    LrtSamsungOptions options, bool* enable_large_model_support);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
+#endif  // ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
