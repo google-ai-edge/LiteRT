@@ -19,6 +19,7 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 # copybara:uncomment_end_and_comment_begin
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 # copybara:comment_end
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
@@ -27,7 +28,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
-# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(
     "//litert/build_common:litert_build_defs.bzl",
@@ -1001,37 +1002,31 @@ cc_library(
 
 exports_files(srcs = glob(["litert_*.h"]))
 
-# copybara:uncomment_begin(google-only)
-# objc_library(
-#     name = "litert_tensor_buffer_test_library",
-#     testonly = True,
-#     srcs = ["litert_tensor_buffer_test.mm"],
-#     deps = [
-#         ":litert_any",
-#         ":litert_common",
-#         ":litert_environment",
-#         ":litert_environment_options",
-#         ":litert_model",
-#         ":litert_tensor_buffer",
-#         ":litert_tensor_buffer_types",
-#         "//third_party/apple_frameworks:XCTest",
-#         "//litert/cc:litert_any",
-#         "//litert/cc:litert_layout",
-#         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-#     ],
-# )
-#
-# macos_unit_test(
-#     name = "litert_tensor_buffer_test_macos",
-#     minimum_os_version = LITERT_MIN_MACOS_VERSION,
-#     tags = ["notap"],
-#     deps = [":litert_tensor_buffer_test_library"],
-# )
-#
-# ios_unit_test(
-#     name = "litert_tensor_buffer_test_ios",
-#     minimum_os_version = LITERT_MIN_IOS_VERSION,
-#     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
-#     deps = [":litert_tensor_buffer_test_library"],
-# )
-# copybara:uncomment_end(google-only)
+objc_library(
+    name = "litert_tensor_buffer_test_library",
+    testonly = True,
+    srcs = ["litert_tensor_buffer_test.mm"],
+    sdk_frameworks = [
+        "Metal",
+        "XCTest",
+    ],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+        ":litert_environment",
+        ":litert_environment_options",
+        ":litert_model",
+        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
+        "//litert/cc:litert_any",
+        "//litert/cc:litert_layout",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+    ],
+)
+
+ios_unit_test(
+    name = "litert_tensor_buffer_test_ios",
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+    deps = [":litert_tensor_buffer_test_library"],
+)
