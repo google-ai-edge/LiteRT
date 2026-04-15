@@ -23,6 +23,8 @@ from litert.python.aot.core import aot_types
 from litert.python.aot.core import apply_plugin
 from litert.python.aot.core import test_common
 
+_REAL_GET_RESOURCE = apply_plugin.common.get_resource
+
 
 class MockCompletedProcess:
 
@@ -60,17 +62,31 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
   def soc_model(self) -> str:
     return "ExampleSocModel"
 
+  def _get_resource_for_test(
+      self, litert_relative_path: pathlib.Path, is_dir: bool = False
+  ) -> pathlib.Path:
+    """Resolves resources while stubbing only the apply-plugin binary path."""
+    # Only stub the binary lookup; model fixtures still need the real resolver.
+    if litert_relative_path == apply_plugin._BINARY:
+      return pathlib.Path("apply_plugin_main")
+    return _REAL_GET_RESOURCE(litert_relative_path, is_dir=is_dir)
+
   @mock.patch.object(subprocess, "run")
   def test_apply_plugin(self, mck: mock.Mock):
     mck.side_effect = self.get_touch_side_effect(
         self.output_model, MockCompletedProcess(0)
     )
-    apply_plugin.ApplyPlugin()(
-        aot_types.Model.create_from_path(self.input_model),
-        aot_types.Model.create_from_path(self.output_model),
-        self.soc_manufacturer,
-        self.soc_model,
-    )
+    with mock.patch.object(
+        apply_plugin.common,
+        "get_resource",
+        side_effect=self._get_resource_for_test,
+    ):
+      apply_plugin.ApplyPlugin()(
+          aot_types.Model.create_from_path(self.input_model),
+          aot_types.Model.create_from_path(self.output_model),
+          self.soc_manufacturer,
+          self.soc_model,
+      )
     cmd_str = " ".join(mck.call_args_list[0][0][0])
     self.assertIn(str(self.input_model), cmd_str)
     self.assertIn(str(self.output_model), cmd_str)
@@ -80,13 +96,18 @@ class ApplyPluginTest(test_common.TestWithTfliteModels):
 
   @mock.patch.object(subprocess, "run", return_value=MockCompletedProcess(1))
   def test_apply_plugin_no_file(self, unused_mock: mock.Mock):
-    with self.assertRaises(ValueError):
-      apply_plugin.ApplyPlugin()(
-          aot_types.Model.create_from_path(self.input_model),
-          aot_types.Model.create_from_path(self.output_model),
-          self.soc_manufacturer,
-          self.soc_model,
-      )
+    with mock.patch.object(
+        apply_plugin.common,
+        "get_resource",
+        side_effect=self._get_resource_for_test,
+    ):
+      with self.assertRaises(ValueError):
+        apply_plugin.ApplyPlugin()(
+            aot_types.Model.create_from_path(self.input_model),
+            aot_types.Model.create_from_path(self.output_model),
+            self.soc_manufacturer,
+            self.soc_model,
+        )
 
 
 if __name__ == "__main__":

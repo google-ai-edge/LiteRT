@@ -1361,7 +1361,7 @@ cc_library(
         "//tflite/types:half",
     ] + select({
         # Windows excludes some options to avoid unnecessary dependencies.
-        "@platforms//os:windows": [],
+        "//litert/build_common:windows": [],
         "//conditions:default": [
             "//litert/cc/dynamic_runtime:litert_op_options",
             # C++ NPU Options API targets.

@@ -143,8 +143,8 @@ litert_test(
     # Currently this test can only be run on Android because we don't have x86 shared libraries for
     # MTK.
     target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
+        "//litert/build_common:android": [],
+        "//litert/build_common:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,

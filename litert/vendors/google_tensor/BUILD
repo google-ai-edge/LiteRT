@@ -144,8 +144,8 @@ cc_test(
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
+        "//litert/build_common:android": [],
+        "//litert/build_common:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

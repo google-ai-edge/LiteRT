@@ -117,8 +117,8 @@ litert_test(
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
-        "@platforms//os:android": [],
-        "@platforms//os:linux": [],
+        "//litert/build_common:android": [],
+        "//litert/build_common:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,

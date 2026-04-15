@@ -16,12 +16,12 @@ package(
 cc_library(
     name = "log",
     srcs = select({
-        "@platforms//os:android": ["log_android.cc"],
+        "//litert/build_common:android": ["log_android.cc"],
         "//conditions:default": ["log_default.cc"],
     }),
     hdrs = ["log.h"],
     linkopts = select({
-        "@platforms//os:android": ["-llog"],
+        "//litert/build_common:android": ["-llog"],
         "//conditions:default": [],
     }),
     deps = [
