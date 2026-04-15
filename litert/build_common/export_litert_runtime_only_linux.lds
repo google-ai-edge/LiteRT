@@ -14,6 +14,12 @@ VERS_1.0 {
 
   local:
 
+    /* c/litert_layout.h */
+    /* LiteRtLayout is non-opaque type (its struct is defined in the header) */
+    /* and its APIs are not defined by litert_c_api_library rule. */
+    LiteRtGetNumLayoutElements;
+    LiteRtIsSameLayout;
+
     /* c/internal/litert_logging.h */
     LiteRtClearSinkLogger;
     LiteRtCreateLogger;
