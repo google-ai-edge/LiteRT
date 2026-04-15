@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_REGISTRY_H_
-#define ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_REGISTRY_H_
-
+#include "litert/c/internal/litert_static_accelerator_registry.h"
+#include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/litert_common.h"
 
-namespace litert::internal {
+extern "C" {
 
-// Registers the GPU accelerator (statically linked or dynamically loaded).
-LiteRtStatus LiteRtRegisterGpuAccelerator(LiteRtEnvironment environment);
+// Define a data pointer to an accelerator definition. This pointer is updated
+// by statically linked GPU accelerator.
+LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 
-}  // namespace litert::internal
+// Define a function pointer for the WebNN accelerator.
+LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
+    LiteRtEnvironmentT& environment) = nullptr;
 
-#endif  // ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_REGISTRY_H_
+}  // extern "C"
