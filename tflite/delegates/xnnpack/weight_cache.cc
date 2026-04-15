@@ -742,8 +742,9 @@ void* MMapWeightCacheProvider::OffsetToAddr(const size_t offset) {
   // reallocated so we cannot ensure pointer stability.
   auto it = offset_to_addr_.find(offset);
   XNNPACK_ABORT_CHECK(it != offset_to_addr_.end(),
-                      "Cannot get the address of a buffer in a cache before "
-                      "the build step that introduces it has finished.");
+                      "No address is mapped to the given offset. This is a "
+                      "critical error that should not happen. Check that the "
+                      "model hasn't changed since the cache was created.");
   return it->second;
 }
 
