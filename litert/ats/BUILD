@@ -166,17 +166,18 @@ litert_test(
         "--dont_register=.*tfl\\.zeros_like.*f16.*",
         "--dont_register=.*tfl\\.sign.*f16.*",
         "--dont_register=.*tfl\\.relu_0_to_1.*f16.*",
-    ],
+    ] + select({
+        "//litert/build_common:windows": [
+            "--dont_register=.*tfl\\.exp.*f16.*",
+        ],
+        "//conditions:default": [],
+    }),
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
     tags = [
         "notap",
     ],
-    target_compatible_with = select({
-        "@platforms//os:windows": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     ungrte = if_oss(True, False),
     use_sys_malloc = True,
     deps = [
@@ -272,10 +273,6 @@ cc_library(
 cc_test(
     name = "executor_test",
     srcs = ["executor_test.cc"],
-    target_compatible_with = select({
-        "@platforms//os:windows": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":executor",
         "//litert/c:litert_common",
@@ -379,10 +376,6 @@ cc_test(
         "nosan",
         "notsan",
     ],
-    target_compatible_with = select({
-        "@platforms//os:windows": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":common",
         ":compile_fixture",
