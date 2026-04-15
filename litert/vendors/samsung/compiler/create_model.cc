@@ -35,6 +35,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
+#include "litert/vendors/samsung/compiler/builders/argmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
@@ -290,6 +291,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflAdd:
         op_wrapper = BuildAddOp(op);
+        break;
+      case kLiteRtOpCodeTflArgMax:
+        op_wrapper = std::move(BuildArgMaxOp(op));
         break;
       case kLiteRtOpCodeTflAveragePool2d:
         op_wrapper = BuildAvgPool2dOp(op);

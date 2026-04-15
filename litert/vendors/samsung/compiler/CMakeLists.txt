@@ -23,6 +23,7 @@ add_library(samsung_compiler_plugin SHARED
     compiler_plugin.cc
     compile_model.cc
     create_model.cc
+    builders/argmax_op_builder.cc
     builders/batch_matmul_op_builder.cc
     builders/cast_op_builder.cc
     builders/concat_op_builder.cc
