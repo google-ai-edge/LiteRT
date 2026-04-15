@@ -14,17 +14,16 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-
-# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
-# copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("@build_bazel_rules_apple//apple:macos.bzl", "macos_unit_test")
 
-# copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "14.0"
 
-# copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
+LITERT_MIN_MACOS_VERSION = "14.0"
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -520,36 +519,39 @@ litert_device_test(
 #     target = ":litert_compiled_model_vulkan_test",
 # )
 #
-# objc_library(
-#     name = "litert_compiled_model_metal_test",
-#     testonly = True,
-#     srcs = [":litert_compiled_model_metal_test.mm"],
-#     data = [
-#         "//litert/test:testdata/constant_output_tensor.tflite",
-#         "//litert/test:testdata/simple_add3d_cst_int32.tflite",
-#         "//litert/test:testdata/simple_cast_and_add_op.tflite",
-#         "//litert/test:testdata/simple_model.tflite",
-#     ],
-#     deps = [
-#         ":litert_common",
-#         ":litert_compiled_model",
-#         ":litert_environment",
-#         ":litert_expected",
-#         ":litert_options",
-#         "@com_google_absl//absl/log:absl_log",
-#         "@com_google_absl//absl/strings",
-#         "@com_google_absl//absl/types:span",
-#         "//third_party/apple_frameworks:XCTest",
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_environment_options",
-#         "//litert/cc/options:litert_gpu_options",
-#         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/test:metal_test_helper",
-#         "//litert/test:simple_model",
-#     ],
-# )
+objc_library(
+    name = "litert_compiled_model_metal_test",
+    testonly = True,
+    srcs = [":litert_compiled_model_metal_test.mm"],
+    data = [
+        "//litert/test:testdata/constant_output_tensor.tflite",
+        "//litert/test:testdata/simple_add3d_cst_int32.tflite",
+        "//litert/test:testdata/simple_cast_and_add_op.tflite",
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    sdk_frameworks = [
+        "Metal",
+        "XCTest",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_expected",
+        ":litert_options",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:metal_test_helper",
+        "//litert/test:simple_model",
+    ],
+)
 #
 # # Should use `--copt=-DCL_DELEGATE_NO_GL` to build for Desktop.
 # cc_test(
@@ -1167,71 +1169,59 @@ cc_library(
     ],
 )
 
-# copybara:uncomment_begin(google-only)
-# objc_library(
-#     name = "LitertTensorBufferTestLibrary",
-#     testonly = True,
-#     srcs = ["litert_tensor_buffer_test.mm"],
-#     data = [
-#         "//litert/test:testdata/simple_model.tflite",
-#     ],
-#     deps = [
-#         ":litert_compiled_model",
-#         ":litert_environment",
-#         ":litert_environment_options",
-#         ":litert_event",
-#         ":litert_expected",
-#         ":litert_layout",
-#         ":litert_macros",
-#         ":litert_tensor_buffer",
-#         "//third_party/apple_frameworks:Metal",
-#         "//third_party/apple_frameworks:XCTest",
-#         "//litert/cc/internal:litert_handle",
-#         "//litert/cc/internal:litert_platform_support",
-#         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/test:metal_test_helper",
-#         "//litert/test:simple_model",
-#         "//tflite/delegates/gpu/metal:metal_device",
-#     ],
-# )
-#
-# macos_unit_test(
-#     name = "litert_tensor_buffer_test_cc_macos",
-#     minimum_os_version = LITERT_MIN_MACOS_VERSION,
-#     deps = [":LitertTensorBufferTestLibrary"],
-# )
-#
-# ios_unit_test(
-#     name = "litert_tensor_buffer_test_cc_ios",
-#     minimum_os_version = LITERT_MIN_IOS_VERSION,
-#     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
-#     tags = [
-#         "manual",
-#         "nobuilder",
-#         "notap",
-#     ],
-#     deps = [":LitertTensorBufferTestLibrary"],
-# )
-#
-# macos_unit_test(
-#     name = "litert_compiled_model_metal_test_cc_macos",
-#     minimum_os_version = LITERT_MIN_MACOS_VERSION,
-#     deps = [":litert_compiled_model_metal_test"],
-# )
-#
-# ios_unit_test(
-#     name = "litert_compiled_model_metal_test_cc_ios",
-#     minimum_os_version = LITERT_MIN_IOS_VERSION,
-#     # copybara:uncomment runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
-#     tags = [
-#         "manual",
-#         "notap",
-#     ],
-#     deps = [":litert_compiled_model_metal_test"],
-# )
-# copybara:uncomment_end(google-only)
+objc_library(
+    name = "LitertTensorBufferTestLibrary",
+    testonly = True,
+    srcs = ["litert_tensor_buffer_test.mm"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    sdk_frameworks = [
+        "Metal",
+        "XCTest",
+    ],
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_environment_options",
+        ":litert_event",
+        ":litert_expected",
+        ":litert_layout",
+        ":litert_macros",
+        ":litert_tensor_buffer",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_platform_support",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:metal_test_helper",
+        "//litert/test:simple_model",
+        "//tflite/delegates/gpu/metal:metal_device",
+    ],
+)
+
+ios_unit_test(
+    name = "litert_tensor_buffer_test_cc_ios",
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [":LitertTensorBufferTestLibrary"],
+)
+
+ios_unit_test(
+    name = "litert_compiled_model_metal_test_cc_ios",
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+    tags = [
+        "manual",
+        "notap",
+    ],
+    deps = [":litert_compiled_model_metal_test"],
+)
 
 # -----------------------------------------------------------------------------
 # LiteRT C++ APIs which needs to use (dynamic) C Runtime Framework.

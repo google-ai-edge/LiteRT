@@ -545,7 +545,6 @@ cc_library(
     name = "litert_environment",
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
-        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment_options",
@@ -753,7 +752,6 @@ cc_library(
     srcs = ["//litert/cc/options:litert_magic_number_options.cc"],
     hdrs = ["//litert/cc/options:litert_magic_number_options.h"],
     deps = [
-        "//litert/c:litert_common",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
     ] + select({
