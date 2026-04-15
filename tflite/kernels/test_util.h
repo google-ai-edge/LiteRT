@@ -361,9 +361,9 @@ class SingleOpModel {
 
   // Set a delegate that is applied right after graph is prepared. This is
   // useful for testing other runtimes like NN API or GPU.
-  // Note: the caller still owns the memory of the passed-in `delegate`.
-  void SetDelegate(TfLiteDelegate* delegate) {
-    delegate_ = delegate;
+  // Takes ownership of the provided delegate.
+  void SetDelegate(Interpreter::TfLiteDelegatePtr&& delegate) {
+    delegate_ = std::move(delegate);
     // As this is a manually-set TF Lite delegate, we assume the intention of
     // the test is to test against the particular delegate, hence bypassing
     // applying TfLite default delegates (i.e. the XNNPACK delegate).
@@ -1024,6 +1024,9 @@ class SingleOpModel {
   void SetBypassDefaultDelegates() { bypass_default_delegates_ = true; }
 
   flatbuffers::FlatBufferBuilder builder_;
+  tflite::Interpreter::TfLiteDelegatePtr delegate_{nullptr,
+                                                   [](TfLiteDelegate*) {}};
+  TfLiteDelegate* last_applied_delegate_ = nullptr;
   std::unique_ptr<tflite::Interpreter> interpreter_;
   std::unique_ptr<OpResolver> resolver_;
 
@@ -1445,7 +1448,6 @@ class SingleOpModel {
   std::vector<int32_t> outputs_;
   std::vector<flatbuffers::Offset<Tensor>> tensors_;
   std::vector<flatbuffers::Offset<Buffer>> buffers_;
-  TfLiteDelegate* delegate_ = nullptr;  // not own the memory.
   std::optional<TfLiteStatus> delegate_application_status_ = std::nullopt;
   std::vector<std::vector<int>> input_shapes_;
   int num_applied_delegates_ = 0;
