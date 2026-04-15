@@ -1443,6 +1443,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         IsUserCustomBuffer(buffer->buffer_type()) || buffer->is_opencl_memory();
 #if defined(__ANDROID__) || (defined(__linux__) && defined(__aarch64__))
     if (buffer->buffer_type() == kLiteRtTensorBufferTypeAhwb) {
+#if defined(__ANDROID__)
       if (__builtin_available(android 26, *)) {
         if (auto ahwb = buffer->GetAhwbBuffer()) {
           // TODO: b/382330322 - Update logic to check if the AHWB (stride) is
@@ -1452,6 +1453,11 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           buffer_is_cpu_compatible = true;
         }
       }
+#else
+      if (auto ahwb = buffer->GetAhwbBuffer()) {
+        buffer_is_cpu_compatible = true;
+      }
+#endif
     } else if (buffer->buffer_type() == kLiteRtTensorBufferTypeFastRpc ||
                buffer->buffer_type() == kLiteRtTensorBufferTypeDmaBuf) {
       buffer_is_cpu_compatible = true;

@@ -52,6 +52,19 @@
         "LITERT_AUTO_BUILD_TFLITE": "ON",
         "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
       }
+    },
+    {
+      "name": "linux-aarch64-iq8",
+      "displayName": "Linux aarch64 (IQ8275)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/cmake_build_linux_aarch64_8275",
+      "toolchainFile": "${sourceDir}/vendors/qualcomm/toolchain/linux_aarch64_iq8275.toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Linux",
+        "CMAKE_SYSTEM_PROCESSOR": "aarch64",
+        "CMAKE_BUILD_TYPE": "Release",
+        "LITERT_AUTO_BUILD_TFLITE": "ON"
+      }
     }
   ]
 }
