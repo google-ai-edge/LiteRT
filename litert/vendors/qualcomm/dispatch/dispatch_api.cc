@@ -25,11 +25,8 @@
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_opaque_options.h"
-#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
@@ -263,7 +260,7 @@ LiteRtStatus InvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      Qnn(), *device_context, exec_bytecode_buffer, function_name);
+      Qnn(), *device_context, exec_type, exec_bytecode_buffer, function_name);
   if (!context) {
     LITERT_LOG(LITERT_ERROR,
                "Failed to create context from context binary: %s for function "

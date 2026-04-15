@@ -68,5 +68,29 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFd) {
   ASSERT_EQ(*alloc_base_fd, dummy_fd);
 }
 
+TEST(DispatchDelegateOptionsTest, GetExecHandleNotFound) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  auto handle_or = options->GetExecHandle("nonexistent_op");
+  ASSERT_TRUE(handle_or.HasValue());
+  EXPECT_EQ(handle_or.Value(), nullptr);
+}
+
+TEST(DispatchDelegateOptionsTest, AddAndGetExecHandle) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  int dummy_val = 1;
+  void* dummy_addr = &dummy_val;
+
+  auto status = options->AddExecHandle("my_op", dummy_addr);
+  ASSERT_TRUE(status.HasValue());
+
+  auto handle_or = options->GetExecHandle("my_op");
+  ASSERT_TRUE(handle_or.HasValue());
+  EXPECT_EQ(handle_or.Value(), dummy_addr);
+}
+
 }  // namespace
 }  // namespace litert::internal

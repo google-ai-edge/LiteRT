@@ -37,6 +37,7 @@ cc_library(
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ],
 )

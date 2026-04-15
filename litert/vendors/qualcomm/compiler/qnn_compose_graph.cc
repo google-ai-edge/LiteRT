@@ -775,8 +775,8 @@ LiteRtStatus BuildShloCompositeOp(
     float epsilon = attributes_map["epsilon"].AsFloat();
     int num_groups = attributes_map["num_groups"].AsInt32();
     if (num_groups == 1) {
-      op_wrappers = ::qnn::BuildLayerNormOp(
-          tensor_pool, input_tensors, output_tensors, epsilon);
+      op_wrappers = ::qnn::BuildLayerNormOp(tensor_pool, input_tensors,
+                                            output_tensors, epsilon);
     } else {
       op_wrappers = ::qnn::BuildGroupNormOp(
           tensor_pool, input_tensors, output_tensors, epsilon, num_groups);
@@ -1378,7 +1378,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                       Qnn_ContextHandle_t context_handle,
                       Qnn_ProfileHandle_t profile_handle,
                       LiteRtSubgraph subgraph, absl::string_view qnn_graph_name,
-                      const ::qnn::Options& options) {
+                      const ::qnn::Options& options,
+                      std::vector<::qnn::TensorWrapper>* inputs = nullptr,
+                      std::vector<::qnn::TensorWrapper>* outputs = nullptr) {
   GraphMapper graph_mapper(ctx, subgraph, qnn, context_handle, profile_handle);
   LITERT_RETURN_IF_ERROR(graph_mapper.IsLiteRtSubgraphSupported());
   LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name, options));
@@ -1406,6 +1408,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
     LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
                                           *tensor_wrapper, created_tensors));
+    if (inputs != nullptr) {
+      inputs->push_back(*tensor_wrapper);
+    }
   }
 
   for (const auto& subgraph_output : graph_mapper.Graph().Outputs()) {
@@ -1519,6 +1524,16 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                       options.GetIrJsonDir(), qnn_graph_name);
   }
 
+  if (outputs != nullptr) {
+    outputs->clear();
+    for (const auto& subgraph_output : graph_mapper.Graph().Outputs()) {
+      auto it = litert_tensor_to_wrapper.find(subgraph_output.Get());
+      if (it != litert_tensor_to_wrapper.end()) {
+        outputs->push_back(*(it->second));
+      }
+    }
+  }
+
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(graph_mapper.Finalize());
 
   return kLiteRtStatusOk;
@@ -1555,9 +1570,12 @@ LiteRtStatus ComposeGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                           Qnn_ProfileHandle_t profile_handle,
                           LiteRtSubgraph subgraph,
                           absl::string_view qnn_graph_name,
-                          const ::qnn::Options& options) {
+                          const ::qnn::Options& options,
+                          std::vector<::qnn::TensorWrapper>* inputs,
+                          std::vector<::qnn::TensorWrapper>* outputs) {
   LITERT_RETURN_IF_ERROR(MapGraph(ctx, qnn, context_handle, profile_handle,
-                                  subgraph, qnn_graph_name, options));
+                                  subgraph, qnn_graph_name, options, inputs,
+                                  outputs));
   return kLiteRtStatusOk;
 }
 

@@ -56,7 +56,9 @@ LiteRtStatus ComposeGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                           Qnn_ProfileHandle_t profile_handle,
                           LiteRtSubgraph subgraph,
                           absl::string_view qnn_graph_name,
-                          const ::qnn::Options& options);
+                          const ::qnn::Options& options,
+                          std::vector<::qnn::TensorWrapper>* inputs = nullptr,
+                          std::vector<::qnn::TensorWrapper>* outputs = nullptr);
 
 }  // namespace litert::qnn
 
