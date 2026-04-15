@@ -840,8 +840,4 @@ sh_test(
         ":libdynamic_runtime_test.so",
         "//litert/c:litert_runtime_c_api_so",
     ],
-    env = {
-        # TODO: Investigate why these symbols are duplicated.
-        "ALLOWLIST_REGEX": "^LiteRtGetNumLayoutElements$$|^LiteRtIsSameLayout$$",
-    },
 )

@@ -251,7 +251,6 @@ LiteRtGetModelSubgraph
 LiteRtGetMulFusedActivationOption
 LiteRtGetNextOpaqueOptions
 LiteRtGetNumAccelerators
-LiteRtGetNumLayoutElements
 LiteRtGetNumMetrics
 LiteRtGetNumModelSignatures
 LiteRtGetNumModelSubgraphs
@@ -359,7 +358,6 @@ LiteRtGpuEnvironmentCreate
 LiteRtHasTensorBufferEvent
 LiteRtIsAcceleratorDelegateResponsibleForJitCompilation
 LiteRtIsEventSignaled
-LiteRtIsSameLayout
 LiteRtJoinTensorBufferRequirements
 LiteRtLockTensorBuffer
 LiteRtPopOpaqueOptions
