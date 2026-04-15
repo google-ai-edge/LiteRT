@@ -103,6 +103,9 @@ class Options {
   void SetEnableWeightSharing(bool enable_weight_sharing);
   bool GetEnableWeightSharing() const;
 
+  void SetEnableJustInTime(bool enable_just_in_time);
+  bool GetEnableJustInTime() const;
+
   void SetUseConvHMX(bool use_conv_hmx);
   bool GetUseConvHMX() const;
 
@@ -150,6 +153,7 @@ class Options {
   bool use_qint16_as_quint16_ = false;
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
+  bool enable_just_in_time_ = false;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;

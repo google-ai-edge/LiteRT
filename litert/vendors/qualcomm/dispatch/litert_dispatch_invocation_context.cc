@@ -33,6 +33,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -45,6 +46,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -76,7 +78,6 @@ std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
       return "";
   }
 }
-
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     litert::qnn::QnnManager& qnn_manager,
     const litert::qnn::ContextBinaryInfo& context_binary_info,
@@ -87,6 +88,7 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
     : qnn_manager_(qnn_manager),
       device_context_(device_context),
       context_handle_(*context_handle),
+      raw_context_handle_(context_handle_.Get()),
       profile_handle_(profile_handle),
       graph_index_(graph_index),
       graph_handle_(graph_handle),
@@ -113,10 +115,76 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
             std::back_inserter(outputs_));
 }
 
+LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
+    litert::qnn::QnnManager& qnn_manager,
+    LiteRtDispatchDeviceContext device_context,
+    const litert::qnn::QnnManager::ContextHandle* context_handle,
+    Qnn_ContextHandle_t raw_context_handle, Qnn_ProfileHandle_t profile_handle,
+    int graph_index, Qnn_GraphHandle_t graph_handle,
+    std::vector<::qnn::TensorWrapper> inputs,
+    std::vector<::qnn::TensorWrapper> outputs)
+    : qnn_manager_(qnn_manager),
+      device_context_(device_context),
+      context_handle_(*context_handle),
+      raw_context_handle_(raw_context_handle),
+      profile_handle_(profile_handle),
+      graph_index_(graph_index),
+      graph_handle_(graph_handle),
+      inputs_(std::move(inputs)),
+      outputs_(std::move(outputs)) {
+  input_buffer_handles_.resize(inputs_.size());
+
+  std::vector<::qnn::TensorWrapper> real_outputs;
+  std::vector<::qnn::TensorWrapper> dumped_outputs;
+  // Dumped tensors are treated as output, move them to the end of outputs_
+  std::for_each(
+      outputs_.begin(), outputs_.end(),
+      [&real_outputs, &dumped_outputs](const ::qnn::TensorWrapper& tensor) {
+        tensor.IsMarkedDump() ? dumped_outputs.emplace_back(tensor)
+                              : real_outputs.emplace_back(tensor);
+      });
+
+  output_buffer_handles_.resize(real_outputs.size());
+
+  outputs_.clear();
+  std::move(real_outputs.begin(), real_outputs.end(),
+            std::back_inserter(outputs_));
+  std::move(dumped_outputs.begin(), dumped_outputs.end(),
+            std::back_inserter(outputs_));
+}
+
 Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::Create(
     QnnManager& qnn, LiteRtDispatchDeviceContextT& device_context,
+    LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name) {
+  if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
+    auto jit_graph = reinterpret_cast<const litert::qnn::QnnJitGraph*>(
+        exec_bytecode_buffer->base_addr);
+    if (!jit_graph) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Invalid JIT handle");
+    }
+
+    Qnn_GraphHandle_t graph_handle;
+    if (auto status = qnn.Api()->graphRetrieve(jit_graph->context_handle,
+                                               jit_graph->graph_name.c_str(),
+                                               &graph_handle);
+        status != QNN_SUCCESS) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to retrieve graph from JIT handle");
+    }
+
+    // Pass an empty context handle since the compiler plugin manages its
+    // lifecycle.
+    absl::NoDestructor<QnnManager::ContextHandle> empty_context_handle;
+    // static const QnnManager::ContextHandle empty_context_handle;
+    return Ptr(new LiteRtDispatchInvocationContextT(
+        qnn, &device_context, empty_context_handle.get(),
+        jit_graph->context_handle, nullptr, 0, graph_handle, jit_graph->inputs,
+        jit_graph->outputs));
+  }
+
   auto exec_bytecode_ptr =
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;

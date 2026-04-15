@@ -104,6 +104,12 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultByteCode(
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code);
 
+// Gets an opaque handle to the compiled artifact (for JIT execution).
+// The handle remains valid as long as the compiled_result is valid.
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
+                              LiteRtParamIndex call_idx, const void** handle);
+
 // Get per-op info related to a particular compiled partition as well as the
 // index of the respective byte code buffer.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultCallInfo(

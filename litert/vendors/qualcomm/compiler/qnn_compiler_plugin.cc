@@ -139,7 +139,28 @@ struct LiteRtCompiledResultT {
   // byte_code_index[i] is the index of the byte code in context_bin that
   // corresponds to the i-th call.
   std::vector<size_t> byte_code_index;
+  // Hold the context handles for Just-In-Time if enabled.
+  std::vector<QnnManager::ContextHandle> context_handles;
+  // Hold the QnnJitGraph for each subgraph for Just-In-Time.
+  std::vector<std::unique_ptr<litert::qnn::QnnJitGraph>> jit_graphs;
 };
+
+LiteRtStatus LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
+                                           LiteRtParamIndex call_idx,
+                                           const void** handle) {
+  if (!compiled_result || !handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (compiled_result->jit_graphs.empty()) {
+    *handle = nullptr;
+    return kLiteRtStatusOk;
+  }
+  if (call_idx >= compiled_result->jit_graphs.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *handle = compiled_result->jit_graphs[call_idx].get();
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex byte_code_idx,
@@ -185,7 +206,9 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 
 LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
-  *num_byte_code = compiled_result->context_bin.size();
+  *num_byte_code = !compiled_result->jit_graphs.empty()
+                       ? compiled_result->jit_graphs.size()
+                       : compiled_result->context_bin.size();
   return kLiteRtStatusOk;
 }
 
@@ -466,11 +489,23 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     entry_point_name = absl::StrFormat(kEntryPointNameFmt, partition_idx);
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
 
+    std::vector<::qnn::TensorWrapper> inputs;
+    std::vector<::qnn::TensorWrapper> outputs;
+
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         *qnn_manager, context_handles[context_handle_idx].Get(),
         context_handles[context_handle_idx].get_profile_handle(),
-        partition.Get(), entry_point_name, options));
+        partition.Get(), entry_point_name, options, &inputs, &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
+
+    if (options.GetEnableJustInTime()) {
+      auto jit_graph = std::make_unique<litert::qnn::QnnJitGraph>();
+      jit_graph->context_handle = context_handles[context_handle_idx].Get();
+      jit_graph->graph_name = entry_point_name;
+      jit_graph->inputs = std::move(inputs);
+      jit_graph->outputs = std::move(outputs);
+      result->jit_graphs.push_back(std::move(jit_graph));
+    }
   }
 
   if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
@@ -478,6 +513,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                "Since IR backend is enabled, functional context binaries are "
                "excluded from the compiled TFLite.");
     return kLiteRtStatusErrorUnsupported;
+  } else if (options.GetEnableJustInTime()) {
+    LITERT_LOG(LITERT_INFO,
+               "Just-In-Time enabled. Skipping context binary generation.");
+    result->context_handles = std::move(context_handles);
   } else {
     // Generate context binary.
     result->context_bin.resize(next_context_handle_idx);

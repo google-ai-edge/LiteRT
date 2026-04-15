@@ -41,6 +41,7 @@ struct LrtQualcommOptionsT {
   std::optional<bool> use_int64_bias_as_int32;
   std::optional<LrtQualcommOptionsBackend> qnn_backend;
   std::optional<bool> enable_weight_sharing;
+  std::optional<bool> enable_just_in_time;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
@@ -100,6 +101,10 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetEnableWeightSharing(parsed_options, *v);
+        } else if (key == "enable_just_in_time") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return v.Error().Status();
+          LrtQualcommOptionsSetEnableJustInTime(parsed_options, *v);
         } else if (key == "use_conv_hmx") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -219,6 +224,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->enable_weight_sharing.has_value()) {
     toml << "enable_weight_sharing = "
          << (*options->enable_weight_sharing ? "true" : "false") << "\n";
+  }
+  if (options->enable_just_in_time.has_value()) {
+    toml << "enable_just_in_time = "
+         << (*options->enable_just_in_time ? "true" : "false") << "\n";
   }
   if (options->use_conv_hmx.has_value()) {
     toml << "use_conv_hmx = " << (*options->use_conv_hmx ? "true" : "false")
@@ -440,6 +449,31 @@ LiteRtStatus LrtQualcommOptionsGetEnableWeightSharing(
   }
 
   *enable_weight_sharing = options->enable_weight_sharing.value_or(false);
+
+  return kLiteRtStatusOk;
+}
+
+// enable_just_in_time
+// -------------------------------------------------------------
+
+LiteRtStatus LrtQualcommOptionsSetEnableJustInTime(LrtQualcommOptions options,
+                                                   bool enable_just_in_time) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->enable_just_in_time = enable_just_in_time;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetEnableJustInTime(LrtQualcommOptions options,
+                                                   bool* enable_just_in_time) {
+  if (enable_just_in_time == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *enable_just_in_time = options->enable_just_in_time.value_or(false);
 
   return kLiteRtStatusOk;
 }

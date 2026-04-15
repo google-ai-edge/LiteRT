@@ -134,6 +134,19 @@ bool QualcommOptions::GetEnableWeightSharing() {
   return val;
 }
 
+void QualcommOptions::SetEnableJustInTime(bool enable_just_in_time) {
+  LrtQualcommOptionsSetEnableJustInTime(options_, enable_just_in_time);
+}
+
+bool QualcommOptions::GetEnableJustInTime() {
+  bool val;
+  auto status = LrtQualcommOptionsGetEnableJustInTime(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return false;
+  }
+  return val;
+}
+
 void QualcommOptions::SetUseConvHMX(bool use_conv_hmx) {
   LrtQualcommOptionsSetUseConvHMX(options_, use_conv_hmx);
 }

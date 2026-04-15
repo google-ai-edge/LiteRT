@@ -137,6 +137,12 @@ class QualcommOptions {
   void SetEnableWeightSharing(bool weight_sharing_enabled);
   bool GetEnableWeightSharing();
 
+  /// @brief Just-In-Time allows passing the QNN Context directly from the
+  /// compiler plugin to the dispatcher in-memory, bypassing graph finalization.
+  /// Defaults to `false`.
+  void SetEnableJustInTime(bool enable_just_in_time);
+  bool GetEnableJustInTime();
+
   /// @brief When using short conv hmx, one might have better performance, but
   /// convolutions with short depth and/or non-symmetric weights could exhibit
   /// inaccurate results.

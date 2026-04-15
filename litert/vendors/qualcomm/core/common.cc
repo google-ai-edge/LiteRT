@@ -124,6 +124,12 @@ void Options::SetEnableWeightSharing(bool enable_weight_sharing) {
 
 bool Options::GetEnableWeightSharing() const { return enable_weight_sharing_; }
 
+void Options::SetEnableJustInTime(bool enable_just_in_time) {
+  enable_just_in_time_ = enable_just_in_time;
+}
+
+bool Options::GetEnableJustInTime() const { return enable_just_in_time_; }
+
 void Options::SetUseConvHMX(bool use_conv_hmx) { use_conv_hmx_ = use_conv_hmx; }
 
 bool Options::GetUseConvHMX() const { return use_conv_hmx_; }
@@ -211,6 +217,7 @@ UseHtpPreference: %v\n\
 UseQint16AsQuint16: %v\n\
 UseInt64BiasAsInt32: %v\n\
 EnableWeightSharing: %v\n\
+EnableJustInTime: %v\n\
 UseConvHMX: %v\n\
 UseFoldReLU: %v\n\
 HtpPerformanceMode: %d\n\
@@ -229,10 +236,10 @@ SaverOutputDir: %s\n";  // NOLINT
   return absl::StrFormat(
       kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
       use_htp_preference_, use_qint16_as_quint16_, use_int64_bias_as_int32_,
-      enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
-      htp_performance_mode_, dsp_performance_mode_, dump_tensor_ids,
-      ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
-      graph_priority_, saver_output_dir_);
+      enable_weight_sharing_, enable_just_in_time_, use_conv_hmx_,
+      use_fold_relu_, htp_performance_mode_, dsp_performance_mode_,
+      dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
+      optimization_level_, graph_priority_, saver_output_dir_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

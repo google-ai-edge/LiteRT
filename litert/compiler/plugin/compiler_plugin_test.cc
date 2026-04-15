@@ -208,7 +208,7 @@ TEST(CompilerPluginTest, Compile) {
   auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
   auto& model = *model_wrap.Get();
 
-  auto result = plugins->front().Compile(&model);
+  auto result = plugins->front().Compile(&model, "JustInTime");
   ASSERT_TRUE(result);
 
   auto byte_code = result->ByteCode();
@@ -220,6 +220,10 @@ TEST(CompilerPluginTest, Compile) {
 
   auto call_info = result->CallInfo(0);
   ASSERT_TRUE(call_info);
+
+  auto handle_or = result->GetHandle(0);
+  ASSERT_TRUE(handle_or.HasValue());
+  EXPECT_NE(handle_or.Value(), nullptr);
 }
 
 TEST(CompilerPluginTest, CompileNonPartitionedModel) {
@@ -379,7 +383,8 @@ TEST(ApplyTest, Simple) {
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
 
-  ASSERT_TRUE(ApplyPlugin(plugins->front(), model));
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPlugin(plugins->front(), model, apply_result));
   ASSERT_EQ(model.NumSubgraphs(), 1);
 
   auto& subgraph = *model.MainSubgraph();
@@ -406,8 +411,9 @@ TEST(ApplyTest, WithPartition) {
   ASSERT_TRUE(partition_result);
   ASSERT_EQ(model.NumSubgraphs(), 1);
 
-  ASSERT_TRUE(ApplyPluginWithPartition(plugins->front(), model,
-                                       std::move(*partition_result)));
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPluginWithPartition(
+      plugins->front(), model, std::move(*partition_result), apply_result));
 
   auto& subgraph = model.Subgraph(0);
   ASSERT_EQ(subgraph.Ops().size(), 1);
@@ -426,7 +432,8 @@ TEST(ApplyTest, MultiSubgraph) {
   ASSERT_TRUE(model_wrap);
   auto& model = *model_wrap.Get();
 
-  ASSERT_TRUE(ApplyPlugin(plugins->front(), model));
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPlugin(plugins->front(), model, apply_result));
   ASSERT_EQ(model.NumSubgraphs(), 2);
 
   {
