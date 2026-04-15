@@ -25,7 +25,14 @@ std::vector<OpWrapper> BuildCustomOp(
   for (auto& output : outputs) {
     op.AddOutputTensor(output);
   }
-  if (!custom_options.empty()) {
+  // try to compile a specified model.
+  if (std::string(op_type) == "Nv12ToRgbResize") {
+    std::array<uint32_t, 3> input_size{320, 320, 320};
+    op.AddTensorParam("input_size", tensor_pool.CreateStaticTensor(
+                                        QNN_DATATYPE_UINT_32, {}, {3},
+                                        input_size.size() * sizeof(uint32_t),
+                                        input_size.data()));
+  } else if (!custom_options.empty()) {
     std::uint32_t options_bytes = custom_options.size();
 
     op.AddTensorParam(

@@ -56,7 +56,7 @@ struct RtldFlags {
 #endif
     };
   }
-  static constexpr RtldFlags Default() { return Lazy().Local().DeepBind(); }
+  static constexpr RtldFlags Default() { return Lazy().Global(); }
   constexpr RtldFlags& Global() {
 #if defined(RTLD_GLOBAL)
     flags |= RTLD_GLOBAL;
