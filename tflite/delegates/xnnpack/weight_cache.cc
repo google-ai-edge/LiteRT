@@ -16,8 +16,6 @@ limitations under the License.
 
 #include <fcntl.h>
 
-#include "tflite/logger.h"
-#include "tflite/minimal_logging.h"
 #if defined(_MSC_VER)
 #include <io.h>
 #define F_OK 0
@@ -33,6 +31,7 @@ limitations under the License.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -47,6 +46,8 @@ limitations under the License.
 #include "tflite/delegates/xnnpack/macros.h"
 #include "tflite/delegates/xnnpack/mmap_handle.h"
 #include "tflite/delegates/xnnpack/weight_cache_schema_generated.h"
+#include "tflite/logger.h"
+#include "tflite/minimal_logging.h"
 
 namespace tflite::xnnpack {
 
@@ -331,9 +332,9 @@ void* CacheMissHandler::Reserve(size_t size) {
   return buffers_.back().ptr;
 }
 
-BufferLocation CacheMissHandler::Append(PackIdentifier pack_id,
-                                        const void* data, uint64_t size,
-                                        int fingerprint_id) {
+BufferLocation CacheMissHandler::Append(
+    PackIdentifier pack_id, const void* data, uint64_t size, int fingerprint_id,
+    std::map<size_t, void*>& offset_to_addr) {
   auto buf_it =
       std::find_if(buffers_.rbegin(), buffers_.rend(),
                    [data](const auto& buf) { return buf.ptr == data; });
@@ -344,6 +345,7 @@ BufferLocation CacheMissHandler::Append(PackIdentifier pack_id,
   }
   buf_it->used = true;
   ++append_count_;
+  offset_to_addr.insert({buf_it->loc.offset, static_cast<void*>(buf_it->ptr)});
   return buf_it->loc;
 }
 
@@ -715,8 +717,8 @@ size_t MMapWeightCacheProvider::LookUpOrInsert(
   const BufferLocation location =
       builder_.IsBuilding()
           ? builder_.Append(pack_id, ptr, size, cache_key->fingerprint_id)
-          : cache_miss_handler_.Append(pack_id, ptr, size,
-                                       cache_key->fingerprint_id);
+          : cache_miss_handler_.Append(
+                pack_id, ptr, size, cache_key->fingerprint_id, offset_to_addr_);
   XNNPACK_ABORT_CHECK(!location.IsInvalid(),
                       "Inserting data in the cache failed.");
   cache_key_to_offset_.emplace(pack_id, location);
