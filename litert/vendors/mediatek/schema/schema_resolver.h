@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
