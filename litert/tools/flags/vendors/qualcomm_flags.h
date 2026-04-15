@@ -53,6 +53,8 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);
 
+ABSL_DECLARE_FLAG(bool, qualcomm_enable_just_in_time);
+
 // @deprecated This flag is deprecated and will be no-op.
 ABSL_DECLARE_FLAG(bool, qualcomm_use_htp_preference);
 
