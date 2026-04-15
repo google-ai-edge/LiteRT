@@ -384,6 +384,10 @@ cc_test(
     srcs = ["litert_shared_library_test.cc"],
     data = [":test_litert_shared_library"],
     defines = ["LITERT_DEFINE_GTEST_STATUS_PRINTER"],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_shared_library",
         "//litert/test:matchers",
