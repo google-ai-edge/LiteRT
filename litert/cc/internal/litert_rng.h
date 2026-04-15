@@ -37,7 +37,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
-
 /// @file
 /// @brief Provides various utilities and types for random number generation.
 ///
@@ -198,8 +197,6 @@ class RangedGenerator final : public DataGenerator<D, Dist> {
   }
 };
 
-
-
 /// @brief A rangeless float generator that reinterprets random bits as the
 /// given float type.
 ///
@@ -239,8 +236,6 @@ class ReinterpretGenerator<D, Dist,
   ReinterpretGenerator(ReinterpretGenerator&&) = default;
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
 };
-
-
 
 template <typename D>
 class F16InF32Generator final {};
@@ -323,8 +318,6 @@ class DummyGenerator final : public DataGeneratorBase<D> {
  private:
   D val_ = 0;
 };
-
-
 
 // DEFAULTS FOR DATA GENERATORS ////////////////////////////////////////////////
 
@@ -550,8 +543,8 @@ class RandomTensorData {
   D High() const { return gen_.Max(); }
   D Low() const { return gen_.Min(); }
 
-  template <typename DD,
-            typename = std::enable_if_t<std::is_constructible_v<Gen, DD, DD>>>
+  template <typename DD, typename = typename std::enable_if_t<
+                             std::is_constructible_v<Gen, DD, DD>>>
   explicit RandomTensorData(DD min, DD max) : gen_(min, max) {}
 
   template <typename DummyType = void>
@@ -595,8 +588,6 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
-
-
   RandomTensorDataBuilder& SetSin() {
     float_config_ = Sin();
     return *this;
@@ -605,8 +596,6 @@ class RandomTensorDataBuilder {
   bool IsFloatDummy() const {
     return std::holds_alternative<Dummy>(float_config_);
   }
-
-
 
   template <typename D>
   std::pair<double, double> Bounds() const {
