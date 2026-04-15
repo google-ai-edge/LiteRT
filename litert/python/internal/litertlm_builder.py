@@ -39,10 +39,12 @@ with litertlm_core.open_file(output_path, "wb") as f:
 # TODO(b/445163709): Remove this module once litert_lm publishes a pypi package.
 
 import dataclasses
+import datetime
 import enum
 import os  # pylint: disable=unused-import
 import shutil
 from typing import Any, BinaryIO, Callable, Optional, TypeVar
+import uuid
 import zlib
 import flatbuffers
 from google.protobuf import message
@@ -430,6 +432,28 @@ class LitertLmFileBuilder:
 
   def build(self, stream: BinaryIO) -> None:
     """Builds the litertlm into the given stream."""
+    # Add UUID if not already present, but always generate a new timestamp.
+    system_metadata_keys = {m.key for m in self._system_metadata}
+    if "uuid" not in system_metadata_keys:
+      self._system_metadata.append(
+          Metadata(
+              key="uuid",
+              value=str(uuid.uuid4()),
+              dtype=DType.STRING,
+          )
+      )
+
+    self._system_metadata = [
+        m for m in self._system_metadata if m.key != "creation_timestamp"
+    ]
+    self._system_metadata.append(
+        Metadata(
+            key="creation_timestamp",
+            value=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            dtype=DType.STRING,
+        )
+    )
+
     stream.seek(0)
     # To simplify the build logic, we reserved the first block for the header.
     # This translates to the first block will be padded to `BLOCK_SIZE`.
