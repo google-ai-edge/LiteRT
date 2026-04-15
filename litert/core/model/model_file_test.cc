@@ -172,8 +172,14 @@ TEST(ModelLoadTest, BadFileData) {
   bad_file.close();
 
   LiteRtModel model = nullptr;
-  EXPECT_THAT(LiteRtCreateModelFromFile(test_file_path.c_str(), &model),
-              IsError(kLiteRtStatusErrorFileIO));
+#ifdef _WIN32
+  const std::string test_file_path_str = test_file_path.string();
+  const auto status =
+      LiteRtCreateModelFromFile(test_file_path_str.c_str(), &model);
+#else
+  const auto status = LiteRtCreateModelFromFile(test_file_path.c_str(), &model);
+#endif
+  EXPECT_EQ(status, kLiteRtStatusErrorFileIO);
   // NOLINTEND
 }
 

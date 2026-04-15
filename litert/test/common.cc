@@ -89,6 +89,24 @@ constexpr char kBaseDir[] = "";
 constexpr absl::string_view kLiteRtDir = "litert";
 constexpr absl::string_view kInternalPrefx = "third_party/odml/litert";
 
+namespace {
+
+std::string GetRunfilesLiteRtPath(absl::string_view rel_path) {
+  const char* test_srcdir = std::getenv("TEST_SRCDIR");
+  if (test_srcdir == nullptr || test_srcdir[0] == '\0') {
+    return {};
+  }
+
+  if constexpr (!IsOss()) {
+    return internal::Join(
+        {test_srcdir, "third_party/odml/litert", kLiteRtDir, rel_path});
+  } else {
+    return internal::Join({test_srcdir, "litert", kLiteRtDir, rel_path});
+  }
+}
+
+}  // namespace
+
 std::string GetTestFilePath(absl::string_view filename) {
   static constexpr absl::string_view kTestDataDir = "test/testdata/";
   if constexpr (!IsOss()) {
@@ -108,6 +126,10 @@ std::string GetTfliteFilePath(absl::string_view filename) {
 }
 
 std::string GetLiteRtPath(absl::string_view rel_path) {
+  const auto runfiles_path = GetRunfilesLiteRtPath(rel_path);
+  if (!runfiles_path.empty() && internal::Exists(runfiles_path)) {
+    return runfiles_path;
+  }
   if constexpr (!IsOss()) {
     return internal::Join({kBaseDir, kInternalPrefx, kLiteRtDir, rel_path});
   } else {

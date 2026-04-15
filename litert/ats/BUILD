@@ -172,6 +172,10 @@ litert_test(
     tags = [
         "notap",
     ],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = if_oss(True, False),
     use_sys_malloc = True,
     deps = [
@@ -267,6 +271,10 @@ cc_library(
 cc_test(
     name = "executor_test",
     srcs = ["executor_test.cc"],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":executor",
         "//litert/c:litert_common",
@@ -370,6 +378,10 @@ cc_test(
         "nosan",
         "notsan",
     ],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":common",
         ":compile_fixture",
