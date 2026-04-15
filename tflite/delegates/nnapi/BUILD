@@ -223,7 +223,7 @@ cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":nnapi_delegate",
-        "//tflite:framework",
+        "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/kernels:builtin_ops",
         "//tflite/kernels:deprecated_backends",
