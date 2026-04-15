@@ -162,6 +162,67 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
+  LiteRtGetAddFusedActivationOption
+  LiteRtGetAveragePool2dFusedActivationOption
+  LiteRtGetAveragePool2dFilterHeightOption
+  LiteRtGetAveragePool2dFilterWidthOption
+  LiteRtGetAveragePool2dPaddingOption
+  LiteRtGetAveragePool2dStrideHOption
+  LiteRtGetAveragePool2dStrideWOption
+  LiteRtGetBatchMatmulAdjXOption
+  LiteRtGetBatchMatmulAdjYOption
+  LiteRtGetBatchMatmulAsymmetricQuantizeInputOption
+  LiteRtGetConcatenationAxisOption
+  LiteRtGetConcatenationFusedActivationOption
+  LiteRtGetConv2dDilationHOption
+  LiteRtGetConv2dDilationWOption
+  LiteRtGetConv2dFusedActivationOption
+  LiteRtGetConv2dPaddingOption
+  LiteRtGetConv2dStrideHOption
+  LiteRtGetConv2dStrideWOption
+  LiteRtGetConv3dDilationDOption
+  LiteRtGetConv3dDilationHOption
+  LiteRtGetConv3dDilationWOption
+  LiteRtGetConv3dFusedActivationOption
+  LiteRtGetConv3dPaddingOption
+  LiteRtGetConv3dStrideDOption
+  LiteRtGetConv3dStrideHOption
+  LiteRtGetConv3dStrideWOption
+  LiteRtGetCumsumExclusiveOption
+  LiteRtGetCumsumReverseOption
+  LiteRtGetDepthToSpaceBlockSizeOption
+  LiteRtGetDepthwiseConv2dDepthMultiplierOption
+  LiteRtGetDepthwiseConv2dDilationHOption
+  LiteRtGetDepthwiseConv2dDilationWOption
+  LiteRtGetDepthwiseConv2dFusedActivationOption
+  LiteRtGetDepthwiseConv2dPaddingOption
+  LiteRtGetDepthwiseConv2dStrideHOption
+  LiteRtGetDepthwiseConv2dStrideWOption
+  LiteRtGetDivFusedActivationOption
+  LiteRtGetFullyConnectedAsymmetricQuantizeInputOption
+  LiteRtFullyConnectedGetQuantizedBiasTypeOption
+  LiteRtGetFullyConnectedFusedActivationOption
+  LiteRtGetFullyConnectedKeepNumDimsOption
+  LiteRtGetFullyConnectedWeightsFormatOption
+  LiteRtGetGatherAxisOption
+  LiteRtGetGatherBatchDimsOption
+  LiteRtGetGeluApproximateOption
+  LiteRtGetL2Pool2dFilterHeightOption
+  LiteRtGetL2Pool2dFilterWidthOption
+  LiteRtGetL2Pool2dFusedActivationOption
+  LiteRtGetL2Pool2dPaddingOption
+  LiteRtGetL2Pool2dStrideHOption
+  LiteRtGetL2Pool2dStrideWOption
+  LiteRtGetLeakyReluAlphaOption
+  LiteRtGetMaxPool2dFilterHeightOption
+  LiteRtGetMaxPool2dFilterWidthOption
+  LiteRtGetMaxPool2dFusedActivationOption
+  LiteRtGetMaxPool2dPaddingOption
+  LiteRtGetMaxPool2dStrideHOption
+  LiteRtGetMaxPool2dStrideWOption
+  LiteRtGetMeanKeepDimsOption
+  LiteRtGetMirrorPadModeOption
+  LiteRtGetMulFusedActivationOption
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsData
   LiteRtGetOpaqueOptionsHash
@@ -170,10 +231,26 @@ EXPORTS
   LiteRtGetOpInput
   LiteRtGetOpOutput
   LiteRtGetOptionsHardwareAccelerators
+  LiteRtGetOneHotAxisOption
+  LiteRtGetPackAxisOption
+  LiteRtGetPackValuesCountOption
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization
   LiteRtGetQuantizationTypeId
   LiteRtGetRankedTensorType
+  LiteRtGetReduceAllKeepDimsOption
+  LiteRtGetReduceAnyKeepDimsOption
+  LiteRtGetReduceMaxKeepDimsOption
+  LiteRtGetReduceMinKeepDimsOption
+  LiteRtGetReshapeNewShapeOption
+  LiteRtGetResizeBilinearAlignCornersOption
+  LiteRtGetResizeBilinearHalfPixelCenterOption
+  LiteRtGetResizeNearestNeighborAlignCornersOption
+  LiteRtGetResizeNearestNeighborHalfPixelCenterOption
+  LiteRtGetSHLOCompositeOpAttributes
+  LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex
+  LiteRtGetSHLOCompositeOpName
+  LiteRtGetSHLOCompositeOpVersion
   LiteRtGetSignatureInputName
   LiteRtGetSignatureInputTensor
   LiteRtGetSignatureInputTensorByIndex
@@ -214,8 +291,27 @@ EXPORTS
   LiteRtGetTensorTypeId
   LiteRtGetTensorUse
   LiteRtGetTensorWeights
+  LiteRtGetSpaceToDepthBlockSizeOption
+  LiteRtGetSplitNumSplitsOption
+  LiteRtGetSqueezeDimsOption
+  LiteRtGetStridedSliceBeginMaskOption
+  LiteRtGetStridedSliceEllipsisMaskOption
+  LiteRtGetStridedSliceEndMaskOption
+  LiteRtGetStridedSliceNewAxisMaskOption
+  LiteRtGetStridedSliceOffsetOption
+  LiteRtGetStridedSliceShrinkAxisMaskOption
+  LiteRtGetSubFusedActivationOption
+  LiteRtGetSumKeepDimsOption
+  LiteRtGetSoftmaxBetaOption
+  LiteRtGetTransposeConvFusedActivationOption
+  LiteRtGetTransposeConvPaddingOption
+  LiteRtGetTransposeConvStrideHOption
+  LiteRtGetTransposeConvStrideWOption
   LiteRtGetUnrankedTensorType
+  LiteRtGetUnpackAxisOption
+  LiteRtGetUnpackNumOption
   LiteRtGetWeightsBytes
+  LiteRtGetWeightsBufferId
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent
   LiteRtIsEventSignaled
@@ -236,6 +332,46 @@ EXPORTS
   LiteRtSetAcceleratorGetHardwareSupport
   LiteRtSetAcceleratorGetName
   LiteRtSetAcceleratorGetVersion
+  LiteRtBuilderBuildAddOpOption
+  LiteRtBuilderBuildAveragePool2dOpOption
+  LiteRtBuilderBuildBatchMatmulOpOption
+  LiteRtBuilderBuildConcatenationOpOption
+  LiteRtBuilderBuildConv2dOpOption
+  LiteRtBuilderBuildConv3dOpOption
+  LiteRtBuilderBuildCumsumOpOption
+  LiteRtBuilderBuildDepthToSpaceOpOption
+  LiteRtBuilderBuildDepthwiseConv2dOpOption
+  LiteRtBuilderBuildDivOpOption
+  LiteRtBuilderBuildFullyConnectedOpOption
+  LiteRtBuilderBuildGatherOpOption
+  LiteRtBuilderBuildGeluOpOption
+  LiteRtBuilderBuildL2Pool2dOpOption
+  LiteRtBuilderBuildLeakyReluOpOption
+  LiteRtBuilderBuildMaxPool2dOpOption
+  LiteRtBuilderBuildMeanOpOption
+  LiteRtBuilderBuildMirrorPadOpOption
+  LiteRtBuilderBuildMulOpOption
+  LiteRtBuilderBuildOp
+  LiteRtBuilderBuildPackOpOption
+  LiteRtBuilderBuildReduceAllOpOption
+  LiteRtBuilderBuildReduceAnyOpOption
+  LiteRtBuilderBuildReduceMaxOpOption
+  LiteRtBuilderBuildReduceMinOpOption
+  LiteRtBuilderBuildReshapeOpOption
+  LiteRtBuilderBuildResizeBilinearOpOption
+  LiteRtBuilderBuildResizeNearestNeighborOpOption
+  LiteRtBuilderBuildSoftmaxOpOption
+  LiteRtBuilderBuildSpaceToDepthOpOption
+  LiteRtBuilderBuildSplitOpOption
+  LiteRtBuilderBuildSqueezeOpOption
+  LiteRtBuilderBuildStridedSliceOpOption
+  LiteRtBuilderBuildSubOpOption
+  LiteRtBuilderBuildSumOpOption
+  LiteRtBuilderBuildTensor
+  LiteRtBuilderBuildTransposeConvOpOption
+  LiteRtBuilderBuildUnpackOpOption
+  LiteRtBuilderBuildWeights
+  LiteRtBuilderEraseOp
   LiteRtSetCompiledModelCancellationFunction
   LiteRtSetCustomEvent
   LiteRtSetDelegateFunction

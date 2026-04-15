@@ -17,6 +17,10 @@
 
 #include <cstdint>
 
+#if defined(__cpp_lib_source_location) && __cpp_lib_source_location >= 201907L
+#include <source_location>
+#endif
+
 /// @file
 /// @brief Defines a class for representing source code locations.
 
@@ -47,12 +51,19 @@ class SourceLocation {
  public:
   /// @brief Creates a `SourceLocation` with the line and file corresponding to
   /// the call site.
+#if defined(__cpp_lib_source_location) && __cpp_lib_source_location >= 201907L
+  static constexpr SourceLocation current(
+      std::source_location location = std::source_location::current()) {
+    return SourceLocation{location.file_name(), location.line()};
+  }
+#else
   static constexpr SourceLocation current(
       PrivateTag = PrivateTag{},
       const char* file = LITERT_INTERNAL_BUILTIN_FILE,
       uint32_t line = LITERT_INTERNAL_BUILTIN_LINE) {
     return SourceLocation{file, line};
   }
+#endif
 
   constexpr const char* file_name() const { return file_; }
   constexpr uint32_t line() const { return line_; }
