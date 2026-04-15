@@ -2446,20 +2446,25 @@ OpFoldResult MulOp::fold(FoldAdaptor adaptor) {
   auto lhs = llvm::dyn_cast_or_null<ElementsAttr>(adaptor.getLhs());
   auto rhs = llvm::dyn_cast_or_null<ElementsAttr>(adaptor.getRhs());
 
-  if (lhs && !is_quantized) {
-    if (is_zero(lhs) && lhs.getType() == getType()) {
-      return lhs;
+  if (!is_quantized) {
+    if (lhs && is_zero(lhs)) {
+      auto lhs_type = getLhs().getType();
+      // If the zero is a splat and has the same type as the output, return it.
+      // Otherwise, return a zero splat of the output type.
+      if (lhs_type == getType()) return getLhs();
+      return DenseElementsAttr::get(
+          getType(), cast<DenseElementsAttr>(lhs).getSplatValue<Attribute>());
     }
-    if (is_one(lhs) && getRhs().getType() == getType()) {
+    if (rhs && is_zero(rhs)) {
+      auto rhs_type = getRhs().getType();
+      if (rhs_type == getType()) return getRhs();
+      return DenseElementsAttr::get(
+          getType(), cast<DenseElementsAttr>(rhs).getSplatValue<Attribute>());
+    }
+    if (lhs && is_one(lhs) && getRhs().getType() == getType()) {
       return getRhs();
     }
-  }
-
-  if (rhs && !is_quantized) {
-    if (is_zero(rhs) && rhs.getType() == getType()) {
-      return rhs;
-    }
-    if (is_one(rhs) && getLhs().getType() == getType()) {
+    if (rhs && is_one(rhs) && getLhs().getType() == getType()) {
       return getLhs();
     }
   }
