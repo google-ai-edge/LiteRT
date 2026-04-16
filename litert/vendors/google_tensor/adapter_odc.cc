@@ -61,9 +61,10 @@ AdapterOdc::~AdapterOdc() {
 
 litert::Expected<void> AdapterOdc::LoadSymbols() {
   // Load the shared library.
+  // TODO(b/502581932): Removing NoDelete leads to seg faults in benchmarks.
   LITERT_ASSIGN_OR_RETURN(
-      dlib_, SharedLibrary::Load(kLiteRtLibPath, RtldFlags::Default()));
-
+      dlib_,
+      SharedLibrary::Load(kLiteRtLibPath, RtldFlags::Default().NoDelete()));
   // Binds all supported symbols from the shared library to the function
   // pointers.
   LOAD_SYMBOL(api_->create, EdgeTpuCompilerCreate);
