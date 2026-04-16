@@ -84,6 +84,7 @@ std::string AbslUnparseFlag(QualcommOptions::LogLevel options) {
       return "debug";
   }
 }
+
 }  // namespace litert::qualcomm
 
 ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
@@ -118,7 +119,6 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerformanceMode,
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
-
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -259,6 +259,43 @@ std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options) {
   }
 }
 
+}  // namespace litert::qualcomm
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphIOTensorMemType,
+          qualcomm_graph_io_tensor_mem_type,
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle,
+          "Specifies mem type to be used for input and output tensors during "
+          "graph creation. Valid settings:\"raw\" and \"memhandle\"");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GraphIOTensorMemType* options,
+                   std::string* error) {
+  if (text == "raw") {
+    *options = QualcommOptions::GraphIOTensorMemType::kRaw;
+    return true;
+  }
+  if (text == "memhandle") {
+    *options = QualcommOptions::GraphIOTensorMemType::kMemHandle;
+    return true;
+  }
+  *error = "Unknown graph input output tensor mem type";
+  return false;
+}
+
+std::string AbslUnparseFlag(
+    QualcommOptions::GraphIOTensorMemType options) {
+  switch (options) {
+    case QualcommOptions::GraphIOTensorMemType::kRaw:
+      return "raw";
+    case QualcommOptions::GraphIOTensorMemType::kMemHandle:
+      return "memhandle";
+    default:
+      ABSL_CHECK(false) << "Unknown GraphIOTensorMemType: "
+                        << static_cast<int>(options);
+  }
+}
 }  // namespace litert::qualcomm
 
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Profiling, qualcomm_profiling,
@@ -542,6 +579,11 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const std::string saver_output_dir =
       absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
   opts.SetSaverOutputDir(saver_output_dir);
+
+  const auto graph_io_tensor_mem_type =
+      absl::GetFlag(FLAGS_qualcomm_graph_io_tensor_mem_type);
+  opts.SetGraphIOTensorMemType(graph_io_tensor_mem_type);
+
   return {};
 }
 
