@@ -14,7 +14,10 @@
 
 #include "litert/c/options/litert_samsung_options.h"
 
-#include <memory>
+#include <cstring>
+#include <optional>
+#include <sstream>
+#include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
