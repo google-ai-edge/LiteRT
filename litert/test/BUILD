@@ -397,10 +397,6 @@ objc_library(
     testonly = True,
     srcs = ["metal_test_helper.mm"],
     hdrs = ["metal_test_helper.h"],
-    sdk_frameworks = [
-        "Metal",
-        "XCTest",
-    ],
     deps = [
         ":common",
         ":matchers",
@@ -408,6 +404,8 @@ objc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
+        "//third_party/apple_frameworks:Metal",
+        "//third_party/apple_frameworks:XCTest",
     ],
 )
 
