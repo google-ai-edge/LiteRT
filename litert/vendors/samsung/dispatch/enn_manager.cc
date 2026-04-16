@@ -14,8 +14,15 @@
 // limitations under the License.
 
 #include "litert/vendors/samsung/dispatch/enn_manager.h"
+#include <memory>
+#include <utility>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_shared_library.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/vendors/samsung/dispatch/enn_type.h"
 
 // system library in mobile phone with exynos chip
 static const char kEnnApiLibName[] = "libenn_public_api_cpp.so";
@@ -23,7 +30,7 @@ static const char kEnnApiLibName[] = "libenn_public_api_cpp.so";
 #define ENN_LOAD_API(LIB, SYM)                                              \
   if (auto symbol = LIB.LookupSymbol<void*>(#SYM); symbol.HasValue()) {     \
     api_->SYM =                                                             \
-        reinterpret_cast<decltype((api_->SYM))>(std::move(symbol.Value())); \
+        reinterpret_cast<decltype(api_->SYM)>(std::move(symbol.Value())); \
   } else {                                                                  \
     LITERT_LOG(LITERT_WARNING, "Failed to load symbol %s: %s", #SYM,        \
                LIB.DlError());                                              \
