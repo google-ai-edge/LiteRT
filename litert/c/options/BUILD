@@ -202,6 +202,18 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_test(
+    name = "litert_samsung_options_test",
+    srcs = ["litert_samsung_options_test.cc"],
+    deps = [
+        ":litert_samsung_options",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
