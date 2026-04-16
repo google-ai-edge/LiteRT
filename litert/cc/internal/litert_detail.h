@@ -276,7 +276,7 @@ CtStr(StrLiteral<N>) -> CtStr<N - 1>;
 
 /// @brief Concatenates compile-time strings.
 template <size_t... Ns>
-constexpr auto CtStrConcat(StrLiteral<Ns>... strs) {
+constexpr auto CtStrConcat(const char (&...strs)[Ns]) {
   using Out = CtStr<(Ns + ...) - sizeof...(Ns)>;
   typename Out::Data data = {};
   auto cur = data.begin();
@@ -287,7 +287,7 @@ constexpr auto CtStrConcat(StrLiteral<Ns>... strs) {
         }
       }(),
       ...);
-  return CtStr(std::move(data));
+  return Out(std::move(data));
 }
 
 /// @brief A constexpr-friendly ceiling function.

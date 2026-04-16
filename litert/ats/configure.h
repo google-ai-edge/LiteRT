@@ -24,6 +24,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/declare.h"  // from @com_google_absl
+#include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/cc/internal/litert_rng.h"
@@ -194,15 +195,26 @@ class AtsConf {
     if (models_out_.empty()) {
       return {};
     }
-    std::string file_name = name;
+    std::string file_name = SanitizeModelOutputFilename(name);
     if (!EndsWith(file_name, ".tflite")) {
       file_name += ".tflite";
     }
     LITERT_RETURN_IF_ERROR(internal::MkDir(models_out_));
     LITERT_ASSIGN_OR_RETURN(auto serialized,
                             internal::SerializeModel(std::move(model)));
-    std::ofstream out(internal::Join({models_out_, file_name}));
+    const auto output_path = internal::Join({models_out_, file_name});
+    std::ofstream out(output_path, std::ios::binary);
+    if (!out.is_open()) {
+      return Error(kLiteRtStatusErrorFileIO,
+                   absl::StrFormat("Failed to open model output file: %s",
+                                   output_path));
+    }
     out.write(serialized.StrData(), serialized.Size());
+    if (!out) {
+      return Error(kLiteRtStatusErrorFileIO,
+                   absl::StrFormat("Failed to write model output file: %s",
+                                   output_path));
+    }
     return {};
   }
 
@@ -243,6 +255,25 @@ class AtsConf {
   AtsConf& operator=(AtsConf&&) = default;
 
  private:
+  static std::string SanitizeModelOutputFilename(absl::string_view name) {
+    return absl::StrReplaceAll(
+        std::string(name),
+        {{"<", "_"},
+         {">", "_"},
+         {":", "_"},
+         {"\"", "_"},
+         {"/", "_"},
+         {"\\", "_"},
+         {"|", "_"},
+         {"?", "_"},
+         {"*", "_"},
+         {"(", "_"},
+         {")", "_"},
+         {"[", "_"},
+         {"]", "_"},
+         {" ", "_"}});
+  }
+
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
                    std::vector<std::regex> neg_re,

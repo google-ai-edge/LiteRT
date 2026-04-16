@@ -166,7 +166,12 @@ litert_test(
         "--dont_register=.*tfl\\.zeros_like.*f16.*",
         "--dont_register=.*tfl\\.sign.*f16.*",
         "--dont_register=.*tfl\\.relu_0_to_1.*f16.*",
-    ],
+    ] + select({
+        "//litert/build_common:windows": [
+            "--dont_register=.*tfl\\.exp.*f16.*",
+        ],
+        "//conditions:default": [],
+    }),
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,

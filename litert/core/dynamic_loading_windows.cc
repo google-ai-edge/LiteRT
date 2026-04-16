@@ -32,6 +32,9 @@ namespace litert::internal {
 
 namespace {
 
+constexpr absl::string_view kDllExtension = ".dll";
+constexpr absl::string_view kSoExtension = ".so";
+
 // Convert forward slashes to backslashes for Windows paths
 std::string NormalizePath(absl::string_view path) {
   return absl::StrReplaceAll(path, {{"/", "\\"}});
@@ -44,9 +47,10 @@ std::string ToWindowsLibName(absl::string_view lib_name) {
   if (absl::StartsWith(name, "lib")) {
     name = name.substr(3);
   }
-  // Replace .so with .dll
-  if (absl::EndsWith(name, ".so")) {
-    name = name.substr(0, name.length() - 3) + ".dll";
+  // Bazel still emits .so names for these Windows shared libraries on this
+  // branch, so strip the extension and let the finder accept either suffix.
+  if (absl::EndsWith(name, kSoExtension) || absl::EndsWith(name, kDllExtension)) {
+    name = name.substr(0, name.find_last_of('.'));
   }
   return name;
 }
@@ -85,8 +89,6 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
                                         const std::string& lib_pattern,
                                         bool full_match,
                                         std::vector<std::string>& results) {
-  results.clear();
-
   std::string normalized_path = NormalizePath(search_path);
   if (!Exists(normalized_path)) {
     LITERT_LOG(LITERT_ERROR, "Search path doesn't exist: %s",
@@ -99,34 +101,37 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
   if (!search_pattern.empty() && search_pattern.back() != '\\') {
     search_pattern += '\\';
   }
-  search_pattern += full_match ? lib_pattern : ("*" + lib_pattern + "*.dll");
+  const auto maybe_add_matches = [&](const std::string& pattern_suffix) {
+    const std::string full_pattern =
+        search_pattern + (full_match ? lib_pattern : ("*" + lib_pattern + "*" + pattern_suffix));
 
-  WIN32_FIND_DATAA find_data;
-  HANDLE find_handle = FindFirstFileA(search_pattern.c_str(), &find_data);
+    WIN32_FIND_DATAA find_data;
+    HANDLE find_handle = FindFirstFileA(full_pattern.c_str(), &find_data);
+    if (find_handle == INVALID_HANDLE_VALUE) {
+      return;
+    }
 
-  if (find_handle == INVALID_HANDLE_VALUE) {
-    // No matching files found
-    return kLiteRtStatusOk;
-  }
+    do {
+      if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        continue;
+      }
 
-  do {
-    // Skip directories
-    if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
       std::string filename(find_data.cFileName);
-
-      // Apply pattern matching if not using Windows wildcard search
       if (full_match) {
-        if (filename == lib_pattern || filename == (lib_pattern + ".dll")) {
+        if (filename == lib_pattern || filename == (lib_pattern + std::string(kDllExtension)) ||
+            filename == (lib_pattern + std::string(kSoExtension))) {
           results.push_back(Join({normalized_path, filename}));
         }
       } else {
-        // Windows wildcard already filtered for us
         results.push_back(Join({normalized_path, filename}));
       }
-    }
-  } while (FindNextFileA(find_handle, &find_data));
+    } while (FindNextFileA(find_handle, &find_data));
 
-  FindClose(find_handle);
+    FindClose(find_handle);
+  };
+
+  maybe_add_matches(std::string(kDllExtension));
+  maybe_add_matches(std::string(kSoExtension));
 
   std::sort(results.begin(), results.end());
   return kLiteRtStatusOk;
