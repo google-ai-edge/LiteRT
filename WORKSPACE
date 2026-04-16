@@ -252,6 +252,7 @@ maven_install(
         "androidx.lifecycle:lifecycle-common:2.8.7",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
         "com.google.guava:guava:33.4.6-android",
+        "org.jetbrains.kotlin:kotlin-stdlib:2.0.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0",
@@ -268,8 +269,8 @@ maven_install(
 # Kotlin rules
 http_archive(
     name = "rules_kotlin",
-    sha256 = "e1448a56b2462407b2688dea86df5c375b36a0991bd478c2ddd94c97168125e2",
-    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.1.3/rules_kotlin-v2.1.3.tar.gz",
+    sha256 = "13d5b767d697473ced9b55547a18a6ab65ab3fae5440555deee8a44c886b50aa",
+    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.3.20/rules_kotlin-v2.3.20.tar.gz",
 )
 
 # Sentencepiece
@@ -340,6 +341,28 @@ stblib()
 load("//third_party/models:workspace.bzl", "models")
 
 models()
+
+# Android rules. Need latest rules_android_ndk to use NDK 26+.
+load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
+
+android_ndk_repository(name = "androidndk")
+
+load("//:android_sdk_env.bzl", "check_android_sdk_env", "declare_android_sdk")
+
+check_android_sdk_env(name = "android_sdk_env")
+
+load("@android_sdk_env//:current_android_sdk_env.bzl", "ANDROID_SDK_HOME_IS_SET")
+
+# Conditionally declare androidsdk repository
+declare_android_sdk(ANDROID_SDK_HOME_IS_SET)
+
+load("//:android_ndk_env.bzl", "check_android_ndk_env")
+
+check_android_ndk_env(name = "android_ndk_env")
+
+load("@android_ndk_env//:current_android_ndk_env.bzl", "ANDROID_NDK_HOME_IS_SET")
+
+register_toolchains("@androidndk//:all" if ANDROID_NDK_HOME_IS_SET else "@android_ndk_env//:all")
 
 # VENDOR SDKS ######################################################################################
 
