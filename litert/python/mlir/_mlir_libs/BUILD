@@ -49,7 +49,7 @@ symlink_inputs(
 cc_library(
     name = "lib_litert_compiler_mlir",
     srcs = select({
-        "//litert/build_common:windows": [],
+        "//litert:windows": [],
         "//conditions:default": [":libLiteRTCompilerMLIR.so"],
     }),
 )
@@ -57,11 +57,11 @@ cc_library(
 cc_binary(
     name = "libLiteRTCompilerMLIR.so",
     linkopts = select({
-        "//litert/build_common:macos": [
+        "//litert:macos": [
             "-Wl,-undefined,dynamic_lookup",
             "-Wl,-install_name,@loader_path/libLiteRTCompilerMLIR.so",
         ],
-        "//litert/build_common:windows": [],
+        "//litert:windows": [],
         "//conditions:default": ["-Wl,-Bsymbolic"],
     }),
     linkshared = 1,

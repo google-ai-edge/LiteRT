@@ -158,7 +158,7 @@ ALL_PY_SRC_MODULES = [
 
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
 PACKAGE_DATA = select({
-    "@org_tensorflow//tensorflow:linux_x86_64": [
+    "//litert:linux_x86_64": [
         "//litert/tools:apply_plugin_main",
         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
@@ -174,7 +174,7 @@ LITERT_RUNTIME_SHARED_LIB = select({
     "@bazel_tools//src/conditions:windows": [
         "//litert/c:litert_runtime_c_api_dll",
     ],
-    "//litert/build_common:macos": [
+    "//litert:macos": [
         "//litert/c:litert_runtime_c_api_dylib",
     ],
     "//conditions:default": ["//litert/c:libLiteRt.so"],

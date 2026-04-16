@@ -322,9 +322,9 @@ litert_test(
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//litert/build_common:ios": [],
-        "//litert/build_common:macos": [],
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",

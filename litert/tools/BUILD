@@ -88,7 +88,7 @@ litert_bin(
     name = "apply_plugin_main",
     srcs = ["apply_plugin_main.cc"],
     data = select({
-        "//litert/build_common:windows": [],
+        "//litert:windows": [],
         "//conditions:default": [
             # copybara:uncomment_begin(google-only)
             # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
@@ -117,8 +117,8 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "//litert/build_common:linux": [],
-        "//litert/build_common:windows": [],
+        "//litert:linux": [],
+        "//litert:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -139,7 +139,7 @@ litert_bin(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "//litert/build_common:windows": [],
+        "//litert:windows": [],
         "//conditions:default": [
             "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
             "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
@@ -165,7 +165,7 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "//litert/build_common:linux": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = [
@@ -626,7 +626,7 @@ cc_binary(
         "//litert/tools/flags/vendors:qualcomm_flags",
         "//litert/tools/flags/vendors:samsung_flags",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [
+        "//litert:android": [
             # copybara:uncomment_begin(google-only)
             # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
             # copybara:uncomment_end

@@ -431,7 +431,7 @@ GPU_ENVIRONMENT_DEPS = [
     "//tflite/delegates/gpu/cl:cl_device",
     "//tflite/delegates/gpu/cl:opencl_wrapper",
 ] + select({
-    "@org_tensorflow//tensorflow:android": [
+    "//litert:android": [
         "//tflite/delegates/gpu/cl:gl_interop",
         "//tflite/delegates/gpu/gl:egl_environment",
     ],
@@ -850,7 +850,7 @@ cc_test(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
     ] + gtest_main_no_heapcheck_deps() + select({
-        "@org_tensorflow//tensorflow:android": [
+        "//litert:android": [
             "//tflite/delegates/gpu/gl:egl_environment",
             "//tflite/delegates/gpu/gl:gl_buffer",
         ],
@@ -1064,8 +1064,8 @@ cc_test(
 cc_library(
     name = "metal_info",
     srcs = select({
-        "//litert/build_common:ios": ["metal_info.cc"],
-        "//litert/build_common:macos": ["metal_info.cc"],
+        "//litert:ios": ["metal_info.cc"],
+        "//litert:macos": ["metal_info.cc"],
         "//conditions:default": [],
     }),
     hdrs = ["metal_info.h"],

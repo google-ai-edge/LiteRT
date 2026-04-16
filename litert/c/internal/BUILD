@@ -372,7 +372,7 @@ cc_library(
     hdrs = ["litert_logging.h"],
     compatible_with = get_compatible_with_portable(),
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "//litert:android": ["-llog"],
         "//conditions:default": [],
     }),
     visibility = [

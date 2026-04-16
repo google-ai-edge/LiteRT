@@ -63,7 +63,7 @@ cc_test(
     name = "litert_any_test",
     srcs = ["litert_any_test.cc"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "//litert:android": ["-llog"],
         "//conditions:default": [],
     }),
     deps = [
@@ -332,7 +332,7 @@ cc_library(
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
 #     ] + select({
-#         "@org_tensorflow//tensorflow:android": [
+#         "//litert:android": [
 #             "//tflite/delegates/gpu/gl:egl_environment",
 #         ],
 #         "//conditions:default": [],
@@ -405,7 +405,7 @@ litert_device_test(
 #         "//litert/test:simple_model",
 #         "@opencl_headers",
 #     ] + select({
-#         "@org_tensorflow//tensorflow:android": [
+#         "//litert:android": [
 #             "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
 #             "//tflite/delegates/gpu/cl:cl_device",
 #             "//tflite/delegates/gpu/cl:gl_interop",
@@ -604,7 +604,7 @@ litert_device_test(
 #         "//litert/test:simple_model",
 #         "@opencl_headers",
 #     ] + select({
-#         "@org_tensorflow//tensorflow:android": [
+#         "//litert:android": [
 #             "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
 #             "//tflite/delegates/gpu/cl:cl_device",
 #             "//tflite/delegates/gpu/cl:gl_interop",
@@ -749,7 +749,7 @@ cc_test(
     name = "litert_environment_test",
     srcs = ["litert_environment_test.cc"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "//litert:android": ["-llog"],
         "//conditions:default": [],
     }),
     deps = [
@@ -1065,7 +1065,7 @@ cc_test(
 #         "//tflite/delegates/gpu/cl:cl_device",
 #         "//tflite/delegates/gpu/cl:opencl_wrapper",
 #     ] + select({
-#         "@org_tensorflow//tensorflow:android": [
+#         "//litert:android": [
 #             "//tflite/delegates/gpu/cl:gl_interop",
 #             "//tflite/delegates/gpu/gl:egl_environment",
 #         ],
@@ -1361,7 +1361,7 @@ cc_library(
         "//tflite/types:half",
     ] + select({
         # Windows excludes some options to avoid unnecessary dependencies.
-        "//litert/build_common:windows": [],
+        "//litert:windows": [],
         "//conditions:default": [
             "//litert/cc/dynamic_runtime:litert_op_options",
             # C++ NPU Options API targets.

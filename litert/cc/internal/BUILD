@@ -620,7 +620,7 @@ cc_test(
 cc_library(
     name = "scoped_file",
     srcs = ["scoped_file.cc"] + select({
-        "//litert/build_common:windows": ["scoped_file_win.cc"],
+        "//litert:windows": ["scoped_file_win.cc"],
         "//conditions:default": ["scoped_file_posix.cc"],
     }),
     hdrs = ["scoped_file.h"],

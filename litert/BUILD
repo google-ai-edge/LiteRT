@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:litert_build_defs.bzl", "if_google", "if_oss")
 load("//litert/build_common:special_rule.bzl", "litert_friends")
 
 package(
@@ -19,6 +20,232 @@ package(
     default_visibility = [
         "//litert:__subpackages__",
     ],
+)
+
+# Referred from //third_party/tensorflow/BUILD
+config_setting(
+    name = "android",
+    constraint_values = if_google(
+        ["@platforms//os:android"],
+        [],
+    ),
+    values = if_oss(
+        {"crosstool_top": "//external:android/crosstool"},
+        {},
+    ),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "android_x86",
+    constraint_values = [
+        "@platforms//cpu:x86_32",
+        "@platforms//os:android",
+    ],
+    values = if_oss(
+        {"crosstool_top": "//external:android/crosstool"},
+        {},
+    ),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "android_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:android",
+    ],
+    values = if_oss(
+        {"crosstool_top": "//external:android/crosstool"},
+        {},
+    ),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "android_arm",
+    constraint_values = [
+        "@platforms//cpu:armv7",
+        "@platforms//os:android",
+    ],
+    values = if_oss(
+        {"crosstool_top": "//external:android/crosstool"},
+        {},
+    ),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "android_arm64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:android",
+    ],
+    values = if_oss(
+        {"crosstool_top": "//external:android/crosstool"},
+        {},
+    ),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "android_mips64",
+    constraint_values = [
+        "@platforms//cpu:mips64",
+        "@platforms//os:android",
+    ],
+    values = if_oss(
+        {"crosstool_top": "//external:android/crosstool"},
+        {},
+    ),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "chromiumos",
+    constraint_values = ["@platforms//os:chromiumos"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "ios",
+    constraint_values = ["@platforms//os:ios"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "ios_arm64",
+    # copybara:uncomment_begin(google-only)
+    # constraint_values = [
+    # "@platforms//os:ios",
+    # "@platforms//cpu:arm64",
+    # ],
+    # copybara:uncomment_end_and_comment_begin
+    values = {
+        "apple_platform_type": "ios",
+        "cpu": "ios_arm64",
+    },
+    # copybara:comment_end
+)
+
+config_setting(
+    name = "ios_sim_arm64",
+    # copybara:uncomment_begin(google-only)
+    # constraint_values = [
+    # "@platforms//os:ios",
+    # "@platforms//cpu:arm64",
+    # "//third_party/bazel_rules/apple_support/constraints:simulator",
+    # ],
+    # copybara:uncomment_end_and_comment_begin
+    values = {
+        "apple_platform_type": "ios",
+        "cpu": "ios_sim_arm64",
+    },
+    # copybara:comment_end
+)
+
+config_setting(
+    name = "ios_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:ios",
+    ],
+    values = if_oss(
+        {"crosstool_top": "//tools/osx/crosstool:crosstool"},
+        {},
+    ),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "macos",
+    constraint_values = ["@platforms//os:macos"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "macos_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:macos",
+    ],
+    values = {
+        "apple_platform_type": "macos",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "macos_arm64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:macos",
+    ],
+    values = {
+        "apple_platform_type": "macos",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "linux",
+    constraint_values = ["@platforms//os:linux"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "linux_armhf",
+    constraint_values = [
+        "@platforms//cpu:armv7e-mf",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "windows",
+    constraint_values = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "emscripten",
+    constraint_values = ["@platforms//os:emscripten"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "debug",
+    values = {
+        "compilation_mode": "dbg",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "optimized",
+    values = {
+        "compilation_mode": "opt",
+    },
+    visibility = ["//visibility:public"],
 )
 
 # Controls visibility into LiteRT C++ and C APIs.

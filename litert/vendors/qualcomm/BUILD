@@ -100,7 +100,7 @@ litert_test(
     name = "qnn_manager_test",
     srcs = ["qnn_manager_test.cc"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -117,8 +117,8 @@ litert_test(
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
-        "//litert/build_common:android": [],
-        "//litert/build_common:linux": [],
+        "//litert:android": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
