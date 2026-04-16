@@ -246,3 +246,8 @@ add_subdirectory(runtime)
 add_subdirectory(compiler)
 add_subdirectory(vendors)
 add_subdirectory(tools)
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tensor/CMakeLists.txt")
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../tensor"
+                   "${CMAKE_CURRENT_BINARY_DIR}/tensor")
+endif()
