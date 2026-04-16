@@ -52,6 +52,11 @@ enum class HtpPerformanceMode {
   kExtremePowerSaver = 9,
 };
 
+enum class GraphIOTensorMemType {
+  kRaw = 0,
+  kMemHandle = 1,
+};
+
 enum class DspPerformanceMode {
   kDefault = 0,
   kSustainedHighPerformance = 1,
@@ -136,6 +141,9 @@ class Options {
   absl::string_view GetSaverOutputDir() const;
   void SetSaverOutputDir(absl::string_view saver_output_dir);
 
+  void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
+  GraphIOTensorMemType GetGraphIOTensorMemType() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -155,6 +163,8 @@ class Options {
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
   std::string saver_output_dir_;
+  GraphIOTensorMemType graph_io_tensor_mem_type_ =
+      GraphIOTensorMemType::kMemHandle;
 };
 
 // Gets a default logger implementation to stdout.

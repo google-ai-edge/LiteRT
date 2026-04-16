@@ -218,6 +218,14 @@ class QualcommOptions {
   void SetSaverOutputDir(const std::string& saver_output_dir);
   absl::string_view GetSaverOutputDir();
 
+  enum class GraphIOTensorMemType : int {
+    kRaw = kLiteRtQualcommGraphIOTensorMemTypeRaw,
+    kMemHandle = kLiteRtQualcommGraphIOTensorMemTypeMemHandle,
+  };
+
+  void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type);
+  GraphIOTensorMemType GetGraphIOTensorMemType() const;
+
  private:
   LrtQualcommOptions options_;
 };

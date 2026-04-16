@@ -171,6 +171,11 @@ class TensorWrapper final {
 
   void SetQuantBitwidth(std::uint32_t bitwidth);
 
+  void SetMemHandle(Qnn_MemHandle_t memory_handle) {
+    qnn_tensor_.v2.memType = QNN_TENSORMEMTYPE_MEMHANDLE;
+    qnn_tensor_.v2.memHandle = memory_handle;
+  }
+
  private:
   void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
 

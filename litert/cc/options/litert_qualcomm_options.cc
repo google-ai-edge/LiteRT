@@ -298,4 +298,21 @@ absl::string_view QualcommOptions::GetSaverOutputDir() {
   return val;
 }
 
+void QualcommOptions::SetGraphIOTensorMemType(
+    GraphIOTensorMemType mem_type) {
+  LrtQualcommOptionsSetGraphIOTensorMemType(
+      options_,
+      static_cast<LrtQualcommOptionsGraphIOTensorMemType>(mem_type));
+}
+
+QualcommOptions::GraphIOTensorMemType QualcommOptions::GetGraphIOTensorMemType()
+    const {
+  LrtQualcommOptionsGraphIOTensorMemType val;
+  auto status = LrtQualcommOptionsGetGraphIOTensorMemType(options_, &val);
+  if (status != kLiteRtStatusOk) {
+    return GraphIOTensorMemType::kMemHandle;
+  }
+  return static_cast<GraphIOTensorMemType>(val);
+}
+
 }  // namespace litert::qualcomm

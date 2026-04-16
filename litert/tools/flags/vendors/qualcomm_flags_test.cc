@@ -466,6 +466,29 @@ TEST(BackendTest, Parse) {
   }
 }
 
+TEST(GraphIOTensorMemTypeTest, Parse) {
+  std::string error;
+  QualcommOptions::GraphIOTensorMemType value;
+
+  {
+    static constexpr absl::string_view kRaw = "raw";
+    static constexpr QualcommOptions::GraphIOTensorMemType kRawEnum =
+        QualcommOptions::GraphIOTensorMemType::kRaw;
+    EXPECT_TRUE(AbslParseFlag(kRaw, &value, &error));
+    EXPECT_EQ(value, kRawEnum);
+    EXPECT_EQ(kRaw, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kMemHandle = "memhandle";
+    static constexpr QualcommOptions::GraphIOTensorMemType kMemHandleEnum =
+        QualcommOptions::GraphIOTensorMemType::kMemHandle;
+    EXPECT_TRUE(AbslParseFlag(kMemHandle, &value, &error));
+    EXPECT_EQ(value, kMemHandleEnum);
+    EXPECT_EQ(kMemHandle, AbslUnparseFlag(value));
+  }
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());
@@ -485,6 +508,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
+  EXPECT_EQ(options.Value().GetGraphIOTensorMemType(),
+            QualcommOptions::GraphIOTensorMemType::kMemHandle);
 }
 
 }  // namespace

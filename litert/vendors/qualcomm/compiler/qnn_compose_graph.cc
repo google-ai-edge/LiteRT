@@ -213,7 +213,7 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
                            ::qnn::TensorPool& tensor_pool,
                            ::qnn::TensorWrapper*& tensor_wrapper,
                            const absl::flat_hash_set<std::int32_t>& ids_to_dump,
-                           bool is_tensor_read_and_write) {
+                           bool is_tensor_output) {
   tensor_wrapper = nullptr;
 
   if (litert_tensor.TypeId() != kLiteRtRankedTensorType) {
@@ -319,7 +319,7 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
     tensor_wrapper = &res;
-  } else if (litert_tensor.Uses().empty() || is_tensor_read_and_write) {
+  } else if (litert_tensor.Uses().empty() || is_tensor_output) {
     auto& res = tensor_pool.CreateOutputTensorWithName(
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
@@ -1390,6 +1390,10 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     ::qnn::TensorWrapper* tensor_wrapper{nullptr};
     LITERT_RETURN_IF_ERROR(ConvertTensor(subgraph_input, tensor_pool,
                                          tensor_wrapper, ids_to_dump));
+    if (options.GetGraphIOTensorMemType() ==
+        ::qnn::GraphIOTensorMemType::kMemHandle) {
+      tensor_wrapper->SetMemHandle(nullptr);
+    }
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
     LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
                                           *tensor_wrapper, created_tensors));
@@ -1425,11 +1429,15 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
 
     std::vector<::qnn::TensorWrapperRef> output_tensors;
     for (const auto& output : op.Outputs()) {
-      bool is_tensor_read_and_write = graph_mapper.IsTensorOutput(output.Get());
+      const bool is_tensor_output = graph_mapper.IsTensorOutput(output.Get());
       ::qnn::TensorWrapper* tensor_wrapper{nullptr};
       LITERT_RETURN_IF_ERROR(ConvertTensor(output, tensor_pool, tensor_wrapper,
                                            ids_to_dump,
-                                           is_tensor_read_and_write));
+                                           is_tensor_output));
+      if (is_tensor_output && options.GetGraphIOTensorMemType() ==
+                                  ::qnn::GraphIOTensorMemType::kMemHandle) {
+        tensor_wrapper->SetMemHandle(nullptr);
+      }
       litert_tensor_to_wrapper.emplace(output.Get(), tensor_wrapper);
       output_tensors.emplace_back(*tensor_wrapper);
     }
