@@ -93,46 +93,10 @@ config_setting(
     flag_values = {":build_include": "cpu_only"},
 )
 
-config_setting(
-    name = "android",
-    constraint_values = ["@platforms//os:android"],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "chromiumos",
-    constraint_values = ["@platforms//os:chromiumos"],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "ios",
-    constraint_values = ["@platforms//os:ios"],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "linux",
-    constraint_values = ["@platforms//os:linux"],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "macos",
-    constraint_values = ["@platforms//os:macos"],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "windows",
-    constraint_values = ["@platforms//os:windows"],
-    visibility = ["//visibility:public"],
-)
-
 selects.config_setting_group(
     name = "linux_x86_64_grte",
     match_all = [
-        "@org_tensorflow//tensorflow:linux_x86_64",
+        "//litert:linux_x86_64",
         ":with_grte",
     ],
 )
@@ -140,7 +104,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "linux_x86_64_ungrte",
     match_all = [
-        "@org_tensorflow//tensorflow:linux_x86_64",
+        "//litert:linux_x86_64",
         ":without_grte",
     ],
 )
@@ -165,40 +129,9 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "android_gpu_enabled",
     match_all = [
-        "@org_tensorflow//tensorflow:android",
+        "//litert:android",
         ":build_include_gpu_enabled",
     ],
-)
-
-config_setting(
-    name = "ios_arm64",
-    # copybara:uncomment_begin(google-only)
-    # constraint_values = [
-    # "@platforms//os:ios",
-    # "@platforms//cpu:arm64",
-    # ],
-    # copybara:uncomment_end_and_comment_begin
-    values = {
-        "apple_platform_type": "ios",
-        "cpu": "ios_arm64",
-    },
-    # copybara:comment_end
-)
-
-config_setting(
-    name = "ios_sim_arm64",
-    # copybara:uncomment_begin(google-only)
-    # constraint_values = [
-    # "@platforms//os:ios",
-    # "@platforms//cpu:arm64",
-    # "//third_party/bazel_rules/apple_support/constraints:simulator",
-    # ],
-    # copybara:uncomment_end_and_comment_begin
-    values = {
-        "apple_platform_type": "ios",
-        "cpu": "ios_sim_arm64",
-    },
-    # copybara:comment_end
 )
 
 exports_files(srcs = [

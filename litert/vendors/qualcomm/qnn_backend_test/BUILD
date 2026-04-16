@@ -13,6 +13,16 @@ cc_test(
     srcs = [
         "qnn_model_test.cc",
     ],
+    linkopts = select({
+        "//litert:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    no_main = True,
     tags = [
         "nobuilder",
     ],

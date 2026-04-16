@@ -45,8 +45,8 @@ litert_dynamic_lib(
         "notap",
     ],
     target_compatible_with = select({
-        "//litert/build_common:linux": [],
-        "//litert/build_common:android": [],
+        "//litert:linux": [],
+        "//litert:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -91,7 +91,7 @@ cc_test(
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -112,8 +112,8 @@ cc_test(
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
-        "//litert/build_common:linux": [],
-        "//litert/build_common:android": [],
+        "//litert:linux": [],
+        "//litert:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

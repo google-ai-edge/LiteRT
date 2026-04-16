@@ -118,7 +118,7 @@ litert_lib(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
     ] + select({
-        "@org_tensorflow//tensorflow:android": [":adapter_odc"],
+        "//litert:android": [":adapter_odc"],
         "//conditions:default": [":adapter_aot"],
     }),
 )
@@ -144,8 +144,8 @@ cc_test(
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
-        "//litert/build_common:android": [],
-        "//litert/build_common:linux": [],
+        "//litert:android": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

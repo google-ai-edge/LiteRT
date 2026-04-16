@@ -49,7 +49,7 @@ def _litert_with_qnn_base(
     if include_system:
         data_x86_64.extend(_QNN_LIB_SYSTEM_X86_64)
     data = select({
-        "@org_tensorflow//tensorflow:linux_x86_64": data_x86_64,
+        "//litert:linux_x86_64": data_x86_64,
         "//conditions:default": [],
     })
 
@@ -57,7 +57,7 @@ def _litert_with_qnn_base(
         litert_rule_kwargs,
         data = data,
         linkopts = select({
-            "@org_tensorflow//tensorflow:linux_x86_64": [make_rpaths(_QNN_LIB_HTP_X86_64)],
+            "//litert:linux_x86_64": [make_rpaths(_QNN_LIB_HTP_X86_64)],
             "//conditions:default": [],
         }),
     )

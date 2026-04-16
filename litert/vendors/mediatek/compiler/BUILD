@@ -101,8 +101,8 @@ cc_library(
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
     local_defines = select({
-        "@org_tensorflow//tensorflow:android": ["LITERT_USE_JIT=1"],
-        "@org_tensorflow//tensorflow:chromiumos": ["LITERT_USE_JIT=1"],
+        "//litert:android": ["LITERT_USE_JIT=1"],
+        "//litert:chromiumos": ["LITERT_USE_JIT=1"],
         "//conditions:default": [],
     }),
     deps = [
@@ -125,7 +125,7 @@ litert_test(
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -143,8 +143,8 @@ litert_test(
     # Currently this test can only be run on Android because we don't have x86 shared libraries for
     # MTK.
     target_compatible_with = select({
-        "//litert/build_common:android": [],
-        "//litert/build_common:linux": [],
+        "//litert:android": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,

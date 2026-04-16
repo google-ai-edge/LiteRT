@@ -43,7 +43,7 @@ def gles_headers():
 
 def gles_linkopts():
     return select({
-        "@org_tensorflow//tensorflow:android": [
+        "//litert:android": [
             "-lGLESv3",
             "-lEGL",
         ],
@@ -53,14 +53,14 @@ def gles_linkopts():
 def litert_android_linkopts():
     return select({
         "//litert:litert_android_no_jni": ["-lnativewindow"],
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//litert:android": ["-landroid"],
         "//conditions:default": [],
     })
 
 def litert_metal_opts():
     return select({
-        "//litert/build_common:ios": ["-ObjC++", "-fobjc-arc"],
-        "//litert/build_common:macos": ["-ObjC++", "-fobjc-arc"],
+        "//litert:ios": ["-ObjC++", "-fobjc-arc"],
+        "//litert:macos": ["-ObjC++", "-fobjc-arc"],
         "//conditions:default": [],
     })
 
@@ -70,15 +70,15 @@ def litert_metal_linkopts():
 
 def litert_metal_deps_without_gpu_environment():
     return select({
-        "//litert/build_common:ios": ["//tflite/delegates/gpu/metal:metal_device"],
-        "//litert/build_common:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert:ios": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert:macos": ["//tflite/delegates/gpu/metal:metal_device"],
         "//conditions:default": [],
     })
 
 def litert_metal_deps():
     return litert_metal_deps_without_gpu_environment() + select({
-        "//litert/build_common:ios": ["//litert/runtime:metal_info"],
-        "//litert/build_common:macos": ["//litert/runtime:metal_info"],
+        "//litert:ios": ["//litert/runtime:metal_info"],
+        "//litert:macos": ["//litert/runtime:metal_info"],
         "//conditions:default": [],
     })
 
@@ -89,25 +89,25 @@ def litert_gpu_accelerator_deps():
 # Prebuilt dependencies for GPU accelerators for each platform.
 def litert_gpu_accelerator_prebuilts():
     return select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             "@litert_prebuilts//:linux_x86_64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:linux_aarch64": [
+        "//litert:linux_aarch64": [
             "@litert_prebuilts//:linux_arm64/libLiteRtWebGpuAccelerator.so",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:macos_arm64": [
+        "//litert:macos_arm64": [
             "@litert_prebuilts//:macos_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
         ],
-        "//litert/build_common:ios_arm64": [
+        "//litert:ios_arm64": [
             "@litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
         ],
-        "//litert/build_common:ios_sim_arm64": [
+        "//litert:ios_sim_arm64": [
             "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
         ],
-        "//litert/build_common:windows": [
+        "//litert:windows": [
             "@litert_prebuilts//:windows_x86_64/libLiteRtWebGpuAccelerator.dll",  # copybara:comment
         ],
-        "@org_tensorflow//tensorflow:android_arm64": [
+        "//litert:android_arm64": [
             "@litert_prebuilts//:android_arm64/libLiteRtClGlAccelerator.so",  # copybara:comment
         ],
         "//conditions:default": [],

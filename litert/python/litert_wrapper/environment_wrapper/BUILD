@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 
 WINDOWS_PYBIND_UNDEFS = select({
-    "//litert/build_common:windows": [
+    "//litert:windows": [
         "/UPROTOBUF_USE_DLLS",
         "/UABSL_CONSUME_DLL",
     ],
@@ -41,7 +41,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ] + select({
-        "//litert/build_common:windows": [
+        "//litert:windows": [
             "//litert/c:litert_runtime_c_api_import",
         ],
         "//conditions:default": [],
@@ -56,8 +56,8 @@ pybind_extension(
     copts = WINDOWS_PYBIND_UNDEFS,
     link_in_framework = True,
     linkopts = select({
-        "//litert/build_common:ios": ["-framework Metal"],
-        "//litert/build_common:macos": ["-framework Metal"],
+        "//litert:ios": ["-framework Metal"],
+        "//litert:macos": ["-framework Metal"],
         "//conditions:default": [],
     }),
     pytype_srcs = [
