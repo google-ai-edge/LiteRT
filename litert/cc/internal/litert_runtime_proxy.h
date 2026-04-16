@@ -1215,6 +1215,12 @@ class RuntimeProxy {
                                signature_name, tensor_name, data, size_bytes);
   }
 
+  LiteRtStatus EnvironmentSupportsFP16(LiteRtEnvironment environment,
+                                       bool* is_supported) {
+    LITERT_PROXY_METHOD_STATUS(litert_environment_supports_fp16, environment,
+                               is_supported);
+  }
+
  protected:
   const LiteRtRuntimeCApiStruct* runtime_c_api_;
 };

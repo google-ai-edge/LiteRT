@@ -181,6 +181,16 @@ LiteRtStatus LiteRtEnvironmentSupportsAhwbGlInterop(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtEnvironmentSupportsFP16(LiteRtEnvironment environment,
+                                           bool* is_supported) {
+  LITERT_RETURN_IF_ERROR(
+      environment != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Environment pointer is null.");
+  *is_supported = environment->SupportsFP16();
+  return kLiteRtStatusOk;
+}
+
 void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
                                         bool* has_gpu_environment) {
   if (environment == nullptr) {

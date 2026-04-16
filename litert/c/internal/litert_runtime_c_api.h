@@ -43,7 +43,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "0.1.0"
+#define LITERT_RUNTIME_ABI_VERSION "0.2.0"
 
 // LINT.ThenChange()
 
@@ -741,6 +741,10 @@ typedef struct LiteRtRuntimeCApiStruct {
       size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
       size_t num_output_buffers, LiteRtTensorBuffer* output_buffers,
       bool* async, const LiteRtSchedulingInfo* scheduling_info);
+
+  // litert_environment.h: LiteRtEnvironmentSupportsFP16
+  LiteRtStatus (*litert_environment_supports_fp16)(
+      LiteRtEnvironment environment, bool* is_supported);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)
