@@ -140,8 +140,6 @@ HFILES += $(wildcard $(QNN_INCLUDE)/HTP/*.h)
 HFILES += $(wildcard $(QNN_INCLUDE)/HTP/core/*.h)
 OP_OBJS = $(patsubst $(SRC_DIR)/%,%,$(patsubst %.cpp,%.o,$(OP_SOURCES)))
 OTHER_OBJS =  $(patsubst $(SRC_DIR)/%,%,$(patsubst %.cpp,%.o,$(OTHER_SOURCES)))
-FLATBUFFERS_OBJ = flatbuffers/util.o
-FLATBUFFERS_OBJ_LITE = flatbuffers/util_lite.o
 
 #======= Assembly ========
 OP_SOURCES_ASM_X86 += $(wildcard $(OP_SRC_DIR)/x86_asm/*.S)
@@ -302,11 +300,7 @@ $(WORK)/x86_64-linux-clang/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/x86_64-linux-c
 $(WORK)/x86_64-linux-clang/ops/%.o: $(OP_SRC_DIR)/x86_asm/%.S | $(WORK)/x86_64-linux-clang
 	$(X86_CXX) $(X86_CXX_FLAGS) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/x86_64-linux-clang/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/x86_64-linux-clang
-	@mkdir -p $(dir $@)
-	$(X86_CXX) $(X86_CXX_FLAGS) -MMD -c $< -o $@
-
-$(WORK)/x86_64-linux-clang/$(LIBRARY_NAME): $(x86_64-linux-clang_objs) $(WORK)/x86_64-linux-clang/$(FLATBUFFERS_OBJ) | $(HFILES)
+$(WORK)/x86_64-linux-clang/$(LIBRARY_NAME): $(x86_64-linux-clang_objs) | $(HFILES)
 	$(X86_CXX) -fPIC -std=c++17 -g -shared -o $@ $^ $(X86_LDFLAGS)
 
 
@@ -320,11 +314,7 @@ $(WORK)/hexagon-v68/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v68
 $(WORK)/hexagon-v68/ops/%.o: $(OP_SRC_DIR)/v68_asm/%.S | $(WORK)/hexagon-v68
 	$(HEXAGON_CXX_V68) $(HEXAGON_CXX_FLAGS_V68) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v68/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/hexagon-v68
-	@mkdir -p $(dir $@)
-	$(HEXAGON_CXX_V68) $(HEXAGON_CXX_FLAGS_V68) -MMD -c $< -o $@
-
-$(WORK)/hexagon-v68/$(LIBRARY_NAME): $(hexagon-v68_objs) $(WORK)/hexagon-v68/$(FLATBUFFERS_OBJ_LITE) | $(HFILES)
+$(WORK)/hexagon-v68/$(LIBRARY_NAME): $(hexagon-v68_objs) | $(HFILES)
 	$(HEXAGON_CXX_V68) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 # v69
@@ -337,11 +327,7 @@ $(WORK)/hexagon-v69/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v69
 $(WORK)/hexagon-v69/ops/%.o: $(OP_SRC_DIR)/v69_asm/%.S | $(WORK)/hexagon-v69
 	$(HEXAGON_CXX_V69) $(HEXAGON_CXX_FLAGS_V69) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v69/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/hexagon-v69
-	@mkdir -p $(dir $@)
-	$(HEXAGON_CXX_V69) $(HEXAGON_CXX_FLAGS_V69) -MMD -c $< -o $@
-
-$(WORK)/hexagon-v69/$(LIBRARY_NAME): $(hexagon-v69_objs) $(WORK)/hexagon-v69/$(FLATBUFFERS_OBJ_LITE) | $(HFILES)
+$(WORK)/hexagon-v69/$(LIBRARY_NAME): $(hexagon-v69_objs) | $(HFILES)
 	$(HEXAGON_CXX_V69) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 # v73
@@ -354,11 +340,7 @@ $(WORK)/hexagon-v73/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v73
 $(WORK)/hexagon-v73/ops/%.o: $(OP_SRC_DIR)/v73_asm/%.S | $(WORK)/hexagon-v73
 	$(HEXAGON_CXX_V73) $(HEXAGON_CXX_FLAGS_V73) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v73/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/hexagon-v73
-	@mkdir -p $(dir $@)
-	$(HEXAGON_CXX_V73) $(HEXAGON_CXX_FLAGS_V73) -MMD -c $< -o $@
-
-$(WORK)/hexagon-v73/$(LIBRARY_NAME): $(hexagon-v73_objs) $(WORK)/hexagon-v73/$(FLATBUFFERS_OBJ_LITE) | $(HFILES)
+$(WORK)/hexagon-v73/$(LIBRARY_NAME): $(hexagon-v73_objs) | $(HFILES)
 	$(HEXAGON_CXX_V73) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 #v75
@@ -371,11 +353,7 @@ $(WORK)/hexagon-v75/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v75
 $(WORK)/hexagon-v75/ops/%.o: $(OP_SRC_DIR)/v75_asm/%.S | $(WORK)/hexagon-v75
 	$(HEXAGON_CXX_V75) $(HEXAGON_CXX_FLAGS_V75) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v75/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/hexagon-v75
-	@mkdir -p $(dir $@)
-	$(HEXAGON_CXX_V75) $(HEXAGON_CXX_FLAGS_V75) -MMD -c $< -o $@
-
-$(WORK)/hexagon-v75/$(LIBRARY_NAME): $(hexagon-v75_objs) $(WORK)/hexagon-v75/$(FLATBUFFERS_OBJ_LITE) | $(HFILES)
+$(WORK)/hexagon-v75/$(LIBRARY_NAME): $(hexagon-v75_objs) | $(HFILES)
 	$(HEXAGON_CXX_V75) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 #v79
@@ -388,11 +366,7 @@ $(WORK)/hexagon-v79/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v79
 $(WORK)/hexagon-v79/ops/%.o: $(OP_SRC_DIR)/v79_asm/%.S | $(WORK)/hexagon-v79
 	$(HEXAGON_CXX_V79) $(HEXAGON_CXX_FLAGS_V79) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v79/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/hexagon-v79
-	@mkdir -p $(dir $@)
-	$(HEXAGON_CXX_V79) $(HEXAGON_CXX_FLAGS_V79) -MMD -c $< -o $@
-
-$(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs) $(WORK)/hexagon-v79/$(FLATBUFFERS_OBJ_LITE) | $(HFILES)
+$(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs) | $(HFILES)
 	$(HEXAGON_CXX_V79) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 # v81
@@ -405,11 +379,7 @@ $(WORK)/hexagon-v81/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v81
 $(WORK)/hexagon-v81/ops/%.o: $(OP_SRC_DIR)/v81_asm/%.S | $(WORK)/hexagon-v81
 	$(HEXAGON_CXX_V81) $(HEXAGON_CXX_FLAGS_V81) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v81/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/hexagon-v81
-	@mkdir -p $(dir $@)
-	$(HEXAGON_CXX_V81) $(HEXAGON_CXX_FLAGS_V81) -MMD -c $< -o $@
-
-$(WORK)/hexagon-v81/$(LIBRARY_NAME): $(hexagon-v81_objs) $(WORK)/hexagon-v81/$(FLATBUFFERS_OBJ_LITE) | $(HFILES)
+$(WORK)/hexagon-v81/$(LIBRARY_NAME): $(hexagon-v81_objs) | $(HFILES)
 	$(HEXAGON_CXX_V81) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 
@@ -423,11 +393,7 @@ $(WORK)/hexagon-v85/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v85
 $(WORK)/hexagon-v85/ops/%.o: $(OP_SRC_DIR)/v85_asm/%.S | $(WORK)/hexagon-v85
 	$(HEXAGON_CXX_V85) $(HEXAGON_CXX_FLAGS_V85) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v85/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/hexagon-v85
-	@mkdir -p $(dir $@)
-	$(HEXAGON_CXX_V85) $(HEXAGON_CXX_FLAGS_V85) -MMD -c $< -o $@
-
-$(WORK)/hexagon-v85/$(LIBRARY_NAME): $(hexagon-v85_objs) $(WORK)/hexagon-v85/$(FLATBUFFERS_OBJ_LITE) | $(HFILES)
+$(WORK)/hexagon-v85/$(LIBRARY_NAME): $(hexagon-v85_objs) | $(HFILES)
 	$(HEXAGON_CXX_V85) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 
@@ -441,11 +407,7 @@ $(WORK)/aarch64-android/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/aarch64-android
 $(WORK)/aarch64-android/ops/%.o: $(OP_SRC_DIR)/android_asm/%.S | $(WORK)/aarch64-android
 	$(AARCH64_CXX) $(AARCH64_CXX_FLAGS) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/aarch64-android/flatbuffers/%.o: $(OP_INCLUDE_DIR)/flatbuffers/src/%.cpp | $(WORK)/aarch64-android
-	@mkdir -p $(dir $@)
-	$(AARCH64_CXX) $(AARCH64_CXX_FLAGS) -MMD -c $< -o $@
-
-$(WORK)/aarch64-android/$(LIBRARY_NAME): $(aarch64-android_objs) $(WORK)/aarch64-android/$(FLATBUFFERS_OBJ) | $(HFILES)
+$(WORK)/aarch64-android/$(LIBRARY_NAME): $(aarch64-android_objs) | $(HFILES)
 	$(AARCH64_CXX) -fPIC -std=c++17 -g -shared -o $@ $^ $(AARCH64_LDFLAGS)
 
 clean:

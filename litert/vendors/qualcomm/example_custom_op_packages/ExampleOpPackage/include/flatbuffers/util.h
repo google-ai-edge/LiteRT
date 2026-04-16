@@ -214,19 +214,27 @@ inline std::string IntToStringHex(int i, int xdigits) {
 // clang-format off
 // Use locale independent functions {strtod_l, strtof_l, strtoll_l, strtoull_l}.
 #if defined(FLATBUFFERS_LOCALE_INDEPENDENT) && (FLATBUFFERS_LOCALE_INDEPENDENT > 0)
+  // BEGIN MANUAL ADDITION: Inline ClassicLocale definition.
+  // The upstream flatbuffers defines ClassicLocale in util.cpp, but we inline
+  // it here to keep the build header-only and avoid POSIX filesystem
+  // dependencies (mkdir, realpath) that the full util.cpp requires — those are
+  // unavailable on Hexagon QuRT.
+  #include <clocale>
   class ClassicLocale {
     #ifdef _MSC_VER
       typedef _locale_t locale_type;
     #else
-      typedef locale_t locale_type;  // POSIX.1-2008 locale_t type
+      typedef locale_t locale_type;
     #endif
-    ClassicLocale();
-    ~ClassicLocale();
     locale_type locale_;
     static ClassicLocale instance_;
+    ClassicLocale() : locale_(newlocale(LC_ALL, "C", nullptr)) {}
+    ~ClassicLocale() { freelocale(locale_); }
   public:
     static locale_type Get() { return instance_.locale_; }
   };
+  inline ClassicLocale ClassicLocale::instance_;
+  // END MANUAL ADDITION
 
   #ifdef _MSC_VER
     #define __strtoull_impl(s, pe, b) _strtoui64_l(s, pe, b, ClassicLocale::Get())
