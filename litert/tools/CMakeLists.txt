@@ -307,11 +307,50 @@ else()
             ${CMAKE_DL_LIBS}
     )
 endif()
+
+# extract_bytecode
+add_executable(extract_bytecode
+    extract_bytecode.cc
+)
+
+target_include_directories(extract_bytecode
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        ${TENSORFLOW_SOURCE_DIR}
+)
+
+if(ANDROID OR APPLE)
+    target_link_libraries(extract_bytecode
+        PRIVATE
+            litert_tool_display
+            litert_cc_internal
+            litert_core
+            litert_core_model
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+    )
+else()
+    target_link_libraries(extract_bytecode
+        PRIVATE
+            Threads::Threads
+            "-Wl,--start-group"
+            litert_tool_display
+            litert_cc_internal
+            litert_core
+            litert_core_model
+            ${ABSEIL_TOOL_LIBS}
+            "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
+    )
+endif()
+
 # Platform-specific configurations for all executables
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(run_model PRIVATE ${LOG_LIB})
     target_link_libraries(analyze_model PRIVATE ${LOG_LIB})
     target_link_libraries(apply_plugin_main PRIVATE ${LOG_LIB})
+    target_link_libraries(extract_bytecode PRIVATE ${LOG_LIB})
     # Statically link TFLite GPU/GL core objects for tool executables on Android.
     if(TARGET litert_tflite_gpu_gl_core)
         target_link_libraries(run_model PRIVATE litert_tflite_gpu_gl_core)
@@ -320,6 +359,6 @@ if(LITERT_PLATFORM_ANDROID)
 endif()
 
 # Install targets
-install(TARGETS run_model analyze_model apply_plugin_main
+install(TARGETS run_model analyze_model apply_plugin_main extract_bytecode
     RUNTIME DESTINATION bin
 )
