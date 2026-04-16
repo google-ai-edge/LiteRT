@@ -87,6 +87,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflArgMax,
     kLiteRtOpCodeTflOneHot,
     kLiteRtOpCodeTflUnpack,
+    kLiteRtOpCodeShloComposite,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,

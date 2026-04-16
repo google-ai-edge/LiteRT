@@ -153,8 +153,10 @@ litert_lib(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_op_options",
         "//litert/vendors/intel_openvino:ov_utils",
         "//tflite/schema:schema_fbs",
+        "@flatbuffers//:flatbuffers",
         "@intel_openvino//:openvino",
     ],
 )
