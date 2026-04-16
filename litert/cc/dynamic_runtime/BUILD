@@ -545,7 +545,6 @@ cc_library(
     name = "litert_environment",
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
-        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment_options",
@@ -560,6 +559,7 @@ cc_library(
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c/internal:litert_logging",
         ],
     }),
 )
@@ -753,13 +753,13 @@ cc_library(
     srcs = ["//litert/cc/options:litert_magic_number_options.cc"],
     hdrs = ["//litert/cc/options:litert_magic_number_options.h"],
     deps = [
-        "//litert/c:litert_common",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
+            "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
