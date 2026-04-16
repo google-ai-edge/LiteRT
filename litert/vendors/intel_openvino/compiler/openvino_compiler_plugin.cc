@@ -24,9 +24,16 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/core/graph_util.hpp"
+#include "openvino/core/rt_info.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/op/fake_quantize.hpp"
+#include "openvino/op/matmul.hpp"
 #include "openvino/openvino.hpp"
+#include "openvino/pass/graph_rewrite.hpp"
+#include "openvino/pass/manager.hpp"
+#include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -131,6 +138,34 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSquare,
 };
 // clang format on
+
+class EliminateMatMulFakeQuantize : public ov::pass::MatcherPass {
+ public:
+  OPENVINO_MATCHER_PASS_RTTI("EliminateMatMulFakeQuantize");
+  EliminateMatMulFakeQuantize() {
+    namespace pattern = ov::pass::pattern;
+    auto matmul_pattern = pattern::wrap_type<ov::op::v0::MatMul>(
+        {pattern::any_input(), pattern::any_input()},
+        pattern::consumers_count(1));
+    auto fq_pattern = pattern::wrap_type<ov::op::v0::FakeQuantize>(
+        {matmul_pattern, pattern::any_input(), pattern::any_input(),
+         pattern::any_input(), pattern::any_input()});
+
+    ov::matcher_pass_callback callback = [=](pattern::Matcher& m) {
+      auto pattern_map = m.get_pattern_value_map();
+      auto matmul = pattern_map[matmul_pattern];
+      auto fq = pattern_map[fq_pattern].get_node_shared_ptr();
+
+      ov::copy_runtime_info(fq, matmul.get_node_shared_ptr());
+      ov::replace_node(fq, matmul.get_node_shared_ptr());
+      return true;
+    };
+
+    auto m = std::make_shared<pattern::Matcher>(fq_pattern,
+                                                "EliminateMatMulFakeQuantize");
+    register_matcher(m, callback);
+  }
+};
 
 // When exporting a model via the OpenVINO NPU plugin, standard string streams
 // might encounter a 32-bit std::streamsize limitation on specific platforms,
@@ -373,6 +408,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
     std::string device = "NPU";  // Default device
     ov::AnyMap configs_map;
+    bool eliminate_fq = false;
 
     if (compiler_plugin->GetIntelOpenVinoOptions().HasValue()) {
       const auto& intel_opts =
@@ -405,6 +441,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       for (int i = 0; i < num_custom_options; ++i) {
         auto [key, value] = intel_opts.GetConfigsMapOption(i);
         if (!key.empty()) {  // Valid config option
+          if (key == "optimize_fq_after_matmul") {
+            LITERT_LOG(LITERT_INFO,
+                       "Custom config: optimize_fq_after_matmul = %s",
+                       value.c_str());
+            eliminate_fq = (value == "true");
+            continue;  // This is a special case handled separately, so skip adding to configs_map
+          }
           configs_map[key] = value;
           LITERT_LOG(LITERT_INFO, "Custom config: %s = %s", key.c_str(),
                      value.c_str());
@@ -468,6 +511,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
+
+        if (eliminate_fq) {
+          // Eliminate FakeQuantize nodes after MatMul operations.
+          ov::pass::Manager pass_manager;
+          pass_manager.register_pass<EliminateMatMulFakeQuantize>();
+          pass_manager.run_passes(ov_model);
+        }
 
         // Use device and configs_map from Intel OpenVINO options
         auto compiled_model = core.compile_model(ov_model, device, configs_map);
