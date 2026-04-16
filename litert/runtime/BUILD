@@ -689,6 +689,7 @@ cc_library(
         "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc/internal:scoped_weight_source",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
