@@ -86,6 +86,8 @@ class LiteRtEnvironmentT {
 
   bool SupportsAhwbGlInterop();
 
+  bool SupportsFP16();
+
  private:
   litert::internal::AcceleratorRegistry accelerators_;
   litert::internal::TensorBufferRegistry tensor_buffer_registry_;

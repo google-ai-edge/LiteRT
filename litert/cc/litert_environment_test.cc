@@ -39,6 +39,13 @@ TEST(EnvironmentTest, Default) {
   EXPECT_TRUE(env);
 }
 
+TEST(EnvironmentTest, SupportsFP16) {
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  // Default environment shouldn't have FP16 support set, so it should be false.
+  EXPECT_FALSE(env->SupportsFP16());
+}
+
 TEST(EnvironmentTest, HasRuntimeProxy) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);

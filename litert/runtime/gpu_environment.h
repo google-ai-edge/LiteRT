@@ -71,6 +71,9 @@ struct GpuEnvironmentProperties {
 
   // Indicates whether Metal is available.
   bool is_metal_available = false;
+
+  // Indicates whether FP16 is supported.
+  bool is_fp16_supported = false;
 };
 
 struct GpuEnvironmentOptions {
@@ -161,6 +164,12 @@ class GpuEnvironment {
 
   bool SupportsAhwbGlInterop() {
     return properties_.is_ahwb_gl_interop_supported;
+  }
+
+  bool SupportsFP16() const { return properties_.is_fp16_supported; }
+
+  void SetFP16Supported(bool supported) {
+    properties_.is_fp16_supported = supported;
   }
 
   // Adds options to the existing GPU environment.

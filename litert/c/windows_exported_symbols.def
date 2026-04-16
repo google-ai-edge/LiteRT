@@ -82,6 +82,7 @@ EXPORTS
   LiteRtEnvironmentSupportsAhwbClInterop
   LiteRtEnvironmentSupportsAhwbGlInterop
   LiteRtEnvironmentSupportsClGlInterop
+  LiteRtEnvironmentSupportsFP16
   LiteRtExternalLiteRtBufferContextCreateBufferForTensor
   LiteRtExternalLiteRtBufferContextGetEnvironment
   LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode

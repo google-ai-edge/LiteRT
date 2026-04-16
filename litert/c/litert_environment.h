@@ -70,6 +70,10 @@ LiteRtStatus LiteRtEnvironmentSupportsAhwbClInterop(
 LiteRtStatus LiteRtEnvironmentSupportsAhwbGlInterop(
     LiteRtEnvironment environment, bool* is_supported);
 
+// Returns whether the environment supports FP16.
+LiteRtStatus LiteRtEnvironmentSupportsFP16(LiteRtEnvironment environment,
+                                           bool* is_supported);
+
 // Returns whether the environment has a GPU environment.
 void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
                                         bool* has_gpu_environment);
