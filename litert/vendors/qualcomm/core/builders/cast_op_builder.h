@@ -11,6 +11,8 @@
 
 namespace qnn {
 
+OpWrapper CreateCastOp(const TensorWrapper& input, const TensorWrapper& output);
+
 std::vector<OpWrapper> BuildCastOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
