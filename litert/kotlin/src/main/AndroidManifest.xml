@@ -23,6 +23,8 @@
     <!-- Required for downloading AiPack models. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android NPU Manager -->
+    <uses-feature android:name="android.hardware.npu" android:required="false" />
 
     <application>
         <!-- Applications that target Android S+ require explicit declaration of
