@@ -373,7 +373,7 @@ class ExtendedModel : public litert::Model {
     return num_subgraphs;
   }
 
-  Expected<Subgraph> Subgraph(size_t subgraph_index) const {
+  Expected<class Subgraph> Subgraph(size_t subgraph_index) const {
     LiteRtSubgraph subgraph;
     if (LiteRtGetModelSubgraph(Get(), subgraph_index, &subgraph) !=
         kLiteRtStatusOk) {
