@@ -32,11 +32,15 @@
 #include "litert/test/matchers.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/environment.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_opencl.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if LITERT_CUSTOM_TENSOR_BUFFER_TEST
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
+#if LITERT_CUSTOM_TENSOR_BUFFER_TEST
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 #include "ml_drift/webgpu/environment.h"  // from @ml_drift
@@ -385,7 +389,7 @@ TEST(TensorBuffer, Event) {
 
 bool CanLoadOpenCl() {
 #if LITERT_HAS_OPENCL_SUPPORT
-  return tflite::gpu::cl::LoadOpenCL().ok();
+  return ml_drift::cl::LoadOpenCL().ok();
 #else
   return false;
 #endif
@@ -404,20 +408,40 @@ TEST(TensorBuffer, OpenCL) {
     GTEST_SKIP() << "OpenCL could not be loaded; skipping the test";
   }
 
-  // Create an option with opencl device id zero. This trick initializes the
-  // OpenCL environment at the LiteRtEnvironment creation time.
+  ml_drift::cl::Environment cl_env;
+  ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env));
+
   LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtAny null_deivce_id,
-      litert::ToLiteRtAny(litert::LiteRtVariant(INT64_C(0))));
-  const std::array<LiteRtEnvOption, 1> environment_options = {
+      LiteRtAny context_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.context().context()))));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.queue()->queue()))));
+
+  const std::array<LiteRtEnvOption, 2> environment_options = {
       LiteRtEnvOption{
-          /*.tag=*/kLiteRtEnvOptionTagOpenClDeviceId,
-          /*.value=*/null_deivce_id,
+          /*.tag=*/kLiteRtEnvOptionTagOpenClContext,
+          /*.value=*/context_id,
+      },
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagOpenClCommandQueue,
+          /*.value=*/queue_id,
       },
   };
+
   LiteRtEnvironment env;
   LITERT_ASSERT_OK(LiteRtCreateEnvironment(environment_options.size(),
                                            environment_options.data(), &env));
+
+  LiteRtRegisterTensorBufferHandlers(
+      env, kLiteRtTensorBufferTypeOpenClBufferPacked, LiteRtCreateOpenClMemory,
+      LiteRtDestroyOpenClMemory, LiteRtLockOpenClMemory,
+      LiteRtUnlockOpenClMemory, LiteRtClearOpenClMemory,
+      LiteRtImportOpenClMemory, kLiteRtEnvOptionTagOpenClContext,
+      kLiteRtEnvOptionTagOpenClCommandQueue);
 
   // Use packed buffer to test Clear() easily. Otherwise, downloaded data may
   // have some garbage values due to strides.

@@ -33,7 +33,7 @@ extern "C" {
 // struct should be accompanied by an update to this version.
 #define LITERT_ACCELERATOR_DEF_CURRENT_VERSION 1
 
-#define LITERT_ACCELERATOR_DEF_MAX_SUPPORTED_BUFFER_TYPES 10
+#define LITERT_ACCELERATOR_DEF_MAX_SUPPORTED_BUFFER_TYPES 16
 
 // A struct that contains the data and functions that are used to define an
 // accelerator. Refer litert_accelerator_registration.h for more details.

@@ -171,9 +171,6 @@ class LiteRtTensorBufferT {
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-#if LITERT_HAS_OPENCL_SUPPORT
-  litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
-#endif  // LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::CustomBuffer*> GetCustomBuffer();
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
@@ -233,7 +230,6 @@ class LiteRtTensorBufferT {
       std::variant<HostBuffer, AhwbBuffer, IonBuffer, DmaBufBuffer,
                    FastRpcBuffer,
 #if LITERT_HAS_OPENCL_SUPPORT
-                   litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::CustomBuffer
 #if LITERT_HAS_OPENGL_SUPPORT

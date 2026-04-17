@@ -46,8 +46,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
-            "//litert/runtime:open_cl_sync",
-            "@opencl_headers",
         ],
         "//conditions:default": [],
     }),
