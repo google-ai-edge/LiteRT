@@ -2167,7 +2167,10 @@ cc_library(
     name = "string_utils",
     srcs = ["utils/string_utils.cc"],
     hdrs = ["utils/string_utils.h"],
-    visibility = ["//tflite:__pkg__"],
+    visibility = [
+        "//tflite:__pkg__",
+        "//third_party/odml/litert:__subpackages__",
+    ],
 )
 
 exports_files(srcs = ["allocation.h"])
