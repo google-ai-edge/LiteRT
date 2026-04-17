@@ -59,3 +59,4 @@ target_link_libraries(samsung_ai_litecore_manager
 
 # Add subdirectories for modular build
 add_subdirectory(compiler)
+add_subdirectory(dispatch)
