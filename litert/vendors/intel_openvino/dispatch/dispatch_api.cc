@@ -23,7 +23,12 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/options/litert_intel_openvino_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
@@ -37,6 +42,14 @@
 
 namespace litert {
 namespace openvino {
+
+using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
+namespace {
+
+// Optional intel openvino specific options provided by the application.
+IntelOpenVinoOptions* intel_openvino_opts = nullptr;
+
+}  // namespace
 
 #if defined(LITERT_WINDOWS_OS)
 LiteRtStatus CreateOpenVinoTensorBuffer(
@@ -113,6 +126,28 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
       /*device_tag=*/kLiteRtEnvOptionTagNull,
       /*queue_tag=*/kLiteRtEnvOptionTagNull));
 #endif  // LITERT_WINDOWS_OS
+
+  if (options) {
+    auto cc_options = litert::Options(options, litert::OwnHandle::kNo);
+    auto opaque_options = cc_options.GetOpaqueOptions();
+    if (opaque_options) {
+      auto target_opq_status = litert::FindOpaqueOptions(
+          *opaque_options, LrtGetIntelOpenVinoOptionsIdentifier());
+
+      if (target_opq_status) {
+        auto payload_status = target_opq_status->GetData<const char>();
+        if (payload_status) {
+          LrtIntelOpenVinoOptions raw_options = nullptr;
+          if (LrtCreateIntelOpenVinoOptionsFromToml(
+                  payload_status.Value(), &raw_options) == kLiteRtStatusOk) {
+            delete intel_openvino_opts;
+            intel_openvino_opts = new IntelOpenVinoOptions(
+                IntelOpenVinoOptions::CreateFromOwnedHandle(raw_options));
+          }
+        }
+      }
+    }
+  }
 
   return kLiteRtStatusOk;
 }
@@ -274,7 +309,7 @@ LiteRtStatus DispatchInvocationContextCreate(
   try {
     auto context = LiteRtDispatchInvocationContextT::Create(
         *device_context, exec_type, exec_bytecode_buffer, function_name,
-        num_inputs, num_outputs);
+        num_inputs, num_outputs, intel_openvino_opts);
     if (!context) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to create context from context binary: %s",
