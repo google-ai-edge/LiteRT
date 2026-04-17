@@ -113,6 +113,14 @@ LiteRtStatus LrtGoogleTensorOptionsSetEnableDynamicRangeQuantization(
 LiteRtStatus LrtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
     LrtGoogleTensorOptions options, bool* enable_dynamic_range_quantization);
 
+// op_filters_proto --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetOpFiltersProto(
+    LrtGoogleTensorOptions options, const char* op_filters_proto);
+
+LiteRtStatus LrtGoogleTensorOptionsGetOpFiltersProto(
+    LrtGoogleTensorOptions options, const char** op_filters_proto);
+
 #ifdef __cplusplus
 // testing flags ---------------------------------------------------------------
 LiteRtStatus LrtGoogleTensorOptionsSetTestingFlags(

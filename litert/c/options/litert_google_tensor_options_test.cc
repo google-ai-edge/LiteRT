@@ -184,6 +184,36 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_FALSE(options->GetDumpOpTimings());
   options->SetDumpOpTimings(true);
   EXPECT_TRUE(options->GetDumpOpTimings());
+
+  EXPECT_EQ(options->GetOpFiltersProto(), "");
+  options->SetOpFiltersProto("test_proto_string");
+  EXPECT_EQ(options->GetOpFiltersProto(), "test_proto_string");
+}
+
+TEST(LrtGoogleTensorOptionsTest, OpFiltersProto) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  const char* op_filters_proto;
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetOpFiltersProto(options, &op_filters_proto));
+  ASSERT_STREQ(op_filters_proto, "");
+
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetOpFiltersProto(options, "some_\"proto\"path\\"));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsGetOpFiltersProto(options, &op_filters_proto));
+  ASSERT_STREQ(op_filters_proto, "some_\"proto\"path\\");
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  const char* parsed_op_filters_proto;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetOpFiltersProto(
+      parsed, &parsed_op_filters_proto));
+  EXPECT_STREQ(parsed_op_filters_proto, "some_\"proto\"path\\");
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
 }
 
 TEST(LrtGoogleTensorOptionsTest, Enable4BitCompilationCAPI) {

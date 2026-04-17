@@ -56,6 +56,8 @@ std::string AbslUnparseFlag(LrtGoogleTensorOptionsShardingIntensity options);
 
 ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
 
+ABSL_DECLARE_FLAG(std::string, google_tensor_op_filters_proto);
+
 #endif
 
 // PARSERS (internal) //////////////////////////////////////////////////////////
