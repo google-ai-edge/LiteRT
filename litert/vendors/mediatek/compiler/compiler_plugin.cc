@@ -297,14 +297,10 @@ class LiteRtCompilerPluginT {
               Expected<litert::Options>(options, litert::OwnHandle::kNo)) {
         opq_ = opts->GetOpaqueOptions();
         if (opq_) {
-          const char* identifier;
           void* payload;
-          if (LiteRtGetOpaqueOptionsIdentifier(opq_->Get(), &identifier) ==
-                  kLiteRtStatusOk &&
-              std::string(identifier) == "mediatek" &&
-              LiteRtGetOpaqueOptionsData(opq_->Get(), &payload) ==
-                  kLiteRtStatusOk) {
-            mt_payload = reinterpret_cast<const std::string*>(payload)->c_str();
+          if (LiteRtFindOpaqueOptionsData(opq_->Get(), "mediatek", &payload) ==
+              kLiteRtStatusOk) {
+            mt_payload = reinterpret_cast<const char*>(payload);
           }
         }
       }
