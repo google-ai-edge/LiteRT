@@ -14,6 +14,7 @@
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable")
 
@@ -145,21 +146,20 @@ exports_files(srcs = [
     "export_litert_tflite_runtime_linux.lds",
 ])
 
-genrule(
+copy_file(
     name = "build_config_header",
-    srcs = select({
-        ":build_include_gpu": ["config/build_config_gpu.h"],
-        ":build_include_gpu_define": ["config/build_config_gpu.h"],
-        ":build_include_npu": ["config/build_config_npu.h"],
-        ":build_include_cpu_only": ["config/build_config_cpu_only.h"],
+    src = select({
+        ":build_include_gpu": "config/build_config_gpu.h",
+        ":build_include_gpu_define": "config/build_config_gpu.h",
+        ":build_include_npu": "config/build_config_npu.h",
+        ":build_include_cpu_only": "config/build_config_cpu_only.h",
         # Note: build_include_gpu_npu is removed to avoid illegal ambiguous match error b/w
         # build_include_gpu_define (define flag) and build_include_gpu_npu (string flag w/ default).
         # LINT.IfChange(build_config_header_default).
-        "//conditions:default": ["config/build_config_gpu_npu.h"],
+        "//conditions:default": "config/build_config_gpu_npu.h",
         # LINT.ThenChange(./BUILD:string_flag_default)
     }),
-    outs = ["build_config.h"],
-    cmd = "cp $< $@",
+    out = "build_config.h",
     compatible_with = get_compatible_with_portable(),
 )
 
