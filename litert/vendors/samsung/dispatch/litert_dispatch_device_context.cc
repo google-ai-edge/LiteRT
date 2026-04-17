@@ -66,7 +66,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   void* addr = nullptr;
 
   switch (tensor_buffer_type) {
-    case kLiteRtTensorBufferTypeDmaBuf:
+    case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
       if (auto status =
               LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &addr, &fd);
@@ -78,6 +78,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                            "DMA-BUF is not supported on this platform");
 #endif  // LITERT_HAS_DMABUF_SUPPORT
       break;
+    }
 
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported buffer type: %d",
