@@ -23,16 +23,15 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/examples/example_common.h"
 #include "litert/vendors/examples/example_transformations.h"
@@ -45,7 +44,11 @@ constexpr char kExamplePluginVersion[] = "1";
 
 // Plugins can hold state.
 struct LiteRtCompilerPluginT {
+  explicit LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx)
+      : compiler_context(ctx) {}
+
   std::vector<LiteRtTransformation> transformations;
+  const LiteRtCompilerContext* compiler_context;
 };
 
 LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
@@ -165,13 +168,14 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
   delete compiled_result;
 }
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
   // Propagate the min logger severity from the environment.
   LiteRtPropagateMinLoggerSeverity(env);
 
-  *compiler_plugin = new LiteRtCompilerPluginT;
+  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context);
   return kLiteRtStatusOk;
 }
 
@@ -181,33 +185,36 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
-                                           LiteRtSubgraph subgraph,
+                                           LiteRtSubgraph c_subgraph,
                                            LiteRtOpList selected_ops) {
-  ::litert::Subgraph main_subgraph(subgraph);
-  for (const auto& op : main_subgraph.Ops()) {
+  const auto* ctx = compiler_plugin->compiler_context;
+  litert::compiler::Subgraph main_subgraph(ctx, c_subgraph);
+
+  LITERT_ASSIGN_OR_RETURN(auto ops, main_subgraph.Ops());
+  for (const auto& op : ops) {
     bool only_f32 = true;
-    for (const auto& input : op.Inputs()) {
-      only_f32 &= input.ElementType() == ::litert::ElementType::Float32;
+    LITERT_ASSIGN_OR_RETURN(auto inputs, op.Inputs());
+    for (const auto& input : inputs) {
+      only_f32 &= (input.ElementType() == litert::ElementType::Float32);
     }
-    for (const auto& output : op.Outputs()) {
-      only_f32 &= output.ElementType() == ::litert::ElementType::Float32;
+    LITERT_ASSIGN_OR_RETURN(auto outputs, op.Outputs());
+    for (const auto& output : outputs) {
+      only_f32 &= (output.ElementType() == litert::ElementType::Float32);
     }
     if (!only_f32) {
       continue;
     }
 
-    if (op.Code() == kLiteRtOpCodeTflMul) {
-      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
-    } else if (op.Code() == kLiteRtOpCodeTflSub) {
-      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 1));
-    } else if (op.Code() == kLiteRtOpCodeShloComposite) {
-      const auto opts =
-          litert::GetOptionsAs<litert::CompositeOptions>(op.Get());
-      if (!opts) {
-        return opts.Error().Status();
-      }
-      if (opts->name == "odml.rms_norm") {
-        LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    LITERT_ASSIGN_OR_RETURN(auto opcode, op.Code());
+    if (opcode == kLiteRtOpCodeTflMul) {
+      LITERT_RETURN_IF_ERROR(ctx->push_op(selected_ops, op.Get(), 0));
+    } else if (opcode == kLiteRtOpCodeTflSub) {
+      LITERT_RETURN_IF_ERROR(ctx->push_op(selected_ops, op.Get(), 1));
+    } else if (opcode == kLiteRtOpCodeShloComposite) {
+      const char* name;
+      LITERT_RETURN_IF_ERROR(ctx->get_shlo_composite_op_name(op.Get(), &name));
+      if (absl::string_view(name) == "odml.rms_norm") {
+        LITERT_RETURN_IF_ERROR(ctx->push_op(selected_ops, op.Get(), 0));
       }
     }
   }
@@ -231,29 +238,26 @@ Expected<OpCode> ConvertOpCode(LiteRtOpCode code) {
   }
 }
 
-LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
-                                    LiteRtSubgraph subgraph,
+LiteRtStatus CompileSinglePartition(const LiteRtCompilerContext* ctx,
+                                    LiteRtParamIndex partition_index,
+                                    LiteRtSubgraph c_subgraph,
                                     ExampleGlobalGraph& global_graph) {
-  const litert::Subgraph sg(subgraph);
+  litert::compiler::Subgraph subgraph(ctx, c_subgraph);
   ExampleGraph example_graph;
   std::unordered_map<LiteRtTensor, int> tensor_map;  // NOLINT
 
-  auto handle_constant = [&](const litert::Tensor& input,
+  auto handle_constant = [&](const litert::compiler::Tensor& input,
                              int example_ind) -> LiteRtStatus {
-    LiteRtWeights weights;
-    LITERT_RETURN_IF_ERROR(LiteRtGetTensorWeights(input.Get(), &weights));
-    int32_t buffer_id;
-    LITERT_RETURN_IF_ERROR(LiteRtGetWeightsBufferId(weights, &buffer_id));
-    const void* addr;
-    size_t size;
-    LITERT_RETURN_IF_ERROR(LiteRtGetWeightsBytes(weights, &addr, &size));
+    LITERT_ASSIGN_OR_RETURN(auto weights, input.GetWeights());
+    LITERT_ASSIGN_OR_RETURN(auto buffer_id, weights.BufferId());
+    LITERT_ASSIGN_OR_RETURN(auto bytes, weights.Bytes());
 
     if (buffer_id > 0) {
       if (global_graph.buffers_.find(buffer_id) ==
           global_graph.buffers_.end()) {
         ExampleTensor tensor(example_graph.Tensors()[example_ind].dims);
-        tensor.data.resize(size / sizeof(float));
-        std::memcpy(tensor.data.data(), addr, size);
+        tensor.data.resize(bytes.size() / sizeof(float));
+        std::memcpy(tensor.data.data(), bytes.data(), bytes.size());
         global_graph.buffers_[buffer_id] = std::move(tensor);
       }
       example_graph.AddConstMap(example_ind, buffer_id);
@@ -262,7 +266,8 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
   };
 
   Inds example_graph_inputs;
-  for (const auto& input : sg.Inputs()) {
+  LITERT_ASSIGN_OR_RETURN(auto subgraph_inputs, subgraph.Inputs());
+  for (const auto& input : subgraph_inputs) {
     LITERT_ASSIGN_OR_RETURN(auto input_type, input.RankedTensorType());
     const auto litert_dims = input_type.Layout().Dimensions();
     const auto example_ind = example_graph.EmplaceTensor(
@@ -270,16 +275,20 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
     tensor_map.emplace(input.Get(), example_ind);
     example_graph_inputs.push_back(example_ind);
 
-    if (input.IsConstant()) {
+    LITERT_ASSIGN_OR_RETURN(auto is_constant, input.IsConstant());
+    if (is_constant) {
       LITERT_RETURN_IF_ERROR(handle_constant(input, example_ind));
     }
   }
 
-  for (const auto& op : sg.Ops()) {
+  LITERT_ASSIGN_OR_RETURN(auto ops, subgraph.Ops());
+  for (const auto& op : ops) {
     Inds example_inputs;
-    for (const auto& input : op.Inputs()) {
+    LITERT_ASSIGN_OR_RETURN(auto op_inputs, op.Inputs());
+    for (const auto& input : op_inputs) {
       if (tensor_map.find(input.Get()) == tensor_map.end()) {
-        if (!input.IsConstant()) {
+        LITERT_ASSIGN_OR_RETURN(auto is_constant, input.IsConstant());
+        if (!is_constant) {
           LITERT_LOG(LITERT_ERROR, "Unknown input tensor");
           return kLiteRtStatusErrorNotFound;
         }
@@ -289,7 +298,8 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
             Dims(litert_dims.cbegin(), litert_dims.cend()));
         tensor_map.emplace(input.Get(), example_ind);
         LITERT_RETURN_IF_ERROR(handle_constant(input, example_ind));
-        if (input.IsConstant()) {
+        LITERT_ASSIGN_OR_RETURN(auto is_constant_2, input.IsConstant());
+        if (is_constant_2) {
           example_graph_inputs.push_back(example_ind);
         }
       }
@@ -297,7 +307,8 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
     }
 
     Inds example_outputs;
-    for (const auto& output : op.Outputs()) {
+    LITERT_ASSIGN_OR_RETURN(auto op_outputs, op.Outputs());
+    for (const auto& output : op_outputs) {
       LITERT_ASSIGN_OR_RETURN(auto output_type, output.RankedTensorType());
       const auto litert_dims = output_type.Layout().Dimensions();
       const auto example_ind = example_graph.EmplaceTensor(
@@ -306,13 +317,15 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
       example_outputs.push_back(example_ind);
     }
 
-    LITERT_ASSIGN_OR_RETURN(auto op_code, ConvertOpCode(op.Code()));
+    LITERT_ASSIGN_OR_RETURN(auto op_code_val, op.Code());
+    LITERT_ASSIGN_OR_RETURN(auto op_code, ConvertOpCode(op_code_val));
     example_graph.EmplaceOp(op_code, std::move(example_inputs),
                             std::move(example_outputs));
   }
 
   Inds example_graph_outputs;
-  for (const auto& output : sg.Outputs()) {
+  LITERT_ASSIGN_OR_RETURN(auto subgraph_outputs, subgraph.Outputs());
+  for (const auto& output : subgraph_outputs) {
     example_graph_outputs.push_back(tensor_map.at(output.Get()));
   }
 
@@ -332,17 +345,20 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
-  const auto num_partitions = model.NumSubgraphs();
+  const auto* ctx = compiler_plugin->compiler_context;
+  litert::compiler::Model model(ctx, partitions);
+
+  LITERT_ASSIGN_OR_RETURN(auto num_partitions, model.NumSubgraphs());
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->per_op_data.resize(num_partitions);
 
   ::litert::example::ExampleGlobalGraph global_graph;
 
   for (auto i = 0; i < num_partitions; ++i) {
-    LITERT_ASSIGN_OR_RETURN(litert::Subgraph subgraph, model.Subgraph(i));
+    LITERT_ASSIGN_OR_RETURN(litert::compiler::Subgraph subgraph,
+                            model.GetSubgraph(i));
     LITERT_RETURN_IF_ERROR(::litert::example::CompileSinglePartition(
-        i, subgraph.Get(), global_graph));
+        ctx, i, subgraph.Get(), global_graph));
     result->per_op_data[i] = absl::StrFormat("partition_%d", i);
   }
 

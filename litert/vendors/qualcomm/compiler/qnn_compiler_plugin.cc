@@ -235,9 +235,10 @@ class LiteRtCompilerPluginT {
   QnnManager::Ptr qnn_manager_ = nullptr;
 };
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
   if (options == nullptr || env == nullptr) {
     LITERT_LOG(LITERT_WARNING,
                "QNN compiler plugin created with null options, these will be "

@@ -35,6 +35,7 @@
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -239,7 +240,7 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
 
   plugin.env_ = env;
   LITERT_RETURN_IF_ERROR(plugin.plugin_api_.create_compiler_plugin(
-      &plugin.plugin_handle_, env, options));
+      LrtGetCompilerContext(), &plugin.plugin_handle_, env, options));
   LITERT_LOG(LITERT_INFO, "Initialize plugin at: %s", lib_path.data());
 
   auto api_version = plugin.ApiVersion();

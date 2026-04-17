@@ -100,6 +100,31 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_compiler_context_header",
+    hdrs = ["litert_compiler_context.h"],
+    visibility = ["//litert:litert_internal_users"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+    ],
+)
+
+cc_library(
+    name = "litert_compiler_context",
+    srcs = ["litert_compiler_context.cc"],
+    hdrs = ["litert_compiler_context.h"],
+    visibility = ["//litert:litert_internal_users"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
+    ],
+)
+
+cc_library(
     name = "litert_runtime_context_header",
     hdrs = ["litert_runtime_context.h"],
     deps = [

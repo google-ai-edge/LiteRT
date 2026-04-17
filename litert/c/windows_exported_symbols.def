@@ -25,6 +25,46 @@ EXPORTS
   LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
   LiteRtAppendOpaqueOptions
+  LiteRtBuilderBuildAddOpOption
+  LiteRtBuilderBuildAveragePool2dOpOption
+  LiteRtBuilderBuildBatchMatmulOpOption
+  LiteRtBuilderBuildConcatenationOpOption
+  LiteRtBuilderBuildConv2dOpOption
+  LiteRtBuilderBuildConv3dOpOption
+  LiteRtBuilderBuildCumsumOpOption
+  LiteRtBuilderBuildDepthToSpaceOpOption
+  LiteRtBuilderBuildDepthwiseConv2dOpOption
+  LiteRtBuilderBuildDivOpOption
+  LiteRtBuilderBuildFullyConnectedOpOption
+  LiteRtBuilderBuildGatherOpOption
+  LiteRtBuilderBuildGeluOpOption
+  LiteRtBuilderBuildL2Pool2dOpOption
+  LiteRtBuilderBuildLeakyReluOpOption
+  LiteRtBuilderBuildMaxPool2dOpOption
+  LiteRtBuilderBuildMeanOpOption
+  LiteRtBuilderBuildMirrorPadOpOption
+  LiteRtBuilderBuildMulOpOption
+  LiteRtBuilderBuildOp
+  LiteRtBuilderBuildPackOpOption
+  LiteRtBuilderBuildReduceAllOpOption
+  LiteRtBuilderBuildReduceAnyOpOption
+  LiteRtBuilderBuildReduceMaxOpOption
+  LiteRtBuilderBuildReduceMinOpOption
+  LiteRtBuilderBuildReshapeOpOption
+  LiteRtBuilderBuildResizeBilinearOpOption
+  LiteRtBuilderBuildResizeNearestNeighborOpOption
+  LiteRtBuilderBuildSoftmaxOpOption
+  LiteRtBuilderBuildSpaceToDepthOpOption
+  LiteRtBuilderBuildSplitOpOption
+  LiteRtBuilderBuildSqueezeOpOption
+  LiteRtBuilderBuildStridedSliceOpOption
+  LiteRtBuilderBuildSubOpOption
+  LiteRtBuilderBuildSumOpOption
+  LiteRtBuilderBuildTensor
+  LiteRtBuilderBuildTransposeConvOpOption
+  LiteRtBuilderBuildUnpackOpOption
+  LiteRtBuilderBuildWeights
+  LiteRtBuilderEraseOp
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
@@ -122,13 +162,13 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
-  LiteRtGetOpCode
-  LiteRtGetOpInput
-  LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsData
   LiteRtGetOpaqueOptionsHash
   LiteRtGetOpaqueOptionsIdentifier
+  LiteRtGetOpCode
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
   LiteRtGetOptionsHardwareAccelerators
   LiteRtGetPerChannelQuantization
   LiteRtGetPerTensorQuantization

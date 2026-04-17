@@ -201,9 +201,10 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
   LITERT_LOG(LITERT_INFO, "Destroy compiled result");
 }
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
   LiteRtPropagateMinLoggerSeverity(env);
 
   *compiler_plugin = new LiteRtCompilerPluginT(env, options);

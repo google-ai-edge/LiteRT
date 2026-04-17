@@ -332,9 +332,10 @@ class LiteRtCompilerPluginT {
   int subgraph_index_ = 0;
 };
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options) {
+LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
+    LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
   LiteRtPropagateMinLoggerSeverity(env);
 
   *compiler_plugin = new LiteRtCompilerPluginT(env, options);
