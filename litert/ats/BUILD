@@ -236,6 +236,10 @@ litert_test(
     tags = [
         "notap",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = if_oss(True, False),
     use_sys_malloc = True,
     deps = [
@@ -334,6 +338,10 @@ cc_library(
 cc_test(
     name = "executor_test",
     srcs = ["executor_test.cc"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":executor",
         "//litert/c:litert_op_code",
@@ -428,7 +436,7 @@ cc_test(
     data = [
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # Re-enable sans once test libs can be linked in a sans friendly way.
     tags = [
@@ -437,6 +445,10 @@ cc_test(
         "nosan",
         "notsan",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":common",
         ":compile_fixture",

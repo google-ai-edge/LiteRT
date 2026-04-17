@@ -25,25 +25,67 @@ if not os.path.splitext(__file__)[0].endswith(
   from litert.python.litert_wrapper.compiled_model_wrapper import (
       _pywrap_litert_compiled_model_wrapper as _cm,
   )
-  from litert.python.litert_wrapper.compiled_model_wrapper import cpu_kernel_mode
-  from litert.python.litert_wrapper.compiled_model_wrapper import hardware_accelerator
+  from litert.python.litert_wrapper.compiled_model_wrapper import (
+      hardware_accelerator,
+  )
+  from litert.python.litert_wrapper.compiled_model_wrapper import (
+      options as options_lib,
+  )
   from litert.python.litert_wrapper.environment_wrapper import (
       environment as environment_wrapper,
   )
   from litert.python.litert_wrapper.tensor_buffer_wrapper import tensor_buffer
 
-  CpuKernelMode = cpu_kernel_mode.CpuKernelMode
+  CpuOptions = options_lib.CpuOptions
+  CpuKernelMode = options_lib.CpuKernelMode
+  GpuOptions = options_lib.GpuOptions
+  QualcommOptions = options_lib.QualcommOptions
+  IntelOpenVinoOptions = options_lib.IntelOpenVinoOptions
+  Options = options_lib.Options
   HardwareAccelerator = hardware_accelerator.HardwareAccelerator
   Environment = environment_wrapper.Environment
+  EnvironmentOptions = environment_wrapper.EnvironmentOptions
   TensorBuffer = tensor_buffer.TensorBuffer
 else:
   # This file is part of ai_edge_litert package.
   from ai_edge_litert import _pywrap_litert_compiled_model_wrapper as _cm
   from ai_edge_litert.cpu_kernel_mode import CpuKernelMode
   from ai_edge_litert.environment import Environment
+  from ai_edge_litert.environment import EnvironmentOptions
   from ai_edge_litert.hardware_accelerator import HardwareAccelerator
+  from ai_edge_litert.options import CpuOptions
+  from ai_edge_litert.options import GpuOptions
+  from ai_edge_litert.options import IntelOpenVinoOptions
+  from ai_edge_litert.options import Options
+  from ai_edge_litert.options import QualcommOptions
   from ai_edge_litert.tensor_buffer import TensorBuffer
 # pylint: enable=g-import-not-at-top
+
+
+def _resolve_options(
+    options: Optional[Options],
+    hardware_accel: Optional[HardwareAccelerator],
+) -> Options:
+  """Resolves new grouped options with the legacy hardware_accel shortcut."""
+  if options is not None:
+    if hardware_accel is not None:
+      raise ValueError("Pass either options or hardware_accel, not both.")
+    return options
+  if hardware_accel is None:
+    hardware_accel = HardwareAccelerator.CPU
+  return Options(
+      hardware_accelerators=hardware_accel,
+      cpu_options=CpuOptions(num_threads=1),
+  )
+
+
+def _create_default_environment() -> Environment:
+  """Creates the default environment used by CompiledModel factories."""
+  return Environment.create(
+      options=EnvironmentOptions(
+          runtime_path=os.path.dirname(os.path.abspath(__file__))
+      )
+  )
 
 
 class CompiledModel:
@@ -68,40 +110,30 @@ class CompiledModel:
   def from_file(
       cls,
       model_path: str,
-      hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
+      hardware_accel: Optional[HardwareAccelerator] = None,
       environment: Optional[Environment] = None,
+      options: Optional[Options] = None,
   ) -> "CompiledModel":
     """Creates a CompiledModel from a model file.
 
     Args:
       model_path: Path to the model file.
-      hardware_accel: Hardware acceleration option. Use constants from
-        HardwareAccelerator class (e.g., HardwareAccelerator.CPU,
-        HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
+      options: Optional grouped per-model options. Use this to mirror the native
+        C++ Options API, including CPU and GPU option groups.
+      hardware_accel: Compatibility shortcut for Options.hardware_accelerators.
+        Defaults to CPU when options is omitted.
 
     Returns:
       A new CompiledModel instance.
     """
-    env = environment or Environment.create(
-        runtime_path=os.path.dirname(os.path.abspath(__file__))
-    )
+    env = environment or _create_default_environment()
+    model_options = _resolve_options(options, hardware_accel)
     ptr = _cm.CreateCompiledModelFromFile(
         env.capsule,
         model_path,
-        hardware_accel=hardware_accel,
-        cpu_num_threads=env.cpu_num_threads,
-        gpu_enforce_f32=env.gpu_enforce_f32,
-        gpu_share_constant_tensors=env.gpu_share_constant_tensors,
-        cpu_kernel_mode=env.cpu_kernel_mode,
-        xnnpack_flags=env.xnnpack_flags,
-        xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
-        enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
-        enable_infinite_float_capping=env.enable_infinite_float_capping,
-        enable_benchmark_mode=env.enable_benchmark_mode,
-        enable_allow_src_quantized_fc_conv_ops=env.enable_allow_src_quantized_fc_conv_ops,
-        enable_hint_waiting_for_completion=env.enable_hint_waiting_for_completion,
+        **model_options._as_flat_kwargs(),
     )
     return cls(ptr, env)
 
@@ -109,40 +141,30 @@ class CompiledModel:
   def from_buffer(
       cls,
       model_data: bytes,
-      hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
+      hardware_accel: Optional[HardwareAccelerator] = None,
       environment: Optional[Environment] = None,
+      options: Optional[Options] = None,
   ) -> "CompiledModel":
     """Creates a CompiledModel from an in-memory buffer.
 
     Args:
       model_data: Model data as bytes.
-      hardware_accel: Hardware acceleration option. Use constants from
-        HardwareAccelerator class (e.g., HardwareAccelerator.CPU,
-        HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
+      options: Optional grouped per-model options. Use this to mirror the native
+        C++ Options API, including CPU and GPU option groups.
+      hardware_accel: Compatibility shortcut for Options.hardware_accelerators.
+        Defaults to CPU when options is omitted.
 
     Returns:
       A new CompiledModel instance.
     """
-    env = environment or Environment.create(
-        runtime_path=os.path.dirname(os.path.abspath(__file__))
-    )
+    env = environment or _create_default_environment()
+    model_options = _resolve_options(options, hardware_accel)
     ptr = _cm.CreateCompiledModelFromBuffer(
         env.capsule,
         model_data,
-        hardware_accel=hardware_accel,
-        cpu_num_threads=env.cpu_num_threads,
-        gpu_enforce_f32=env.gpu_enforce_f32,
-        gpu_share_constant_tensors=env.gpu_share_constant_tensors,
-        cpu_kernel_mode=env.cpu_kernel_mode,
-        xnnpack_flags=env.xnnpack_flags,
-        xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
-        enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
-        enable_infinite_float_capping=env.enable_infinite_float_capping,
-        enable_benchmark_mode=env.enable_benchmark_mode,
-        enable_allow_src_quantized_fc_conv_ops=env.enable_allow_src_quantized_fc_conv_ops,
-        enable_hint_waiting_for_completion=env.enable_hint_waiting_for_completion,
+        **model_options._as_flat_kwargs(),
     )
     return cls(ptr, env)
 

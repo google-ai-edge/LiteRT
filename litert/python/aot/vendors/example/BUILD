@@ -32,6 +32,10 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "example_backend_test",
     srcs = ["example_backend_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":example_backend",
         "//litert/python/aot/core:aot_types",

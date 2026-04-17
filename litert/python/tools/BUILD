@@ -54,6 +54,10 @@ pytype_strict_library(
 py_strict_test(
     name = "mmap_utils_test",
     srcs = ["mmap_utils_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":mmap_utils",
         # Dependency placeholder: gfile,
@@ -64,6 +68,7 @@ py_strict_test(
 pytype_strict_library(
     name = "benchmark_litert_model",
     srcs = ["benchmark_litert_model.py"],
+    imports = ["."],
     deps = [
         # Dependency placeholder: gfile,
         # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
@@ -76,6 +81,7 @@ py_strict_test(
     srcs = ["benchmark_litert_model_test.py"],
     deps = [
         ":benchmark_litert_model",
+        "//litert/python/litert_wrapper/compiled_model_wrapper:options",
         # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
         "@org_tensorflow//third_party/py/numpy",  # copybara:comment
     ],
