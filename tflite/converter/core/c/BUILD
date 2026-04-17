@@ -62,6 +62,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     visibility = [
+        "//litert/compiler/mlir:__pkg__",
         "//tflite/converter:__subpackages__",
         "//tflite/core/c:__subpackages__",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/utils:__pkg__",

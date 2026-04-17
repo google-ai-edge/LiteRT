@@ -28,6 +28,7 @@ cc_library(
     hdrs = ["metadata_util.h"],
     compatible_with = get_compatible_with_portable(),
     visibility = [
+        "//litert/compiler/mlir:__pkg__",
         "//tflite/converter:__pkg__",
         "//tflite/core:__pkg__",
         "//tflite/delegates:__pkg__",

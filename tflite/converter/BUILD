@@ -2167,7 +2167,10 @@ cc_library(
     name = "string_utils",
     srcs = ["utils/string_utils.cc"],
     hdrs = ["utils/string_utils.h"],
-    visibility = ["//tflite:__pkg__"],
+    visibility = [
+        "//litert/compiler/mlir:__pkg__",
+        "//tflite:__pkg__",
+    ],
 )
 
 exports_files(srcs = ["allocation.h"])
@@ -2198,7 +2201,10 @@ exports_files(srcs = ["utils/control_edges.h"])
 cc_library(
     name = "control_edges",
     hdrs = ["utils/control_edges.h"],
-    visibility = ["//tflite/converter/experimental/remat:__pkg__"],
+    visibility = [
+        "//litert/compiler/mlir:__pkg__",
+        "//tflite/converter/experimental/remat:__pkg__",
+    ],
 )
 
 tf_cc_test(

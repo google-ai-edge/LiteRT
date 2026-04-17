@@ -9,6 +9,7 @@ load("@org_tensorflow//tensorflow/core/platform:rules_cc.bzl", "cc_library")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
+        "//litert/compiler/mlir:__pkg__",
         "//tflite/converter:__subpackages__",
         "@org_tensorflow//tensorflow:__pkg__",
     ],
