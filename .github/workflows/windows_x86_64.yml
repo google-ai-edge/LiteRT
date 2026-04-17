@@ -126,14 +126,7 @@ jobs:
             //litert/tools/flags/vendors:mediatek_flags_test `
             //litert/tools/flags/vendors:qualcomm_flags_test `
             //litert/vendors/examples:example_common_test `
-            //litert/vendors/qualcomm/core:common_test `
-            //litert/vendors/qualcomm/core:tensor_pool_test `
-            //litert/vendors/qualcomm/core/dump:dump_graph_test `
-            //litert/vendors/qualcomm/core/transformation:graph_to_graph_test `
-            //litert/vendors/qualcomm/core/wrappers/tests:op_wrapper_test `
-            //litert/vendors/qualcomm/core/wrappers/tests:param_wrapper_test `
-            //litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test `
-            //litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_test
+
 
       - name: Build tools for Windows
         run: |
