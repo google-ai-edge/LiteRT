@@ -15,6 +15,10 @@ implementation, **Dispatch APIs** and **Compiler Plugins** suffer from the same
 reverse dependency issues. This document serves as a guide for decoupling them
 as well.
 
+Note: **Compiler Plugins** use a dedicated `LiteRtCompilerContext` for
+compile-time operations, while **Accelerators** and **Dispatch APIs** use
+`LiteRtRuntimeContext`.
+
 ## Goal
 
 Decouple Accelerator components from the LiteRT Runtime C API (`libLiteRt.so`)
@@ -132,10 +136,9 @@ decoupling and prevent cyclic dependencies:
 1.  `litert_runtime_context_header`
 
     -   **Type:** Header-only target.
-    -   **Usage:** This target is used by the **Accelerator**, **Dispatch API**,
-        and **CompilerPlugin**. It provides the lightweight abstraction
-        interface needed for these components to interoperate without pulling in
-        runtime symbols.
+    -   **Usage:** This target is used by the **Accelerator** and **Dispatch
+        API**. **CompilerPlugin** uses `LiteRtCompilerContext` (defined in
+        `litert_compiler_context_header`).
 
 2.  `litert_runtime_context`
 

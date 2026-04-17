@@ -53,8 +53,11 @@ LITERT_CAPI_EXPORT const char* LiteRtGetCompilerPluginSocManufacturer();
 // while the plugin is alive. These are read-only (TODO: update api for const
 // correctness). It is OK for these to be null, in which case the plugin should
 // use default values.
+typedef struct LiteRtCompilerContext LiteRtCompilerContext;
+
 LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
+LiteRtCreateCompilerPlugin(const LiteRtCompilerContext* compiler_context,
+                           LiteRtCompilerPlugin* compiler_plugin,
                            LiteRtEnvironmentOptions env, LiteRtOptions options);
 
 LITERT_CAPI_EXPORT void LiteRtDestroyCompilerPlugin(

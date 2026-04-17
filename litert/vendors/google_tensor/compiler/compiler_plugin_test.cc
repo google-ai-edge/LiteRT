@@ -115,7 +115,8 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   google_tensor_options.SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
 
-  PluginPtr plugin = CreatePlugin(/*env=*/nullptr, options.Get());
+  PluginPtr plugin =
+      CreatePlugin(/*runtime_context=*/nullptr, /*env=*/nullptr, options.Get());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
@@ -151,7 +152,8 @@ TEST(TestCallGoogleTensorPlugin, CompileWithTestingFlags) {
   // Set testing flags. Use a safe flag that doesn't involve the filesystem.
   google_tensor_options.SetTestingFlags("enable_reference=true");
 
-  PluginPtr plugin = CreatePlugin(/*env=*/nullptr, options.Get());
+  PluginPtr plugin =
+      CreatePlugin(/*runtime_context=*/nullptr, /*env=*/nullptr, options.Get());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;

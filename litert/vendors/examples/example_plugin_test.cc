@@ -18,6 +18,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
@@ -34,7 +35,7 @@ TEST(TestDummyPlugin, GetConfigInfo) {
   ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(),
                "ExampleSocManufacturer");
 
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
 
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
@@ -48,7 +49,7 @@ TEST(TestDummyPlugin, GetConfigInfo) {
 }
 
 TEST(TestCallDummyPlugin, PartitionSimpleMultiAdd) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
@@ -64,7 +65,7 @@ TEST(TestCallDummyPlugin, PartitionSimpleMultiAdd) {
 }
 
 TEST(TestCallDummyPlugin, CompileMulSubgraph) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
@@ -79,13 +80,10 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
-  ASSERT_EQ(
-      byte_code_string,
-      "SUBGRAPH "
-      "partition_0\nversion:1\ninputs:0,1\noutputs:3\nconst_map:\ntensors:["
-      "2x2],[2x2],[2x2],[2x2]"
-      "\nops:mul(0,"
-      "0)(2)~mul(2,1)(3)\n");
+  ASSERT_EQ(byte_code_string,
+            "SUBGRAPH "
+            "partition_0\nversion:1\ninputs:0,1\noutputs:3\nconst_map:\n"
+            "tensors:[2x2],[2x2],[2x2],[2x2]\nops:mul(0,0)(2)~mul(2,1)(3)\n");
 
   LiteRtParamIndex byte_code_idx;
   const void* op_data;
@@ -102,7 +100,7 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 }
 
 TEST(TestCallDummyPlugin, RegisterAllTransformations) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   LiteRtTransformation* transformations;
   LiteRtParamIndex num_transformations;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
@@ -113,7 +111,7 @@ TEST(TestCallDummyPlugin, RegisterAllTransformations) {
 }
 
 TEST(TestCallDummyPlugin, CheckCompilerCompatibility) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};
   LiteRtEnvironmentOptions env = nullptr;
   LiteRtOptions options = nullptr;
@@ -127,7 +125,7 @@ TEST(TestCallDummyPlugin, CheckCompilerCompatibility) {
 }
 
 TEST(TestCallDummyPlugin, CompileMultiSubgraphWithSharedWeights) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("cst_multi_subgraph.tflite");
 
   LiteRtCompiledResult compiled;
