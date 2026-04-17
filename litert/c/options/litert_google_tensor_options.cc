@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/escaping.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
@@ -39,6 +40,7 @@ struct LrtGoogleTensorOptionsT {
       kLiteRtGoogleTensorShardingIntensityMinimal;
   bool enable_dynamic_range_quantization = false;
   std::vector<std::vector<std::string>> testing_flags = {};
+  std::string op_filters_proto = "";
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -116,6 +118,10 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     absl::StrAppendFormat(&toml_str, "testing_flags = \"%s\"\n",
                           testing_flags_str);
   }
+  if (!options->op_filters_proto.empty()) {
+    absl::StrAppendFormat(&toml_str, "op_filters_proto = \"%s\"\n",
+                          absl::Base64Escape(options->op_filters_proto));
+  }
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -172,6 +178,10 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
               absl::StrReplaceAll(value, {{"\\\\", "\\"}, {"\\\"", "\""}});
           LITERT_RETURN_IF_ERROR(
               LrtGoogleTensorOptionsSetTestingFlags(&options_ref, unescaped));
+        } else if (key == "op_filters_proto") {
+          if (!absl::Base64Unescape(value, &options_ref.op_filters_proto)) {
+            return kLiteRtStatusErrorInvalidArgument;
+          }
         }
         return kLiteRtStatusOk;
       });
@@ -391,5 +401,29 @@ LiteRtStatus LrtGoogleTensorOptionsGetTestingFlags(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *testing_flags = options->testing_flags;
+  return kLiteRtStatusOk;
+}
+
+// op_filters_proto --------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetOpFiltersProto(
+    LrtGoogleTensorOptions options, const char* op_filters_proto) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op_filters_proto == nullptr) {
+    options->op_filters_proto = "";
+  } else {
+    options->op_filters_proto = op_filters_proto;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetOpFiltersProto(
+    LrtGoogleTensorOptions options, const char** op_filters_proto) {
+  if (options == nullptr || op_filters_proto == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *op_filters_proto = options->op_filters_proto.c_str();
   return kLiteRtStatusOk;
 }

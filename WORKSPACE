@@ -311,6 +311,17 @@ http_archive(
     url = "https://github.com/marzer/tomlplusplus/archive/refs/tags/v3.4.0.tar.gz",
 )
 
+# RE2
+http_archive(
+    name = "com_googlesource_code_re2",
+    sha256 = "7b2b3aa8241eac25f674e5b5b2e23d4ac4f0a8891418a2661869f736f03f57f4",
+    strip_prefix = "re2-2024-03-01",
+    urls = [
+        "https://github.com/google/re2/archive/refs/tags/2024-03-01.tar.gz",
+        "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/re2/archive/refs/tags/2024-03-01.tar.gz",
+    ],
+)
+
 load("@rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")
 
 kotlin_repositories()  # if you want the default. Otherwise see custom kotlinc distribution below

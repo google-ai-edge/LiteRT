@@ -78,6 +78,8 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_protobuf//:protobuf",
+        "@com_googlesource_code_re2//:re2",
     ],
 )
 
@@ -119,6 +121,7 @@ cc_test(
     }),
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
+        ":google_tensor_options_cc_proto",
         "//litert/c:litert_common",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_api_with_dynamic_runtime",
