@@ -52,46 +52,6 @@ jobs:
           $env:TF_SET_ANDROID_WORKSPACE = 0
           $env:CC_OPT_FLAGS = '-Wno-sign-compare'
           python configure.py
-      - name : Set up cache keys and bazel output base.
-        id: cache-keys
-        run: |
-          $CACHE_RESTORE_KEY_2="${{ github.workflow }}"
-          $CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
-          $CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
-          # If it's not a pull request, then it will be the same as $CACHE_RESTORE_KEY_1-.
-          $CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
-          $CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
-          echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$env:GITHUB_OUTPUT"
-          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$env:GITHUB_OUTPUT"
-          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$env:GITHUB_OUTPUT"
-          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
-          echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
-          # D: is faster than C: for I/O.
-          $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
-          echo "BAZEL_OUTPUT_BASE=D:/w-$SHORT_SHA" >> "$env:GITHUB_ENV"
-
-      - name: Clean build outputs if cache is being refreshed.
-        if: env.REFRESH_CACHE == 'true'
-        run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
-
-      - name: Restore bazel cache if cache is not being refreshed.
-        id: bazel-cache
-        if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.cache/bazel-windows
-          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
-          restore-keys: |
-            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
-            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
-            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
-            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
-
-      - name: Check cache hit
-        run: |
-          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
 
       - name: Run bazel test on Windows for litert
         run: |
@@ -191,15 +151,3 @@ jobs:
           bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `
             //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin `
             //litert/vendors/intel_openvino/dispatch:LiteRtDispatch
-
-      - name: Remove cache if cache is being refreshed.
-        if: env.REFRESH_CACHE == 'true'
-        continue-on-error: true  # Ignore errors when cache is not found.
-        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
-
-      - name: Save bazel cache if it's new or being refreshed.
-        uses: actions/cache/save@v4
-        if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.cache/bazel-windows
-          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
