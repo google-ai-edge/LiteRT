@@ -44,7 +44,8 @@
 namespace gt = litert::google_tensor;
 
 LiteRtStatus LiteRtDispatchDeviceContextT::Create(
-    LiteRtOptions options, LiteRtDispatchDeviceContext& device_context) {
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
+    LiteRtDispatchDeviceContext& device_context) {
   ThrContext* thr_context = thrContextCreate();
   if (thr_context == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to create SB context");
@@ -65,11 +66,12 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
 
   // The returned instance must be allocated with `new`, as it will be
   // deallocated via `delete` in `Destroy`.
-  device_context = new LiteRtDispatchDeviceContextT(thr_context);
+  device_context =
+      new LiteRtDispatchDeviceContextT(runtime_context, thr_context);
 
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   std::optional<litert::LiteRtDarwinnRuntimeOptionsT> options_data =
-      gt::GetDarwinnOptionsData(options);
+      gt::GetDarwinnOptionsData(runtime_context, options);
   LITERT_RETURN_IF_ERROR(
       gt::ApplyDarwinnOptionsToDeviceContext(device_context, options_data));
   device_context->darwinn_options() = std::move(options_data);
@@ -98,16 +100,16 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     LiteRtTensorBuffer tensor_buffer,
     LiteRtTensorBufferHandle& tensor_buffer_handle) {
   LiteRtRankedTensorType tensor_type;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type));
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_tensor_type(
+      tensor_buffer, &tensor_type));
   if (tensor_type.layout.has_strides) {
     LITERT_LOG(LITERT_ERROR, "Tensor strides are not supported");
     return kLiteRtStatusErrorUnsupported;
   }
 
   LiteRtTensorBufferType tensor_buffer_type;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type));
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_type(
+      tensor_buffer, &tensor_buffer_type));
   if (!gt::IsTensorBufferTypeSupported(tensor_buffer_type)) {
     LITERT_LOG(LITERT_ERROR, "Unsupported tensor buffer type %d",
                tensor_buffer_type);
@@ -115,18 +117,19 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   }
 
   size_t tensor_buffer_size;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size));
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_size(
+      tensor_buffer, &tensor_buffer_size));
 
   size_t tensor_buffer_offset;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset));
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_offset(
+      tensor_buffer, &tensor_buffer_offset));
 
   switch (tensor_buffer_type) {
 #if LITERT_HAS_AHWB_SUPPORT
     case kLiteRtTensorBufferTypeAhwb: {
       AHardwareBuffer* ahwb;
-      LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb));
+      LITERT_RETURN_IF_ERROR(
+          runtime_context_->get_tensor_buffer_ahwb(tensor_buffer, &ahwb));
 
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferWithOffset(
@@ -140,7 +143,7 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     case kLiteRtTensorBufferTypeDmaBuf: {
       void* dmabuf_buffer_addr;
       int dmabuf_buffer_fd;
-      LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferDmaBufBuffer(
+      LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_dma_buf_buffer(
           tensor_buffer, &dmabuf_buffer_addr, &dmabuf_buffer_fd));
 
       GT_LOG_RETURN_IF_SB_ERROR(
@@ -153,8 +156,8 @@ LiteRtStatus LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 #endif
     case kLiteRtTensorBufferTypeHostMemory: {
       void* host_memory_addr;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferHostMemory(tensor_buffer, &host_memory_addr));
+      LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_host_memory(
+          tensor_buffer, &host_memory_addr));
 
       GT_LOG_RETURN_IF_SB_ERROR(
           thrRegisterBufferWithOffset(

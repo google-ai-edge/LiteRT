@@ -90,6 +90,8 @@ class LiteRtDispatchInvocationContextT {
 
   LiteRtDispatchGraph graph() { return graph_; }
 
+  LiteRtDispatchDeviceContext device_context() const { return device_context_; }
+
  private:
   LiteRtDispatchInvocationContextT(
       LiteRtDispatchDeviceContext device_context,
