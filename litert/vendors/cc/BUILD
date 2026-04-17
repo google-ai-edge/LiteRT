@@ -13,7 +13,6 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -32,18 +31,6 @@ cc_library(
 )
 
 cc_library(
-    name = "options_helper",
-    hdrs = ["options_helper.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/internal:litert_handle",
-    ],
-)
-
-cc_library(
     name = "namespace_heuristics",
     srcs = ["namespace_heuristics.cc"],
     hdrs = ["namespace_heuristics.h"],
@@ -52,22 +39,5 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_test(
-    name = "options_helper_test",
-    srcs = ["options_helper_test.cc"],
-    deps = [
-        ":options_helper",
-        "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/options:litert_runtime_options",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_googletest//:gtest_main",
     ],
 )

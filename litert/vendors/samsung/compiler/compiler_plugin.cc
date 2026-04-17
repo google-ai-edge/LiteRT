@@ -36,7 +36,6 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
-#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/compile_model.h"
 #include "litert/vendors/samsung/compiler/create_model.h"
