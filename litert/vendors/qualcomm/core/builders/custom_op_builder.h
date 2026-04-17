@@ -6,17 +6,14 @@
 
 #include <vector>
 
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildCustomOp(
-    TensorPool& tensor_pool, const char* package_name, const char* op_type,
-    const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs,
-    absl::Span<const uint8_t> custom_options);
+OpWrapper CreateCustomOp(const char* package_name, const char* op_type,
+                         const std::vector<TensorWrapperRef>& inputs,
+                         const std::vector<TensorWrapperRef>& outputs);
 
 }  // namespace qnn
 
