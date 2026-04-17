@@ -475,6 +475,7 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
         status != QNN_SUCCESS) {
       LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
                  status);
+      return kLiteRtStatusErrorRuntimeFailure;
     } else {
       LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
     }
