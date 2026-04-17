@@ -35,6 +35,7 @@ extern "C" {
 #include "tflite/c/c_api_types.h"
 
 typedef struct TfLiteTensor TfLiteTensor;
+typedef struct AHardwareBuffer AHardwareBuffer;
 
 /// A function table that contains LiteRT C APIs needed for Accelerators.
 ///
@@ -128,6 +129,11 @@ typedef struct LiteRtRuntimeContext {
                                               size_t* offset);
   LiteRtStatus (*get_tensor_buffer_custom_tensor_buffer_handle)(
       LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
+  LiteRtStatus (*get_tensor_buffer_ahwb)(LiteRtTensorBuffer tensor_buffer,
+                                         AHardwareBuffer** ahwb);
+  LiteRtStatus (*get_tensor_buffer_dma_buf_buffer)(
+      LiteRtTensorBuffer tensor_buffer, void** dmabuf_buffer_addr,
+      int* dmabuf_buffer_fd);
   LiteRtStatus (*has_tensor_buffer_event)(LiteRtTensorBuffer tensor_buffer,
                                           bool* has_event);
   LiteRtStatus (*get_tensor_buffer_event)(LiteRtTensorBuffer tensor_buffer,
@@ -139,8 +145,14 @@ typedef struct LiteRtRuntimeContext {
   LiteRtStatus (*create_managed_event)(LiteRtEnvironment env,
                                        LiteRtEventType event_type,
                                        LiteRtEvent* event);
+  LiteRtStatus (*create_event_from_sync_fence_fd)(LiteRtEnvironment env,
+                                                  int sync_fence_fd,
+                                                  bool owns_fd,
+                                                  LiteRtEvent* event);
   LiteRtStatus (*get_event_event_type)(LiteRtEvent event,
                                        LiteRtEventType* type);
+  LiteRtStatus (*get_event_sync_fence_fd)(LiteRtEvent event,
+                                          int* sync_fence_fd);
   LiteRtStatus (*create_event_from_opencl_event)(LiteRtEnvironment env,
                                                  LiteRtClEvent cl_event,
                                                  LiteRtEvent* event);

@@ -19,6 +19,7 @@
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
@@ -29,7 +30,8 @@
 // This class is thread-compatible.
 class LiteRtDispatchDeviceContextT {
  public:
-  static LiteRtStatus Create(LiteRtOptions options,
+  static LiteRtStatus Create(const LiteRtRuntimeContext* runtime_context,
+                             LiteRtOptions options,
                              LiteRtDispatchDeviceContext& device_context);
 
   LiteRtStatus Destroy();
@@ -66,16 +68,23 @@ class LiteRtDispatchDeviceContextT {
   }
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
 
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
+  }
+
   LiteRtStatus AnnotateSystemAttribute(const char* absl_nonnull key,
                                        const char* absl_nonnull value);
 
  private:
-  explicit LiteRtDispatchDeviceContextT(ThrContext* absl_nonnull thr_context)
-      : thr_context_(thr_context) {}
+  explicit LiteRtDispatchDeviceContextT(
+      const LiteRtRuntimeContext* runtime_context,
+      ThrContext* absl_nonnull thr_context)
+      : runtime_context_(runtime_context), thr_context_(thr_context) {}
 
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchDeviceContextT() = default;
 
+  const LiteRtRuntimeContext* runtime_context_;
   ThrContext* absl_nonnull thr_context_;
 #if LITERT_HAS_DARWINN_OPTIONS_SUPPORT
   std::optional<litert::LiteRtDarwinnRuntimeOptionsT> darwinn_options_;

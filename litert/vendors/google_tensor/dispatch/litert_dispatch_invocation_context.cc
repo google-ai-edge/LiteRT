@@ -240,7 +240,9 @@ LiteRtStatus LiteRtDispatchInvocationContextT::Invoke() {
 LiteRtStatus LiteRtDispatchInvocationContextT::AttachInputEvent(
     int graph_input_index, LiteRtEvent input_event) {
   LiteRtEventType type;
-  LITERT_RETURN_IF_ERROR(LiteRtGetEventEventType(input_event, &type));
+  LITERT_RETURN_IF_ERROR(
+      device_context_->runtime_context()->get_event_event_type(input_event,
+                                                               &type));
   if (type != LiteRtEventTypeSyncFenceFd) {
     LITERT_LOG(LITERT_ERROR,
                "Attaching input event with type %d is not supported", type);
@@ -254,7 +256,8 @@ LiteRtStatus LiteRtDispatchInvocationContextT::AttachInputEvent(
   // This API does not return a duped fd, so `sync_fence_fd` must not be
   // closed.
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetEventSyncFenceFd(input_event, &sync_fence_fd));
+      device_context_->runtime_context()->get_event_sync_fence_fd(
+          input_event, &sync_fence_fd));
 
   // On Android platforms, it is expected that `sync_fence_fd` is a dma-fence
   // fd. On other Linux platforms, it is expected that `sync_fence_fd` is an
@@ -336,9 +339,10 @@ LiteRtStatus LiteRtDispatchInvocationContextT::InvokeAsync(
 
     // `owns_fd=true` so that `sync_fence_fd` is closed when the event is
     // destroyed.
-    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromSyncFenceFd(
-        /*env=*/nullptr, sync_fence_fd, /*owns_fd=*/true,
-        &output_events[graph_output_index]));
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->create_event_from_sync_fence_fd(
+            /*env=*/nullptr, sync_fence_fd, /*owns_fd=*/true,
+            &output_events[graph_output_index]));
 
     std::move(sync_fence_fd_cleanup).Cancel();
     std::move(thr_fence_handle_cleanup).Cancel();

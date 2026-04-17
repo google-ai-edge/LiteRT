@@ -15,6 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 # copybara:uncomment load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 # copybara:uncomment load("//litert/integration_test:litert_device.bzl", "litert_device_test")
@@ -69,9 +70,12 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:span",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_environment_options",
         "//litert/vendors/c:litert_dispatch_c_api",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:litert_darwinn_runtime_options",
@@ -139,19 +143,25 @@ litert_dispatch_api(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_event_header",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper",
+        "//litert/c/internal:litert_logging_helper_with_runtime_context",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "//litert/cc/internal:litert_handle",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
     ],
 )
 
@@ -161,8 +171,11 @@ cc_library(
     srcs = ["dispatch_api_test_fixtures.cc"],
     hdrs = ["dispatch_api_test_fixtures.h"],
     deps = [
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_buffer_ref",
@@ -272,3 +285,15 @@ cc_library(
 # )
 #
 # copybara:uncomment_end
+
+sh_test(
+    name = "google_tensor_dispatch_so_symbol_test",
+    srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
+    args = [
+        "LiteRtDispatchGetApi",
+        "$(location :dispatch_api_so)",
+    ],
+    data = [
+        ":dispatch_api_so",
+    ],
+)

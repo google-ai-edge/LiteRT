@@ -15,7 +15,7 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -54,6 +54,7 @@ constexpr auto Pad(X x, Align align) {
 }
 
 LiteRtStatus CreateTensorBufferRequirements(
+    const LiteRtRuntimeContext* runtime_context,
     const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferRequirements& requirements) {
   if (tensor_type.layout.has_strides) {
@@ -64,7 +65,7 @@ LiteRtStatus CreateTensorBufferRequirements(
   LITERT_ASSIGN_OR_RETURN(size_t size_bytes,
                           litert::internal::GetNumPackedBytes(tensor_type));
 
-  return LiteRtCreateTensorBufferRequirements(
+  return runtime_context->create_tensor_buffer_requirements(
       GetTheSupportedTensorBufferTypes().size(),
       GetTheSupportedTensorBufferTypes().data(),
       Pad(size_bytes, kEdgeTpuPadding), /*num_strides=*/0,
@@ -81,8 +82,9 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment env, LiteRtOptions options) {
   GT_LOG_RETURN_IF_SB_ERROR(thrInitialize(), "Failed to initialize SB");
   LiteRtEnvironmentOptions environment_options;
-  LiteRtGetEnvironmentOptions(env, &environment_options);
-  LiteRtPropagateMinLoggerSeverity(environment_options);
+  runtime_context->get_environment_options(env, &environment_options);
+  LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                     environment_options);
   return InitializeDispatchApiConfig(environment_options, options);
 }
 
@@ -118,7 +120,8 @@ LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
                                  LiteRtDispatchDeviceContext* device_context) {
   GT_LOG_RETURN_IF_NULL(device_context);
 
-  return LiteRtDispatchDeviceContextT::Create(options, *device_context);
+  return LiteRtDispatchDeviceContextT::Create(runtime_context, options,
+                                              *device_context);
 }
 
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
@@ -134,8 +137,9 @@ LiteRtStatus GetInputRequirements(
   GT_LOG_RETURN_IF_NULL(tensor_type);
   GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
 
-  return CreateTensorBufferRequirements(*tensor_type,
-                                        *tensor_buffer_requirements);
+  return CreateTensorBufferRequirements(
+      invocation_context->device_context()->runtime_context(), *tensor_type,
+      *tensor_buffer_requirements);
 }
 
 LiteRtStatus GetOutputRequirements(
@@ -145,8 +149,9 @@ LiteRtStatus GetOutputRequirements(
   GT_LOG_RETURN_IF_NULL(tensor_type);
   GT_LOG_RETURN_IF_NULL(tensor_buffer_requirements);
 
-  return CreateTensorBufferRequirements(*tensor_type,
-                                        *tensor_buffer_requirements);
+  return CreateTensorBufferRequirements(
+      invocation_context->device_context()->runtime_context(), *tensor_type,
+      *tensor_buffer_requirements);
 }
 
 LiteRtStatus RegisterTensorBuffer(

@@ -71,11 +71,15 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .get_tensor_buffer_gl_buffer = LiteRtGetTensorBufferGlBuffer,
       .get_tensor_buffer_custom_tensor_buffer_handle =
           LiteRtGetTensorBufferCustomTensorBufferHandle,
+      .get_tensor_buffer_ahwb = LiteRtGetTensorBufferAhwb,
+      .get_tensor_buffer_dma_buf_buffer = LiteRtGetTensorBufferDmaBufBuffer,
       .has_tensor_buffer_event = LiteRtHasTensorBufferEvent,
       .get_tensor_buffer_event = LiteRtGetTensorBufferEvent,
       .set_tensor_buffer_event = LiteRtSetTensorBufferEvent,
       .create_managed_event = LiteRtCreateManagedEvent,
+      .create_event_from_sync_fence_fd = LiteRtCreateEventFromSyncFenceFd,
       .get_event_event_type = LiteRtGetEventEventType,
+      .get_event_sync_fence_fd = LiteRtGetEventSyncFenceFd,
 #if LITERT_HAS_OPENCL_SUPPORT
       .create_event_from_opencl_event = LiteRtCreateEventFromOpenClEvent,
       .get_event_opencl_event = LiteRtGetEventOpenClEvent,
