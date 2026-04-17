@@ -14,15 +14,6 @@
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = [
-        # By default, visibility is restricted to litert_cc_users_dynamic_link. Individual targets can be
-        # made public by setting their visibility to litert_public.
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_cc_users_dynamic_link",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
 )
 
 LITERT_C_API_DEPS = [
