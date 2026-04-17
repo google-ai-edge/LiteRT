@@ -58,7 +58,6 @@ litert_dynamic_lib(
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/options:litert_samsung_options",
-        "//litert/vendors/cc:options_helper",
         "//litert/vendors/samsung:ai_litecore_api",
         "//litert/vendors/samsung:soc_model",
     ],
