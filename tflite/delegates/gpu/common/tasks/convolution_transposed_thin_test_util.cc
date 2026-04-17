@@ -16,6 +16,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/tasks/convolution_transposed_thin_test_util.h"
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "tflite/delegates/gpu/common/operations.h"
