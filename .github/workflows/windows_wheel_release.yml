@@ -50,13 +50,14 @@ jobs:
           python -m pip list
 
       - name: Set USE_BAZEL_VERSION
-        shell: bash
         run: |
-          if [ -f .bazelversion ]; then
-            echo "USE_BAZEL_VERSION=$(cat .bazelversion)" >> $GITHUB_ENV
-          elif [ -f bazelversion ]; then
-            echo "USE_BAZEL_VERSION=$(cat bazelversion)" >> $GITHUB_ENV
-          fi
+          if (Test-Path .bazelversion) {
+            $version = Get-Content .bazelversion -TotalCount 1
+            echo "USE_BAZEL_VERSION=$version" >> $env:GITHUB_ENV
+          } elseif (Test-Path bazelversion) {
+            $version = Get-Content bazelversion -TotalCount 1
+            echo "USE_BAZEL_VERSION=$version" >> $env:GITHUB_ENV
+          }
 
       - name: Configure tensorflow & python path
         run: |
