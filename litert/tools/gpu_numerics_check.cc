@@ -53,6 +53,9 @@
 
 ABSL_FLAG(bool, print_diff_stats, false,
           "Whether to print the diff stats CSV.");
+ABSL_FLAG(
+    bool, print_difference_distribution, false,
+    "Whether to print the difference distribution of the output buffers.");
 ABSL_FLAG(std::string, model_dir, "",
           "Optional base directory to prepend to models provide in --graph.");
 ABSL_FLAG(std::vector<std::string>, graph, {},
@@ -101,6 +104,67 @@ struct ModelRunResult {
   std::string model_name;
   std::vector<BufferDiffStats> diff_stats;
 };
+
+void PrintDifferenceDistribution(const std::vector<float>& cpu_data,
+                                 const std::vector<float>& gpu_data) {
+  if (cpu_data.size() != gpu_data.size() || cpu_data.empty()) {
+    return;
+  }
+
+  std::vector<float> diffs(cpu_data.size());
+  for (size_t i = 0; i < cpu_data.size(); ++i) {
+    diffs[i] = cpu_data[i] - gpu_data[i];
+  }
+
+  float min_diff = diffs[0];
+  float max_diff = diffs[0];
+  for (const auto& diff : diffs) {
+    if (diff < min_diff) min_diff = diff;
+    if (diff > max_diff) max_diff = diff;
+  }
+
+  if (min_diff == max_diff) {
+    std::cout << "All differences are the same: " << min_diff << std::endl;
+    return;
+  }
+
+  const int kNumBins = 20;
+  std::vector<int> hist(kNumBins, 0);
+  const float bin_width = (max_diff - min_diff) / kNumBins;
+
+  for (const auto& diff : diffs) {
+    int bin = (diff - min_diff) / bin_width;
+    if (bin >= kNumBins) bin = kNumBins - 1;
+    hist[bin]++;
+  }
+
+  int max_hist_count = 0;
+  for (int count : hist) {
+    if (count > max_hist_count) max_hist_count = count;
+  }
+
+  if (max_hist_count == 0) {
+    return;
+  }
+
+  const int kMaxBarWidth = 100;
+  std::cout << "\n--- Difference (CPU - GPU) Distribution ---" << std::endl;
+  std::cout << absl::StrFormat("%-22s | %s\n", "Difference Range",
+                               "Distribution");
+  std::cout << std::string(22 + 3 + 100, '-') << std::endl;
+
+  for (int i = 0; i < kNumBins; ++i) {
+    float bin_start = min_diff + i * bin_width;
+    float bin_end = bin_start + bin_width;
+    std::string range_str = absl::StrFormat("[%.4f, %.4f)", bin_start, bin_end);
+
+    int bar_width = (hist[i] * kMaxBarWidth) / max_hist_count;
+    std::string bar(bar_width, '#');
+
+    std::cout << absl::StrFormat("%-22s | %s\n", range_str, bar);
+  }
+  std::cout << "---------------------------------------------\n" << std::endl;
+}
 
 Expected<Environment> GetEnvironment() {
   std::vector<litert::EnvironmentOptions::Option> environment_options = {};
@@ -359,6 +423,7 @@ Expected<std::vector<TensorBuffer>> CreateOutputBuffers(
 Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
                                                     TensorBuffer& gpu_buffer,
                                                     size_t buffer_index,
+                                                    absl::string_view output_name,
                                                     float epsilon) {
   std::vector<std::pair<float, int>> all_diffs;
   const int kMaxPrint = 20;
@@ -366,6 +431,12 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   size_t total_different = 0;
   double mean_squared_error = 0;
   float mean_diff = 0;
+  double dot_product = 0.0;
+  double magnitude_cpu = 0.0;
+  double magnitude_gpu = 0.0;
+  float max_abs_cpu = 0.0f;
+  double sum_cpu = 0.0;
+  double sum_gpu = 0.0;
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_type, cpu_buffer.TensorType());
   LITERT_ASSIGN_OR_RETURN(auto gpu_type, gpu_buffer.TensorType());
@@ -397,7 +468,8 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
     }
   }
 
-  ABSL_LOG(INFO) << "Comparing output buffer " << buffer_index << ":";
+  ABSL_LOG(INFO) << "Comparing output buffer " << buffer_index
+                 << " (name: " << output_name << "):";
 
   auto get_val = [&](TensorBuffer& buffer,
                      std::vector<float>& buffer_data) -> Expected<void> {
@@ -443,6 +515,11 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   std::vector<float> gpu_data(total_elements);
   LITERT_RETURN_IF_ERROR(get_val(cpu_buffer, cpu_data));
   LITERT_RETURN_IF_ERROR(get_val(gpu_buffer, gpu_data));
+
+  if (absl::GetFlag(FLAGS_print_difference_distribution)) {
+    PrintDifferenceDistribution(cpu_data, gpu_data);
+  }
+
   bool print_outputs = absl::GetFlag(FLAGS_print_outputs);
   for (int element_index = 0; element_index < total_elements; ++element_index) {
     if (print_outputs) {
@@ -458,6 +535,12 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
         (cpu_data[element_index] - gpu_data[element_index]);
     mean_squared_error += diff_square;
     mean_diff += abs_diff;
+    dot_product += cpu_data[element_index] * gpu_data[element_index];
+    magnitude_cpu += cpu_data[element_index] * cpu_data[element_index];
+    magnitude_gpu += gpu_data[element_index] * gpu_data[element_index];
+    max_abs_cpu = std::max(max_abs_cpu, std::abs(cpu_data[element_index]));
+    sum_cpu += cpu_data[element_index];
+    sum_gpu += gpu_data[element_index];
 
     all_diffs.push_back(std::make_pair(abs_diff, element_index));
     if (abs_diff > epsilon) {
@@ -493,11 +576,36 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
               << std::endl;
   }
 
+  const double cosine_similarity =
+      dot_product / (sqrt(magnitude_cpu) * sqrt(magnitude_gpu));
+  const double mse = mean_squared_error / total_elements;
+  const double snr = 10 * log10(magnitude_cpu / mean_squared_error);
+  const double psnr = 10 * log10(max_abs_cpu * max_abs_cpu / mse);
+
+  const double numerator = total_elements * dot_product - sum_cpu * sum_gpu;
+  const double denominator_cpu =
+      total_elements * magnitude_cpu - sum_cpu * sum_cpu;
+  const double denominator_gpu =
+      total_elements * magnitude_gpu - sum_gpu * sum_gpu;
+  double pearson_correlation = 0.0;
+  if (denominator_cpu > 0 && denominator_gpu > 0) {
+    pearson_correlation = numerator / (sqrt(denominator_cpu * denominator_gpu));
+  } else if (mean_squared_error == 0) {
+    pearson_correlation = 1.0;
+  }
+
+  std::cout << "CPU magnitude: " << magnitude_cpu << std::endl;
+  std::cout << "GPU magnitude: " << magnitude_gpu << std::endl;
   std::cout << "Mean diff: " << mean_diff / all_diffs.size() << std::endl;
-  std::cout << "MSE: " << mean_squared_error / total_elements << std::endl;
+  std::cout << "Cosine similarity: " << cosine_similarity << std::endl;
+  std::cout << "MSE: " << mse << std::endl;
+  std::cout << "SNR: " << snr << " dB" << std::endl;
+  std::cout << "PSNR: " << psnr << " dB" << std::endl;
+  std::cout << "Pearson correlation: " << pearson_correlation << std::endl;
   std::cout << "Total " << total_different << " out of " << total_elements
             << " are different elements, for output #" << buffer_index
-            << ", threshold - " << epsilon << std::endl;
+            << " (name: " << output_name << "), threshold - " << epsilon
+            << std::endl;
   return BufferDiffStats{
       .buffer_idx = buffer_index,
       .total_elements = total_elements,
@@ -506,16 +614,22 @@ Expected<BufferDiffStats> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
       .max_diff = all_diffs.back().first,
       .min_diff = all_diffs.front().first,
       .mean_diff = mean_diff / all_diffs.size(),
-      .mse = mean_squared_error / total_elements,
+      .mse = mse,
   };
 }
 
 Expected<std::vector<BufferDiffStats>> CompareOutputBuffers(
     std::vector<TensorBuffer>& cpu_output_buffers,
-    std::vector<TensorBuffer>& gpu_output_buffers) {
+    std::vector<TensorBuffer>& gpu_output_buffers,
+    const std::vector<absl::string_view>& output_names) {
   if (cpu_output_buffers.size() != gpu_output_buffers.size()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Number of output buffers mismatch between CPU and GPU.");
+  }
+  if (cpu_output_buffers.size() != output_names.size()) {
+    return Error(
+        kLiteRtStatusErrorInvalidArgument,
+        "Number of output buffers mismatch between CPU buffers and names.");
   }
 
   float epsilon = absl::GetFlag(FLAGS_epsilon);
@@ -526,7 +640,7 @@ Expected<std::vector<BufferDiffStats>> CompareOutputBuffers(
     auto& gpu_buffer = gpu_output_buffers[i];
     LITERT_ASSIGN_OR_RETURN(
         auto diff_stat,
-        CompareSingleOutputBuffer(cpu_buffer, gpu_buffer, i, epsilon));
+        CompareSingleOutputBuffer(cpu_buffer, gpu_buffer, i, output_names[i], epsilon));
     diff_stats.push_back(std::move(diff_stat));
   }
 
@@ -602,10 +716,15 @@ Expected<std::vector<BufferDiffStats>> RunModel(absl::string_view model_path) {
   LITERT_RETURN_IF_ERROR(compiled_model_gpu.Run(
       signature_index, gpu_input_buffers, gpu_output_buffers));
 
+  // Get output names
+  LITERT_ASSIGN_OR_RETURN(
+      auto output_names,
+      compiled_model_cpu.GetSignatureOutputNames(signature_index));
+
   // Compare output buffers
   LITERT_ASSIGN_OR_RETURN(
       auto diff_stats,
-      CompareOutputBuffers(cpu_output_buffers, gpu_output_buffers));
+      CompareOutputBuffers(cpu_output_buffers, gpu_output_buffers, output_names));
   return diff_stats;
 }
 
