@@ -170,17 +170,24 @@ cc_test(
         "dispatch_api_openvino_test.cc",
     ],
     copts = ["-fexceptions"],
+    data = [
+        ":libLiteRtDispatch_IntelOpenvino.so",
+        "@intel_openvino//:openvino_libs",
+        #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
+        #"//litert/test:testdata/ov_model_add1d_FP32.blob",
+    ],
+    env = select({
+        "//litert:linux": {
+            "LD_LIBRARY_PATH": "external/intel_openvino/openvino/runtime/lib/intel64",
+        },
+        "//conditions:default": {},
+    }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
-    #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
-    #data = [
-    #    "//litert/test:testdata/ov_model_add1d_FP32.blob",
-    #],
     linkopts = litert_android_linkopts(),
     linkstatic = 1,
     tags = [
         "manual",
         "no-remote-exec",
-        "no_oss",
         "notap",
     ],
     deps = [

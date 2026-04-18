@@ -39,7 +39,8 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
-constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
+constexpr absl::string_view kDispatchLibraryDir =
+    "litert/vendors/intel_openvino/dispatch";
 
 litert::Expected<litert::Environment> CreateDefaultEnvironment() {
   const std::vector<litert::EnvironmentOptions::Option> environment_options = {
