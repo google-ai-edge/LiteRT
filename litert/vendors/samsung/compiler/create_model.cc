@@ -40,6 +40,7 @@
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/conv3d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
@@ -56,6 +57,7 @@
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu1_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu6_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/relun1to1_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizenearestneighbor_op_builder.h"
@@ -318,6 +320,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflConv2d:
         op_wrapper = BuildConv2dOp(op);
         break;
+      case kLiteRtOpCodeTflConv3d:
+        op_wrapper = std::move(BuildConv3dOp(op));
+        break;
       case kLiteRtOpCodeTflCos:
         op_wrapper = BuildCosOp(op);
         break;
@@ -414,6 +419,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflRelu0To1:
         op_wrapper = std::move(BuildRelu1Op(op));
+        break;
+      case kLiteRtOpCodeTflReluN1To1:
+        op_wrapper = std::move(BuildReluN1To1(op));
         break;
       case kLiteRtOpCodeTflRelu6:
         op_wrapper = std::move(BuildRelu6Op(op));

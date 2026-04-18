@@ -28,6 +28,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/cast_op_builder.cc
     builders/concat_op_builder.cc
     builders/conv2d_op_builder.cc
+    builders/conv3d_op_builder.cc
     builders/cumsum_op_builder.cc
     builders/elementwise_op_builder.cc
     builders/fully_connected_op_builder.cc
@@ -44,6 +45,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/relu_op_builder.cc
     builders/relu1_op_builder.cc
     builders/relu6_op_builder.cc
+    builders/relun1to1_op_builder.cc
     builders/reshape_op_builder.cc
     builders/resizebilinear_op_builder.cc
     builders/resizenearestneighbor_op_builder.cc

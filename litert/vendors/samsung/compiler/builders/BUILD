@@ -542,3 +542,29 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
 )
+
+cc_library(
+    name = "conv3d_op_builder",
+    srcs = ["conv3d_op_builder.cc"],
+    hdrs = ["conv3d_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "relun1to1_op_builder",
+    srcs = ["relun1to1_op_builder.cc"],
+    hdrs = ["relun1to1_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
