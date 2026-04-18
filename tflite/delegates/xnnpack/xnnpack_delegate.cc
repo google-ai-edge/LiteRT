@@ -4659,6 +4659,15 @@ class Subgraph {
       return kTfLiteError;
     }
 
+    if (!dynamically_quantized && filter_tensor.type == kTfLiteInt8 &&
+        filter_tensor.params.zero_point != 0) {
+      TF_LITE_MAYBE_KERNEL_LOG(logging_context,
+                               "unsupported zero point (%d) for weights in "
+                               "FULLY_CONNECTED operator #%d",
+                               filter_tensor.params.zero_point, node_index);
+      return kTfLiteError;
+    }
+
     if (filter_tensor.type == kTfLiteInt4 && input_channels % 2 == 1) {
       TF_LITE_MAYBE_KERNEL_LOG(
           logging_context,
