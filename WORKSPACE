@@ -89,6 +89,7 @@ load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
 tensorflow_source_repo(
     name = "org_tensorflow",
+    patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
     sha256 = "977114079cda0d6aa9d05bc73ae2c2e3d36705fbb041e631a564e4d42e1e1dd9",
     strip_prefix = "tensorflow-49e7f1937d1509dd7fea41bff9ccc994baa97258",

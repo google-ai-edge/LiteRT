@@ -39,9 +39,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
-#if defined(LITERT_WINDOWS_OS)
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
-#endif  // LITERT_WINDOWS_OS
 
 #if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
 #include "openvino/core/type/element_type.hpp"
@@ -143,7 +141,6 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
-#if defined(LITERT_WINDOWS_OS)
       HwMemoryHandle hw_memory_handle;
       LITERT_RETURN_IF_ERROR(
           LiteRtGetTensorBufferCustomTensorBufferHandle(tensor_buffer,
@@ -159,11 +156,6 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                                  RegisteredTensor{.tensor = openvino_tensor});
 
       return next_handle_++;
-#else
-      return litert::Unexpected(
-          kLiteRtStatusErrorRuntimeFailure,
-          "OpenVINO tensor support is missing on this platform.");
-#endif  // LITERT_WINDOWS_OS
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
@@ -176,7 +168,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                                             &buffer_fd),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get DMA-BUF buffer"));
-      auto context = core_->get_default_context("NPU")
+      auto context = getCore()
+                         ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
@@ -215,7 +208,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-      auto context = core_->get_default_context("NPU")
+      auto context = getCore()
+                         ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       void* buffer = mmap(nullptr, tensor_buffer_size, PROT_READ | PROT_WRITE,
                           MAP_SHARED, fd, tensor_buffer_offset);

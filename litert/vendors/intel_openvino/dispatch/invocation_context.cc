@@ -155,9 +155,7 @@ LiteRtDispatchInvocationContextT::Create(
         break;
     }
   }
-#if defined(LITERT_WINDOWS_OS)
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
-#endif  // LITERT_WINDOWS_OS
 
   if (!exec_bytecode_ptr || exec_bytecode_size == 0) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -193,14 +191,11 @@ litert::Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   LiteRtTensorBufferType supported_tensor_buffer_types[] = {
-#if defined(LITERT_WINDOWS_OS)
       kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
-#else
       // OpenVINO RemoteTensor doesn't support copy-free AHWB buffer. Until
       // it's supported, we use DMA-BUF.
       kLiteRtTensorBufferTypeDmaBuf,
       kLiteRtTensorBufferTypeAhwb,
-#endif
   };
 
   int num_supported_tensor_buffer_types =
