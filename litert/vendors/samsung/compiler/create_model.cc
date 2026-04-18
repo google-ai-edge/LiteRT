@@ -37,6 +37,7 @@
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/builders/argmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/broadcastto_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
@@ -307,6 +308,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflBatchMatmul:
         op_wrapper = BuildBatchMatMulOp(op);
+        break;
+      case kLiteRtOpCodeTflBroadcastTo:
+        op_wrapper = std::move(BuildBroadcastToOp(op));
         break;
       case kLiteRtOpCodeTflCast:
         op_wrapper = BuildCastOp(op);
