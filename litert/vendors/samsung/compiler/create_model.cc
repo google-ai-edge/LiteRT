@@ -52,6 +52,7 @@
 #include "litert/vendors/samsung/compiler/builders/pool2d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/relu1_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu6_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
@@ -399,6 +400,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflRelu:
         op_wrapper = BuildReLUOp(op);
+        break;
+      case kLiteRtOpCodeTflRelu0To1:
+        op_wrapper = std::move(BuildRelu1Op(op));
         break;
       case kLiteRtOpCodeTflRelu6:
         op_wrapper = std::move(BuildRelu6Op(op));

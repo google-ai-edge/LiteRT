@@ -208,6 +208,18 @@ cc_library(
 )
 
 cc_library(
+    name = "relu1_op_builder",
+    srcs = ["relu1_op_builder.cc"],
+    hdrs = ["relu1_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
     name = "relu6_op_builder",
     srcs = ["relu6_op_builder.cc"],
     hdrs = ["relu6_op_builder.h"],
