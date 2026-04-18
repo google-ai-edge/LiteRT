@@ -97,6 +97,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:pool2d_op_builder",
         "//litert/vendors/samsung/compiler/builders:reduce_op_builder",
         "//litert/vendors/samsung/compiler/builders:relu_op_builder",
+        "//litert/vendors/samsung/compiler/builders:relu6_op_builder",
         "//litert/vendors/samsung/compiler/builders:reshape_op_builder",
         "//litert/vendors/samsung/compiler/builders:resizebilinear_op_builder",
         "//litert/vendors/samsung/compiler/builders:resizenearestneighbor_op_builder",

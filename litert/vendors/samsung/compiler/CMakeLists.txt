@@ -41,6 +41,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/pool2d_op_builder.cc
     builders/reduce_op_builder.cc
     builders/relu_op_builder.cc
+    builders/relu6_op_builder.cc
     builders/reshape_op_builder.cc
     builders/resizebilinear_op_builder.cc
     builders/resizenearestneighbor_op_builder.cc
