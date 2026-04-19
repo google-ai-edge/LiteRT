@@ -29,6 +29,7 @@
 extern "C" {
 #endif  // __cplusplus
 
+LITERT_DEFINE_HANDLE(LiteRtDispatchDeviceContext);
 // /////////////////////////////////////////////////////////////////////////////
 // TensorBuffers.
 // /////////////////////////////////////////////////////////////////////////////
@@ -291,6 +292,16 @@ LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
 // calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
+    LiteRtTensorBuffer* buffer);
+
+// :Create a managed TensorBuffer with dispatch device context and tensor identification.
+// provide access to device context, tensor index, and input/output type during buffer creation.
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
+LiteRtStatus LiteRtCreateManagedTensorBufferWithContext(
+    LiteRtEnvironment env, LiteRtDispatchDeviceContext device_context,
+    unsigned tensor_index, bool is_input, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
     LiteRtTensorBuffer* buffer);
 
