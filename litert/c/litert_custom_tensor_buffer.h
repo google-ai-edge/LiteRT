@@ -25,6 +25,9 @@
 extern "C" {
 #endif  // __cplusplus
 
+// This provides hardware vendors access to device and model context during
+// tensor buffer creation, enabling  zero-copy implementations
+LITERT_DEFINE_HANDLE(LiteRtDispatchDeviceContext);
 // GPU HW Device ID. It could be specific HW object depends on the environment
 // such as `WGPUDevice` in WebGPU.
 typedef void* LiteRtGpuDeviceId;
@@ -53,8 +56,16 @@ struct HwMemoryInfo {
 typedef struct HwMemoryInfo* HwMemoryInfoPtr;
 
 // Custom TensorBuffer handler function to create a custom TensorBuffer.
+// :Added device context and tensor identification parameters
+// to enable hardware vendors to achieve true zero-copy I/O tensors by allowing
+// immediate assignment of hardware-specific memory addresses during creation.
+// Without these parameters, vendors must use global state workarounds that
+// prevent multi-instance deployments and compromise architectural integrity.
 typedef LiteRtStatus (*CreateCustomTensorBuffer)(
     LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    LiteRtDispatchDeviceContext device_context,    // Device context for hardware access
+    unsigned tensor_index,                          // Tensor index (0, 1, 2, ...)  
+    bool is_input,                                  // true=input tensor, false=output tensor
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info);
@@ -66,6 +77,9 @@ typedef LiteRtStatus (*CreateCustomTensorBuffer)(
 // false" flag inside its HwMemoryInfo-derived struct.
 typedef LiteRtStatus (*ImportCustomTensorBuffer)(
     LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    LiteRtDispatchDeviceContext device_context,    // Device context for hardware access
+    unsigned tensor_index,                          // Tensor index (0, 1, 2, ...)
+    bool is_input,                                  // true=input tensor, false=output tensor
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
     size_t bytes, size_t packed_bytes, HwMemoryInfoPtr* hw_memory_info);
