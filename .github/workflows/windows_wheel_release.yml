@@ -16,7 +16,7 @@ on:
 jobs:
   build-release:
     name: "Build stable Windows wheel - Python ${{ matrix.python-version }}"
-    runs-on: Windows_x64  # Latest high spec runner ((96 cores and 384GB RAM)).
+    runs-on: windows-x86-n2-16
     strategy:
       fail-fast: false
       matrix:
@@ -50,13 +50,14 @@ jobs:
           python -m pip list
 
       - name: Set USE_BAZEL_VERSION
-        shell: bash
         run: |
-          if [ -f .bazelversion ]; then
-            echo "USE_BAZEL_VERSION=$(cat .bazelversion)" >> $GITHUB_ENV
-          elif [ -f bazelversion ]; then
-            echo "USE_BAZEL_VERSION=$(cat bazelversion)" >> $GITHUB_ENV
-          fi
+          if (Test-Path .bazelversion) {
+            $version = Get-Content .bazelversion -TotalCount 1
+            echo "USE_BAZEL_VERSION=$version" >> $env:GITHUB_ENV
+          } elseif (Test-Path bazelversion) {
+            $version = Get-Content bazelversion -TotalCount 1
+            echo "USE_BAZEL_VERSION=$version" >> $env:GITHUB_ENV
+          }
 
       - name: Configure tensorflow & python path
         run: |
