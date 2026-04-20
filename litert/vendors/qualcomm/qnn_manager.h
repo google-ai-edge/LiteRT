@@ -106,6 +106,8 @@ struct SdkVersion {
   }
 };
 
+enum class QnnManagerRole { kCompile, kDispatch };
+
 class QnnManager {
   friend std::string internal::Dump(const QnnManager& qnn);
 
@@ -121,7 +123,8 @@ class QnnManager {
   static Expected<Ptr> Create(
       const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt,
-      std::optional<::qnn::SocInfo> soc_info = std::nullopt);
+      std::optional<::qnn::SocInfo> soc_info = std::nullopt,
+      QnnManagerRole role = QnnManagerRole::kCompile);
 
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
@@ -184,7 +187,8 @@ class QnnManager {
 
   LiteRtStatus Init(std::optional<std::string> shared_library_dir,
                     std::optional<::qnn::SocInfo> soc_info,
-                    const ::qnn::Options& options);
+                    const ::qnn::Options& options,
+                    QnnManagerRole role);
 
   //
   // Manage libQnn*.so Loading

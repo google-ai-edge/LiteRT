@@ -1485,7 +1485,7 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(ConvertOp(
         options.GetUseHtpPreference(), options.GetUseInt64BiasAsInt32(),
-        options.GetCustomOpPackage(), op, tensor_pool, input_tensors,
+        options.GetCompileCustomOpPackage(), op, tensor_pool, input_tensors,
         output_tensors, op_wrappers));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
