@@ -118,6 +118,10 @@ class GpuOptions {
     return LrtSetGpuAcceleratorCompilationOptionsModelCacheKey(options_,
                                                                model_cache_key);
   }
+  LiteRtStatus SetWeightCacheFd(int weight_cache_fd) {
+    return LrtSetGpuAcceleratorCompilationOptionsWeightCacheFd(options_,
+                                                               weight_cache_fd);
+  }
   LiteRtStatus SetProgramCacheFd(int program_cache_fd) {
     return LrtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
         options_, program_cache_fd);
