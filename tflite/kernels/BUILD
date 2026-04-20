@@ -367,7 +367,6 @@ cc_library(
     copts = tflite_copts(),
     deps = [
         ":cpu_backend_context",
-        ":tflite_with_ruy",
         "//tflite/kernels/internal:compatibility",
         # For now this unconditionally depends on both ruy and gemmlowp.
         # We only need to depend on gemmlowp when tflite_with_ruy
@@ -401,6 +400,7 @@ cc_library(
     hdrs = [
         "cpu_backend_gemm.h",
         "cpu_backend_gemm_params.h",
+        "cpu_backend_gemm_reference.h",
         "cpu_backend_gemm_ruy.h",
     ],
     compatible_with = get_compatible_with_portable(),
@@ -488,7 +488,6 @@ cc_test(
     tags = ["tflite_smoke_test"],
     deps = [
         ":rng_util",
-        ":test_util",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -863,7 +862,6 @@ cc_library(
         "//tflite/core/c:common",
         "//tflite/experimental/resource",
         "//tflite/kernels/internal:tensor",
-        "@flatbuffers",
     ],
 )
 
@@ -899,9 +897,7 @@ pybind_extension(
     ],
     deps = [
         "//tflite:framework_stable",
-        "//tflite:mutable_op_resolver",
         "@pybind11",
-        "@xla//third_party/python_runtime:headers",
     ],
 )
 
@@ -913,10 +909,9 @@ cc_library(
     copts = tflite_copts(),
     visibility = ["//visibility:private"],
     deps = [
-        "//tflite/kernels:cpu_backend_context",
+        ":cpu_backend_context",
         "//tflite/kernels/internal:optimized_base",
         "//tflite/kernels/internal:tensor",
-        "@eigen_archive//:eigen3",
     ],
 )
 
@@ -938,11 +933,11 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     deps = [
+        ":cpu_backend_context",
         ":gru_cell",
         ":kernel_util",
+        ":padding",
         "//tflite/core/c:common",
-        "//tflite/kernels:cpu_backend_context",
-        "//tflite/kernels:padding",
         "//tflite/kernels/internal:common",
         "//tflite/kernels/internal:compatibility",
         "//tflite/kernels/internal:reference_base",
@@ -1052,7 +1047,6 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     deps = [
-        ":builtin_op_kernels",
         "//tflite:framework_stable",
         "//tflite:util",
         "//tflite/core/c:common",
@@ -1470,7 +1464,6 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite/schema:schema_fbs",
-        "//tflite/testing:util",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -1507,7 +1500,6 @@ cc_test(
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
-        "@eigen_archive//:eigen3",
     ],
 )
 
@@ -1574,9 +1566,7 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
-        "//tflite:string",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -1646,13 +1636,9 @@ cc_test(
         ":test_util",
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
-        "//tflite/core/api",
-        "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",
-        "@flatbuffers",
     ],
 )
 
@@ -1874,7 +1860,6 @@ cc_library(
     ],
     deps = [
         ":test_util",
-        "//tflite:string",
         "//tflite/schema:schema_fbs",
     ],
 )
@@ -1963,8 +1948,6 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite/kernels/internal:types",
-        "//tflite/schema:schema_fbs",
-        "//tflite/testing:util",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -2051,7 +2034,6 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
@@ -2292,7 +2274,6 @@ cc_test(
         ":custom_ops",
         ":test_main",
         ":test_util",
-        "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
@@ -2843,7 +2824,6 @@ cc_test(
         ":kernel_util",
         ":subgraph_test_util",
         ":test_main",
-        ":variable_op_kernels",
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
         "@com_google_googletest//:gtest",
@@ -2863,7 +2843,6 @@ cc_test(
         "//tflite/core:framework_stable",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/kernels/internal:tensor",
-        "//tflite/profiling:memory_info",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -3141,18 +3120,15 @@ cc_test(
         "hashtable_ops_test.cc",
     ],
     deps = [
+        ":test_main",
+        ":test_util",
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
-        "//tflite/core/api",
         "//tflite/experimental/resource",
-        "//tflite/kernels:test_main",
-        "//tflite/kernels:test_util",
         "//tflite/kernels/internal:tensor",
         "//tflite/testing:util",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
@@ -3163,8 +3139,8 @@ cc_test(
     tags = ["tflite_not_portable_ios"],
     deps = [
         ":custom_ops",
+        ":test_util",
         "//tflite:framework_stable",
-        "//tflite/kernels:test_util",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -3177,9 +3153,7 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
-        "//tflite:string",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -3221,7 +3195,6 @@ cc_test(
     size = "small",
     srcs = ["stablehlo_add_test.cc"],
     deps = [
-        ":subgraph_test_util",
         ":test_util",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -3237,7 +3210,6 @@ cc_test(
     size = "small",
     srcs = ["stablehlo_multiply_test.cc"],
     deps = [
-        ":subgraph_test_util",
         ":test_util",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -3364,7 +3336,7 @@ cc_test(
     name = "unsorted_segment_min_test",
     size = "small",
     srcs = [
-        "unsorted_segment_sum_test.cc",
+        "unsorted_segment_min_test.cc",
         "unsorted_segment_test.cc",
         "unsorted_segment_test.h",
     ],
