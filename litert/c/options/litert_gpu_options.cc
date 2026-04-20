@@ -138,6 +138,10 @@ struct LrtGpuOptions {
   // serialization_dir.
   std::optional<int> program_cache_fd;
 
+  // The file descriptor to use for weight caching. If set, it overrides the
+  // serialization_dir.
+  std::optional<int> weight_cache_fd;
+
   // Added in version 2.1.0.
   // If true, only the compiled programs will be cached. If false, gpu graph
   // info including work group sizes (and all compiled programs depending on
@@ -312,6 +316,10 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     ss << "program_cache_fd = "
        << static_cast<int>(options->program_cache_fd.value()) << "\n";
   }
+  if (options->weight_cache_fd.has_value()) {
+    ss << "weight_cache_fd = "
+       << static_cast<int>(options->weight_cache_fd.value()) << "\n";
+  }
   if (options->cache_only_compiled_programs.has_value()) {
     ss << "cache_only_compiled_programs = "
        << (options->cache_only_compiled_programs.value() ? "true" : "false")
@@ -453,6 +461,10 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlInt(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->program_cache_fd = *res;
+        } else if (key == "weight_cache_fd") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->weight_cache_fd = *res;
         } else if (key == "cache_only_compiled_programs") {
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
@@ -615,6 +627,14 @@ LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsProgramCacheFd(
   if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
 
   gpu_options->program_cache_fd = program_cache_fd;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    LrtGpuOptions* gpu_options, int weight_cache_fd) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->weight_cache_fd = weight_cache_fd;
   return kLiteRtStatusOk;
 }
 
@@ -901,6 +921,16 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
   *program_cache_fd = options->program_cache_fd.value_or(-1);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
+    int* weight_cache_fd, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(weight_cache_fd, ErrorStatusBuilder::InvalidArgument())
+      << "`weight_cache_fd` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  *weight_cache_fd = options->weight_cache_fd.value_or(-1);
   return kLiteRtStatusOk;
 }
 
