@@ -74,9 +74,9 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   LITERT_RETURN_IF_ERROR(
       LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type));
 
+  // Strides are allowed as they are used for padding.
   if (tensor_type.layout.has_strides) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "Tensor strides are not supported");
+    LITERT_LOG(LITERT_DEBUG, "Registering tensor buffer with strides");
   }
 
   switch (tensor_buffer_type) {
