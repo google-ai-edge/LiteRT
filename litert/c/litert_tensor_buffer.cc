@@ -190,10 +190,21 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto opencl_memory, tensor_buffer->GetOpenClMemory());
+  if (auto custom_buffer = tensor_buffer->GetCustomBuffer(); custom_buffer) {
+    LiteRtTensorBufferType buffer_type = tensor_buffer->buffer_type();
+    if (buffer_type == kLiteRtTensorBufferTypeOpenClBuffer ||
+        buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
+        buffer_type == kLiteRtTensorBufferTypeOpenClTexture ||
+        buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
+        buffer_type == kLiteRtTensorBufferTypeOpenClImageBuffer ||
+        buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16 ||
+        buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
+      *cl_mem_addr = static_cast<LiteRtClMem>((*custom_buffer)->raw_handle());
+      return kLiteRtStatusOk;
+    }
+  }
 
-  *cl_mem_addr = opencl_memory->GetMemoryPtr();
-  return kLiteRtStatusOk;
+  return kLiteRtStatusErrorNotFound;
 #else
   return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_OPENCL_SUPPORT

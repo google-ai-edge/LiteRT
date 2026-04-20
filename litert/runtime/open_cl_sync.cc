@@ -96,6 +96,7 @@ LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
                                    const LiteRtRankedTensorType* tensor_type,
                                    LiteRtTensorBufferType buffer_type,
                                    size_t bytes, cl_mem* cl_memory) {
+  ABSL_LOG(INFO) << "LiteRtGpuMemoryCreate";
   auto tensor_desc = CreateTensorDescriptor(tensor_type, buffer_type);
   LITERT_RETURN_IF_ERROR(tensor_desc.status().ok(),
                          kLiteRtStatusErrorUnsupported);

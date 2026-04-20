@@ -93,6 +93,7 @@ class Environment {
     WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
     RuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     AutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
+    GpuAcceleratorLibraryName = kLiteRtEnvOptionTagGpuAcceleratorLibraryName,
   };
 
   struct [[deprecated("Use EnvironmentOptions::Option instead.")]] Option {

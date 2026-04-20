@@ -91,6 +91,8 @@ class EnvironmentOptions {
     kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
     /// Minimum logger severity for the environment.
     kMinLoggerSeverity = kLiteRtEnvOptionTagMinLoggerSeverity,
+    /// Preferred GPU accelerator library name.
+    kGpuAcceleratorLibraryName = kLiteRtEnvOptionTagGpuAcceleratorLibraryName,
   };
 
   struct Option {
