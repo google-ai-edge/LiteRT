@@ -1267,6 +1267,48 @@ TEST(TensorBuffer, ClBufferReadOnWriteLockIsInvalid) {
   }
 }
 
+TEST(TensorBuffer, ClBufferReadWriteInt8) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+
+  constexpr const int8_t kInt8TensorData[] = {1, 2, 3, 4};
+  const LiteRtRankedTensorType litert_tensor_type = {
+      /*.element_type=*/kLiteRtElementTypeInt8,
+      /*.layout=*/BuildLayout({4})};
+  const RankedTensorType kTensorType(litert_tensor_type);
+  constexpr auto kTensorBufferType = TensorBufferType::kOpenClBuffer;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer, TensorBuffer::CreateManaged(
+                              user_gpu_env->GetEnvironment(), kTensorBufferType,
+                              kTensorType, sizeof(kInt8TensorData)));
+
+  // 1. Test Upload
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kWrite);
+    ASSERT_TRUE(lock_and_addr);
+    std::memcpy(lock_and_addr->second, kInt8TensorData,
+                sizeof(kInt8TensorData));
+  }
+
+  // 2. Test Download
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    ASSERT_EQ(std::memcmp(lock_and_addr->second, kInt8TensorData,
+                          sizeof(kInt8TensorData)),
+              0);
+  }
+}
+
 TEST(TensorBuffer, GetAhwb) {
   if (!HasAhwbSupport()) {
     GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
