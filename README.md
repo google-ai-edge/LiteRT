@@ -26,6 +26,8 @@ runtime for on-device AI.
 LiteRT features advanced GPU/NPU acceleration, delivers superior ML & GenAI
 performance, making on-device ML inference easier than ever.
 
+Dummy change to test the import workflow.
+
 ### 🌟 What's New
 
 - **🆕 New LiteRT Compiled Model API**: Streamline development with automated accelerator
