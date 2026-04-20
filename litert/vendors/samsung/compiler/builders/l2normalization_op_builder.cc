@@ -13,16 +13,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
+#include "litert/vendors/samsung/compiler/builders/l2normalization_op_builder.h"
 
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/c/litert_op_options.h"
+#include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildGatherOp(const Op& op);
+Expected<OpWrapper> BuildL2NormalizationOp(const Op& op) {
+  OpWrapper op_wrapper("L2Normalization");
+  for (const auto& input : op.Inputs()) {
+    op_wrapper.AddInput(input);
+  }
+  for (const auto& output : op.Outputs()) {
+    op_wrapper.AddOutput(output);
+  }
+  int32_t dims = GetDimensions(op.Inputs()[0]).size();
+  std::vector<int32_t> axis_dims = {dims - 1};
+  op_wrapper.AddParam("axis", axis_dims);
 
-Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op);
+  return op_wrapper;
 }
-
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
+}  // namespace litert::samsung

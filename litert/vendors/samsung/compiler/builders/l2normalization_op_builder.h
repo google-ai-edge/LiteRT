@@ -13,16 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_L2NORMALIZATION_OP_BUILDER_H_
+#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_L2NORMALIZATION_OP_BUILDER_H_
 
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildGatherOp(const Op& op);
+Expected<OpWrapper> BuildL2NormalizationOp(const Op& op);
 
-Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op);
 }
-
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
+#endif  //  ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_L2NORMALIZATION_OP_BUILDER_H_
