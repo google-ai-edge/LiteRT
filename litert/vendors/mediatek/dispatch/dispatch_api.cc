@@ -88,16 +88,10 @@ LiteRtStatus LiteRtInitialize(const LiteRtRuntimeContext* runtime_context,
   LiteRtOpaqueOptions opaque_opts_c = nullptr;
   if (options &&
       LiteRtGetOpaqueOptions(options, &opaque_opts_c) == kLiteRtStatusOk) {
-    const char* identifier;
     void* payload;
-    if (LiteRtGetOpaqueOptionsIdentifier(opaque_opts_c, &identifier) ==
+    if (LiteRtFindOpaqueOptionsData(opaque_opts_c, "mediatek", &payload) ==
         kLiteRtStatusOk) {
-      if (std::string(identifier) == "mediatek") {
-        if (LiteRtGetOpaqueOptionsData(opaque_opts_c, &payload) ==
-            kLiteRtStatusOk) {
-          mt_payload = reinterpret_cast<const std::string*>(payload)->c_str();
-        }
-      }
+      mt_payload = reinterpret_cast<const char*>(payload);
     }
   }
 

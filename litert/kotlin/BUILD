@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
@@ -196,14 +197,13 @@ TFLITE_JAVA_SRCS_COPIED = [
     # go/keep-sorted end
 ]
 
-[genrule(
+[copy_file(
     name = "copy_%s" % f.replace("/", "_").replace(".", "_"),
-    srcs = ["//tflite/java:%s" % f.replace(
+    src = "//tflite/java:%s" % f.replace(
         "src/copied_from_tflite/java",
         "src/main/java",
-    )],
-    outs = [f],
-    cmd = "cp $< $@",
+    ),
+    out = f,
     visibility = ["//visibility:private"],
 ) for f in TFLITE_JAVA_SRCS_COPIED]
 

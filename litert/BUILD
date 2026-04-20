@@ -419,3 +419,10 @@ config_setting(
         "crosstool_top": "//external:android/crosstool",  # copybara:comment
     },
 )
+
+# Configuration to keep symbols even in optimized builds, useful for profiling
+config_setting(
+    name = "litert_keep_symbols",
+    values = {"define": "litert_keep_symbols=true"},
+    visibility = ["//visibility:public"],
+)
