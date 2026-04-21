@@ -83,16 +83,6 @@ class CustomBuffer {
                                      size_t buffer_size,
                                      size_t packed_buffer_size);
 
-  //: Wraps an existing custom buffer with dispatch device context and tensor identification.
-  static Expected<CustomBuffer> Wrap(LiteRtEnvironment env,
-                                     LiteRtDispatchDeviceContext device_context,
-                                     unsigned tensor_index, bool is_input,
-                                     const LiteRtRankedTensorType& tensor_type,
-                                     LiteRtTensorBufferType buffer_type,
-                                     HwMemoryHandle hw_buffer_handle,
-                                     size_t buffer_size,
-                                     size_t packed_buffer_size);
-
  private:
   // Private constructor to create a custom buffer.
   CustomBuffer(LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,

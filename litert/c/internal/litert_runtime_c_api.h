@@ -745,6 +745,11 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_environment.h: LiteRtEnvironmentSupportsFP16
   LiteRtStatus (*litert_environment_supports_fp16)(
       LiteRtEnvironment environment, bool* is_supported);
+
+  // litert_compiled_model.h: LiteRtCompiledModelCreateBufferForIoTensor
+  LiteRtStatus (*litert_compiled_model_create_buffer_for_io_tensor)(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      const char* tensor_name, bool is_input, LiteRtTensorBuffer* tensor_buffer);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

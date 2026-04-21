@@ -102,8 +102,9 @@ class DispatchDelegateKernel
   Expected<void> ComputeTensorPortConnections(TfLiteOpaqueContext* context);
 
   Expected<void> AllocateTensorBuffersIfNeeded(TfLiteOpaqueContext* context);
+  void SyncDispatchBufferContext(TfLiteOpaqueContext* context);
   Expected<LiteRtTensorBufferPtr> AllocateTensorBuffer(
-      TfLiteOpaqueTensor* tfl_tensor);
+      TfLiteOpaqueTensor* tfl_tensor, int tensor_id);
   Expected<void> RegisterBufferWithDispatchApi(
       int tensor_id, LiteRtTensorBufferPtr&& tensor_buffer);
 

@@ -460,6 +460,14 @@ class RuntimeProxy {
                                compiled_model, environment);
   }
 
+  LiteRtStatus CompiledModelCreateBufferForIoTensor(
+      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      const char* tensor_name, bool is_input, LiteRtTensorBuffer* tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS(litert_compiled_model_create_buffer_for_io_tensor,
+                               compiled_model, signature_index, tensor_name,
+                               is_input, tensor_buffer);
+  }
+
   LiteRtStatus RunCompiledModel(LiteRtCompiledModel compiled_model,
                                 LiteRtParamIndex signature_index,
                                 size_t num_input_buffers,

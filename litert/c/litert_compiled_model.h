@@ -123,6 +123,17 @@ LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
 LiteRtStatus LiteRtGetCompiledModelEnvironment(
     LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment);
 
+// Creates an input or output tensor buffer using the compiled model's external
+// buffer context (same path as delegate buffer registration). Use this so
+// dispatch custom buffers receive `LiteRtDispatchDeviceContext` and I/O mapping
+// during creation. On failure, callers may fall back to
+// `LiteRtCreateManagedTensorBuffer` with requirements from
+// `LiteRtGetCompiledModel*BufferRequirements`.
+// Caller takes ownership of `*tensor_buffer` on success.
+LiteRtStatus LiteRtCompiledModelCreateBufferForIoTensor(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* tensor_name, bool is_input, LiteRtTensorBuffer* tensor_buffer);
+
 // Runs the model of the given signature synchronously, with the provided
 // input/output LiteRtTensorBuffer.
 //

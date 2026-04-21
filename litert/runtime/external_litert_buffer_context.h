@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
@@ -209,6 +210,20 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   // Returns the LiteRtEnvironment used to create CompiledModel.
   inline LiteRtEnvironment GetEnvironment() const { return env_; }
 
+  litert::internal::TfLiteTensorIdentifier GetTensorIdentifierFor(
+      const TfLiteOpaqueTensor* tensor) const {
+    return get_tensor_identifier_fn_(tensor);
+  }
+
+  // When set by the dispatch delegate, CreateBufferForTensor uses
+  // LiteRtCreateManagedTensorBufferWithContext for user-defined custom buffer
+  // types so vendor create callbacks receive device_context and tensor identity.
+  // I/O tensors are matched by TfLiteTensorIdentifier.
+  void SetDispatchCustomBufferContext(
+      LiteRtDispatchDeviceContext device_context,
+      std::vector<litert::internal::TfLiteTensorIdentifier> input_tensor_ids,
+      std::vector<litert::internal::TfLiteTensorIdentifier> output_tensor_ids);
+
   // Sets dispatch annotations that should be propagated to dispatch graphs.
   void SetDispatchAnnotations(
       const std::unordered_map<std::string, std::string>& annotations) {
@@ -267,6 +282,12 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
  private:
   LiteRtEnvironment env_;
   GetTensorIdentifierFn get_tensor_identifier_fn_;
+  LiteRtDispatchDeviceContext dispatch_device_context_for_custom_buffers_ =
+      nullptr;
+  std::vector<litert::internal::TfLiteTensorIdentifier>
+      dispatch_input_tensor_ids_;
+  std::vector<litert::internal::TfLiteTensorIdentifier>
+      dispatch_output_tensor_ids_;
   std::unordered_map<litert::internal::TfLiteTensorIdentifier,
                      LiteRtTensorBufferRequirementsPtr,
                      litert::internal::TensorIdentifierHash,
