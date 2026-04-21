@@ -15,6 +15,24 @@
 # Docker image to provide a hermetic build environment for Litert.
 FROM ubuntu:24.04
 
+# Proxy build arguments (passed from host environment via --build-arg).
+# When the host has no proxy configured these remain empty and all network
+# access goes direct. Both lower-case and upper-case variants are forwarded
+# because different tools honour different conventions (e.g. curl reads
+# http_proxy while some Java libraries read HTTP_PROXY).
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV http_proxy=${http_proxy} \
+    https_proxy=${https_proxy} \
+    no_proxy=${no_proxy} \
+    HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY}
+
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -135,22 +153,16 @@ exec "$@"\n\
 # Set the entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Immediately execute a build.
-# Add a wrapper script to optionally disable SVE for Bazel's host JVM on AArch64
-RUN echo '#!/bin/bash\n\
-set -euo pipefail\n\
-\n\
-./docker_build/verify_android_env.sh\n\
-\n\
-EXTRA_STARTUP=""\n\
-arch=$(uname -m || echo unknown)\n\
-if [ "${DISABLE_SVE_FOR_BAZEL:-}" = "1" ] && { [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; }; then\n\
-  EXTRA_STARTUP="--host_jvm_args=-XX:UseSVE=0"\n\
-  echo "[run_build] AArch64 detected; disabling SVE for Bazel host JVM" >&2\n\
-fi\n\
-\
-bazel ${EXTRA_STARTUP} build //litert/runtime:compiled_model\n\
-' > /run_build.sh && chmod +x /run_build.sh
+# Default build script.
+# Provides proxy-to-JVM forwarding, optional SVE workaround, and a single
+# default Bazel target.  Individual build_*.sh scripts (build_with_docker.sh,
+# build_wheel_with_docker.sh) override the CMD to run their own targets while
+# reusing the same proxy/SVE helpers defined inline.
+COPY setup_bazel_env.sh /setup_bazel_env.sh
+COPY run_build.sh /run_build.sh
+RUN chmod +x /setup_bazel_env.sh /run_build.sh
 
-# Default command runs the wrapper
+# Default command — builds //litert/runtime:compiled_model.
+# Override with `docker run ... litert_build_env bash -c '...'` or by passing
+# a custom CMD in build_with_docker.sh / build_wheel_with_docker.sh.
 CMD ["/run_build.sh"]

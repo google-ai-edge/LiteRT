@@ -66,6 +66,9 @@ class CompiledModel:
       model_path: str,
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
+      intel_openvino_device_type: str = "npu",
+      intel_openvino_performance_mode: str = "latency",
+      intel_openvino_configs_map: str = "",
   ) -> "CompiledModel":
     """Creates a CompiledModel from a model file.
 
@@ -76,6 +79,12 @@ class CompiledModel:
         HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
+      intel_openvino_device_type: Intel OpenVINO target device. One of 'cpu',
+        'gpu', 'npu', 'auto'. Defaults to 'npu'.
+      intel_openvino_performance_mode: Intel OpenVINO performance hint. One of
+        'latency', 'throughput', 'cumulative_throughput'. Defaults to 'latency'.
+      intel_openvino_configs_map: Comma-separated KEY=VALUE pairs for custom
+        OpenVINO configuration properties.
 
     Returns:
       A new CompiledModel instance.
@@ -88,6 +97,9 @@ class CompiledModel:
         model_path,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
+        intel_openvino_device_type=intel_openvino_device_type,
+        intel_openvino_performance_mode=intel_openvino_performance_mode,
+        intel_openvino_configs_map=intel_openvino_configs_map,
     )
     return cls(ptr, env)
 
@@ -97,6 +109,9 @@ class CompiledModel:
       model_data: bytes,
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
+      intel_openvino_device_type: str = "npu",
+      intel_openvino_performance_mode: str = "latency",
+      intel_openvino_configs_map: str = "",
   ) -> "CompiledModel":
     """Creates a CompiledModel from an in-memory buffer.
 
@@ -107,6 +122,12 @@ class CompiledModel:
         HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
+      intel_openvino_device_type: Intel OpenVINO target device. One of 'cpu',
+        'gpu', 'npu', 'auto'. Defaults to 'npu'.
+      intel_openvino_performance_mode: Intel OpenVINO performance hint. One of
+        'latency', 'throughput', 'cumulative_throughput'. Defaults to 'latency'.
+      intel_openvino_configs_map: Comma-separated KEY=VALUE pairs for custom
+        OpenVINO configuration properties.
 
     Returns:
       A new CompiledModel instance.
@@ -119,6 +140,9 @@ class CompiledModel:
         model_data,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
+        intel_openvino_device_type=intel_openvino_device_type,
+        intel_openvino_performance_mode=intel_openvino_performance_mode,
+        intel_openvino_configs_map=intel_openvino_configs_map,
     )
     return cls(ptr, env)
 

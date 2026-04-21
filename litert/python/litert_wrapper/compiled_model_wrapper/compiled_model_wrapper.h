@@ -47,12 +47,20 @@ class CompiledModelWrapper {
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param cpu_num_threads Number of threads for CPU execution.
+   * @param intel_openvino_device_type Target device: "cpu", "gpu", "npu",
+   *        or "auto". Empty string skips OpenVINO option setup.
+   * @param intel_openvino_performance_mode Performance hint: "latency",
+   *        "throughput", or "cumulative_throughput".
+   * @param intel_openvino_configs_map Comma-separated KEY=VALUE pairs for
+   *        custom OpenVINO configuration properties.
    * @param out_error String to store error message if creation fails
    * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromFile(
       PyObject* environment_capsule, const char* model_path, int hardware_accel,
-      int cpu_num_threads, std::string* out_error);
+      int cpu_num_threads, const char* intel_openvino_device_type,
+      const char* intel_openvino_performance_mode,
+      const char* intel_openvino_configs_map, std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
@@ -68,12 +76,20 @@ class CompiledModelWrapper {
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param cpu_num_threads Number of threads for CPU execution.
+   * @param intel_openvino_device_type Target device: "cpu", "gpu", "npu",
+   *        or "auto". Empty string skips OpenVINO option setup.
+   * @param intel_openvino_performance_mode Performance hint: "latency",
+   *        "throughput", or "cumulative_throughput".
+   * @param intel_openvino_configs_map Comma-separated KEY=VALUE pairs for
+   *        custom OpenVINO configuration properties.
    * @param out_error String to store error message if creation fails
    * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromBuffer(
       PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-      int cpu_num_threads, std::string* out_error);
+      int cpu_num_threads, const char* intel_openvino_device_type,
+      const char* intel_openvino_performance_mode,
+      const char* intel_openvino_configs_map, std::string* out_error);
 
   CompiledModelWrapper(litert::ExtendedModel model,
                        litert::CompiledModel compiled);

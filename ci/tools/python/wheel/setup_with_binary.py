@@ -195,7 +195,11 @@ setuptools.setup(
         'protobuf',
     ],
     extras_require={
+        'npu-intel': [
+            'openvino==2026.1.0',
+        ],
         'npu-sdk': [
+            'openvino==2026.1.0',
             'ai-edge-litert-sdk-qualcomm~=0.1.0',
             'ai-edge-litert-sdk-mediatek~=0.1.0',
         ],
@@ -203,6 +207,11 @@ setuptools.setup(
             'lark',
             'ml_dtypes',
             'xdsl==0.28.0',
+        ],
+    },
+    entry_points={
+        'console_scripts': [
+            'litert-benchmark=ai_edge_litert.tools.benchmark_litert_model:main',
         ],
     },
     # Use the custom command for the build_py step
