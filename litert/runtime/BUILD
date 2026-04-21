@@ -605,6 +605,7 @@ cc_test(
 #         "//litert/c:litert_options",
 #         "//litert/c:litert_tensor_buffer",
 #         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/c/internal:litert_runtime_context_header",
 #         "//litert/cc:litert_buffer_ref",
 #         "//litert/core:environment",
 #         "//litert/core:filesystem",
