@@ -535,9 +535,11 @@ cc_library(
         ":op_macros",
         "//tflite:array",
         "//tflite:kernel_api",
+        "//tflite:util",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:cppmath",
         "//tflite/kernels/internal:quantization_util",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -777,6 +779,7 @@ BUILTIN_KERNEL_DEPS = [
     ":control_flow_common",
     "@eigen_archive//:eigen3",
     "@flatbuffers",
+    "@com_google_absl//absl/types:span",
     "//tflite:framework_stable",
     "//tflite:minimal_logging",
     "//tflite:string_util",
@@ -1533,6 +1536,7 @@ cc_test(
     # TODO(b/162870360): Re-enable nnapi test after delegating grouped conv is added.
     # tags = ["tflite_nnapi"],
     deps = [
+        ":kernel_util",
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
@@ -1571,12 +1575,12 @@ cc_test(
     size = "small",
     srcs = ["conv3d_test.cc"],
     deps = [
+        ":kernel_util",
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
-        "//tflite:string",
+        "//tflite/c:common",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -1627,12 +1631,8 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite:string",
         "//tflite/core:framework_stable",
-        "//tflite/core/api",
-        "//tflite/kernels/internal:test_util",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
@@ -3177,9 +3177,9 @@ cc_test(
         ":test_main",
         ":test_util",
         "//tflite:framework_stable",
-        "//tflite:string",
+        "//tflite/c:common",
+        "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
     ],
 )

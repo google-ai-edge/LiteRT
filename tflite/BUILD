@@ -1200,6 +1200,7 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -1216,6 +1217,7 @@ cc_library(
         ":macros",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
