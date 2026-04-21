@@ -647,6 +647,28 @@ LiteRtTensorBufferT::CreateManagedCustomTensorBuffer(
   return tensor_buffer;
 }
 
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedCustomTensorBufferWithContext(
+    LiteRtEnvironment env, LiteRtDispatchDeviceContext device_context,
+    unsigned tensor_index, bool is_input,
+    const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, device_context, tensor_index, is_input,
+      tensor_type, buffer_type, buffer_size, packed_size);
+  if (!buffer) {
+    return Unexpected(buffer.Error());
+  }
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(*buffer));
+  return tensor_buffer;
+}
+
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {

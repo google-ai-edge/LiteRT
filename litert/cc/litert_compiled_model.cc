@@ -359,6 +359,16 @@ Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
 Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
     size_t signature_index, absl::string_view tensor_name,
     bool is_input) const {
+  std::string tensor_name_owned(tensor_name);
+  LiteRtTensorBuffer c_buffer = nullptr;
+  if (env_.runtime->CompiledModelCreateBufferForIoTensor(
+          Get(), static_cast<LiteRtParamIndex>(signature_index),
+          tensor_name_owned.c_str(), is_input, &c_buffer) ==
+          kLiteRtStatusOk &&
+      c_buffer != nullptr) {
+    return TensorBuffer::WrapCObject(env_, c_buffer, OwnHandle::kYes);
+  }
+
   Expected<RankedTensorType> tensor_type_expected =
       is_input ? GetInputTensorType(signature_index, tensor_name)
                : GetOutputTensorType(signature_index, tensor_name);

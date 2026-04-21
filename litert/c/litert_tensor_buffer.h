@@ -295,8 +295,8 @@ LiteRtStatus LiteRtCreateManagedTensorBuffer(
     const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
     LiteRtTensorBuffer* buffer);
 
-// :Create a managed TensorBuffer with dispatch device context and tensor identification.
-// provide access to device context, tensor index, and input/output type during buffer creation.
+// Like LiteRtCreateManagedTensorBuffer, but passes dispatch context and I/O slot
+// to custom buffer handlers.
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateManagedTensorBufferWithContext(
