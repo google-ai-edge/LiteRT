@@ -17,25 +17,24 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/internal/litert_scheduling_info.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
-
-#include "litert/c/internal/litert_tensor_buffer_registry.h"
-#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 
 namespace litert {
@@ -122,22 +121,20 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
       /*queue_tag=*/kLiteRtEnvOptionTagNull));
 
   if (options) {
-    auto cc_options = litert::Options(options, litert::OwnHandle::kNo);
-    auto opaque_options = cc_options.GetOpaqueOptions();
-    if (opaque_options) {
-      auto target_opq_status = litert::FindOpaqueOptions(
-          *opaque_options, LrtGetIntelOpenVinoOptionsIdentifier());
-
-      if (target_opq_status) {
-        auto payload_status = target_opq_status->GetData<const char>();
-        if (payload_status) {
-          LrtIntelOpenVinoOptions raw_options = nullptr;
-          if (LrtCreateIntelOpenVinoOptionsFromToml(
-                  payload_status.Value(), &raw_options) == kLiteRtStatusOk) {
-            delete intel_openvino_opts;
-            intel_openvino_opts = new IntelOpenVinoOptions(
-                IntelOpenVinoOptions::CreateFromOwnedHandle(raw_options));
-          }
+    litert::internal::OptionsWrapper internal_options(
+        litert::internal::ContextWrapper(runtime_context), options);
+    auto opaque_options_result = internal_options.GetOpaqueOptions();
+    if (opaque_options_result) {
+      auto payload_data_result = opaque_options_result->FindOpaqueOptions(
+          LrtGetIntelOpenVinoOptionsIdentifier());
+      if (payload_data_result && payload_data_result.Value() != nullptr) {
+        LrtIntelOpenVinoOptions raw_options = nullptr;
+        if (LrtCreateIntelOpenVinoOptionsFromToml(
+                static_cast<const char*>(payload_data_result.Value()),
+                &raw_options) == kLiteRtStatusOk) {
+          delete intel_openvino_opts;
+          intel_openvino_opts = new IntelOpenVinoOptions(
+              IntelOpenVinoOptions::CreateFromOwnedHandle(raw_options));
         }
       }
     }

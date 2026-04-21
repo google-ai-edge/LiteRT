@@ -16,6 +16,8 @@
 
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
 
 LiteRtCompilerContext* LrtGetCompilerContext() {
   static LiteRtCompilerContext ctx = {
@@ -46,6 +48,9 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .get_shlo_composite_op_attributes = LiteRtGetSHLOCompositeOpAttributes,
       .get_shlo_composite_op_version = LiteRtGetSHLOCompositeOpVersion,
       .push_op = LiteRtPushOp,
+      .get_opaque_options = LiteRtGetOpaqueOptions,
+      .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
+      .destroy_options = LiteRtDestroyOptions,
   };
   return &ctx;
 }

@@ -36,12 +36,13 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_mediatek_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/mediatek/compiler/compile_model.h"
 #include "litert/vendors/mediatek/compiler/create_model.h"
@@ -290,17 +291,19 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 
 class LiteRtCompilerPluginT {
  public:
-  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
+  LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
+                        LiteRtEnvironmentOptions env, LiteRtOptions options) {
     const char* mt_payload = "";
     if (options) {
-      if (auto opts =
-              Expected<litert::Options>(options, litert::OwnHandle::kNo)) {
-        opq_ = opts->GetOpaqueOptions();
+      opts_ = litert::internal::OptionsWrapper(
+          litert::internal::ContextWrapper(ctx), options,
+          litert::OwnHandle::kNo);
+      if (opts_) {
+        opq_ = opts_->GetOpaqueOptions();
         if (opq_) {
-          void* payload;
-          if (LiteRtFindOpaqueOptionsData(opq_->Get(), "mediatek", &payload) ==
-              kLiteRtStatusOk) {
-            mt_payload = reinterpret_cast<const char*>(payload);
+          auto target_opq_status = opq_->FindOpaqueOptions("mediatek");
+          if (target_opq_status) {
+            mt_payload = static_cast<const char*>(target_opq_status.Value());
           }
         }
       }
@@ -316,13 +319,18 @@ class LiteRtCompilerPluginT {
 
   LrtMediatekOptions* GetMediatekOptions() { return mediatek_opts_; }
 
-  ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
+  ::litert::Expected<litert::internal::OpaqueOptionsWrapper>&
+  GetOpaqueOptions() {
+    return opq_;
+  }
 
   void SetSubgraphIndex(int index) { subgraph_index_ = index; }
   int GetSubgraphIndex() const { return subgraph_index_; }
 
  private:
-  litert::Expected<litert::OpaqueOptions> opq_ =
+  litert::Expected<litert::internal::OptionsWrapper> opts_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
+  litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
   LrtMediatekOptions* mediatek_opts_ = nullptr;
   int subgraph_index_ = 0;
@@ -334,7 +342,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtOptions options) {
   LiteRtPropagateMinLoggerSeverity(env);
 
-  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
+  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   return kLiteRtStatusOk;
 }
 

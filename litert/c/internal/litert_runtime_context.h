@@ -74,6 +74,7 @@ typedef struct LiteRtRuntimeContext {
   LiteRtStatus (*find_opaque_options_data)(LiteRtOpaqueOptions options,
                                            const char* payload_identifier,
                                            void** payload_data);
+  void (*destroy_options)(LiteRtOptions options);
   LiteRtStatus (*get_environment_options)(LiteRtEnvironment env,
                                           LiteRtEnvironmentOptions* options);
   LiteRtStatus (*get_environment_options_value)(

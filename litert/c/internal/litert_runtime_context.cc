@@ -46,6 +46,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
           LiteRtDestroyExternalLiteRtBufferContext,
       .get_opaque_options = LiteRtGetOpaqueOptions,
       .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
+      .destroy_options = LiteRtDestroyOptions,
       .get_environment_options = LiteRtGetEnvironmentOptions,
       .get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
       .environment_has_gpu_environment = LiteRtEnvironmentHasGpuEnvironment,

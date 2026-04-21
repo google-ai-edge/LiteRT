@@ -19,7 +19,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -27,13 +26,15 @@
 #include "litert/c/internal/litert_logging_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/options/litert_samsung_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_common.h"
-#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
@@ -45,28 +46,26 @@ class LiteRtCompilerPluginT {
  public:
   using SamsungOptions = ::litert::samsung::SamsungOptions;
 
-  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
+  LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
+                        LiteRtEnvironmentOptions env, LiteRtOptions options) {
     if (options == nullptr) {
       return;
     }
-    auto cc_options = litert::Options(options, litert::OwnHandle::kNo);
-    auto opaques_status = cc_options.GetOpaqueOptions();
+    compiler_opts_ = litert::internal::OptionsWrapper(
+        litert::internal::ContextWrapper(ctx), options, litert::OwnHandle::kNo);
+    auto opaques_status = compiler_opts_->GetOpaqueOptions();
     if (!opaques_status) {
       return;
     }
 
-    auto target_opq = litert::FindOpaqueOptions(
-        *opaques_status, LrtSamsungOptionsGetIdentifier());
+    auto target_opq =
+        opaques_status->FindOpaqueOptions(LrtSamsungOptionsGetIdentifier());
     if (!target_opq) {
       return;
     }
-    auto payload_status = target_opq->GetData<const char>();
-    if (!payload_status) {
-      return;
-    }
+    const char* payload = static_cast<const char*>(target_opq.Value());
     LrtSamsungOptions samsung_options;
-    auto status = LrtCreateSamsungOptionsFromToml(payload_status.Value(),
-                                                  &samsung_options);
+    auto status = LrtCreateSamsungOptionsFromToml(payload, &samsung_options);
     if (status == kLiteRtStatusOk) {
       samsung_opts_ = SamsungOptions(samsung_options);
     } else {
@@ -78,10 +77,15 @@ class LiteRtCompilerPluginT {
     return samsung_opts_;
   }
 
-  ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
+  ::litert::Expected<litert::internal::OpaqueOptionsWrapper>&
+  GetOpaqueOptions() {
+    return opq_;
+  }
 
  private:
-  litert::Expected<litert::OpaqueOptions> opq_ = litert::Error(
+  litert::Expected<litert::internal::OptionsWrapper> compiler_opts_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
+  litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ = litert::Error(
       litert::Status::kErrorInvalidArgument, "Null opaque options");
   litert::Expected<SamsungOptions> samsung_opts_ = litert::Error(
       litert::Status::kErrorInvalidArgument, "Null google tensor options");
@@ -206,7 +210,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtOptions options) {
   LiteRtPropagateMinLoggerSeverity(env);
 
-  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
+  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   return kLiteRtStatusOk;
 }
 

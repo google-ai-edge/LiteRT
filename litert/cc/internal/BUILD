@@ -167,6 +167,76 @@ cc_library(
     hdrs = ["litert_handle.h"],
 )
 
+cc_library(
+    name = "litert_context_wrapper",
+    hdrs = ["litert_context_wrapper.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/c/internal:litert_runtime_context_header",
+    ],
+)
+
+cc_library(
+    name = "litert_opaque_options_wrapper",
+    hdrs = ["litert_opaque_options_wrapper.h"],
+    deps = [
+        ":litert_context_wrapper",
+        ":litert_handle",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+    ],
+)
+
+cc_test(
+    name = "litert_opaque_options_wrapper_test",
+    srcs = ["litert_opaque_options_wrapper_test.cc"],
+    deps = [
+        ":litert_context_wrapper",
+        ":litert_opaque_options_wrapper",
+        ":litert_options_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_options_wrapper",
+    hdrs = ["litert_options_wrapper.h"],
+    deps = [
+        ":litert_context_wrapper",
+        ":litert_handle",
+        ":litert_opaque_options_wrapper",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+    ],
+)
+
+cc_test(
+    name = "litert_options_wrapper_test",
+    srcs = ["litert_options_wrapper_test.cc"],
+    deps = [
+        ":litert_context_wrapper",
+        ":litert_options_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
+        "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "litert_handle_test",
     srcs = ["litert_handle_test.cc"],

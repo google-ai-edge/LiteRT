@@ -32,6 +32,9 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -85,13 +88,16 @@ LiteRtStatus LiteRtInitialize(const LiteRtRuntimeContext* runtime_context,
 
   LrtMediatekOptions* mediatek_opts = nullptr;
   const char* mt_payload = "";
-  LiteRtOpaqueOptions opaque_opts_c = nullptr;
-  if (options &&
-      LiteRtGetOpaqueOptions(options, &opaque_opts_c) == kLiteRtStatusOk) {
-    void* payload;
-    if (LiteRtFindOpaqueOptionsData(opaque_opts_c, "mediatek", &payload) ==
-        kLiteRtStatusOk) {
-      mt_payload = reinterpret_cast<const char*>(payload);
+  if (options) {
+    litert::internal::OptionsWrapper internal_options(
+        litert::internal::ContextWrapper(runtime_context), options);
+    auto opaque_options_result = internal_options.GetOpaqueOptions();
+    if (opaque_options_result) {
+      auto payload_data_result =
+          opaque_options_result->FindOpaqueOptions("mediatek");
+      if (payload_data_result && payload_data_result.Value() != nullptr) {
+        mt_payload = reinterpret_cast<const char*>(payload_data_result.Value());
+      }
     }
   }
 

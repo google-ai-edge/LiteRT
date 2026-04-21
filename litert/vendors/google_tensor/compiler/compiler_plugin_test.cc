@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
@@ -115,7 +116,8 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnCpu) {
       LiteRtCreateOpaqueOptions(identifier, payload, deleter, &opaque));
   LITERT_ASSERT_OK(LiteRtAddOpaqueOptions(options.Get(), opaque));
 
-  auto plugin = CreatePlugin(/*env=*/nullptr, options.Get());
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, options.Get());
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
@@ -205,7 +207,8 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
       LiteRtCreateOpaqueOptions(identifier, payload, deleter, &opaque));
   LITERT_ASSERT_OK(LiteRtAddOpaqueOptions(options.Get(), opaque));
 
-  auto plugin = CreatePlugin(/*env=*/nullptr, options.Get());
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, options.Get());
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 

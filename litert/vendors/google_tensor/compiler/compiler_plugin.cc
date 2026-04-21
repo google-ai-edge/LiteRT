@@ -33,21 +33,19 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper.h"
-#include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
@@ -418,11 +416,14 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 // Plugins can hold state.
 class LiteRtCompilerPluginT {
  public:
-  explicit LiteRtCompilerPluginT(LiteRtEnvironmentOptions env,
-                                 LiteRtOptions options) {
+  explicit LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
+                                 LiteRtEnvironmentOptions env,
+                                 LiteRtOptions options)
+      : ctx_(ctx) {
     if (options) {
-      opts_ =
-          ::litert::Expected<litert::Options>(options, litert::OwnHandle::kNo);
+      opts_ = litert::internal::OptionsWrapper(
+          litert::internal::ContextWrapper(ctx), options,
+          litert::OwnHandle::kNo);
       if (opts_) {
         opq_ = opts_->GetOpaqueOptions();
       }
@@ -434,14 +435,13 @@ class LiteRtCompilerPluginT {
         litert::Error(kLiteRtStatusErrorNotFound, "No options found");
 
     if (opq_) {
-      void* payload;
-      auto identifier = LrtGoogleTensorOptionsGetIdentifier();
-      if (LiteRtFindOpaqueOptionsData(opq_->Get(), identifier, &payload) ==
-          kLiteRtStatusOk) {
-        // we assume the payload is a const char* pointing to a TOML string.
+      auto target_opq_status =
+          opq_->FindOpaqueOptions(LrtGoogleTensorOptionsGetIdentifier());
+      if (target_opq_status) {
+        const char* payload =
+            static_cast<const char*>(target_opq_status.Value());
         LrtGoogleTensorOptions options;
-        auto status = LrtCreateGoogleTensorOptionsFromToml(
-            reinterpret_cast<const char*>(payload), &options);
+        auto status = LrtCreateGoogleTensorOptionsFromToml(payload, &options);
         if (status == kLiteRtStatusOk) {
           google_tensor_opts = options;
         } else {
@@ -468,7 +468,10 @@ class LiteRtCompilerPluginT {
     return google_tensor_opts;
   }
 
-  ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
+  ::litert::Expected<litert::internal::OpaqueOptionsWrapper>&
+  GetOpaqueOptions() {
+    return opq_;
+  }
   void SetLiteRtVersion(LiteRtApiVersion v) { litert_version_ = v; }
   LiteRtApiVersion GetLiteRtVersion() const { return litert_version_; }
 
@@ -508,9 +511,10 @@ class LiteRtCompilerPluginT {
   }
 
  private:
-  litert::Expected<litert::Options> opts_ =
+  const LiteRtCompilerContext* ctx_;
+  litert::Expected<litert::internal::OptionsWrapper> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
-  litert::Expected<litert::OpaqueOptions> opq_ =
+  litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
   LiteRtApiVersion litert_version_{LITERT_API_VERSION_MAJOR,
                                    LITERT_API_VERSION_MINOR,
@@ -523,7 +527,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtOptions options) {
   LiteRtPropagateMinLoggerSeverity(env);
 
-  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
+  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   return kLiteRtStatusOk;
 }
 

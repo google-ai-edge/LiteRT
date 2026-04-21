@@ -93,6 +93,14 @@ typedef struct LiteRtCompilerContext {
   // Utility
   LiteRtStatus (*push_op)(LiteRtOpList op_list, LiteRtOp op,
                           LiteRtParamIndex partition_index);
+
+  // Options
+  LiteRtStatus (*get_opaque_options)(LiteRtOptions options,
+                                     LiteRtOpaqueOptions* opaque_options);
+  LiteRtStatus (*find_opaque_options_data)(LiteRtOpaqueOptions options,
+                                           const char* payload_identifier,
+                                           void** payload_data);
+  void (*destroy_options)(LiteRtOptions options);
 } LiteRtCompilerContext;
 
 LiteRtCompilerContext* LrtGetCompilerContext();

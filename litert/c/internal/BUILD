@@ -102,7 +102,11 @@ cc_library(
 cc_library(
     name = "litert_compiler_context_header",
     hdrs = ["litert_compiler_context.h"],
-    visibility = ["//litert:litert_internal_users"],
+    visibility = [
+        "//litert/cc:__subpackages__",
+        "//litert/compiler:__subpackages__",
+        "//litert/vendors:__subpackages__",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
@@ -121,6 +125,25 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
+    ],
+)
+
+cc_library(
+    name = "litert_compiler_context_testonly",
+    testonly = 1,
+    hdrs = ["litert_compiler_context.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":litert_compiler_context",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
     ],
 )
 

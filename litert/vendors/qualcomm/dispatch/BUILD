@@ -53,6 +53,9 @@ litert_dynamic_lib(
     so_name = "libLiteRtDispatch_Qualcomm.so",
     visibility = ["//litert:litert_public"],
     deps = [
+        "//litert/cc/internal:litert_context_wrapper",
+        "//litert/cc/internal:litert_opaque_options_wrapper",
+        "//litert/cc/internal:litert_options_wrapper",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",

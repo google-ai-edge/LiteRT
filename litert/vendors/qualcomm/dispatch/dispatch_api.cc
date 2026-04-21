@@ -31,6 +31,8 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -93,18 +95,17 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
       litert::Error(kLiteRtStatusErrorNotFound, "Null Qualcomm options");
 
   if (TheOptions) {
-    LiteRtOpaqueOptions opaque_options;
-    if (LiteRtGetOpaqueOptions(TheOptions, &opaque_options) ==
-        kLiteRtStatusOk) {
-      void* options_data = nullptr;
-      if (LiteRtFindOpaqueOptionsData(opaque_options,
-                                      LrtQualcommOptionsGetIdentifier(),
-                                      &options_data) == kLiteRtStatusOk &&
-          options_data != nullptr) {
+    litert::internal::OptionsWrapper internal_options(
+        litert::internal::ContextWrapper(runtime_context), TheOptions);
+    auto opaque_options_result = internal_options.GetOpaqueOptions();
+    if (opaque_options_result) {
+      auto payload_data_result = opaque_options_result->FindOpaqueOptions(
+          LrtQualcommOptionsGetIdentifier());
+      if (payload_data_result && payload_data_result.Value() != nullptr) {
         LrtQualcommOptions options_handle = nullptr;
         if (LrtCreateQualcommOptionsFromToml(
-                reinterpret_cast<const char*>(options_data), &options_handle) ==
-            kLiteRtStatusOk) {
+                reinterpret_cast<const char*>(payload_data_result.Value()),
+                &options_handle) == kLiteRtStatusOk) {
           qnn_opts = litert::qualcomm::QualcommOptions(options_handle);
         }
       }
