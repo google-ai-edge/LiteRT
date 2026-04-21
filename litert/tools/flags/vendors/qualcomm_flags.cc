@@ -87,13 +87,6 @@ ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
           "platforms.");
 
-ABSL_FLAG(bool, qualcomm_use_htp_preference, false,
-          "Whether to transform a litert op into the HTP prefered pattern.");
-
-ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
-          "Whether to automatically convert a quantized int16 model into a "
-          "quantized uin16 model.");
-
 ABSL_FLAG(bool, qualcomm_use_int64_bias_as_int32, true,
           "Whether to convert bias tensors of FullyConnected "
           "and Conv2D Ops from int64 to int32. Defaults to true.");
@@ -487,14 +480,6 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto log_level = absl::GetFlag(FLAGS_qualcomm_log_level);
   opts.SetLogLevel(log_level);
-
-  const auto use_htp_preference =
-      absl::GetFlag(FLAGS_qualcomm_use_htp_preference);
-  opts.SetUseHtpPreference(use_htp_preference);
-
-  const auto use_qint16_as_quint16 =
-      absl::GetFlag(FLAGS_qualcomm_use_qint16_as_quint16);
-  opts.SetUseQint16AsQuint16(use_qint16_as_quint16);
 
   const auto use_int64_bias_as_int32 =
       absl::GetFlag(FLAGS_qualcomm_use_int64_bias_as_int32);

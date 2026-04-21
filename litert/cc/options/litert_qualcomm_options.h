@@ -118,14 +118,6 @@ class QualcommOptions {
   void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
   DspPerformanceMode GetDspPerformanceMode();
 
-  void SetUseHtpPreference(bool use_htp_preference);
-  bool GetUseHtpPreference();
-
-  /// @brief This option controls whether to convert a quantized int16 model to
-  /// a quantized uint16 model. Defaults to `false`.
-  void SetUseQint16AsQuint16(bool use_qin16_as_quint16);
-  bool GetUseQint16AsQuint16();
-
   /// @brief This option controls whether to convert bias tensors of
   /// FullyConnected and Conv2D Ops from int64 to int32. Defaults to `true`.
   void SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32);
