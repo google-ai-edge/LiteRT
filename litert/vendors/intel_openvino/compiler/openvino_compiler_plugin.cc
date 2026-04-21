@@ -215,6 +215,12 @@ struct LiteRtCompiledResultT {
 LiteRtStatus LiteRtGetCompiledResultByteCode(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex byte_code_idx,
     const void** byte_code, size_t* byte_code_size) {
+  if (!compiled_result || !byte_code || !byte_code_size) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (byte_code_idx >= compiled_result->byte_code.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
   const char* raw_data_ptr = compiled_result->byte_code[byte_code_idx].data();
   *byte_code = static_cast<void*>(const_cast<char*>(raw_data_ptr));
   *byte_code_size = compiled_result->byte_code[byte_code_idx].length();
@@ -225,6 +231,9 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex call_idx,
     const void** call_info, size_t* call_info_size,
     LiteRtParamIndex* byte_code_idx) {
+  if (!compiled_result || !call_info || !call_info_size || !byte_code_idx) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   if (call_idx >= compiled_result->graph_names.size()) {
     return kLiteRtStatusErrorIndexOOB;
   }
@@ -239,6 +248,9 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
 LiteRtStatus LiteRtGetNumCompiledResultCalls(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_calls) {
+  if (!compiled_result || !num_calls) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   *num_calls = compiled_result->graph_names.size();
   return kLiteRtStatusOk;
 }

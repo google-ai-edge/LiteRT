@@ -170,34 +170,36 @@ cc_test(
         "dispatch_api_openvino_test.cc",
     ],
     copts = ["-fexceptions"],
+    data = [
+        ":libLiteRtDispatch_IntelOpenvino.so",
+        "@intel_openvino//:openvino_libs",
+        #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
+        #"//litert/test:testdata/ov_model_add1d_FP32.blob",
+    ],
+    env = select({
+        "//litert:linux": {
+            "LD_LIBRARY_PATH": "external/intel_openvino/openvino/runtime/lib/intel64",
+        },
+        "//conditions:default": {},
+    }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
-    #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
-    #data = [
-    #    "//litert/test:testdata/ov_model_add1d_FP32.blob",
-    #],
     linkopts = litert_android_linkopts(),
     linkstatic = 1,
     tags = [
         "manual",
         "no-remote-exec",
-        "no_oss",
         "notap",
     ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_context_testonly",
-        "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_environment",
         "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/core:filesystem_testonly",
-        "//litert/test:common",
         "//litert/test:matchers",
-        "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
