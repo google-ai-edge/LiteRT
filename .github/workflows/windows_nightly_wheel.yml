@@ -51,7 +51,7 @@ jobs:
 
       - name: Set NIGHTLY_RELEASE_DATE
         run: |
-          $date = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([System.DateTime]::UtcNow, 'America/Los_Angeles').ToString('yyyyMMdd')
+          $date = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([System.DateTime]::UtcNow, 'Pacific Standard Time').ToString('yyyyMMdd')
           echo "NIGHTLY_RELEASE_DATE=$date" >> $env:GITHUB_ENV
 
       - name: Configure tensorflow & python path
@@ -80,12 +80,12 @@ jobs:
           echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
           # D: is faster than C: for I/O.
-          $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
-          echo "BAZEL_OUTPUT_BASE=D:/w-$SHORT_SHA" >> "$env:GITHUB_ENV"
+          echo "BAZEL_OUTPUT_USER_ROOT=D:/.cache/bazel" >> "$env:GITHUB_ENV"
+
 
       - name: Clean build outputs if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
-        run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
+        run: bazel clean --expunge --output_user_root="$env:BAZEL_OUTPUT_USER_ROOT"
 
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
@@ -108,7 +108,7 @@ jobs:
 
       - name: Set BAZEL_CONFIG_FLAGS for Cache
         run: |
-          $CacheDir = Join-Path $env:USERPROFILE ".cache" "bazel-windows"
+          $CacheDir = Join-Path $env:USERPROFILE (Join-Path ".cache" "bazel-windows")
           echo "BAZEL_CONFIG_FLAGS=--disk_cache=$CacheDir" >> $env:GITHUB_ENV
 
       - name: Build LiteRT wheel for Windows

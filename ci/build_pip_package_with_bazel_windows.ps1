@@ -19,10 +19,10 @@ function Convert-WslPathToWindows {
     [string]$Path
   )
   if ($Path -match '^/mnt/([a-zA-Z])/(.*)$') {
-    return ("$($matches[1].ToUpper()):\" + ($matches[2] -replace '/', '\'))
+    return "$($matches[1].ToUpper()):\$($matches[2] -replace '/', '\')"
   }
   if ($Path -match '^\\\\wsl\\\$\\[^\\]+\\mnt\\([a-zA-Z])\\(.*)$') {
-    return ("$($matches[1].ToUpper()):\" + $matches[2])
+    return "$($matches[1].ToUpper()):\$($matches[2])"
   }
   return $Path
 }
@@ -69,7 +69,12 @@ function Get-BazelInfo {
   Write-Host "Getting Bazel info: $Key..."
   $ProcInfo = New-Object System.Diagnostics.ProcessStartInfo
   $ProcInfo.FileName = $Bazel
-  $ProcInfo.Arguments = "info $Key"
+  if ($env:BAZEL_OUTPUT_USER_ROOT) {
+    $ProcInfo.Arguments = "--output_user_root=$($env:BAZEL_OUTPUT_USER_ROOT) info $Key"
+  }
+  else {
+    $ProcInfo.Arguments = "info $Key"
+  }
   $ProcInfo.RedirectStandardOutput = $true
   $ProcInfo.RedirectStandardError = $true
   $ProcInfo.UseShellExecute = $false
@@ -138,10 +143,27 @@ if ($LASTEXITCODE -ne 0) {
   Write-Warning "Failed to check Bazel version. Exit code: $LASTEXITCODE"
 }
 
+if ($env:BAZEL_OUTPUT_USER_ROOT) {
+  $env:BAZEL_OUTPUT_USER_ROOT = Convert-WslPathToWindows $env:BAZEL_OUTPUT_USER_ROOT
+  if ($env:BAZEL_OUTPUT_USER_ROOT -match '^D:' -and -not (Test-Path 'D:\')) {
+    Write-Host 'D: drive not found, redirecting BAZEL_OUTPUT_USER_ROOT to C: drive.'
+    $env:BAZEL_OUTPUT_USER_ROOT = $env:BAZEL_OUTPUT_USER_ROOT -replace '^D:', 'C:'
+  }
+  $OutputUserRootParent = Split-Path -Parent $env:BAZEL_OUTPUT_USER_ROOT
+  if (-not (Test-Path $OutputUserRootParent)) {
+    New-Item -ItemType Directory -Path $OutputUserRootParent -Force | Out-Null
+  }
+}
+
 # Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
 Write-Host 'Fetching dependencies...'
+$BazelStartupOpts = if ($env:BAZEL_OUTPUT_USER_ROOT) {
+  @("--output_user_root=$($env:BAZEL_OUTPUT_USER_ROOT)")
+} else {
+  @()
+}
 $FetchArgs = @('fetch', '--config=windows', '--repo_env=USE_PYWRAP_RULES=True', '//ci/tools/python/wheel:litert_wheel')
-& $Bazel $FetchArgs
+& $Bazel $BazelStartupOpts $FetchArgs
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel fetch failed with exit code $LASTEXITCODE"
 }
@@ -368,7 +390,7 @@ if ($env:USE_LOCAL_TF -eq 'true') { $BazelArgs += '--config=use_local_tf' }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 Write-Host 'Starting bazel build...'
-& $Bazel @BazelArgs //ci/tools/python/wheel:litert_wheel
+& $Bazel $BazelStartupOpts @BazelArgs //ci/tools/python/wheel:litert_wheel
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel build failed with exit code $LASTEXITCODE"
 }
