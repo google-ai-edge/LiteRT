@@ -12,6 +12,9 @@
 
 namespace qnn {
 
+OpWrapper CreateConvertOp(const TensorWrapper& input,
+                          const TensorWrapper& output);
+
 OpWrapper CreateQuantizeOp(const TensorWrapper& input,
                            const TensorWrapper& output);
 

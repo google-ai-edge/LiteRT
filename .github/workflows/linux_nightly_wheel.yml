@@ -19,7 +19,9 @@ concurrency:
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
-    runs-on: LiteRT_Linux_x64
+    runs-on: linux-x86-n2-16
+    container:
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
     strategy:
       fail-fast: false # Allow other matrix jobs to continue if one fails
       matrix:
@@ -30,6 +32,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev llvm-18 clang-18
 
       - name: Set up cache keys and bazel output base.
         id: cache-keys
@@ -94,6 +100,7 @@ jobs:
           echo "BAZEL_CONFIG_FLAGS=--disk_cache=$CacheDir" >> "$GITHUB_ENV"
 
       - name: Build and generate wheel
+        shell: bash
         env:
           DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
           CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
@@ -103,12 +110,25 @@ jobs:
           BUILD_CONVERTER: ${{ inputs.build_converter }}
         run: |
           export NIGHTLY_RELEASE_DATE=$(TZ='America/Los_Angeles' date +%Y%m%d)
-          if [[ -f "ci/build_pip_package_with_docker.sh" ]]; then
-            chmod +x ci/build_pip_package_with_docker.sh
-            echo "INFO: Running build_pip_package_with_docker.sh. Ensure 'bazel clean --expunge' is called inside the container before the build."
-            ./ci/build_pip_package_with_docker.sh
+          export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
+          export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
+          chmod +x configure.py
+          export PYTHON_BIN_PATH=$(which ${CI_BUILD_PYTHON})
+          export PYTHON_LIB_PATH=$(${CI_BUILD_PYTHON} -c 'import site; print(site.getsitepackages()[0])')
+          export TF_NEED_ROCM=0
+          export TF_NEED_CUDA=0
+          export TF_SET_ANDROID_WORKSPACE=0
+          export CC_OPT_FLAGS='-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
+          python3 configure.py < <(yes "")
+
+          ${CI_BUILD_PYTHON} -m pip install pip setuptools wheel
+
+          if [[ -f "ci/build_pip_package_with_bazel.sh" ]]; then
+            chmod +x ci/build_pip_package_with_bazel.sh
+            echo "INFO: Running build_pip_package_with_bazel.sh. Ensure 'bazel clean --expunge' is called inside the container before the build."
+            ./ci/build_pip_package_with_bazel.sh
           else
-            echo "Error: ci/build_pip_package_with_docker.sh not found!"
+            echo "Error: ci/build_pip_package_with_bazel.sh not found!"
             exit 1
           fi
 
