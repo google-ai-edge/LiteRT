@@ -702,6 +702,7 @@ cc_library(
         "//litert/core:build_stamp",
         "//litert/core:environment",
         "//litert/core:error_reporter",
+        "//litert/core:filesystem",
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",

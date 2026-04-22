@@ -144,6 +144,16 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (!compiler_plugin || !sdk_version) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // No-op implementation for Samsung plugin.
+  *sdk_version = "";
+  return kLiteRtStatusOk;
+}
+
 //
 // Compiled Result Definition
 //
