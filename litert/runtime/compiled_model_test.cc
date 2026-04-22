@@ -14,7 +14,9 @@
 
 #include "litert/runtime/compiled_model.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -27,8 +29,15 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/environment.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
@@ -41,6 +50,7 @@
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -60,6 +70,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+#include "third_party/odml/litert/ml_drift/delegate/buffer_handler_opencl.h"
 #include "tflite/interpreter.h"
 
 namespace litert {
@@ -70,17 +81,7 @@ using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::litert::IsError;
 
-Expected<LiteRtEnvironment> CreateGpuEnabledEnvironment() {
-  LiteRtEnvironment env;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
 
-  LITERT_ASSIGN_OR_RETURN(
-      auto gpu_env,
-      litert::internal::GpuEnvironment::Create(env->GetOptions()));
-  LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
-  return env;
-}
 
 // Creates a tensor buffer of the given tensor, buffer type, and size.
 Expected<LiteRtTensorBufferT*> CreateBufferOfType(
@@ -486,7 +487,44 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   absl::LeakCheckDisabler disable_leak_check;
 
   // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_ptr, CreateGpuEnabledEnvironment());
+  if (!ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL could not be loaded; skipping the test";
+  }
+
+  ml_drift::cl::Environment cl_env;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny context_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.context().context()))));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.queue()->queue()))));
+
+  const std::array<LiteRtEnvOption, 2> environment_options = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagOpenClContext,
+          /*.value=*/context_id,
+      },
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagOpenClCommandQueue,
+          /*.value=*/queue_id,
+      },
+  };
+
+  LiteRtEnvironment env_ptr;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(
+      environment_options.size(), environment_options.data(), &env_ptr));
+
+  LiteRtRegisterTensorBufferHandlers(
+      env_ptr, kLiteRtTensorBufferTypeOpenClBuffer, LiteRtCreateOpenClMemory,
+      LiteRtDestroyOpenClMemory, LiteRtLockOpenClMemory,
+      LiteRtUnlockOpenClMemory, LiteRtClearOpenClMemory,
+      LiteRtImportOpenClMemory, kLiteRtEnvOptionTagOpenClContext,
+      kLiteRtEnvOptionTagOpenClCommandQueue);
 
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);

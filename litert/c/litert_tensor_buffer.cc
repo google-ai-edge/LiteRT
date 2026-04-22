@@ -172,10 +172,10 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
   if (!tensor_type || !buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
-                          LiteRtTensorBufferT::CreateFromOpenClMemory(
-                              env, *tensor_type, buffer_type, cl_mem_addr,
-                              opencl_buffer_size, deallocator));
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateFromOpenClMemory(
+          env, *tensor_type, buffer_type, cl_mem_addr, opencl_buffer_size));
   *buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 #else
@@ -190,9 +190,8 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto opencl_memory, tensor_buffer->GetOpenClMemory());
-
-  *cl_mem_addr = opencl_memory->GetMemoryPtr();
+  LITERT_ASSIGN_OR_RETURN(auto cl_mem, tensor_buffer->GetOpenClMemory());
+  *cl_mem_addr = cl_mem;
   return kLiteRtStatusOk;
 #else
   return kLiteRtStatusErrorUnsupported;

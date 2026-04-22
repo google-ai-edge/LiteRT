@@ -52,10 +52,6 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
-#if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/open_cl_sync.h"
-#include <CL/cl.h>
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 #include "tflite/schema/schema_generated.h"
 
 namespace weight_loader {
@@ -574,11 +570,6 @@ absl::Status EnsureOpenClTensorBuffer(LiteRtRuntimeContext* runtime_context,
         "LiteRtEnvironment must not be null for OpenCL access");
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto* gpu_env, env->GetGpuEnvironment());
-
-  LITERT_ASSIGN_OR_RETURN(std::vector<uint8_t> data,
-                          ReadWeightSlice(info, path));
-
   LiteRtTensorBuffer device_buffer;
   LITERT_RETURN_IF_ERROR(runtime_context->create_managed_tensor_buffer(
       env, info.gpu_buffer_type, &info.tensor_type, info.length,
@@ -586,19 +577,18 @@ absl::Status EnsureOpenClTensorBuffer(LiteRtRuntimeContext* runtime_context,
   entry.access->SetDeviceBuffer(LiteRtTensorBufferPtr(
       device_buffer, LiteRtTensorBufferDeleter{runtime_context}));
 
-  cl_mem cl_memory;
-  LITERT_RETURN_IF_ERROR(runtime_context->get_tensor_buffer_opencl_memory(
-      entry.access->GetDeviceBuffer(), &cl_memory));
+  void* host_ptr;
+  LITERT_RETURN_IF_ERROR(runtime_context->lock_tensor_buffer(
+      entry.access->GetDeviceBuffer(), &host_ptr,
+      kLiteRtTensorBufferLockModeWrite));
 
-  LiteRtRankedTensorType tensor_type_c = info.tensor_type;
-  LiteRtStatus upload_status = ::litert::internal::LiteRtGpuMemoryUpload(
-      gpu_env, &tensor_type_c, info.gpu_buffer_type, info.length, data.data(),
-      cl_memory);
-  if (upload_status != kLiteRtStatusOk) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to upload OpenCL buffer (status=%d)",
-                        static_cast<int>(upload_status)));
-  }
+  LITERT_ASSIGN_OR_RETURN(std::vector<uint8_t> data,
+                          ReadWeightSlice(info, path));
+  std::memcpy(host_ptr, data.data(), data.size());
+
+  LITERT_RETURN_IF_ERROR(
+      runtime_context->unlock_tensor_buffer(entry.access->GetDeviceBuffer()));
+
   return absl::OkStatus();
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT

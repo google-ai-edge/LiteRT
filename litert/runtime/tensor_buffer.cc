@@ -23,7 +23,10 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
+
+#include "litert/c/litert_opencl_types.h"
 
 #ifndef LITERT_DISABLE_CPU
 #include "xnnpack.h"  // from @XNNPACK
@@ -438,13 +441,19 @@ LiteRtTensorBufferT::CreateManagedFastRpcBuffer(
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-    LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t buffer_size,
-    LiteRtOpenClDeallocator deallocator) {
+    LiteRtTensorBufferType buffer_type, LiteRtClMem buffer,
+    size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  LITERT_ASSIGN_OR_RETURN(
+      auto custom_buffer,
+      litert::internal::CustomBuffer::Wrap(env, tensor_type, buffer_type,
+                                           buffer, buffer_size, packed_size));
+
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
-  tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
-      gpu_env, tensor_type, buffer_type, buffer, buffer_size, deallocator);
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(custom_buffer));
   return tensor_buffer;
 }
 
@@ -452,14 +461,18 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
-  LITERT_ASSIGN_OR_RETURN(auto buffer,
-                          litert::internal::OpenClMemory::Alloc(
-                              gpu_env, tensor_type, buffer_type, buffer_size));
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, tensor_type, buffer_type, buffer_size, packed_size);
+  if (!buffer) {
+    return Unexpected(buffer.Error());
+  }
+
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
-  tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
-      std::move(buffer));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(*buffer));
   return tensor_buffer;
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -863,69 +876,6 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetFastRpcBuffer() {
 }
 
 #if LITERT_HAS_OPENCL_SUPPORT
-Expected<litert::internal::OpenClMemory*>
-LiteRtTensorBufferT::GetOpenClMemory() {
-  if (IsOpenClMemory(buffer_type_)) {
-    return &std::get<litert::internal::OpenClMemory>(buffer_);
-  }
-#if LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
-  if (buffer_type_ == kLiteRtTensorBufferTypeAhwb) {
-    if (auto it =
-            memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
-        it != memory_backed_buffers_.end()) {
-      BufferVariant& memory_backed_buffer = it->second;
-      return &std::get<litert::internal::OpenClMemory>(memory_backed_buffer);
-    }
-    // Create a new CL buffer from the AHWB buffer if not found.
-    litert::internal::AhwbBuffer ahwb_buffer = {
-        .ahwb = std::get<AhwbBuffer>(buffer_).ahwb};
-
-    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env_));
-    LITERT_ASSIGN_OR_RETURN(litert::internal::OpenClMemory cl_buffer_from_ahwb,
-                            litert::internal::OpenClMemory::AllocFromAhwbBuffer(
-                                gpu_env, tensor_type_, ahwb_buffer));
-
-    auto [it, inserted] = memory_backed_buffers_.insert(
-        {kLiteRtTensorBufferTypeOpenClBuffer, std::move(cl_buffer_from_ahwb)});
-    LITERT_RETURN_IF_ERROR(
-        inserted == true,
-        Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                   "Failed to insert CL buffer into memory backed buffers"));
-    return &std::get<litert::internal::OpenClMemory>(it->second);
-  }
-#endif
-#if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
-  if (buffer_type_ == kLiteRtTensorBufferTypeGlBuffer) {
-    if (auto it =
-            memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
-        it != memory_backed_buffers_.end()) {
-      BufferVariant& memory_backed_buffer = it->second;
-      return &std::get<litert::internal::OpenClMemory>(memory_backed_buffer);
-    }
-    // Create a new CL buffer from the GL buffer if not found.
-    litert::internal::GlBuffer& gl_buffer =
-        std::get<litert::internal::GlBuffer>(buffer_);
-    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env_));
-    LITERT_ASSIGN_OR_RETURN(
-        litert::internal::OpenClMemory cl_buffer_from_gl_buffer,
-        litert::internal::OpenClMemory::AllocFromGlBuffer(gpu_env, tensor_type_,
-                                                          gl_buffer));
-    auto [it, inserted] =
-        memory_backed_buffers_.insert({kLiteRtTensorBufferTypeOpenClBuffer,
-                                       std::move(cl_buffer_from_gl_buffer)});
-    LITERT_RETURN_IF_ERROR(
-        inserted == true,
-        Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                   "Failed to insert CL buffer into memory backed buffers"));
-    return &std::get<litert::internal::OpenClMemory>(it->second);
-  }
-#endif
-  return Unexpected(
-      kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeOpenClBuffer),
-                      BufferTypeToString(buffer_type_)));
-}
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -977,13 +927,89 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
 
 Expected<litert::internal::CustomBuffer*>
 LiteRtTensorBufferT::GetCustomBuffer() {
-  if (IsWebGpuMemory(buffer_type_) || IsVulkanMemory(buffer_type_) ||
-      IsMetalMemory(buffer_type_) || IsUserCustomBuffer(buffer_type_)) {
-    return &std::get<litert::internal::CustomBuffer>(buffer_);
+  if (auto* custom_buffer =
+          std::get_if<litert::internal::CustomBuffer>(&buffer_)) {
+    return custom_buffer;
   }
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "Unexpected tensor buffer type");
 }
+
+#if LITERT_HAS_OPENCL_SUPPORT
+Expected<LiteRtClMem> LiteRtTensorBufferT::GetOpenClMemory() {
+  if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBuffer ||
+      buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
+      buffer_type_ == kLiteRtTensorBufferTypeOpenClTexture ||
+      buffer_type_ == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
+      buffer_type_ == kLiteRtTensorBufferTypeOpenClImageBuffer ||
+      buffer_type_ == kLiteRtTensorBufferTypeOpenClImageBufferFp16 ||
+      buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
+    LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+    return static_cast<LiteRtClMem>(custom_buffer->raw_handle());
+  }
+
+#if LITERT_HAS_OPENGL_SUPPORT
+  if (buffer_type_ == kLiteRtTensorBufferTypeGlBuffer) {
+    if (auto it =
+            memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+        it != memory_backed_buffers_.end()) {
+      BufferVariant& memory_backed_buffer = it->second;
+      return std::get<litert::internal::OpenClMemory>(memory_backed_buffer)
+          .GetMemoryPtr();
+    }
+    // Create a new CL buffer from the GL buffer if not found.
+    litert::internal::GlBuffer& gl_buffer =
+        std::get<litert::internal::GlBuffer>(buffer_);
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env_));
+    LITERT_ASSIGN_OR_RETURN(
+        litert::internal::OpenClMemory cl_buffer_from_gl_buffer,
+        litert::internal::OpenClMemory::AllocFromGlBuffer(gpu_env, tensor_type_,
+                                                          gl_buffer));
+
+    auto [it, inserted] =
+        memory_backed_buffers_.insert({kLiteRtTensorBufferTypeOpenClBuffer,
+                                       std::move(cl_buffer_from_gl_buffer)});
+    LITERT_RETURN_IF_ERROR(
+        inserted == true,
+        Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Failed to insert OpenCL buffer into memory backed buffers"));
+    return std::get<litert::internal::OpenClMemory>(it->second).GetMemoryPtr();
+  }
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_AHWB_SUPPORT
+  if (buffer_type_ == kLiteRtTensorBufferTypeAhwb) {
+    if (auto it =
+            memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+        it != memory_backed_buffers_.end()) {
+      BufferVariant& memory_backed_buffer = it->second;
+      return std::get<litert::internal::OpenClMemory>(memory_backed_buffer)
+          .GetMemoryPtr();
+    }
+    // Create a new CL buffer from the AHWB buffer if not found.
+    litert::internal::AhwbBuffer ahwb_buffer = {
+        .ahwb = std::get<AhwbBuffer>(buffer_).ahwb};
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env_));
+    LITERT_ASSIGN_OR_RETURN(litert::internal::OpenClMemory cl_buffer_from_ahwb,
+                            litert::internal::OpenClMemory::AllocFromAhwbBuffer(
+                                gpu_env, tensor_type_, ahwb_buffer));
+
+    auto [it, inserted] = memory_backed_buffers_.insert(
+        {kLiteRtTensorBufferTypeOpenClBuffer, std::move(cl_buffer_from_ahwb)});
+    LITERT_RETURN_IF_ERROR(
+        inserted == true,
+        Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Failed to insert OpenCL buffer into memory backed buffers"));
+    return std::get<litert::internal::OpenClMemory>(it->second).GetMemoryPtr();
+  }
+#endif  // LITERT_HAS_AHWB_SUPPORT
+
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "Cannot get OpenCL memory from this tensor buffer type");
+}
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_RETURN_IF_ERROR(is_locked_ == false,
@@ -1025,23 +1051,6 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
       LITERT_ASSIGN_OR_ABORT(auto fastrpc_buffer, GetFastRpcBuffer());
       return fastrpc_buffer.first;
     }
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClTexture:
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClBufferPacked: {
-#if LITERT_HAS_OPENCL_SUPPORT
-      LITERT_ASSIGN_OR_ABORT(auto opencl_memory, GetOpenClMemory());
-      LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              opencl_memory->Lock<float>(mode));
-      return host_memory_ptr;
-#else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "OpenCL buffers are not supported");
-#endif  // LITERT_HAS_OPENCL_SUPPORT
-    }
     case kLiteRtTensorBufferTypeGlBuffer: {
 #if LITERT_HAS_OPENGL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(auto gl_buffer, GetGlBuffer());
@@ -1053,6 +1062,13 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
                         "OpenGL buffers are not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
     }
+    case kLiteRtTensorBufferTypeOpenClBuffer:
+    case kLiteRtTensorBufferTypeOpenClBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClTexture:
+    case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClBufferPacked:
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuTexture:
@@ -1106,21 +1122,6 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return {};
 #endif
     }
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClTexture:
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClBufferPacked: {
-#if LITERT_HAS_OPENCL_SUPPORT
-      LITERT_ASSIGN_OR_RETURN(auto opencl_buffer, GetOpenClMemory());
-      return opencl_buffer->Unlock<float>();
-#else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "OpenCL buffers are not supported");
-#endif  // LITERT_HAS_OPENCL_SUPPORT
-    }
     case kLiteRtTensorBufferTypeGlBuffer: {
 #if LITERT_HAS_OPENGL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(auto gl_buffer, GetGlBuffer());
@@ -1130,6 +1131,13 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
                         "OpenGL buffers are not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
     }
+    case kLiteRtTensorBufferTypeOpenClBuffer:
+    case kLiteRtTensorBufferTypeOpenClBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClTexture:
+    case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClBufferPacked:
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuTexture:
@@ -1176,15 +1184,7 @@ Expected<void> LiteRtTensorBufferT::Clear() {
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
     case kLiteRtTensorBufferTypeOpenClImageBuffer:
     case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClBufferPacked: {
-#if LITERT_HAS_OPENCL_SUPPORT
-      LITERT_ASSIGN_OR_RETURN(auto opencl_buffer, GetOpenClMemory());
-      return opencl_buffer->Clear();
-#else
-      return Unexpected(kLiteRtStatusErrorUnsupported,
-                        "OpenCL buffers are not supported");
-#endif  // LITERT_HAS_OPENCL_SUPPORT
-    }
+    case kLiteRtTensorBufferTypeOpenClBufferPacked:
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuTexture:

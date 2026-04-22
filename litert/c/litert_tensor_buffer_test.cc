@@ -20,6 +20,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
+#include "litert/c/internal/litert_tensor_buffer_registry.h" // NOLINT: Required for custom tensor buffer tests.
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
@@ -31,12 +32,7 @@
 #include "litert/runtime/event.h"
 #include "litert/test/matchers.h"
 
-#if LITERT_HAS_OPENCL_SUPPORT
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
-#endif  // LITERT_HAS_OPENCL_SUPPORT
-
 #if LITERT_CUSTOM_TENSOR_BUFFER_TEST
-#include "litert/c/internal/litert_tensor_buffer_registry.h"
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 #include "ml_drift/webgpu/environment.h"  // from @ml_drift
@@ -383,98 +379,6 @@ TEST(TensorBuffer, Event) {
   LiteRtDestroyEnvironment(env);
 }
 
-bool CanLoadOpenCl() {
-#if LITERT_HAS_OPENCL_SUPPORT
-  return tflite::gpu::cl::LoadOpenCL().ok();
-#else
-  return false;
-#endif
-}
-TEST(TensorBuffer, OpenCL) {
-// MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported In msan or tsan";
-#endif
-
-  if (!LiteRtHasOpenClSupport()) {
-    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
-                    "skipping the test";
-  }
-  if (!CanLoadOpenCl()){
-    GTEST_SKIP() << "OpenCL could not be loaded; skipping the test";
-  }
-
-  // Create an option with opencl device id zero. This trick initializes the
-  // OpenCL environment at the LiteRtEnvironment creation time.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtAny null_deivce_id,
-      litert::ToLiteRtAny(litert::LiteRtVariant(INT64_C(0))));
-  const std::array<LiteRtEnvOption, 1> environment_options = {
-      LiteRtEnvOption{
-          /*.tag=*/kLiteRtEnvOptionTagOpenClDeviceId,
-          /*.value=*/null_deivce_id,
-      },
-  };
-  LiteRtEnvironment env;
-  LITERT_ASSERT_OK(LiteRtCreateEnvironment(environment_options.size(),
-                                           environment_options.data(), &env));
-
-  // Use packed buffer to test Clear() easily. Otherwise, downloaded data may
-  // have some garbage values due to strides.
-  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBufferPacked;
-  LiteRtTensorBuffer tensor_buffer;
-  ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
-                                      sizeof(kTensorData), &tensor_buffer),
-      kLiteRtStatusOk);
-
-  LiteRtTensorBufferType buffer_type;
-  ASSERT_EQ(LiteRtGetTensorBufferType(tensor_buffer, &buffer_type),
-            kLiteRtStatusOk);
-  ASSERT_EQ(buffer_type, kTensorBufferType);
-
-  LiteRtRankedTensorType tensor_type;
-  ASSERT_EQ(LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type),
-            kLiteRtStatusOk);
-  ASSERT_EQ(tensor_type.element_type, kLiteRtElementTypeFloat32);
-  ASSERT_EQ(tensor_type.layout.rank, 1);
-  ASSERT_EQ(tensor_type.layout.dimensions[0], kTensorType.layout.dimensions[0]);
-  ASSERT_EQ(tensor_type.layout.has_strides, false);
-
-  size_t size;
-  ASSERT_EQ(LiteRtGetTensorBufferSize(tensor_buffer, &size), kLiteRtStatusOk);
-  ASSERT_EQ(size, sizeof(kTensorData));
-
-  size_t offset;
-  ASSERT_EQ(LiteRtGetTensorBufferOffset(tensor_buffer, &offset),
-            kLiteRtStatusOk);
-  ASSERT_EQ(offset, 0);
-
-  void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
-                                   kLiteRtTensorBufferLockModeWrite),
-            kLiteRtStatusOk);
-  std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
-  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
-                                   kLiteRtTensorBufferLockModeRead),
-            kLiteRtStatusOk);
-  ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
-  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-
-  ASSERT_EQ(LiteRtClearTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
-                                   kLiteRtTensorBufferLockModeRead),
-            kLiteRtStatusOk);
-  std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
-  ASSERT_EQ(std::memcmp(host_mem_addr, zero_data.data(), zero_data.size()), 0);
-  ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-
-  LiteRtDestroyTensorBuffer(tensor_buffer);
-  LiteRtDestroyEnvironment(env);
-}
-
 #if LITERT_HAS_OPENGL_SUPPORT
 TEST(TensorBuffer, GlBuffer) {
 // MSAN does not support GPU tests.
@@ -651,8 +555,9 @@ TEST(TensorBuffer, Vulkan) {
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       .queueFamilyIndex = vk_env.vulkan_env().GetQueue().QueueFamilyIndex()};
   ASSERT_EQ(ml_drift::syrtis::vkCreateCommandPool(
-      vk_env.vulkan_env().GetDevice(), &command_pool_create_info, nullptr,
-      &vk_env.command_pool()), VK_SUCCESS);
+                vk_env.vulkan_env().GetDevice(), &command_pool_create_info,
+                nullptr, &vk_env.command_pool()),
+            VK_SUCCESS);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtAny vulkan_env,
