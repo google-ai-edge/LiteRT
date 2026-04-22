@@ -62,7 +62,8 @@ typedef enum {
   kLiteRtEnvOptionTagAutoRegisterAccelerators = 24,
   // Minimum logger severity for the environment.
   kLiteRtEnvOptionTagMinLoggerSeverity = 25,
-
+  kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel = 26,
+  kLiteRtEnvOptionTagCompilerCacheMaxTotalSize = 27,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
