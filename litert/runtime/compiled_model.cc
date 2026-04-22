@@ -42,6 +42,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_consts.h"
+#include "litert/core/filesystem.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -971,7 +972,13 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     LiteRtOptionsT& options, LiteRtEnvironmentT& env) {
   bool need_reserialization = false;
   compilation_cache_ = MaybeCreateCompilationCache(env);
-  std::optional<uint64_t> model_hash = std::nullopt;
+  std::optional<litert::internal::CompilationCache::CacheKey> cache_key =
+      std::nullopt;
+  std::string model_name = "";
+  if (auto source_path = model.SourcePath()) {
+    model_name = litert::internal::Stem(*source_path);
+  }
+
   // Load the plugins before JIT compilation attempt, so that we can check the
   // cache first.
   auto maybe_compiled_plugins =
@@ -980,12 +987,11 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   // 'kLiteRtEnvOptionTagCompilerPluginLibraryDir'), and we loaded the plugins
   // successfully, we can try to load the model from the cache.
   if (compilation_cache_.has_value()) {
-    Expected<uint64_t> maybe_model_hash =
-        litert::internal::CompilationCache::TryGetModelHash(
-            model, &options, maybe_compiled_plugins);
-    if (maybe_model_hash.HasValue()) {
-      model_hash = maybe_model_hash.Value();
-      if (TryLoadingFromCache(model_hash.value())) {
+    auto maybe_cache_key = litert::internal::CompilationCache::TryGetModelHash(
+        model, &options, maybe_compiled_plugins);
+    if (maybe_cache_key.HasValue()) {
+      cache_key = maybe_cache_key.Value();
+      if (TryLoadingFromCache(cache_key.value(), model_name)) {
         LITERT_LOG(LITERT_INFO,
                    "Flatbuffer model initialized from cached model.");
         return true;
@@ -1006,10 +1012,10 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   LITERT_LOG(LITERT_INFO, "JIT compilation changed model, reserializing...");
 
   LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
-  if (model_hash.has_value()) {
+  if (cache_key.has_value()) {
     LITERT_LOG(LITERT_DEBUG, "Saving JIT compiled model to cache.");
-    LITERT_RETURN_IF_ERROR(
-        compilation_cache_.value().SaveModel(serialized, model_hash.value()));
+    LITERT_RETURN_IF_ERROR(compilation_cache_.value().SaveModel(
+        serialized, cache_key.value(), model_name));
   }
 
   model_buf_ = std::move(serialized);
@@ -1027,13 +1033,15 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   return true;
 }
 
-bool LiteRtCompiledModelT::TryLoadingFromCache(uint64_t model_hash) {
+bool LiteRtCompiledModelT::TryLoadingFromCache(
+    litert::internal::CompilationCache::CacheKey cache_key,
+    absl::string_view model_name) {
   if (!compilation_cache_.has_value()) {
     return false;
   }
   // Check if we compiled this model before.
   Expected<std::optional<LiteRtModelT::Ptr>> maybe_cached_model =
-      compilation_cache_.value().TryLoadModel(model_hash);
+      compilation_cache_.value().TryLoadModel(cache_key, model_name);
   if (!maybe_cached_model) {
     // The model was found in the cache, but failed to load.
     LITERT_LOG(LITERT_WARNING, "Failed to load model from cache: %s",
