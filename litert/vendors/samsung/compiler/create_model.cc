@@ -29,11 +29,13 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/samsung/ai_litecore_manager.h"
+#include "litert/vendors/samsung/compiler/builders/argmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
@@ -52,6 +54,8 @@
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/resizenearestneighbor_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/rms_norm_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/select_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/slice_op_builder.h"
@@ -289,6 +293,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflAdd:
         op_wrapper = BuildAddOp(op);
         break;
+      case kLiteRtOpCodeTflArgMax:
+        op_wrapper = BuildArgMaxOp(op);
+        break;
       case kLiteRtOpCodeTflAveragePool2d:
         op_wrapper = BuildAvgPool2dOp(op);
         break;
@@ -349,6 +356,15 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflHardSwish:
         op_wrapper = BuildHardSwishOp(op);
         break;
+      case kLiteRtOpCodeTflLess:
+        op_wrapper = BuildLessOp(op);
+        break;
+      case kLiteRtOpCodeTflLog:
+        op_wrapper = BuildLogOp(op);
+        break;
+      case kLiteRtOpCodeTflLogicalAnd:
+        op_wrapper = BuildLogicalAndOp(op);
+        break;
       case kLiteRtOpCodeTflLogistic:
         op_wrapper = BuildLogisticOp(op);
         break;
@@ -370,9 +386,15 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflMul:
         op_wrapper = BuildMulOp(op);
         break;
+      case kLiteRtOpCodeTflNotEqual:
+        op_wrapper = BuildNotEqualOp(op);
+        break;
       case kLiteRtOpCodeTflPad:
       case kLiteRtOpCodeTflPadv2:
         op_wrapper = BuildPadOp(op);
+        break;
+      case kLiteRtOpCodeTflPow:
+        op_wrapper = BuildPowOp(op);
         break;
       case kLiteRtOpCodeTflRelu:
         op_wrapper = BuildReLUOp(op);
@@ -388,6 +410,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflResizeBilinear:
         op_wrapper = BuildResizeBilinearOp(op);
+        break;
+      case kLiteRtOpCodeTflResizeNearestNeighbor:
+        op_wrapper = BuildResizeNearestNeighborOp(op);
         break;
       case kLiteRtOpCodeTflRsqrt:
         op_wrapper = BuildRsqrtOp(op);
@@ -434,6 +459,17 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflTransposeConv:
         op_wrapper = BuildTransposeConvOp(op);
         break;
+      case kLiteRtOpCodeShloComposite: {
+        auto composite_opt = GetOptionsAs<CompositeOptions>(op.Get());
+        if (composite_opt &&
+            composite_opt->name == CompositeOptions::kRmsNorm) {
+          op_wrapper = BuildRmsNormOp(op);
+        } else {
+          LITERT_LOG(LITERT_ERROR,
+                     "Unsupported composite operator : ", composite_opt->name);
+        }
+        break;
+      }
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
     }

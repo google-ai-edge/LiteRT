@@ -222,6 +222,20 @@ cc_library(
 )
 
 cc_library(
+    name = "rms_norm_op_builder",
+    srcs = ["rms_norm_op_builder.cc"],
+    hdrs = ["rms_norm_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_op_options",
+    ],
+)
+
+cc_library(
     name = "softmax_op_builder",
     srcs = ["softmax_op_builder.cc"],
     hdrs = ["softmax_op_builder.h"],
@@ -458,5 +472,35 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "argmax_op_builder",
+    srcs = ["argmax_op_builder.cc"],
+    hdrs = ["argmax_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_model",
+    ],
+)
+
+cc_library(
+    name = "resizenearestneighbor_op_builder",
+    srcs = ["resizenearestneighbor_op_builder.cc"],
+    hdrs = ["resizenearestneighbor_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_model",
     ],
 )

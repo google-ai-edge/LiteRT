@@ -23,6 +23,7 @@ add_library(samsung_compiler_plugin SHARED
     compiler_plugin.cc
     compile_model.cc
     create_model.cc
+    builders/argmax_op_builder.cc
     builders/batch_matmul_op_builder.cc
     builders/cast_op_builder.cc
     builders/concat_op_builder.cc
@@ -42,6 +43,8 @@ add_library(samsung_compiler_plugin SHARED
     builders/relu_op_builder.cc
     builders/reshape_op_builder.cc
     builders/resizebilinear_op_builder.cc
+    builders/resizenearestneighbor_op_builder.cc
+    builders/rms_norm_op_builder.cc
     builders/select_op_builder.cc
     builders/selectv2_op_builder.cc
     builders/slice_op_builder.cc

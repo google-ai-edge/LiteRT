@@ -148,4 +148,24 @@ Expected<OpWrapper> BuildFloorDivOp(const Op& op) {
   return BuildElementwiseOp(op, "FloorDiv", 0);
 }
 
+Expected<OpWrapper> BuildLessOp(const Op& op) {
+  return BuildElementwiseOp(op, "Less", 0);
+}
+
+Expected<OpWrapper> BuildLogOp(const Op& op) {
+  return BuildElementwiseOp(op, "Log", 0);
+}
+
+Expected<OpWrapper> BuildPowOp(const Op& op) {
+  return BuildElementwiseOp(op, "Pow", 0);
+}
+
+Expected<OpWrapper> BuildLogicalAndOp(const Op& op) {
+  return BuildElementwiseOp(op, "And", 0);
+}
+
+Expected<OpWrapper> BuildNotEqualOp(const Op& op) {
+  return BuildElementwiseOp(op, "NotEqual", 0);
+}
+
 }  // namespace litert::samsung
