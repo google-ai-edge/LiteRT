@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -204,6 +205,17 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   EXPECT_STREQ(config_id, "UNKNOWN_SDM");
 }
 
+TEST(TestQnnPlugin, GetSDKVersion) {
+  auto plugin = CreatePlugin();
+
+  const char* sdk_version = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  ASSERT_NE(sdk_version, nullptr);
+  EXPECT_FALSE(absl::string_view(sdk_version).empty());
+  LITERT_LOG(LITERT_INFO, "QNN SDK Version: %s", sdk_version);
+}
+
 TEST(TestQnnPlugin, PartitionMulOps) {
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel("one_mul.tflite");
@@ -261,7 +273,7 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   qnn_opts->SetEnableWeightSharing(false);
 
   auto plugin =
-      CreatePlugin(/*runtime_context=*/nullptr, /*env=*/nullptr, opts->Get());
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, opts->Get());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;
