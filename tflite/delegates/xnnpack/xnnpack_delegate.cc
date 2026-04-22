@@ -4966,6 +4966,14 @@ class Subgraph {
           "Not handling ill defined empty reduction in node #%d", node_index);
       return kTfLiteError;
     }
+    if (num_reduction_axes > XNN_MAX_TENSOR_DIMS) {
+      TF_LITE_MAYBE_KERNEL_LOG(
+          logging_context,
+          "unsupported number of reduction axes (%d) in node #%d: "
+          "must be <= %d",
+          num_reduction_axes, node_index, XNN_MAX_TENSOR_DIMS);
+      return kTfLiteError;
+    }
     const TfLiteTensor& output_tensor = tensors[node->outputs->data[0]];
     TF_LITE_ENSURE_STATUS(
         CheckTensorFloat32OrQUInt8Type(delegate, logging_context, output_tensor,
