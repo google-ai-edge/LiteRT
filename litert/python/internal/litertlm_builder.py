@@ -84,6 +84,37 @@ class Metadata:
   dtype: DType
 
 
+def populate_system_metadata(
+    system_metadata: list[Metadata],
+) -> list[Metadata]:
+  """Populates system metadata with default UUID and creation timestamp.
+
+  Args:
+    system_metadata: The list of system metadata.
+
+  Returns:
+    The updated list of system metadata.
+  """
+  system_metadata = [
+      m for m in system_metadata if m.key not in ("uuid", "creation_timestamp")
+  ]
+  system_metadata.append(
+      Metadata(
+          key="uuid",
+          value=str(uuid.uuid4()),
+          dtype=DType.STRING,
+      )
+  )
+  system_metadata.append(
+      Metadata(
+          key="creation_timestamp",
+          value=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+          dtype=DType.STRING,
+      )
+  )
+  return system_metadata
+
+
 @enum.unique
 class TfLiteModelType(enum.Enum):
   """TfLiteModelType enum.
@@ -433,26 +464,7 @@ class LitertLmFileBuilder:
   def build(self, stream: BinaryIO) -> None:
     """Builds the litertlm into the given stream."""
     # Add UUID if not already present, but always generate a new timestamp.
-    system_metadata_keys = {m.key for m in self._system_metadata}
-    if "uuid" not in system_metadata_keys:
-      self._system_metadata.append(
-          Metadata(
-              key="uuid",
-              value=str(uuid.uuid4()),
-              dtype=DType.STRING,
-          )
-      )
-
-    self._system_metadata = [
-        m for m in self._system_metadata if m.key != "creation_timestamp"
-    ]
-    self._system_metadata.append(
-        Metadata(
-            key="creation_timestamp",
-            value=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            dtype=DType.STRING,
-        )
-    )
+    self._system_metadata = populate_system_metadata(self._system_metadata)
 
     stream.seek(0)
     # To simplify the build logic, we reserved the first block for the header.
