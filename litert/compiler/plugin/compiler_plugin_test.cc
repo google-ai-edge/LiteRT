@@ -185,6 +185,17 @@ TEST(CompilerPluginTest, SocModels) {
               ::testing::ElementsAreArray({kTestModels}));
 }
 
+TEST(CompilerPluginTest, SdkVersion) {
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
+
+  auto sdk_version = plugins->front().SdkVersion();
+  ASSERT_TRUE(sdk_version);
+  EXPECT_EQ(*sdk_version, "1.0.0-example");
+}
+
 TEST(CompilerPluginTest, Partition) {
   auto plugins =
       CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
