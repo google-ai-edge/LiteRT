@@ -262,7 +262,7 @@ RUNTIME_TENSOR_BUFFER_HEADER_DEPS = [
     ],
     "//conditions:default": [],
 }) + select({
-    "@org_tensorflow//tensorflow:android": [
+    "//litert:android": [
         ":ahwb_buffer",
     ],
     "//conditions:default": [],
@@ -562,6 +562,7 @@ cc_test(
     srcs = ["magic_number_utils_test.cc"],
     data = ["//litert/test:testdata/model_magic_test.tflite"],
     deps = [
+        ":gpu_environment",
         ":magic_number_utils",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -569,7 +570,6 @@ cc_test(
         "//litert/core:environment",
         "//litert/core/model",
         "//litert/core/model:model_load",
-        "//litert/runtime:gpu_environment",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
