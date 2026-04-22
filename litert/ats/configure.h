@@ -27,6 +27,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/cc/internal/litert_rng.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
@@ -108,7 +109,7 @@ class AtsConf {
 
   // Parse flags into this class and do any global setup needed which depends
   // on said flags.
-  static Expected<AtsConf> ParseFlagsAndDoSetup();
+  static Expected<AtsConf> ParseFlagsAndDoSetup(const litert::Environment& env);
 
   // Get the user-specified seed for param generation for the test logic with
   // the given name. Default is provided if not specified.
@@ -254,7 +255,8 @@ class AtsConf {
                    bool compile_mode, std::string models_out, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,
                    std::string soc_manufacturer, std::string soc_model,
-                   Options&& target_options, Options&& reference_options)
+                   Options&& target_options, Options&& reference_options,
+                   internal::LiteRtOptionsPtr&& target_options_handle)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -276,7 +278,8 @@ class AtsConf {
         soc_manufacturer_(std::move(soc_manufacturer)),
         soc_model_(std::move(soc_model)),
         target_options_(std::move(target_options)),
-        reference_options_(std::move(reference_options)) {
+        reference_options_(std::move(reference_options)),
+        target_options_handle_(std::move(target_options_handle)) {
     // For now, we will provide default settings for data generation.
     // More configurability may be introduced later.
     data_builder_.SetSin();
@@ -305,6 +308,7 @@ class AtsConf {
   std::string soc_model_;
   Options target_options_;
   Options reference_options_;
+  internal::LiteRtOptionsPtr target_options_handle_;
 
   RandomTensorDataBuilder data_builder_;
 };

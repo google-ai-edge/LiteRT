@@ -56,9 +56,12 @@ TEST(MediaTek, DispatchApiWithAhwb) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  options, env.GetHolder()));
 
-  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env.Get(),
-                                     options.Get()),
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, litert_opts.get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -79,8 +82,8 @@ TEST(MediaTek, DispatchApiWithAhwb) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
-                                              options.Get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
+                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 

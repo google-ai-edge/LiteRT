@@ -32,6 +32,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
@@ -48,32 +49,34 @@
 namespace litert::testing {
 namespace {
 
-Expected<AtsConf> NpuInferenceOptions() {
+Expected<AtsConf> NpuInferenceOptions(litert::Environment& env) {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_backend, "npu");
   absl::SetFlag(&FLAGS_soc_manufacturer, "ExampleSocManufacturer");
-  return AtsConf::ParseFlagsAndDoSetup();
+  return AtsConf::ParseFlagsAndDoSetup(env);
 }
 
-Expected<AtsConf> CpuInferenceOptions() {
+Expected<AtsConf> CpuInferenceOptions(litert::Environment& env) {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_backend, "cpu");
-  return AtsConf::ParseFlagsAndDoSetup();
+  return AtsConf::ParseFlagsAndDoSetup(env);
 }
 
-Expected<AtsConf> CompileOptions() {
+Expected<AtsConf> CompileOptions(litert::Environment& env) {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_compile_mode, true);
   absl::SetFlag(&FLAGS_soc_manufacturer, "ExampleSocManufacturer");
   absl::SetFlag(&FLAGS_backend, "npu");
-  return AtsConf::ParseFlagsAndDoSetup();
+  return AtsConf::ParseFlagsAndDoSetup(env);
 }
 
 Expected<void> CheckAts() {
+  LITERT_ASSIGN_OR_RETURN(auto env, litert::Environment::Create({}));
+
   absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
 
   LITERT_ASSIGN_OR_RETURN(auto dir, UniqueTestDirectory::Create());
@@ -84,9 +87,9 @@ Expected<void> CheckAts() {
   AtsInferenceTest::Capture i_cap;
   AtsCompileTest::Capture c_cap;
 
-  LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions());
-  LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions());
-  LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions());
+  LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions(env));
+  LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions(env));
+  LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions(env));
 
   // CPU
   {

@@ -714,6 +714,7 @@ cc_library(
     hdrs = ["//litert/cc:litert_options.h"],
     deps = [
         ":litert_custom_op_kernel",
+        ":litert_environment",
         ":litert_opaque_options",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_intel_openvino_options",
@@ -725,6 +726,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_runtime_proxy_runtimecapi",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_compiler_options",

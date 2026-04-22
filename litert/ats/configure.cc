@@ -33,6 +33,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -169,14 +170,14 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
 
 Expected<std::optional<internal::CompilerPlugin>> ParsePlugin(
     absl::string_view plugin_dir, absl::string_view soc_manufacturer,
-    bool compile_mode, const Options& litert_options) {
+    bool compile_mode, LiteRtOptions litert_options) {
   using R = std::optional<internal::CompilerPlugin>;
   if (!compile_mode) {
     return R(std::nullopt);
   }
   LITERT_ASSIGN_OR_RETURN(auto plugin, internal::CompilerPlugin::FindPlugin(
                                            soc_manufacturer, {plugin_dir},
-                                           nullptr, litert_options.Get()));
+                                           nullptr, litert_options));
   return R(std::move(plugin));
 }
 
@@ -188,7 +189,8 @@ void Setup(const AtsConf& options) {
 
 }  // namespace
 
-Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
+Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup(
+    const litert::Environment& env) {
   LITERT_ASSIGN_OR_RETURN(auto seeds, ParseParamSeedMap());
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
   std::vector<std::regex> neg_re;
@@ -221,16 +223,24 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto target_options, ParseOptions(backend));
   LITERT_ASSIGN_OR_RETURN(auto reference_options, Options::Create());
   reference_options.SetHardwareAccelerators(HwAccelerators::kCpu);
-  LITERT_ASSIGN_OR_RETURN(
-      auto plugin,
-      ParsePlugin(plugin_dir, soc_manufacturer, compile_mode, target_options));
+  internal::LiteRtOptionsPtr target_options_handle;
+  std::optional<internal::CompilerPlugin> plugin;
+  if (compile_mode) {
+    LITERT_ASSIGN_OR_RETURN(target_options_handle,
+                            internal::LiteRtOptionsPtrBuilder::Build(
+                                target_options, env.GetHolder()));
+    LITERT_ASSIGN_OR_RETURN(
+        plugin, ParsePlugin(plugin_dir, soc_manufacturer, compile_mode,
+                            target_options_handle.get()));
+  }
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               data_seed, iters_per_test, std::move(max_ms_per_test_opt),
               fail_on_timeout, dump_report, std::move(csv), compile_mode,
               std::move(models_out), limit, std::move(plugin),
               std::move(soc_manufacturer), std::move(soc_model),
-              std::move(target_options), std::move(reference_options));
+              std::move(target_options), std::move(reference_options),
+              std::move(target_options_handle));
   Setup(res);
   return res;
 }
