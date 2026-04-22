@@ -220,6 +220,53 @@ describe('LiteRt', () => {
       wasmModel.delete();
       wasmModule._free(ptr);
     });
+
+    describe('fallback model', () => {
+      let model: CompiledModel;
+
+      beforeAll(async () => {
+        if (!(await supportsFeature('jspi'))) {
+          pending('This browser does not support JSPI');
+          return;
+        }
+        await resetLiteRt(/* loadFromDirectory= */ true, {jspi: true});
+        model = await loadAndCompile(
+            '/testdata/fallback_model.tflite', {accelerator: 'webgpu'});
+      });
+
+      afterAll(async () => {
+        if (model) {
+          model.delete();
+        }
+        await resetLiteRt();
+      });
+
+      it('loads the model', () => {
+        expect(model).toBeDefined();
+      });
+
+      it('is not fully accelerated (falls back to CPU)', () => {
+        expect(model.isFullyAccelerated).toBeFalse();
+      });
+
+      it('runs successfully with fallback', async () => {
+        const inputData = new Float32Array([1, 2, 3, 4]);
+        const input = new Tensor(inputData, [1, 4]);
+        const outputs = await model.run([input]);
+        expect(outputs).toBeDefined();
+        expect(outputs.length).toBe(1);
+
+        const outputTensor = outputs[0];
+        expect(outputTensor).toBeDefined();
+
+        const outputData = await outputTensor.data();
+        const expectedOutput = new Float32Array([0, 0, 0, 0, 2, 3, 4, 5]);
+        expect(outputData).toEqual(expectedOutput);
+
+        input.delete();
+        outputTensor.delete();
+      });
+    });
   });
 
   it('setDefaultEnvironment() sets the default environment', async () => {
