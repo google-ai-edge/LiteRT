@@ -28,7 +28,9 @@
 #include <sys/system_properties.h>
 #endif  // __ANDROID__
 
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -220,6 +222,20 @@ Expected<void> CompilationCache::SaveModel(
     return Unexpected(kLiteRtStatusErrorFileIO,
                       "Failed to write all data to cache file");
   }
+
+  // Case 1 Cleanup: Remove old content directories for named models.
+  if (!model_name.empty()) {
+    LITERT_ASSIGN_OR_RETURN(auto inventory, BuildInventory());
+    for (const auto& entry : inventory) {
+      if (entry.model_id == model_name &&
+          entry.content_hash != cache_key.content_hash) {
+        std::string dir_path = litert::internal::Join(
+            {cache_root_path_, model_name, absl::StrCat(entry.content_hash)});
+        LITERT_RETURN_IF_ERROR(RmDir(dir_path));
+      }
+    }
+  }
+
   return Expected<void>();
 }
 
@@ -249,5 +265,55 @@ Expected<std::optional<LiteRtModelT::Ptr>> CompilationCache::TryLoadModel(
 
 CompilationCache::CompilationCache(absl::string_view cache_root_path)
     : cache_root_path_(cache_root_path) {}
+
+Expected<std::vector<CompilationCache::CacheEntry>>
+CompilationCache::BuildInventory() const {
+  LITERT_ASSIGN_OR_RETURN(auto maybe_files, RecursiveListDir(cache_root_path_));
+
+  std::vector<CacheEntry> inventory;
+  for (const auto& file_path : maybe_files) {
+    auto maybe_rel = Relative(file_path, cache_root_path_);
+    if (!maybe_rel) {
+      continue;
+    }
+    std::string rel_path = std::move(*maybe_rel);
+
+    std::vector<absl::string_view> parts = absl::StrSplit(rel_path, '/');
+    if (parts.size() != 3) {
+      continue;
+    }
+
+    absl::string_view model_id = parts[0];
+    absl::string_view content_hash_str = parts[1];
+    absl::string_view config_hash_str = parts[2];
+
+    size_t last_dot = config_hash_str.find_last_of('.');
+    if (last_dot != absl::string_view::npos) {
+      config_hash_str = config_hash_str.substr(0, last_dot);
+    }
+
+    uint64_t content_hash = 0;
+    uint64_t config_hash = 0;
+
+    if (!absl::SimpleAtoi(content_hash_str, &content_hash) ||
+        !absl::SimpleAtoi(config_hash_str, &config_hash)) {
+      continue;
+    }
+
+    LITERT_ASSIGN_OR_RETURN(size_t size, Size(file_path));
+    LITERT_ASSIGN_OR_RETURN(auto mtime, GetLastWriteTime(file_path));
+
+    inventory.push_back({
+        .path = file_path,
+        .size = size,
+        .last_modified = mtime,
+        .model_id = std::string(model_id),
+        .content_hash = content_hash,
+        .config_hash = config_hash,
+    });
+  }
+
+  return inventory;
+}
 
 }  // namespace litert::internal
