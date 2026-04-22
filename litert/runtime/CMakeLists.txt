@@ -18,7 +18,12 @@ cmake_minimum_required(VERSION 3.20)
 set(LITERT_RUNTIME_SOURCES
     accelerator_registry.cc
     accelerators/auto_registration.cc
+    accelerators/cpu_registry.cc
     accelerators/dispatch/dispatch_accelerator.cc
+    accelerators/gpu_registry.cc
+    accelerators/npu_registry.cc
+    accelerators/registration_helper.cc
+    accelerators/webnn_registry.cc
     accelerators/xnnpack/xnnpack_accelerator.cc
     ahwb_buffer.cc
     ahwb_wrapper.cc

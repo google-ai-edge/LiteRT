@@ -29,7 +29,6 @@ set(LITERT_C_INTERNAL_HEADERS
     internal/litert_runtime_c_api.h
     internal/litert_runtime_context.h
     internal/litert_scheduling_info.h
-    internal/litert_static_accelerator_registry.h
     internal/litert_tensor_buffer_registry.h
 )
 
@@ -40,7 +39,6 @@ set(LITERT_C_INTERNAL_SOURCES
     internal/litert_delegate_wrapper.cc
     internal/litert_external_litert_buffer_context.cc
     internal/litert_runtime_context.cc
-    internal/litert_static_accelerator_registry.cc
     internal/litert_tensor_buffer_registry.cc
 )
 

@@ -537,21 +537,6 @@ _HEADER_FILES_FOR_SHARED_LIB = [
 
 exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB)
 
-cc_library(
-    name = "litert_static_accelerator_registry",
-    srcs = ["litert_static_accelerator_registry.cc"],
-    hdrs = ["litert_static_accelerator_registry.h"],
-    visibility = [
-        "//litert/runtime/accelerators:__subpackages__",
-        "//third_party/odml/litert/ml_drift:__subpackages__",
-    ],
-    deps = [
-        ":litert_accelerator_def",
-        "//litert/c:litert_common",
-    ],
-    alwayslink = 1,
-)
-
 filegroup(
     name = "internal_headers",
     srcs = _HEADER_FILES_FOR_SHARED_LIB,
