@@ -108,7 +108,9 @@ cc_library(
         "//litert/vendors:__subpackages__",
     ],
     deps = [
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
     ],
@@ -120,7 +122,9 @@ cc_library(
     hdrs = ["litert_compiler_context.h"],
     visibility = ["//litert:litert_internal_users"],
     deps = [
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -137,7 +141,9 @@ cc_library(
     visibility = ["//litert:litert_public"],
     deps = [
         ":litert_compiler_context",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -480,6 +486,23 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
+    ],
+)
+
+cc_library(
+    name = "litert_logging_helper_with_compiler_context",
+    srcs = ["litert_logging_helper_with_compiler_context.cc"],
+    hdrs = ["litert_logging_helper_with_compiler_context.h"],
+    visibility = [
+        "//litert/runtime/accelerators/gpu:__pkg__",
+        "//litert/vendors:__subpackages__",
+    ],
+    deps = [
+        ":litert_compiler_context_header",
+        ":litert_logging",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
     ],
 )
 

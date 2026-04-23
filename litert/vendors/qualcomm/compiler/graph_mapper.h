@@ -20,7 +20,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
@@ -32,10 +32,10 @@ namespace litert::qnn {
 // to QNN Graphs.
 class GraphMapper {
  public:
-  GraphMapper(LiteRtSubgraph subgraph, QnnManager& qnn,
-              Qnn_ContextHandle_t context_handle,
+  GraphMapper(const LiteRtCompilerContext* ctx, LiteRtSubgraph subgraph,
+              QnnManager& qnn, Qnn_ContextHandle_t context_handle,
               Qnn_ProfileHandle_t profile_handle)
-      : subgraph_(Subgraph(subgraph)),
+      : subgraph_(litert::compiler::Subgraph(ctx, subgraph)),
         qnn_(qnn),
         context_handle_(context_handle),
         profile_handle_(profile_handle) {}
@@ -45,7 +45,7 @@ class GraphMapper {
   Qnn_GraphHandle_t& QnnGraph();
 
   // CC Convenience Accessors
-  const Subgraph& Graph() const { return subgraph_; }
+  const litert::compiler::Subgraph& Graph() const { return subgraph_; }
 
   // Can implementation handle given LiteRtSubgraph topology (see comment at
   // bottom of file).
@@ -72,7 +72,7 @@ class GraphMapper {
   }
 
  private:
-  const Subgraph subgraph_;
+  const litert::compiler::Subgraph subgraph_;
 
   // Set of all outputs of the graph.
   absl::flat_hash_set<LiteRtTensor> graph_outpus_;
