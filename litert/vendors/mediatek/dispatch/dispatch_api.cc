@@ -25,7 +25,7 @@
 #endif
 
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
@@ -62,9 +62,10 @@ namespace mediatek {
 // /////////////////////////////////////////////////////////////////////////////
 
 std::optional<std::string> GetSharedLibraryDir(
+    const LiteRtRuntimeContext* runtime_context,
     LiteRtEnvironmentOptions environment_options) {
   LiteRtAny dispatch_lib_dir_any;
-  auto status = LiteRtGetEnvironmentOptionsValue(
+  auto status = runtime_context->get_environment_options_value(
       environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
       &dispatch_lib_dir_any);
   if (status != kLiteRtStatusOk) {
@@ -79,9 +80,10 @@ LiteRtStatus LiteRtInitialize(const LiteRtRuntimeContext* runtime_context,
                               LiteRtEnvironment environment,
                               LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  if (LiteRtGetEnvironmentOptions(environment, &environment_options) ==
-      kLiteRtStatusOk) {
-    LiteRtPropagateMinLoggerSeverity(environment_options);
+  if (runtime_context->get_environment_options(
+          environment, &environment_options) == kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
   }
   static_environment_options = environment_options;
   static_options = options;
@@ -109,7 +111,8 @@ LiteRtStatus LiteRtInitialize(const LiteRtRuntimeContext* runtime_context,
     return create_status;
   }
 
-  auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
+  auto shared_library_dir_opt =
+      GetSharedLibraryDir(runtime_context, environment_options);
 
   if (auto neuron_adapter_api = litert::mediatek::NeuronAdapterApi::Create(
           shared_library_dir_opt, mediatek_opts);
@@ -158,8 +161,8 @@ LiteRtStatus LiteRtGetCapabilities(int* capabilities) {
 LiteRtStatus LiteRtDeviceContextCreate(
     const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
-  if (auto context =
-          LiteRtDispatchDeviceContextT::Create(*static_neuron_adapter);
+  if (auto context = LiteRtDispatchDeviceContextT::Create(
+          runtime_context, *static_neuron_adapter);
       context) {
     *device_context = context->release();
     return kLiteRtStatusOk;

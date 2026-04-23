@@ -21,7 +21,7 @@
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -70,9 +70,10 @@ char BuildId[256];
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment environment, LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  if (LiteRtGetEnvironmentOptions(environment, &environment_options) ==
-      kLiteRtStatusOk) {
-    LiteRtPropagateMinLoggerSeverity(environment_options);
+  if (runtime_context->get_environment_options(
+          environment, &environment_options) == kLiteRtStatusOk) {
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
   }
   TheEnvironmentOptions = environment_options;
   TheOptions = options;
@@ -80,7 +81,7 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   const char* dispatch_lib_dir = nullptr;
   if (environment_options) {
     LiteRtAny dispatch_lib_dir_any;
-    auto status = LiteRtGetEnvironmentOptionsValue(
+    auto status = runtime_context->get_environment_options_value(
         environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
         &dispatch_lib_dir_any);
     if (status == kLiteRtStatusOk && dispatch_lib_dir_any.str_value) {
@@ -181,7 +182,9 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
                                  LiteRtOptions options,
                                  LiteRtDispatchDeviceContext* device_context) {
-  if (auto context = LiteRtDispatchDeviceContextT::Create(Qnn()); context) {
+  if (auto context =
+          LiteRtDispatchDeviceContextT::Create(runtime_context, Qnn());
+      context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
   } else {
