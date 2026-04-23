@@ -14,16 +14,19 @@
 
 #include "litert/core/filesystem.h"
 
+#include <chrono>  // NOLINT
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <string>
-#include <system_error> // NOLINT
+#include <system_error>  // NOLINT
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -89,6 +92,20 @@ Expected<size_t> Size(absl::string_view path) {
   return StdSize(std_path);
 }
 
+Expected<absl::Time> GetLastWriteTime(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  std::error_code ec;
+  auto ftime = std::filesystem::last_write_time(std_path, ec);
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Failed to get last write time: %s, error: %s",
+                                 path.data(), ec.message().c_str()));
+  }
+  return absl::Now() +
+         absl::FromChrono(ftime -
+                          std::filesystem::file_time_type::clock::now());
+}
+
 Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
   auto std_path = MakeStdPath(path);
 
@@ -118,6 +135,28 @@ Expected<std::vector<std::string>> ListDir(absl::string_view path) {
     if (std::filesystem::is_regular_file(entry)) {
       res.push_back(entry.path().generic_string());
     }
+  }
+  return res;
+}
+
+Expected<std::vector<std::string>> RecursiveListDir(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  if (!StdExists(std_path)) {
+    return Error(kLiteRtStatusErrorNotFound,
+                 absl::StrFormat("Directory not found: %s", std_path.c_str()));
+  }
+  std::vector<std::string> res;
+  std::error_code ec;
+  for (const auto& entry :
+       std::filesystem::recursive_directory_iterator(std_path, ec)) {
+    if (std::filesystem::is_regular_file(entry)) {
+      res.push_back(entry.path().generic_string());
+    }
+  }
+  if (ec) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Recursive directory iteration failed: %s",
+                                 ec.message().c_str()));
   }
   return res;
 }
@@ -180,9 +219,9 @@ Expected<void> RmDir(std::string path_to_remove) {
     // If count == 0 and it doesn't exist, it means it never existed. Still Ok.
     return {};
   } else {
-    return Error(kLiteRtStatusErrorFileIO,
-                 absl::StrFormat("Could not fully remove: %s",
-                                 path_to_remove.c_str()));
+    return Error(
+        kLiteRtStatusErrorFileIO,
+        absl::StrFormat("Could not fully remove: %s", path_to_remove.c_str()));
   }
 }
 
