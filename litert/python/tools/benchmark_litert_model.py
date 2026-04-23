@@ -133,6 +133,24 @@ def parse_args():
   )
 
   parser.add_argument(
+      '--intel_openvino_device_type',
+      default='npu',
+      choices=['cpu', 'gpu', 'npu', 'auto'],
+      help='Intel OpenVINO target device (default: npu).',
+  )
+  parser.add_argument(
+      '--intel_openvino_performance_mode',
+      default='latency',
+      choices=['latency', 'throughput', 'cumulative_throughput'],
+      help='Intel OpenVINO performance hint (default: latency).',
+  )
+  parser.add_argument(
+      '--intel_openvino_configs_map',
+      default='',
+      help='Comma-separated KEY=VALUE pairs for custom OpenVINO properties.',
+  )
+
+  parser.add_argument(
       '--num_runs', type=int, default=50, help='Number of inference runs.'
   )
   parser.add_argument(
@@ -171,6 +189,27 @@ def build_hardware_accelerators(args, HardwareAccelerator):
   return HardwareAccelerator(accel)
 
 
+def _auto_discover_intel_openvino(func_name):
+  """Call a function from intel_openvino_backend."""
+  # pylint: disable=g-import-not-at-top
+  try:
+    from litert.python.aot.vendors.intel_openvino import (
+        intel_openvino_backend,
+    )
+    return getattr(intel_openvino_backend, func_name)() or ''
+  except (ImportError, AttributeError):
+    pass
+  try:
+    from ai_edge_litert.aot.vendors.intel_openvino import (
+        intel_openvino_backend,
+    )
+    return getattr(intel_openvino_backend, func_name)() or ''
+  except (ImportError, AttributeError):
+    pass
+  # pylint: enable=g-import-not-at-top
+  return ''
+
+
 def create_environment(args, Environment):
   """Create a LiteRT Environment with the requested paths."""
   kwargs = {}
@@ -178,12 +217,18 @@ def create_environment(args, Environment):
     kwargs['runtime_path'] = args.runtime_path
 
   compiler_plugin_path = args.compiler_plugin_path
+  if not compiler_plugin_path:
+    compiler_plugin_path = _auto_discover_intel_openvino(
+        'get_compiler_plugin_dir'
+    )
   if compiler_plugin_path:
     if os.path.isfile(compiler_plugin_path):
       compiler_plugin_path = os.path.dirname(compiler_plugin_path)
     kwargs['compiler_plugin_path'] = compiler_plugin_path
 
   dispatch_path = args.dispatch_library_path
+  if not dispatch_path:
+    dispatch_path = _auto_discover_intel_openvino('get_dispatch_dir')
   if dispatch_path:
     if os.path.isfile(dispatch_path):
       dispatch_path = os.path.dirname(dispatch_path)
@@ -265,6 +310,12 @@ def run_benchmark(args):
     logger.info('Dispatch lib:    %s', args.dispatch_library_path)
   if args.compiler_plugin_path:
     logger.info('Compiler plugin: %s', args.compiler_plugin_path)
+  if args.use_npu:
+    logger.info('OV device type:  %s', args.intel_openvino_device_type)
+    logger.info('OV perf mode:    %s', args.intel_openvino_performance_mode)
+    if args.intel_openvino_configs_map:
+      logger.info('OV configs map:  %s', args.intel_openvino_configs_map)
+
   logger.info('Creating environment...')
   t0 = time.perf_counter()
   env = create_environment(args, Environment)
@@ -277,6 +328,9 @@ def run_benchmark(args):
       model_path,
       hardware_accel=hw_accel,
       environment=env,
+      intel_openvino_device_type=args.intel_openvino_device_type,
+      intel_openvino_performance_mode=args.intel_openvino_performance_mode,
+      intel_openvino_configs_map=args.intel_openvino_configs_map,
   )
   init_time_ms = (time.perf_counter() - t0) * 1000
   logger.info('Model loaded (%.1f ms)', init_time_ms)

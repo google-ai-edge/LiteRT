@@ -165,5 +165,39 @@ class DispatchPathConversionTest(unittest.TestCase):
       self.assertEqual(dispatch_path, d)
 
 
+class IntelOpenVinoArgsTest(unittest.TestCase):
+  """Test Intel OpenVINO CLI args are parsed correctly."""
+
+  def test_default_openvino_args(self):
+    """Verify defaults when no Intel OpenVINO args are given."""
+    with mock.patch(
+        'sys.argv',
+        ['benchmark', '--model=test.tflite'],
+    ):
+      args = bm.parse_args()
+      self.assertEqual(args.intel_openvino_device_type, 'npu')
+      self.assertEqual(args.intel_openvino_performance_mode, 'latency')
+      self.assertEqual(args.intel_openvino_configs_map, '')
+
+  def test_custom_openvino_args(self):
+    """Verify custom Intel OpenVINO args are parsed."""
+    with mock.patch(
+        'sys.argv',
+        [
+            'benchmark',
+            '--model=test.tflite',
+            '--intel_openvino_device_type=auto',
+            '--intel_openvino_performance_mode=throughput',
+            '--intel_openvino_configs_map=CACHE_DIR=/tmp,NUM_STREAMS=4',
+        ],
+    ):
+      args = bm.parse_args()
+      self.assertEqual(args.intel_openvino_device_type, 'auto')
+      self.assertEqual(args.intel_openvino_performance_mode, 'throughput')
+      self.assertEqual(
+          args.intel_openvino_configs_map, 'CACHE_DIR=/tmp,NUM_STREAMS=4'
+      )
+
+
 if __name__ == '__main__':
   unittest.main()

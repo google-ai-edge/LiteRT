@@ -110,3 +110,36 @@ litert-benchmark --model=model.tflite --result_json=results.json
 
 Output includes model metadata, accelerator configuration, and full latency
 statistics (avg, min, max, median, std, p5, p95).
+
+### Intel OpenVINO Options
+
+When using `--use_npu` with the Intel OpenVINO dispatch library, these
+additional options control device selection and performance tuning:
+
+- `--intel_openvino_device_type` (default: `npu`): Target device —
+  `cpu`, `gpu`, `npu`, or `auto`
+- `--intel_openvino_performance_mode` (default: `latency`): Performance hint —
+  `latency`, `throughput`, or `cumulative_throughput`
+- `--intel_openvino_configs_map`: Comma-separated `KEY=VALUE` pairs for custom
+  OpenVINO properties
+
+The dispatch library is auto-discovered from the pip wheel when installed with
+`pip install ai-edge-litert[npu-intel]`. To specify it manually, use
+`--dispatch_library_path`.
+
+```bash
+# NPU inference (dispatch auto-discovered from wheel)
+litert-benchmark --model=model.tflite --use_npu
+
+# OpenVINO CPU inference
+litert-benchmark --model=model.tflite --use_npu \
+    --intel_openvino_device_type=cpu
+
+# NPU with throughput optimization
+litert-benchmark --model=model.tflite --use_npu \
+    --intel_openvino_performance_mode=throughput
+
+# Custom OpenVINO properties
+litert-benchmark --model=model.tflite --use_npu \
+    --intel_openvino_configs_map="NUM_STREAMS=2,INFERENCE_PRECISION_HINT=f16"
+```

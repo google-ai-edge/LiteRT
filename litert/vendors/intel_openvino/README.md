@@ -140,33 +140,23 @@ print("Fully accelerated:", model.is_fully_accelerated())
 ### 5. Benchmark
 
 ```bash
-# Find dispatch library path
-DISPATCH_DIR=$(python3 -c "
-from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
-print(intel_openvino_backend.get_dispatch_dir())
-")
-
-# NPU benchmark
-litert-benchmark --model=model.tflite --use_npu \
-    --dispatch_library_path=$DISPATCH_DIR --num_runs=50
+# NPU benchmark (dispatch auto-discovered from wheel)
+litert-benchmark --model=model.tflite --use_npu --num_runs=50
 
 # CPU benchmark (for comparison)
 litert-benchmark --model=model.tflite --num_runs=50 --num_threads=4
 
 # NPU only — fail if model can't be fully accelerated
-litert-benchmark --model=model.tflite --use_npu \
-    --dispatch_library_path=$DISPATCH_DIR --require_full_delegation
+litert-benchmark --model=model.tflite --use_npu --require_full_delegation
 
 # Save results as JSON
-litert-benchmark --model=model.tflite --use_npu \
-    --dispatch_library_path=$DISPATCH_DIR --result_json=results.json
+litert-benchmark --model=model.tflite --use_npu --result_json=results.json
 ```
 
 You can also run the benchmark tool as a Python module:
 
 ```bash
-python3 -m ai_edge_litert.tools.benchmark_litert_model \
-    --model=model.tflite --use_npu --dispatch_library_path=$DISPATCH_DIR
+python3 -m ai_edge_litert.tools.benchmark_litert_model --model=model.tflite
 ```
 
 ---

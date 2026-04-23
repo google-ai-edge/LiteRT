@@ -34,12 +34,18 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
   m.def(
       "CreateCompiledModelFromFile",
       [](py::object environment_capsule, const std::string& model_path,
-         int hardware_accel, int cpu_num_threads, bool enforce_f32_gpu) {
+         int hardware_accel, int cpu_num_threads, bool enforce_f32_gpu,
+         const std::string& intel_openvino_device_type,
+         const std::string& intel_openvino_performance_mode,
+         const std::string& intel_openvino_configs_map) {
         std::string error;
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
                 environment_capsule.ptr(), model_path.c_str(), hardware_accel,
-                cpu_num_threads, enforce_f32_gpu, &error);
+                cpu_num_threads, enforce_f32_gpu,
+                intel_openvino_device_type.c_str(),
+                intel_openvino_performance_mode.c_str(),
+                intel_openvino_configs_map.c_str(), &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -47,19 +53,28 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       },
       py::arg("environment_capsule"), py::arg("model_path"),
       py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0,
-      py::arg("enforce_f32_gpu") = false);
+      py::arg("enforce_f32_gpu") = false,
+      py::arg("intel_openvino_device_type") = "npu",
+      py::arg("intel_openvino_performance_mode") = "latency",
+      py::arg("intel_openvino_configs_map") = "");
 
   // Factory method to create a CompiledModelWrapper from a model buffer.
   m.def(
       "CreateCompiledModelFromBuffer",
       [](py::object environment_capsule, py::bytes model_data,
-         int hardware_accel, int cpu_num_threads, bool enforce_f32_gpu) {
+         int hardware_accel, int cpu_num_threads, bool enforce_f32_gpu,
+         const std::string& intel_openvino_device_type,
+         const std::string& intel_openvino_performance_mode,
+         const std::string& intel_openvino_configs_map) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromBuffer(
                 environment_capsule.ptr(), data_obj, hardware_accel,
-                cpu_num_threads, enforce_f32_gpu, &error);
+                cpu_num_threads, enforce_f32_gpu,
+                intel_openvino_device_type.c_str(),
+                intel_openvino_performance_mode.c_str(),
+                intel_openvino_configs_map.c_str(), &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -67,7 +82,10 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       },
       py::arg("environment_capsule"), py::arg("model_data"),
       py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0,
-      py::arg("enforce_f32_gpu") = false);
+      py::arg("enforce_f32_gpu") = false,
+      py::arg("intel_openvino_device_type") = "npu",
+      py::arg("intel_openvino_performance_mode") = "latency",
+      py::arg("intel_openvino_configs_map") = "");
 
   // Bindings for the CompiledModelWrapper class.
   py::class_<CompiledModelWrapper>(m, "CompiledModelWrapper")
