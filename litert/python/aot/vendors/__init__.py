@@ -15,6 +15,7 @@
 """Vendor backends for LiteRt."""
 import os
 
+from litert.python.aot.vendors.intel_openvino import intel_openvino_backend as _
 from litert.python.aot.vendors.mediatek import mediatek_backend as _
 from litert.python.aot.vendors.qualcomm import qualcomm_backend as _
 

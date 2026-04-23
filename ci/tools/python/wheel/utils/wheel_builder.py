@@ -156,6 +156,24 @@ def create_empty_init_files(dst_dir: str) -> None:
     create_empty_init_files(dir_name.path)
 
 
+_WIN32_DLL_INIT = """\
+import os as _os
+import sys as _sys
+
+if _sys.platform == "win32" and hasattr(_os, "add_dll_directory"):
+    _pkg_dir = _os.path.dirname(_os.path.abspath(__file__))
+    if _os.path.isdir(_pkg_dir):
+        _os.add_dll_directory(_pkg_dir)
+    try:
+        import openvino as _ov
+        _ov_libs = _os.path.join(_os.path.dirname(_ov.__file__), "libs")
+        if _os.path.isdir(_ov_libs):
+            _os.add_dll_directory(_ov_libs)
+    except ImportError:
+        pass
+"""
+
+
 def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
   create_empty_init_files(dst_dir)
 
@@ -163,6 +181,7 @@ def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
     if meta_dict:
       for key, value in meta_dict.items():
         f.write(f'{key} = "{value}"\n')
+      f.write(_WIN32_DLL_INIT)
 
 
 def construct_meta_dict(args) -> dict[str, str]:

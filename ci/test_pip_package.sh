@@ -129,6 +129,16 @@ function test_import {
   ${PYTHON_BIN} -c "import ai_edge_litert.environment"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_mediatek"
+
+  # Intel OpenVINO backend imports
+  ${PYTHON_BIN} -c "from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend; print('Intel OpenVINO backend ID:', intel_openvino_backend.IntelOpenVinoBackend.id())"
+  ${PYTHON_BIN} -c "
+import os
+from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
+d = intel_openvino_backend.get_dispatch_dir()
+assert d and os.path.isdir(d), f'Dispatch dir not found: {d}'
+print('Dispatch dir:', d)
+"
   echo
 }
 

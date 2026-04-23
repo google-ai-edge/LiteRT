@@ -30,6 +30,11 @@ LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = "0.1.0"
 # It contains Exynos AI LiteCore 1.1.0 VERSION
 LITERT_SDK_SAMSUNG_FULL_VERSION = "1.1.0"
 
+# The next version of LiteRT SDK for Intel OpenVINO version.
+# The minor version code should be bumped after every release.
+# It contains OpenVINO 2026.1 and NPU Driver v1.32.0
+LITERT_SDK_INTEL_OPENVINO_FULL_VERSION = "0.1.0"
+
 # The next version of LiteRT Converter version.
 # The minor version code should be bumped after every release.
 LITERT_CONVERTER_VERSION = "0.1.0"
