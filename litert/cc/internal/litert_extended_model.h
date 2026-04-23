@@ -224,6 +224,18 @@ class Op : public internal::NonOwnedHandle<LiteRtOp> {
     return absl::string_view(custom_code);
   }
 
+  /// @brief Gets the custom options.
+  /// @return The custom options if present, otherwise an error.
+  Expected<absl::Span<const uint8_t>> CustomOptions() const {
+    const uint8_t* options = nullptr;
+    size_t options_bytes = 0;
+    auto stat = LiteRtGetCustomOptions(Get(), &options, &options_bytes);
+    if (stat != kLiteRtStatusOk) {
+      return Error(stat, "Failed to get custom options");
+    }
+    return absl::MakeConstSpan(options, options_bytes);
+  }
+
   OpInputs Inputs() const;
   OpOutputs Outputs() const;
 

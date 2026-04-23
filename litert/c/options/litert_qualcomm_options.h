@@ -293,6 +293,33 @@ LiteRtStatus LrtQualcommOptionsSetSaverOutputDir(LrtQualcommOptions options,
 
 LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(LrtQualcommOptions options,
                                                  const char** saver_output_dir);
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackageName(
+    LrtQualcommOptions options, const char* custom_op_package_name);
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageName(
+    LrtQualcommOptions options, const char** custom_op_package_name);
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackagePath(
+    LrtQualcommOptions options, const char* custom_op_package_path);
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackagePath(
+    LrtQualcommOptions options, const char** custom_op_package_path);
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackageTarget(
+    LrtQualcommOptions options, const char* custom_op_package_target);
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageTarget(
+    LrtQualcommOptions options, const char** custom_op_package_target);
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char* custom_op_package_interface_provider);
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char** custom_op_package_interface_provider);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

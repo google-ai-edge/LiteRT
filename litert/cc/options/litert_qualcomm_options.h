@@ -214,6 +214,19 @@ class QualcommOptions {
   void SetSaverOutputDir(const std::string& saver_output_dir);
   absl::string_view GetSaverOutputDir();
 
+  void SetCustomOpPackageName(const std::string& name);
+  std::string_view GetCustomOpPackageName();
+
+  void SetCustomOpPackagePath(const std::string& path);
+  std::string_view GetCustomOpPackagePath();
+
+  void SetCustomOpPackageTarget(const std::string& target);
+  std::string_view GetCustomOpPackageTarget();
+
+  void SetCustomOpPackageInterfaceProvider(
+      const std::string& interface_provider);
+  std::string_view GetCustomOpPackageInterfaceProvider();
+
  private:
   LrtQualcommOptions options_;
 };

@@ -69,7 +69,7 @@ void OpWrapper::AddTensorParam(const char* name, const TensorWrapper& tensor) {
 
 Qnn_OpConfig_t OpWrapper::GetOpConfig() {
   Qnn_OpConfig_t qnn_op = QNN_OPCONFIG_INIT;
-  qnn_op.v1.packageName = QNN_OP_PACKAGE_NAME_QTI_AISW;
+  qnn_op.v1.packageName = package_name_;
   qnn_op.v1.typeName = type_name_;
   qnn_op.v1.name = name_.data();
   // input tensors

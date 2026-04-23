@@ -53,6 +53,10 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
   std::optional<LrtQualcommOptionsGraphPriority> graph_priority;
   std::optional<std::string> saver_output_dir;
+  std::optional<std::string> custom_op_package_name = "";
+  std::optional<std::string> custom_op_package_path = "";
+  std::optional<std::string> custom_op_package_target = "";
+  std::optional<std::string> custom_op_package_interface_provider = "";
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -161,6 +165,18 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "saver_output_dir") {
           LrtQualcommOptionsSetSaverOutputDir(parsed_options,
                                               std::string(value).c_str());
+        } else if (key == "custom_op_package_name") {
+          LrtQualcommOptionsSetCustomOpPackageName(parsed_options,
+                                                   std::string(value).c_str());
+        } else if (key == "custom_op_package_path") {
+          LrtQualcommOptionsSetCustomOpPackagePath(parsed_options,
+                                                   std::string(value).c_str());
+        } else if (key == "custom_op_package_target") {
+          LrtQualcommOptionsSetCustomOpPackageTarget(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "custom_op_package_interface_provider") {
+          LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+              parsed_options, std::string(value).c_str());
         }
 
         return kLiteRtStatusOk;
@@ -267,6 +283,22 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->saver_output_dir.has_value()) {
     toml << "saver_output_dir = \"" << *options->saver_output_dir << "\"\n";
   }
+  if (options->custom_op_package_name.has_value()) {
+    toml << "custom_op_package_name = \"" << *options->custom_op_package_name
+         << "\"\n";
+  }
+  if (options->custom_op_package_path.has_value()) {
+    toml << "custom_op_package_path = \"" << *options->custom_op_package_path
+         << "\"\n";
+  }
+  if (options->custom_op_package_target.has_value()) {
+    toml << "custom_op_package_target = \""
+         << *options->custom_op_package_target << "\"\n";
+  }
+  if (options->custom_op_package_interface_provider.has_value()) {
+    toml << "custom_op_package_interface_provider = \""
+         << *options->custom_op_package_interface_provider << "\"\n";
+  }
 
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
@@ -348,6 +380,106 @@ LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(
   *saver_output_dir = options->saver_output_dir.has_value()
                           ? options->saver_output_dir->c_str()
                           : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackageName(
+    LrtQualcommOptions options, const char* custom_op_package_name) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->custom_op_package_name = custom_op_package_name;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageName(
+    LrtQualcommOptions options, const char** custom_op_package_name) {
+  if (options == nullptr || custom_op_package_name == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *custom_op_package_name = options->custom_op_package_name.has_value()
+                                ? options->custom_op_package_name->c_str()
+                                : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackagePath(
+    LrtQualcommOptions options, const char* custom_op_package_path) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->custom_op_package_path = custom_op_package_path;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackagePath(
+    LrtQualcommOptions options, const char** custom_op_package_path) {
+  if (options == nullptr || custom_op_package_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *custom_op_package_path = options->custom_op_package_path.has_value()
+                                ? options->custom_op_package_path->c_str()
+                                : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackageTarget(
+    LrtQualcommOptions options, const char* custom_op_package_target) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->custom_op_package_target = custom_op_package_target;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageTarget(
+    LrtQualcommOptions options, const char** custom_op_package_target) {
+  if (options == nullptr || custom_op_package_target == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *custom_op_package_target = options->custom_op_package_target.has_value()
+                                  ? options->custom_op_package_target->c_str()
+                                  : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char* custom_op_package_interface_provider) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->custom_op_package_interface_provider =
+      custom_op_package_interface_provider;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char** custom_op_package_interface_provider) {
+  if (options == nullptr || custom_op_package_interface_provider == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *custom_op_package_interface_provider =
+      options->custom_op_package_interface_provider.has_value()
+          ? options->custom_op_package_interface_provider->c_str()
+          : "";
 
   return kLiteRtStatusOk;
 }

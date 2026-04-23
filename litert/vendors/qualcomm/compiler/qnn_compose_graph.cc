@@ -19,12 +19,15 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -34,6 +37,7 @@
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -53,6 +57,7 @@
 #include "litert/vendors/qualcomm/core/builders/conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/conv3d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/cumsum_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/custom_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/depthwise_conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/dynamic_update_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
@@ -129,6 +134,180 @@ std::string SanitizeName(std::string_view name) {
   }
   return out;
 }
+
+enum class FlexbufferScalarType {
+  kUnsupported = 0,
+  kBool,
+  kInt,
+  kUint,
+  kFloat,
+};
+
+// Returns the common scalar type for a scalar or vector tree.
+// Any mixed scalar types or empty vectors are treated as unsupported.
+FlexbufferScalarType GetUniformScalarType(const flexbuffers::Reference& ref) {
+  if (ref.IsBool()) {
+    return FlexbufferScalarType::kBool;
+  } else if (ref.IsInt()) {
+    return FlexbufferScalarType::kInt;
+  } else if (ref.IsUInt()) {
+    return FlexbufferScalarType::kUint;
+  } else if (ref.IsFloat()) {
+    return FlexbufferScalarType::kFloat;
+  } else if (ref.IsUntypedVector()) {
+    const auto& vec = ref.AsVector();
+    if (vec.IsTheEmptyVector()) {
+      return FlexbufferScalarType::kUnsupported;
+    } else {
+      // Recurse into the first element and ensure all others match.
+      const auto first_type = GetUniformScalarType(vec[0]);
+      for (size_t i = 1; i < vec.size(); ++i) {
+        if (GetUniformScalarType(vec[i]) != first_type) {
+          return FlexbufferScalarType::kUnsupported;
+        }
+      }
+      return first_type;
+    }
+  } else if (ref.IsTypedVector()) {
+    const auto& vec = ref.AsTypedVector();
+    if (vec.IsTheEmptyVector()) {
+      return FlexbufferScalarType::kUnsupported;
+    } else {
+      // Typed vectors are accepted but still validated recursively.
+      const auto first_type = GetUniformScalarType(vec[0]);
+      for (size_t i = 1; i < vec.size(); ++i) {
+        if (GetUniformScalarType(vec[i]) != first_type) {
+          return FlexbufferScalarType::kUnsupported;
+        }
+      }
+      return first_type;
+    }
+  } else if (ref.IsFixedTypedVector()) {
+    const auto& vec = ref.AsFixedTypedVector();
+    if (vec.IsTheEmptyFixedTypedVector()) {
+      return FlexbufferScalarType::kUnsupported;
+    } else {
+      // Fixed typed vectors follow the same uniformity check.
+      const auto first_type = GetUniformScalarType(vec[0]);
+      for (size_t i = 1; i < vec.size(); ++i) {
+        if (GetUniformScalarType(vec[i]) != first_type) {
+          return FlexbufferScalarType::kUnsupported;
+        }
+      }
+      return first_type;
+    }
+  } else {
+    return FlexbufferScalarType::kUnsupported;
+  }
+}
+
+// Returns the shape for a scalar/vector tree; nullopt for ragged vectors.
+std::optional<std::vector<uint32_t>> InferShape(
+    const flexbuffers::Reference& ref) {
+  if (ref.IsBool() || ref.IsInt() || ref.IsUInt() || ref.IsFloat()) {
+    return std::vector<uint32_t>{};
+  } else if (ref.IsUntypedVector()) {
+    const auto& vec = ref.AsVector();
+    if (vec.IsTheEmptyVector()) {
+      return std::vector<uint32_t>{0};
+    } else {
+      auto dimensions = InferShape(vec[0]);
+      if (!dimensions.has_value()) {
+        return std::nullopt;
+      }
+      for (size_t i = 1; i < vec.size(); ++i) {
+        const auto other_dimensions = InferShape(vec[i]);
+        if (!other_dimensions.has_value() ||
+            other_dimensions.value() != dimensions.value()) {
+          return std::nullopt;
+        }
+      }
+      dimensions->insert(dimensions->begin(),
+                         static_cast<uint32_t>(vec.size()));
+      return dimensions;
+    }
+  } else if (ref.IsTypedVector()) {
+    const auto& vec = ref.AsTypedVector();
+    if (vec.IsTheEmptyVector()) {
+      return std::vector<uint32_t>{0};
+    } else {
+      auto dimensions = InferShape(vec[0]);
+      if (!dimensions.has_value()) {
+        return std::nullopt;
+      }
+      for (size_t i = 1; i < vec.size(); ++i) {
+        const auto other_dimensions = InferShape(vec[i]);
+        if (!other_dimensions.has_value() ||
+            other_dimensions.value() != dimensions.value()) {
+          return std::nullopt;
+        }
+      }
+      dimensions->insert(dimensions->begin(),
+                         static_cast<uint32_t>(vec.size()));
+      return dimensions;
+    }
+  } else if (ref.IsFixedTypedVector()) {
+    const auto& vec = ref.AsFixedTypedVector();
+    if (vec.IsTheEmptyFixedTypedVector()) {
+      return std::vector<uint32_t>{0};
+    } else {
+      auto dimensions = InferShape(vec[0]);
+      if (!dimensions.has_value()) {
+        return std::nullopt;
+      }
+      for (size_t i = 1; i < vec.size(); ++i) {
+        const auto other_dimensions = InferShape(vec[i]);
+        if (!other_dimensions.has_value() ||
+            other_dimensions.value() != dimensions.value()) {
+          return std::nullopt;
+        }
+      }
+      dimensions->insert(dimensions->begin(),
+                         static_cast<uint32_t>(vec.size()));
+      return dimensions;
+    }
+  } else {
+    return std::nullopt;
+  }
+}
+
+template <typename T>
+void FillBuffer(const flexbuffers::Reference& ref, std::vector<T>& data) {
+  if (ref.IsUntypedVector()) {
+    const auto vec = ref.AsVector();
+    for (size_t i = 0; i < vec.size(); ++i) {
+      FillBuffer<T>(vec[i], data);
+    }
+    return;
+  }
+
+  if (ref.IsTypedVector()) {
+    const auto vec = ref.AsTypedVector();
+    for (size_t i = 0; i < vec.size(); ++i) {
+      FillBuffer<T>(vec[i], data);
+    }
+    return;
+  }
+
+  if (ref.IsFixedTypedVector()) {
+    const auto vec = ref.AsFixedTypedVector();
+    for (size_t i = 0; i < vec.size(); ++i) {
+      FillBuffer<T>(vec[i], data);
+    }
+    return;
+  }
+
+  if constexpr (std::is_same_v<T, uint8_t>) {
+    data.emplace_back(ref.AsBool());
+  } else if constexpr (std::is_same_v<T, int32_t>) {
+    data.emplace_back(ref.AsInt32());
+  } else if constexpr (std::is_same_v<T, uint32_t>) {
+    data.emplace_back(ref.AsUInt32());
+  } else if constexpr (std::is_same_v<T, float>) {
+    data.emplace_back(ref.AsFloat());
+  }
+}
+
 }  // namespace
 
 LiteRtStatus ConvertPaddingType(const uint32_t litert_padding,
@@ -1338,10 +1517,148 @@ constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> kOpBuilders =
     GetOpBuilders();
 static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
 
+LiteRtStatus BuildCustomOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           const ::qnn::CustomOpPackage& custom_op_package) {
+  // use tflite custom code as op type in QNN custom op pacakge.
+  auto custom_code = litert_op.CustomCode();
+  if (!custom_code.HasValue() || custom_code->empty()) {
+    LITERT_LOG(LITERT_ERROR, "Custom op missing custom code.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto custom_options = litert_op.CustomOptions();
+  if (!custom_options.HasValue()) {
+    LITERT_LOG(LITERT_ERROR, "Custom op missing custom options.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const char* package_name = custom_op_package.name.empty()
+                                 ? QNN_OP_PACKAGE_NAME_QTI_AISW
+                                 : custom_op_package.name.c_str();
+  auto& custom_op = op_wrappers.emplace_back(::qnn::CreateCustomOp(
+      package_name, custom_code->data(), input_tensors, output_tensors));
+
+  if (custom_options->size() < 2) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Custom op custom options are too small to be a flexbuffer map, maybe "
+        "there is no custom options in custom op.");
+    return kLiteRtStatusOk;
+  }
+
+  const auto root =
+      flexbuffers::GetRoot(custom_options->data(), custom_options->size());
+  if (!root.IsMap()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Custom op custom options are not a flexbuffer "
+               "map.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const auto map = root.AsMap();
+  const auto keys = map.Keys();
+  const auto values = map.Values();
+  for (size_t i = 0; i < map.size(); ++i) {
+    const char* key = keys[i].AsKey();
+    const auto value = values[i];
+
+    const auto type = GetUniformScalarType(value);
+    if (type == FlexbufferScalarType::kUnsupported) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Cannot get uniform scalar type from custom options key: %s. "
+                 "Skip this key.",
+                 key);
+      continue;
+    }
+
+    if (value.IsUntypedVector() || value.IsTypedVector() ||
+        value.IsFixedTypedVector()) {
+      const auto dimensons = InferShape(value);
+      if (!dimensons.has_value()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Custom options key '%s' has ragged vector dimensions. Skip "
+                   "this key.",
+                   key);
+        continue;
+      }
+
+      uint32_t num_elements =
+          std::accumulate(dimensons->begin(), dimensons->end(), uint32_t{1},
+                          std::multiplies<uint32_t>());
+      switch (type) {
+        case FlexbufferScalarType::kBool: {
+          std::vector<uint8_t> data;
+          data.reserve(num_elements);
+          FillBuffer<uint8_t>(value, data);
+          auto& tensor = tensor_pool.CreateStaticTensor(
+              QNN_DATATYPE_BOOL_8, {}, dimensons.value(),
+              static_cast<uint32_t>(num_elements * sizeof(uint8_t)),
+              data.data());
+          custom_op.AddTensorParam(key, tensor);
+          break;
+        }
+        case FlexbufferScalarType::kInt: {
+          std::vector<int32_t> data;
+          data.reserve(num_elements);
+          FillBuffer<int32_t>(value, data);
+          auto& tensor = tensor_pool.CreateStaticTensor(
+              QNN_DATATYPE_INT_32, {}, dimensons.value(),
+              static_cast<uint32_t>(num_elements * sizeof(int32_t)),
+              data.data());
+          custom_op.AddTensorParam(key, tensor);
+          break;
+        }
+        case FlexbufferScalarType::kUint: {
+          std::vector<uint32_t> data;
+          data.reserve(num_elements);
+          FillBuffer<uint32_t>(value, data);
+          auto& tensor = tensor_pool.CreateStaticTensor(
+              QNN_DATATYPE_UINT_32, {}, dimensons.value(),
+              static_cast<uint32_t>(num_elements * sizeof(uint32_t)),
+              data.data());
+          custom_op.AddTensorParam(key, tensor);
+          break;
+        }
+        case FlexbufferScalarType::kFloat: {
+          std::vector<float> data;
+          data.reserve(num_elements);
+          FillBuffer<float>(value, data);
+          auto& tensor = tensor_pool.CreateStaticTensor(
+              QNN_DATATYPE_FLOAT_32, {}, dimensons.value(),
+              static_cast<uint32_t>(num_elements * sizeof(float)), data.data());
+          custom_op.AddTensorParam(key, tensor);
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+    } else if (type == FlexbufferScalarType::kBool) {
+      custom_op.AddScalarParam<bool>(key, value.AsBool());
+    } else if (type == FlexbufferScalarType::kInt) {
+      custom_op.AddScalarParam<std::int32_t>(key, value.AsInt32());
+    } else if (type == FlexbufferScalarType::kUint) {
+      custom_op.AddScalarParam<std::uint32_t>(key, value.AsUInt32());
+    } else if (type == FlexbufferScalarType::kFloat) {
+      custom_op.AddScalarParam<float>(key, value.AsFloat());
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "Unsupported types from custom options key: %s.", key);
+      continue;
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
 }  // namespace
 
 LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        bool use_int64_bias_as_int32,
+                       const ::qnn::CustomOpPackage& custom_op_package,
                        const litert::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1353,6 +1670,10 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers, use_htp_preferences,
                              use_int64_bias_as_int32);
+  }
+  if (op_code == kLiteRtOpCodeTflCustom) {
+    return BuildCustomOp(litert_op, tensor_pool, input_tensors, output_tensors,
+                         op_wrappers, custom_op_package);
   }
   LITERT_LOG(LITERT_ERROR,
              "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
@@ -1465,8 +1786,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(ConvertOp(
-        options.GetUseHtpPreference(), options.GetUseInt64BiasAsInt32(), op,
-        tensor_pool, input_tensors, output_tensors, op_wrappers));
+        options.GetUseHtpPreference(), options.GetUseInt64BiasAsInt32(),
+        options.GetCustomOpPackage(), op, tensor_pool, input_tensors,
+        output_tensors, op_wrappers));
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
