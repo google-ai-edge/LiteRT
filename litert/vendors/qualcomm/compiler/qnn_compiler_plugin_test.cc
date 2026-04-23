@@ -25,10 +25,10 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -193,7 +193,7 @@ const char* kSoCModel = nullptr;
 TEST(TestQnnPlugin, GetConfigInfo) {
   EXPECT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Qualcomm");
 
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
 
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
@@ -207,7 +207,7 @@ TEST(TestQnnPlugin, GetConfigInfo) {
 }
 
 TEST(TestQnnPlugin, PartitionMulOps) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
@@ -222,7 +222,7 @@ TEST(TestQnnPlugin, PartitionMulOps) {
 }
 
 TEST(TestQnnPlugin, CompileMulSubgraph) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;
@@ -299,7 +299,7 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
 }
 
 TEST(TestQnnPlugin, ShareContextBinary) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("cst_multi_subgraph.tflite");
 
   LiteRtCompiledResult compiled;
@@ -314,7 +314,7 @@ TEST(TestQnnPlugin, ShareContextBinary) {
 }
 
 TEST(TestQnnPlugin, NotShareContextBinary) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("multi_subgraph.tflite");
 
   LiteRtCompiledResult compiled;
@@ -332,7 +332,7 @@ TEST(TestQnnPlugin, Compatibility) {
   static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
                                                 LITERT_API_VERSION_MINOR,
                                                 LITERT_API_VERSION_PATCH};
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
       kApiVersion, plugin.get(), nullptr, nullptr, nullptr));
 
@@ -369,7 +369,7 @@ class QnnPlyginSupportedSocCompilationTest
     : public ::testing::TestWithParam<std::string> {};
 
 TEST_P(QnnPlyginSupportedSocCompilationTest, CompileMulSubgraph) {
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
   auto soc_model = GetParam();
 #if defined(__x86_64__) || defined(_M_X64)
@@ -414,7 +414,7 @@ class QnnPluginOpValidationTest : public ::testing::TestWithParam<std::string> {
 
 TEST_P(QnnPluginOpValidationTest, SupportedOpsTest) {
   LITERT_LOG(LITERT_INFO, "Validating TFLite model: %s", GetParam().c_str());
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel(GetParam());
 
   const auto subgraph = model.MainSubgraph();
@@ -436,7 +436,7 @@ class QnnPluginOpCompatibilityTest
 
 TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
   LITERT_LOG(LITERT_INFO, "Testing TFLite model: %s", GetParam().c_str());
-  auto plugin = CreatePlugin();
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel(GetParam());
 
   LiteRtCompiledResult compiled;

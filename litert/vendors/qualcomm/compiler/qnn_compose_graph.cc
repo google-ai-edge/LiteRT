@@ -39,10 +39,10 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/cc/namespace_heuristics.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
@@ -108,6 +108,7 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+
 namespace litert::qnn {
 namespace {
 static const char* kLiteRtStr = "litert";
@@ -210,7 +211,7 @@ LiteRtStatus ConvertDataType(const litert::ElementType litert_type,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
+LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
                            ::qnn::TensorPool& tensor_pool,
                            ::qnn::TensorWrapper*& tensor_wrapper,
                            const absl::flat_hash_set<std::int32_t>& ids_to_dump,
@@ -353,7 +354,7 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
 namespace {
 
 using OpBuilder = LiteRtStatus (*)(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences,
@@ -361,13 +362,13 @@ using OpBuilder = LiteRtStatus (*)(
 
 // Wrapper to call the op builder with or without the bias parameter.
 template <auto F>
-LiteRtStatus Adapt(const litert::Op& op, ::qnn::TensorPool& tp,
+LiteRtStatus Adapt(const litert::compiler::Op& op, ::qnn::TensorPool& tp,
                    std::vector<::qnn::TensorWrapperRef>& in,
                    std::vector<::qnn::TensorWrapperRef>& out,
                    std::vector<::qnn::OpWrapper>& ow, bool htp, bool bias) {
   if constexpr (std::is_invocable_v<
-                    decltype(F), const litert::Op&, ::qnn::TensorPool&,
-                    std::vector<::qnn::TensorWrapperRef>&,
+                    decltype(F), const litert::compiler::Op&,
+                    ::qnn::TensorPool&, std::vector<::qnn::TensorWrapperRef>&,
                     std::vector<::qnn::TensorWrapperRef>&,
                     std::vector<::qnn::OpWrapper>&, bool, bool>) {
     return F(op, tp, in, out, ow, htp, bias);
@@ -378,7 +379,7 @@ LiteRtStatus Adapt(const litert::Op& op, ::qnn::TensorPool& tp,
 
 #define REGISTER_SIMPLE_OP_BUILDER(OpName, BuildFunc)                         \
   LiteRtStatus OpName(                                                        \
-      const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,            \
+      const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,  \
       std::vector<::qnn::TensorWrapperRef>& input_tensors,                    \
       std::vector<::qnn::TensorWrapperRef>& output_tensors,                   \
       std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) { \
@@ -446,7 +447,7 @@ REGISTER_SIMPLE_OP_BUILDER(BuildScatterNdOp, BuildScatterNdOp)
 #undef REGISTER_SIMPLE_OP_BUILDER
 
 LiteRtStatus BuildConcatenationOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -466,7 +467,7 @@ LiteRtStatus BuildConcatenationOp(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildAddOp(const litert::Op& litert_op,
+LiteRtStatus BuildAddOp(const litert::compiler::Op& litert_op,
                         ::qnn::TensorPool& tensor_pool,
                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -485,7 +486,7 @@ LiteRtStatus BuildAddOp(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildDivOp(const litert::Op& litert_op,
+LiteRtStatus BuildDivOp(const litert::compiler::Op& litert_op,
                         ::qnn::TensorPool& tensor_pool,
                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -504,7 +505,7 @@ LiteRtStatus BuildDivOp(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildMulOp(const litert::Op& litert_op,
+LiteRtStatus BuildMulOp(const litert::compiler::Op& litert_op,
                         ::qnn::TensorPool& tensor_pool,
                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -523,7 +524,7 @@ LiteRtStatus BuildMulOp(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildSubOp(const litert::Op& litert_op,
+LiteRtStatus BuildSubOp(const litert::compiler::Op& litert_op,
                         ::qnn::TensorPool& tensor_pool,
                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -543,7 +544,7 @@ LiteRtStatus BuildSubOp(const litert::Op& litert_op,
 }
 
 LiteRtStatus BuildFullyConnectedOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences,
@@ -571,7 +572,7 @@ LiteRtStatus BuildFullyConnectedOp(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildGatherOp(const litert::Op& litert_op,
+LiteRtStatus BuildGatherOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -588,7 +589,7 @@ LiteRtStatus BuildGatherOp(const litert::Op& litert_op,
 }
 
 LiteRtStatus BuildBatchMatmulOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -603,7 +604,7 @@ LiteRtStatus BuildBatchMatmulOp(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildSumOp(const litert::Op& litert_op,
+LiteRtStatus BuildSumOp(const litert::compiler::Op& litert_op,
                         ::qnn::TensorPool& tensor_pool,
                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -617,7 +618,7 @@ LiteRtStatus BuildSumOp(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildMeanOp(const litert::Op& litert_op,
+LiteRtStatus BuildMeanOp(const litert::compiler::Op& litert_op,
                          ::qnn::TensorPool& tensor_pool,
                          std::vector<::qnn::TensorWrapperRef>& input_tensors,
                          std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -632,7 +633,7 @@ LiteRtStatus BuildMeanOp(const litert::Op& litert_op,
 }
 
 LiteRtStatus BuildReduceMaxOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -645,7 +646,7 @@ LiteRtStatus BuildReduceMaxOp(
 }
 
 LiteRtStatus BuildReduceMinOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -658,7 +659,7 @@ LiteRtStatus BuildReduceMinOp(
 }
 
 LiteRtStatus BuildReduceAllOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -671,7 +672,7 @@ LiteRtStatus BuildReduceAllOp(
 }
 
 LiteRtStatus BuildReduceAnyOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -684,7 +685,7 @@ LiteRtStatus BuildReduceAnyOp(
 }
 
 LiteRtStatus BuildSoftmaxOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -695,7 +696,7 @@ LiteRtStatus BuildSoftmaxOp(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildSplitOp(const litert::Op& litert_op,
+LiteRtStatus BuildSplitOp(const litert::compiler::Op& litert_op,
                           ::qnn::TensorPool& tensor_pool,
                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -709,7 +710,7 @@ LiteRtStatus BuildSplitOp(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildTopkV2Op(const litert::Op& litert_op,
+LiteRtStatus BuildTopkV2Op(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -744,7 +745,7 @@ LiteRtStatus BuildTopkV2Op(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildPackOp(const litert::Op& litert_op,
+LiteRtStatus BuildPackOp(const litert::compiler::Op& litert_op,
                          ::qnn::TensorPool& tensor_pool,
                          std::vector<::qnn::TensorWrapperRef>& input_tensors,
                          std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -757,7 +758,7 @@ LiteRtStatus BuildPackOp(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildUnpackOp(const litert::Op& litert_op,
+LiteRtStatus BuildUnpackOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -771,7 +772,7 @@ LiteRtStatus BuildUnpackOp(const litert::Op& litert_op,
 }
 
 LiteRtStatus BuildShloCompositeOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -802,7 +803,7 @@ LiteRtStatus BuildShloCompositeOp(
 }
 
 LiteRtStatus BuildL2NormalizationOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -812,7 +813,7 @@ LiteRtStatus BuildL2NormalizationOp(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildConv2dOp(const litert::Op& litert_op,
+LiteRtStatus BuildConv2dOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -852,7 +853,7 @@ LiteRtStatus BuildConv2dOp(const litert::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildConv3dOp(const litert::Op& litert_op,
+LiteRtStatus BuildConv3dOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -898,7 +899,7 @@ LiteRtStatus BuildConv3dOp(const litert::Op& litert_op,
 }
 
 LiteRtStatus BuildTransposeConvOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -929,7 +930,7 @@ LiteRtStatus BuildTransposeConvOp(
 }
 
 LiteRtStatus BuildDepthwiseConv2dOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -966,7 +967,7 @@ LiteRtStatus BuildDepthwiseConv2dOp(
 }
 
 LiteRtStatus BuildAveragePool2dOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1003,7 +1004,7 @@ LiteRtStatus BuildAveragePool2dOp(
 }
 
 LiteRtStatus BuildMaxPool2dOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1040,7 +1041,7 @@ LiteRtStatus BuildMaxPool2dOp(
 }
 
 LiteRtStatus BuildL2Pool2dOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1077,7 +1078,7 @@ LiteRtStatus BuildL2Pool2dOp(
 }
 
 LiteRtStatus BuildDepthToSpaceOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1090,7 +1091,7 @@ LiteRtStatus BuildDepthToSpaceOp(
 }
 
 LiteRtStatus BuildSpaceToDepthOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1103,7 +1104,7 @@ LiteRtStatus BuildSpaceToDepthOp(
 }
 
 LiteRtStatus BuildLeakyReluOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1116,7 +1117,7 @@ LiteRtStatus BuildLeakyReluOp(
 }
 
 LiteRtStatus BuildResizeBilinearOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1133,7 +1134,7 @@ LiteRtStatus BuildResizeBilinearOp(
 }
 
 LiteRtStatus BuildResizeNearestNeighborOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1150,7 +1151,7 @@ LiteRtStatus BuildResizeNearestNeighborOp(
 }
 
 LiteRtStatus BuildMirrorPadOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1161,7 +1162,7 @@ LiteRtStatus BuildMirrorPadOp(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildCumsumOp(const litert::Op& litert_op,
+LiteRtStatus BuildCumsumOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -1179,7 +1180,7 @@ LiteRtStatus BuildCumsumOp(const litert::Op& litert_op,
 }
 
 LiteRtStatus BuildStridedSliceOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1208,7 +1209,7 @@ LiteRtStatus BuildStridedSliceOp(
 }
 
 LiteRtStatus BuildLogSoftmaxOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
@@ -1219,7 +1220,7 @@ LiteRtStatus BuildLogSoftmaxOp(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus BuildOneHotOp(const litert::Op& litert_op,
+LiteRtStatus BuildOneHotOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -1342,7 +1343,7 @@ static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
 
 LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        bool use_int64_bias_as_int32,
-                       const litert::Op& litert_op,
+                       const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -1394,11 +1395,12 @@ LiteRtStatus AddTensorToQnn(
   return kLiteRtStatusErrorRuntimeFailure;
 }
 
-LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
+LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
+                      Qnn_ContextHandle_t context_handle,
                       Qnn_ProfileHandle_t profile_handle,
                       LiteRtSubgraph subgraph, absl::string_view qnn_graph_name,
                       const ::qnn::Options& options) {
-  GraphMapper graph_mapper(subgraph, qnn, context_handle, profile_handle);
+  GraphMapper graph_mapper(ctx, subgraph, qnn, context_handle, profile_handle);
   LITERT_RETURN_IF_ERROR(graph_mapper.IsLiteRtSubgraphSupported());
   LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name, options));
 
@@ -1563,13 +1565,14 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
 //
 //===----------------------------------------------------------------------===//
 
-LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
+LiteRtStatus ComposeGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
+                          Qnn_ContextHandle_t context_handle,
                           Qnn_ProfileHandle_t profile_handle,
                           LiteRtSubgraph subgraph,
                           absl::string_view qnn_graph_name,
                           const ::qnn::Options& options) {
-  LITERT_RETURN_IF_ERROR(MapGraph(qnn, context_handle, profile_handle, subgraph,
-                                  qnn_graph_name, options));
+  LITERT_RETURN_IF_ERROR(MapGraph(ctx, qnn, context_handle, profile_handle,
+                                  subgraph, qnn_graph_name, options));
   return kLiteRtStatusOk;
 }
 
