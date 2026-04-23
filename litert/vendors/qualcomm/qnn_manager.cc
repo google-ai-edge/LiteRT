@@ -391,7 +391,8 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
 
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
-                              const ::qnn::Options& options) {
+                              const ::qnn::Options& options,
+                              QnnManagerRole role) {
   // If shared_library_dir is provided, add it to the path as it may contain
   // libs to be loaded.
   // TOOD: This should probably be done upstream in litert_dispatch.
@@ -465,6 +466,28 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   const char* build_id;
   Api()->backendGetBuildId(&build_id);
   LITERT_ASSIGN_OR_RETURN(sdk_version_, ParseSdkVersion(build_id));
+
+  // Select custom op package based on role. For dispatch, prefer the dispatch
+  // package; fall back to compile package for backward compatibility.
+  const auto& custom_op_package =
+      (role == QnnManagerRole::kDispatch &&
+       !options.GetDispatchCustomOpPackage().path.empty())
+          ? options.GetDispatchCustomOpPackage()
+          : options.GetCompileCustomOpPackage();
+  if (!custom_op_package.path.empty()) {
+    if (auto status = Api()->backendRegisterOpPackage(
+            backend_->GetBackendHandle(), custom_op_package.path.data(),
+            custom_op_package.interface_provider.data(),
+            custom_op_package.target.data());
+        status != QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+                 status);
+      return kLiteRtStatusErrorRuntimeFailure;
+    } else {
+      LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
+    }
+  }
+
   return kLiteRtStatusOk;
 }
 
@@ -556,9 +579,11 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 Expected<QnnManager::Ptr> QnnManager::Create(
     const ::qnn::Options& options,
     std::optional<std::string> shared_library_dir,
-    std::optional<::qnn::SocInfo> soc_info) {
+    std::optional<::qnn::SocInfo> soc_info,
+    QnnManagerRole role) {
   Ptr qnn_manager(new QnnManager);
-  if (auto status = qnn_manager->Init(shared_library_dir, soc_info, options);
+  if (auto status =
+          qnn_manager->Init(shared_library_dir, soc_info, options, role);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to set up QNN manager");
   }

@@ -487,6 +487,14 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
+  EXPECT_EQ(options.Value().GetCompileCustomOpPackageName(), "");
+  EXPECT_EQ(options.Value().GetCompileCustomOpPackagePath(), "");
+  EXPECT_EQ(options.Value().GetCompileCustomOpPackageTarget(), "");
+  EXPECT_EQ(options.Value().GetCompileCustomOpPackageInterfaceProvider(), "");
+  EXPECT_EQ(options.Value().GetDispatchCustomOpPackageName(), "");
+  EXPECT_EQ(options.Value().GetDispatchCustomOpPackagePath(), "");
+  EXPECT_EQ(options.Value().GetDispatchCustomOpPackageTarget(), "");
+  EXPECT_EQ(options.Value().GetDispatchCustomOpPackageInterfaceProvider(), "");
 }
 
 }  // namespace

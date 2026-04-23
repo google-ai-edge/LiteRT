@@ -298,4 +298,122 @@ absl::string_view QualcommOptions::GetSaverOutputDir() {
   return val;
 }
 
+void QualcommOptions::SetCompileCustomOpPackageName(const std::string& name) {
+  LrtQualcommOptionsSetCompileCustomOpPackageName(options_, name.c_str());
+}
+
+std::string_view QualcommOptions::GetCompileCustomOpPackageName() {
+  const char* val;
+  auto status = LrtQualcommOptionsGetCompileCustomOpPackageName(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetCompileCustomOpPackagePath(const std::string& path) {
+  LrtQualcommOptionsSetCompileCustomOpPackagePath(options_, path.c_str());
+}
+
+std::string_view QualcommOptions::GetCompileCustomOpPackagePath() {
+  const char* val;
+  auto status = LrtQualcommOptionsGetCompileCustomOpPackagePath(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetCompileCustomOpPackageTarget(const std::string& target) {
+  LrtQualcommOptionsSetCompileCustomOpPackageTarget(options_, target.c_str());
+}
+
+std::string_view QualcommOptions::GetCompileCustomOpPackageTarget() {
+  const char* val;
+  auto status = LrtQualcommOptionsGetCompileCustomOpPackageTarget(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetCompileCustomOpPackageInterfaceProvider(
+    const std::string& interface_provider) {
+  LrtQualcommOptionsSetCompileCustomOpPackageInterfaceProvider(
+      options_, interface_provider.c_str());
+}
+
+std::string_view QualcommOptions::GetCompileCustomOpPackageInterfaceProvider() {
+  const char* val;
+  auto status =
+      LrtQualcommOptionsGetCompileCustomOpPackageInterfaceProvider(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetDispatchCustomOpPackageName(
+    const std::string& name) {
+  LrtQualcommOptionsSetDispatchCustomOpPackageName(options_, name.c_str());
+}
+
+std::string_view QualcommOptions::GetDispatchCustomOpPackageName() {
+  const char* val;
+  auto status =
+      LrtQualcommOptionsGetDispatchCustomOpPackageName(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetDispatchCustomOpPackagePath(
+    const std::string& path) {
+  LrtQualcommOptionsSetDispatchCustomOpPackagePath(options_, path.c_str());
+}
+
+std::string_view QualcommOptions::GetDispatchCustomOpPackagePath() {
+  const char* val;
+  auto status =
+      LrtQualcommOptionsGetDispatchCustomOpPackagePath(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetDispatchCustomOpPackageTarget(
+    const std::string& target) {
+  LrtQualcommOptionsSetDispatchCustomOpPackageTarget(options_, target.c_str());
+}
+
+std::string_view QualcommOptions::GetDispatchCustomOpPackageTarget() {
+  const char* val;
+  auto status =
+      LrtQualcommOptionsGetDispatchCustomOpPackageTarget(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
+void QualcommOptions::SetDispatchCustomOpPackageInterfaceProvider(
+    const std::string& interface_provider) {
+  LrtQualcommOptionsSetDispatchCustomOpPackageInterfaceProvider(
+      options_, interface_provider.c_str());
+}
+
+std::string_view
+QualcommOptions::GetDispatchCustomOpPackageInterfaceProvider() {
+  const char* val;
+  auto status =
+      LrtQualcommOptionsGetDispatchCustomOpPackageInterfaceProvider(
+          options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return "";
+  }
+  return val;
+}
+
 }  // namespace litert::qualcomm

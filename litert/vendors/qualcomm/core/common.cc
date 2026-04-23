@@ -200,6 +200,33 @@ void Options::SetSaverOutputDir(absl::string_view saver_output_dir) {
   saver_output_dir_ = saver_output_dir;
 }
 
+void Options::SetCompileCustomOpPackage(std::string_view name, std::string_view path,
+                                 std::string_view target,
+                                 std::string_view interface_provider) {
+  compile_custom_op_package_.name = name;
+  compile_custom_op_package_.path = path;
+  compile_custom_op_package_.target = target;
+  compile_custom_op_package_.interface_provider = interface_provider;
+}
+
+const CustomOpPackage& Options::GetCompileCustomOpPackage() const {
+  return compile_custom_op_package_;
+}
+
+void Options::SetDispatchCustomOpPackage(std::string_view name,
+                                         std::string_view path,
+                                         std::string_view target,
+                                         std::string_view interface_provider) {
+  dispatch_custom_op_package_.name = name;
+  dispatch_custom_op_package_.path = path;
+  dispatch_custom_op_package_.target = target;
+  dispatch_custom_op_package_.interface_provider = interface_provider;
+}
+
+const CustomOpPackage& Options::GetDispatchCustomOpPackage() const {
+  return dispatch_custom_op_package_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -222,7 +249,19 @@ VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n\
 GraphPriority: %d\n\
-SaverOutputDir: %s\n";  // NOLINT
+SaverOutputDir: %s\n\
+CompileCustomOpPackage: {\
+  name: %s\n\
+  path: %s\n\
+  target: %s\n\
+  interface_provider: %s\n\
+}\n\
+DispatchCustomOpPackage: {\
+  name: %s\n\
+  path: %s\n\
+  target: %s\n\
+  interface_provider: %s\n\
+}";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
@@ -232,7 +271,12 @@ SaverOutputDir: %s\n";  // NOLINT
       enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
       htp_performance_mode_, dsp_performance_mode_, dump_tensor_ids,
       ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_,
-      graph_priority_, saver_output_dir_);
+      graph_priority_, saver_output_dir_, compile_custom_op_package_.name,
+      compile_custom_op_package_.path, compile_custom_op_package_.target,
+      compile_custom_op_package_.interface_provider,
+      dispatch_custom_op_package_.name, dispatch_custom_op_package_.path,
+      dispatch_custom_op_package_.target,
+      dispatch_custom_op_package_.interface_provider);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

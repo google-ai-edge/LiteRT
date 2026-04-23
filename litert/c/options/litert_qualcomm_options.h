@@ -293,6 +293,59 @@ LiteRtStatus LrtQualcommOptionsSetSaverOutputDir(LrtQualcommOptions options,
 
 LiteRtStatus LrtQualcommOptionsGetSaverOutputDir(LrtQualcommOptions options,
                                                  const char** saver_output_dir);
+
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackageName(
+    LrtQualcommOptions options, const char* compile_custom_op_package_name);
+
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackageName(
+    LrtQualcommOptions options, const char** compile_custom_op_package_name);
+
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackagePath(
+    LrtQualcommOptions options, const char* compile_custom_op_package_path);
+
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackagePath(
+    LrtQualcommOptions options, const char** compile_custom_op_package_path);
+
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackageTarget(
+    LrtQualcommOptions options, const char* compile_custom_op_package_target);
+
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackageTarget(
+    LrtQualcommOptions options, const char** compile_custom_op_package_target);
+
+LiteRtStatus LrtQualcommOptionsSetCompileCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char* compile_custom_op_package_interface_provider);
+
+LiteRtStatus LrtQualcommOptionsGetCompileCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char** compile_custom_op_package_interface_provider);
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackageName(
+    LrtQualcommOptions options, const char* dispatch_custom_op_package_name);
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackageName(
+    LrtQualcommOptions options, const char** dispatch_custom_op_package_name);
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackagePath(
+    LrtQualcommOptions options, const char* dispatch_custom_op_package_path);
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackagePath(
+    LrtQualcommOptions options, const char** dispatch_custom_op_package_path);
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackageTarget(
+    LrtQualcommOptions options, const char* dispatch_custom_op_package_target);
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackageTarget(
+    LrtQualcommOptions options, const char** dispatch_custom_op_package_target);
+
+LiteRtStatus LrtQualcommOptionsSetDispatchCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char* dispatch_custom_op_package_interface_provider);
+
+LiteRtStatus LrtQualcommOptionsGetDispatchCustomOpPackageInterfaceProvider(
+    LrtQualcommOptions options,
+    const char** dispatch_custom_op_package_interface_provider);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
