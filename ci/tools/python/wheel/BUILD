@@ -139,7 +139,8 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot/vendors/qualcomm:target",
     "//litert/python/aot/vendors/samsung:samsung_backend",
     "//litert/python/aot/vendors/samsung:target",
-
+    "//litert/python/aot/vendors/intel_openvino:intel_openvino_backend",
+    "//litert/python/aot/vendors/intel_openvino:target",
     # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
     "//litert/python/internal:litertlm_core",
     "//litert/python/internal:litertlm_header_schema_py",
@@ -161,9 +162,16 @@ PACKAGE_DATA = select({
     "//litert:linux_x86_64": [
         "//litert/tools:apply_plugin_main",
         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+        "//litert/vendors/intel_openvino/compiler:intel_openvino_compiler_plugin_so",
+        "//litert/vendors/intel_openvino/dispatch:dispatch_api_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "//litert/vendors/samsung/compiler:compiler_plugin_so",
+    ],
+    "//litert:windows": [
+        "//litert/tools:apply_plugin_main",
+        "//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin",
+        "//litert/vendors/intel_openvino/dispatch:LiteRtDispatch",
     ],
     "//conditions:default": [],
 })

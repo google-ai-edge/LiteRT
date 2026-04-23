@@ -36,11 +36,11 @@ def openvino_configure():
                 },
             },
             {
-                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.1/linux/openvino_toolkit_ubuntu22_2026.1.0.21367.63e31528c62_x86_64.tgz",
+                "url": "https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.1/linux/openvino_toolkit_ubuntu24_2026.1.0.21367.63e31528c62_x86_64.tgz",
                 "host_os": "linux",
                 "file_extension": "tgz",
                 "symlink_mapping": {
-                    "openvino": "openvino_toolkit_ubuntu22_2026.1.0.21367.63e31528c62_x86_64",
+                    "openvino": "openvino_toolkit_ubuntu24_2026.1.0.21367.63e31528c62_x86_64",
                 },
             },
             {

@@ -25,6 +25,29 @@ This will:
 - Generate the configuration file (.litert_configure.bazelrc)
 - Build a target. We use `//litert/runtime:compiled_model` as an example
 
+## Building the Python Wheel
+
+To build the `ai-edge-litert` pip wheel and all vendor SDK packages:
+
+```
+cd docker_build
+./build_wheel_with_docker.sh
+```
+
+This builds the main wheel (with Intel OpenVINO, Qualcomm, and MediaTek
+compiler plugins bundled) plus vendor SDK sdist packages. Outputs are
+collected in `dist/` at the repository root.
+
+Options:
+- `--use_existing_image` — skip `docker build` and reuse the existing image
+- `--dbg` — build in debug mode instead of optimized
+- `--python=3.12` — set `HERMETIC_PYTHON_VERSION`
+
+To verify the Intel OpenVINO plugin is bundled:
+```
+unzip -l dist/*.whl | grep openvino
+```
+
 ## Building with Docker Compose
 
 Alternatively, you can use Docker Compose:
@@ -35,15 +58,64 @@ docker-compose up
 
 ## Customizing the Build
 
-To build different targets, you can either:
+The default `build_with_docker.sh` runs `run_build.sh` inside the container,
+which builds `//litert/runtime:compiled_model`. To build different targets,
+edit `run_build.sh` — it is copied into the Docker image at build time.
 
-1. Modify the `hermetic_build.Dockerfile` and change the CMD line
-2. Modify the command in `docker-compose.yml`
-3. Pass a custom command when running Docker:
-   ```
-   # Run this from the repository root.
-   docker run --rm --user $(id -u):$(id -g) -v $(pwd):/litert_build litert_build_env bash -c "bazel build //litert/your_custom:target"
-   ```
+### Editing `run_build.sh`
+
+`run_build.sh` sources `/setup_bazel_env.sh` which sets `EXTRA_STARTUP`
+(proxy forwarding for Bazel's JVM downloader, SVE workaround for Apple
+Silicon). Use `${EXTRA_STARTUP}` in every `bazel` command so proxy and
+platform flags are applied automatically.
+
+Default `run_build.sh`:
+```bash
+source /setup_bazel_env.sh
+bazel ${EXTRA_STARTUP} build //litert/runtime:compiled_model
+```
+
+#### Example: Intel OpenVINO compiler plugin, dispatch library, and benchmark tool
+
+```bash
+source /setup_bazel_env.sh
+bazel ${EXTRA_STARTUP} build //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so
+bazel ${EXTRA_STARTUP} build //litert/vendors/intel_openvino/dispatch:dispatch_api_so
+bazel ${EXTRA_STARTUP} build //litert/tools:benchmark_model
+```
+
+#### Example: All vendor compiler plugins
+
+```bash
+source /setup_bazel_env.sh
+bazel ${EXTRA_STARTUP} build //litert/vendors/qualcomm/compiler:qualcomm_compiler_plugin_so
+bazel ${EXTRA_STARTUP} build //litert/vendors/mediatek/compiler:mediatek_compiler_plugin_so
+bazel ${EXTRA_STARTUP} build //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so
+```
+
+After editing, rebuild the Docker image to pick up the changes (the file is
+`COPY`'d during `docker build`):
+```bash
+./build_with_docker.sh           # rebuilds image + runs build
+./build_with_docker.sh --use_existing_image  # skip image rebuild (won't pick up run_build.sh changes)
+```
+
+### Alternative: Override CMD without editing files
+
+You can also pass a one-off command directly via `docker run`, without
+modifying `run_build.sh`:
+```bash
+# From the repository root:
+docker run --rm \
+  --security-opt seccomp=unconfined \
+  --user $(id -u):$(id -g) \
+  -e HOME=/litert_build -e USER=$(id -un) \
+  -e http_proxy="${http_proxy:-}" \
+  -e https_proxy="${https_proxy:-}" \
+  -v $(pwd):/litert_build \
+  litert_build_env \
+  bash -c 'source /setup_bazel_env.sh && bazel ${EXTRA_STARTUP} build //litert/your_custom:target'
+```
 
 ## Accessing Build Artifacts
 
@@ -68,6 +140,32 @@ The Docker environment:
 4. Automatically initializes and updates git submodules
 5. Automatically generates the .litert_configure.bazelrc file
 6. Provides a hermetic build environment independent of your local setup
+
+## Proxy Configuration
+
+If you are behind a corporate proxy, export the standard proxy environment
+variables **before** running any Docker build script:
+
+```bash
+export http_proxy="http://proxy.example.com:123"
+export https_proxy="http://proxy.example.com:123"
+export no_proxy="localhost,127.0.0.1,.example.com"
+```
+
+The build scripts automatically forward these variables through three layers:
+
+| Layer | Mechanism | Tools affected |
+|-------|-----------|----------------|
+| Docker image build | `--build-arg` in `docker build` | `apt-get`, `wget`, `pip` during image creation |
+| Container runtime | `-e` in `docker run` | `curl`, `pip`, general network access |
+| Bazel JVM downloader | `--host_jvm_args=-Dhttps.proxyHost=...` | Bazel repository fetches |
+
+Bazel's JVM-based downloader does **not** read `http_proxy`/`https_proxy`
+natively. The scripts parse the proxy URL, extract host and port, and pass
+them as Java system properties via `--host_jvm_args`.
+
+When no proxy variables are set (or they are empty), all proxy code is a
+complete no-op — no flags are added and connections go direct.
 
 ## Troubleshooting
 
