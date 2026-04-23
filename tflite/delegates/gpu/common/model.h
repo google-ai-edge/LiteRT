@@ -89,8 +89,8 @@ class GraphFloat32 {
   // @return graph inputs, that are values without producers.
   std::vector<Value*> inputs() const;
 
-  // @return graph outputs, that are values without consumers or values added by
-  // AddKnownGraphOutput.
+  // @return graph outputs, that are values added by AddKnownGraphOutput.
+  // If no outputs were added, returns values without consumers.
   std::vector<Value*> outputs() const;
 
   // @return values updated in place with a previously defined tensor reference.

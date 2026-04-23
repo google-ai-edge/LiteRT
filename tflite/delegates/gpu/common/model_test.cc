@@ -551,9 +551,42 @@ TEST(Model, KnownGraphOutput) {
 
   EXPECT_THAT(graph.nodes(), ElementsAre(node1, node2));
   EXPECT_THAT(graph.inputs(), UnorderedElementsAre(graph_input));
-  // `graph_output2` should appear first than the known graph output
-  // `graph_output1` for the compatibility.
-  EXPECT_THAT(graph.outputs(), ElementsAre(graph_output2, graph_output1));
+  EXPECT_THAT(graph.outputs(), ElementsAre(graph_output1, graph_output2));
+}
+
+TEST(Model, OutputOrdering) {
+  // node -> (out0, out1, out2)
+  // out1 has a consumer (it's intermediate but also a graph output)
+  GraphFloat32 graph;
+  Node* node = graph.NewNode();
+  Node* consumer = graph.NewNode();
+  Value* out0 = graph.NewValue();
+  Value* out1 = graph.NewValue();
+  Value* out2 = graph.NewValue();
+
+  ASSERT_TRUE(graph.SetProducer(node->id, out0->id).ok());
+  ASSERT_TRUE(graph.SetProducer(node->id, out1->id).ok());
+  ASSERT_TRUE(graph.SetProducer(node->id, out2->id).ok());
+  ASSERT_TRUE(graph.AddConsumer(consumer->id, out1->id).ok());
+
+  // Mark them as known outputs in a specific order.
+  graph.AddKnownGraphOutput(out0);
+  graph.AddKnownGraphOutput(out1);
+  graph.AddKnownGraphOutput(out2);
+
+  // Should strictly follow known_graph_outputs_ order.
+  EXPECT_THAT(graph.outputs(), ElementsAre(out0, out1, out2));
+
+  // If we change the order in known_graph_outputs_
+  GraphFloat32 graph2;
+  Node* node2 = graph2.NewNode();
+  Value* v0 = graph2.NewValue();
+  Value* v1 = graph2.NewValue();
+  ASSERT_TRUE(graph2.SetProducer(node2->id, v0->id).ok());
+  ASSERT_TRUE(graph2.SetProducer(node2->id, v1->id).ok());
+  graph2.AddKnownGraphOutput(v1);
+  graph2.AddKnownGraphOutput(v0);
+  EXPECT_THAT(graph2.outputs(), ElementsAre(v1, v0));
 }
 
 }  // namespace
