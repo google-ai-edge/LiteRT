@@ -40,6 +40,7 @@
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
 namespace litert::compiled_model_wrapper {
@@ -171,7 +172,7 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     PyObject* environment_capsule, const char* model_path, int hardware_accel,
-    int cpu_num_threads, std::string* out_error) {
+    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -195,6 +196,15 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
   }
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
+
+  if (enforce_f32_gpu) {
+    auto gpu_options_or = options.GetGpuOptions();
+    if (!gpu_options_or) {
+      if (out_error) *out_error = gpu_options_or.Error().Message();
+      return nullptr;
+    }
+    gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+  }
 
   if (cpu_num_threads > 0) {
     auto cpu_options_or = options.GetCpuOptions();
@@ -227,7 +237,7 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-    int cpu_num_threads, std::string* out_error) {
+    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -261,6 +271,15 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   }
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
+
+  if (enforce_f32_gpu) {
+    auto gpu_options_or = options.GetGpuOptions();
+    if (!gpu_options_or) {
+      if (out_error) *out_error = gpu_options_or.Error().Message();
+      return nullptr;
+    }
+    gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+  }
 
   if (cpu_num_threads > 0) {
     auto cpu_options_or = options.GetCpuOptions();
