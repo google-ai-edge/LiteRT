@@ -108,8 +108,6 @@ inline LiteRtStatus InitQnnOptions(
   ::qnn::QNNLogger::SetLogLevel(qnn_options.GetLogLevel());
   qnn_options.SetProfiling(
       static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
-  qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
-  qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
   qnn_options.SetUseInt64BiasAsInt32(qualcomm_options.GetUseInt64BiasAsInt32());
   qnn_options.SetBackendType(
       static_cast<::qnn::BackendType>(qualcomm_options.GetBackend()));

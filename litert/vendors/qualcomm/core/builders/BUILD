@@ -24,21 +24,6 @@ cc_library(
 )
 
 cc_library(
-    name = "fully_connected_op_builder_htp",
-    srcs = ["fully_connected_op_builder_htp.cc"],
-    hdrs = ["fully_connected_op_builder_htp.h"],
-    deps = [
-        ":op_builder",
-        "//litert/vendors/qualcomm/core:tensor_pool",
-        "//litert/vendors/qualcomm/core/utils:log",
-        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-cc_library(
     name = "elementwise_op_builder",
     srcs = ["elementwise_op_builder.cc"],
     hdrs = ["elementwise_op_builder.h"],

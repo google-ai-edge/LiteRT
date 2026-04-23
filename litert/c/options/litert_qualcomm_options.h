@@ -80,6 +80,7 @@ LiteRtStatus LrtQualcommOptionsGetLogLevel(
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
 // use_htp_preference
+// @deprecated This option is deprecated and will be no-op.
 
 // This option controls whether to convert a LiteRt operation to QNN operations
 // which are preferred by the HTP backend. Defaults to false.
@@ -91,6 +92,7 @@ LiteRtStatus LrtQualcommOptionsGetUseHtpPreference(LrtQualcommOptions options,
                                                    bool* use_htp_preference);
 
 // use_qint16_as_quint16
+// @deprecated This option is deprecated and will be no-op.
 
 // This option controls whether to convert a quantized int16 model to a
 // quantized uint16 model. Defaults to false.

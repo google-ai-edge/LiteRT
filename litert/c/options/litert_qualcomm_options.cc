@@ -359,9 +359,7 @@ LiteRtStatus LrtQualcommOptionsSetUseHtpPreference(LrtQualcommOptions options,
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-
-  options->use_htp_preference = use_htp_preference;
-
+  // This option is deprecated and no-op.
   return kLiteRtStatusOk;
 }
 
@@ -381,9 +379,7 @@ LiteRtStatus LrtQualcommOptionsSetUseQint16AsQuint16(
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-
-  options->use_qint16_as_quint16 = use_qint16_as_quint16;
-
+  // This option is deprecated and no-op.
   return kLiteRtStatusOk;
 }
 

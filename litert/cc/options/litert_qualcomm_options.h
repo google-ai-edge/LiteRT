@@ -118,12 +118,16 @@ class QualcommOptions {
   void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
   DspPerformanceMode GetDspPerformanceMode();
 
+  [[deprecated("This option is deprecated and will be no-op.")]]
   void SetUseHtpPreference(bool use_htp_preference);
+  [[deprecated("This option is deprecated and will be no-op.")]]
   bool GetUseHtpPreference();
 
   /// @brief This option controls whether to convert a quantized int16 model to
   /// a quantized uint16 model. Defaults to `false`.
+  [[deprecated("This option is deprecated and will be no-op.")]]
   void SetUseQint16AsQuint16(bool use_qin16_as_quint16);
+  [[deprecated("This option is deprecated and will be no-op.")]]
   bool GetUseQint16AsQuint16();
 
   /// @brief This option controls whether to convert bias tensors of
