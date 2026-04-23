@@ -26,6 +26,7 @@ compiler plugin and dispatch API support for Intel NPU hardware.
 - [Verifying NPU Execution](#verifying-npu-execution)
 - [OpenVINO Configuration Options](#openvino-configuration-options)
   - [AOT Compilation](#aot-compilation)
+  - [Benchmark Tool](#benchmark-tool)
 - [Setting Up an Intel NPU Device on Linux (PTL / LNL)](#setting-up-an-intel-npu-device-on-linux-ptl--lnl)
 - [Setting Up an Intel NPU Device on Windows](#setting-up-an-intel-npu-device-on-windows)
 - [Validating on a PTL Device](#validating-on-a-ptl-device)
@@ -136,6 +137,38 @@ model.run_by_index(sig_idx, input_buffers, output_buffers)
 print("Fully accelerated:", model.is_fully_accelerated())
 ```
 
+### 5. Benchmark
+
+```bash
+# Find dispatch library path
+DISPATCH_DIR=$(python3 -c "
+from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
+print(intel_openvino_backend.get_dispatch_dir())
+")
+
+# NPU benchmark
+litert-benchmark --model=model.tflite --use_npu \
+    --dispatch_library_path=$DISPATCH_DIR --num_runs=50
+
+# CPU benchmark (for comparison)
+litert-benchmark --model=model.tflite --num_runs=50 --num_threads=4
+
+# NPU only — fail if model can't be fully accelerated
+litert-benchmark --model=model.tflite --use_npu \
+    --dispatch_library_path=$DISPATCH_DIR --require_full_delegation
+
+# Save results as JSON
+litert-benchmark --model=model.tflite --use_npu \
+    --dispatch_library_path=$DISPATCH_DIR --result_json=results.json
+```
+
+You can also run the benchmark tool as a Python module:
+
+```bash
+python3 -m ai_edge_litert.tools.benchmark_litert_model \
+    --model=model.tflite --use_npu --dispatch_library_path=$DISPATCH_DIR
+```
+
 ---
 
 ## Verifying NPU Execution
@@ -193,8 +226,9 @@ This warning appears in two scenarios and **does not affect inference**:
 
 1. **During `Environment.create()` without a dispatch path** — Auto-registration
    tries to register NPU but no dispatch directory was provided. When using the
-   dispatch path is provided explicitly, NPU registers on the first attempt and
-   this warning only appears on an internal environment created by the runtime.
+   benchmark tool (which sets the dispatch path), NPU registers on the first
+   attempt and this warning only appears on an internal environment created by
+   the runtime.
 2. **During the first `model.run()` call** — The LiteRT runtime lazily creates
    an internal environment that does not inherit the dispatch path. This is
    upstream runtime behavior; the NPU dispatch was already initialized from
@@ -462,7 +496,7 @@ Three layers of proxy forwarding are handled automatically:
 | Bazel JVM downloader | `--host_jvm_args=-Dhttps.proxyHost=...` | Bazel repository fetches |
 
 Outputs in `dist/`:
-- `ai_edge_litert-*.whl` (wheel with compiler plugin + dispatch library)
+- `ai_edge_litert-*.whl` (wheel with compiler plugin + dispatch library + benchmark tool)
 - `ai_edge_litert_sdk_qualcomm-*.tar.gz`
 - `ai_edge_litert_sdk_mediatek-*.tar.gz`
 - `ai_edge_litert_sdk_intel-*.tar.gz`

@@ -212,6 +212,11 @@ setuptools.setup(
             'xdsl==0.28.0',
         ],
     },
+    entry_points={
+        'console_scripts': [
+            'litert-benchmark=ai_edge_litert.tools.benchmark_litert_model:main',
+        ],
+    },
     # Use the custom command for the build_py step
     cmdclass={
         'build_py': CustomBuildPy,
