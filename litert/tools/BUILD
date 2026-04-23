@@ -803,6 +803,7 @@ cc_binary(
         ":benchmark_model_main",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_allgpu_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_delegate_create",
         # copybara:uncomment_end
     ],
 )
