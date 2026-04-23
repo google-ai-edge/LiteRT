@@ -19,19 +19,21 @@ compiler plugin and dispatch API support for Intel NPU hardware.
 
 ## Table of Contents
 
--   [Supported Platforms](#supported-platforms)
--   [Prerequisites](#prerequisites)
--   [Quick Start](#quick-start)
--   [Verifying NPU Execution](#verifying-npu-execution)
--   [AOT Compilation](#aot-compilation)
--   [Setting Up an Intel NPU Device on Linux](#setting-up-an-intel-npu-device-on-linux)
--   [Setting Up an Intel NPU Device on Windows](#setting-up-an-intel-npu-device-on-windows)
--   [Validating on a PTL Device](#validating-on-a-ptl-device)
--   [Building the Python Wheel from Source](#building-the-python-wheel-from-source)
--   [Running Unit Tests](#running-unit-tests)
--   [Troubleshooting](#troubleshooting)
--   [Component Versions](#component-versions)
--   [Architecture](#architecture)
+- [Supported Platforms](#supported-platforms)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Verifying NPU Execution](#verifying-npu-execution)
+- [OpenVINO Configuration Options](#openvino-configuration-options)
+  - [AOT Compilation](#aot-compilation)
+  - [Benchmark Tool](#benchmark-tool)
+- [Setting Up an Intel NPU Device on Linux (PTL / LNL)](#setting-up-an-intel-npu-device-on-linux-ptl--lnl)
+- [Setting Up an Intel NPU Device on Windows](#setting-up-an-intel-npu-device-on-windows)
+- [Validating on a PTL Device](#validating-on-a-ptl-device)
+- [Building the Python Wheel from Source](#building-the-python-wheel-from-source)
+- [Running Unit Tests](#running-unit-tests)
+- [Troubleshooting](#troubleshooting)
+- [Component Versions](#component-versions)
+- [Architecture](#architecture)
 
 **Validated on:** - Linux: Intel Panther Lake (PTL, NPU5010), Ubuntu 24.04,
 OpenVINO 2026.1.0, NPU driver v1.32.0. - Windows: Intel Core Ultra Series 2/3,
@@ -130,7 +132,39 @@ model.run_by_index(sig_idx, input_buffers, output_buffers)
 print("Fully accelerated:", model.is_fully_accelerated())
 ```
 
---------------------------------------------------------------------------------
+### 5. Benchmark
+
+```bash
+# Find dispatch library path
+DISPATCH_DIR=$(python3 -c "
+from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
+print(intel_openvino_backend.get_dispatch_dir())
+")
+
+# NPU benchmark
+litert-benchmark --model=model.tflite --use_npu \
+    --dispatch_library_path=$DISPATCH_DIR --num_runs=50
+
+# CPU benchmark (for comparison)
+litert-benchmark --model=model.tflite --num_runs=50 --num_threads=4
+
+# NPU only — fail if model can't be fully accelerated
+litert-benchmark --model=model.tflite --use_npu \
+    --dispatch_library_path=$DISPATCH_DIR --require_full_delegation
+
+# Save results as JSON
+litert-benchmark --model=model.tflite --use_npu \
+    --dispatch_library_path=$DISPATCH_DIR --result_json=results.json
+```
+
+You can also run the benchmark tool as a Python module:
+
+```bash
+python3 -m ai_edge_litert.tools.benchmark_litert_model \
+    --model=model.tflite --use_npu --dispatch_library_path=$DISPATCH_DIR
+```
+
+---
 
 ## Verifying NPU Execution
 
@@ -264,6 +298,8 @@ model = CompiledModel.from_file(
 Follow these steps on your target Intel NPU machine (Panther Lake or Lunar Lake)
 running Ubuntu 24.04.
 
+ ℹ️ **_NOTE:_** If you want to do only AOT you can skip this section, as npu driver are not required for AOT compilation
+
 ### Step 1: Install NPU Drivers
 
 <!--* pragma: { seclinter_this_is_fine: true } *-->
@@ -296,14 +332,6 @@ If you encounter conflicts with existing Level Zero packages:
 ```bash
 sudo dpkg --purge --force-remove-reinstreq level-zero level-zero-devel
 sudo dpkg -i libze1_*.deb
-```
-
-### Step 3: Install OpenVINO Runtime
-
-**Option A: pip (recommended)**
-
-```bash
-pip install openvino==2026.1.0
 ```
 
 **Option B: APT repository**
@@ -341,6 +369,10 @@ correctly.
 ```bash
 pip install ai-edge-litert[npu-intel]
 
+#or install the intel sdk nightly seperately
+pip install ai-edge-litert
+pip install ai-edge-litert-sdk-intel-nightly
+
 # Verify backend
 python3 -c "
 from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
@@ -356,9 +388,7 @@ print('Dispatch dir:', intel_openvino_backend.get_dispatch_dir())
 Follow these steps on a Windows machine with Intel NPU hardware (Panther Lake or
 Lunar Lake).
 
-**Validated on:** Windows 11, Intel Core Ultra Series 2/3, NPU driver
-32.0.100.4724, OpenVINO 2026.1.0, Python 3.11 (only supported version on Windows
-— hardcoded in `.bazelrc` `build:windows` config).
+ℹ️ **_NOTE:_** If you want to do only AOT you can skip this section, as npu driver are not required for AOT compilation
 
 ### Step 1: Install Intel NPU Driver
 
@@ -374,6 +404,10 @@ After installation, verify the NPU device appears in Device Manager under
 
 ```powershell
 python -m pip install ai-edge-litert[npu-intel]
+
+#or install intel nightly sdk seperately
+python -m pip install ai-edge-litert
+python -m pip install ai-edge-litert-sdk-intel-nightly
 
 # Verify backend
 python -c "from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend; print('Backend ID:', intel_openvino_backend.IntelOpenVinoBackend.id()); print('Dispatch dir:', intel_openvino_backend.get_dispatch_dir())"
@@ -403,33 +437,9 @@ print("Fully accelerated:", model.is_fully_accelerated())
 
 --------------------------------------------------------------------------------
 
-## Validating on a PTL Device
-
-Copy the wheel to your PTL device and run the verification steps:
-
-```bash
-# From build machine
-scp dist/ai_edge_litert-*.whl intel@<PTL_HOST>:/path/to/workdir/
-
-# On the PTL device
-ssh intel@<PTL_HOST>
-cd /path/to/workdir
-python3 -m venv venv && source venv/bin/activate
-pip install ai_edge_litert-*.whl[npu-intel]
-
-# Verify backend
-python3 -c "
-from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
-print('Backend ID:', intel_openvino_backend.IntelOpenVinoBackend.id())
-print('Dispatch dir:', intel_openvino_backend.get_dispatch_dir())
-"
-```
-
---------------------------------------------------------------------------------
-
 ## Building the Python Wheel from Source
 
-### Option A: Docker Hermetic Build (Recommended)
+### Option A: Docker Hermetic Build only for Linux (Recommended)
 
 No local Bazel or build tools required. The Docker image includes all
 dependencies (Bazel 7.4.1, Android SDK/NDK, Clang 18, Python).
@@ -454,23 +464,11 @@ export no_proxy="localhost,127.0.0.1,.example.com"
 cd LiteRT/docker_build
 ./build_wheel_with_docker.sh
 ```
-
-Three layers of proxy forwarding are handled automatically:
-
-| Layer        | How                                     | Used by            |
-| ------------ | --------------------------------------- | ------------------ |
-| Docker image | `--build-arg http_proxy=...`            | `apt-get`, `wget`, |
-: build        :                                         : `pip` during image :
-:              :                                         : creation           :
-| Container    | `-e http_proxy=...`                     | `curl`, `pip`,     |
-: runtime      :                                         : general network    :
-:              :                                         : access             :
-| Bazel JVM    | `--host_jvm_args=-Dhttps.proxyHost=...` | Bazel repository   |
-: downloader   :                                         : fetches            :
-
-Outputs in `dist/`: - `ai_edge_litert-*.whl` (wheel with compiler plugin +
-dispatch library) - `ai_edge_litert_sdk_qualcomm-*.tar.gz` -
-`ai_edge_litert_sdk_mediatek-*.tar.gz` - `ai_edge_litert_sdk_intel-*.tar.gz`
+Outputs in `dist/`:
+- `ai_edge_litert-*.whl` (wheel with compiler plugin + dispatch library + benchmark tool)
+- `ai_edge_litert_sdk_qualcomm-*.tar.gz`
+- `ai_edge_litert_sdk_mediatek-*.tar.gz`
+- `ai_edge_litert_sdk_intel-*.tar.gz`
 
 Options: - `--use_existing_image` — skip `docker build`, reuse existing image -
 `--dbg` — build in debug mode - `--python=3.12` — set `HERMETIC_PYTHON_VERSION`
@@ -524,11 +522,15 @@ openvino`
 ```bash
 cd LiteRT
 ./configure
+# for Linux
 bash ci/build_pip_package_with_bazel.sh
+# for Windows
+bash ci/build_pip_package_with_bazel_windows.ps1
 ```
 
-### Building Individual Shared Libraries
 
+### Building Individual Shared Libraries
+For Linux:
 ```bash
 bazel build //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so
 bazel build //litert/vendors/intel_openvino/dispatch:dispatch_api_so

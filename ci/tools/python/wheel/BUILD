@@ -148,6 +148,7 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/internal:sampler_params_py_pb2",
     "//litert/python/internal:litertlm_builder",
     "//litert/python/tools:flatbuffer_utils",
+    "//litert/python/tools:benchmark_litert_model",
 ] + select({
     ":build_converter_enabled": [
         "//litert/python/mlir",
