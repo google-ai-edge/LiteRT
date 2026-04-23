@@ -74,6 +74,9 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
           LiteRtGetTensorBufferCustomTensorBufferHandle,
       .get_tensor_buffer_ahwb = LiteRtGetTensorBufferAhwb,
       .get_tensor_buffer_dma_buf_buffer = LiteRtGetTensorBufferDmaBufBuffer,
+#if LITERT_HAS_FASTRPC_SUPPORT
+      .get_tensor_buffer_fast_rpc_buffer = LiteRtGetTensorBufferFastRpcBuffer,
+#endif
       .has_tensor_buffer_event = LiteRtHasTensorBufferEvent,
       .get_tensor_buffer_event = LiteRtGetTensorBufferEvent,
       .set_tensor_buffer_event = LiteRtSetTensorBufferEvent,

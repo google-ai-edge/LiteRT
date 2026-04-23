@@ -23,6 +23,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -45,8 +46,9 @@ using litert::Unexpected;
 using litert::qnn::QnnManager;
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create(QnnManager& qnn) {
-  return Ptr(new LiteRtDispatchDeviceContextT(qnn));
+LiteRtDispatchDeviceContextT::Create(
+    const LiteRtRuntimeContext* runtime_context, QnnManager& qnn) {
+  return Ptr(new LiteRtDispatchDeviceContextT(runtime_context, qnn));
 }
 
 Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(
@@ -82,15 +84,15 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor) {
   LITERT_LOG(LITERT_DEBUG, "Registering tensor buffer %p", tensor_buffer);
   LiteRtTensorBufferType tensor_buffer_type;
-  if (auto status =
-          LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type);
+  if (auto status = runtime_context_->get_tensor_buffer_type(
+          tensor_buffer, &tensor_buffer_type);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to get tensor buffer type");
   }
 
   LiteRtRankedTensorType tensor_type;
-  if (auto status =
-          LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type);
+  if (auto status = runtime_context_->get_tensor_buffer_tensor_type(
+          tensor_buffer, &tensor_type);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to get tensor buffer's type");
   }
@@ -118,7 +120,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeFastRpc:
 #if LITERT_HAS_FASTRPC_SUPPORT
-      if (auto status = LiteRtGetTensorBufferFastRpcBuffer(
+      if (auto status = runtime_context_->get_tensor_buffer_fast_rpc_buffer(
               tensor_buffer, &buffer_host_addr, &buffer_fd);
           status != kLiteRtStatusOk) {
         return Unexpected(status, "Failed to get FastRPC buffer");
@@ -131,7 +133,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
     case kLiteRtTensorBufferTypeDmaBuf:
 #if LITERT_HAS_DMABUF_SUPPORT
-      if (auto status = LiteRtGetTensorBufferDmaBufBuffer(
+      if (auto status = runtime_context_->get_tensor_buffer_dma_buf_buffer(
               tensor_buffer, &buffer_host_addr, &buffer_fd);
           status != kLiteRtStatusOk) {
         return Unexpected(status, "Failed to get DMA-BUF buffer");
@@ -169,15 +171,15 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       [[fallthrough]];
     default:
       size_t tensor_buffer_size;
-      if (auto status =
-              LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size);
+      if (auto status = runtime_context_->get_tensor_buffer_size(
+              tensor_buffer, &tensor_buffer_size);
           status != kLiteRtStatusOk) {
         return Unexpected(status, "Failed to get tensor buffer size");
       }
 
       size_t tensor_buffer_offset;
-      if (auto status =
-              LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset);
+      if (auto status = runtime_context_->get_tensor_buffer_offset(
+              tensor_buffer, &tensor_buffer_offset);
           status != kLiteRtStatusOk) {
         return Unexpected(status, "Failed to get tensor buffer offset");
       }

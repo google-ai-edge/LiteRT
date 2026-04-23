@@ -36,6 +36,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -182,10 +183,9 @@ LiteRtDispatchInvocationContextT::Create(
       profile_handle, graph_index, graph_handle));
 }
 
-namespace {
-
-Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
-    const LiteRtRankedTensorType& tensor_type) {
+Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetInputRequirements(
+    int input_index, const LiteRtRankedTensorType& tensor_type) {
   if (tensor_type.layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported by QNN");
@@ -203,10 +203,12 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
   }
 
   LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
-          kSupportedTensorBufferTypes.size(),
-          kSupportedTensorBufferTypes.data(), *buffer_size, /*num_strides=*/0,
-          /*strides=*/nullptr, &requirements);
+  if (auto status =
+          device_context_->runtime_context()->create_tensor_buffer_requirements(
+              kSupportedTensorBufferTypes.size(),
+              kSupportedTensorBufferTypes.data(), *buffer_size,
+              /*num_strides=*/0,
+              /*strides=*/nullptr, &requirements);
       status != kLiteRtStatusOk) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Not implemented");
   }
@@ -214,18 +216,10 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
   return requirements;
 }
 
-}  // namespace
-
-Expected<LiteRtTensorBufferRequirements>
-LiteRtDispatchInvocationContextT::GetInputRequirements(
-    int input_index, const LiteRtRankedTensorType& tensor_type) {
-  return GetTensorBufferRequirements(tensor_type);
-}
-
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
-  return GetTensorBufferRequirements(tensor_type);
+  return GetInputRequirements(output_index, tensor_type);
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
@@ -369,7 +363,7 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
     return Unexpected(tensor_buffer.Error());
   }
   void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(
+  if (auto status = device_context_->runtime_context()->lock_tensor_buffer(
           *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock the tensor buffer");
@@ -379,7 +373,8 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
   std::vector<std::uint16_t> uint16_data;
   qnn::ConvertDataFromInt16toUInt16(int16_data, uint16_data);
   std::memcpy(mem_addr, uint16_data.data(), bytes);
-  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
+  if (auto status = device_context_->runtime_context()->unlock_tensor_buffer(
+          *tensor_buffer);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock the tensor buffer");
   }
@@ -393,7 +388,7 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
     return Unexpected(tensor_buffer.Error());
   }
   void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(
+  if (auto status = device_context_->runtime_context()->lock_tensor_buffer(
           *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock the tensor buffer");
@@ -403,7 +398,8 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
   std::vector<std::int16_t> int16_data;
   qnn::ConvertDataFromUInt16toInt16(uint16_data, int16_data);
   std::memcpy(mem_addr, int16_data.data(), bytes);
-  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
+  if (auto status = device_context_->runtime_context()->unlock_tensor_buffer(
+          *tensor_buffer);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock the tensor buffer");
   }

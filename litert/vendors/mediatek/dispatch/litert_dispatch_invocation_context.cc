@@ -364,7 +364,8 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::IoRequirementsBuilder(
 }
 
 Expected<LiteRtTensorBufferRequirements>
-LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create() {
+LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create(
+    const LiteRtRuntimeContext* runtime_context) {
   static constexpr std::array kSupportedTensorBufferTypes = {
 #if defined(__ANDROID__)
       kLiteRtTensorBufferTypeAhwb,
@@ -373,7 +374,7 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create() {
   };
 
   LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
+  if (auto status = runtime_context->create_tensor_buffer_requirements(
           kSupportedTensorBufferTypes.size(),
           kSupportedTensorBufferTypes.data(), buffer_size_, strides_.size(),
           strides_.data(), &requirements);
@@ -443,7 +444,8 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
                                                 tensor_type);
   }
 
-  return input_requirements_builders_[input_index]->Create();
+  return input_requirements_builders_[input_index]->Create(
+      device_context_->runtime_context());
 }
 
 Expected<LiteRtTensorBufferRequirements>
@@ -504,7 +506,8 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
                                                 tensor_type);
   }
 
-  return output_requirements_builders_[output_index]->Create();
+  return output_requirements_builders_[output_index]->Create(
+      device_context_->runtime_context());
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::AttachInput(

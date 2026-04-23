@@ -135,6 +135,8 @@ typedef struct LiteRtRuntimeContext {
   LiteRtStatus (*get_tensor_buffer_dma_buf_buffer)(
       LiteRtTensorBuffer tensor_buffer, void** dmabuf_buffer_addr,
       int* dmabuf_buffer_fd);
+  LiteRtStatus (*get_tensor_buffer_fast_rpc_buffer)(
+      LiteRtTensorBuffer tensor_buffer, void** host_buffer_addr, int* fd);
   LiteRtStatus (*has_tensor_buffer_event)(LiteRtTensorBuffer tensor_buffer,
                                           bool* has_event);
   LiteRtStatus (*get_tensor_buffer_event)(LiteRtTensorBuffer tensor_buffer,
