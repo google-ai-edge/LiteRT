@@ -106,12 +106,23 @@ load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 
 tf_workspace3()
 
+# Toolchains for ML projects hermetic builds.
+# Details: https://github.com/google-ml-infra/rules_ml_toolchain
+http_archive(
+    name = "rules_ml_toolchain",
+    sha256 = "5014d544b42b946524e196d6d20c5edf9211651ce310bf20e308d057a20d37b7",
+    strip_prefix = "rules_ml_toolchain-adf936c8f9254d66f77e3bcab96a723b0703be89",
+    urls = [
+        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/adf936c8f9254d66f77e3bcab96a723b0703be89.tar.gz",
+    ],
+)
+
 # Initialize hermetic Python
 load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
 
 python_init_rules()
 
-load("@xla//third_party/py:python_init_repositories.bzl", "python_init_repositories")
+load("@rules_ml_toolchain//py:python_init_repositories.bzl", "python_init_repositories")
 
 python_init_repositories(
     default_python_version = "system",
@@ -129,11 +140,11 @@ python_init_repositories(
     },
 )
 
-load("@xla//third_party/py:python_init_toolchains.bzl", "python_init_toolchains")
+load("@rules_ml_toolchain//py:python_register_toolchain.bzl", "python_register_toolchain")
 
-python_init_toolchains()
+python_register_toolchain()
 
-load("@xla//third_party/py:python_init_pip.bzl", "python_init_pip")
+load("@rules_ml_toolchain//py:python_init_pip.bzl", "python_init_pip")
 
 python_init_pip()
 
@@ -160,17 +171,6 @@ load(
 )
 
 python_wheel_version_suffix_repository(name = "tf_wheel_version_suffix")
-
-# Toolchains for ML projects hermetic builds.
-# Details: https://github.com/google-ml-infra/rules_ml_toolchain
-http_archive(
-    name = "rules_ml_toolchain",
-    sha256 = "9dbee8f24cc1b430bf9c2a6661ab70cbca89979322ddc7742305a05ff637ab6b",
-    strip_prefix = "rules_ml_toolchain-545c80f1026d526ea9c7aaa410bf0b52c9a82e74",
-    urls = [
-        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/545c80f1026d526ea9c7aaa410bf0b52c9a82e74.tar.gz",
-    ],
-)
 
 load(
     "@rules_ml_toolchain//cc/deps:cc_toolchain_deps.bzl",
