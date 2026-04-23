@@ -412,6 +412,7 @@ objc_library(
 exports_files(
     srcs = [
         "litert_c_api_dependency_test.sh",
+        "litert_compiler_plugin_symbol_test.sh",
         "testdata/mobilenet_v2_1.0_224.tflite",
         "testdata/model_magic_test.tflite",
         "testdata/model_with_external_weights.tflite",

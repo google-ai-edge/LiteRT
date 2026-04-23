@@ -24,8 +24,10 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -41,22 +43,20 @@ class Weights {
   Weights(const LiteRtCompilerContext* ctx, LiteRtWeights weights)
       : ctx_(ctx), weights_(weights) {}
 
-  Expected<int32_t> BufferId() const {
+  int32_t BufferId() const {
     int32_t buffer_id = -1;
-    if (!ctx_ || !ctx_->get_weights_buffer_id) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_weights_buffer_id) {
+      internal::AssertOk(ctx_->get_weights_buffer_id, weights_, &buffer_id);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_weights_buffer_id(weights_, &buffer_id));
     return buffer_id;
   }
 
-  Expected<absl::Span<const uint8_t>> Bytes() const {
+  absl::Span<const uint8_t> Bytes() const {
     size_t size = 0;
     const void* addr = nullptr;
-    if (!ctx_ || !ctx_->get_weights_bytes) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_weights_bytes) {
+      internal::AssertOk(ctx_->get_weights_bytes, weights_, &addr, &size);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_weights_bytes(weights_, &addr, &size));
     return absl::MakeSpan(static_cast<const uint8_t*>(addr), size);
   }
 
@@ -72,21 +72,19 @@ class Tensor {
 
   LiteRtTensor Get() const { return tensor_; }
 
-  Expected<absl::string_view> Name() const {
+  absl::string_view Name() const {
     const char* name = "";
-    if (!ctx_ || !ctx_->get_tensor_name) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_tensor_name) {
+      internal::AssertOk(ctx_->get_tensor_name, tensor_, &name);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_tensor_name(tensor_, &name));
     return absl::string_view(name);
   }
 
-  Expected<LiteRtTensorTypeId> TypeId() const {
+  LiteRtTensorTypeId TypeId() const {
     LiteRtTensorTypeId type_id = kLiteRtRankedTensorType;
-    if (!ctx_ || !ctx_->get_tensor_type_id) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_tensor_type_id) {
+      internal::AssertOk(ctx_->get_tensor_type_id, tensor_, &type_id);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_tensor_type_id(tensor_, &type_id));
     return type_id;
   }
 
@@ -116,41 +114,79 @@ class Tensor {
     return type;
   }
 
-  Expected<bool> HasWeights() const {
-    LITERT_ASSIGN_OR_RETURN(auto weights, GetWeights());
-    LITERT_ASSIGN_OR_RETURN(auto bytes, weights.Bytes());
+  bool HasWeights() const {
+    auto weights = Weights();
+    auto bytes = weights.Bytes();
     return !bytes.empty();
   }
 
-  Expected<Weights> GetWeights() const {
+  Weights Weights() const {
     LiteRtWeights weights = nullptr;
-    if (!ctx_ || !ctx_->get_tensor_weights) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_tensor_weights) {
+      internal::AssertOk(ctx_->get_tensor_weights, tensor_, &weights);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_tensor_weights(tensor_, &weights));
-    return Weights(ctx_, weights);
+    return litert::compiler::Weights(ctx_, weights);
   }
 
-  Expected<std::optional<LiteRtTensorDefiningOp>> DefiningOp() const {
+  std::optional<LiteRtTensorDefiningOp> DefiningOp() const {
     bool has_defining_op = false;
     LiteRtTensorDefiningOp defining_op;
-    if (!ctx_ || !ctx_->get_tensor_defining_op) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_tensor_defining_op) {
+      internal::AssertOk(ctx_->get_tensor_defining_op, tensor_,
+                         &has_defining_op, &defining_op);
     }
-    LITERT_RETURN_IF_ERROR(
-        ctx_->get_tensor_defining_op(tensor_, &has_defining_op, &defining_op));
     if (has_defining_op) {
-      return std::make_optional(defining_op);
+      return defining_op;
     }
-    return std::optional<LiteRtTensorDefiningOp>();
+    return std::nullopt;
   }
 
   Expected<Op> GetDefiningOp() const;
 
-  Expected<bool> IsConstant() const {
-    LITERT_ASSIGN_OR_RETURN(auto has_weights, HasWeights());
-    LITERT_ASSIGN_OR_RETURN(auto def_op, DefiningOp());
-    return has_weights && !def_op.has_value();
+  bool IsConstant() const { return HasWeights() && !DefiningOp().has_value(); }
+
+  LiteRtQuantizationTypeId QTypeId() const {
+    LiteRtQuantizationTypeId q_type_id = kLiteRtQuantizationNone;
+    if (ctx_ && ctx_->get_quantization_type_id) {
+      internal::AssertOk(ctx_->get_quantization_type_id, Get(), &q_type_id);
+    }
+    return q_type_id;
+  }
+
+  bool HasQuantization() const { return QTypeId() != kLiteRtQuantizationNone; }
+
+  LiteRtQuantizationPerTensor PerTensorQuantization() const {
+    LiteRtQuantizationPerTensor per_tensor_quantization;
+    if (ctx_ && ctx_->get_per_tensor_quantization) {
+      internal::AssertOk(ctx_->get_per_tensor_quantization, Get(),
+                         &per_tensor_quantization);
+    }
+    return per_tensor_quantization;
+  }
+
+  LiteRtQuantizationPerChannel PerChannelQuantization() const {
+    LiteRtQuantizationPerChannel per_channel_quantization;
+    if (ctx_ && ctx_->get_per_channel_quantization) {
+      internal::AssertOk(ctx_->get_per_channel_quantization, Get(),
+                         &per_channel_quantization);
+    }
+    return per_channel_quantization;
+  }
+
+  struct TensorUse;
+  std::vector<TensorUse> Uses() const;
+
+  bool IsSubgraphInput() const {
+    auto def_op = DefiningOp();
+    return !HasWeights() && !def_op.has_value();
+  }
+
+  uint32_t TensorIndex() const {
+    uint32_t index = 0;
+    if (ctx_ && ctx_->get_tensor_index) {
+      internal::AssertOk(ctx_->get_tensor_index, Get(), &index);
+    }
+    return index;
   }
 
   bool operator==(const Tensor& other) const {
@@ -171,46 +207,61 @@ class Op {
 
   LiteRtOp Get() const { return op_; }
 
-  Expected<LiteRtOpCode> Code() const {
+  LiteRtOpCode Code() const {
     LiteRtOpCode opcode = kLiteRtOpCodeTflCustom;
-    if (!ctx_ || !ctx_->get_op_code) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_op_code) {
+      internal::AssertOk(ctx_->get_op_code, op_, &opcode);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_op_code(op_, &opcode));
     return opcode;
   }
 
-  Expected<std::vector<Tensor>> Inputs() const {
+  std::vector<Tensor> Inputs() const {
     LiteRtParamIndex num_inputs = 0;
-    if (!ctx_ || !ctx_->get_num_op_inputs) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_num_op_inputs) {
+      internal::AssertOk(ctx_->get_num_op_inputs, op_, &num_inputs);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_num_op_inputs(op_, &num_inputs));
     std::vector<Tensor> inputs;
     inputs.reserve(num_inputs);
     for (LiteRtParamIndex i = 0; i < num_inputs; ++i) {
       LiteRtTensor input;
-      LITERT_RETURN_IF_ERROR(ctx_->get_op_input(op_, i, &input));
+      if (ctx_ && ctx_->get_op_input) {
+        internal::AssertOk(ctx_->get_op_input, op_, i, &input);
+      }
       inputs.emplace_back(ctx_, input);
     }
     return inputs;
   }
 
-  Expected<std::vector<Tensor>> Outputs() const {
+  std::vector<Tensor> Outputs() const {
     LiteRtParamIndex num_outputs = 0;
-    if (!ctx_ || !ctx_->get_num_op_outputs) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_num_op_outputs) {
+      internal::AssertOk(ctx_->get_num_op_outputs, op_, &num_outputs);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_num_op_outputs(op_, &num_outputs));
     std::vector<Tensor> outputs;
     outputs.reserve(num_outputs);
     for (LiteRtParamIndex i = 0; i < num_outputs; ++i) {
       LiteRtTensor output;
-      LITERT_RETURN_IF_ERROR(ctx_->get_op_output(op_, i, &output));
+      if (ctx_ && ctx_->get_op_output) {
+        internal::AssertOk(ctx_->get_op_output, op_, i, &output);
+      }
       outputs.emplace_back(ctx_, output);
     }
     return outputs;
   }
+
+  Expected<absl::string_view> CustomCode() const {
+    const char* custom_code;
+    if (!ctx_ || !ctx_->get_custom_code) {
+      return Unexpected(kLiteRtStatusErrorNotFound);
+    }
+    auto status = ctx_->get_custom_code(Get(), &custom_code);
+    if (status != kLiteRtStatusOk) {
+      return Error(status, "Failed to get custom code");
+    }
+    return absl::string_view(custom_code);
+  }
+
+  bool Is(LiteRtOpCode code) const { return Code() == code; }
 
  private:
   const LiteRtCompilerContext* ctx_;
@@ -218,11 +269,35 @@ class Op {
 };
 
 inline Expected<Op> Tensor::GetDefiningOp() const {
-  LITERT_ASSIGN_OR_RETURN(auto def_op, DefiningOp());
+  auto def_op = DefiningOp();
   if (def_op.has_value()) {
     return Op(ctx_, def_op->op);
   }
   return Unexpected(kLiteRtStatusErrorNotFound);
+}
+
+struct Tensor::TensorUse {
+  Op user;
+  LiteRtParamIndex user_arg_ind;
+};
+
+inline std::vector<Tensor::TensorUse> Tensor::Uses() const {
+  LiteRtParamIndex num_uses = 0;
+  if (ctx_ && ctx_->get_num_tensor_uses) {
+    internal::AssertOk(ctx_->get_num_tensor_uses, Get(), &num_uses);
+  }
+  std::vector<TensorUse> uses;
+  uses.reserve(num_uses);
+  for (LiteRtParamIndex i = 0; i < num_uses; ++i) {
+    LiteRtOp user = nullptr;
+    LiteRtParamIndex user_arg_index = 0;
+    if (ctx_ && ctx_->get_tensor_use) {
+      internal::AssertOk(ctx_->get_tensor_use, Get(), i, &user,
+                         &user_arg_index);
+    }
+    uses.emplace_back(TensorUse{Op(ctx_, user), user_arg_index});
+  }
+  return uses;
 }
 
 class Subgraph {
@@ -232,51 +307,53 @@ class Subgraph {
 
   LiteRtSubgraph Get() const { return subgraph_; }
 
-  Expected<std::vector<Tensor>> Inputs() const {
+  std::vector<Tensor> Inputs() const {
     LiteRtParamIndex num_inputs = 0;
-    if (!ctx_ || !ctx_->get_num_subgraph_inputs) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_num_subgraph_inputs) {
+      internal::AssertOk(ctx_->get_num_subgraph_inputs, subgraph_, &num_inputs);
     }
-    LITERT_RETURN_IF_ERROR(
-        ctx_->get_num_subgraph_inputs(subgraph_, &num_inputs));
     std::vector<Tensor> inputs;
     inputs.reserve(num_inputs);
     for (LiteRtParamIndex i = 0; i < num_inputs; ++i) {
       LiteRtTensor input;
-      LITERT_RETURN_IF_ERROR(ctx_->get_subgraph_input(subgraph_, i, &input));
+      if (ctx_ && ctx_->get_subgraph_input) {
+        internal::AssertOk(ctx_->get_subgraph_input, subgraph_, i, &input);
+      }
       inputs.emplace_back(ctx_, input);
     }
     return inputs;
   }
 
-  Expected<std::vector<Tensor>> Outputs() const {
+  std::vector<Tensor> Outputs() const {
     LiteRtParamIndex num_outputs = 0;
-    if (!ctx_ || !ctx_->get_num_subgraph_outputs) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_num_subgraph_outputs) {
+      internal::AssertOk(ctx_->get_num_subgraph_outputs, subgraph_,
+                         &num_outputs);
     }
-    LITERT_RETURN_IF_ERROR(
-        ctx_->get_num_subgraph_outputs(subgraph_, &num_outputs));
     std::vector<Tensor> outputs;
     outputs.reserve(num_outputs);
     for (LiteRtParamIndex i = 0; i < num_outputs; ++i) {
       LiteRtTensor output;
-      LITERT_RETURN_IF_ERROR(ctx_->get_subgraph_output(subgraph_, i, &output));
+      if (ctx_ && ctx_->get_subgraph_output) {
+        internal::AssertOk(ctx_->get_subgraph_output, subgraph_, i, &output);
+      }
       outputs.emplace_back(ctx_, output);
     }
     return outputs;
   }
 
-  Expected<std::vector<Op>> Ops() const {
+  std::vector<Op> Ops() const {
     LiteRtParamIndex num_ops = 0;
-    if (!ctx_ || !ctx_->get_num_subgraph_ops) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_num_subgraph_ops) {
+      internal::AssertOk(ctx_->get_num_subgraph_ops, subgraph_, &num_ops);
     }
-    LITERT_RETURN_IF_ERROR(ctx_->get_num_subgraph_ops(subgraph_, &num_ops));
     std::vector<Op> ops;
     ops.reserve(num_ops);
     for (LiteRtParamIndex i = 0; i < num_ops; ++i) {
       LiteRtOp op;
-      LITERT_RETURN_IF_ERROR(ctx_->get_subgraph_op(subgraph_, i, &op));
+      if (ctx_ && ctx_->get_subgraph_op) {
+        internal::AssertOk(ctx_->get_subgraph_op, subgraph_, i, &op);
+      }
       ops.emplace_back(ctx_, op);
     }
     return ops;
@@ -294,26 +371,24 @@ class Model {
 
   LiteRtModel Get() const { return model_; }
 
-  Expected<size_t> NumSubgraphs() const {
+  size_t NumSubgraphs() const {
     LiteRtParamIndex num_subgraphs = 0;
-    if (!ctx_ || !ctx_->get_num_model_subgraphs) {
-      return Unexpected(kLiteRtStatusErrorNotFound);
+    if (ctx_ && ctx_->get_num_model_subgraphs) {
+      internal::AssertOk(ctx_->get_num_model_subgraphs, model_, &num_subgraphs);
     }
-    LITERT_RETURN_IF_ERROR(
-        ctx_->get_num_model_subgraphs(model_, &num_subgraphs));
     return num_subgraphs;
   }
 
-  Expected<Subgraph> GetSubgraph(size_t index) const {
+  Expected<class Subgraph> Subgraph(size_t index) const {
     LiteRtSubgraph subgraph;
     if (!ctx_ || !ctx_->get_model_subgraph) {
       return Unexpected(kLiteRtStatusErrorNotFound);
     }
     LITERT_RETURN_IF_ERROR(ctx_->get_model_subgraph(model_, index, &subgraph));
-    return Subgraph(ctx_, subgraph);
+    return litert::compiler::Subgraph(ctx_, subgraph);
   }
 
-  Expected<Subgraph> MainSubgraph() const { return GetSubgraph(0); }
+  Expected<class Subgraph> MainSubgraph() const { return this->Subgraph(0); }
 
  private:
   const LiteRtCompilerContext* ctx_;
