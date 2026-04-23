@@ -21,7 +21,9 @@
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
+#include "litert/tools/flags/options_parser_registry.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -155,5 +157,11 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
       absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
   return {};
 }
+
+LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
+  LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
+                          options.GetGoogleTensorOptions());
+  return UpdateGoogleTensorOptionsFromFlags(google_tensor_opts);
+});
 
 }  // namespace litert::google_tensor

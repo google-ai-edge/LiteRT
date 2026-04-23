@@ -24,7 +24,9 @@
 #include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
+#include "litert/tools/flags/options_parser_registry.h"
 
 ABSL_FLAG(bool, samsung_large_model_support, false,
           "Whether to enable large model support.");
@@ -32,9 +34,16 @@ ABSL_FLAG(bool, samsung_large_model_support, false,
 namespace litert::samsung {
 
 Expected<void> UpdateSamsungOptionsFromFlags(SamsungOptions& options) {
-  // SamsungOptions currently has no configurable options.
-  // This function is a placeholder for future Samsung-specific options.
   return {};
 }
+
+}  // namespace litert::samsung
+
+namespace litert::samsung {
+
+LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
+  LITERT_ASSIGN_OR_RETURN(auto& samsung_opts, options.GetSamsungOptions());
+  return UpdateSamsungOptionsFromFlags(samsung_opts);
+});
 
 }  // namespace litert::samsung

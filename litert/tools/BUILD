@@ -410,6 +410,12 @@ cc_library(
         "//litert/cc/options:litert_samsung_options",
         "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
+        "//litert/tools/flags:options_parser_registry",
+        "//litert/tools/flags/vendors:google_tensor_flags",
+        "//litert/tools/flags/vendors:intel_openvino_flags",
+        "//litert/tools/flags/vendors:mediatek_flags",
+        "//litert/tools/flags/vendors:qualcomm_flags",
+        "//litert/tools/flags/vendors:samsung_flags",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -499,12 +505,14 @@ cc_binary(
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
+        "//litert/tools/flags:options_parser_registry",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
         "//litert/tools/flags/vendors:samsung_flags",
         "//tflite/profiling:time",
+        "@com_google_absl//absl/flags:config",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
@@ -622,11 +630,14 @@ cc_binary(
     deps = NUMERICS_CHECK_DEPS + [
         ":tensor_utils",
         "//litert/cc:litert_common",
+        "//litert/tools/flags:options_parser_registry",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
         "//litert/tools/flags/vendors:samsung_flags",
+        "@com_google_absl//absl/flags:config",
+        "@com_google_absl//absl/strings",
     ] + select({
         "//litert:android": [
             # copybara:uncomment_begin(google-only)
@@ -773,6 +784,8 @@ cc_library(
         ":benchmark_litert_model",
         "//tflite/c:c_api_types",
         "//tflite/tools:logging",
+        "@com_google_absl//absl/flags:reflection",
+        "@com_google_absl//absl/strings",
     ],
 )
 

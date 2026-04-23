@@ -47,6 +47,7 @@ limitations under the License.
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
+#include "litert/tools/flags/options_parser_registry.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
@@ -101,7 +102,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
       GetRequestedHardwareAccelerators(params);
 
   if (use_npu) {
-    // QNN options
+    // Set default QNN options
     LITERT_ASSIGN_OR_ABORT(auto& qnn_opts,
                            compilation_options.GetQualcommOptions());
     qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
@@ -113,7 +114,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
         litert::qualcomm::QualcommOptions::OptimizationLevel::
             kOptimizeForInferenceO3);
 
-    // MTK options
+    // Set default MTK options
     LITERT_ASSIGN_OR_ABORT(auto& mtk_opts,
                            compilation_options.GetMediatekOptions());
     if (mediatek_nerun_pilot_version == "version9") {
@@ -121,11 +122,17 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
           kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9);
     }
     mtk_opts.SetPerformanceMode(
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);  // NOLINT
-    mtk_opts.SetPerformanceMode(
         kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost);
     mtk_opts.SetEnableL1CacheOptimizations(true);
-    // TODO(yunandrew): Add options for other NPU backends.
+
+    // Parser user provided NPU options
+    auto status = tools::OptionsParserRegistry::GetInstance().RunAllParsers(
+        compilation_options);
+    if (!status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to run options parsers: %s",
+                 status.Error().Message().c_str());
+      std::abort();
+    }
   }
 
   if (use_gpu) {

@@ -26,9 +26,6 @@
 
 // GENERAL SDK SETTINGS ////////////////////////////////////////////////////////
 
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS) || \
-    defined(INCLUDE_QUALCOMM_RUNTIME_FLAGS)
-
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LogLevel,
                   qualcomm_log_level);
 
@@ -52,11 +49,7 @@ std::string AbslUnparseFlag(QualcommOptions::Backend options);
 
 }  // namespace litert::qualcomm
 
-#endif
-
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS)
 
 ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);
 
@@ -104,11 +97,7 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
-#endif
-
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS)
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
                   qualcomm_htp_performance_mode);
@@ -148,12 +137,7 @@ std::string AbslUnparseFlag(QualcommOptions::Profiling options);
 
 }  // namespace litert::qualcomm
 
-#endif
-
 // TO OBJECT (internal) ////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_QUALCOMM_COMPILE_FLAGS) || \
-    defined(INCLUDE_QUALCOMM_RUNTIME_FLAGS)
 
 namespace litert::qualcomm {
 
@@ -162,7 +146,5 @@ namespace litert::qualcomm {
 Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts);
 
 }  // namespace litert::qualcomm
-
-#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_QUALCOMM_FLAGS_H_

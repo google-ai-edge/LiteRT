@@ -19,7 +19,9 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
+#include "absl/flags/usage_config.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -32,16 +34,6 @@
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/model/model_load.h"
 #include "litert/tools/accuracy_debugger/accuracy_debugger_util.h"
-
-#define INCLUDE_QUALCOMM_COMPILE_FLAGS
-#define INCLUDE_QUALCOMM_RUNTIME_FLAGS
-#define INCLUDE_MEDIATEK_COMPILE_FLAGS
-#define INCLUDE_MEDIATEK_RUNTIME_FLAGS
-#define INCLUDE_INTEL_OPENVINO_COMPILE_FLAGS
-#define INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
-#define INCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS
-#define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
-
 #include "litert/tools/flags/vendors/google_tensor_flags.h"
 #include "litert/tools/flags/vendors/intel_openvino_flags.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
@@ -170,6 +162,15 @@ litert::Expected<litert::Options> GetOptions() {
 }  // namespace litert::tools
 
 int main(int argc, char** argv) {
+  absl::FlagsUsageConfig usage_config;
+  usage_config.contains_help_flags = [](absl::string_view filename) {
+    return absl::StrContains(
+               filename,
+               "litert/tools/accuracy_debugger/accuracy_debugger_main.cc") ||
+           absl::StrContains(filename, "litert/tools/flags/vendors/");
+  };
+  absl::SetFlagsUsageConfig(usage_config);
+
   absl::ParseCommandLine(argc, argv);
 
   std::string model_path = absl::GetFlag(FLAGS_model_path);

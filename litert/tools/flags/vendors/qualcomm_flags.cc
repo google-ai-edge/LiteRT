@@ -22,8 +22,11 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/tools/flags/flag_types.h"
+#include "litert/tools/flags/options_parser_registry.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -546,8 +549,16 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const std::string saver_output_dir =
       absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
   opts.SetSaverOutputDir(saver_output_dir);
-
   return {};
 }
+
+}  // namespace litert::qualcomm
+
+namespace litert::qualcomm {
+
+LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
+  LITERT_ASSIGN_OR_RETURN(auto& qualcomm_opts, options.GetQualcommOptions());
+  return UpdateQualcommOptionsFromFlags(qualcomm_opts);
+});
 
 }  // namespace litert::qualcomm

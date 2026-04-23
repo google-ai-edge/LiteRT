@@ -12,12 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#define INCLUDE_QUALCOMM_RUNTIME_FLAGS
-#define INCLUDE_MEDIATEK_RUNTIME_FLAGS
-#define INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
-#define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
-#define INCLUDE_SAMSUNG_RUNTIME_FLAGS
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -30,8 +24,10 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
+#include "absl/flags/usage_config.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/random/random.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -47,11 +43,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
-#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
-#include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
-#include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
-#include "litert/tools/flags/vendors/samsung_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/options_parser_registry.h"
 #include "litert/tools/tensor_utils.h"
 #include "tflite/profiling/time.h"
 
@@ -103,11 +95,6 @@ ABSL_FLAG(int32_t, kernel_batch_size, -1, "Kernel batch size for the model.");
 namespace litert {
 namespace {
 
-using ::litert::google_tensor::UpdateGoogleTensorOptionsFromFlags;
-using ::litert::intel_openvino::UpdateIntelOpenVinoOptionsFromFlags;
-using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
-using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
-using ::litert::samsung::UpdateSamsungOptionsFromFlags;
 
 litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
@@ -258,20 +245,8 @@ Expected<Options> GetOptions() {
     }
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
-  LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
-                          options.GetGoogleTensorOptions());
   LITERT_RETURN_IF_ERROR(
-      UpdateGoogleTensorOptionsFromFlags(google_tensor_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& intel_openvino_opts,
-                          options.GetIntelOpenVinoOptions());
-  LITERT_RETURN_IF_ERROR(
-      UpdateIntelOpenVinoOptionsFromFlags(intel_openvino_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& samsung_opts, options.GetSamsungOptions());
-  LITERT_RETURN_IF_ERROR(UpdateSamsungOptionsFromFlags(samsung_opts));
-  LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
-  LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
+      tools::OptionsParserRegistry::GetInstance().RunAllParsers(options));
   LITERT_RETURN_IF_ERROR(ConfigureScopedWeightSource(options));
   return options;
 }
@@ -518,6 +493,13 @@ Expected<void> RunModel() {
 }  // namespace litert
 
 int main(int argc, char** argv) {
+  absl::FlagsUsageConfig usage_config;
+  usage_config.contains_help_flags = [](absl::string_view filename) {
+    return absl::StrContains(filename, "litert/tools/run_model.cc") ||
+           absl::StrContains(filename, "litert/tools/flags/vendors/");
+  };
+  absl::SetFlagsUsageConfig(usage_config);
+
   absl::ParseCommandLine(argc, argv);
 
   auto res = litert::RunModel();

@@ -110,30 +110,6 @@ target_link_libraries(litert_apply_plugin
         absl::statusor
 )
 
-# NPU numerics check
-add_library(litert_npu_numerics_check STATIC
-    npu_numerics_check.cc
-)
-
-target_include_directories(litert_npu_numerics_check
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-target_link_libraries(litert_npu_numerics_check
-    PUBLIC
-        litert_cc_api
-        litert_runtime
-        absl::strings
-        absl::status
-        absl::statusor
-        litert_tensor_utils
-)
-
 # Add flags
 add_subdirectory(flags)
 
@@ -147,6 +123,7 @@ set(LITERT_TOOL_COMMON_LIBS
     litert_core
     litert_core_model
     litert_runtime
+    litert_options_parser_registry
 )
 
 set(ABSEIL_TOOL_LIBS
@@ -163,6 +140,55 @@ set(ABSEIL_TOOL_LIBS
     absl::status
     absl::statusor
 )
+
+# NPU numerics check
+add_executable(litert_npu_numerics_check
+    npu_numerics_check.cc
+)
+
+target_include_directories(litert_npu_numerics_check
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
+        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+if(ANDROID OR APPLE)
+    target_link_libraries(litert_npu_numerics_check
+        PRIVATE
+            litert_tool_display
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            litert_tool_flags_samsung
+            ${LITERT_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+            litert_tensor_utils
+    )
+else()
+    target_link_libraries(litert_npu_numerics_check
+        PRIVATE
+            litert_tool_display
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            litert_tool_flags_samsung
+            Threads::Threads
+            tensorflow-lite
+            "-Wl,--start-group"
+            ${ABSEIL_TOOL_LIBS}
+            ${LITERT_TOOL_COMMON_LIBS}
+            "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
+            litert_tensor_utils
+    )
+endif()
 
 # run_model
 add_executable(run_model
@@ -353,6 +379,7 @@ if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(extract_bytecode PRIVATE ${LOG_LIB})
     # Statically link TFLite GPU/GL core objects for tool executables on Android.
     if(TARGET litert_tflite_gpu_gl_core)
+        target_link_libraries(litert_npu_numerics_check PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(run_model PRIVATE litert_tflite_gpu_gl_core)
         target_link_libraries(apply_plugin_main PRIVATE litert_tflite_gpu_gl_core)
     endif()

@@ -76,6 +76,7 @@ cc_binary(
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "@com_google_absl//absl/flags:config",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",

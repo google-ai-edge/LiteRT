@@ -27,16 +27,9 @@
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-#if defined(INCLUDE_SAMSUNG_COMPILE_FLAGS)
-
 ABSL_DECLARE_FLAG(bool, samsung_large_model_support);
 
-#endif
-
 // PARSERS (internal) //////////////////////////////////////////////////////////
-
-#if defined(INCLUDE_SAMSUNG_COMPILE_FLAGS) || \
-    defined(INCLUDE_SAMSUNG_RUNTIME_FLAGS)
 
 namespace litert::samsung {
 
@@ -45,6 +38,5 @@ namespace litert::samsung {
 Expected<void> UpdateSamsungOptionsFromFlags(SamsungOptions& options);
 
 }  // namespace litert::samsung
-#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_SAMSUNG__FLAGS_H_
