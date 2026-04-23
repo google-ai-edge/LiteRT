@@ -75,6 +75,7 @@ function Get-BazelInfo {
   else {
     $ProcInfo.Arguments = "info $Key"
   }
+  $ProcInfo.WorkingDirectory = $RepoRoot
   $ProcInfo.RedirectStandardOutput = $true
   $ProcInfo.RedirectStandardError = $true
   $ProcInfo.UseShellExecute = $false
