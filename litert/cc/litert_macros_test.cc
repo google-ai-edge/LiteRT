@@ -324,6 +324,9 @@ TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
 }
 
 TEST(LiteRtErrorStatusBuilderTest, BacktraceWorks) {
+#if defined(LITERT_WINDOWS_OS)
+  GTEST_SKIP() << "Backtrace source locations are not available on Windows";
+#endif
   const int error_1_line = __LINE__ + 2;
   auto error_1 = []() -> Expected<void> {
     LITERT_RETURN_IF_ERROR(Unexpected(Status::kErrorUnknown, "An error message."));
