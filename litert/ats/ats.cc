@@ -31,7 +31,6 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/internal/litert_detail.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "tflite/schema/schema_generated.h"
@@ -123,11 +122,9 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
 }
 
 int Ats() {
-  auto env = litert::Environment::Create({});
-  ABSL_CHECK(env);
   std::cerr << kArt << std::endl;
 
-  auto options = AtsConf::ParseFlagsAndDoSetup(*env);
+  auto options = AtsConf::ParseFlagsAndDoSetup();
   ABSL_CHECK(options);
 
   size_t test_id = 0;

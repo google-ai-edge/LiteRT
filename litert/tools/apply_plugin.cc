@@ -77,7 +77,7 @@ class Context {
 
   Environment& Environment() { return run_->environment; }
 
-  LiteRtOptions Options() { return run_->options_ptr.get(); }
+  ::litert::Options& Options() { return run_->options; }
 
   absl::string_view SocModelTarget() const {
     ABSL_CHECK_EQ(run_->soc_models.size(), 1);
@@ -182,7 +182,7 @@ Expected<std::vector<CompilerPlugin>> LoadAllPlugins(Context& ctx) {
   LITERT_RETURN_IF_ERROR(LiteRtGetEnvironmentOptions(
       ctx.Environment().GetHolder().handle, &env_options));
   auto plugins =
-      CompilerPlugin::LoadPlugins(paths_vec, env_options, ctx.Options());
+      CompilerPlugin::LoadPlugins(paths_vec, env_options, ctx.Options().Get());
   if (!plugins.HasValue()) {
     ctx.Dump().Fail();
     return plugins;
@@ -479,15 +479,12 @@ LiteRtStatus Apply(Context& ctx) {
 }  // namespace
 
 LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run) {
-  auto options_ptr = litert::internal::LiteRtOptionsPtrBuilder::Build(
-      run->options, run->environment.GetHolder());
-  if (!options_ptr.HasValue()) {
+  if (auto status = run->options.Build(); !status) {
     run->dump_out.Get().get()
-        << "Failed to build options, Error: " << options_ptr.Error().Message()
+        << "Failed to build options, Error: " << status.Error().Message()
         << "\n";
-    return options_ptr.Error().Status();
+    return status.Error().Status();
   }
-  run->options_ptr = std::move(*options_ptr);
 
   Context context(std::move(run));
   DumpPreamble(context.Dump());

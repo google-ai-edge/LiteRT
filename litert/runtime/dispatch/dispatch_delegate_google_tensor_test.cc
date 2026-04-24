@@ -144,11 +144,7 @@ TEST(DispatchDelegate, CpuBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto c_options,
-      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
-
-  dispatch_delegate = CreateDispatchDelegatePtr(env.Get(), c_options.get());
+  dispatch_delegate = CreateDispatchDelegatePtr(env.Get(), options.Get());
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -218,11 +214,7 @@ TEST(DispatchDelegate, HwBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto c_options,
-      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
-
-  dispatch_delegate = CreateDispatchDelegatePtr(env.Get(), c_options.get());
+  dispatch_delegate = CreateDispatchDelegatePtr(env.Get(), options.Get());
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "

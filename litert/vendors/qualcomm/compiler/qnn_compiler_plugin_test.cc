@@ -21,12 +21,10 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/model/model.h"
@@ -262,12 +260,8 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   qnn_opts->SetLogLevel(qualcomm::QualcommOptions::LogLevel::kError);
   qnn_opts->SetEnableWeightSharing(false);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto litert_opts,
-      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
   auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+      CreatePlugin(/*runtime_context=*/nullptr, /*env=*/nullptr, opts->Get());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;

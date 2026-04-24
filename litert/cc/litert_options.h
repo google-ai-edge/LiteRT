@@ -16,22 +16,19 @@
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
 #include <cstddef>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_custom_op_kernel.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -50,30 +47,22 @@ namespace litert {
 class CompiledModel;
 class CompiledModelNext;
 
-namespace internal {
-struct LiteRtDestroyOptionsDeleter {
-  void (*destroy_options)(LiteRtOptionsT*) = nullptr;
-  void operator()(LiteRtOptionsT* options) const {
-    if (options && destroy_options) {
-      destroy_options(options);
-    }
-  }
-};
-
-using LiteRtOptionsPtr =
-    std::unique_ptr<LiteRtOptionsT, internal::LiteRtDestroyOptionsDeleter>;
-
-class LiteRtOptionsPtrBuilder;
-}  // namespace internal
+namespace tools {
+struct ApplyPluginRun;
+LiteRtStatus ApplyPlugin(std::unique_ptr<ApplyPluginRun> run);
+}  // namespace tools
 
 /// Manages the configuration options for compiling a LiteRT model.
 ///
 /// This class provides methods to set hardware accelerators, add custom
 /// operations, bind external tensors, and configure various backend-specific
 /// options (e.g., GPU, CPU, Qualcomm, MediaTek, etc.).
-class Options {
+class Options : public internal::BaseHandle<LiteRtOptions> {
  public:
-  friend class internal::LiteRtOptionsPtrBuilder;
+  friend class CompiledModel;
+  friend class CompiledModelNext;
+  friend LiteRtStatus tools::ApplyPlugin(
+      std::unique_ptr<tools::ApplyPluginRun> run);
 
   /// A map from a group name to a weight section.
   ///
@@ -85,16 +74,30 @@ class Options {
 
   Options() = default;
 
+  /// Constructs an `Options` object from a C handle.
+  /// @param compilation_options The C handle to the LiteRT options.
+  /// @param owned Indicates whether this object should take ownership of the
+  /// provided handle.
+  explicit Options(LiteRtOptions compilation_options, OwnHandle owned)
+      : internal::BaseHandle<LiteRtOptions>(compilation_options,
+                                            LiteRtDestroyOptions, owned) {}
+
   /// Creates a new `Options` object.
-  static Expected<Options> Create() { return Options(); }
+  /// @return An `Expected` object containing the new `Options` instance, or an
+  /// error if creation fails.
+  static Expected<Options> Create() {
+    LiteRtOptions options;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateOptions(&options));
+    return Options(options, OwnHandle::kYes);
+  }
 
   /// Sets the hardware accelerators to be used for the model.
   /// @param accelerators A bitmask of hardware accelerators.
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
   Expected<void> SetHardwareAccelerators(HwAccelerators accelerators) {
-    lite_rt_hw_accelerator_set_ =
-        static_cast<LiteRtHwAcceleratorSet>(accelerators);
+    LITERT_RETURN_IF_ERROR(LiteRtSetOptionsHardwareAccelerators(
+        Get(), static_cast<LiteRtHwAcceleratorSet>(accelerators)));
     return {};
   }
 
@@ -103,25 +106,34 @@ class Options {
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
   Expected<void> SetHardwareAccelerators(HwAcceleratorSet accelerators) {
-    lite_rt_hw_accelerator_set_ =
-        static_cast<LiteRtHwAcceleratorSet>(accelerators.value);
+    LITERT_RETURN_IF_ERROR(LiteRtSetOptionsHardwareAccelerators(
+        Get(), static_cast<LiteRtHwAcceleratorSet>(accelerators.value)));
     return {};
   }
 
   /// Retrieves the currently set hardware accelerators.
   /// @return An `Expected` object containing the set of hardware accelerators,
   /// or an error.
-  Expected<LiteRtHwAcceleratorSet> GetHardwareAccelerators() const {
-    if (lite_rt_hw_accelerator_set_.has_value()) {
-      return *lite_rt_hw_accelerator_set_;
-    }
-    return litert::Error(litert::Status::kErrorInvalidArgument,
-                         "Hardware accelerators are not set.");
+  Expected<LiteRtHwAcceleratorSet> GetHardwareAccelerators() {
+    LiteRtHwAcceleratorSet accelerators;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetOptionsHardwareAccelerators(Get(), &accelerators));
+    return accelerators;
   }
 
+  /// @deprecated Use the `GetXXXOptions()` methods instead.
+  [[deprecated("Use the GetXXXOptions() methods instead.")]]
   Expected<void> AddOpaqueOptions(OpaqueOptions&& options) {
-    opaque_options_.push_back(options.Release());
+    LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(Get(), options.Release()));
     return {};
+  }
+
+  /// Retrieves the opaque options.
+  /// @return An `Expected` object containing the opaque options, or an error.
+  Expected<OpaqueOptions> GetOpaqueOptions() {
+    LiteRtOpaqueOptions options;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(Get(), &options));
+    return OpaqueOptions::WrapCObject(options, OwnHandle::kNo);
   }
 
   /// Adds a custom operator kernel.
@@ -135,14 +147,9 @@ class Options {
                                    int custom_op_version,
                                    const LiteRtCustomOpKernel& custom_op_kernel,
                                    void* custom_op_kernel_user_data = nullptr) {
-    build_actions_.push_back(
-        [custom_op_name, custom_op_version, custom_op_kernel,
-         custom_op_kernel_user_data](internal::RuntimeProxy* runtime,
-                                     LiteRtOptions options) {
-          return runtime->AddCustomOpKernelOption(
-              options, custom_op_name.c_str(), custom_op_version,
-              &custom_op_kernel, custom_op_kernel_user_data);
-        });
+    LITERT_RETURN_IF_ERROR(LiteRtAddCustomOpKernelOption(
+        Get(), custom_op_name.c_str(), custom_op_version, &custom_op_kernel,
+        custom_op_kernel_user_data));
     return {};
   }
 
@@ -173,13 +180,8 @@ class Options {
   Expected<void> AddExternalTensorBinding(const std::string& signature_name,
                                           const std::string& tensor_name,
                                           void* data, size_t size_bytes) {
-    build_actions_.push_back([signature_name, tensor_name, data, size_bytes](
-                                 internal::RuntimeProxy* runtime,
-                                 LiteRtOptions options) {
-      return runtime->AddExternalTensorBinding(options, signature_name.c_str(),
-                                               tensor_name.c_str(), data,
-                                               size_bytes);
-    });
+    LITERT_RETURN_IF_ERROR(LiteRtAddExternalTensorBinding(
+        Get(), signature_name.c_str(), tensor_name.c_str(), data, size_bytes));
     return {};
   }
 
@@ -234,17 +236,12 @@ class Options {
   Expected<CompilerOptions&> GetCompilerOptions();
 
  private:
-  /// Builds the options object and creates a internal::LiteRtOptionsPtr object.
+  /// Builds the options object.
   ///
-  /// This should be called after all setters have been invoked.
-  static Expected<internal::LiteRtOptionsPtr> Build(
-      const Options& options, const internal::EnvironmentHolder& env);
+  /// This should be called after all setters have been invoked. It is
+  /// automatically called in `CompiledModel::Create`.
+  Expected<void> Build();
 
-  std::optional<LiteRtHwAcceleratorSet> lite_rt_hw_accelerator_set_;
-  std::vector<LiteRtOpaqueOptions> opaque_options_;
-  std::vector<
-      std::function<LiteRtStatus(internal::RuntimeProxy*, LiteRtOptions)>>
-      build_actions_;
   std::optional<GpuOptions> gpu_options_;
   std::optional<CpuOptions> cpu_options_;
   std::optional<qualcomm::QualcommOptions> qualcomm_options_;
@@ -255,21 +252,6 @@ class Options {
   std::optional<RuntimeOptions> runtime_options_;
   std::optional<CompilerOptions> compiler_options_;
 };
-
-namespace internal {
-
-/// Helper class to build a LiteRtOptionsPtr object from an Options object.
-///
-/// @internal This class should be only used by LiteRT internal APIs.
-class LiteRtOptionsPtrBuilder {
- public:
-  static Expected<internal::LiteRtOptionsPtr> Build(
-      const Options& options, const internal::EnvironmentHolder& env) {
-    return Options::Build(options, env);
-  }
-};
-
-}  // namespace internal
 
 }  // namespace litert
 

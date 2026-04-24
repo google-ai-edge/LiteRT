@@ -18,7 +18,6 @@
 #include <cstddef>
 #include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -116,15 +115,12 @@ class CompiledModelNext : public CompiledModel {
                      absl::Span<const TensorBuffer> input_buffers,
                      absl::Span<const TensorBuffer> output_buffers,
                      Options* run_options) const {
-    LiteRtOptions options_handle = nullptr;
-    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
-      options_handle = owned_options.get();
+      LITERT_RETURN_IF_ERROR(run_options->Build());
     }
     bool async = false;
     return RunHelper(signature_index, input_buffers, output_buffers, async,
-                     options_handle, nullptr);
+                     run_options ? run_options->Get() : nullptr, nullptr);
   }
 
   /// @brief Runs with per-request scheduling info for a given signature index.
@@ -141,15 +137,13 @@ class CompiledModelNext : public CompiledModel {
   Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
                      absl::Span<const TensorBuffer> output_buffers,
                      Options* run_options) const {
-    LiteRtOptions options_handle = nullptr;
-    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
-      options_handle = owned_options.get();
+      LITERT_RETURN_IF_ERROR(run_options->Build());
     }
     bool async = false;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async, options_handle, nullptr);
+                     async, run_options ? run_options->Get() : nullptr,
+                     nullptr);
   }
 
   /// @brief Runs default signature with per-request scheduling info.
@@ -166,15 +160,12 @@ class CompiledModelNext : public CompiledModel {
                           const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
                           bool& async, Options* run_options) const {
-    LiteRtOptions options_handle = nullptr;
-    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
-      options_handle = owned_options.get();
+      LITERT_RETURN_IF_ERROR(run_options->Build());
     }
     async = true;
     return RunHelper(signature_index, input_buffers, output_buffers, async,
-                     options_handle, nullptr);
+                     run_options ? run_options->Get() : nullptr, nullptr);
   }
 
   /// @brief Runs asynchronously with per-request scheduling info for a given
@@ -193,15 +184,13 @@ class CompiledModelNext : public CompiledModel {
   Expected<void> RunAsync(const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
                           bool& async, Options* run_options) const {
-    LiteRtOptions options_handle = nullptr;
-    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
-      options_handle = owned_options.get();
+      LITERT_RETURN_IF_ERROR(run_options->Build());
     }
     async = true;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async, options_handle, nullptr);
+                     async, run_options ? run_options->Get() : nullptr,
+                     nullptr);
   }
 
   /// @brief Runs default signature asynchronously with per-request scheduling
@@ -267,15 +256,12 @@ class CompiledModelNext : public CompiledModel {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       Options* run_options) const {
-    LiteRtOptions options_handle = nullptr;
-    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
-      options_handle = owned_options.get();
+      LITERT_RETURN_IF_ERROR(run_options->Build());
     }
     bool async = false;
     return RunMapHelper(signature_key, input_map, output_map, async,
-                        options_handle, nullptr);
+                        run_options ? run_options->Get() : nullptr, nullptr);
   }
 
   /// @brief Runs by signature key with per-request scheduling info using named
@@ -295,16 +281,13 @@ class CompiledModelNext : public CompiledModel {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       Options* run_options) const {
-    LiteRtOptions options_handle = nullptr;
-    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
-      options_handle = owned_options.get();
+      LITERT_RETURN_IF_ERROR(run_options->Build());
     }
     bool async = false;
     return RunMapWithIndexHelper(
-        /*signature_index=*/0, input_map, output_map, async, options_handle,
-        nullptr);
+        /*signature_index=*/0, input_map, output_map, async,
+        run_options ? run_options->Get() : nullptr, nullptr);
   }
 
   /// @brief Runs default signature with per-request scheduling info using named
@@ -325,15 +308,12 @@ class CompiledModelNext : public CompiledModel {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async, Options* run_options) const {
-    LiteRtOptions options_handle = nullptr;
-    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
-      options_handle = owned_options.get();
+      LITERT_RETURN_IF_ERROR(run_options->Build());
     }
     async = true;
     return RunMapHelper(signature_key, input_map, output_map, async,
-                        options_handle, nullptr);
+                        run_options ? run_options->Get() : nullptr, nullptr);
   }
 
   /// @brief Runs by signature key asynchronously with per-request scheduling
@@ -449,19 +429,15 @@ class CompiledModelNext : public CompiledModel {
   explicit CompiledModelNext(internal::EnvironmentHolder& env,
                              LiteRtModel litert_model,
                              LiteRtCompiledModel compiled_model,
-                             OwnHandle owned,
-                             internal::LiteRtOptionsPtr options = {})
+                             OwnHandle owned)
       : CompiledModel(env, litert_model,
-                      /*model_owned=*/OwnHandle::kNo, compiled_model, owned,
-                      std::move(options)) {}
+                      /*model_owned=*/OwnHandle::kNo, compiled_model, owned) {}
 
   explicit CompiledModelNext(internal::EnvironmentHolder& env,
                              LiteRtModel litert_model, OwnHandle model_owned,
                              LiteRtCompiledModel compiled_model,
-                             OwnHandle owned,
-                             internal::LiteRtOptionsPtr options = {})
-      : CompiledModel(env, litert_model, model_owned, compiled_model, owned,
-                      std::move(options)) {}
+                             OwnHandle owned)
+      : CompiledModel(env, litert_model, model_owned, compiled_model, owned) {}
 };
 
 }  // namespace litert

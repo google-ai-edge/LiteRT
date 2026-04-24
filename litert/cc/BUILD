@@ -1015,10 +1015,7 @@ cc_test(
     srcs = ["litert_options_test.cc"],
     deps = [
         ":litert_common",
-        ":litert_environment",
         ":litert_options",
-        "//litert/c:litert_common",
-        "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/core:options",
@@ -1098,7 +1095,6 @@ cc_library_with_testonly_vis(
     deps = [
         ":litert_common",
         ":litert_custom_op_kernel",
-        ":litert_environment",
         ":litert_expected",
         ":litert_macros",
         ":litert_opaque_options",
@@ -1117,7 +1113,6 @@ cc_library_with_testonly_vis(
         "//litert/c/options:litert_runtime_options",
         "//litert/c/options:litert_samsung_options",
         "//litert/cc/internal:litert_handle",
-        "//litert/cc/internal:litert_runtime_proxy",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_compiler_options",

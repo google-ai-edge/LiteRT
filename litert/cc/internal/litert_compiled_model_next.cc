@@ -35,41 +35,36 @@ namespace litert {
 Expected<CompiledModelNext> CompiledModelNext::Create(
     litert::Environment& env, const litert::Model& model,
     Options& compilation_options) {
-  auto env_holder = env.GetHolder();
-  LITERT_ASSIGN_OR_RETURN(
-      auto owned_options,
-      CompiledModel::BuildOptions(compilation_options, env.GetHolder()));
+  LITERT_RETURN_IF_ERROR(compilation_options.Build());
   LiteRtModel litert_model = model.Get();
   LiteRtCompiledModel compiled_model;
+  auto env_holder = env.GetHolder();
   LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
-      env_holder.handle, litert_model, owned_options.get(), &compiled_model));
+      env_holder.handle, litert_model, compilation_options.Get(),
+      &compiled_model));
   return CompiledModelNext(env_holder, litert_model, compiled_model,
-                           OwnHandle::kYes, std::move(owned_options));
+                           OwnHandle::kYes);
 }
 
 Expected<CompiledModelNext> CompiledModelNext::Create(
     litert::Environment& env, const litert::Model& model,
     const Options& compilation_options) {
-  auto env_holder = env.GetHolder();
-  LITERT_ASSIGN_OR_RETURN(
-      auto owned_options,
-      CompiledModel::BuildOptions(compilation_options, env.GetHolder()));
   LiteRtModel litert_model = model.Get();
   LiteRtCompiledModel compiled_model;
+  auto env_holder = env.GetHolder();
   LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
-      env_holder.handle, litert_model, owned_options.get(), &compiled_model));
+      env_holder.handle, litert_model, compilation_options.Get(),
+      &compiled_model));
   return CompiledModelNext(env_holder, litert_model, compiled_model,
-                           OwnHandle::kYes, std::move(owned_options));
+                           OwnHandle::kYes);
 }
 
 Expected<CompiledModelNext> CompiledModelNext::Create(
     litert::Environment& env, const std::string& model_filename,
     Options& compilation_options) {
-  auto env_holder = env.GetHolder();
-  LITERT_ASSIGN_OR_RETURN(
-      auto owned_options,
-      CompiledModel::BuildOptions(compilation_options, env.GetHolder()));
+  LITERT_RETURN_IF_ERROR(compilation_options.Build());
   LiteRtModel litert_model;
+  auto env_holder = env.GetHolder();
   if (auto status = env_holder.runtime->CreateModelFromFile(
           model_filename.c_str(), &litert_model);
       status != kLiteRtStatusOk) {
@@ -77,7 +72,7 @@ Expected<CompiledModelNext> CompiledModelNext::Create(
   }
   LiteRtCompiledModel compiled_model;
   if (auto status = env_holder.runtime->CreateCompiledModel(
-          env_holder.handle, litert_model, owned_options.get(),
+          env_holder.handle, litert_model, compilation_options.Get(),
           &compiled_model);
       status != kLiteRtStatusOk) {
     env_holder.runtime->DestroyModel(litert_model);
@@ -85,30 +80,28 @@ Expected<CompiledModelNext> CompiledModelNext::Create(
   }
   return CompiledModelNext(env_holder, litert_model,
                            /*model_owned=*/OwnHandle::kYes, compiled_model,
-                           OwnHandle::kYes, std::move(owned_options));
+                           OwnHandle::kYes);
 }
 
 Expected<CompiledModelNext> CompiledModelNext::Create(
     litert::Environment& env, const litert::Model& model,
     litert::HwAccelerators hardware_accelerators) {
-  auto env_holder = env.GetHolder();
-  Options compilation_options;
+  LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
-  LITERT_ASSIGN_OR_RETURN(auto owned_options,
-                          CompiledModel::BuildOptions(
-                              std::move(compilation_options), env.GetHolder()));
   LiteRtModel litert_model = model.Get();
   LiteRtCompiledModel compiled_model;
+  auto env_holder = env.GetHolder();
   LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
-      env_holder.handle, litert_model, owned_options.get(), &compiled_model));
+      env_holder.handle, litert_model, compilation_options.Get(),
+      &compiled_model));
   return CompiledModelNext(env_holder, litert_model, compiled_model,
-                           OwnHandle::kYes, std::move(owned_options));
+                           OwnHandle::kYes);
 }
 
 Expected<CompiledModelNext> CompiledModelNext::Create(
     litert::Environment& env, const std::string& model_filename,
     litert::HwAccelerators hardware_accelerators) {
-  Options compilation_options;
+  LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
   return Create(env, model_filename, compilation_options);
 }

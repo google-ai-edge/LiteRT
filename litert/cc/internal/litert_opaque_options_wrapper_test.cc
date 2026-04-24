@@ -21,7 +21,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -31,7 +30,6 @@ namespace litert::compiler {
 namespace {
 
 TEST(OpaqueOptionsTest, FindOpaqueOptions) {
-  LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
   const char* kDummyOpaqueOptionsId = "dummy_opaque_options";
   struct DummyOpaqueOptions {
     int dummy_option;
@@ -44,16 +42,12 @@ TEST(OpaqueOptionsTest, FindOpaqueOptions) {
           [](void* d) { delete reinterpret_cast<DummyOpaqueOptions*>(d); }));
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
   ASSERT_TRUE(options.AddOpaqueOptions(std::move(opaque_options)));
-  LITERT_ASSIGN_OR_ABORT(auto litert_options_ptr,
-                         litert::internal::LiteRtOptionsPtrBuilder::Build(
-                             options, env.GetHolder()));
 
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   ASSERT_NE(ctx, nullptr);
 
-  // Create a litert::internal::OptionsWrapper from the LiteRtOptions object.
   litert::internal::OptionsWrapper compiler_options(
-      litert::internal::ContextWrapper(ctx), litert_options_ptr.get());
+      litert::internal::ContextWrapper(ctx), options.Get());
 
   auto opq_opts_result = compiler_options.GetOpaqueOptions();
   ASSERT_TRUE(opq_opts_result.HasValue());

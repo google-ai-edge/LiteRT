@@ -77,12 +77,9 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
-                              litert::internal::LiteRtOptionsPtrBuilder::Build(
-                                  options, env.GetHolder()));
 
   ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
-                                     env.GetHolder().handle, litert_opts.get()),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -103,8 +100,8 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
-                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -349,12 +346,9 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
-                              litert::internal::LiteRtOptionsPtrBuilder::Build(
-                                  options, env.GetHolder()));
 
   ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
-                                     env.GetHolder().handle, litert_opts.get()),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -375,8 +369,8 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
-                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -647,12 +641,9 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  auto litert_opts_expected = litert::internal::LiteRtOptionsPtrBuilder::Build(
-      options, env.GetHolder());
-  auto litert_opts = std::move(litert_opts_expected.Value());
 
   ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
-                                     env.GetHolder().handle, litert_opts.get()),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -673,8 +664,8 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
-                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 
@@ -954,12 +945,9 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
-                              litert::internal::LiteRtOptionsPtrBuilder::Build(
-                                  options, env.GetHolder()));
 
   ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
-                                     env.GetHolder().handle, litert_opts.get()),
+                                     env.GetHolder().handle, options.Get()),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -980,8 +968,8 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   ABSL_LOG(INFO) << "capabilities: " << capabilities;
 
   LiteRtDispatchDeviceContext device_context = nullptr;
-  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
-                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(LrtGetRuntimeContext(),
+                                              options.Get(), &device_context),
             kLiteRtStatusOk);
   ABSL_LOG(INFO) << "device_context: " << device_context;
 

@@ -21,12 +21,10 @@
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "litert/cc/litert_common.h"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
-#include "litert/cc/litert_common.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/core/options.h"
 #include "litert/test/matchers.h"
 
@@ -34,7 +32,6 @@ namespace litert {
 namespace {
 
 TEST(OptionsTest, SetHardwareAccelerators) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
   // Tests overload that takes litert::HwAccelerators.
@@ -44,14 +41,9 @@ TEST(OptionsTest, SetHardwareAccelerators) {
   // Tests overload that takes litert::HwAcceleratorSet.
   LITERT_EXPECT_OK(options.SetHardwareAccelerators(
       HwAccelerators::kCpu | HwAccelerators::kGpu));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options_handle,
-      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 }
 
 TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
 
   const std::string path =
@@ -72,10 +64,7 @@ TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   auto status =
       options.SetExternalWeightScopedFile(*scoped_file, std::move(sections));
   LITERT_EXPECT_OK(status);
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options_handle,
-      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
-  auto* impl = reinterpret_cast<LiteRtOptionsT*>(options_handle.get());
+  auto* impl = reinterpret_cast<LiteRtOptionsT*>(options.Get());
   ASSERT_NE(impl->scoped_weight_source, nullptr);
   EXPECT_TRUE(impl->scoped_weight_source->file.IsValid());
   auto it = impl->scoped_weight_source->sections.find("weights.group");
