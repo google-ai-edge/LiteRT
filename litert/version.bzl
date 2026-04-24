@@ -36,4 +36,4 @@ LITERT_SDK_INTEL_FULL_VERSION = "0.2.0"
 
 # The next version of LiteRT Converter version.
 # The minor version code should be bumped after every release.
-LITERT_CONVERTER_VERSION = "0.1.0"
+LITERT_CONVERTER_VERSION = "0.2.0"
