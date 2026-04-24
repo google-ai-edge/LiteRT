@@ -49,6 +49,10 @@ genrule(
         $(location {}) --proto -o $(@D) $(location :configuration.proto)
         perl -p -i -e 's/tflite.proto/tflite/' $@
     """.format(flatc_path),
+    cmd_bat = " && ".join([
+        """call "$(location {})" --proto -o "$(@D)" "$(location :configuration.proto)" """.format(flatc_path),
+        """powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$content = [System.IO.File]::ReadAllText('$@'); [System.IO.File]::WriteAllText('$@', $$content.Replace('tflite.proto', 'tflite'), [System.Text.Encoding]::ASCII)" """,
+    ]),
     compatible_with = get_compatible_with_portable(),
     tools = [flatc_path],
 )
@@ -67,6 +71,11 @@ genrule(
         $(location {}) --proto -o $(@D) $(@D)/configuration.prev.proto
         perl -p -i -e 's/tflite.proto/tflite/' $@
     """.format(flatc_path),
+    cmd_bat = " && ".join([
+        """powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::Copy('$(location :testdata/configuration.proto_prev)', '$(@D)/configuration.prev.proto', $$true)" """,
+        """call "$(location {})" --proto -o "$(@D)" "$(@D)/configuration.prev.proto" """.format(flatc_path),
+        """powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$content = [System.IO.File]::ReadAllText('$@'); [System.IO.File]::WriteAllText('$@', $$content.Replace('tflite.proto', 'tflite'), [System.Text.Encoding]::ASCII)" """,
+    ]),
     compatible_with = get_compatible_with_portable(),
     tools = [flatc_path],
 )
@@ -112,6 +121,15 @@ genrule(
       cat < $(<) >> $(@)
       echo ')Delimiter";' >> $(@)
     """,
+    cmd_bat = "".join([
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ",
+        "\"$$schema = [System.IO.File]::ReadAllText('$<'); ",
+        "$$content = 'constexpr char configuration_fbs_contents[] = R' + ",
+        "[char]34 + 'Delimiter(' + [Environment]::NewLine + $$schema + ",
+        "')Delimiter' + [char]34 + ';' + [Environment]::NewLine; ",
+        "[System.IO.File]::WriteAllText('$@', $$content, ",
+        "[System.Text.Encoding]::ASCII)\" ",
+    ]),
 )
 
 exports_files(["configuration.proto"])
