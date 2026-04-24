@@ -354,8 +354,10 @@ cc_test(
 
 cc_library(
     name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
-    hdrs = ["litert_shared_library.h"],
+    hdrs = [
+        "litert_shared_library.h",
+        "litert_shared_library_windows.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -689,11 +691,11 @@ cc_test(
 
 cc_library(
     name = "scoped_file",
-    srcs = ["scoped_file.cc"] + select({
-        "//litert:windows": ["scoped_file_win.cc"],
-        "//conditions:default": ["scoped_file_posix.cc"],
-    }),
-    hdrs = ["scoped_file.h"],
+    hdrs = [
+        "scoped_file.h",
+        "scoped_file_posix.h",
+        "scoped_file_win.h",
+    ],
     deps = [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -726,7 +728,6 @@ cc_test(
 # Do not use this target directly. It should only be used by Environment.
 cc_library(
     name = "litert_runtime_builtin_dynamic",
-    srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
     # The visibility is for testing only, otherwise it would be private.
     visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
@@ -748,7 +749,6 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_builtin_static",
-    srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
     visibility = friends_of_litert_runtime_builtin_static() + [
         # This extra visibility is for testing only.
@@ -772,8 +772,8 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_builtin_none",
-    srcs = ["litert_runtime_no_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
+    defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
     visibility = ["//visibility:private"],
     deps = [
         "//litert/c/internal:litert_runtime_c_api",
