@@ -119,6 +119,7 @@ jobs:
           )
 
           $BAZEL_ARGS = @(
+            "--output_base=$env:BAZEL_OUTPUT_BASE"
             "test"
             "--disk_cache=~/.cache/bazel-windows"
           ) + $BUILD_FLAGS + @(
@@ -141,18 +142,18 @@ jobs:
 
       - name: Build tools for Windows
         run: |
-          bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache=~/.cache/bazel-windows --config=windows -- `
             //litert/tools:run_model
 
       - name: Build example plugin for Windows
         run: |
-          bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache=~/.cache/bazel-windows --config=windows -- `
             //litert/vendors/examples:LiteRtCompilerPlugin `
             //litert/vendors/examples:LiteRtDispatch
 
       - name: Build Intel OpenVINO plugin for Windows
         run: |
-          bazel build --disk_cache=~/.cache/bazel-windows --config=windows -- `
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache=~/.cache/bazel-windows --config=windows -- `
             //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin `
             //litert/vendors/intel_openvino/dispatch:LiteRtDispatch
 
