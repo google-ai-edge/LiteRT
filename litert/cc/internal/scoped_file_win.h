@@ -12,12 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_WIN_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_WIN_H_
+
+#if defined(_WIN32)
+
+#include <Windows.h>
 #include <fcntl.h>
 #include <io.h>
-#include <windows.h>
 
+#include <cctype>
 #include <cerrno>
 #include <cstddef>
+#include <string>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -26,8 +33,9 @@
 #include "litert/cc/internal/scoped_file.h"
 
 namespace litert {
-namespace {
-std::wstring Utf8ToWideChar(absl::string_view utf8str) {
+namespace internal::scoped_file_detail {
+
+inline std::wstring Utf8ToWideChar(absl::string_view utf8str) {
   int size_required = MultiByteToWideChar(CP_UTF8, 0, utf8str.data(),
                                           (int)utf8str.size(), nullptr, 0);
   std::wstring ws_translated_str(size_required, 0);
@@ -36,8 +44,8 @@ std::wstring Utf8ToWideChar(absl::string_view utf8str) {
   return ws_translated_str;
 }
 
-absl::StatusOr<ScopedFile> OpenImpl(absl::string_view path,
-                                    DWORD file_attribute_flag) {
+inline absl::StatusOr<ScopedFile> OpenImpl(absl::string_view path,
+                                           DWORD file_attribute_flag) {
   std::wstring ws_path = Utf8ToWideChar(path);
 
   DWORD share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
@@ -52,39 +60,8 @@ absl::StatusOr<ScopedFile> OpenImpl(absl::string_view path,
   }
   return ScopedFile(hfile);
 }
-}  // namespace
 
-const HANDLE ScopedFile::kInvalidPlatformFile = INVALID_HANDLE_VALUE;
-
-// static
-absl::StatusOr<ScopedFile> ScopedFile::Open(absl::string_view path) {
-  return OpenImpl(path, FILE_ATTRIBUTE_READONLY);
-}
-
-// static
-absl::StatusOr<ScopedFile> ScopedFile::OpenWritable(absl::string_view path) {
-  return OpenImpl(path, FILE_ATTRIBUTE_NORMAL);
-}
-
-// static
-void ScopedFile::CloseFile(HANDLE file) { ::CloseHandle(file); }
-
-// static
-absl::StatusOr<size_t> ScopedFile::GetSizeImpl(HANDLE file) {
-  LARGE_INTEGER size;
-  if (!::GetFileSizeEx(file, &size)) {
-    return absl::UnknownError("Failed to get file size");
-  }
-  return static_cast<size_t>(size.QuadPart);
-}
-
-namespace {
-
-// Returns a string holding the error message corresponding to the code returned
-// by `GetLastError()`.
-//
-// TODO: Extract to a separate helper file for Windows utilities.
-std::string GetLastErrorString() {
+inline std::string GetLastErrorString() {
   const DWORD error = GetLastError();
   LPSTR message_buffer = nullptr;
   const DWORD chars_written = FormatMessageA(
@@ -95,44 +72,62 @@ std::string GetLastErrorString() {
   if (chars_written > 0 && message_buffer != nullptr) {
     std::string error_message = message_buffer;
     LocalFree(message_buffer);
-    // Remove trailing whitespace
     while (!error_message.empty() && std::isspace(error_message.back())) {
       error_message.pop_back();
     }
     return error_message;
   }
-  // https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes#system-error-codes
   return std::to_string(error);
 }
 
-}  // namespace
+}  // namespace internal::scoped_file_detail
 
-absl::StatusOr<ScopedFile> ScopedFile::Duplicate() {
+inline const HANDLE ScopedFile::kInvalidPlatformFile = INVALID_HANDLE_VALUE;
+
+inline absl::StatusOr<ScopedFile> ScopedFile::Open(absl::string_view path) {
+  return internal::scoped_file_detail::OpenImpl(path, FILE_ATTRIBUTE_READONLY);
+}
+
+inline absl::StatusOr<ScopedFile> ScopedFile::OpenWritable(
+    absl::string_view path) {
+  return internal::scoped_file_detail::OpenImpl(path, FILE_ATTRIBUTE_NORMAL);
+}
+
+inline void ScopedFile::CloseFile(HANDLE file) { ::CloseHandle(file); }
+
+inline absl::StatusOr<size_t> ScopedFile::GetSizeImpl(HANDLE file) {
+  LARGE_INTEGER size;
+  if (!::GetFileSizeEx(file, &size)) {
+    return absl::UnknownError("Failed to get file size");
+  }
+  return static_cast<size_t>(size.QuadPart);
+}
+
+inline absl::StatusOr<ScopedFile> ScopedFile::Duplicate() {
   if (!IsValid()) {
     return absl::InvalidArgumentError("File is not opened.");
   }
   HANDLE duplicated;
   if (!DuplicateHandle(GetCurrentProcess(), file_, GetCurrentProcess(),
                        &duplicated, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
-    return absl::FailedPreconditionError("Could not duplicate handle: " +
-                                         GetLastErrorString());
+    return absl::FailedPreconditionError(
+        "Could not duplicate handle: " +
+        internal::scoped_file_detail::GetLastErrorString());
   }
   return ScopedFile(duplicated);
 }
 
-absl::StatusOr<int> ScopedFile::Release() {
+inline absl::StatusOr<int> ScopedFile::Release() {
   if (!IsValid()) {
     return absl::InvalidArgumentError("File is not opened.");
   }
 
-  // We test whether we can read the file in a synchronous manner by attempting
-  // a 0 byte read without specifying the "overlapped" parameter.
   char buffer[1];
   if (!ReadFile(file_, &buffer, /*nNumberOfBytesToRead=*/0,
                 /*lpNumberOfBytesRead=*/nullptr, /*lpOverlapped=*/nullptr)) {
     return absl::FailedPreconditionError(
         "Could not convert asynchronous handle to C file descriptor: " +
-        GetLastErrorString());
+        internal::scoped_file_detail::GetLastErrorString());
   }
 
   const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(file_),
@@ -146,3 +141,7 @@ absl::StatusOr<int> ScopedFile::Release() {
 }
 
 }  // namespace litert
+
+#endif  // defined(_WIN32)
+
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_WIN_H_
