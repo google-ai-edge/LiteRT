@@ -172,6 +172,7 @@ class CompilerPlugin {
   CompilerPlugin() = default;
 
   std::vector<std::string> soc_models_;
+  SharedLibrary runtime_lib_;
   SharedLibrary lib_;
   LiteRtOptions options_ = nullptr;
   LiteRtEnvironmentOptions env_ = nullptr;

@@ -23,8 +23,13 @@ namespace {
 using testing::StrEq;
 
 TEST(SourceLocation, BuildAtCurrentLocation) {
+#if LITERT_HAS_BUILTIN(__builtin_FILE) && LITERT_HAS_BUILTIN(__builtin_LINE)
   EXPECT_THAT(SourceLocation::current().line(), __LINE__);
   EXPECT_THAT(SourceLocation::current().file_name(), StrEq(__FILE__));
+#else
+  EXPECT_THAT(SourceLocation::current().line(), 0);
+  EXPECT_THAT(SourceLocation::current().file_name(), StrEq("unknown"));
+#endif
 }
 
 }  // namespace
