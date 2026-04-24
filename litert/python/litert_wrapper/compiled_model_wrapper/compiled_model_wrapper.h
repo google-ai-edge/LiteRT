@@ -52,7 +52,9 @@ class CompiledModelWrapper {
    */
   static CompiledModelWrapper* CreateWrapperFromFile(
       PyObject* environment_capsule, const char* model_path, int hardware_accel,
-      int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error);
+      int cpu_num_threads, bool enforce_f32_gpu, int cpu_kernel_mode,
+      int xnnpack_flags, const char* xnnpack_weight_cache_path,
+      bool enable_constant_tensor_sharing, std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
@@ -73,7 +75,9 @@ class CompiledModelWrapper {
    */
   static CompiledModelWrapper* CreateWrapperFromBuffer(
       PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-      int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error);
+      int cpu_num_threads, bool enforce_f32_gpu, int cpu_kernel_mode,
+      int xnnpack_flags, const char* xnnpack_weight_cache_path,
+      bool enable_constant_tensor_sharing, std::string* out_error);
 
   CompiledModelWrapper(litert::ExtendedModel model,
                        litert::CompiledModel compiled);
