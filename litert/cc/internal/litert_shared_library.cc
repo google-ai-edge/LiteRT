@@ -110,12 +110,6 @@ bool IsAbsolutePath(const std::string& path) {
   return std::filesystem::path(path).is_absolute();
 }
 
-std::string NormalizeWindowsPath(const char* path) {
-  std::filesystem::path normalized(path);
-  normalized.make_preferred();
-  return normalized.string();
-}
-
 const char* dlerror() {
   return g_last_error.empty() ? nullptr : g_last_error.c_str();
 }
@@ -129,7 +123,9 @@ void* dlopen(const char* filename, int flags) {
     return GetModuleHandle(NULL);
   }
 
-  std::string requested_name = NormalizeWindowsPath(filename);
+  std::filesystem::path requested_path(filename);
+  requested_path.make_preferred();
+  std::string requested_name = requested_path.string();
   std::string fallback_name = requested_name;
   size_t pos = fallback_name.rfind(".so");
   if (pos != std::string::npos && pos == fallback_name.length() - 3) {
