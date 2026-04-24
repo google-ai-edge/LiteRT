@@ -19,46 +19,87 @@
 #include <string>
 #include <utility>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert::intel_openvino {
 
 /// @brief Defines the C++ wrapper for Intel OpenVINO-specific LiteRT options.
 class IntelOpenVinoOptions {
- public:
+public:
   IntelOpenVinoOptions() = delete;
 
   // Non-copyable, only movable
-  IntelOpenVinoOptions(const IntelOpenVinoOptions&) = delete;
-  IntelOpenVinoOptions& operator=(const IntelOpenVinoOptions&) = delete;
-  IntelOpenVinoOptions(IntelOpenVinoOptions&&) = default;
-  IntelOpenVinoOptions& operator=(IntelOpenVinoOptions&&) = default;
+  IntelOpenVinoOptions(const IntelOpenVinoOptions &) = delete;
+  IntelOpenVinoOptions &operator=(const IntelOpenVinoOptions &) = delete;
+  IntelOpenVinoOptions(IntelOpenVinoOptions &&) = default;
+  IntelOpenVinoOptions &operator=(IntelOpenVinoOptions &&) = default;
 
-  static Expected<IntelOpenVinoOptions> Create();
-
-  static IntelOpenVinoOptions CreateFromOwnedHandle(
-      LrtIntelOpenVinoOptions options) {
+  static Expected<IntelOpenVinoOptions> Create() {
+    LrtIntelOpenVinoOptions options;
+    LITERT_RETURN_IF_ERROR(LrtIntelOpenVinoOptionsCreate(&options));
     return IntelOpenVinoOptions(options);
   }
 
-  void SetDeviceType(LiteRtIntelOpenVinoDeviceType device_type);
+  static IntelOpenVinoOptions
+  CreateFromOwnedHandle(LrtIntelOpenVinoOptions options) {
+    return IntelOpenVinoOptions(options);
+  }
 
-  LiteRtIntelOpenVinoDeviceType GetDeviceType() const;
+  void SetDeviceType(LiteRtIntelOpenVinoDeviceType device_type) {
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsSetDeviceType(Get(), device_type));
+  }
 
-  void SetPerformanceMode(LiteRtIntelOpenVinoPerformanceMode performance_mode);
+  LiteRtIntelOpenVinoDeviceType GetDeviceType() const {
+    LiteRtIntelOpenVinoDeviceType device_type;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetDeviceType(Get(), &device_type));
+    return device_type;
+  }
 
-  LiteRtIntelOpenVinoPerformanceMode GetPerformanceMode() const;
+  void SetPerformanceMode(LiteRtIntelOpenVinoPerformanceMode performance_mode) {
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsSetPerformanceMode(Get(), performance_mode));
+  }
 
-  void SetConfigsMapOption(const char* key, const char* value);
+  LiteRtIntelOpenVinoPerformanceMode GetPerformanceMode() const {
+    LiteRtIntelOpenVinoPerformanceMode performance_mode;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetPerformanceMode(Get(), &performance_mode));
+    return performance_mode;
+  }
 
-  int GetNumConfigsMapOptions() const;
+  void SetConfigsMapOption(const char *key, const char *value) {
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsSetConfigsMapOption(Get(), key, value));
+  }
 
-  std::pair<std::string, std::string> GetConfigsMapOption(int index) const;
+  int GetNumConfigsMapOptions() const {
+    int num_options;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(Get(), &num_options));
+    return num_options;
+  }
+
+  std::pair<std::string, std::string> GetConfigsMapOption(int index) const {
+    const char *key = nullptr;
+    const char *value = nullptr;
+    auto status =
+        LrtIntelOpenVinoOptionsGetConfigsMapOption(Get(), index, &key, &value);
+
+    if (status != kLiteRtStatusOk) {
+      return std::make_pair(std::string(), std::string());
+    }
+
+    return std::make_pair(std::string(key), std::string(value));
+  }
 
   LrtIntelOpenVinoOptions Get() const { return options_.get(); }
 
- private:
+private:
   explicit IntelOpenVinoOptions(LrtIntelOpenVinoOptions options)
       : options_(options) {}
 
@@ -72,6 +113,6 @@ class IntelOpenVinoOptions {
       options_;
 };
 
-}  // namespace litert::intel_openvino
+} // namespace litert::intel_openvino
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_INTEL_OPENVINO_OPTIONS_H_
+#endif // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_INTEL_OPENVINO_OPTIONS_H_

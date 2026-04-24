@@ -19,6 +19,7 @@
 #include <string>
 
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_tensor_buffer_utils.h"
 
 /// @file
 /// @brief Defines C++ types and enums for LiteRT tensor buffers.
@@ -113,6 +114,11 @@ inline bool IsGpuFloat16Memory(TensorBufferType buffer_type) {
   return IsGpuFloat16Memory(static_cast<LiteRtTensorBufferType>(buffer_type));
 }
 
-}  // namespace litert
+// TODO(b/454666070): Rename to BufferTypeToString once the C version is gone.
+inline std::string BufferTypeToStringCC(TensorBufferType buffer_type) {
+  return BufferTypeToString(static_cast<LiteRtTensorBufferType>(buffer_type));
+}
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_TYPES_H_
+} // namespace litert
+
+#endif // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_TYPES_H_

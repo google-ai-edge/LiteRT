@@ -106,7 +106,6 @@ cc_library(
 
 cc_library(
     name = "litert_macros",
-    srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
@@ -147,6 +146,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -206,7 +206,6 @@ cc_test(
 
 cc_library(
     name = "litert_opaque_options",
-    srcs = ["litert_opaque_options.cc"],
     hdrs = ["litert_opaque_options.h"],
     deps = [
         ":litert_common",
@@ -270,7 +269,6 @@ cc_test(
 
 cc_library(
     name = "litert_compiled_model",
-    srcs = [":litert_compiled_model.cc"],
     hdrs = [":litert_compiled_model.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
@@ -619,7 +617,6 @@ litert_device_test(
 
 cc_library(
     name = "litert_custom_op_kernel",
-    srcs = [":litert_custom_op_kernel.cc"],
     hdrs = [":litert_custom_op_kernel.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
@@ -837,7 +834,6 @@ cc_library(
 
 cc_library(
     name = "litert_model",
-    srcs = [":litert_model.cc"],
     hdrs = [":litert_model.h"],
     defines = select({
         "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
@@ -1083,7 +1079,6 @@ cc_test(
 
 cc_library_with_testonly_vis(
     name = "litert_options",
-    srcs = ["litert_options.cc"],
     hdrs = ["litert_options.h"],
     vis = [
         # copybara:uncomment_begin(oss litert_lm)
@@ -1291,6 +1286,7 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/functional:any_invocable",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/core/model:model_load",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_custom_op_kernel",
         "//litert/cc/dynamic_runtime:litert_environment",
@@ -1321,6 +1317,8 @@ cc_library(
         ":litert_macros",
         ":litert_model_types",
         ":litert_tensor_buffer_types",
+        "//litert/cc/internal:litert_tensor_buffer_utils",
+        "//tflite/converter:allocation",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
@@ -1359,7 +1357,6 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer_types",
-    srcs = ["litert_tensor_buffer_types.cc"],
     hdrs = ["litert_tensor_buffer_types.h"],
     deps = [
         "//litert/c:litert_tensor_buffer_types",

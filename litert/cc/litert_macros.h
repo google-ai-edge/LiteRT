@@ -55,9 +55,9 @@
 /// @code
 /// LITERT_RETURN_IF_ERROR(expr) << "Failed while trying to ...";
 /// @endcode
-#define LITERT_RETURN_IF_ERROR(...)                                       \
-  LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD(                                 \
-      (__VA_ARGS__, LITERT_RETURN_IF_ERROR_2, LITERT_RETURN_IF_ERROR_1))( \
+#define LITERT_RETURN_IF_ERROR(...)                                            \
+  LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD(                                      \
+      (__VA_ARGS__, LITERT_RETURN_IF_ERROR_2, LITERT_RETURN_IF_ERROR_1))(      \
       __VA_ARGS__)
 
 // ASSIGN_OR_RETURN(decl, expr)
@@ -84,15 +84,15 @@
       _CONCAT_NAME(expected_value_or_error_, __LINE__), DECL, __VA_ARGS__)
 
 /// @brief Works like `LITERT_RETURN_IF_ERROR` but aborts the process on error.
-#define LITERT_ABORT_IF_ERROR(EXPR)                                        \
-  if (auto status = (EXPR); ::litert::ErrorStatusBuilder::IsError(status)) \
+#define LITERT_ABORT_IF_ERROR(EXPR)                                            \
+  if (auto status = (EXPR); ::litert::ErrorStatusBuilder::IsError(status))     \
   ::litert::LogBeforeAbort(::litert::ErrorStatusBuilder(status))
 
 /// @brief Works like `LITERT_ASSIGN_OR` but aborts the process on error.
-#define LITERT_ASSIGN_OR_ABORT(DECL, ...)                                    \
-  LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD((DECL, __VA_ARGS__,                 \
-                                          LITERT_ASSIGN_OR_ABORT_HELPER_3,   \
-                                          LITERT_ASSIGN_OR_ABORT_HELPER_2))( \
+#define LITERT_ASSIGN_OR_ABORT(DECL, ...)                                      \
+  LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD((DECL, __VA_ARGS__,                   \
+                                          LITERT_ASSIGN_OR_ABORT_HELPER_3,     \
+                                          LITERT_ASSIGN_OR_ABORT_HELPER_2))(   \
       _CONCAT_NAME(expected_value_or_error_, __LINE__), DECL, __VA_ARGS__)
 
 namespace litert {
@@ -110,11 +110,10 @@ namespace litert {
 /// The error message can be extended with additional information using the `<<`
 /// operator.
 class ErrorStatusBuilder {
- public:
+public:
   /// @brief Specializes this class with an implicit conversion to
   /// `litert::Error` and an `IsError()` member.
-  template <class Error, class CRTP = void>
-  struct ErrorConversion;
+  template <class Error, class CRTP = void> struct ErrorConversion;
 
   static ErrorStatusBuilder InvalidArgument(
       litert::SourceLocation loc = litert::SourceLocation::current()) {
@@ -122,14 +121,14 @@ class ErrorStatusBuilder {
                               std::move(loc));
   }
 
-  static ErrorStatusBuilder WrongVersion(
-      litert::SourceLocation loc = litert::SourceLocation::current()) {
+  static ErrorStatusBuilder
+  WrongVersion(litert::SourceLocation loc = litert::SourceLocation::current()) {
     return ErrorStatusBuilder(kLiteRtStatusErrorWrongVersion, std::move(loc));
   }
 
   template <class T>
   explicit ErrorStatusBuilder(
-      T&& error, litert::SourceLocation loc = litert::SourceLocation::current())
+      T &&error, litert::SourceLocation loc = litert::SourceLocation::current())
       : error_(AsError(std::forward<T>(error))), loc_(loc) {}
 
   explicit ErrorStatusBuilder(
@@ -147,26 +146,22 @@ class ErrorStatusBuilder {
     return static_cast<LiteRtStatus>(error_.StatusCC());
   }
 
-  template <class T>
-  operator litert::Expected<T>() const noexcept {
+  template <class T> operator litert::Expected<T>() const noexcept {
     return litert::Unexpected(error_.StatusCC(), LogMessage());
   }
 
   operator absl::Status() const noexcept { return ToAbslStatus(); }
 
-  template <class T>
-  operator absl::StatusOr<T>() const noexcept {
+  template <class T> operator absl::StatusOr<T>() const noexcept {
     return ToAbslStatus();
   }
   // NOLINTEND(*-explicit-constructor)
 
-  template <class T>
-  static constexpr bool IsError(T&& value) {
+  template <class T> static constexpr bool IsError(T &&value) {
     return ErrorConversion<std::decay_t<T>>::IsError(std::forward<T>(value));
   }
 
-  template <class T>
-  static litert::Error AsError(T&& value) {
+  template <class T> static litert::Error AsError(T &&value) {
     return ErrorConversion<std::decay_t<T>>::AsError(std::forward<T>(value));
   }
 
@@ -187,65 +182,60 @@ class ErrorStatusBuilder {
   }
 
   /// @brief Appends data to the error message.
-  template <class T>
-  ErrorStatusBuilder& operator<<(T&& val) {
+  template <class T> ErrorStatusBuilder &operator<<(T &&val) {
     if (!extra_log_) {
       extra_log_ = std::make_unique<std::stringstream>();
     }
-    *extra_log_ << static_cast<T&&>(val);
+    *extra_log_ << static_cast<T &&>(val);
     return *this;
   }
 
   /// @brief Sets the log level used when converting to a `LiteRtStatus`.
-  ErrorStatusBuilder& Log(LiteRtLogSeverity log_level) noexcept {
+  ErrorStatusBuilder &Log(LiteRtLogSeverity log_level) noexcept {
     log_level_ = log_level;
     return *this;
   }
 
   /// @brief Sets the log level to `verbose` for conversion to a
   /// `LiteRtStatus`.
-  ErrorStatusBuilder& LogVerbose() noexcept {
+  ErrorStatusBuilder &LogVerbose() noexcept {
     return Log(kLiteRtLogSeverityVerbose);
   }
 
   /// @brief Sets the log level to `info` for conversion to a `LiteRtStatus`.
-  ErrorStatusBuilder& LogInfo() noexcept { return Log(kLiteRtLogSeverityInfo); }
+  ErrorStatusBuilder &LogInfo() noexcept { return Log(kLiteRtLogSeverityInfo); }
 
   /// @brief Sets the log level to `warning` for conversion to a
   /// `LiteRtStatus`.
-  ErrorStatusBuilder& LogWarning() noexcept {
+  ErrorStatusBuilder &LogWarning() noexcept {
     return Log(kLiteRtLogSeverityWarning);
   }
 
   /// @brief Sets the log level to `error` for conversion to a `LiteRtStatus`.
-  ErrorStatusBuilder& LogError() noexcept {
+  ErrorStatusBuilder &LogError() noexcept {
     return Log(kLiteRtLogSeverityError);
   }
 
   /// @brief Prevents logging any message when converting to a `LiteRtStatus`.
-  ErrorStatusBuilder& NoLog() noexcept { return Log(kLiteRtLogSeveritySilent); }
+  ErrorStatusBuilder &NoLog() noexcept { return Log(kLiteRtLogSeveritySilent); }
 
-  template <class T>
-  static T&& ForwardWrappedValue(Expected<T>& e) {
+  template <class T> static T &&ForwardWrappedValue(Expected<T> &e) {
     return std::move(e.Value());
   }
 
-  template <class T>
-  static T& ForwardWrappedValue(Expected<T&>& e) {
+  template <class T> static T &ForwardWrappedValue(Expected<T &> &e) {
     return e.Value();
   }
 
-  template <class T>
-  static T&& ForwardWrappedValue(absl::StatusOr<T>& e) {
+  template <class T> static T &&ForwardWrappedValue(absl::StatusOr<T> &e) {
     return std::move(e).value();
   }
 
-  template <class T>
-  static T& ForwardWrappedValue(absl::StatusOr<T&>& e) {
+  template <class T> static T &ForwardWrappedValue(absl::StatusOr<T &> &e) {
     return e.value();
   }
 
- private:
+private:
   bool ShouldLog() const noexcept {
     return log_level_ != kLiteRtLogSeveritySilent &&
            (!error_.Message().empty() || extra_log_);
@@ -261,8 +251,7 @@ class ErrorStatusBuilder {
 };
 
 // NOLINTBEGIN(*-explicit-constructor)
-template <>
-struct ErrorStatusBuilder::ErrorConversion<bool> {
+template <> struct ErrorStatusBuilder::ErrorConversion<bool> {
   static constexpr bool IsError(bool value) { return !value; };
   static litert::Error AsError(bool value) {
     return litert::Error(Status::kErrorUnknown);
@@ -270,7 +259,7 @@ struct ErrorStatusBuilder::ErrorConversion<bool> {
 };
 
 template <class T>
-struct ErrorStatusBuilder::ErrorConversion<T*>
+struct ErrorStatusBuilder::ErrorConversion<T *>
     : ErrorStatusBuilder::ErrorConversion<bool> {};
 
 template <class T>
@@ -278,9 +267,8 @@ struct ErrorStatusBuilder::ErrorConversion<
     T, std::enable_if_t<std::is_arithmetic_v<T>>>
     : ErrorStatusBuilder::ErrorConversion<bool> {};
 
-template <>
-struct ErrorStatusBuilder::ErrorConversion<LiteRtStatus> {
-  static constexpr bool IsError(const LiteRtStatus& value) {
+template <> struct ErrorStatusBuilder::ErrorConversion<LiteRtStatus> {
+  static constexpr bool IsError(const LiteRtStatus &value) {
     return value != kLiteRtStatusOk;
   };
   static litert::Error AsError(LiteRtStatus value) {
@@ -290,41 +278,39 @@ struct ErrorStatusBuilder::ErrorConversion<LiteRtStatus> {
 
 template <class T>
 struct ErrorStatusBuilder::ErrorConversion<litert::Expected<T>> {
-  static constexpr bool IsError(const litert::Expected<T>& value) {
+  static constexpr bool IsError(const litert::Expected<T> &value) {
     return !value.HasValue();
   };
-  static litert::Error AsError(const litert::Expected<T>& value) {
+  static litert::Error AsError(const litert::Expected<T> &value) {
     return litert::Error(value.Error());
   }
-  static litert::Error AsError(litert::Expected<T>&& value) {
+  static litert::Error AsError(litert::Expected<T> &&value) {
     return litert::Error(std::move(value.Error()));
   }
 };
 
-template <>
-struct ErrorStatusBuilder::ErrorConversion<litert::Unexpected> {
-  static constexpr bool IsError(const litert::Unexpected& value) {
+template <> struct ErrorStatusBuilder::ErrorConversion<litert::Unexpected> {
+  static constexpr bool IsError(const litert::Unexpected &value) {
     return true;
   };
-  static litert::Error AsError(litert::Unexpected&& value) {
+  static litert::Error AsError(litert::Unexpected &&value) {
     return litert::Error(std::move(value.Error()));
   }
 };
 
-template <>
-struct ErrorStatusBuilder::ErrorConversion<absl::Status> {
-  static bool IsError(const absl::Status& value) { return !value.ok(); };
-  static litert::Error AsError(const absl::Status& value);
+template <> struct ErrorStatusBuilder::ErrorConversion<absl::Status> {
+  static bool IsError(const absl::Status &value) { return !value.ok(); };
+  static litert::Error AsError(const absl::Status &value);
 };
 
 template <class T>
 struct ErrorStatusBuilder::ErrorConversion<absl::StatusOr<T>> {
-  static bool IsError(const absl::StatusOr<T>& value) { return !value.ok(); };
-  static litert::Error AsError(const absl::StatusOr<T>& value) {
+  static bool IsError(const absl::StatusOr<T> &value) { return !value.ok(); };
+  static litert::Error AsError(const absl::StatusOr<T> &value) {
     return ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
         value.status());
   }
-  static litert::Error AsError(absl::StatusOr<T>&& value) {
+  static litert::Error AsError(absl::StatusOr<T> &&value) {
     return ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
         std::move(value.status()));
   }
@@ -333,7 +319,7 @@ struct ErrorStatusBuilder::ErrorConversion<absl::StatusOr<T>> {
 // NOLINTEND(*-explicit-constructor)
 
 class LogBeforeAbort {
- public:
+public:
   explicit LogBeforeAbort(ErrorStatusBuilder builder)
       : builder_(std::move(builder)) {}
 
@@ -343,71 +329,70 @@ class LogBeforeAbort {
     std::abort();
   }
 
-  template <class T>
-  LogBeforeAbort& operator<<(T&& val) {
+  template <class T> LogBeforeAbort &operator<<(T &&val) {
     builder_ << val;
     return *this;
   }
 
- private:
+private:
   ErrorStatusBuilder builder_;
 };
 
-}  // namespace litert
+} // namespace litert
 
 //////////// Implementation details start here. ///////////////////////
 
-#define LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD_HELPER(_1, _2, OVERLOAD, ...) \
+#define LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD_HELPER(_1, _2, OVERLOAD, ...)   \
   OVERLOAD
 
-#define LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD(args) \
+#define LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD(args)                           \
   LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD_HELPER args
 
 #define LITERT_RETURN_IF_ERROR_1(EXPR) LITERT_RETURN_IF_ERROR_2(EXPR, _)
 
 // NOLINTBEGIN(readability/braces)
-#define LITERT_RETURN_IF_ERROR_2(EXPR, RETURN_VALUE)                     \
-  if (auto status = EXPR; ::litert::ErrorStatusBuilder::IsError(status)) \
-    if (::litert::ErrorStatusBuilder _(std::move(status)); true)         \
+#define LITERT_RETURN_IF_ERROR_2(EXPR, RETURN_VALUE)                           \
+  if (auto status = EXPR; ::litert::ErrorStatusBuilder::IsError(status))       \
+    if (::litert::ErrorStatusBuilder _(std::move(status)); true)               \
   return RETURN_VALUE
 // NOLINTEND(readability/braces)
 
-#define LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD, \
-                                                       ...)                  \
+#define LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD,   \
+                                                       ...)                    \
   OVERLOAD
 
-#define LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD(args) \
+#define LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD(args)                          \
   LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD_HELPER args
 
-#define LITERT_ASSIGN_OR_RETURN_HELPER_2(TMP_VAR, DECL, EXPR) \
+#define LITERT_ASSIGN_OR_RETURN_HELPER_2(TMP_VAR, DECL, EXPR)                  \
   LITERT_ASSIGN_OR_RETURN_HELPER_3(TMP_VAR, DECL, EXPR, _)
 
-#define LITERT_ASSIGN_OR_RETURN_HELPER_3(TMP_VAR, DECL, EXPR, RETURN_VALUE) \
-  auto&& TMP_VAR = (EXPR);                                                  \
-  if (::litert::ErrorStatusBuilder::IsError(TMP_VAR)) {                     \
-    [[maybe_unused]] ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));    \
-    return RETURN_VALUE;                                                    \
-  }                                                                         \
-  _LITERT_STRIP_PARENS(DECL) =                                              \
+#define LITERT_ASSIGN_OR_RETURN_HELPER_3(TMP_VAR, DECL, EXPR, RETURN_VALUE)    \
+  auto &&TMP_VAR = (EXPR);                                                     \
+  if (::litert::ErrorStatusBuilder::IsError(TMP_VAR)) {                        \
+    [[maybe_unused]] ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));       \
+    return RETURN_VALUE;                                                       \
+  }                                                                            \
+  _LITERT_STRIP_PARENS(DECL) =                                                 \
       ::litert::ErrorStatusBuilder::ForwardWrappedValue(TMP_VAR)
 
-#define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD, \
-                                                      ...)                  \
+#define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD,    \
+                                                      ...)                     \
   OVERLOAD
 
-#define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD(args) \
+#define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD(args)                           \
   LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER args
 
-#define LITERT_ASSIGN_OR_ABORT_HELPER_2(TMP_VAR, DECL, EXPR) \
+#define LITERT_ASSIGN_OR_ABORT_HELPER_2(TMP_VAR, DECL, EXPR)                   \
   LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, _)
 
-#define LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, LOG_EXPRESSION) \
-  auto&& TMP_VAR = (EXPR);                                                   \
-  if (::litert::ErrorStatusBuilder::IsError(TMP_VAR)) {                      \
-    ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));                      \
-    ::litert::LogBeforeAbort(std::move((LOG_EXPRESSION)));                   \
-  }                                                                          \
-  _LITERT_STRIP_PARENS(DECL) =                                               \
+#define LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, LOG_EXPRESSION)   \
+  auto &&TMP_VAR = (EXPR);                                                     \
+  if (::litert::ErrorStatusBuilder::IsError(TMP_VAR)) {                        \
+    ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));                        \
+    ::litert::LogBeforeAbort(std::move((LOG_EXPRESSION)));                     \
+  }                                                                            \
+  _LITERT_STRIP_PARENS(DECL) =                                                 \
       ::litert::ErrorStatusBuilder::ForwardWrappedValue(TMP_VAR)
 
 #define _CONCAT_NAME_IMPL(x, y) x##y
@@ -449,27 +434,170 @@ class LogBeforeAbort {
 
 #define LITERT_CHECK_STATUS_HAS_CODE(expr, code) ABSL_CHECK(expr == code);
 
-#define LITERT_CHECK_STATUS_OK(expr) \
+#define LITERT_CHECK_STATUS_OK(expr)                                           \
   LITERT_CHECK_STATUS_HAS_CODE(expr, kLiteRtStatusOk);
 
-#define LITERT_ENSURE(cond, status, msg) \
-  if (!(cond)) {                         \
-    LITERT_LOG(LITERT_ERROR, "%s", msg); \
-    return status;                       \
+#define LITERT_ENSURE(cond, status, msg)                                       \
+  if (!(cond)) {                                                               \
+    LITERT_LOG(LITERT_ERROR, "%s", msg);                                       \
+    return status;                                                             \
   }
 
-#define LITERT_ENSURE_SUPPORTED(cond, msg) \
+#define LITERT_ENSURE_SUPPORTED(cond, msg)                                     \
   LITERT_ENSURE(cond, kLiteRtStatusErrorUnsupported, msg);
 
-#define LITERT_RETURN_IF_ERROR_OR_NOT_MATCHED(expr)                          \
-  if (LiteRtStatus status = expr;                                            \
-      (status != kLiteRtStatusOk && status != kLiteRtStatusLegalizeNoMatch)) \
+#define LITERT_RETURN_IF_ERROR_OR_NOT_MATCHED(expr)                            \
+  if (LiteRtStatus status = expr;                                              \
+      (status != kLiteRtStatusOk && status != kLiteRtStatusLegalizeNoMatch))   \
     return status;
 
-#define LITERT_STACK_ARRAY(ty, var, size, init) \
-  ty* var = (ty*)alloca(sizeof(ty) * size);     \
-  for (ty* e = var; e < var + size; ++e) {      \
-    *e = init;                                  \
+#define LITERT_STACK_ARRAY(ty, var, size, init)                                \
+  ty *var = (ty *)alloca(sizeof(ty) * size);                                   \
+  for (ty *e = var; e < var + size; ++e) {                                     \
+    *e = init;                                                                 \
   }
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
+namespace {
+LiteRtStatus ToLiteRtStatus(const absl::StatusCode &code) {
+  switch (code) {
+  case absl::StatusCode::kOk:
+    return kLiteRtStatusOk;
+  case absl::StatusCode::kCancelled:
+    return kLiteRtStatusErrorTimeoutExpired;
+  case absl::StatusCode::kUnknown:
+    return kLiteRtStatusErrorUnknown;
+  case absl::StatusCode::kInvalidArgument:
+    return kLiteRtStatusErrorInvalidArgument;
+  case absl::StatusCode::kDeadlineExceeded:
+    return kLiteRtStatusErrorTimeoutExpired;
+  case absl::StatusCode::kNotFound:
+    return kLiteRtStatusErrorNotFound;
+  case absl::StatusCode::kAlreadyExists:
+    return kLiteRtStatusErrorRuntimeFailure;
+  case absl::StatusCode::kPermissionDenied:
+    return kLiteRtStatusErrorRuntimeFailure;
+  case absl::StatusCode::kResourceExhausted:
+    return kLiteRtStatusErrorRuntimeFailure;
+  case absl::StatusCode::kFailedPrecondition:
+    return kLiteRtStatusErrorRuntimeFailure;
+  case absl::StatusCode::kAborted:
+    return kLiteRtStatusErrorRuntimeFailure;
+  case absl::StatusCode::kOutOfRange:
+    return kLiteRtStatusErrorIndexOOB;
+  case absl::StatusCode::kUnimplemented:
+    return kLiteRtStatusErrorUnsupported;
+  case absl::StatusCode::kInternal:
+    return kLiteRtStatusErrorUnknown;
+  case absl::StatusCode::kUnavailable:
+    return kLiteRtStatusErrorNotFound;
+  case absl::StatusCode::kDataLoss:
+    return kLiteRtStatusErrorRuntimeFailure;
+  case absl::StatusCode::kUnauthenticated:
+    return kLiteRtStatusErrorRuntimeFailure;
+  default:
+    return kLiteRtStatusErrorUnknown;
+  }
+  return kLiteRtStatusErrorUnknown;
+}
+} // namespace
+
+namespace litert {
+
+inline litert::Error ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
+    const absl::Status &value) {
+  return litert::Error(::ToLiteRtStatus(value.code()),
+                       std::string(value.message()));
+}
+
+inline absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
+  switch (error_.StatusCC()) {
+  case Status::kOk:
+    return absl::OkStatus();
+  case Status::kErrorInvalidArgument:
+    return absl::InvalidArgumentError(LogMessage());
+  case Status::kErrorMemoryAllocationFailure:
+    return absl::ResourceExhaustedError(LogMessage());
+  case Status::kErrorRuntimeFailure:
+    return absl::InternalError(LogMessage());
+  case Status::kErrorMissingInputTensor:
+    return absl::InvalidArgumentError(LogMessage());
+  case Status::kErrorUnsupported:
+    return absl::UnimplementedError(LogMessage());
+  case Status::kErrorNotFound:
+    return absl::NotFoundError(LogMessage());
+  case Status::kErrorTimeoutExpired:
+    return absl::DeadlineExceededError(LogMessage());
+  case Status::kCancelled:
+    return absl::CancelledError(LogMessage());
+  case Status::kErrorWrongVersion:
+    return absl::FailedPreconditionError(LogMessage());
+  case Status::kErrorUnknown:
+    return absl::UnknownError(LogMessage());
+  case Status::kErrorAlreadyExists:
+    return absl::AlreadyExistsError(LogMessage());
+  case Status::kErrorFileIO:
+    return absl::UnavailableError(LogMessage());
+  case Status::kErrorInvalidFlatbuffer:
+    return absl::InvalidArgumentError(LogMessage());
+  case Status::kErrorDynamicLoading:
+    return absl::UnavailableError(LogMessage());
+  case Status::kErrorSerialization:
+    return absl::InternalError(LogMessage());
+  case Status::kErrorCompilation:
+    return absl::InternalError(LogMessage());
+  case Status::kErrorIndexOOB:
+    return absl::OutOfRangeError(LogMessage());
+  case Status::kErrorInvalidIrType:
+    return absl::InvalidArgumentError(LogMessage());
+  case Status::kErrorInvalidGraphInvariant:
+    return absl::InvalidArgumentError(LogMessage());
+  case Status::kErrorGraphModification:
+    return absl::InternalError(LogMessage());
+  case Status::kErrorInvalidToolConfig:
+    return absl::InvalidArgumentError(LogMessage());
+  case Status::kLegalizeNoMatch:
+    return absl::NotFoundError(LogMessage());
+  case Status::kErrorInvalidLegalization:
+    return absl::InvalidArgumentError(LogMessage());
+  case Status::kPatternNoMatch:
+    return absl::NotFoundError(error_.Message());
+  case Status::kInvalidTransformation:
+    return absl::InvalidArgumentError(error_.Message());
+  case Status::kErrorUnsupportedRuntimeVersion:
+    return absl::FailedPreconditionError(LogMessage());
+  case Status::kErrorUnsupportedCompilerVersion:
+    return absl::FailedPreconditionError(LogMessage());
+  case Status::kErrorIncompatibleByteCodeVersion:
+    return absl::FailedPreconditionError(LogMessage());
+  case Status::kErrorShapeInferenceUnsupportedOp:
+    return absl::UnimplementedError(LogMessage());
+  case Status::kErrorShapeInferenceFailed:
+    return absl::InvalidArgumentError(LogMessage());
+  }
+  return absl::UnknownError(LogMessage());
+}
+
+inline std::string ErrorStatusBuilder::LogMessage() const {
+  LiteRtLogger logger = LiteRtGetDefaultLogger();
+  LiteRtLogSeverity min_severity;
+  if (LiteRtGetMinLoggerSeverity(logger, &min_severity) != kLiteRtStatusOk) {
+    min_severity = kLiteRtLogSeverityVerbose;
+  }
+  if (log_level_ >= min_severity) {
+    std::stringstream sstr;
+    sstr << LiteRtGetLogSeverityName(log_level_) << ": [" << loc_.file_name()
+         << ':' << loc_.line() << ']';
+    if (extra_log_) {
+      sstr << ' ' << extra_log_->str();
+    }
+    if (!error_.Message().empty()) {
+      sstr << "\n└ " << error_.Message();
+    }
+    return sstr.str();
+  }
+  return "";
+}
+
+} // namespace litert
+
+#endif // ODML_LITERT_LITERT_CC_LITERT_MACROS_H_

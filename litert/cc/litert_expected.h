@@ -20,13 +20,17 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
 
@@ -43,7 +47,7 @@ namespace litert {
 /// @brief A C++ wrapper for a `LiteRtStatus` code, providing a status and an
 /// error message.
 class Error {
- public:
+public:
   /// @brief Constructs an `Error` from a status and an optional error message.
   /// @note `::litert::Status::kOk` should not be passed.
   explicit Error(::litert::Status status, std::string message = "")
@@ -65,13 +69,15 @@ class Error {
   }
 
   [[deprecated("Use StatusCC() instead.")]]
-  constexpr LiteRtStatus Status() const { return status_; }
+  constexpr LiteRtStatus Status() const {
+    return status_;
+  }
 
   /// @brief Gets the error message. Returns an empty string if none was
   /// attached.
-  const std::string& Message() const { return message_; }
+  const std::string &Message() const { return message_; }
 
-  friend std::ostream& operator<<(std::ostream& stream, const Error& error) {
+  friend std::ostream &operator<<(std::ostream &stream, const Error &error) {
     stream << LiteRtGetStatusString(error.status_);
     if (!error.Message().empty()) {
       stream << ": " << error.Message();
@@ -80,21 +86,21 @@ class Error {
   }
 
   template <class Sink>
-  friend void AbslStringify(Sink& sink, const Error& error) {
+  friend void AbslStringify(Sink &sink, const Error &error) {
     absl::Format(&sink, "%s", LiteRtGetStatusString(error.status_));
     if (!error.Message().empty()) {
       absl::Format(&sink, ": %v", error.Message());
     }
   }
 
- private:
+private:
   LiteRtStatus status_;
   std::string message_;
 };
 
 /// @brief A utility for generic return values that represents a failure.
 class Unexpected {
- public:
+public:
   explicit Unexpected(Status status, std::string message = "")
       : error_(status, std::move(message)) {}
 
@@ -105,32 +111,32 @@ class Unexpected {
             class = std::enable_if_t<
                 !std::is_same_v<std::decay_t<First>, Status> &&
                 !std::is_same_v<std::decay_t<First>, LiteRtStatus>>>
-  constexpr explicit Unexpected(First&& first, Rest&&... rest)
+  constexpr explicit Unexpected(First &&first, Rest &&...rest)
       : error_(std::forward<First>(first), std::forward<Rest>(rest)...) {}
 
   /// @brief Allows for implicit conversion from a convertible `Error` value
   /// in-place.
   // NOLINTNEXTLINE(*-explicit-constructor)
-  Unexpected(class Error&& e) : error_(std::move(e)) {}
+  Unexpected(class Error &&e) : error_(std::move(e)) {}
 
-  Unexpected(Unexpected&& other) = default;
-  Unexpected(const Unexpected& other) = default;
-  Unexpected& operator=(Unexpected&& other) = default;
-  Unexpected& operator=(const Unexpected& other) = default;
+  Unexpected(Unexpected &&other) = default;
+  Unexpected(const Unexpected &other) = default;
+  Unexpected &operator=(Unexpected &&other) = default;
+  Unexpected &operator=(const Unexpected &other) = default;
 
-  constexpr const class Error& Error() const& noexcept { return error_; }
-  constexpr class Error& Error() & noexcept { return error_; }
-  constexpr const class Error&& Error() const&& noexcept {
+  constexpr const class Error &Error() const & noexcept { return error_; }
+  constexpr class Error &Error() & noexcept { return error_; }
+  constexpr const class Error &&Error() const && noexcept {
     return std::move(error_);
   }
-  constexpr class Error&& Error() && noexcept { return std::move(error_); }
+  constexpr class Error &&Error() && noexcept { return std::move(error_); }
 
   template <class Sink>
-  friend void AbslStringify(Sink& sink, const Unexpected& unexpected) {
+  friend void AbslStringify(Sink &sink, const Unexpected &unexpected) {
     AbslStringify(sink, unexpected.Error());
   }
 
- private:
+private:
   class Error error_;
 };
 
@@ -154,9 +160,8 @@ class Unexpected {
 ///   return Foo();
 /// }
 /// @endcode
-template <class T>
-class Expected {
- public:
+template <class T> class Expected {
+public:
   using StorageType =
       std::conditional_t<std::is_reference_v<T>,
                          std::reference_wrapper<std::remove_reference_t<T>>, T>;
@@ -164,10 +169,10 @@ class Expected {
   /// @brief The following type definitions are in snake_case to match standard
   /// member types.
   using value_type = std::decay_t<T>;
-  using pointer = std::remove_reference_t<T>*;
-  using const_pointer = const value_type*;
-  using reference = std::remove_reference_t<T>&;
-  using const_reference = const value_type&;
+  using pointer = std::remove_reference_t<T> *;
+  using const_pointer = const value_type *;
+  using reference = std::remove_reference_t<T> &;
+  using const_reference = const value_type &;
 
   /// @brief Constructs `T` from an initializer list in-place.
   template <class U>
@@ -175,7 +180,7 @@ class Expected {
 
   /// @brief Constructs `T` from forwarded arguments in-place.
   template <class... Args>
-  explicit Expected(Args&&... args)
+  explicit Expected(Args &&...args)
       : has_value_(true), value_(std::forward<Args>(args)...) {}
 
   // NOLINTBEGIN(*-explicit-constructor)
@@ -189,22 +194,22 @@ class Expected {
   template <
       class U,
       class = std::enable_if_t<std::is_same_v<std::decay_t<U>, value_type>>,
-      class = std::enable_if<!std::is_same_v<const U&, reference>>>
-  Expected(const U& t) : has_value_(true), value_(t) {}
-  Expected(value_type&& t) : has_value_(true), value_(std::move(t)) {}
+      class = std::enable_if<!std::is_same_v<const U &, reference>>>
+  Expected(const U &t) : has_value_(true), value_(t) {}
+  Expected(value_type &&t) : has_value_(true), value_(std::move(t)) {}
 
   /// @brief Constructs from an `Unexpected` object in-place.
   ///
   /// Allows for implicit conversion from `Error`.
-  Expected(const Unexpected& err) : has_value_(false), unexpected_(err) {}
-  Expected(Unexpected&& err) : has_value_(false), unexpected_(std::move(err)) {}
-  Expected(const class Error& e) : has_value_(false), unexpected_(e) {}
+  Expected(const Unexpected &err) : has_value_(false), unexpected_(err) {}
+  Expected(Unexpected &&err) : has_value_(false), unexpected_(std::move(err)) {}
+  Expected(const class Error &e) : has_value_(false), unexpected_(e) {}
 
   // NOLINTEND(*-explicit-constructor)
 
   // Copy/move
 
-  Expected(Expected&& other) : has_value_(other.HasValue()) {
+  Expected(Expected &&other) : has_value_(other.HasValue()) {
     if (HasValue()) {
       ::new (std::addressof(value_)) StorageType(std::move(other.value_));
     } else {
@@ -213,7 +218,7 @@ class Expected {
     }
   }
 
-  Expected(const Expected& other) : has_value_(other.has_value_) {
+  Expected(const Expected &other) : has_value_(other.has_value_) {
     if (HasValue()) {
       ::new (std::addressof(value_)) StorageType(other.value_);
       value_ = other.value_;
@@ -222,7 +227,7 @@ class Expected {
     }
   }
 
-  Expected& operator=(Expected&& other) {
+  Expected &operator=(Expected &&other) {
     if (this != &other) {
       if (HasValue()) {
         if (other.HasValue()) {
@@ -245,7 +250,7 @@ class Expected {
     return *this;
   }
 
-  Expected& operator=(const Expected& other) {
+  Expected &operator=(const Expected &other) {
     if (this != &other) {
       if (HasValue()) {
         if (other.HasValue()) {
@@ -277,7 +282,7 @@ class Expected {
 
   /// @brief Observers for the `T` value. The program exits if it doesn't have
   /// one.
-  const_reference Value() const& {
+  const_reference Value() const & {
     CheckVal();
     if constexpr (std::is_reference_v<T>) {
       return value_.get();
@@ -297,13 +302,13 @@ class Expected {
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its value.
-  reference& Value() const&& = delete;
+  reference &Value() const && = delete;
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its value.
-  reference& Value() && = delete;
+  reference &Value() && = delete;
 
-  const_pointer operator->() const& {
+  const_pointer operator->() const & {
     CheckVal();
     if constexpr (std::is_reference_v<T>) {
       return &(value_.get());
@@ -323,43 +328,43 @@ class Expected {
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its value.
-  const_pointer operator->() const&& = delete;
+  const_pointer operator->() const && = delete;
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its value.
   pointer operator->() && = delete;
 
-  const_reference operator*() const& { return Value(); }
+  const_reference operator*() const & { return Value(); }
 
   reference operator*() & { return Value(); }
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its value.
-  reference& operator*() const&& = delete;
+  reference &operator*() const && = delete;
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its value.
-  reference& operator*() && = delete;
+  reference &operator*() && = delete;
 
   /// @brief Observer for `Unexpected`. The program exits if it doesn't have
   /// one.
-  const class Error& Error() const& {
+  const class Error &Error() const & {
     CheckNoVal();
     return unexpected_.Error();
   }
 
-  class Error& Error() & {
+  class Error &Error() & {
     CheckNoVal();
     return unexpected_.Error();
   }
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its error.
-  const class Error&& Error() const&& = delete;
+  const class Error &&Error() const && = delete;
 
   /// @brief Deleted: an `Expected` should always be checked before accessing
   /// its error.
-  class Error&& Error() && = delete;
+  class Error &&Error() && = delete;
 
   /// @brief Checks if this `Expected` contains a `T` value.
   ///
@@ -369,7 +374,7 @@ class Expected {
   /// @brief Converts to `bool` for `HasValue`.
   explicit operator bool() const { return HasValue(); }
 
- private:
+private:
   bool has_value_;
   union {
     StorageType value_;
@@ -379,30 +384,24 @@ class Expected {
   void CheckVal() const { ABSL_CHECK(HasValue()); }
 };
 
-template <class T>
-Expected(const T&) -> Expected<T>;
+template <class T> Expected(const T &) -> Expected<T>;
 
-template <class T>
-Expected(T&&) -> Expected<T>;
+template <class T> Expected(T &&) -> Expected<T>;
 
 namespace internal {
-template <class T>
-struct CanBeAbslFormated {
+template <class T> struct CanBeAbslFormated {
   template <class U>
   static constexpr auto Check(int)
       -> decltype(absl::StrCat(std::declval<U>()), true) {
     return true;
   }
-  template <class U>
-  static constexpr bool Check(...) {
-    return false;
-  }
+  template <class U> static constexpr bool Check(...) { return false; }
   enum { value = Check<T>(0) };
 };
-}  // namespace internal
+} // namespace internal
 
 template <class Sink, class T>
-void AbslStringify(Sink& sink, const Expected<T>& expected) {
+void AbslStringify(Sink &sink, const Expected<T> &expected) {
   if (!expected.HasValue()) {
     absl::Format(&sink, "%v", expected.Error());
   } else {
@@ -422,9 +421,8 @@ void AbslStringify(Sink& sink, const Expected<T>& expected) {
 ///
 /// This specialization is used to simplify returning a valid value (e.g.,
 /// `return {};`).
-template <>
-class Expected<void> {
- public:
+template <> class Expected<void> {
+public:
   /// @brief Implicit construction is used to simplify returning a valid value
   /// (e.g., `return {};`).
   Expected() : unexpected_(std::nullopt) {}
@@ -432,32 +430,32 @@ class Expected<void> {
   // NOLINTBEGIN(*-explicit-constructor)
 
   /// @brief Constructs from an `Unexpected` object in-place.
-  Expected(const Unexpected& err) : unexpected_(err) {}
-  Expected(Unexpected&& err) : unexpected_(std::move(err)) {}
+  Expected(const Unexpected &err) : unexpected_(err) {}
+  Expected(Unexpected &&err) : unexpected_(std::move(err)) {}
 
   /// @brief Allows for implicit conversion from `Error`.
-  Expected(const Error& e) : unexpected_(e) {}
+  Expected(const Error &e) : unexpected_(e) {}
 
   // NOLINTEND(*-explicit-constructor)
 
   /// @brief Observer for `Unexpected`. The program exits if it doesn't have
   /// one.
-  const class Error& Error() const& {
+  const class Error &Error() const & {
     CheckNoVal();
     return unexpected_->Error();
   }
 
-  class Error& Error() & {
+  class Error &Error() & {
     CheckNoVal();
     return unexpected_->Error();
   }
 
-  const class Error&& Error() const&& {
+  const class Error &&Error() const && {
     CheckNoVal();
     return std::move(unexpected_->Error());
   }
 
-  class Error&& Error() && {
+  class Error &&Error() && {
     CheckNoVal();
     return std::move(unexpected_->Error());
   }
@@ -470,12 +468,89 @@ class Expected<void> {
   /// @brief Converts to `bool` for `HasValue`.
   explicit operator bool() const { return HasValue(); }
 
- private:
+private:
   std::optional<Unexpected> unexpected_;
   void CheckNoVal() const { ABSL_CHECK(!HasValue()); }
   void CheckVal() const { ABSL_CHECK(HasValue()); }
 };
 
-}  // namespace litert
+#ifdef LITERT_NO_ABSL
+namespace internal {
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_EXPECTED_H_
+template <typename T>
+inline constexpr absl::Span<T> ToAbslSpan(std::span<T> span) {
+  return absl::Span<T>(span.data(), span.size());
+}
+
+template <typename T>
+inline constexpr absl::Span<const T> ToAbslSpan(std::span<const T> span) {
+  return absl::Span<const T>(span.data(), span.size());
+}
+
+template <typename T>
+inline constexpr std::span<T> ToStdSpan(absl::Span<T> span) {
+  return std::span<T>(span.data(), span.size());
+}
+
+template <typename T>
+inline constexpr std::span<const T> ToStdSpan(absl::Span<const T> span) {
+  return std::span<const T>(span.data(), span.size());
+}
+
+inline constexpr absl::string_view ToAbslStringView(std::string_view view) {
+  return absl::string_view(view.data(), view.size());
+}
+
+inline constexpr std::string_view ToStdStringView(absl::string_view view) {
+  return std::string_view(view.data(), view.size());
+}
+
+inline std::vector<std::string_view>
+ToStdStringViews(const std::vector<absl::string_view> &views) {
+  std::vector<std::string_view> std_views;
+  std_views.reserve(views.size());
+  for (absl::string_view view : views) {
+    std_views.push_back(ToStdStringView(view));
+  }
+  return std_views;
+}
+
+template <typename T>
+inline Expected<std::span<T>> ToStdSpan(Expected<absl::Span<T>> expected) {
+  if (!expected) {
+    return expected.Error();
+  }
+  return ToStdSpan(*expected);
+}
+
+template <typename T>
+inline Expected<std::span<const T>>
+ToStdSpan(Expected<absl::Span<const T>> expected) {
+  if (!expected) {
+    return expected.Error();
+  }
+  return ToStdSpan(*expected);
+}
+
+inline Expected<std::string_view>
+ToStdStringView(Expected<absl::string_view> expected) {
+  if (!expected) {
+    return expected.Error();
+  }
+  return ToStdStringView(*expected);
+}
+
+inline Expected<std::vector<std::string_view>>
+ToStdStringViews(Expected<std::vector<absl::string_view>> expected) {
+  if (!expected) {
+    return expected.Error();
+  }
+  return ToStdStringViews(*expected);
+}
+
+} // namespace internal
+#endif // LITERT_NO_ABSL
+
+} // namespace litert
+
+#endif // ODML_LITERT_LITERT_CC_LITERT_EXPECTED_H_

@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -38,15 +39,15 @@ namespace litert {
 ///        and access type-erased configuration data.
 /// @todo Work logging into this API (and derived classes).
 class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
- public:
+public:
   using Ref = std::reference_wrapper<OpaqueOptions>;
   friend class RuntimeOptions;
 
   OpaqueOptions() = default;
 
-  static Expected<OpaqueOptions> Create(
-      const std::string& payload_identifier, void* payload_data,
-      void (*payload_destructor)(void* payload_data)) {
+  static Expected<OpaqueOptions>
+  Create(const std::string &payload_identifier, void *payload_data,
+         void (*payload_destructor)(void *payload_data)) {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(
         LiteRtCreateOpaqueOptions(payload_identifier.c_str(), payload_data,
@@ -54,18 +55,26 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
     return OpaqueOptions(options, OwnHandle::kYes);
   }
 
+#ifdef LITERT_NO_ABSL
+  Expected<std::string_view> GetIdentifier() const {
+    const char *payload_identifier;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
+    return std::string_view(payload_identifier);
+  }
+#else
   Expected<absl::string_view> GetIdentifier() const {
-    const char* payload_identifier;
+    const char *payload_identifier;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
     return absl::string_view(payload_identifier);
   }
+#endif
 
-  template <typename T>
-  Expected<T*> GetData() const {
-    void* payload_data;
+  template <typename T> Expected<T *> GetData() const {
+    void *payload_data;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(Get(), &payload_data));
-    return reinterpret_cast<T*>(payload_data);
+    return reinterpret_cast<T *>(payload_data);
   }
 
   Expected<OpaqueOptions> Next() {
@@ -74,7 +83,7 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
     return OpaqueOptions(h, OwnHandle::kNo);
   }
 
-  Expected<void> Append(OpaqueOptions&& appended_options) {
+  Expected<void> Append(OpaqueOptions &&appended_options) {
     auto h = Get();
     LITERT_RETURN_IF_ERROR(
         LiteRtAppendOpaqueOptions(&h, appended_options.Release()));
@@ -103,7 +112,11 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
 
   Expected<void> SetHash(LiteRtOpaqueOptionsHashFunc payload_hash_func);
 
-  Expected<uint64_t> Hash() const;
+  Expected<uint64_t> Hash() const {
+    uint64_t hash;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsHash(Get(), &hash));
+    return hash;
+  }
 
   /// @internal
   /// @brief Wraps a `LiteRtOpaqueOptions` C object in an `OpaqueOptions` C++
@@ -114,7 +127,7 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
     return OpaqueOptions(options, owned);
   }
 
- protected:
+protected:
   /// @param owned Indicates if the created
   /// `AcceleratorCompilationOptions` object should take ownership of the
   /// provided `options` handle.
@@ -125,8 +138,9 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
 
 /// @brief Finds the opaque option in the chain that matches the provided
 /// identifier.
-Expected<OpaqueOptions> FindOpaqueOptions(
-    OpaqueOptions& options, const std::string& payload_identifier);
+Expected<OpaqueOptions>
+FindOpaqueOptions(OpaqueOptions &options,
+                  const std::string &payload_identifier);
 
 /// @brief A convenience wrapper on top of `FindOpaqueOptions`.
 ///
@@ -137,7 +151,7 @@ Expected<OpaqueOptions> FindOpaqueOptions(
 template <typename Discriminated,
           std::enable_if_t<std::is_base_of<OpaqueOptions, Discriminated>::value,
                            bool> = true>
-Expected<Discriminated> FindOpaqueOptions(OpaqueOptions& options) {
+Expected<Discriminated> FindOpaqueOptions(OpaqueOptions &options) {
   LITERT_ASSIGN_OR_RETURN(
       auto opq,
       FindOpaqueOptions(options, std::string(Discriminated::Discriminator())));
@@ -150,14 +164,37 @@ Expected<Discriminated> FindOpaqueOptions(OpaqueOptions& options) {
 /// This is analogous to `Discriminate`, but it returns the payload used to
 /// interoperate with the C API.
 template <typename T>
-Expected<T*> FindOpaqueData(OpaqueOptions& options,
-                            const std::string& payload_identifier) {
-  void* payload_data;
+Expected<T *> FindOpaqueData(OpaqueOptions &options,
+                             const std::string &payload_identifier) {
+  void *payload_data;
   LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
       options.Get(), payload_identifier.c_str(), &payload_data));
-  return reinterpret_cast<T*>(payload_data);
+  return reinterpret_cast<T *>(payload_data);
 }
 
-}  // namespace litert
+inline Expected<OpaqueOptions>
+FindOpaqueOptions(OpaqueOptions &options,
+                  const std::string &payload_identifier) {
+  Expected<OpaqueOptions> chain(
+      OpaqueOptions::WrapCObject(options.Get(), OwnHandle::kNo));
+  while (chain) {
+    // TODO: lukeboyer - Error out in all the cases where there isn't
+    // a valid identifier.
+    const auto next_id = chain->GetIdentifier();
+    if (next_id && *next_id == payload_identifier) {
+      return OpaqueOptions::WrapCObject(chain->Get(), OwnHandle::kNo);
+    }
+    chain = chain->Next();
+  }
+  return Error(Status::kErrorInvalidArgument);
+}
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_
+inline Expected<void>
+OpaqueOptions::SetHash(LiteRtOpaqueOptionsHashFunc payload_hash_func) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(Get(), payload_hash_func));
+  return {};
+}
+
+} // namespace litert
+
+#endif // ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_

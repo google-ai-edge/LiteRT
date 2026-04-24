@@ -72,28 +72,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
     internal/scoped_weight_source.h
 )
 
-set(LITERT_CC_PUBLIC_SOURCES
-    litert_compiled_model.cc
-    litert_custom_op_kernel.cc
-    litert_macros.cc
-    litert_model.cc
-    litert_opaque_options.cc
-    litert_options.cc
-    litert_tensor_buffer.cc
-    litert_tensor_buffer_types.cc
-    options/litert_compiler_options.cc
-    options/litert_cpu_options.cc
-    options/litert_google_tensor_options.cc
-    options/litert_gpu_options.cc
-    options/litert_intel_openvino_options.cc
-    options/litert_magic_number_options.cc
-    options/litert_mediatek_options.cc
-    options/litert_qualcomm_options.cc
-    options/litert_runtime_options.cc
-    options/litert_samsung_options.cc
-    options/litert_webnn_options.cc
-)
-
 file(GLOB LITERT_CC_DISCOVERED_PUBLIC_HEADERS
     RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     CONFIGURE_DEPENDS
@@ -118,14 +96,10 @@ file(GLOB LITERT_CC_DISCOVERED_PUBLIC_SOURCES
     "options/*.cc"
 )
 list(FILTER LITERT_CC_DISCOVERED_PUBLIC_SOURCES EXCLUDE REGEX "_test\\.cc$")
-list(SORT LITERT_CC_DISCOVERED_PUBLIC_SOURCES)
-set(_litert_cc_expected_public_sources ${LITERT_CC_PUBLIC_SOURCES})
-list(SORT _litert_cc_expected_public_sources)
-if(NOT LITERT_CC_DISCOVERED_PUBLIC_SOURCES STREQUAL _litert_cc_expected_public_sources)
+if(LITERT_CC_DISCOVERED_PUBLIC_SOURCES)
     message(FATAL_ERROR
-        "litert/cc public source manifest is out of sync.\n"
-        "Discovered:\n  ${LITERT_CC_DISCOVERED_PUBLIC_SOURCES}\n"
-        "Expected:\n  ${_litert_cc_expected_public_sources}\n"
+        "litert/cc wrapper sources should be header-only.\n"
+        "Discovered implementation sources:\n  ${LITERT_CC_DISCOVERED_PUBLIC_SOURCES}\n"
         "Update litert/cc/CMakeLists.txt.")
 endif()
 
@@ -136,7 +110,7 @@ set(LITERT_CC_HEADERS
 
 # Core C++ API library
 add_library(litert_cc_api STATIC
-    ${LITERT_CC_PUBLIC_SOURCES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../c/empty.cc
 )
 
 target_include_directories(litert_cc_api
