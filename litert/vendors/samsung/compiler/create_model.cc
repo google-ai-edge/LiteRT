@@ -48,6 +48,7 @@
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gathernd_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/gelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/hardswish_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/l2normalization_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
@@ -73,6 +74,7 @@
 #include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/split_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/strided_slice_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
@@ -369,6 +371,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflGatherNd:
         op_wrapper = BuildGatherNdOp(op);
         break;
+      case kLiteRtOpCodeTflGelu:
+        op_wrapper = std::move(BuildGeluOp(op));
+        break;
       case kLiteRtOpCodeTflGreater:
         op_wrapper = BuildGreaterOp(op);
         break;
@@ -495,6 +500,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflStridedSlice:
         op_wrapper = BuildStridedSliceOp(op);
+        break;
+      case kLiteRtOpCodeTflTanh:
+        op_wrapper = std::move(BuildTanhOp(op));
         break;
       case kLiteRtOpCodeTflTranspose:
         op_wrapper = BuildTransposeOp(op);
