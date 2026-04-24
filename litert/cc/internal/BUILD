@@ -354,8 +354,10 @@ cc_test(
 
 cc_library(
     name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
-    hdrs = ["litert_shared_library.h"],
+    hdrs = [
+        "litert_shared_library.h",
+        "litert_shared_library_windows.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -689,11 +691,11 @@ cc_test(
 
 cc_library(
     name = "scoped_file",
-    srcs = ["scoped_file.cc"] + select({
-        "//litert:windows": ["scoped_file_win.cc"],
-        "//conditions:default": ["scoped_file_posix.cc"],
-    }),
-    hdrs = ["scoped_file.h"],
+    hdrs = [
+        "scoped_file.h",
+        "scoped_file_posix.h",
+        "scoped_file_win.h",
+    ],
     deps = [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
