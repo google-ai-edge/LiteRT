@@ -66,7 +66,6 @@ class CompiledModel:
       model_path: str,
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
-      enforce_f32_gpu: bool = False,
   ) -> "CompiledModel":
     """Creates a CompiledModel from a model file.
 
@@ -77,7 +76,6 @@ class CompiledModel:
         HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
-      enforce_f32_gpu: Enforce F32 precision on GPU.
 
     Returns:
       A new CompiledModel instance.
@@ -90,7 +88,7 @@ class CompiledModel:
         model_path,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
-        enforce_f32_gpu=enforce_f32_gpu,
+        enforce_f32_gpu=env.enforce_f32_gpu,
     )
     return cls(ptr, env)
 
@@ -100,7 +98,6 @@ class CompiledModel:
       model_data: bytes,
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
-      enforce_f32_gpu: bool = False,
   ) -> "CompiledModel":
     """Creates a CompiledModel from an in-memory buffer.
 
@@ -111,7 +108,6 @@ class CompiledModel:
         HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
-      enforce_f32_gpu: Enforce F32 precision on GPU.
 
     Returns:
       A new CompiledModel instance.
@@ -124,7 +120,7 @@ class CompiledModel:
         model_data,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
-        enforce_f32_gpu=enforce_f32_gpu,
+        enforce_f32_gpu=env.enforce_f32_gpu,
     )
     return cls(ptr, env)
 
