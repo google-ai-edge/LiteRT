@@ -32,9 +32,31 @@ else:
 class Environment:
   """Python wrapper for a shared LiteRT environment."""
 
-  def __init__(self, capsule, cpu_num_threads: int = 0):
+  def __init__(
+      self,
+      capsule,
+      cpu_num_threads: int = 0,
+      enforce_f32_gpu: bool = False,
+      cpu_kernel_mode: int = -1,
+      xnnpack_flags: int = -1,
+      xnnpack_weight_cache_path: str = "",
+      enable_constant_tensor_sharing: bool = False,
+      enable_infinite_float_capping: bool = False,
+      enable_benchmark_mode: bool = False,
+      enable_allow_src_quantized_fc_conv_ops: bool = False,
+  ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
+    self.enforce_f32_gpu = enforce_f32_gpu
+    self.cpu_kernel_mode = cpu_kernel_mode
+    self.xnnpack_flags = xnnpack_flags
+    self.xnnpack_weight_cache_path = xnnpack_weight_cache_path
+    self.enable_constant_tensor_sharing = enable_constant_tensor_sharing
+    self.enable_infinite_float_capping = enable_infinite_float_capping
+    self.enable_benchmark_mode = enable_benchmark_mode
+    self.enable_allow_src_quantized_fc_conv_ops = (
+        enable_allow_src_quantized_fc_conv_ops
+    )
 
   @classmethod
   def create(
@@ -43,6 +65,14 @@ class Environment:
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
       cpu_num_threads: int = 1,
+      enforce_f32_gpu: bool = False,
+      cpu_kernel_mode: int = -1,
+      xnnpack_flags: int = -1,
+      xnnpack_weight_cache_path: str = "",
+      enable_constant_tensor_sharing: bool = False,
+      enable_infinite_float_capping: bool = False,
+      enable_benchmark_mode: bool = False,
+      enable_allow_src_quantized_fc_conv_ops: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -52,6 +82,15 @@ class Environment:
       compiler_plugin_path: Optional path to compiler plugin libraries.
       dispatch_library_path: Optional path to dispatch libraries.
       cpu_num_threads: Number of threads for CPU execution.
+      enforce_f32_gpu: Enforce F32 precision on GPU.
+      cpu_kernel_mode: CPU kernel mode option.
+      xnnpack_flags: XNNPACK flags option.
+      xnnpack_weight_cache_path: XNNPACK weight cache path option.
+      enable_constant_tensor_sharing: Enable constant tensor sharing on GPU.
+      enable_infinite_float_capping: Enable infinite float capping on GPU.
+      enable_benchmark_mode: Enable benchmark mode on GPU.
+      enable_allow_src_quantized_fc_conv_ops: Enable allow src quantized fc conv
+        ops on GPU.
 
     Returns:
       A new Environment instance.
@@ -63,7 +102,18 @@ class Environment:
         compiler_plugin_path=compiler_plugin_path,
         dispatch_library_path=dispatch_library_path,
     )
-    return cls(capsule, cpu_num_threads)
+    return cls(
+        capsule,
+        cpu_num_threads,
+        enforce_f32_gpu,
+        cpu_kernel_mode,
+        xnnpack_flags,
+        xnnpack_weight_cache_path,
+        enable_constant_tensor_sharing,
+        enable_infinite_float_capping,
+        enable_benchmark_mode,
+        enable_allow_src_quantized_fc_conv_ops,
+    )
 
   @property
   def capsule(self):
