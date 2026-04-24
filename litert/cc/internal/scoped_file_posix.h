@@ -12,8 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_POSIX_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_POSIX_H_
+
+#if !defined(_WIN32)
+
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <cstddef>
@@ -26,8 +32,7 @@
 
 namespace litert {
 
-// static
-absl::StatusOr<ScopedFile> ScopedFile::Open(absl::string_view path) {
+inline absl::StatusOr<ScopedFile> ScopedFile::Open(absl::string_view path) {
   int fd = open(path.data(), O_RDONLY);
   if (fd < 0) {
     return absl::ErrnoToStatus(errno, absl::StrCat("open() failed: ", path));
@@ -35,8 +40,8 @@ absl::StatusOr<ScopedFile> ScopedFile::Open(absl::string_view path) {
   return ScopedFile(fd);
 }
 
-// static
-absl::StatusOr<ScopedFile> ScopedFile::OpenWritable(absl::string_view path) {
+inline absl::StatusOr<ScopedFile> ScopedFile::OpenWritable(
+    absl::string_view path) {
   int fd = open(path.data(), O_RDWR);
   if (fd < 0) {
     return absl::ErrnoToStatus(errno, absl::StrCat("open() failed: ", path));
@@ -44,11 +49,9 @@ absl::StatusOr<ScopedFile> ScopedFile::OpenWritable(absl::string_view path) {
   return ScopedFile(fd);
 }
 
-// static
-void ScopedFile::CloseFile(int file) { close(file); }
+inline void ScopedFile::CloseFile(int file) { close(file); }
 
-// static
-absl::StatusOr<size_t> ScopedFile::GetSizeImpl(int file) {
+inline absl::StatusOr<size_t> ScopedFile::GetSizeImpl(int file) {
   struct stat info;
   int result = fstat(file, &info);
   if (result < 0) {
@@ -57,14 +60,14 @@ absl::StatusOr<size_t> ScopedFile::GetSizeImpl(int file) {
   return info.st_size;
 }
 
-absl::StatusOr<ScopedFile> ScopedFile::Duplicate() {
+inline absl::StatusOr<ScopedFile> ScopedFile::Duplicate() {
   if (!IsValid()) {
     return absl::InvalidArgumentError("File is not opened.");
   }
   return ScopedFile(dup(file_));
 }
 
-absl::StatusOr<int> ScopedFile::Release() {
+inline absl::StatusOr<int> ScopedFile::Release() {
   if (!IsValid()) {
     return absl::InvalidArgumentError("File is not opened.");
   }
@@ -72,3 +75,7 @@ absl::StatusOr<int> ScopedFile::Release() {
 }
 
 }  // namespace litert
+
+#endif  // !defined(_WIN32)
+
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_POSIX_H_
