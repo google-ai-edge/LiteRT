@@ -194,6 +194,7 @@ enum MirrorPadModeType : uint32_t {
 struct CompositeOptions : public OpOptions {
   /// Name for special composites representing manual partitions.
   static constexpr absl::string_view kNpuCall = "odml.npu_call";
+  static constexpr absl::string_view kCpuCall = "odml.cpu_call";
   static constexpr absl::string_view kRmsNorm = "odml.rms_norm";
   static constexpr absl::string_view kL2Norm = "odml.l2_norm";
   static constexpr absl::string_view kGroupNorm = "odml.group_norm";
