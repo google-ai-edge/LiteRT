@@ -18,17 +18,18 @@
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
 
 # Placeholder: load proto_library
 # Placeholder: load java_lite_proto_library
-load("@flatbuffers//:build_defs.bzl", "DEFAULT_FLATC_ARGS", "flatbuffer_android_library", "flatbuffer_cc_library", "flatbuffer_java_library", "flatc_path")
+load("@flatbuffers//:build_defs.bzl", "DEFAULT_FLATC_ARGS", "flatbuffer_android_library", "flatbuffer_cc_library", "flatbuffer_java_library")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("//tflite:build_def.bzl", "tflite_copts", "tflite_copts_warnings")
 load("//tflite:special_rules.bzl", "tflite_portable_test_suite")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite", "cc_test_with_tflite")
 
 # copybara:uncomment load("//tools/build_defs/proto/cpp:cc_proto_library.bzl", "cc_proto_library")
-load(":build_defs.bzl", "flatbuffer_schema_compat_test")
+load(":build_defs.bzl", "flatbuffer_schema_compat_test", "flatbuffer_schema_contents_header", "flatbuffer_schema_from_proto")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -38,50 +39,33 @@ package(
     licenses = ["notice"],
 )
 
+py_binary(
+    name = "configuration_schema_tool",
+    srcs = ["configuration_schema_tool.py"],
+    python_version = "PY3",
+)
+
 # We generate a FlatBuffer schema from the Protobuf schema.
-genrule(
+flatbuffer_schema_from_proto(
     name = "configuration_schema",
-    srcs = ["configuration.proto"],
-    outs = ["configuration.fbs"],
+    src = "configuration.proto",
+    out = "configuration.fbs",
     # We rename the namespace since otherwise the proto classes and flatbuffer
     # classes would have the same names.
-    cmd = """
-        $(location {}) --proto -o $(@D) $(location :configuration.proto)
-        perl -p -i -e 's/tflite.proto/tflite/' $@
-    """.format(flatc_path),
-    cmd_ps = "; ".join([
-        """$$flatc = Start-Process -FilePath "$(location {})" -ArgumentList @("--proto", "-o", "$(@D)", "$(location :configuration.proto)") -Wait -NoNewWindow -PassThru""".format(flatc_path),
-        """if ($$flatc.ExitCode -ne 0) { exit $$flatc.ExitCode }""",
-        """$$content = [System.IO.File]::ReadAllText('$@')""",
-        """[System.IO.File]::WriteAllText('$@', $$content.Replace('tflite.proto', 'tflite'), [System.Text.Encoding]::ASCII)""",
-    ]),
     compatible_with = get_compatible_with_portable(),
-    tools = [flatc_path],
 )
 
 # We also do the same transformation for the _previous_
 # version of the schema -- this is used to test that changes
 # to the schema preserve binary backwards compatibility.
-genrule(
+flatbuffer_schema_from_proto(
     name = "configuration_prev_schema",
-    srcs = ["testdata/configuration.proto_prev"],  # Must NOT end in '.proto'.
-    outs = ["configuration.prev.fbs"],  # MUST end in '.fbs'.
+    src = "testdata/configuration.proto_prev",  # Must NOT end in '.proto'.
+    out = "configuration.prev.fbs",  # MUST end in '.fbs'.
     # We rename the namespace since otherwise the proto classes and flatbuffer
     # classes would have the same names.
-    cmd = """
-        cp $(location :testdata/configuration.proto_prev) $(@D)/configuration.prev.proto
-        $(location {}) --proto -o $(@D) $(@D)/configuration.prev.proto
-        perl -p -i -e 's/tflite.proto/tflite/' $@
-    """.format(flatc_path),
-    cmd_ps = "; ".join([
-        """[System.IO.File]::Copy('$(location :testdata/configuration.proto_prev)', '$(@D)/configuration.prev.proto', $$true)""",
-        """$$flatc = Start-Process -FilePath "$(location {})" -ArgumentList @("--proto", "-o", "$(@D)", "$(@D)/configuration.prev.proto") -Wait -NoNewWindow -PassThru""".format(flatc_path),
-        """if ($$flatc.ExitCode -ne 0) { exit $$flatc.ExitCode }""",
-        """$$content = [System.IO.File]::ReadAllText('$@')""",
-        """[System.IO.File]::WriteAllText('$@', $$content.Replace('tflite.proto', 'tflite'), [System.Text.Encoding]::ASCII)""",
-    ]),
     compatible_with = get_compatible_with_portable(),
-    tools = [flatc_path],
+    proto_name = "configuration.prev.proto",
 )
 
 # Test that changes to the proto file preserve binary backwards compatibility
@@ -116,23 +100,10 @@ sh_test(
 # Generate a C++ header containing the contents of the FlatBuffer schema
 # as a char array literal.  This is potentially useful for embedding in programs
 # (e.g. for JSON parsing using that schema).
-genrule(
+flatbuffer_schema_contents_header(
     name = "configuration_fbs_contents_cc",
-    srcs = ["configuration.fbs"],
-    outs = ["configuration_fbs_contents-inl.h"],
-    cmd = """
-      echo 'constexpr char configuration_fbs_contents[] = R"Delimiter(' > $(@)
-      cat < $(<) >> $(@)
-      echo ')Delimiter";' >> $(@)
-    """,
-    cmd_ps = "".join([
-        "$$schema = [System.IO.File]::ReadAllText('$<'); ",
-        "$$content = 'constexpr char configuration_fbs_contents[] = R' + ",
-        "[char]34 + 'Delimiter(' + [Environment]::NewLine + $$schema + ",
-        "')Delimiter' + [char]34 + ';' + [Environment]::NewLine; ",
-        "[System.IO.File]::WriteAllText('$@', $$content, ",
-        "[System.Text.Encoding]::ASCII) ",
-    ]),
+    src = "configuration.fbs",
+    out = "configuration_fbs_contents-inl.h",
 )
 
 exports_files(["configuration.proto"])
