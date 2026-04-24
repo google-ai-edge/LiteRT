@@ -31,6 +31,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/conv2d_op_builder.cc
     builders/conv3d_op_builder.cc
     builders/cumsum_op_builder.cc
+    builders/dequantize_op_builder.cc
     builders/elementwise_op_builder.cc
     builders/fully_connected_op_builder.cc
     builders/gather_op_builder.cc
@@ -42,6 +43,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/logistic_op_builder.cc
     builders/pad_op_builder.cc
     builders/pool2d_op_builder.cc
+    builders/quantize_op_builder.cc
     builders/reduce_op_builder.cc
     builders/relu_op_builder.cc
     builders/relu1_op_builder.cc

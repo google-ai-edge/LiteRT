@@ -581,3 +581,29 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
 )
+
+cc_library(
+    name = "quantize_op_builder",
+    srcs = ["quantize_op_builder.cc"],
+    hdrs = ["quantize_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "dequantize_op_builder",
+    srcs = ["dequantize_op_builder.cc"],
+    hdrs = ["dequantize_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)

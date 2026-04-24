@@ -43,6 +43,7 @@
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/conv3d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/dequantize_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
@@ -54,6 +55,7 @@
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/pool2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/quantize_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu1_op_builder.h"
@@ -336,6 +338,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflDepthwiseConv2d:
         op_wrapper = BuildDepthwiseConv2dOp(op);
         break;
+      case kLiteRtOpCodeTflDequantize:
+        op_wrapper = std::move(BuildDequantizeOp(op));
+        break;
       case kLiteRtOpCodeTflDiv:
         op_wrapper = BuildDivOp(op);
         break;
@@ -417,6 +422,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflPow:
         op_wrapper = BuildPowOp(op);
+        break;
+      case kLiteRtOpCodeTflQuantize:
+        op_wrapper = std::move(BuildQuantizeOp(op));
         break;
       case kLiteRtOpCodeTflRelu:
         op_wrapper = BuildReLUOp(op);
