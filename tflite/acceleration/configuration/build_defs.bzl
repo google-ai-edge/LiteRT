@@ -41,3 +41,94 @@ def flatbuffer_schema_compat_test(name, ref_schema, schema):
         srcs = [name + "_test.sh"],
         data = [flatc_path, ref_schema, schema],
     )
+
+def _flatbuffer_schema_from_proto_impl(ctx):
+    args = ctx.actions.args()
+    args.add("generate_schema")
+    args.add("--flatc")
+    args.add(ctx.executable._flatc)
+    args.add("--src")
+    args.add(ctx.file.src)
+    args.add("--out")
+    args.add(ctx.outputs.out)
+    if ctx.attr.proto_name:
+        args.add("--proto_name")
+        args.add(ctx.attr.proto_name)
+
+    ctx.actions.run(
+        executable = ctx.executable._schema_tool,
+        arguments = [args],
+        inputs = [ctx.file.src],
+        outputs = [ctx.outputs.out],
+        tools = [
+            ctx.attr._schema_tool[DefaultInfo].files_to_run,
+            ctx.attr._flatc[DefaultInfo].files_to_run,
+        ],
+        mnemonic = "FlatbufferSchemaFromProto",
+        progress_message = "Generating FlatBuffer schema %{output}",
+        use_default_shell_env = False,
+    )
+
+    return [DefaultInfo(files = depset([ctx.outputs.out]))]
+
+flatbuffer_schema_from_proto = rule(
+    implementation = _flatbuffer_schema_from_proto_impl,
+    attrs = {
+        "out": attr.output(mandatory = True),
+        "proto_name": attr.string(),
+        "src": attr.label(
+            allow_single_file = True,
+            mandatory = True,
+        ),
+        "_flatc": attr.label(
+            default = Label("@flatbuffers//:flatc"),
+            executable = True,
+            cfg = "exec",
+        ),
+        "_schema_tool": attr.label(
+            default = Label("//tflite/acceleration/configuration:configuration_schema_tool"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+
+def _flatbuffer_schema_contents_header_impl(ctx):
+    args = ctx.actions.args()
+    args.add("generate_header")
+    args.add("--src")
+    args.add(ctx.file.src)
+    args.add("--out")
+    args.add(ctx.outputs.out)
+    args.add("--variable_name")
+    args.add(ctx.attr.variable_name)
+
+    ctx.actions.run(
+        executable = ctx.executable._schema_tool,
+        arguments = [args],
+        inputs = [ctx.file.src],
+        outputs = [ctx.outputs.out],
+        tools = [ctx.attr._schema_tool[DefaultInfo].files_to_run],
+        mnemonic = "FlatbufferSchemaContentsHeader",
+        progress_message = "Generating FlatBuffer schema contents header %{output}",
+        use_default_shell_env = False,
+    )
+
+    return [DefaultInfo(files = depset([ctx.outputs.out]))]
+
+flatbuffer_schema_contents_header = rule(
+    implementation = _flatbuffer_schema_contents_header_impl,
+    attrs = {
+        "out": attr.output(mandatory = True),
+        "src": attr.label(
+            allow_single_file = True,
+            mandatory = True,
+        ),
+        "variable_name": attr.string(default = "configuration_fbs_contents"),
+        "_schema_tool": attr.label(
+            default = Label("//tflite/acceleration/configuration:configuration_schema_tool"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
