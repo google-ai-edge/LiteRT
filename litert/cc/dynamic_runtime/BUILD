@@ -248,7 +248,6 @@ cc_library(
 
 cc_library(
     name = "litert_builder",
-    srcs = ["//litert/cc/internal:litert_builder.cc"],
     hdrs = ["//litert/cc/internal:litert_builder.h"],
     visibility = [
         "//litert:litert_public",
@@ -324,7 +323,6 @@ cc_test(
 
 cc_library(
     name = "litert_model_predicates",
-    srcs = ["//litert/cc/internal:litert_model_predicates.cc"],
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
@@ -393,7 +391,6 @@ cc_test(
 
 cc_library(
     name = "litert_op_options",
-    srcs = ["//litert/cc/internal:litert_op_options.cc"],
     hdrs = ["//litert/cc/internal:litert_op_options.h"],
     visibility = ["//litert:litert_public"],
     deps = [

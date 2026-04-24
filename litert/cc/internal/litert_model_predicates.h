@@ -16,7 +16,9 @@
 #define ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_
 
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
@@ -24,6 +26,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
@@ -101,6 +104,98 @@ bool MatchUse(const Tensor& tensor, const UseInfo& expected_use);
 /// @return `true` if the tensor's users match the expected information.
 bool MatchUses(const Tensor& tensor, const std::vector<UseInfo>& expected_uses,
                bool strict = true);
+
+namespace internal::model_predicates_detail {
+
+template <typename T>
+bool Any(absl::Span<const T> vals,
+         const std::function<bool(const T&)>& unary_pred) {
+  for (const auto& val : vals) {
+    if (unary_pred(val)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool UseSoftEqual(const Tensor::TensorUse& actual_use,
+                         const UseInfo& expected_use) {
+  if (expected_use.user_param_ind.has_value() &&
+      actual_use.user_arg_ind != expected_use.user_param_ind.value()) {
+    return false;
+  }
+  if (expected_use.op_code.has_value() &&
+      actual_use.user.Code() != expected_use.op_code.value()) {
+    return false;
+  }
+  return true;
+}
+
+}  // namespace internal::model_predicates_detail
+
+inline bool MatchRankedTensorType(const RankedTensorType& tensor_type,
+                                  const TensorTypeInfo& expected) {
+  if (expected.element_type.has_value() &&
+      (tensor_type.ElementType() != expected.element_type.value())) {
+    return false;
+  }
+
+  if (expected.dims.has_value()) {
+    auto actual_dims = tensor_type.Layout().Dimensions();
+    auto expected_dims = absl::MakeConstSpan(expected.dims.value());
+    return AllZip(actual_dims, expected_dims,
+                  [](auto l, auto r) -> bool { return l == r; });
+  }
+  return true;
+}
+
+inline bool MatchOpType(
+    const Op& op,
+    const std::vector<std::optional<TensorTypeInfo>>& expected_inputs,
+    const std::vector<std::optional<TensorTypeInfo>>& expected_outputs) {
+  auto match = [](const Tensor& actual,
+                  const std::optional<TensorTypeInfo>& expected) -> bool {
+    if (!expected.has_value()) {
+      return true;
+    }
+    auto actual_ranked_tensor_type = actual.RankedTensorType();
+    if (!actual_ranked_tensor_type) {
+      return false;
+    }
+    return MatchRankedTensorType(*actual_ranked_tensor_type, expected.value());
+  };
+
+  const bool inputs_match = AllZip(absl::MakeConstSpan(op.Inputs()),
+                                   absl::MakeConstSpan(expected_inputs), match);
+  const bool outputs_match =
+      AllZip(absl::MakeConstSpan(op.Outputs()),
+             absl::MakeConstSpan(expected_outputs), match);
+  return inputs_match && outputs_match;
+}
+
+inline bool MatchUse(const Tensor& tensor, const UseInfo& expected_use) {
+  auto soft_equal = [&expected_use = std::as_const(expected_use)](
+                        const Tensor::TensorUse& actual_use) {
+    return internal::model_predicates_detail::UseSoftEqual(actual_use,
+                                                           expected_use);
+  };
+  return internal::model_predicates_detail::Any<Tensor::TensorUse>(
+      tensor.Uses(), soft_equal);
+}
+
+inline bool MatchUses(const Tensor& tensor,
+                      const std::vector<UseInfo>& expected_uses, bool strict) {
+  const auto uses = tensor.Uses();
+  if (strict && uses.size() != expected_uses.size()) {
+    return false;
+  }
+  auto not_use = [&tensor =
+                      std::as_const(tensor)](const UseInfo& expected_use) {
+    return !MatchUse(tensor, expected_use);
+  };
+  return !internal::model_predicates_detail::Any<UseInfo>(expected_uses,
+                                                          not_use);
+}
 
 }  // namespace litert
 
