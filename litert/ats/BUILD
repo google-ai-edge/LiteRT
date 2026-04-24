@@ -369,7 +369,7 @@ cc_test(
     data = [
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # Re-enable sans once test libs can be linked in a sans friendly way.
     tags = [

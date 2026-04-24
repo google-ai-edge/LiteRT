@@ -73,7 +73,7 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # Workaround to disable mismatched-size-delete.
     # A compiler plugin uses `libLiteRt.so` but `compiler_plugin` is a static library for runtime.
@@ -124,7 +124,7 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [

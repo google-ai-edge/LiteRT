@@ -73,6 +73,7 @@ RtldFlags SanitizeFlagsInCaseOfAsan(RtldFlags flags) {
 #include <windows.h>
 
 #include <cctype>
+#include <filesystem>  // NOLINT
 #include <string>
 
 // Windows implementation of dlfcn.h functions
@@ -106,10 +107,13 @@ std::string GetWindowsErrorString(DWORD error_code) {
 }
 
 bool IsAbsolutePath(const std::string& path) {
-  return (path.size() >= 3 &&
-          std::isalpha(static_cast<unsigned char>(path[0])) && path[1] == ':' &&
-          (path[2] == '\\' || path[2] == '/')) ||
-         (path.size() >= 2 && path[0] == '\\' && path[1] == '\\');
+  return std::filesystem::path(path).is_absolute();
+}
+
+std::string NormalizeWindowsPath(const char* path) {
+  std::filesystem::path normalized(path);
+  normalized.make_preferred();
+  return normalized.string();
 }
 
 const char* dlerror() {
@@ -125,7 +129,7 @@ void* dlopen(const char* filename, int flags) {
     return GetModuleHandle(NULL);
   }
 
-  std::string requested_name(filename);
+  std::string requested_name = NormalizeWindowsPath(filename);
   std::string fallback_name = requested_name;
   size_t pos = fallback_name.rfind(".so");
   if (pos != std::string::npos && pos == fallback_name.length() - 3) {

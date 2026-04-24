@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "copy_file", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -47,6 +47,22 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
+)
+
+copy_file(
+    name = "example_plugin_runtime_dll",
+    src = "//litert/c:litert_runtime_c_api_dll",
+    target = "libLiteRt.dll",
+    visibility = ["//litert:litert_public"],
+)
+
+filegroup(
+    name = "example_plugin_so_data",
+    srcs = [":example_plugin_so"] + select({
+        "//litert:windows": [":example_plugin_runtime_dll"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//litert:litert_public"],
 )
 
 litert_dynamic_lib(
@@ -282,7 +298,7 @@ cc_test(
     srcs = ["end_to_end_test.cc"],
     data = [
         ":example_dispatch_so",
-        ":example_plugin_so",
+        ":example_plugin_so_data",
         "//litert/test:mlir_test_data",
     ],
     # This test dlopens, so sanitzers are prone to false positive.

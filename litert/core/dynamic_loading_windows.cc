@@ -124,6 +124,7 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
                                         const std::string& lib_pattern,
                                         bool full_match,
                                         std::vector<std::string>& results) {
+  const size_t initial_result_count = results.size();
   std::string normalized_path = NormalizePath(search_path);
   if (!Exists(normalized_path)) {
     LITERT_LOG(LITERT_ERROR, "Search path doesn't exist: %s",
@@ -160,8 +161,10 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
     maybe_add_matches(pattern);
   }
 
+  auto new_results_begin = results.begin() + initial_result_count;
+  std::sort(new_results_begin, results.end());
+  results.erase(std::unique(new_results_begin, results.end()), results.end());
   std::sort(results.begin(), results.end());
-  results.erase(std::unique(results.begin(), results.end()), results.end());
   return kLiteRtStatusOk;
 }
 
