@@ -54,7 +54,7 @@ class Shape {
   ValueType& operator*() { return value_; }
   const ValueType& operator*() const { return value_; }
   // Get the specified dimension if known
-  int Dim(const int idx) const;
+  int Dim(int idx) const;
 
   // Returns the rank of the shape
   int Rank() const { return has_value_ ? value_.size() : kUnknownRank; }
@@ -66,7 +66,7 @@ class Shape {
   std::string ToString() const;
 
   // Adds two dimension taking into account unknown dims.
-  static int AddDims(const int dim1, const int dim2);
+  static int AddDims(int dim1, int dim2);
 
   // Comparison
 
