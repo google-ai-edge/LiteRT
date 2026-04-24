@@ -35,6 +35,16 @@ namespace {
 constexpr absl::string_view kDllExtension = ".dll";
 constexpr absl::string_view kSoExtension = ".so";
 
+std::string StripSharedLibExtension(absl::string_view lib_name) {
+  std::string name(lib_name);
+  if (absl::EndsWith(name, kSoExtension)) {
+    name.resize(name.size() - kSoExtension.size());
+  } else if (absl::EndsWith(name, kDllExtension)) {
+    name.resize(name.size() - kDllExtension.size());
+  }
+  return name;
+}
+
 // Convert forward slashes to backslashes for Windows paths
 std::string NormalizePath(absl::string_view path) {
   return absl::StrReplaceAll(path, {{"/", "\\"}});
@@ -51,9 +61,33 @@ std::string ToWindowsLibName(absl::string_view lib_name) {
   // branch, so strip the extension and let the finder accept either suffix.
   if (absl::EndsWith(name, kSoExtension) ||
       absl::EndsWith(name, kDllExtension)) {
-    name = name.substr(0, name.find_last_of('.'));
+    name = StripSharedLibExtension(name);
   }
   return name;
+}
+
+std::vector<std::string> GetSearchPatterns(const std::string& lib_pattern,
+                                           bool full_match) {
+  if (!full_match) {
+    return {"*" + lib_pattern + "*" + std::string(kDllExtension),
+            "*" + lib_pattern + "*" + std::string(kSoExtension)};
+  }
+
+  // Some cross-platform callers pass POSIX-style .so names on Windows. Accept
+  // the requested name plus Windows/POSIX suffix variants from the same stem.
+  std::vector<std::string> patterns;
+  const auto add_pattern = [&](std::string pattern) {
+    if (std::find(patterns.begin(), patterns.end(), pattern) ==
+        patterns.end()) {
+      patterns.push_back(std::move(pattern));
+    }
+  };
+
+  const std::string stem = StripSharedLibExtension(lib_pattern);
+  add_pattern(lib_pattern);
+  add_pattern(stem + std::string(kDllExtension));
+  add_pattern(stem + std::string(kSoExtension));
+  return patterns;
 }
 
 // Get directory name from a path
@@ -102,11 +136,8 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
   if (!search_pattern.empty() && search_pattern.back() != '\\') {
     search_pattern += '\\';
   }
-  const auto maybe_add_matches = [&](const std::string& pattern_suffix) {
-    const std::string full_pattern =
-        search_pattern +
-        (full_match ? lib_pattern : ("*" + lib_pattern + "*" + pattern_suffix));
-
+  const auto maybe_add_matches = [&](const std::string& pattern) {
+    const std::string full_pattern = search_pattern + pattern;
     WIN32_FIND_DATAA find_data;
     HANDLE find_handle = FindFirstFileA(full_pattern.c_str(), &find_data);
     if (find_handle == INVALID_HANDLE_VALUE) {
@@ -119,24 +150,18 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
       }
 
       std::string filename(find_data.cFileName);
-      if (full_match) {
-        if (filename == lib_pattern ||
-            filename == (lib_pattern + std::string(kDllExtension)) ||
-            filename == (lib_pattern + std::string(kSoExtension))) {
-          results.push_back(Join({normalized_path, filename}));
-        }
-      } else {
-        results.push_back(Join({normalized_path, filename}));
-      }
+      results.push_back(Join({normalized_path, filename}));
     } while (FindNextFileA(find_handle, &find_data));
 
     FindClose(find_handle);
   };
 
-  maybe_add_matches(std::string(kDllExtension));
-  maybe_add_matches(std::string(kSoExtension));
+  for (const auto& pattern : GetSearchPatterns(lib_pattern, full_match)) {
+    maybe_add_matches(pattern);
+  }
 
   std::sort(results.begin(), results.end());
+  results.erase(std::unique(results.begin(), results.end()), results.end());
   return kLiteRtStatusOk;
 }
 
