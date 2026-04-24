@@ -35,6 +35,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/gathernd_op_builder.cc
     builders/gelu_op_builder.cc
     builders/hardswish_op_builder.cc
+    builders/l2normalization_op_builder.cc
     builders/leakyrelu_op_builder.cc
     builders/logistic_op_builder.cc
     builders/pad_op_builder.cc

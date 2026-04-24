@@ -46,6 +46,8 @@
 #include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gathernd_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/hardswish_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/l2normalization_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
@@ -328,6 +330,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflDiv:
         op_wrapper = BuildDivOp(op);
         break;
+      case kLiteRtOpCodeTflEmbeddingLookup:
+        op_wrapper = std::move(BuildEmbeddingLookupOp(op));
+        break;
       case kLiteRtOpCodeTflEqual:
         op_wrapper = BuildEqualOp(op);
         break;
@@ -357,6 +362,12 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflHardSwish:
         op_wrapper = BuildHardSwishOp(op);
+        break;
+      case kLiteRtOpCodeTflL2Normalization:
+        op_wrapper = std::move(BuildL2NormalizationOp(op));
+        break;
+      case kLiteRtOpCodeTflLeakyRelu:
+        op_wrapper = std::move(BuildLeakyReluOp(op));
         break;
       case kLiteRtOpCodeTflLess:
         op_wrapper = BuildLessOp(op);
