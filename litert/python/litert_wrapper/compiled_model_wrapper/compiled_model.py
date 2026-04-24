@@ -25,17 +25,21 @@ if not os.path.splitext(__file__)[0].endswith(
   from litert.python.litert_wrapper.compiled_model_wrapper import (
       _pywrap_litert_compiled_model_wrapper as _cm,
   )
+  from litert.python.litert_wrapper.compiled_model_wrapper import cpu_kernel_mode
   from litert.python.litert_wrapper.compiled_model_wrapper import hardware_accelerator
   from litert.python.litert_wrapper.environment_wrapper import (
       environment as environment_wrapper,
   )
   from litert.python.litert_wrapper.tensor_buffer_wrapper import tensor_buffer
+
+  CpuKernelMode = cpu_kernel_mode.CpuKernelMode
   HardwareAccelerator = hardware_accelerator.HardwareAccelerator
   Environment = environment_wrapper.Environment
   TensorBuffer = tensor_buffer.TensorBuffer
 else:
   # This file is part of ai_edge_litert package.
   from ai_edge_litert import _pywrap_litert_compiled_model_wrapper as _cm
+  from ai_edge_litert.cpu_kernel_mode import CpuKernelMode
   from ai_edge_litert.environment import Environment
   from ai_edge_litert.hardware_accelerator import HardwareAccelerator
   from ai_edge_litert.tensor_buffer import TensorBuffer
@@ -66,7 +70,6 @@ class CompiledModel:
       model_path: str,
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
-      enforce_f32_gpu: bool = False,
   ) -> "CompiledModel":
     """Creates a CompiledModel from a model file.
 
@@ -77,7 +80,6 @@ class CompiledModel:
         HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
-      enforce_f32_gpu: Enforce F32 precision on GPU.
 
     Returns:
       A new CompiledModel instance.
@@ -90,7 +92,13 @@ class CompiledModel:
         model_path,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
-        enforce_f32_gpu=enforce_f32_gpu,
+        enforce_f32_gpu=env.enforce_f32_gpu,
+        cpu_kernel_mode=env.cpu_kernel_mode,
+        xnnpack_flags=env.xnnpack_flags,
+        xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
+        enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
+        enable_infinite_float_capping=env.enable_infinite_float_capping,
+        enable_benchmark_mode=env.enable_benchmark_mode,
     )
     return cls(ptr, env)
 
@@ -100,7 +108,6 @@ class CompiledModel:
       model_data: bytes,
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
-      enforce_f32_gpu: bool = False,
   ) -> "CompiledModel":
     """Creates a CompiledModel from an in-memory buffer.
 
@@ -111,7 +118,6 @@ class CompiledModel:
         HardwareAccelerator.GPU). Defaults to CPU.
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
-      enforce_f32_gpu: Enforce F32 precision on GPU.
 
     Returns:
       A new CompiledModel instance.
@@ -124,7 +130,13 @@ class CompiledModel:
         model_data,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
-        enforce_f32_gpu=enforce_f32_gpu,
+        enforce_f32_gpu=env.enforce_f32_gpu,
+        cpu_kernel_mode=env.cpu_kernel_mode,
+        xnnpack_flags=env.xnnpack_flags,
+        xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
+        enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
+        enable_infinite_float_capping=env.enable_infinite_float_capping,
+        enable_benchmark_mode=env.enable_benchmark_mode,
     )
     return cls(ptr, env)
 
