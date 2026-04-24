@@ -52,6 +52,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/reshape_op_builder.cc
     builders/resizebilinear_op_builder.cc
     builders/resizenearestneighbor_op_builder.cc
+    builders/reversev2_op_builder.cc
     builders/rms_norm_op_builder.cc
     builders/select_op_builder.cc
     builders/selectv2_op_builder.cc

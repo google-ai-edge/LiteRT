@@ -110,6 +110,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:reshape_op_builder",
         "//litert/vendors/samsung/compiler/builders:resizebilinear_op_builder",
         "//litert/vendors/samsung/compiler/builders:resizenearestneighbor_op_builder",
+        "//litert/vendors/samsung/compiler/builders:reversev2_op_builder",
         "//litert/vendors/samsung/compiler/builders:rms_norm_op_builder",
         "//litert/vendors/samsung/compiler/builders:select_op_builder",
         "//litert/vendors/samsung/compiler/builders:selectv2_op_builder",

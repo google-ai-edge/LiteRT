@@ -64,6 +64,7 @@
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizenearestneighbor_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/reversev2_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/rms_norm_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/select_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
@@ -452,6 +453,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflResizeNearestNeighbor:
         op_wrapper = BuildResizeNearestNeighborOp(op);
+        break;
+      case kLiteRtOpCodeTflReverseV2:
+        op_wrapper = std::move(BuildReverseV2Op(op));
         break;
       case kLiteRtOpCodeTflRsqrt:
         op_wrapper = BuildRsqrtOp(op);
