@@ -93,6 +93,9 @@ function install_sdk {
   local mtk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_mediatek*.tar.gz)"
   SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
 
+  local intel_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_intel*.tar.gz)"
+  ${PYTHON_BIN} -m pip install ${intel_dist_pkg?} --ignore-installed
+
   echo
 }
 
@@ -119,6 +122,10 @@ function uninstall_pip {
 
   yes | ${PYTHON_BIN} -m pip uninstall ${mtk_pip_pkg}
 
+  local intell_pip_pkg="ai_edge_litert_sdk_intel"
+
+  yes | ${PYTHON_BIN} -m pip uninstall ${intell_pip_pkg}
+
   echo
 }
 
@@ -129,6 +136,7 @@ function test_import {
   ${PYTHON_BIN} -c "import ai_edge_litert.environment"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_mediatek"
+  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_intel"
   echo
 }
 

@@ -161,5 +161,11 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
 
 mv bazel-bin/ci/tools/python/vendor_sdk/samsung/ai_edge_litert_sdk_samsung*.tar.gz dist/
 
+## Intel SDK
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist
+
+mv bazel-bin/ci/tools/python/vendor_sdk/intel/ai_edge_litert_sdk_intel*.tar.gz dist/
+
 echo "Output can be found here:"
 find "./dist/"
