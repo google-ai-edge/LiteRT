@@ -40,6 +40,9 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_types.h"
+#include "tflite/converter/allocation.h"
+#include <variant>
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 /// @file
 /// @brief Defines extended C++ wrappers for the LiteRT model components,
@@ -330,13 +333,11 @@ class ExtendedModel : public litert::Model {
   }
 
 #if !defined(LITERT_DYNAMIC_RUNTIME)
-  // copybara:uncomment_begin(google_only)
-  // /// @brief Creates a model from an owned TFLite allocation.
-  // ///
-  // /// LiteRT takes ownership of the allocation wrapper.
-  // static Expected<ExtendedModel> CreateFromAllocation(
-      // std::unique_ptr<tflite::Allocation> allocation);
-  // copybara:uncomment_end
+  /// @brief Creates a model from an owned TFLite allocation.
+  ///
+  /// LiteRT takes ownership of the allocation wrapper.
+  static Expected<ExtendedModel> CreateFromAllocation(
+      std::unique_ptr<tflite::Allocation> allocation);
 #endif  // !defined(LITERT_DYNAMIC_RUNTIME)
 
   Expected<absl::Span<const uint8_t>> Metadata(
@@ -492,6 +493,357 @@ struct SerializationOptions {
     return opts;
   }
 };
+
+namespace {
+
+absl::string_view FetchExtendedTensorName(LiteRtTensor tensor) {
+  if (tensor == nullptr) {
+    return "";
+  }
+  const char* name;
+  internal::AssertOk(LiteRtGetTensorName, tensor, &name);
+  return name;
+}
+
+std::uint32_t FetchExtendedTensorIndex(LiteRtTensor tensor) {
+  if (tensor == nullptr) {
+    return 0;
+  }
+  std::uint32_t index;
+  internal::AssertOk(LiteRtGetTensorIndex, tensor, &index);
+  return index;
+}
+
+LiteRtTensorTypeId FetchExtendedTensorTypeId(LiteRtTensor tensor) {
+  if (tensor == nullptr) {
+    return kLiteRtRankedTensorType;
+  }
+  LiteRtTensorTypeId type_id;
+  internal::AssertOk(LiteRtGetTensorTypeId, tensor, &type_id);
+  return type_id;
+}
+
+std::variant<LiteRtUnrankedTensorType, litert::RankedTensorType>
+FetchExtendedTensorType(LiteRtTensor tensor, LiteRtTensorTypeId type_id) {
+  if (tensor == nullptr) {
+    return {};
+  }
+  if (type_id == kLiteRtRankedTensorType) {
+    LiteRtRankedTensorType ranked_tensor_type;
+    internal::AssertOk(LiteRtGetRankedTensorType, tensor, &ranked_tensor_type);
+    return litert::RankedTensorType(ranked_tensor_type);
+  } else {
+    LiteRtUnrankedTensorType unranked_tensor_type;
+    internal::AssertOk(LiteRtGetUnrankedTensorType, tensor,
+                       &unranked_tensor_type);
+    return unranked_tensor_type;
+  }
+}
+
+LiteRtQuantizationTypeId FetchExtendedTensorQuantizationTypeId(
+    LiteRtTensor tensor) {
+  if (tensor == nullptr) {
+    return kLiteRtQuantizationNone;
+  }
+  LiteRtQuantizationTypeId quantization_type_id;
+  internal::AssertOk(LiteRtGetQuantizationTypeId, tensor,
+                     &quantization_type_id);
+  return quantization_type_id;
+}
+
+LiteRtQuantizationPerTensor FetchExtendedTensorQuantizationPerTensor(
+    LiteRtTensor tensor) {
+  if (FetchExtendedTensorQuantizationTypeId(tensor) !=
+      kLiteRtQuantizationPerTensor) {
+    return {};
+  }
+  LiteRtQuantizationPerTensor per_tensor_quantization;
+  internal::AssertOk(LiteRtGetPerTensorQuantization, tensor,
+                     &per_tensor_quantization);
+  return per_tensor_quantization;
+}
+
+LiteRtQuantizationPerChannel FetchExtendedTensorQuantizationPerChannel(
+    LiteRtTensor tensor) {
+  if (FetchExtendedTensorQuantizationTypeId(tensor) !=
+      kLiteRtQuantizationPerChannel) {
+    return {};
+  }
+  LiteRtQuantizationPerChannel per_channel_quantization;
+  internal::AssertOk(LiteRtGetPerChannelQuantization, tensor,
+                     &per_channel_quantization);
+  return per_channel_quantization;
+}
+
+absl::string_view FetchExtendedSignatureKey(LiteRtSignature signature) {
+  const char* key;
+  internal::AssertOk(LiteRtGetSignatureKey, signature, &key);
+  return key;
+}
+
+std::vector<absl::string_view> FetchExtendedSignatureInputNames(
+    LiteRtSignature signature) {
+  LiteRtParamIndex num_inputs;
+  internal::AssertOk(LiteRtGetNumSignatureInputs, signature, &num_inputs);
+  std::vector<absl::string_view> input_names;
+  input_names.reserve(num_inputs);
+  for (int i = 0; i < num_inputs; ++i) {
+    const char* name;
+    internal::AssertOk(LiteRtGetSignatureInputName, signature, i, &name);
+    input_names.push_back(name);
+  }
+  return input_names;
+}
+
+std::vector<absl::string_view> FetchExtendedSignatureOutputNames(
+    LiteRtSignature signature) {
+  LiteRtParamIndex num_outputs;
+  internal::AssertOk(LiteRtGetNumSignatureOutputs, signature, &num_outputs);
+  std::vector<absl::string_view> output_names;
+  output_names.reserve(num_outputs);
+  for (int i = 0; i < num_outputs; ++i) {
+    const char* name;
+    internal::AssertOk(LiteRtGetSignatureOutputName, signature, i, &name);
+    output_names.push_back(name);
+  }
+  return output_names;
+}
+
+std::vector<std::unique_ptr<SimpleTensor>> FetchExtendedSignatureInputTensors(
+    LiteRtSignature signature) {
+  LiteRtParamIndex num_inputs;
+  internal::AssertOk(LiteRtGetNumSignatureInputs, signature, &num_inputs);
+  std::vector<std::unique_ptr<SimpleTensor>> input_tensors;
+  input_tensors.reserve(num_inputs);
+  for (int i = 0; i < num_inputs; ++i) {
+    LiteRtTensor tensor;
+    internal::AssertOk(LiteRtGetSignatureInputTensorByIndex, signature, i,
+                       &tensor);
+    input_tensors.push_back(std::make_unique<Tensor>(tensor));
+  }
+  return input_tensors;
+}
+
+std::vector<std::unique_ptr<SimpleTensor>> FetchExtendedSignatureOutputTensors(
+    LiteRtSignature signature) {
+  LiteRtParamIndex num_outputs;
+  internal::AssertOk(LiteRtGetNumSignatureOutputs, signature, &num_outputs);
+  std::vector<std::unique_ptr<SimpleTensor>> output_tensors;
+  output_tensors.reserve(num_outputs);
+  for (int i = 0; i < num_outputs; ++i) {
+    LiteRtTensor tensor;
+    internal::AssertOk(LiteRtGetSignatureOutputTensorByIndex, signature, i,
+                       &tensor);
+    output_tensors.push_back(std::make_unique<Tensor>(tensor));
+  }
+  return output_tensors;
+}
+
+}  // namespace
+
+#if !defined(LITERT_DYNAMIC_RUNTIME)
+inline Expected<ExtendedModel> ExtendedModel::CreateFromAllocation(
+    std::unique_ptr<tflite::Allocation> allocation) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto model, litert::Model::CreateFromAllocation(std::move(allocation)));
+  return CreateFromOwnedHandle(model.Release());
+}
+#endif  // !defined(LITERT_DYNAMIC_RUNTIME)
+
+inline Signature::Signature(LiteRtSignature signature)
+    : internal::NonOwnedHandle<LiteRtSignature>(signature),
+      litert::SimpleSignature(FetchExtendedSignatureKey(signature),
+                              FetchExtendedSignatureInputNames(signature),
+                              FetchExtendedSignatureInputTensors(signature),
+                              FetchExtendedSignatureOutputNames(signature),
+                              FetchExtendedSignatureOutputTensors(signature)) {}
+
+inline Tensor::Tensor(LiteRtTensor tensor)
+    : internal::NonOwnedHandle<LiteRtTensor>(tensor),
+      litert::SimpleTensor(
+          FetchExtendedTensorIndex(tensor), FetchExtendedTensorName(tensor),
+          FetchExtendedTensorTypeId(tensor),
+          FetchExtendedTensorType(tensor, FetchExtendedTensorTypeId(tensor)),
+          FetchExtendedTensorQuantizationTypeId(tensor),
+          FetchExtendedTensorQuantizationPerTensor(tensor),
+          FetchExtendedTensorQuantizationPerChannel(tensor)) {}
+
+inline bool Tensor::IsSubgraphInput() const {
+  LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, RankedTensorType());
+  if (ranked_tensor_type.Layout().Rank() == 1 &&
+      ranked_tensor_type.Layout().Dimensions()[0] == 0) {
+    return false;
+  }
+  return !HasWeights() && !DefiningOp().has_value();
+}
+
+inline bool Tensor::IsConstant() const {
+  return HasWeights() && !DefiningOp().has_value();
+}
+
+inline Tensor::TensorUses Tensor::Uses() const {
+  LiteRtParamIndex num_uses;
+  internal::AssertOk(LiteRtGetNumTensorUses, Get(), &num_uses);
+
+  TensorUses uses;
+  for (auto i = 0; i < num_uses; ++i) {
+    LiteRtOp user;
+    LiteRtParamIndex user_arg_index;
+    internal::AssertOk(LiteRtGetTensorUse, Get(), i, &user, &user_arg_index);
+    uses.emplace_back(TensorUse{Op(user), user_arg_index});
+  }
+  return uses;
+}
+
+inline OpInputs Op::Inputs() const {
+  LiteRtParamIndex num_inputs;
+  internal::AssertOk(LiteRtGetNumOpInputs, Get(), &num_inputs);
+
+  OpInputs inputs;
+  for (auto i = 0; i < num_inputs; ++i) {
+    LiteRtTensor input;
+    internal::AssertOk(LiteRtGetOpInput, Get(), i, &input);
+    inputs.emplace_back(Tensor(input));
+  }
+  return inputs;
+}
+
+inline OpOutputs Op::Outputs() const {
+  LiteRtParamIndex num_outputs;
+  internal::AssertOk(LiteRtGetNumOpOutputs, Get(), &num_outputs);
+
+  OpOutputs outputs;
+  for (auto i = 0; i < num_outputs; ++i) {
+    LiteRtTensor output;
+    internal::AssertOk(LiteRtGetOpOutput, Get(), i, &output);
+    outputs.emplace_back(Tensor(output));
+  }
+  return outputs;
+}
+
+inline SubgraphInputs Subgraph::Inputs() const {
+  LiteRtParamIndex num_inputs;
+  internal::AssertOk(LiteRtGetNumSubgraphInputs, Get(), &num_inputs);
+
+  SubgraphInputs inputs;
+  for (auto i = 0; i < num_inputs; ++i) {
+    LiteRtTensor input;
+    internal::AssertOk(LiteRtGetSubgraphInput, Get(), i, &input);
+    inputs.emplace_back(Tensor(input));
+  }
+  return inputs;
+}
+
+inline Expected<Tensor> Subgraph::Input(absl::string_view name) const {
+  LiteRtParamIndex num_inputs;
+  internal::AssertOk(LiteRtGetNumSubgraphInputs, Get(), &num_inputs);
+
+  for (auto i = 0; i < num_inputs; ++i) {
+    LiteRtTensor input;
+    internal::AssertOk(LiteRtGetSubgraphInput, Get(), i, &input);
+    const char* input_name;
+    internal::AssertOk(LiteRtGetTensorName, input, &input_name);
+    if (name == input_name) {
+      return Tensor(input);
+    }
+  }
+  return Unexpected(Status::kErrorNotFound, "Failed to find input");
+}
+
+inline Expected<Tensor> Subgraph::Output(absl::string_view name) const {
+  LiteRtParamIndex num_outputs;
+  internal::AssertOk(LiteRtGetNumSubgraphOutputs, Get(), &num_outputs);
+
+  for (auto i = 0; i < num_outputs; ++i) {
+    LiteRtTensor output;
+    internal::AssertOk(LiteRtGetSubgraphOutput, Get(), i, &output);
+    const char* output_name;
+    internal::AssertOk(LiteRtGetTensorName, output, &output_name);
+    if (name == output_name) {
+      return Tensor(output);
+    }
+  }
+  return Unexpected(Status::kErrorNotFound, "Failed to find output");
+}
+
+inline SubgraphOutputs Subgraph::Outputs() const {
+  LiteRtParamIndex num_outputs;
+  internal::AssertOk(LiteRtGetNumSubgraphOutputs, Get(), &num_outputs);
+
+  SubgraphOutputs outputs;
+  for (auto i = 0; i < num_outputs; ++i) {
+    LiteRtTensor output;
+    internal::AssertOk(LiteRtGetSubgraphOutput, Get(), i, &output);
+    outputs.emplace_back(Tensor(output));
+  }
+  return outputs;
+}
+
+inline Expected<Tensor> Op::Input(size_t index) const {
+  LiteRtParamIndex num_inputs;
+  LITERT_RETURN_IF_ERROR(LiteRtGetNumOpInputs(Get(), &num_inputs));
+  if (index >= num_inputs) {
+    return Unexpected(Status::kErrorIndexOOB);
+  }
+  LiteRtTensor input;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpInput(Get(), index, &input));
+  return Tensor(input);
+}
+
+inline Expected<Tensor> Op::Output(size_t index) const {
+  LiteRtParamIndex num_outputs;
+  LITERT_RETURN_IF_ERROR(LiteRtGetNumOpOutputs(Get(), &num_outputs));
+  if (index >= num_outputs) {
+    return Unexpected(Status::kErrorIndexOOB);
+  }
+  LiteRtTensor output;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpOutput(Get(), index, &output));
+  return Tensor(output);
+}
+
+inline Expected<Op> Tensor::GetDefiningOp() const {
+  bool has_defining_op;
+  LiteRtTensorDefiningOp defining_op;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTensorDefiningOp(Get(), &has_defining_op, &defining_op));
+  if (!has_defining_op) {
+    return Unexpected(Status::kErrorNotFound);
+  }
+  return Op(defining_op.op);
+}
+
+inline std::vector<Op> Subgraph::Ops() const {
+  LiteRtParamIndex num_ops;
+  internal::AssertOk(LiteRtGetNumSubgraphOps, Get(), &num_ops);
+
+  std::vector<Op> ops;
+  for (auto i = 0; i < num_ops; ++i) {
+    LiteRtOp op;
+    internal::AssertOk(LiteRtGetSubgraphOp, Get(), i, &op);
+    ops.emplace_back(Op(op));
+  }
+  return ops;
+}
+
+inline Expected<class Subgraph> ExtendedModel::Subgraph(
+    absl::string_view signature_key) const {
+  LiteRtParamIndex num_signatures;
+  internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
+  for (int i = 0; i < num_signatures; ++i) {
+    LiteRtSignature lite_rt_signature;
+    internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
+    auto key = FetchExtendedSignatureKey(lite_rt_signature);
+    if (key == signature_key) {
+      LiteRtSubgraph subgraph;
+      if (LiteRtGetSignatureSubgraph(lite_rt_signature, &subgraph) !=
+          kLiteRtStatusOk) {
+        return Unexpected(Status::kErrorNotFound, "Subgraph not found");
+      }
+      return litert::Subgraph(subgraph);
+    }
+  }
+  return Unexpected(Status::kErrorNotFound, "Signature not found");
+}
 
 }  // namespace litert
 

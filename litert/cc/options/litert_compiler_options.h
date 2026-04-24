@@ -18,44 +18,69 @@
 #include <memory>
 
 #include "litert/c/options/litert_compiler_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for LiteRT compiler options.
 class CompilerOptions {
- public:
+public:
   /// @brief Creates a new `CompilerOptions` instance with default values.
-  static Expected<CompilerOptions> Create();
+  static Expected<CompilerOptions> Create() {
+    LrtCompilerOptions *options = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtCreateCompilerOptions(&options));
+    return CompilerOptions(options);
+  }
 
   /// @brief Sets the partition strategy.
   Expected<void> SetPartitionStrategy(
-      LiteRtCompilerOptionsPartitionStrategy partition_strategy);
+      LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
+    LITERT_RETURN_IF_ERROR(LrtSetCompilerOptionsPartitionStrategy(
+        options_.get(), partition_strategy));
+    return {};
+  }
 
   /// @brief Gets the partition strategy.
-  Expected<LiteRtCompilerOptionsPartitionStrategy> GetPartitionStrategy() const;
+  Expected<LiteRtCompilerOptionsPartitionStrategy>
+  GetPartitionStrategy() const {
+    LiteRtCompilerOptionsPartitionStrategy strategy;
+    LITERT_RETURN_IF_ERROR(
+        LrtGetCompilerOptionsPartitionStrategy(options_.get(), &strategy));
+    return strategy;
+  }
 
   /// @brief Sets the dummy option for testing.
-  Expected<void> SetDummyOption(bool dummy_option);
+  Expected<void> SetDummyOption(bool dummy_option) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCompilerOptionsDummyOption(options_.get(), dummy_option));
+    return {};
+  }
 
   /// @brief Gets the dummy option.
-  Expected<bool> GetDummyOption() const;
+  Expected<bool> GetDummyOption() const {
+    bool dummy_option;
+    LITERT_RETURN_IF_ERROR(
+        LrtGetCompilerOptionsDummyOption(options_.get(), &dummy_option));
+    return dummy_option;
+  }
 
   /// @brief Returns the underlying C handle.
-  LrtCompilerOptions* Get() { return options_.get(); }
-  const LrtCompilerOptions* Get() const { return options_.get(); }
+  LrtCompilerOptions *Get() { return options_.get(); }
+  const LrtCompilerOptions *Get() const { return options_.get(); }
 
- private:
-  explicit CompilerOptions(LrtCompilerOptions* options);
+private:
+  explicit CompilerOptions(LrtCompilerOptions *options) : options_(options) {}
 
   struct Deleter {
-    void operator()(LrtCompilerOptions* ptr) const {
+    void operator()(LrtCompilerOptions *ptr) const {
       LrtDestroyCompilerOptions(ptr);
     }
   };
   std::unique_ptr<LrtCompilerOptions, Deleter> options_;
 };
 
-}  // namespace litert
+} // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
+#endif // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_

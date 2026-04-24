@@ -28,7 +28,6 @@ package(
 
 cc_library(
     name = "litert_cpu_options",
-    srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -60,7 +59,6 @@ cc_test(
 
 cc_library(
     name = "litert_compiler_options",
-    srcs = ["litert_compiler_options.cc"],
     hdrs = ["litert_compiler_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -89,7 +87,6 @@ cc_test(
 
 cc_library(
     name = "litert_webnn_options",
-    srcs = ["litert_webnn_options.cc"],
     hdrs = ["litert_webnn_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -113,7 +110,6 @@ cc_test(
 
 cc_library(
     name = "litert_gpu_options",
-    srcs = ["litert_gpu_options.cc"],
     hdrs = ["litert_gpu_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -138,7 +134,6 @@ cc_test(
 
 cc_library(
     name = "litert_google_tensor_options",
-    srcs = ["litert_google_tensor_options.cc"],
     hdrs = ["litert_google_tensor_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -154,7 +149,6 @@ cc_library(
 
 cc_library(
     name = "litert_qualcomm_options",
-    srcs = ["litert_qualcomm_options.cc"],
     hdrs = ["litert_qualcomm_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -170,7 +164,6 @@ cc_library(
 
 cc_library(
     name = "litert_mediatek_options",
-    srcs = ["litert_mediatek_options.cc"],
     hdrs = ["litert_mediatek_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -186,7 +179,6 @@ cc_library(
 
 cc_library(
     name = "litert_intel_openvino_options",
-    srcs = ["litert_intel_openvino_options.cc"],
     hdrs = ["litert_intel_openvino_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -212,7 +204,6 @@ cc_test(
 
 cc_library(
     name = "litert_samsung_options",
-    srcs = ["litert_samsung_options.cc"],
     hdrs = ["litert_samsung_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -229,7 +220,6 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_options",
-    srcs = ["litert_runtime_options.cc"],
     hdrs = ["litert_runtime_options.h"],
     deps = [
         "//litert/c:litert_common",
@@ -242,7 +232,6 @@ cc_library(
 
 cc_library(
     name = "litert_magic_number_options",
-    srcs = ["litert_magic_number_options.cc"],
     hdrs = ["litert_magic_number_options.h"],
     deps = [
         "//litert/c:litert_common",

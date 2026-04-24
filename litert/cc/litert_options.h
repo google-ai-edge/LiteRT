@@ -23,7 +23,16 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/options/litert_compiler_options.h"
+#include "litert/c/options/litert_cpu_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_gpu_options.h"
+#include "litert/c/options/litert_intel_openvino_options.h"
+#include "litert/c/options/litert_mediatek_options.h"
+#include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -41,6 +50,8 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
+#include "litert/core/options.h"
+#include <utility>
 
 namespace litert {
 
@@ -50,7 +61,40 @@ class CompiledModelNext;
 namespace tools {
 struct ApplyPluginRun;
 LiteRtStatus ApplyPlugin(std::unique_ptr<ApplyPluginRun> run);
-}  // namespace tools
+} // namespace tools
+
+namespace {
+
+template <typename OptionType>
+Expected<OptionType &> EnsureOption(std::optional<OptionType> &slot) {
+  if (!slot) {
+    LITERT_ASSIGN_OR_RETURN(auto option, OptionType::Create());
+    slot.emplace(std::move(option));
+  }
+  return slot.value();
+}
+
+template <typename OptionType, typename GetDataFunc>
+LiteRtStatus AppendAndResetOpaqueData(LiteRtOptions options,
+                                      std::optional<OptionType> &slot,
+                                      GetDataFunc get_data_func) {
+  if (!slot) {
+    return kLiteRtStatusOk;
+  }
+  const char *identifier;
+  void *payload = nullptr;
+  void (*payload_deleter)(void *) = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      get_data_func(slot->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+      identifier, payload, payload_deleter, &opaque_opts));
+  LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(options, opaque_opts));
+  slot.reset();
+  return kLiteRtStatusOk;
+}
+
+} // namespace
 
 /// Manages the configuration options for compiling a LiteRT model.
 ///
@@ -58,11 +102,11 @@ LiteRtStatus ApplyPlugin(std::unique_ptr<ApplyPluginRun> run);
 /// operations, bind external tensors, and configure various backend-specific
 /// options (e.g., GPU, CPU, Qualcomm, MediaTek, etc.).
 class Options : public internal::BaseHandle<LiteRtOptions> {
- public:
+public:
   friend class CompiledModel;
   friend class CompiledModelNext;
-  friend LiteRtStatus tools::ApplyPlugin(
-      std::unique_ptr<tools::ApplyPluginRun> run);
+  friend LiteRtStatus
+  tools::ApplyPlugin(std::unique_ptr<tools::ApplyPluginRun> run);
 
   /// A map from a group name to a weight section.
   ///
@@ -123,7 +167,7 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
 
   /// @deprecated Use the `GetXXXOptions()` methods instead.
   [[deprecated("Use the GetXXXOptions() methods instead.")]]
-  Expected<void> AddOpaqueOptions(OpaqueOptions&& options) {
+  Expected<void> AddOpaqueOptions(OpaqueOptions &&options) {
     LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(Get(), options.Release()));
     return {};
   }
@@ -143,10 +187,10 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   /// @param custom_op_kernel_user_data User data to be passed to the kernel.
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
-  Expected<void> AddCustomOpKernel(const std::string& custom_op_name,
+  Expected<void> AddCustomOpKernel(const std::string &custom_op_name,
                                    int custom_op_version,
-                                   const LiteRtCustomOpKernel& custom_op_kernel,
-                                   void* custom_op_kernel_user_data = nullptr) {
+                                   const LiteRtCustomOpKernel &custom_op_kernel,
+                                   void *custom_op_kernel_user_data = nullptr) {
     LITERT_RETURN_IF_ERROR(LiteRtAddCustomOpKernelOption(
         Get(), custom_op_name.c_str(), custom_op_version, &custom_op_kernel,
         custom_op_kernel_user_data));
@@ -157,11 +201,11 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   /// @param custom_op_kernel The custom operator kernel to add.
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
-  Expected<void> AddCustomOpKernel(CustomOpKernel& custom_op_kernel) {
+  Expected<void> AddCustomOpKernel(CustomOpKernel &custom_op_kernel) {
     return AddCustomOpKernel(custom_op_kernel.OpName(),
                              custom_op_kernel.OpVersion(),
                              custom_op_kernel.GetLiteRtCustomOpKernel(),
-                             static_cast<void*>(&custom_op_kernel));
+                             static_cast<void *>(&custom_op_kernel));
   }
 
   /// Binds an external memory buffer to a specific tensor in the model.
@@ -177,9 +221,9 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   /// @param size_bytes The size of the external memory buffer in bytes.
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
-  Expected<void> AddExternalTensorBinding(const std::string& signature_name,
-                                          const std::string& tensor_name,
-                                          void* data, size_t size_bytes) {
+  Expected<void> AddExternalTensorBinding(const std::string &signature_name,
+                                          const std::string &tensor_name,
+                                          void *data, size_t size_bytes) {
     LITERT_RETURN_IF_ERROR(LiteRtAddExternalTensorBinding(
         Get(), signature_name.c_str(), tensor_name.c_str(), data, size_bytes));
     return {};
@@ -191,56 +235,113 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   /// file.
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
-  Expected<void> SetExternalWeightScopedFile(ScopedFile& scoped_file,
-                                             ScopedWeightSectionMap sections);
+  Expected<void> SetExternalWeightScopedFile(ScopedFile &scoped_file,
+                                             ScopedWeightSectionMap sections) {
+    if (!scoped_file.IsValid()) {
+      return Unexpected(Status::kErrorInvalidArgument,
+                        "Scoped file handle must be valid");
+    }
+    if (sections.empty()) {
+      return Unexpected(Status::kErrorInvalidArgument,
+                        "At least one external buffer group must be provided");
+    }
+    for (const auto &[name, section] : sections) {
+      if (section.length == 0) {
+        return Unexpected(Status::kErrorInvalidArgument,
+                          "Section length must be positive for group " + name);
+      }
+    }
+    auto *options_impl = reinterpret_cast<LiteRtOptionsT *>(Get());
+    if (!options_impl) {
+      return Unexpected(Status::kErrorRuntimeFailure,
+                        "Options handle must not be null");
+    }
+    options_impl->scoped_weight_source = std::make_unique<ScopedWeightSource>(
+        std::move(scoped_file), std::move(sections));
+    return {};
+  }
 
   /// Returns a reference to the GPU options.
   ///
   /// Use this to configure GPU-specific settings.
-  Expected<GpuOptions&> GetGpuOptions();
+  Expected<GpuOptions &> GetGpuOptions() { return EnsureOption(gpu_options_); }
 
   /// Returns a reference to the CPU options.
   ///
   /// Use this to configure CPU-specific settings.
-  Expected<CpuOptions&> GetCpuOptions();
+  Expected<CpuOptions &> GetCpuOptions() { return EnsureOption(cpu_options_); }
 
   /// Returns a reference to the Qualcomm options.
   ///
   /// Use this to configure Qualcomm-specific settings.
-  Expected<qualcomm::QualcommOptions&> GetQualcommOptions();
+  Expected<qualcomm::QualcommOptions &> GetQualcommOptions() {
+    return EnsureOption(qualcomm_options_);
+  }
 
   /// Returns a reference to the MediaTek options.
   ///
   /// Use this to configure MediaTek-specific settings.
-  Expected<mediatek::MediatekOptions&> GetMediatekOptions();
+  Expected<mediatek::MediatekOptions &> GetMediatekOptions() {
+    return EnsureOption(mediatek_options_);
+  }
 
   /// Returns a reference to the Google Tensor options.
   ///
   /// Use this to configure Google Tensor-specific settings.
-  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions();
+  Expected<google_tensor::GoogleTensorOptions &> GetGoogleTensorOptions() {
+    return EnsureOption(google_tensor_options_);
+  }
 
   /// Returns a reference to the Intel OpenVINO options.
   ///
   /// Use this to configure Intel OpenVINO-specific settings.
-  Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions();
+  Expected<intel_openvino::IntelOpenVinoOptions &> GetIntelOpenVinoOptions() {
+    return EnsureOption(intel_openvino_options_);
+  }
 
   /// Returns a reference to the Samsung options.
   ///
   /// Use this to configure Samsung-specific settings.
-  Expected<samsung::SamsungOptions&> GetSamsungOptions();
+  Expected<samsung::SamsungOptions &> GetSamsungOptions() {
+    return EnsureOption(samsung_options_);
+  }
 
   /// Returns a reference to the runtime options.
-  Expected<RuntimeOptions&> GetRuntimeOptions();
+  Expected<RuntimeOptions &> GetRuntimeOptions() {
+    return EnsureOption(runtime_options_);
+  }
 
   /// Returns a reference to the compiler options.
-  Expected<CompilerOptions&> GetCompilerOptions();
+  Expected<CompilerOptions &> GetCompilerOptions() {
+    return EnsureOption(compiler_options_);
+  }
 
- private:
+private:
   /// Builds the options object.
   ///
   /// This should be called after all setters have been invoked. It is
   /// automatically called in `CompiledModel::Create`.
-  Expected<void> Build();
+  Expected<void> Build() {
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), gpu_options_, LrtGetOpaqueGpuOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), cpu_options_, LrtGetOpaqueCpuOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), qualcomm_options_, LrtGetOpaqueQualcommOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), mediatek_options_, LrtGetOpaqueMediatekOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), google_tensor_options_, LrtGetOpaqueGoogleTensorOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), intel_openvino_options_, LrtGetOpaqueIntelOpenVinoOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), samsung_options_, LrtGetOpaqueSamsungOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), runtime_options_, LrtGetOpaqueRuntimeOptionsData));
+    LITERT_RETURN_IF_ERROR(AppendAndResetOpaqueData(
+        Get(), compiler_options_, LrtGetOpaqueCompilerOptionsData));
+    return {};
+  }
 
   std::optional<GpuOptions> gpu_options_;
   std::optional<CpuOptions> cpu_options_;
@@ -253,6 +354,6 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   std::optional<CompilerOptions> compiler_options_;
 };
 
-}  // namespace litert
+} // namespace litert
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
+#endif // ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
