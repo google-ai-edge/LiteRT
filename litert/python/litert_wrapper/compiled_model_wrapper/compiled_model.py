@@ -25,7 +25,9 @@ if not os.path.splitext(__file__)[0].endswith(
   from litert.python.litert_wrapper.compiled_model_wrapper import (
       _pywrap_litert_compiled_model_wrapper as _cm,
   )
-  from litert.python.litert_wrapper.compiled_model_wrapper import hardware_accelerator
+  from litert.python.litert_wrapper.compiled_model_wrapper import (
+      hardware_accelerator,
+  )
   from litert.python.litert_wrapper.environment_wrapper import (
       environment as environment_wrapper,
   )
@@ -67,6 +69,9 @@ class CompiledModel:
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
       enforce_f32_gpu: bool = False,
+      intel_openvino_device_type: str = "npu",
+      intel_openvino_performance_mode: str = "latency",
+      intel_openvino_configs_map: str = "",
   ) -> "CompiledModel":
     """Creates a CompiledModel from a model file.
 
@@ -78,6 +83,12 @@ class CompiledModel:
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
       enforce_f32_gpu: Enforce F32 precision on GPU.
+      intel_openvino_device_type: Intel OpenVINO target device. One of 'cpu',
+        'gpu', 'npu', 'auto'. Defaults to 'npu'.
+      intel_openvino_performance_mode: Intel OpenVINO performance hint. One of
+        'latency', 'throughput', 'cumulative_throughput'. Defaults to 'latency'.
+      intel_openvino_configs_map: Comma-separated KEY=VALUE pairs for custom
+        OpenVINO configuration properties.
 
     Returns:
       A new CompiledModel instance.
@@ -91,6 +102,9 @@ class CompiledModel:
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
         enforce_f32_gpu=enforce_f32_gpu,
+        intel_openvino_device_type=intel_openvino_device_type,
+        intel_openvino_performance_mode=intel_openvino_performance_mode,
+        intel_openvino_configs_map=intel_openvino_configs_map,
     )
     return cls(ptr, env)
 
@@ -101,6 +115,9 @@ class CompiledModel:
       hardware_accel: HardwareAccelerator = HardwareAccelerator.CPU,
       environment: Optional[Environment] = None,
       enforce_f32_gpu: bool = False,
+      intel_openvino_device_type: str = "npu",
+      intel_openvino_performance_mode: str = "latency",
+      intel_openvino_configs_map: str = "",
   ) -> "CompiledModel":
     """Creates a CompiledModel from an in-memory buffer.
 
@@ -112,6 +129,12 @@ class CompiledModel:
       environment: Optional shared LiteRT environment. When omitted, a default
         environment is created for this model.
       enforce_f32_gpu: Enforce F32 precision on GPU.
+      intel_openvino_device_type: Intel OpenVINO target device. One of 'cpu',
+        'gpu', 'npu', 'auto'. Defaults to 'npu'.
+      intel_openvino_performance_mode: Intel OpenVINO performance hint. One of
+        'latency', 'throughput', 'cumulative_throughput'. Defaults to 'latency'.
+      intel_openvino_configs_map: Comma-separated KEY=VALUE pairs for custom
+        OpenVINO configuration properties.
 
     Returns:
       A new CompiledModel instance.
@@ -125,6 +148,9 @@ class CompiledModel:
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
         enforce_f32_gpu=enforce_f32_gpu,
+        intel_openvino_device_type=intel_openvino_device_type,
+        intel_openvino_performance_mode=intel_openvino_performance_mode,
+        intel_openvino_configs_map=intel_openvino_configs_map,
     )
     return cls(ptr, env)
 
@@ -247,7 +273,7 @@ class CompiledModel:
   def create_output_buffer_by_name(
       self, signature_key: str, output_name: str
   ) -> TensorBuffer:
-    """Creates an output TensorBuffer for the specified signature and output name.
+    """Creates an output TensorBuffer for a signature and output name.
 
     Args:
       signature_key: Name of the signature.

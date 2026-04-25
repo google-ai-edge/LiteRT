@@ -26,9 +26,11 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -41,6 +43,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
 namespace litert::compiled_model_wrapper {
@@ -131,6 +134,75 @@ bool SetTensorDetailsDictItem(PyObject* result_dict, absl::string_view key,
   Py_DECREF(value);
   return status == 0;
 }
+
+// Sets Intel OpenVINO options on the given Options object.
+// No-op if device_type is null or empty.
+void SetIntelOpenVinoOptions(litert::Options& options,
+                             const char* device_type,
+                             const char* performance_mode,
+                             const char* configs_map) {
+  if (device_type == nullptr || *device_type == '\0') {
+    return;
+  }
+  auto ov_options_or = options.GetIntelOpenVinoOptions();
+  if (!ov_options_or) {
+    LITERT_LOG(LITERT_WARNING, "Intel OpenVINO options not available");
+    return;
+  }
+
+  // Device type (default: NPU).
+  LiteRtIntelOpenVinoDeviceType dt;
+  std::string dt_str(device_type);
+  if (dt_str == "cpu")
+    dt = kLiteRtIntelOpenVinoDeviceTypeCPU;
+  else if (dt_str == "gpu")
+    dt = kLiteRtIntelOpenVinoDeviceTypeGPU;
+  else if (dt_str == "auto")
+    dt = kLiteRtIntelOpenVinoDeviceTypeAUTO;
+  else
+    dt = kLiteRtIntelOpenVinoDeviceTypeNPU;
+  ov_options_or->SetDeviceType(dt);
+
+  // Performance mode (default: LATENCY).
+  if (performance_mode != nullptr && *performance_mode) {
+    LiteRtIntelOpenVinoPerformanceMode pm;
+    std::string pm_str(performance_mode);
+    if (pm_str == "throughput")
+      pm = kLiteRtIntelOpenVinoPerformanceModeThroughput;
+    else if (pm_str == "cumulative_throughput")
+      pm = kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput;
+    else
+      pm = kLiteRtIntelOpenVinoPerformanceModeLatency;
+    ov_options_or->SetPerformanceMode(pm);
+  }
+
+  // Configs map (comma-separated KEY=VALUE pairs).
+  if (configs_map != nullptr && *configs_map) {
+    std::string configs_str(configs_map);
+    size_t start = 0;
+    while (start < configs_str.size()) {
+      size_t comma = configs_str.find(',', start);
+      std::string pair = (comma == std::string::npos)
+                             ? configs_str.substr(start)
+                             : configs_str.substr(start, comma - start);
+      size_t eq = pair.find('=');
+      if (eq == std::string::npos) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Skipping malformed config entry (no '='): %s",
+                   pair.c_str());
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+        continue;
+      }
+      std::string key = pair.substr(0, eq);
+      std::string value = pair.substr(eq + 1);
+      ov_options_or->SetConfigsMapOption(key.c_str(), value.c_str());
+      if (comma == std::string::npos) break;
+      start = comma + 1;
+    }
+  }
+}
+
 }  // namespace
 
 // Returns the byte width of a data type.
@@ -172,7 +244,10 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     PyObject* environment_capsule, const char* model_path, int hardware_accel,
-    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
+    int cpu_num_threads, bool enforce_f32_gpu,
+    const char* intel_openvino_device_type,
+    const char* intel_openvino_performance_mode,
+    const char* intel_openvino_configs_map, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -215,6 +290,10 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     cpu_options_or->SetNumThreads(cpu_num_threads);
   }
 
+  SetIntelOpenVinoOptions(options, intel_openvino_device_type,
+                         intel_openvino_performance_mode,
+                         intel_openvino_configs_map);
+
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(*env, model.Get(), options);
   if (!compiled_or) {
@@ -237,7 +316,10 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
+    int cpu_num_threads, bool enforce_f32_gpu,
+    const char* intel_openvino_device_type,
+    const char* intel_openvino_performance_mode,
+    const char* intel_openvino_configs_map, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -289,6 +371,10 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     }
     cpu_options_or->SetNumThreads(cpu_num_threads);
   }
+
+  SetIntelOpenVinoOptions(options, intel_openvino_device_type,
+                         intel_openvino_performance_mode,
+                         intel_openvino_configs_map);
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(*env, model.Get(), options);

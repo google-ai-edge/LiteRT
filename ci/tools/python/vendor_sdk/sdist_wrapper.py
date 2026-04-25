@@ -189,7 +189,13 @@ def main():
     shutil.move(actual_sdist_file, final_output_path_abs)
 
     print(f"Successfully created sdist: {final_output_path_abs}")
-    shutil.rmtree(build_dir)
+    try:
+      shutil.rmtree(build_dir)
+    except OSError as e:
+      print(
+          f"Warning: Could not clean up {build_dir}: {e}",
+          file=sys.stderr,
+      )
 
   finally:
     os.chdir(original_cwd)

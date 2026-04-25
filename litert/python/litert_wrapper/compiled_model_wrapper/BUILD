@@ -47,6 +47,7 @@ cc_library(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_model_types",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",

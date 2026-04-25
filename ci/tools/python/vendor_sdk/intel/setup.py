@@ -20,7 +20,6 @@ latency and a small binary size on Android, iOS, and other operating systems.
 """
 
 import setuptools
-from setuptools.command.build_py import build_py as _build_py  # pylint: disable=g-importing-member
 
 PACKAGE_NAME = '{{ PACKAGE_NAME }}'
 PACKAGE_VERSION = '{{ PACKAGE_VERSION }}'
@@ -37,7 +36,6 @@ setuptools.setup(
     author_email='packages@tensorflow.org',
     license='Apache 2.0',
     include_package_data=True,
-    has_ext_modules=lambda: True,
     keywords='litert tflite tensorflow tensor machine learning',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
@@ -45,6 +43,7 @@ setuptools.setup(
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: Apache Software License',
+        'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
@@ -59,6 +58,7 @@ setuptools.setup(
     ],
     packages=['ai_edge_litert_sdk_intel'],
     package_dir={'ai_edge_litert_sdk_intel': 'ai_edge_litert_sdk_intel'},
+    python_requires='>=3.10',
     install_requires=[
         'openvino==2026.1.0',
     ],
