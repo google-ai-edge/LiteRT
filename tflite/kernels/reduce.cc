@@ -22,8 +22,9 @@ limitations under the License.
 #include <functional>
 #include <limits>
 #include <tuple>
-#include <vector>
 
+#include "absl/algorithm/container.h"
+#include "absl/container/inlined_vector.h"
 #include "absl/types/span.h"
 #include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/builtin_op_data.h"
@@ -50,6 +51,9 @@ namespace builtin {
 namespace reduce {
 
 const int kMaxConstantOutputTensorSize = 8;
+/// Stores reducer axes inline for common rank <= 4 tensors.
+using ResolvedAxisVector = absl::InlinedVector<int, 4>;
+
 // This file has reference implementation of reduce_* operators.
 enum KernelType {
   kReference,
@@ -155,7 +159,7 @@ struct OpContext {
 TfLiteStatus ResolveAxisForShape(TfLiteContext* context,
                                  const TfLiteTensor* axis_tensor,
                                  int input_num_dims,
-                                 std::vector<int>* resolved_axis) {
+                                 ResolvedAxisVector* resolved_axis) {
   TF_LITE_ENSURE(context, resolved_axis != nullptr);
   TF_LITE_ENSURE_MSG(context, input_num_dims >= 0,
                      "Reduce input rank must be non-negative.");
@@ -165,20 +169,28 @@ TfLiteStatus ResolveAxisForShape(TfLiteContext* context,
                     GetTensorNumElementsAsInt(context, axis_tensor, &num_axis));
   const int* axis_data = GetTensorData<int>(axis_tensor);
   TF_LITE_ENSURE(context, axis_data != nullptr || num_axis == 0);
-  resolved_axis->assign(input_num_dims, 0);
-  int num_resolved_axis = 0;
-  TF_LITE_ENSURE_MSG(
-      context,
-      reference_ops::ResolveAxis(input_num_dims, axis_data, num_axis,
-                                 resolved_axis->data(), &num_resolved_axis),
-      "Invalid axis index.");
-  resolved_axis->resize(num_resolved_axis);
+  const absl::Span<const int> axis_values =
+      absl::MakeConstSpan(axis_data, static_cast<size_t>(num_axis));
+  resolved_axis->clear();
+  if (input_num_dims == 0) {
+    return kTfLiteOk;
+  }
+  for (int current : axis_values) {
+    if (current < 0) {
+      current += input_num_dims;
+    }
+    TF_LITE_ENSURE_MSG(context, current >= 0 && current < input_num_dims,
+                       "Invalid axis index.");
+    if (!absl::c_contains(*resolved_axis, current)) {
+      resolved_axis->push_back(current);
+    }
+  }
   return kTfLiteOk;
 }
 
 /// Returns true when `axis` contains `dimension`.
 bool AxisContains(absl::Span<const int> axis, int dimension) {
-  return std::find(axis.begin(), axis.end(), dimension) != axis.end();
+  return absl::c_contains(axis, dimension);
 }
 
 /// Computes a checked flat size as an int for legacy reducer kernel APIs.
@@ -201,7 +213,7 @@ TfLiteStatus BuildMeanParamsFor4D(TfLiteContext* context,
                                   tflite::MeanParams* op_params) {
   TF_LITE_ENSURE(context, op_params != nullptr);
   TF_LITE_ENSURE_EQ(context, NumDimensions(op_context.input), 4);
-  std::vector<int> resolved_axis;
+  ResolvedAxisVector resolved_axis;
   TF_LITE_ENSURE_OK(
       context,
       ResolveAxisForShape(context, op_context.axis,
@@ -264,7 +276,7 @@ TfLiteStatus GetOutputShape(TfLiteContext* context, OpContext* op_context,
   TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, op_context->input));
   const TfLiteIntArray* input_dims = op_context->input->dims;
   int input_num_dims = NumDimensions(op_context->input);
-  std::vector<int> resolved_axis;
+  ResolvedAxisVector resolved_axis;
   TF_LITE_ENSURE_OK(
       context, ResolveAxisForShape(context, op_context->axis, input_num_dims,
                                    &resolved_axis));
@@ -918,15 +930,15 @@ TfLiteStatus ReduceAllDims(const T* input_data,
     }
     return kTfLiteOk;
   }
-  std::vector<ReduceWorkerTask<T>> tasks;
-  std::vector<EvalData<T>> data;
+  absl::InlinedVector<ReduceWorkerTask<T>, 4> tasks;
+  absl::InlinedVector<EvalData<T>, 4> data;
   tasks.reserve(thread_count);
   data.reserve(thread_count);
   int start = 0;
   for (int i = 0; i < thread_count; ++i) {
     data.push_back(eval_data);
     int end = start + (num_elems - start) / (thread_count - i);
-    tasks.emplace_back(ReduceWorkerTask<T>(&data.back(), start, end));
+    tasks.emplace_back(&data.back(), start, end);
     start = end;
   }
   // Run all tasks on the thread pool.
@@ -1020,13 +1032,15 @@ TfLiteStatus EvalType(TfLiteContext* context, TfLiteNode* node,
         return kTfLiteError;
     }
 
-    int num_resolved_axis = 0;
-    TF_LITE_ENSURE_MSG(
-        context,
-        tflite::reference_ops::ResolveAxis(
-            input->dims->size, GetTensorData<int>(op_context->axis), num_axis,
-            GetTensorData<int>(resolved_axis), &num_resolved_axis),
-        "Invalid axis index.");
+    ResolvedAxisVector resolved_axis_values;
+    TF_LITE_ENSURE_OK(
+        context, ResolveAxisForShape(context, op_context->axis,
+                                     input->dims->size, &resolved_axis_values));
+    const int num_resolved_axis = static_cast<int>(resolved_axis_values.size());
+    int* resolved_axis_data = GetTensorData<int>(resolved_axis);
+    TF_LITE_ENSURE(
+        context, resolved_axis_data != nullptr || resolved_axis_values.empty());
+    absl::c_copy(resolved_axis_values, resolved_axis_data);
 
     if (IsReduceAllDims(num_resolved_axis, input->dims->size)) {
       TF_LITE_ENSURE_OK(
@@ -1192,9 +1206,11 @@ TfLiteStatus EvalQuantizedProd(TfLiteContext* context, TfLiteNode* node,
   TF_LITE_ENSURE_OK(context, ValidateTensorData(context, input));
   TF_LITE_ENSURE_OK(context, ValidateTensorData(context, op_context->axis));
 
+  const absl::Span<const int> input_dims = absl::MakeConstSpan(
+      input->dims->data, static_cast<size_t>(input->dims->size));
   // Return early when input shape has zero dim.
-  for (int i = 0; i < input->dims->size; ++i) {
-    if (input->dims->data[i] == 0) return kTfLiteOk;
+  if (absl::c_contains(input_dims, 0)) {
+    return kTfLiteOk;
   }
 
   if (IsDynamicTensor(normalized_dims)) {
