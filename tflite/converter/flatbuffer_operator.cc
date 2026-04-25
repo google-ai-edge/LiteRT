@@ -73,7 +73,7 @@ StatusOr<mlir::StringAttr> GetPaddingAttr(TfLitePadding pad_params,
   } else if (pad_params == TfLitePadding::kTfLitePaddingValid) {
     padding = tflite::Padding_VALID;
   } else {
-    return InvalidArgument(
+    return absl::InvalidArgumentError(
         absl::StrCat("Invalid padding type", std::to_string(pad_params)));
   }
 
