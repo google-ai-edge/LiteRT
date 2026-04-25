@@ -17,6 +17,19 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
 namespace qnn {
+namespace {
+void CloneNamespace(const OpWrapper& source, std::vector<OpWrapper>& ops) {
+  absl::string_view start_op_name = source.GetName();
+  size_t pos = start_op_name.rfind('/');
+  if (pos == absl::string_view::npos) {
+    return;
+  }
+  for (auto& op : ops) {
+    op.AddPrefixToName(absl::StrCat(start_op_name.substr(0, pos), "/"));
+  }
+}
+}  // namespace
+
 size_t OptimizeKvSwappedFastVlmPrefill(
     std::function<bool(OpWrapper&)> validate_op_config,
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
@@ -132,6 +145,7 @@ size_t OptimizeKvSwappedFastVlmPrefill(
   auto concat_op = BuildConcatenationOp(
       tensor_pool, sha_outputs,
       {const_cast<::qnn::TensorWrapper&>(pattern_output)}, 2);
+  CloneNamespace(ops[start_index + kQKVAddIdx], concat_op);
   std::move(concat_op.begin(), concat_op.end(), std::back_inserter(new_ops));
 
   // Validate new graph.
