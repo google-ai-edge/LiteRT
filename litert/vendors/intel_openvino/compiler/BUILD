@@ -57,7 +57,10 @@ litert_dynamic_lib(
     shared_lib_name = "intel_openvino_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_IntelOpenvino.so",
     ungrte = True,
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         ":graph_iterator",
         ":openvino_soc_config",
