@@ -136,6 +136,7 @@ selects.config_setting_group(
 )
 
 exports_files(srcs = [
+    "check_static_initializers.sh",
     "export_litert_gpu_accelerator_darwin.lds",
     "export_litert_gpu_accelerator_linux.lds",
     "export_litert_only_darwin.lds",

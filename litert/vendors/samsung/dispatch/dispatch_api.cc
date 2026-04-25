@@ -40,7 +40,7 @@
 
 namespace {
 
-static std::unique_ptr<::litert::samsung::EnnManager> static_enn_manager;
+static ::litert::samsung::EnnManager* static_enn_manager = nullptr;
 
 char BuildId[256];
 
@@ -75,7 +75,7 @@ LiteRtStatus LiteRtSamsungInitialize(
           : std::nullopt;
 
   if (auto enn_manager = ::litert::samsung::EnnManager::Create(); enn_manager) {
-    static_enn_manager.reset(enn_manager->release());
+    static_enn_manager = enn_manager->release();
   } else {
     LITERT_LOG(LITERT_INFO, "Failed to initialize: %s",
                enn_manager.Error().Message().c_str());
@@ -119,7 +119,7 @@ LiteRtStatus LiteRtSamsungDeviceContextCreate(
     const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
   if (auto context =
-          LiteRtDispatchDeviceContextT::Create(static_enn_manager.get());
+          LiteRtDispatchDeviceContextT::Create(static_enn_manager),
       context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
@@ -204,7 +204,7 @@ LiteRtStatus LiteRtSamsungInvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      static_enn_manager.get(), device_context, exec_type, exec_bytecode_buffer,
+      static_enn_manager, device_context, exec_type, exec_bytecode_buffer,
       function_name, num_inputs, num_outputs);
 
   if (!context) {
