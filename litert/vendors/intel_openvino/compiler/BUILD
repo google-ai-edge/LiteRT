@@ -16,7 +16,6 @@ load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynami
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
 )
 
 litert_lib(
@@ -57,7 +56,7 @@ litert_dynamic_lib(
     shared_lib_name = "intel_openvino_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_IntelOpenvino.so",
     ungrte = True,
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":graph_iterator",
         ":openvino_soc_config",
