@@ -120,6 +120,7 @@ enum Precision {
   kPrecisionDefault = 0,
   kPrecisionFp16 = 1,
   kPrecisionFp32 = 2,
+  kPrecisionFp32_16 = 3,
 };
 
 // Converts the precision string to LiteRtDelegatePrecision.
@@ -130,6 +131,8 @@ GpuOptions::Precision ToGpuOptionsPrecision(const char* precision_str) {
       return GpuOptions::Precision::kFp16;
     case kPrecisionFp32:
       return GpuOptions::Precision::kFp32;
+    case kPrecisionFp32_16:
+      return GpuOptions::Precision::kFp32_16;
     default:
       return GpuOptions::Precision::kDefault;
   }
