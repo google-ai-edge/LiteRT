@@ -51,7 +51,6 @@ litert_dynamic_lib(
     }),
     ungrte = True,
     visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
         "//research/drishti/benchmarking:__subpackages__",
@@ -139,7 +138,6 @@ cc_test(
 proto_library(
     name = "google_tensor_options_proto",
     srcs = ["google_tensor_options.proto"],
-    visibility = ["//platforms/darwinn/compiler:__subpackages__"],
 )
 
 cc_proto_library(
