@@ -51,7 +51,6 @@ litert_dynamic_lib(
     }),
     ungrte = True,
     visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
         "//research/drishti/benchmarking:__subpackages__",
