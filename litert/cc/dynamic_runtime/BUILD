@@ -207,7 +207,7 @@ cc_library(
 cc_library(
     name = "litert_tensor_buffer_types",
     hdrs = ["//litert/cc:litert_tensor_buffer_types.h"],
-    visibility = ["//litert:litert_public"],
+    visibility = ["//visibility:private"],
     deps = [] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
         "//litert:ios": LITERT_C_API_DEPS,
