@@ -86,6 +86,7 @@ cc_library(
     deps = [
         ":common",
         ":graph_helpers",
+        ":reference",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
@@ -128,6 +129,7 @@ cc_library(
     deps = [
         ":common",
         ":graph_helpers",
+        ":reference",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -207,6 +209,26 @@ cc_test(
         "//litert/test:matchers",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "reference_test",
+    srcs = ["reference_test.cc"],
+    deps = [
+        ":reference",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "reference",
+    testonly = True,
+    hdrs = ["reference.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
     ],
 )
 
