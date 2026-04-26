@@ -104,6 +104,8 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/tools:apply_plugin_test"
         # Enable once openvino
         "-//litert/vendors/intel_openvino/..."
+        # Requires TOML
+        "-//litert/c/options:litert_runtime_options_test"
 )
 
 
