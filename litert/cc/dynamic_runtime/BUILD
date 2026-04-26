@@ -487,6 +487,25 @@ cc_library(
     }),
 )
 
+cc_library(
+    name = "litert_tensor_buffer_requirements",
+    hdrs = ["//litert/cc:litert_tensor_buffer_requirements.h"],
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_tensor_buffer_types",
+        "@com_google_absl//absl/types:span",
+    ] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_common",
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
 cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["//litert/cc:litert_tensor_buffer_test.cc"],
@@ -601,6 +620,7 @@ cc_library(
         ":litert_options",
         ":litert_profiler",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -609,7 +629,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_handle",
@@ -643,6 +662,7 @@ cc_test(
         ":litert_options",
         ":litert_profiler",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_types",
@@ -653,7 +673,6 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/options:litert_runtime_options",
         "//litert/test:common",
