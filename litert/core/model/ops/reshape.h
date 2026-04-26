@@ -22,49 +22,37 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
 
 namespace litert::internal {
 
 // Infers the output shape for a Reshape op.
-inline LiteRtStatus InferReshape(const LiteRtOpT& op,
-                                 absl::Span<const Dims> input_shapes,
-                                 std::vector<Dims>& output_shapes) {
+inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
+                                 InferenceResult& result) {
   constexpr int kInputArgIndex = 0;
   constexpr int kShapeTensorArgIndex = 1;
-  constexpr int kReshapeMinArgsWithShapeTensor = 2;
-  constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
-  if (input_shapes.empty()) {
-    return kLiteRtStatusErrorInvalidArgument;
+  if (result.output_shapes.empty()) {
+    result.output_shapes.resize(1);
   }
 
-  const auto& opts = GetTflOptions(op);
+  Dims input_shape = ctx.GetInputShape(kInputArgIndex);
+  const auto& opts = ctx.GetOptions();
   const auto* reshape_opts = opts.AsReshapeOptions();
 
   Dims new_shape;
 
-  // Check shape tensor first (2nd input)
-  if (op.Inputs().size() >= kReshapeMinArgsWithShapeTensor) {
-    const auto& shape_tensor = op.Input(kShapeTensorArgIndex);
-    // If constant, read it.
-    if (shape_tensor.Weights().Buffer().Size() >= kShapeTensorSize) {
-      auto buf = shape_tensor.Weights().Buffer();
-      // Assume int32 for now (TFLite standard for shape).
-      if (buf.Size() % sizeof(int32_t) != 0) {
-        return kLiteRtStatusErrorInvalidArgument;
-      }
-      const int32_t* dims = reinterpret_cast<const int32_t*>(buf.Data());
-      size_t rank = buf.Size() / sizeof(int32_t);
-      for (size_t i = 0; i < rank; ++i) {
-        new_shape.push_back(dims[i]);
-      }
-    } else {
-      return kLiteRtStatusErrorShapeInferenceFailed;
+  auto buf = ctx.GetInputData(kShapeTensorArgIndex);
+  if (!buf.empty()) {
+    if (buf.size() % sizeof(int32_t) != 0) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    const int32_t* dims = reinterpret_cast<const int32_t*>(buf.data());
+    size_t rank = buf.size() / sizeof(int32_t);
+    for (size_t i = 0; i < rank; ++i) {
+      new_shape.push_back(dims[i]);
     }
   } else if (reshape_opts && !reshape_opts->new_shape.empty()) {
-    // Use options.
     for (auto d : reshape_opts->new_shape) {
       new_shape.push_back(d);
     }
@@ -72,10 +60,9 @@ inline LiteRtStatus InferReshape(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  // Handle -1
   int minus_one_idx = -1;
   int64_t new_product = 1;
-  for (int i = 0; i < new_shape.size(); ++i) {
+  for (int i = 0; i < (int)new_shape.size(); ++i) {
     if (new_shape[i] == -1) {
       if (minus_one_idx != -1) {
         return kLiteRtStatusErrorShapeInferenceFailed;  // Multiple -1
@@ -87,10 +74,9 @@ inline LiteRtStatus InferReshape(const LiteRtOpT& op,
   }
 
   if (minus_one_idx != -1) {
-    // Calculate missing dim from input volume.
     int64_t input_product = 1;
     bool input_dynamic = false;
-    for (auto d : input_shapes[kInputArgIndex]) {
+    for (auto d : input_shape) {
       if (d == -1) {
         input_dynamic = true;
         break;
@@ -99,18 +85,18 @@ inline LiteRtStatus InferReshape(const LiteRtOpT& op,
     }
 
     if (input_dynamic) {
-      // Cannot resolve -1 if input is dynamic.
-      // Keep it as -1.
+      // Cannot resolve -1 if the total volume of input is unknown.
       new_shape[minus_one_idx] = -1;
     } else {
       if (input_product % new_product != 0) {
         return kLiteRtStatusErrorShapeInferenceFailed;
       }
-      new_shape[minus_one_idx] = input_product / new_product;
+      new_shape[minus_one_idx] =
+          (new_product == 0) ? 0 : input_product / new_product;
     }
   }
 
-  output_shapes[0] = std::move(new_shape);
+  result.output_shapes[0] = std::move(new_shape);
   return kLiteRtStatusOk;
 }
 
