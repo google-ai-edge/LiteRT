@@ -49,9 +49,12 @@ namespace litert::internal {
 namespace {
 
 std::string GetCachedModelFilePath(absl::string_view cache_root_path,
-                                   uint64_t model_hash) {
+                                   CompilationCache::CacheKey cache_key,
+                                   absl::string_view model_name) {
+  std::string model_dir = model_name.empty() ? "mem" : std::string(model_name);
   return litert::internal::Join(
-      {cache_root_path, absl::StrCat(model_hash, ".tflite")});
+      {cache_root_path, model_dir, absl::StrCat(cache_key.content_hash),
+       absl::StrCat(cache_key.config_hash, ".tflite")});
 }
 
 Expected<std::vector<litert::internal::CompilationCache::CompilerPluginInfo>>
@@ -65,10 +68,12 @@ GetPluginInfo(
     LITERT_ASSIGN_OR_RETURN(LiteRtHwAcceleratorSet hw_accelerators,
                             plugin.SupportedHardware());
     absl::string_view manufacturer = plugin.SocManufacturer();
+    LITERT_ASSIGN_OR_RETURN(std::string sdk_version, plugin.SdkVersion());
     cache_info[i] = {
         .api_version = api_version,
         .hw_accelerators = (LiteRtHwAccelerators)hw_accelerators,
         .manufacturer = manufacturer,
+        .sdk_version = std::move(sdk_version),
     };
   }
   return cache_info;
@@ -105,6 +110,7 @@ uint64_t GetHash(
   uint64_t ans = GetHash(compiler_plugin_info.api_version);
   HashCombine(ans, compiler_plugin_info.hw_accelerators);
   HashCombine(ans, compiler_plugin_info.manufacturer);
+  HashCombine(ans, compiler_plugin_info.sdk_version);
   return ans;
 }
 
@@ -133,47 +139,40 @@ Expected<CompilationCache> CompilationCache::Create(
   return CompilationCache(cache_root_path);
 }
 
-Expected<uint64_t> CompilationCache::GetModelHash(
+Expected<CompilationCache::CacheKey> CompilationCache::GetModelHash(
     const LiteRtModelT& model, const LiteRtOptionsT& options,
     const CompilerPluginInfo& compiler_plugin_info) {
   std::vector<CompilerPluginInfo> compiler_plugin_infos{compiler_plugin_info};
   return GetModelHash(model, options, compiler_plugin_infos);
 }
 
-Expected<uint64_t> CompilationCache::GetModelHash(
+Expected<CompilationCache::CacheKey> CompilationCache::GetModelHash(
     const LiteRtModelT& model, const LiteRtOptionsT& options,
     const std::vector<CompilerPluginInfo>& compiler_plugin_infos) {
-  uint64_t combined_hash = 0;
+  uint64_t config_hash = 0;
   for (const auto& compiler_plugin_info : compiler_plugin_infos) {
-    uint64_t compiler_plugin_hash = GetHash(compiler_plugin_info);
-    HashCombine(combined_hash, compiler_plugin_hash);
+    HashCombine(config_hash, GetHash(compiler_plugin_info));
   }
 
 #ifdef __ANDROID__
-  // The compiler plugin of some vendors has dependencies on files (e.g. shared
-  // libraries that are opened by their compiler plugin implementation) that
-  // are part of the Android image.  Therefore if the Android build fingerprint
-  // changes, the cached model might become invalid.
   char build_fingerprint[PROP_VALUE_MAX];
   if (__system_property_get("ro.build.fingerprint", build_fingerprint)) {
-    HashCombine(combined_hash, std::string(build_fingerprint));
+    HashCombine(config_hash, std::string(build_fingerprint));
   }
 #endif  // __ANDROID__
 
-  LITERT_ASSIGN_OR_RETURN(uint64_t model_hash, GetHash(model));
-  uint64_t options_hash = GetHash(options);
+  LITERT_ASSIGN_OR_RETURN(uint64_t content_hash, GetHash(model));
+  HashCombine(config_hash, GetHash(options));
 
-  HashCombine(combined_hash, model_hash, options_hash);
-  return combined_hash;
+  return CacheKey{.content_hash = content_hash, .config_hash = config_hash};
 }
 
-litert::Expected<uint64_t> CompilationCache::TryGetModelHash(
+litert::Expected<CompilationCache::CacheKey> CompilationCache::TryGetModelHash(
     LiteRtModelT& model, LiteRtOptions options,
     Expected<std::vector<litert::internal::CompilerPlugin>>& compiler_plugins) {
   if (!compiler_plugins) {
     return compiler_plugins.Error();
   }
-  // Compute the hash, so we can check the cache.
   LITERT_ASSIGN_OR_RETURN(
       std::vector<litert::internal::CompilationCache::CompilerPluginInfo>
           compiler_plugin_infos,
@@ -183,17 +182,25 @@ litert::Expected<uint64_t> CompilationCache::TryGetModelHash(
 }
 
 Expected<void> CompilationCache::SaveModel(const LiteRtModelT& model,
-                                           uint64_t model_hash) {
+                                           CacheKey cache_key,
+                                           absl::string_view model_name) {
   const ::litert::internal::FlatbufferWrapper& tfl_wrapper =
       litert::internal::GetTflFlatbuffer(model);
   const litert::BufferRef<uint8_t>& tfl_buf = tfl_wrapper.Buf();
-  return SaveModel(tfl_buf, model_hash);
+  return SaveModel(tfl_buf, cache_key, model_name);
 }
 
 Expected<void> CompilationCache::SaveModel(
-    const litert::BufferRef<uint8_t>& model_buffer, uint64_t model_hash) {
+    const litert::BufferRef<uint8_t>& model_buffer, CacheKey cache_key,
+    absl::string_view model_name) {
   const std::string cached_model_file_path =
-      GetCachedModelFilePath(cache_root_path_, model_hash);
+      GetCachedModelFilePath(cache_root_path_, cache_key, model_name);
+
+  // Create directories if needed!
+  LITERT_ASSIGN_OR_RETURN(std::string parent_dir,
+                          Parent(cached_model_file_path));
+  LITERT_RETURN_IF_ERROR(MkDir(parent_dir));
+
   std::ofstream output_file(cached_model_file_path,
                             std::ios::out | std::ios::binary);
   if (!output_file.is_open()) {
@@ -217,11 +224,21 @@ Expected<void> CompilationCache::SaveModel(
 }
 
 Expected<std::optional<LiteRtModelT::Ptr>> CompilationCache::TryLoadModel(
-    uint64_t model_hash) {
+    CacheKey cache_key, absl::string_view model_name) {
   std::string expected_model_file_path =
-      GetCachedModelFilePath(cache_root_path_, model_hash);
+      GetCachedModelFilePath(cache_root_path_, cache_key, model_name);
   if (!Exists(expected_model_file_path)) {
-    return Expected<std::optional<LiteRtModelT::Ptr>>(std::nullopt);
+    if (!model_name.empty()) {
+      std::string fallback_path =
+          GetCachedModelFilePath(cache_root_path_, cache_key, "");
+      if (Exists(fallback_path)) {
+        expected_model_file_path = fallback_path;
+      } else {
+        return Expected<std::optional<LiteRtModelT::Ptr>>(std::nullopt);
+      }
+    } else {
+      return Expected<std::optional<LiteRtModelT::Ptr>>(std::nullopt);
+    }
   }
 
   LITERT_ASSIGN_OR_RETURN(
