@@ -184,6 +184,14 @@ jobs:
             //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin `
             //litert/vendors/intel_openvino/dispatch:LiteRtDispatch
 
+      - name: Build LiteRT tools for Windows
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-windows  --define=protobuf_allow_msvc=true `
+            --config=windows  -- `
+            //litert/tools:apply_plugin_main `
+            //litert/tools:benchmark_litert_model `
+            //litert/tools:run_model
+
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true  # Ignore errors when cache is not found.
