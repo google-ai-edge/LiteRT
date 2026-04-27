@@ -491,7 +491,7 @@ class LitertLmFileBuilder:
     assert self._system_metadata, "System metadata is empty."
 
     stream.seek(0)
-    stream.write(b"LITERTLM")
+    stream.write(litertlm_core.HEADER_MAGIC_BYTES)
     stream.write(litertlm_core.LITERTLM_MAJOR_VERSION.to_bytes(4, "little"))
     stream.write(litertlm_core.LITERTLM_MINOR_VERSION.to_bytes(4, "little"))
     stream.write(litertlm_core.LITERTLM_PATCH_VERSION.to_bytes(4, "little"))
