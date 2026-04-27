@@ -143,6 +143,9 @@ class DispatchDelegateKernel
     bool maybe_sync_with_cpu = false;
     size_t tensor_buffer_used_size = 0;
     bool attached = false;
+    // Tensor buffer that holds out-fence, allowing for deferred unregistration
+    // of tensor_buffer.
+    LiteRtTensorBufferPtr out_fence_buffer;
 
     TensorInfo() = default;
 
@@ -169,6 +172,9 @@ class DispatchDelegateKernel
   // Tensor ID will be stable across reallocations.
   absl::flat_hash_map<int, std::vector<PortConnection>>
       io_tensors_port_connections_;
+
+  // Hold stale TensorInfo records for non-blocking out-fence unregistration.
+  std::vector<TensorInfo> deferred_unregistrations_;
 };
 
 }  // namespace litert::internal
