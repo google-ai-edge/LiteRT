@@ -97,6 +97,11 @@ LiteRtStatus GpuOptions::SetProgramCacheFd(int program_cache_fd) {
                                                               program_cache_fd);
 }
 
+LiteRtStatus GpuOptions::SetWeightCacheFd(int weight_cache_fd) {
+  return LrtSetGpuAcceleratorCompilationOptionsWeightCacheFd(options_,
+                                                             weight_cache_fd);
+}
+
 LiteRtStatus GpuOptions::SetSerializeProgramCache(
     bool serialize_program_cache) {
   return LrtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
