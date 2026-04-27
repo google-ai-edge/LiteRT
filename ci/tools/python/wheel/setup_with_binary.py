@@ -204,8 +204,8 @@ setuptools.setup(
         ],
         'npu-sdk': [
             'ai-edge-litert-sdk-intel~=0.2.0',
-            'ai-edge-litert-sdk-qualcomm~=0.1.0',
-            'ai-edge-litert-sdk-mediatek~=0.1.0',
+            'ai-edge-litert-sdk-qualcomm~=0.2.0',
+            'ai-edge-litert-sdk-mediatek~=0.2.0',
         ],
         'model-utils': [
             'lark',
