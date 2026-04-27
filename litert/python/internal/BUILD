@@ -88,6 +88,14 @@ pytype_strict_library(
 )
 
 pytype_strict_library(
+    name = "litertlm_utils",
+    srcs = ["litertlm_utils.py"],
+    deps = [
+        ":litertlm_core",
+    ],
+)
+
+pytype_strict_library(
     name = "litertlm_builder",
     srcs = ["litertlm_builder.py"],
     visibility = ["//visibility:public"],

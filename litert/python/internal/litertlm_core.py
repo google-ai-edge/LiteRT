@@ -31,6 +31,7 @@ LITERTLM_PATCH_VERSION = 0
 #   litert_lm/python/litert_lm_builder/litertlm_core.py:litertlm_version_constants
 # )
 # copybara:comment_end(google-only)
+HEADER_MAGIC_BYTES = b"LITERTLM"
 BLOCK_SIZE = 16 * 1024
 HEADER_BEGIN_BYTE_OFFSET = 32
 HEADER_END_LOCATION_BYTE_OFFSET = 24
