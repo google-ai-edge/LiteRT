@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_metal_opts")
@@ -143,6 +144,46 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dispatch_delegate_async_test",
+    srcs = ["dispatch_delegate_async_test.cc"],
+    data = [
+        ":libLiteRtDispatch_Mock_Async.so",
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    deps = [
+        ":dispatch",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc/dynamic_runtime:litert_compiled_model_next",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_binary(
+    name = "libLiteRtDispatch_Mock_Async.so",
+    srcs = ["mock_async_dispatch.cc"],
+    linkshared = 1,
+    linkstatic = 1,
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 
