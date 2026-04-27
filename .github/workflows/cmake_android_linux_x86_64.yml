@@ -78,9 +78,11 @@ jobs:
           echo "Cache Primary Key: ${{ steps.cmake-cache.outputs.cache-primary-key }}"
           echo "Cache Matched Key: ${{ steps.cmake-cache.outputs.cache-matched-key }}"
       - name: Setup CMake 3.28.3
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: "3.28.3"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install cmake==3.28.3
+          cmake --version
 
       - name: Ensure clang toolchain
         run: |
