@@ -28,7 +28,10 @@ litert_dynamic_lib(
     ],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
     export_litert_only = True,
-    linkopts = ["-Wl,-rpath,$$ORIGIN"],
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
+    }),
     linkstatic = 1,
     shared_lib_name = "example_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Example.so",
@@ -80,7 +83,10 @@ litert_dynamic_lib(
     ],
     hdrs = ["//litert/vendors/c:litert_dispatch.h"],
     export_litert_only = True,
-    linkopts = ["-Wl,-rpath,$$ORIGIN"],
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
+    }),
     linkstatic = 1,
     shared_lib_name = "example_dispatch_so",
     so_name = "libLiteRtDispatch_Example.so",

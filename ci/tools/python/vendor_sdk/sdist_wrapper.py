@@ -117,6 +117,12 @@ def main():
     with open(dest_init_py_path, "wt") as f:
       f.write(init_py_content)
 
+    if os.path.exists("TERMS_OF_USE.md"):
+      shutil.copy(
+          "TERMS_OF_USE.md",
+          os.path.join(build_dir, project_name, "TERMS_OF_USE.md"),
+      )
+
     print(f"Changing working directory to: {build_dir}")
     os.chdir(build_dir)
 

@@ -17,13 +17,10 @@
 
 #include <cstddef>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/cleanup/cleanup.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_gl_types.h"
@@ -32,6 +29,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
@@ -120,7 +118,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
         internal::tensor_buffer_detail::ToLiteRtTensorBufferRequirements(
             env_holder, requirements));
 
-    auto cleanup = absl::MakeCleanup([&env_holder, litert_requirements] {
+    auto cleanup = internal::MakeCleanup([&env_holder, litert_requirements] {
       env_holder.runtime->DestroyTensorBufferRequirements(litert_requirements);
     });
 
@@ -519,7 +517,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
   bool HasEvent() const {
     bool has_event;
     auto status = env_.runtime->HasTensorBufferEvent(Get(), &has_event);
-    ABSL_CHECK_EQ(status, kLiteRtStatusOk);
+    LITERT_INTERNAL_CHECK_EQ(status, kLiteRtStatusOk);
     return has_event;
   }
 
@@ -595,47 +593,46 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     return {};
   }
 
-  /// @brief Writes data from a user-provided `absl::Span<const T>` to the
+  /// @brief Writes data from a user-provided `Span<const T>` to the
   /// tensor buffer.
   ///
   /// Returns an error if the provided buffer is larger than the tensor
   /// buffer's size.
   template <typename T>
-  Expected<void> Write(absl::Span<const T> data) {
+  Expected<void> Write(Span<const T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kWrite));
-    absl::Cleanup unlock = [this] { Unlock(); };
+    auto unlock = internal::MakeCleanup([this] { Unlock(); });
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     if (size < data.size() * sizeof(T)) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat(
-              "TensorBuffer host memory buffer size is smaller than the "
-              "given data size, %zu vs %zu",
-              size, data.size() * sizeof(T)));
+          "TensorBuffer host memory buffer size is smaller than the given "
+          "data size, " +
+              std::to_string(size) + " vs " +
+              std::to_string(data.size() * sizeof(T)));
     }
     std::memcpy(host_mem_addr, data.data(), data.size() * sizeof(T));
     return {};
   }
 
   /// @brief Reads data from the tensor buffer into a user-provided
-  /// `absl::Span<T>`.
+  /// `Span<T>`.
   ///
   /// If the provided buffer is smaller than the tensor buffer, data will be
   /// read up to the size of the provided buffer. Returns an error if the
   /// provided buffer is larger than the tensor buffer.
   template <typename T>
-  Expected<void> Read(absl::Span<T> data) {
+  Expected<void> Read(Span<T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kRead));
-    absl::Cleanup unlock = [this] { Unlock(); };
+    auto unlock = internal::MakeCleanup([this] { Unlock(); });
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     size_t total_read_size = data.size() * sizeof(T);
     if (size < total_read_size) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat(
-              "TensorBuffer host memory buffer size is smaller than the "
-              "given data size, %zu vs %zu",
-              size, total_read_size));
+          "TensorBuffer host memory buffer size is smaller than the given "
+          "data size, " +
+              std::to_string(size) + " vs " + std::to_string(total_read_size));
     }
     std::memcpy(data.data(), host_mem_addr, total_read_size);
     return {};
@@ -652,7 +649,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
 
     // Fall back to synchronous write.
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kWrite));
-    absl::Cleanup unlock = [this] { Unlock(); };
+    auto unlock = internal::MakeCleanup([this] { Unlock(); });
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     std::memset(host_mem_addr, 0, size);
     return {};

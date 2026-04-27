@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_metal_opts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
@@ -151,6 +152,47 @@ cc_test(
 )
 
 cc_test(
+    name = "dispatch_delegate_async_test",
+    srcs = ["dispatch_delegate_async_test.cc"],
+    data = [
+        ":libLiteRtDispatch_Mock_Async.so",
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    deps = [
+        ":dispatch",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_dispatch_api(
+    name = "mock_async_dispatch",
+    srcs = ["mock_async_dispatch.cc"],
+    export_litert_only = False,
+    shared_lib_name = "mock_async_dispatch_so",
+    so_name = "libLiteRtDispatch_Mock_Async.so",
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_test(
     name = "dispatch_delegate_scheduling_info_test",
     srcs = ["dispatch_delegate_scheduling_info_test.cc"],
     data = [
@@ -177,15 +219,12 @@ cc_test(
 )
 
 cc_library(
-    name = "dispatch_delegate",
+    name = "dispatch_delegate_kernel",
     srcs = [
-        "dispatch_delegate.cc",
         "dispatch_delegate_kernel.cc",
     ],
     hdrs = [
         "dispatch_delegate_kernel.h",
-        "//litert/c/internal:litert_dispatch_delegate.h",
-        "//litert/cc/internal:litert_dispatch_delegate.h",
     ],
     copts = litert_metal_opts(),
     deps = [
@@ -204,7 +243,6 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tflite_error_status_builder",
-        "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/runtime:external_litert_buffer_context",
         "//litert/runtime:metrics",
@@ -224,6 +262,39 @@ cc_library(
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
+    name = "dispatch_delegate",
+    srcs = [
+        "dispatch_delegate.cc",
+    ],
+    hdrs = [
+        "//litert/c/internal:litert_dispatch_delegate.h",
+        "//litert/cc/internal:litert_dispatch_delegate.h",
+    ],
+    copts = litert_metal_opts(),
+    deps = [
+        ":dispatch",
+        ":dispatch_delegate_kernel",
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_dispatch_headers",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core:build_stamp",
+        "//litert/runtime:metrics",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
