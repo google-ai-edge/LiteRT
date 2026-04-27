@@ -58,11 +58,16 @@ litert_dynamic_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_IntelOpenvino.so",
-        "-Wl,-lc++abi",
-    ],
+    ] + select({
+        "//litert:android": ["-Wl,-lc++abi"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_IntelOpenvino.so",
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_common",
@@ -111,7 +116,10 @@ litert_bin(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts(),
     linkshared = 1,
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_common",

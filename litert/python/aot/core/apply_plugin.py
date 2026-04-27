@@ -19,13 +19,18 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 
 from litert.python.aot.core import aot_types
 from litert.python.aot.core import common
 from litert.python.aot.core import components
 
-_BINARY = pathlib.Path("tools/apply_plugin_main")
+_BINARY = pathlib.Path(
+    "tools/apply_plugin_main.exe"
+    if sys.platform == "win32"
+    else "tools/apply_plugin_main"
+)
 
 _RE_PARTITION_STATS = re.compile(
     r"Partitioned subgraph<(\d+)>, selected (\d+) ops, from a total of "
@@ -80,74 +85,87 @@ class ApplyPlugin(components.ApplyPluginT):
       ValueError: If no tflite model was created by the underying binary.
     """
     if input_model.in_memory:
-      tmp_file = tempfile.NamedTemporaryFile(mode="wb")
+      tmp_file = tempfile.NamedTemporaryFile(mode="wb", delete=False)
       input_model.save(tmp_file.name)
+      tmp_file.close()
     else:
       tmp_file = None
 
     try:
-      binary = common.get_resource(_BINARY)
-    except FileNotFoundError as e:
-      raise FileNotFoundError(
-          "Failed to find apply plugin binary. AOT might not be available on"
-          " your platform."
-      ) from e
-    args = [
-        str(binary),
-        "--cmd=apply",
-        f"--model={str(input_model.path)}",
-        f"--o={str(output_model.path)}",
-        f"--soc_manufacturer={soc_manufacturer}",
-        f"--soc_model={soc_model}",
-        f"--err={self.default_err}",
-    ]
-    extra_args = [f"--{key}={value}" for key, value in kwargs.items()]
-    args.extend(extra_args)
-    if self._subgraphs_to_compile:
-      subgraphs_to_compile = ",".join(
-          str(s) for s in self._subgraphs_to_compile
-      )
-      args.append(f"--subgraphs={subgraphs_to_compile}")
-    env = os.environ.copy()
-    ld_library_path = common.construct_ld_library_path()
-    if ld_library_path:
+      try:
+        binary = common.get_resource(_BINARY)
+      except FileNotFoundError as e:
+        raise FileNotFoundError(
+            "Failed to find apply plugin binary. AOT might not be available on"
+            " your platform."
+        ) from e
+      args = [
+          str(binary),
+          "--cmd=apply",
+          f"--model={str(input_model.path)}",
+          f"--o={str(output_model.path)}",
+          f"--soc_manufacturer={soc_manufacturer}",
+          f"--soc_model={soc_model}",
+          f"--err={self.default_err}",
+      ]
+      extra_args = [f"--{key}={value}" for key, value in kwargs.items()]
+      args.extend(extra_args)
+      if self._subgraphs_to_compile:
+        subgraphs_to_compile = ",".join(
+            str(s) for s in self._subgraphs_to_compile
+        )
+        args.append(f"--subgraphs={subgraphs_to_compile}")
+      env = os.environ.copy()
+      lib_search_path = common.construct_ld_library_path()
       if sdk_libs_path:
-        ld_library_path = f"{sdk_libs_path}{os.pathsep}{ld_library_path}"
-      env["LD_LIBRARY_PATH"] = ld_library_path
+        lib_search_path = (
+            f"{sdk_libs_path}{os.pathsep}{lib_search_path}"
+            if lib_search_path
+            else sdk_libs_path
+        )
+      if lib_search_path:
+        if sys.platform == "win32":
+          env["PATH"] = lib_search_path + os.pathsep + env.get("PATH", "")
+        else:
+          env["LD_LIBRARY_PATH"] = lib_search_path
 
-    result = subprocess.run(
-        args,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-    )
-    if result.returncode:
-      log_file = tempfile.NamedTemporaryFile(
-          suffix=".error", mode="w", delete=False
+      result = subprocess.run(
+          args,
+          check=False,
+          text=True,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.STDOUT,
+          env=env,
       )
-      log_file.write(result.stdout)
-      log_file.close()
-      raise ValueError(
-          f"{self.component_name} failed to apply plugin. See"
-          f" {log_file.name} for details."
+      if result.returncode:
+        log_file = tempfile.NamedTemporaryFile(
+            suffix=".error", mode="w", delete=False
+        )
+        log_file.write(result.stdout)
+        log_file.close()
+        raise ValueError(
+            f"{self.component_name} failed to apply plugin. See"
+            f" {log_file.name} for details."
+        )
+
+      if not common.is_tflite(output_model.path):
+        raise ValueError(f"{output_model.path} is not a TFLite model.")
+
+      partition_stats = _RE_PARTITION_STATS.findall(result.stdout)
+      output_model.partition_stats = aot_types.PartitionStats(
+          subgraph_stats=[
+              aot_types.SubgraphPartitionStats(
+                  subgraph_index=int(s[0]),
+                  num_ops_offloaded=int(s[1]),
+                  num_total_ops=int(s[2]),
+                  num_partitions_offloaded=int(s[3]),
+              )
+              for s in partition_stats
+          ]
       )
-
-    if not common.is_tflite(output_model.path):
-      raise ValueError(f"{output_model.path} is not a TFLite model.")
-
-    partition_stats = _RE_PARTITION_STATS.findall(result.stdout)
-    output_model.partition_stats = aot_types.PartitionStats(
-        subgraph_stats=[
-            aot_types.SubgraphPartitionStats(
-                subgraph_index=int(s[0]),
-                num_ops_offloaded=int(s[1]),
-                num_total_ops=int(s[2]),
-                num_partitions_offloaded=int(s[3]),
-            )
-            for s in partition_stats
-        ]
-    )
-    if tmp_file is not None:
-      tmp_file.close()
+    finally:
+      if tmp_file is not None:
+        try:
+          os.unlink(tmp_file.name)
+        except OSError:
+          pass

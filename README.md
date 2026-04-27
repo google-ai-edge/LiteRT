@@ -52,15 +52,19 @@ performance, making on-device ML inference easier than ever.
 
 LiteRT is designed for cross-platform deployment on a wide range of hardware.
 
-| Platform   | CPU Support | GPU Support           | NPU Support                                                       |
-| ---------- | ----------- | --------------------- | ----------------------------------------------------------------- |
-| 🤖 Android | ✅          | ✅OpenCL<br>✅OpenGL | Google Tensor\*<br>✅ Qualcomm<br>✅ MediaTek<br>S.LSI\*<br>Intel\* |
-| 🍎 iOS     | ✅          | ✅ Metal                 | ANE\*                                                             |
-| 🐧 Linux   | ✅          | ✅ WebGPU                | N/A                                                               |
-| 🍎 macOS   | ✅          | ✅ WebGPU<br>✅ Metal                 | ANE\*                                                            |
-| 💻 Windows | ✅          | ✅ WebGPU                | Intel\*                                                           |
-| 🌐 Web     | ✅          | ✅ WebGPU                | Coming soon                                                       |
-| 🧩 IoT     |  ✅           | ✅ WebGPU                      | Broadcom\*<br>Raspberry Pi\*                                      |
+| Platform  | CPU     | GPU Support        | NPU Support                    |
+:           : Support :                    :                                :
+| --------- | ------- | ------------------ | ------------------------------ |
+| 🤖 Android | ✅       | ✅OpenCL<br>✅OpenGL | Google Tensor\*<br>✅           |
+:           :         :                    : Qualcomm<br>✅                  :
+:           :         :                    : MediaTek<br>S.LSI\*<br>Intel\* :
+| 🍎 iOS     | ✅       | ✅ Metal            | ANE\*                          |
+| 🐧 Linux   | ✅       | ✅ WebGPU           | Intel*                         |
+| 🍎 macOS   | ✅       | ✅ WebGPU<br>✅      | ANE\*                          |
+:           :         : Metal              :                                :
+| 💻 Windows | ✅       | ✅ WebGPU           | Intel\*                        |
+| 🌐 Web     | ✅       | ✅ WebGPU           | Coming soon                    |
+| 🧩 IoT     | ✅       | ✅ WebGPU           | Broadcom\*<br>Raspberry Pi\*   |
 
 *\*Coming soon*
 
