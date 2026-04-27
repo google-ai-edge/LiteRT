@@ -17,7 +17,10 @@ cc_library(
         "//tflite/delegates/gpu/common:operations",
         "//tflite/delegates/gpu/common:util",
         "//tflite/delegates/gpu/common/selectors:subgraph",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:any",
+        "@org_tensorflow//third_party/gloop/util/status:status_macros",
     ],
 )
 
@@ -57,6 +60,8 @@ cc_library(
         "//tflite/delegates/gpu/common:tensor",
         "//tflite/delegates/gpu/common/selectors:subgraph",
         "//tflite/delegates/gpu/common/task:qcom_thin_filter_desc",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:any",
     ],
 )
 
@@ -75,6 +80,8 @@ cc_library(
         "//tflite/delegates/gpu/common/selectors:subgraph",
         "//tflite/delegates/gpu/common/task:buffer_desc",
         "//tflite/delegates/gpu/common/task:gpu_operation",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:any",
     ],
 )
 
@@ -93,6 +100,8 @@ cc_library(
         "//tflite/delegates/gpu/common/tasks:elementwise",
         "//tflite/delegates/gpu/common/tasks:prelu",
         "//tflite/delegates/gpu/common/tasks:relu",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:any",
     ],
 )
