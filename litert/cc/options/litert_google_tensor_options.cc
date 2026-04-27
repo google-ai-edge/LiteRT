@@ -169,6 +169,26 @@ std::vector<std::vector<std::string>> GoogleTensorOptions::GetTestingFlags()
   return testing_flags;
 }
 
+void GoogleTensorOptions::SetPerformanceMode(PerformanceMode mode) {
+  LrtGoogleTensorOptions options_data = Get();
+  LrtGoogleTensorOptionsSetPerformanceMode(
+      options_data,
+      static_cast<LiteRtGoogleTensorOptionsPerformanceMode>(mode));
+}
+
+GoogleTensorOptions::PerformanceMode GoogleTensorOptions::GetPerformanceMode()
+    const {
+  LrtGoogleTensorOptions options_data = Get();
+  LiteRtGoogleTensorOptionsPerformanceMode performance_mode;
+  if (LrtGoogleTensorOptionsGetPerformanceMode(
+          options_data, &performance_mode) != kLiteRtStatusOk) {
+    // If the value hasn't been set or any other error occurs, return a
+    // default value.
+    return PerformanceMode::kBalanced;
+  }
+  return static_cast<PerformanceMode>(performance_mode);
+}
+
 void GoogleTensorOptions::SetOpFiltersProto(
     absl::string_view op_filters_proto) {
   internal::AssertOk(LrtGoogleTensorOptionsSetOpFiltersProto, Get(),

@@ -15,7 +15,6 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 
 #include <cinttypes>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
@@ -76,6 +75,19 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
   LITERT_RETURN_IF_ERROR(
       gt::ApplyDarwinnOptionsToGraph(graph, device_context->darwinn_options()));
 #endif  // LITERT_HAS_DARWINN_OPTIONS_SUPPORT
+
+  // Apply Google Tensor specific options.
+  constexpr char kEdgetpuPerformanceMode[] = "edgetpu_performance_mode";
+  if (const auto& options = device_context->google_tensor_options();
+      options.has_value() && options->performance_mode.has_value()) {
+    // Ignore the return value as this is unsupported on older runtime.
+    if (graph->AnnotateGraph(
+            kEdgetpuPerformanceMode,
+            std::to_string(static_cast<int>(*options->performance_mode))
+                .c_str()) != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_WARNING, "Failed to apply edgetpu_performance_mode.");
+    }
+  }
 
   LITERT_RETURN_IF_ERROR(device_context->RegisterGraph(graph));
   graph->registered_with_device_context_ = true;
