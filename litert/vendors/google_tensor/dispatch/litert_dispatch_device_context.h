@@ -79,6 +79,12 @@ class LiteRtDispatchDeviceContextT {
                                        const char* absl_nonnull value);
 
  private:
+  struct MmapRegion {
+    LiteRtDispatchExecutableHandle exec_handle;
+    void* addr;
+    size_t length;
+  };
+
   explicit LiteRtDispatchDeviceContextT(
       const LiteRtRuntimeContext* runtime_context,
       ThrContext* absl_nonnull thr_context)
@@ -86,12 +92,6 @@ class LiteRtDispatchDeviceContextT {
 
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchDeviceContextT() = default;
-
-  struct MmapRegion {
-    LiteRtDispatchExecutableHandle exec_handle;
-    void* addr;
-    size_t length;
-  };
 
   const LiteRtRuntimeContext* runtime_context_;
   ThrContext* absl_nonnull thr_context_;
