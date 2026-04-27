@@ -88,12 +88,21 @@ pytype_strict_library(
 )
 
 pytype_strict_library(
+    name = "litertlm_utils",
+    srcs = ["litertlm_utils.py"],
+    deps = [
+        ":litertlm_core",
+    ],
+)
+
+pytype_strict_library(
     name = "litertlm_builder",
     srcs = ["litertlm_builder.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":litertlm_core",
         ":litertlm_header_schema_py",
+        ":litertlm_utils",
         ":llm_metadata_py_pb2",
         "@com_google_protobuf//:protobuf_python",
         "@flatbuffers//:runtime_py",
