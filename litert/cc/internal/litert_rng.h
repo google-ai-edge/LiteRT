@@ -489,8 +489,7 @@ class RandomTensorType {
 
 template <size_t Rank, size_t MaxSize, LiteRtElementType... ElementType>
 const typename RandomTensorType<Rank, MaxSize, ElementType...>::DimSize
-    RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize =
-        RandomTensorType<Rank, MaxSize, ElementType...>::MaxDimSize();
+    RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize = MaxDimSize();
 
 template <typename>
 inline constexpr bool kUnsupportedRandomTensorDataType = false;

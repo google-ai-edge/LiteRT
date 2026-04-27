@@ -32,6 +32,19 @@ namespace litert::internal {
 
 namespace {
 
+constexpr absl::string_view kDllExtension = ".dll";
+constexpr absl::string_view kSoExtension = ".so";
+
+std::string StripSharedLibExtension(absl::string_view lib_name) {
+  std::string name(lib_name);
+  if (absl::EndsWith(name, kSoExtension)) {
+    name.resize(name.size() - kSoExtension.size());
+  } else if (absl::EndsWith(name, kDllExtension)) {
+    name.resize(name.size() - kDllExtension.size());
+  }
+  return name;
+}
+
 // Convert forward slashes to backslashes for Windows paths
 std::string NormalizePath(absl::string_view path) {
   return absl::StrReplaceAll(path, {{"/", "\\"}});
@@ -44,11 +57,37 @@ std::string ToWindowsLibName(absl::string_view lib_name) {
   if (absl::StartsWith(name, "lib")) {
     name = name.substr(3);
   }
-  // Replace .so with .dll
-  if (absl::EndsWith(name, ".so")) {
-    name = name.substr(0, name.length() - 3) + ".dll";
+  // Bazel still emits .so names for these Windows shared libraries on this
+  // branch, so strip the extension and let the finder accept either suffix.
+  if (absl::EndsWith(name, kSoExtension) ||
+      absl::EndsWith(name, kDllExtension)) {
+    name = StripSharedLibExtension(name);
   }
   return name;
+}
+
+std::vector<std::string> GetSearchPatterns(const std::string& lib_pattern,
+                                           bool full_match) {
+  if (!full_match) {
+    return {"*" + lib_pattern + "*" + std::string(kDllExtension),
+            "*" + lib_pattern + "*" + std::string(kSoExtension)};
+  }
+
+  // Some cross-platform callers pass POSIX-style .so names on Windows. Accept
+  // the requested name plus Windows/POSIX suffix variants from the same stem.
+  std::vector<std::string> patterns;
+  const auto add_pattern = [&](std::string pattern) {
+    if (std::find(patterns.begin(), patterns.end(), pattern) ==
+        patterns.end()) {
+      patterns.push_back(std::move(pattern));
+    }
+  };
+
+  const std::string stem = StripSharedLibExtension(lib_pattern);
+  add_pattern(lib_pattern);
+  add_pattern(stem + std::string(kDllExtension));
+  add_pattern(stem + std::string(kSoExtension));
+  return patterns;
 }
 
 // Get directory name from a path
@@ -85,8 +124,7 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
                                         const std::string& lib_pattern,
                                         bool full_match,
                                         std::vector<std::string>& results) {
-  results.clear();
-
+  const size_t initial_result_count = results.size();
   std::string normalized_path = NormalizePath(search_path);
   if (!Exists(normalized_path)) {
     LITERT_LOG(LITERT_ERROR, "Search path doesn't exist: %s",
@@ -99,35 +137,33 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
   if (!search_pattern.empty() && search_pattern.back() != '\\') {
     search_pattern += '\\';
   }
-  search_pattern += full_match ? lib_pattern : ("*" + lib_pattern + "*.dll");
+  const auto maybe_add_matches = [&](const std::string& pattern) {
+    const std::string full_pattern = search_pattern + pattern;
+    WIN32_FIND_DATAA find_data;
+    HANDLE find_handle = FindFirstFileA(full_pattern.c_str(), &find_data);
+    if (find_handle == INVALID_HANDLE_VALUE) {
+      return;
+    }
 
-  WIN32_FIND_DATAA find_data;
-  HANDLE find_handle = FindFirstFileA(search_pattern.c_str(), &find_data);
+    do {
+      if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        continue;
+      }
 
-  if (find_handle == INVALID_HANDLE_VALUE) {
-    // No matching files found
-    return kLiteRtStatusOk;
+      std::string filename(find_data.cFileName);
+      results.push_back(Join({normalized_path, filename}));
+    } while (FindNextFileA(find_handle, &find_data));
+
+    FindClose(find_handle);
+  };
+
+  for (const auto& pattern : GetSearchPatterns(lib_pattern, full_match)) {
+    maybe_add_matches(pattern);
   }
 
-  do {
-    // Skip directories
-    if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-      std::string filename(find_data.cFileName);
-
-      // Apply pattern matching if not using Windows wildcard search
-      if (full_match) {
-        if (filename == lib_pattern || filename == (lib_pattern + ".dll")) {
-          results.push_back(Join({normalized_path, filename}));
-        }
-      } else {
-        // Windows wildcard already filtered for us
-        results.push_back(Join({normalized_path, filename}));
-      }
-    }
-  } while (FindNextFileA(find_handle, &find_data));
-
-  FindClose(find_handle);
-
+  auto new_results_begin = results.begin() + initial_result_count;
+  std::sort(new_results_begin, results.end());
+  results.erase(std::unique(new_results_begin, results.end()), results.end());
   std::sort(results.begin(), results.end());
   return kLiteRtStatusOk;
 }
