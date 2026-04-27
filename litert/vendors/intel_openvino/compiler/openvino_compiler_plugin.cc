@@ -130,6 +130,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflRelu0To1,
     kLiteRtOpCodeTflSquare,
+    kLiteRtOpCodeShloComposite,
 };
 // clang format on
 

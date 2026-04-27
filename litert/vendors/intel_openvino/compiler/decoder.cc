@@ -32,6 +32,7 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "flatbuffers/flexbuffers.h"
 #include "litert/vendors/intel_openvino/utils.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -40,7 +41,7 @@ namespace openvino {
 
 // This has been picked from the openvino build:
 // build/src/frontends/tensorflow_lite/src/schema_generated.h
-constexpr std::array<std::pair<LiteRtOpCode, const char*>, 161> kLitertOvMap{
+constexpr std::array<std::pair<LiteRtOpCode, const char*>, 162> kLitertOvMap{
     {{kLiteRtOpCodeTflAdd, "ADD"},
      {kLiteRtOpCodeTflAveragePool2d, "AVERAGE_POOL_2D"},
      {kLiteRtOpCodeTflConcatenation, "CONCATENATION"},
@@ -203,7 +204,8 @@ constexpr std::array<std::pair<LiteRtOpCode, const char*>, 161> kLitertOvMap{
      {kLiteRtOpCodeTflAtan2, "ATAN2"},
      {kLiteRtOpCodeTflUnsortedSegmentMin, "UNSORTED_SEGMENT_MIN"},
      {kLiteRtOpCodeTflSign, "SIGN"},
-     {kLiteRtOpCodeTflUnpack, "UNPACK"}}};
+     {kLiteRtOpCodeTflUnpack, "UNPACK"},
+     {kLiteRtOpCodeShloComposite, "STABLEHLO_COMPOSITE"}}};
 
 constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
   for (const auto& entry : kLitertOvMap) {
@@ -840,6 +842,36 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         // Using the default value as per TFLite and OV spec.
         int32_t axis = -1;
         return ov::Any(axis);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeShloComposite:
+      if (name == "composite_name") {
+        const char* composite_name = nullptr;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetSHLOCompositeOpName(litert_op_, &composite_name),
+            ERROR_LOG_STR("name", op_name_.c_str()));
+        return ov::Any(std::string(composite_name));
+      } else if (name == "decomposition_subgraph_index") {
+        int32_t subgraph_index;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex(
+                litert_op_, &subgraph_index),
+            ERROR_LOG_STR("decomposition_subgraph_index", op_name_.c_str()));
+        return ov::Any(subgraph_index);
+      } else if (name == "epsilon") {
+        const uint8_t* attrs_data = nullptr;
+        int32_t attrs_size = 0;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetSHLOCompositeOpAttributes(litert_op_, &attrs_data,
+                                               &attrs_size),
+            ERROR_LOG_STR("composite_attributes", op_name_.c_str()));
+        if (attrs_size <= 0 || attrs_data == nullptr) {
+          return ERROR_LOG_STR("epsilon (empty composite_attributes)",
+                               op_name_.c_str());
+        }
+        auto root = flexbuffers::GetRoot(attrs_data, attrs_size);
+        auto map = root.AsMap();
+        return ov::Any(map["epsilon"].AsDouble());
       }
       break;
     default:
