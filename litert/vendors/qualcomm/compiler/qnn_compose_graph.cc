@@ -63,6 +63,7 @@
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/group_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/layer_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
@@ -771,8 +772,13 @@ LiteRtStatus BuildShloCompositeOp(
     auto attributes_map = info->attributes_map.value();
     float epsilon = attributes_map["epsilon"].AsFloat();
     int num_groups = attributes_map["num_groups"].AsInt32();
-    op_wrappers = ::qnn::BuildGroupNormOp(tensor_pool, input_tensors,
-                                          output_tensors, epsilon, num_groups);
+    if (num_groups == 1) {
+      op_wrappers = ::qnn::BuildLayerNormOp(
+          tensor_pool, input_tensors, output_tensors, epsilon);
+    } else {
+      op_wrappers = ::qnn::BuildGroupNormOp(
+          tensor_pool, input_tensors, output_tensors, epsilon, num_groups);
+    }
   }
   if (info->name == CompositeOptions::kL2Norm) {
     auto attributes_map = info->attributes_map.value();
@@ -824,10 +830,10 @@ LiteRtStatus BuildConv2dOp(const litert::Op& litert_op,
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers = ::qnn::BuildConv2dOp(
-      tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
-      dilation_h_factor, dilation_w_factor, qnn_padding,
-      use_int64_bias_as_int32);
+  op_wrappers = ::qnn::BuildConv2dOp(tensor_pool, input_tensors,
+                                     {activation_input}, stride_h, stride_w,
+                                     dilation_h_factor, dilation_w_factor,
+                                     qnn_padding, use_int64_bias_as_int32);
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
