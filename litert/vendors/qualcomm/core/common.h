@@ -103,6 +103,9 @@ class Options {
   void SetUseFoldReLU(bool use_fold_relu);
   bool GetUseFoldReLU() const;
 
+  void SetPPoint(std::int32_t p_point);
+  std::int32_t GetPPoint() const;
+
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
 
@@ -144,6 +147,7 @@ class Options {
   bool enable_weight_sharing_ = false;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
+  std::int32_t p_point_ = 0;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;

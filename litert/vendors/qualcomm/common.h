@@ -114,6 +114,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
   qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());
+  qnn_options.SetPPoint(qualcomm_options.GetPPoint());
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetDspPerformanceMode(static_cast<::qnn::DspPerformanceMode>(

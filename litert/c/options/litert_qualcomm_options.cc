@@ -43,6 +43,7 @@ struct LrtQualcommOptionsT {
   std::optional<bool> enable_weight_sharing;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
+  std::optional<std::int32_t> p_point;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
@@ -108,6 +109,10 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
+        } else if (key == "p_point") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          LrtQualcommOptionsSetPPoint(parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -227,6 +232,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->use_fold_relu.has_value()) {
     toml << "use_fold_relu = " << (*options->use_fold_relu ? "true" : "false")
          << "\n";
+  }
+  if (options->p_point.has_value()) {
+    toml << "p_point = " << *options->p_point << "\n";
   }
   if (options->htp_performance_mode.has_value()) {
     toml << "htp_performance_mode = "
@@ -507,6 +515,28 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   }
 
   *use_fold_relu = options->use_fold_relu.value_or(true);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetPPoint(LrtQualcommOptions options,
+                                         std::int32_t p_point) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->p_point = p_point;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetPPoint(LrtQualcommOptions options,
+                                         std::int32_t* p_point) {
+  if (p_point == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *p_point = options->p_point.value_or(0);
 
   return kLiteRtStatusOk;
 }

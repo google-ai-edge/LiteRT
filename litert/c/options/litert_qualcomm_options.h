@@ -153,6 +153,15 @@ LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
                                               bool* use_fold_relu);
 
+// P points are experimental (HTP backend with O3 only) and map to predefined
+// compiler configurations affecting latency and DRAM bandwidth.
+
+LiteRtStatus LrtQualcommOptionsSetPPoint(LrtQualcommOptions options,
+                                         int32_t p_point);
+
+LiteRtStatus LrtQualcommOptionsGetPPoint(LrtQualcommOptions options,
+                                         int32_t* p_point);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 // htp_performance_mode

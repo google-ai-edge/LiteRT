@@ -160,6 +160,19 @@ bool QualcommOptions::GetUseFoldReLU() {
   return val;
 }
 
+void QualcommOptions::SetPPoint(std::int32_t p_point) {
+  LrtQualcommOptionsSetPPoint(options_, p_point);
+}
+
+std::int32_t QualcommOptions::GetPPoint() {
+  std::int32_t val;
+  auto status = LrtQualcommOptionsGetPPoint(options_, &val);
+  if (status == kLiteRtStatusErrorNotFound) {
+    return 0;
+  }
+  return val;
+}
+
 void QualcommOptions::SetProfiling(Profiling profiling) {
   LrtQualcommOptionsSetProfiling(
       options_, static_cast<LrtQualcommOptionsProfiling>(profiling));

@@ -99,6 +99,8 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
+ABSL_DECLARE_FLAG(int32_t, qualcomm_p_point);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
