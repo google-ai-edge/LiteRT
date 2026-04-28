@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -53,7 +54,10 @@ int TheCapabilities = 0;
 
 // Tensor buffer types that are supported by the available SouthBound
 // implementation.
-std::vector<LiteRtTensorBufferType> TheSupportedTensorBufferTypes;
+std::vector<LiteRtTensorBufferType>& TheSupportedTensorBufferTypes() {
+  static absl::NoDestructor<std::vector<LiteRtTensorBufferType>> storage;
+  return *storage;
+}
 
 }  // namespace
 
@@ -77,7 +81,7 @@ LiteRtStatus InitializeDispatchApiConfig(
     TheCapabilities |= kLiteRtDispatchCapabilitiesGraph;
   }
 
-  TheSupportedTensorBufferTypes = {
+  TheSupportedTensorBufferTypes() = {
 #if LITERT_HAS_AHWB_SUPPORT
       kLiteRtTensorBufferTypeAhwb,
 #endif
@@ -85,11 +89,11 @@ LiteRtStatus InitializeDispatchApiConfig(
 #if LITERT_HAS_DMABUF_SUPPORT
   if (GoogleTensorSouthBoundFeatureSupported(
           GoogleTensorSouthBoundFeature::kDmaBufRegistration)) {
-    TheSupportedTensorBufferTypes.push_back(kLiteRtTensorBufferTypeDmaBuf);
+    TheSupportedTensorBufferTypes().push_back(kLiteRtTensorBufferTypeDmaBuf);
   }
 #endif
-  if (TheSupportedTensorBufferTypes.empty()) {
-    TheSupportedTensorBufferTypes.push_back(kLiteRtTensorBufferTypeHostMemory);
+  if (TheSupportedTensorBufferTypes().empty()) {
+    TheSupportedTensorBufferTypes().push_back(kLiteRtTensorBufferTypeHostMemory);
   }
 
   TheDispatchApiConfigIsInitialized = true;
@@ -108,7 +112,7 @@ int GetTheCapabilities() {
 
 absl::Span<const LiteRtTensorBufferType> GetTheSupportedTensorBufferTypes() {
   CHECK_DISPATCH_API_CONFIG_INIT();
-  return TheSupportedTensorBufferTypes;
+  return TheSupportedTensorBufferTypes();
 }
 
 }  // namespace litert::google_tensor

@@ -32,6 +32,7 @@ load(
     "export_lrt_tflite_runtime_linkopt",
     "export_lrt_tflite_runtime_script",
     "litert_c_api_library",
+    "litert_static_initializer_test",
 )
 load(
     "//litert/build_common:special_rule.bzl",
@@ -817,6 +818,16 @@ sh_test(
         "litert_runtime_c_api_so_symbols.txt",
         ":libLiteRt.so",
     ],
+)
+
+litert_static_initializer_test(
+    name = "litert_runtime_c_api_so_static_initializer_test",
+    # We allow 2 initializers which are currently introduced by toolchain
+    # dependencies in the .preinit_array:
+    # 1. __local_cpu_feature_fail_fast_preinit (from libgcc/compiler-rt)
+    # 2. setup_dl_debug_hook (from libunwind)
+    allowed_initializers = 0,  # copybara:comment_replace allowed_initializers = 2,
+    target = ":litert_runtime_c_api_so",
 )
 
 macos_dylib(
