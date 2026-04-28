@@ -99,6 +99,9 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> WriteTensorTo(
       const std::filesystem::path& output_folder, ::qnn::TensorWrapper& tensor);
 
+  litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+      const LiteRtRankedTensorType& tensor_type);
+
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContext device_context_;
   const litert::qnn::QnnManager::ContextHandle& context_handle_;
