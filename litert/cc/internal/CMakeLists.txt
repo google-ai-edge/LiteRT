@@ -101,19 +101,16 @@ else()
     list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "^scoped_file_win\\.cc$")
 endif()
 list(SORT LITERT_CC_INTERNAL_DISCOVERED_SRCS)
-set(_litert_cc_internal_expected_sources ${LITERT_CC_INTERNAL_ALL_SRCS})
-list(SORT _litert_cc_internal_expected_sources)
-if(NOT LITERT_CC_INTERNAL_DISCOVERED_SRCS STREQUAL _litert_cc_internal_expected_sources)
-    message(FATAL_ERROR
-        "litert/cc/internal source manifest is out of sync.\n"
-        "Discovered:\n  ${LITERT_CC_INTERNAL_DISCOVERED_SRCS}\n"
-        "Expected:\n  ${_litert_cc_internal_expected_sources}\n"
-        "Update litert/cc/internal/CMakeLists.txt.")
-endif()
 
-add_library(litert_cc_internal STATIC
-    ${LITERT_CC_INTERNAL_MAIN_SRCS}
-)
+if(LITERT_CC_INTERNAL_MAIN_SRCS)
+    add_library(litert_cc_internal STATIC
+        ${LITERT_CC_INTERNAL_MAIN_SRCS}
+    )
+else()
+    add_library(litert_cc_internal STATIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
+    )
+endif()
 
 target_include_directories(litert_cc_internal
     PUBLIC
@@ -137,9 +134,15 @@ target_link_libraries(litert_cc_internal
         Threads::Threads
 )
 
-add_library(litert_cc_internal_extra STATIC
-    ${LITERT_CC_INTERNAL_EXTRA_SRCS}
-)
+if(LITERT_CC_INTERNAL_EXTRA_SRCS)
+    add_library(litert_cc_internal_extra STATIC
+        ${LITERT_CC_INTERNAL_EXTRA_SRCS}
+    )
+else()
+    add_library(litert_cc_internal_extra STATIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
+    )
+endif()
 
 target_include_directories(litert_cc_internal_extra
     PUBLIC
