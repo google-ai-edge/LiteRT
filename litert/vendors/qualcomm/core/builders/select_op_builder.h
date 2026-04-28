@@ -5,7 +5,6 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SELECT_OP_BUILDER_H_
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
@@ -15,10 +14,6 @@ OpWrapper CreateSelectOp(const TensorWrapper& condition,
                          const TensorWrapper& input_1,
                          const TensorWrapper& input_2,
                          const TensorWrapper& output);
-
-std::vector<OpWrapper> BuildSelectOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
 
 }  // namespace qnn
 
