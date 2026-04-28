@@ -75,15 +75,36 @@ def read_model_from_bytearray(model_bytearray):
   if sys.byteorder == 'big':
     byte_swap_tflite_model_obj(model, 'little', 'big')
 
-  # Offset handling for models > 2GB
+  # Offset handling for models > 2GB. Validate each (offset, size) using
+  # overflow-safe arithmetic before slicing; Python slicing clamps
+  # out-of-range indices silently, which lets crafted models produce
+  # aliased buffers and corrupted re-serialized output. Reject any
+  # (offset, size) that would exceed the model bytearray length.
+  model_len = len(model_bytearray)
   for buffer in model.buffers:
     if buffer.offset:
+      if buffer.offset > model_len or buffer.size > model_len - buffer.offset:
+        raise ValueError(
+            f'Buffer offset+size exceeds model length: '
+            f'offset={buffer.offset}, size={buffer.size}, '
+            f'model_len={model_len}'
+        )
       buffer.data = model_bytearray[buffer.offset : buffer.offset + buffer.size]
       buffer.offset = 0
       buffer.size = 0
   for subgraph in model.subgraphs:
     for op in subgraph.operators:
       if op.largeCustomOptionsOffset:
+        if (
+            op.largeCustomOptionsOffset > model_len
+            or op.largeCustomOptionsSize
+            > model_len - op.largeCustomOptionsOffset
+        ):
+          raise ValueError(
+              f'Op largeCustomOptions offset+size exceeds model length: '
+              f'offset={op.largeCustomOptionsOffset}, '
+              f'size={op.largeCustomOptionsSize}, model_len={model_len}'
+          )
         op.customOptions = model_bytearray[
             op.largeCustomOptionsOffset : op.largeCustomOptionsOffset
             + op.largeCustomOptionsSize
