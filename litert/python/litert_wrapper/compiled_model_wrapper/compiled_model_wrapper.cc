@@ -40,6 +40,7 @@
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
@@ -172,7 +173,10 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     PyObject* environment_capsule, const char* model_path, int hardware_accel,
-    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
+    int cpu_num_threads, bool enforce_f32_gpu, int cpu_kernel_mode,
+    int xnnpack_flags, const char* xnnpack_weight_cache_path,
+    bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
+    bool enable_benchmark_mode, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -197,22 +201,47 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
 
-  if (enforce_f32_gpu) {
+  if (enforce_f32_gpu || enable_constant_tensor_sharing ||
+      enable_infinite_float_capping || enable_benchmark_mode) {
     auto gpu_options_or = options.GetGpuOptions();
     if (!gpu_options_or) {
       if (out_error) *out_error = gpu_options_or.Error().Message();
       return nullptr;
     }
-    gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    if (enforce_f32_gpu) {
+      gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    }
+    if (enable_constant_tensor_sharing) {
+      gpu_options_or->EnableConstantTensorSharing(true);
+    }
+    if (enable_infinite_float_capping) {
+      gpu_options_or->EnableInfiniteFloatCapping(true);
+    }
+    if (enable_benchmark_mode) {
+      gpu_options_or->EnableBenchmarkMode(true);
+    }
   }
 
-  if (cpu_num_threads > 0) {
+  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0 ||
+      (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path)) {
     auto cpu_options_or = options.GetCpuOptions();
     if (!cpu_options_or) {
       if (out_error) *out_error = cpu_options_or.Error().Message();
       return nullptr;
     }
-    cpu_options_or->SetNumThreads(cpu_num_threads);
+    if (cpu_num_threads > 0) {
+      cpu_options_or->SetNumThreads(cpu_num_threads);
+    }
+    if (cpu_kernel_mode >= 0) {
+      cpu_options_or->SetKernelMode(
+          static_cast<LiteRtCpuKernelMode>(cpu_kernel_mode));
+    }
+    if (xnnpack_flags >= 0) {
+      cpu_options_or->SetXNNPackFlags(static_cast<uint32_t>(xnnpack_flags));
+    }
+    if (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path) {
+      cpu_options_or->SetXNNPackWeightCachePath(xnnpack_weight_cache_path);
+    }
   }
 
   // Create a compiled model
@@ -237,7 +266,10 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
+    int cpu_num_threads, bool enforce_f32_gpu, int cpu_kernel_mode,
+    int xnnpack_flags, const char* xnnpack_weight_cache_path,
+    bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
+    bool enable_benchmark_mode, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -272,22 +304,47 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
 
-  if (enforce_f32_gpu) {
+  if (enforce_f32_gpu || enable_constant_tensor_sharing ||
+      enable_infinite_float_capping || enable_benchmark_mode) {
     auto gpu_options_or = options.GetGpuOptions();
     if (!gpu_options_or) {
       if (out_error) *out_error = gpu_options_or.Error().Message();
       return nullptr;
     }
-    gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    if (enforce_f32_gpu) {
+      gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    }
+    if (enable_constant_tensor_sharing) {
+      gpu_options_or->EnableConstantTensorSharing(true);
+    }
+    if (enable_infinite_float_capping) {
+      gpu_options_or->EnableInfiniteFloatCapping(true);
+    }
+    if (enable_benchmark_mode) {
+      gpu_options_or->EnableBenchmarkMode(true);
+    }
   }
 
-  if (cpu_num_threads > 0) {
+  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0 ||
+      (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path)) {
     auto cpu_options_or = options.GetCpuOptions();
     if (!cpu_options_or) {
       if (out_error) *out_error = cpu_options_or.Error().Message();
       return nullptr;
     }
-    cpu_options_or->SetNumThreads(cpu_num_threads);
+    if (cpu_num_threads > 0) {
+      cpu_options_or->SetNumThreads(cpu_num_threads);
+    }
+    if (cpu_kernel_mode >= 0) {
+      cpu_options_or->SetKernelMode(
+          static_cast<LiteRtCpuKernelMode>(cpu_kernel_mode));
+    }
+    if (xnnpack_flags >= 0) {
+      cpu_options_or->SetXNNPackFlags(static_cast<uint32_t>(xnnpack_flags));
+    }
+    if (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path) {
+      cpu_options_or->SetXNNPackWeightCachePath(xnnpack_weight_cache_path);
+    }
   }
 
   // Create a compiled model
