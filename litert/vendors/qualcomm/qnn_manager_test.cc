@@ -13,6 +13,7 @@
 
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
+#include <cstdlib>
 #include <optional>
 
 #include <gmock/gmock.h>
@@ -167,6 +168,35 @@ TEST_F(SdkVersionTest, HandlesGreaterThanOrEqual) {
   EXPECT_GE(v1_1_0, v1_0_1);
   EXPECT_GE(v2_0_0, v1_1_0);
   EXPECT_FALSE(v1_0_0 >= v1_0_1);
+}
+
+TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
+  static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
+  const char* original_adsp = getenv(kAdsp);
+
+  // Set a known value
+  setenv(kAdsp, "/my/path", /*overwrite=*/1);
+
+  auto options = ::qnn::Options();
+
+  // This will fail to load libraries but should update env var.
+  auto qnn = QnnManager::Create(options, "/my/path");
+
+  // Verify that it didn't duplicate
+  const char* new_adsp = getenv(kAdsp);
+  EXPECT_STREQ(new_adsp, "/my/path");
+
+  // Now try to add a new one
+  auto qnn2 = QnnManager::Create(options, "/another/path");
+  new_adsp = getenv(kAdsp);
+  EXPECT_STREQ(new_adsp, "/another/path;/my/path");
+
+  // Restore original value
+  if (original_adsp) {
+    setenv(kAdsp, original_adsp, /*overwrite=*/1);
+  } else {
+    unsetenv(kAdsp);
+  }
 }
 
 }  // namespace

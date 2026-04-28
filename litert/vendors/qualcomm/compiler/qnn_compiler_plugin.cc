@@ -33,7 +33,9 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
@@ -223,6 +225,17 @@ class LiteRtCompilerPluginT {
         }
       }
     }
+
+    if (env_options) {
+      LiteRtAny compiler_plugin_lib_dir_any;
+      auto status = ctx->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagCompilerPluginLibraryDir,
+          &compiler_plugin_lib_dir_any);
+      if (status == kLiteRtStatusOk && compiler_plugin_lib_dir_any.str_value) {
+        shared_library_dir_ =
+            std::string(compiler_plugin_lib_dir_any.str_value);
+      }
+    }
   }
 
   const ::qnn::Options& Options() const { return qnn_options_; }
@@ -233,6 +246,10 @@ class LiteRtCompilerPluginT {
 
   QnnManager* QNN() { return qnn_manager_.get(); }
 
+  const std::optional<std::string>& shared_library_dir() const {
+    return shared_library_dir_;
+  }
+
  private:
   litert::Expected<litert::internal::OptionsWrapper> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
@@ -240,6 +257,7 @@ class LiteRtCompilerPluginT {
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null Qualcomm options");
   ::qnn::Options qnn_options_{};
   QnnManager::Ptr qnn_manager_ = nullptr;
+  std::optional<std::string> shared_library_dir_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -271,7 +289,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   QnnManager* qnn_manager = compiler_plugin->QNN();
   if (!qnn_manager) {
     auto qnn_manager_or = QnnManager::Create(
-        compiler_plugin->Options(), std::nullopt,
+        compiler_plugin->Options(), compiler_plugin->shared_library_dir(),
         soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
@@ -364,8 +382,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   if (!qnn_manager || ir_backend_override) {
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
-    auto qnn_manager_or =
-        QnnManager::Create(options, std::nullopt, opt_soc_model);
+    auto qnn_manager_or = QnnManager::Create(
+        options, compiler_plugin->shared_library_dir(), opt_soc_model);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();

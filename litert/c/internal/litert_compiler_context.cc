@@ -14,6 +14,7 @@
 
 #include "litert/c/internal/litert_compiler_context.h"
 
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/c/litert_opaque_options.h"
@@ -51,6 +52,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .get_opaque_options = LiteRtGetOpaqueOptions,
       .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
       .destroy_options = LiteRtDestroyOptions,
+      .get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
   };
   return &ctx;
 }
