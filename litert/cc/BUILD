@@ -1301,6 +1301,7 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_profiler",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/internal:litert_runtime_proxy_runtimecapi",
+        "//litert/cc/internal:litert_tensor_buffer_utils",
         # C++ Common Options API targets.
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
@@ -1359,7 +1360,6 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer_types",
-    srcs = ["litert_tensor_buffer_types.cc"],
     hdrs = ["litert_tensor_buffer_types.h"],
     deps = [
         "//litert/c:litert_tensor_buffer_types",

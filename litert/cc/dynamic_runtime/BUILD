@@ -205,7 +205,9 @@ cc_library(
     name = "litert_tensor_buffer_types",
     hdrs = ["//litert/cc:litert_tensor_buffer_types.h"],
     visibility = ["//litert:litert_public"],
-    deps = [] + select({
+    deps = [
+        "//litert/cc/internal:litert_tensor_buffer_utils",
+    ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
