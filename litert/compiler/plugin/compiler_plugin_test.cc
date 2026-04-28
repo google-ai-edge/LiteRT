@@ -77,6 +77,7 @@ TEST(CompilerPluginTest, FindTestPluginOk) {
 }
 
 TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   auto litert_options = Options::Create();
   auto compiler_options = CompilerOptions::Create();
   compiler_options->SetPartitionStrategy(
@@ -92,15 +93,21 @@ TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
   auto opaque_compiler_options =
       litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_built_options,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  *litert_options, env.GetHolder()));
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)},
-                                 /*env=*/nullptr, litert_options->Get()));
+                                 /*env=*/nullptr, litert_built_options.get()));
   EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
 }
 
 TEST(CompilerPluginTest, GetOptionsFromTestPluginOk) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   auto litert_options = Options::Create();
   auto compiler_options = CompilerOptions::Create();
   compiler_options->SetPartitionStrategy(
@@ -116,11 +123,14 @@ TEST(CompilerPluginTest, GetOptionsFromTestPluginOk) {
   auto opaque_compiler_options =
       litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_built_options,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  *litert_options, env.GetHolder()));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)},
-                                 /*env=*/nullptr, litert_options->Get()));
+                                 /*env=*/nullptr, litert_built_options.get()));
 
   auto compiler_options_from_plugin = plugin.CompilerOptions();
   ASSERT_TRUE(compiler_options_from_plugin);

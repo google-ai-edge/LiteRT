@@ -129,6 +129,7 @@ target_link_libraries(run_model_simple
         absl::flags_parse
         absl::random_random
         absl::log
+        absl::log_internal_message
         absl::log_internal_check_op
         absl::string_view
         absl::span
@@ -149,5 +150,6 @@ target_link_libraries(dump_model_simple
         litert_cc_api
         absl::span
         absl::log
+        absl::log_internal_message
         absl::log_internal_check_op
 )

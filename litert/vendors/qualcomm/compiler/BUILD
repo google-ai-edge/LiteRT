@@ -118,10 +118,12 @@ litert_test(
         ":qnn_compiler_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context_testonly",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_environment",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_model_predicates",
         "//litert/cc/dynamic_runtime:litert_options",

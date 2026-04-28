@@ -363,11 +363,6 @@ if(LITERT_PLATFORM_ANDROID)
   target_link_libraries(litert_runtime_c_api_static INTERFACE ${LOG_LIB} android log nativewindow ${ANDROID_EGL_LIB} ${ANDROID_GLESV3_LIB} ${ANDROID_GLESV2_LIB})
 endif()
 
-target_link_libraries(litert_runtime_c_api_shared_lib
-    PUBLIC
-        ${_litert_runtime_c_api_public_deps}
-)
-
 if(APPLE)
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
@@ -379,8 +374,9 @@ else()
       PRIVATE
         -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        -Wl,--no-whole-archive
-        ${_litert_runtime_c_api_public_deps})
+        ${_litert_runtime_c_api_public_deps}
+        -Wl,--no-whole-archive)
+  target_link_options(litert_runtime_c_api_shared_lib PRIVATE -Wl,--no-undefined)
 endif()
 # GPU/GL dependencies by platform
 if(APPLE)

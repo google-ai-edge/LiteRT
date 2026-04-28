@@ -19,7 +19,9 @@
 #include <gtest/gtest.h>
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -29,13 +31,14 @@ namespace litert::compiler {
 namespace {
 
 TEST(OptionsTest, GetOpaqueOptions) {
-  LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
+  LiteRtOptions c_options = nullptr;
+  ASSERT_EQ(LiteRtCreateOptions(&c_options), kLiteRtStatusOk);
 
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   ASSERT_NE(ctx, nullptr);
 
   litert::internal::OptionsWrapper compiler_options(
-      litert::internal::ContextWrapper(ctx), options.Get());
+      litert::internal::ContextWrapper(ctx), c_options);
 
   auto result = compiler_options.GetOpaqueOptions();
   // We expect success or NotFound depending on whether empty options are
@@ -43,6 +46,8 @@ TEST(OptionsTest, GetOpaqueOptions) {
   if (!result.HasValue()) {
     EXPECT_EQ(result.Error().Status(), kLiteRtStatusErrorNotFound);
   }
+
+  LiteRtDestroyOptions(c_options);
 }
 
 TEST(OptionsTest, FindOpaqueOptionsData) {
@@ -59,11 +64,17 @@ TEST(OptionsTest, FindOpaqueOptionsData) {
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
   ASSERT_TRUE(options.AddOpaqueOptions(std::move(opaque_options)));
 
+  LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(auto litert_options_ptr,
+                         litert::internal::LiteRtOptionsPtrBuilder::Build(
+                             options, env.GetHolder()));
+
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   ASSERT_NE(ctx, nullptr);
 
+  // Create a litert::internal::OptionsWrapper from the LiteRtOptions object.
   litert::internal::OptionsWrapper compiler_options(
-      litert::internal::ContextWrapper(ctx), options.Get());
+      litert::internal::ContextWrapper(ctx), litert_options_ptr.get());
 
   auto result = compiler_options.FindOpaqueOptionsData(kDummyOpaqueOptionsId);
   ASSERT_TRUE(result.HasValue());

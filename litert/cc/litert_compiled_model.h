@@ -335,9 +335,10 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   static Expected<CompiledModel> Create(litert::Environment& env,
                                         const std::string& model_filename,
                                         Options& compilation_options) {
-    LITERT_RETURN_IF_ERROR(compilation_options.Build());
-    LiteRtModel litert_model;
     auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(auto owned_options,
+                            BuildOptions(compilation_options, env_holder));
+    LiteRtModel litert_model;
     if (auto status = env_holder.runtime->CreateModelFromFile(
             model_filename.c_str(), &litert_model);
         status != kLiteRtStatusOk) {
@@ -345,7 +346,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     }
     LiteRtCompiledModel compiled_model;
     if (auto res = env_holder.runtime->CreateCompiledModel(
-            env_holder.handle, litert_model, compilation_options.Get(),
+            env_holder.handle, litert_model, owned_options.get(),
             &compiled_model);
         res != kLiteRtStatusOk) {
       env_holder.runtime->DestroyModel(litert_model);
@@ -353,7 +354,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     }
     return CompiledModel(env_holder, litert_model,
                          /*model_owned=*/OwnHandle::kYes, compiled_model,
-                         /*owned=*/OwnHandle::kYes);
+                         /*owned=*/OwnHandle::kYes, std::move(owned_options));
   }
 
   /// @brief An overload of `Create` that takes a buffer reference to the model
@@ -361,9 +362,11 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   static Expected<CompiledModel> Create(litert::Environment& env,
                                         BufferRef<uint8_t> model_buffer,
                                         Options& compilation_options) {
-    LITERT_RETURN_IF_ERROR(compilation_options.Build());
-    LiteRtModel litert_model;
     auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        BuildOptions(std::move(compilation_options), env.GetHolder()));
+    LiteRtModel litert_model;
     if (auto status = env_holder.runtime->CreateModelFromBuffer(
             model_buffer.Data(), model_buffer.Size(), &litert_model);
         status != kLiteRtStatusOk) {
@@ -371,7 +374,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     }
     LiteRtCompiledModel compiled_model;
     if (auto res = env_holder.runtime->CreateCompiledModel(
-            env_holder.handle, litert_model, compilation_options.Get(),
+            env_holder.handle, litert_model, owned_options.get(),
             &compiled_model);
         res != kLiteRtStatusOk) {
       env_holder.runtime->DestroyModel(litert_model);
@@ -379,7 +382,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     }
     return CompiledModel(env_holder, litert_model,
                          /*model_owned=*/OwnHandle::kYes, compiled_model,
-                         /*owned=*/OwnHandle::kYes);
+                         /*owned=*/OwnHandle::kYes, std::move(owned_options));
   }
 
   /// @brief A simplified version of `Create` that uses default compilation
@@ -771,12 +774,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                      absl::Span<const TensorBuffer> input_buffers,
                      absl::Span<const TensorBuffer> output_buffers,
                      Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
+
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunHelper(signature_index, input_buffers, output_buffers, async,
-                     run_options ? run_options->Get() : nullptr, nullptr);
+                     options_handle, nullptr);
   }
 
   /// @brief Runs with per-request scheduling info for a given signature index.
@@ -793,13 +800,17 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
                      absl::Span<const TensorBuffer> output_buffers,
                      Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
+
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options,
+                              BuildOptions(std::move(*run_options), env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async, run_options ? run_options->Get() : nullptr,
-                     nullptr);
+                     async, options_handle, nullptr);
   }
 
   /// @brief Runs default signature with per-request scheduling info.
@@ -874,12 +885,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                           const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
                           bool& async, Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
+
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     async = true;
     return RunHelper(signature_index, input_buffers, output_buffers, async,
-                     run_options ? run_options->Get() : nullptr, nullptr);
+                     options_handle, nullptr);
   }
 
   /// @brief Runs asynchronously with per-request scheduling info for a given
@@ -898,13 +913,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   Expected<void> RunAsync(const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
                           bool& async, Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
+
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     async = true;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async, run_options ? run_options->Get() : nullptr,
-                     nullptr);
+                     async, options_handle, nullptr);
   }
 
   /// @brief Runs default signature asynchronously with per-request scheduling
@@ -1069,12 +1087,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
+
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunMapHelper(signature_key, input_map, output_map, async,
-                        run_options ? run_options->Get() : nullptr, nullptr);
+                        options_handle, nullptr);
   }
 
   /// @brief Runs by signature key with per-request scheduling info using named
@@ -1108,13 +1130,17 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
+
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunMapWithIndexHelper(
-        /*signature_index=*/0, input_map, output_map, async,
-        run_options ? run_options->Get() : nullptr, nullptr);
+        /*signature_index=*/0, input_map, output_map, async, options_handle,
+        nullptr);
   }
 
   /// @brief Runs default signature with per-request scheduling info using
@@ -1149,12 +1175,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async, Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
+
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     async = true;
     return RunMapHelper(signature_key, input_map, output_map, async,
-                        run_options ? run_options->Get() : nullptr, nullptr);
+                        options_handle, nullptr);
   }
 
   /// @brief Runs by signature key asynchronously with per-request scheduling
@@ -1741,15 +1771,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   static Expected<CompiledModel> Create(litert::Environment& env,
                                         const LiteRtModel litert_model,
                                         Options& compilation_options) {
-    LITERT_RETURN_IF_ERROR(compilation_options.Build());
-    LiteRtCompiledModel compiled_model;
     auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        BuildOptions(std::move(compilation_options), env_holder));
+    LiteRtCompiledModel compiled_model;
     LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
-        env_holder.handle, litert_model, compilation_options.Get(),
-        &compiled_model));
+        env_holder.handle, litert_model, owned_options.get(), &compiled_model));
     return CompiledModel(env_holder, litert_model,
                          /*model_owned=*/OwnHandle::kNo, compiled_model,
-                         /*owned=*/OwnHandle::kYes);
+                         /*owned=*/OwnHandle::kYes, std::move(owned_options));
   }
 
   /// @internal
@@ -1762,9 +1793,19 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   static Expected<CompiledModel> Create(
       litert::Environment& env, const LiteRtModel litert_model,
       litert::HwAccelerators hardware_accelerators) {
-    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    Options compilation_options;
     compilation_options.SetHardwareAccelerators(hardware_accelerators);
     return Create(env, litert_model, compilation_options);
+  }
+
+  /// @internal
+  /// @brief Builds the options object and returns an owning handle.
+  static Expected<internal::LiteRtOptionsPtr> BuildOptions(
+      const Options& options, const internal::EnvironmentHolder& env) {
+    LITERT_ASSIGN_OR_RETURN(
+        auto options_handle,
+        internal::LiteRtOptionsPtrBuilder::Build(options, env));
+    return std::move(options_handle);
   }
 
   /// @brief Constructs a `CompiledModel` instance.
@@ -1775,14 +1816,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// `compiled_model` handle.
   explicit CompiledModel(internal::EnvironmentHolder& env,
                          LiteRtModel litert_model, OwnHandle model_owned,
-                         LiteRtCompiledModel compiled_model, OwnHandle owned)
+                         LiteRtCompiledModel compiled_model, OwnHandle owned,
+                         internal::LiteRtOptionsPtr options = {})
       : internal::BaseHandle<LiteRtCompiledModel>(
             compiled_model,
             [runtime = env.runtime](LiteRtCompiledModel compiled_model) {
               runtime->DestroyCompiledModel(compiled_model);
             },
             owned),
-        env_(env) {
+        env_(env),
+        options_(std::move(options)) {
     if (model_owned == OwnHandle::kYes) {
       model_ = internal::BaseHandle<LiteRtModel>(
           litert_model,
@@ -2162,6 +2205,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   }
 
   internal::EnvironmentHolder env_;
+  internal::LiteRtOptionsPtr options_;
   absl::AnyInvocable<bool()> check_cancelled_func_;
   internal::BaseHandle<LiteRtModel> model_;
 };
