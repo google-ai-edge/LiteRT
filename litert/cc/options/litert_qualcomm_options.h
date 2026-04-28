@@ -17,13 +17,16 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert::qualcomm {
 
@@ -65,7 +68,11 @@ class QualcommOptions {
     return LrtQualcommOptionsGetIdentifier();
   }
 
-  static Expected<QualcommOptions> Create();
+  static Expected<QualcommOptions> Create() {
+    LrtQualcommOptions c_options;
+    LITERT_RETURN_IF_ERROR(LrtCreateQualcommOptions(&c_options));
+    return QualcommOptions(c_options);
+  }
 
   /// @brief Determines the logging level of all underlying Qualcomm SDK
   /// libraries.
@@ -80,8 +87,18 @@ class QualcommOptions {
     kDebug = kLiteRtQualcommLogLevelDebug,
   };
 
-  void SetLogLevel(LogLevel log_level);
-  LogLevel GetLogLevel();
+  void SetLogLevel(LogLevel log_level) {
+    LrtQualcommOptionsSetLogLevel(
+        options_, static_cast<LrtQualcommOptionsLogLevel>(log_level));
+  }
+  LogLevel GetLogLevel() {
+    LrtQualcommOptionsLogLevel val;
+    auto status = LrtQualcommOptionsGetLogLevel(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return LogLevel::kInfo;
+    }
+    return static_cast<LogLevel>(val);
+  }
 
   /// @brief This option controls whether to convert a LiteRT operation to QNN
   /// operations that are preferred by the HTP backend. Defaults to `false`.
@@ -99,8 +116,19 @@ class QualcommOptions {
     kExtremePowerSaver = kLiteRtQualcommHtpPerformanceModeExtremePowerSaver,
   };
 
-  void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
-  HtpPerformanceMode GetHtpPerformanceMode();
+  void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode) {
+    LrtQualcommOptionsSetHtpPerformanceMode(
+        options_, static_cast<LrtQualcommOptionsHtpPerformanceMode>(
+                      htp_performance_mode));
+  }
+  HtpPerformanceMode GetHtpPerformanceMode() {
+    LrtQualcommOptionsHtpPerformanceMode val;
+    auto status = LrtQualcommOptionsGetHtpPerformanceMode(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return HtpPerformanceMode::kDefault;
+    }
+    return static_cast<HtpPerformanceMode>(val);
+  }
 
   enum class DspPerformanceMode : int {
     kDefault = kLiteRtQualcommDspPerformanceModeDefault,
@@ -115,44 +143,109 @@ class QualcommOptions {
     kBalanced = kLiteRtQualcommDspPerformanceModeBalanced,
   };
 
-  void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode);
-  DspPerformanceMode GetDspPerformanceMode();
+  void SetDspPerformanceMode(DspPerformanceMode dsp_performance_mode) {
+    LrtQualcommOptionsSetDspPerformanceMode(
+        options_, static_cast<LrtQualcommOptionsDspPerformanceMode>(
+                      dsp_performance_mode));
+  }
+  DspPerformanceMode GetDspPerformanceMode() {
+    LrtQualcommOptionsDspPerformanceMode val;
+    auto status = LrtQualcommOptionsGetDspPerformanceMode(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return DspPerformanceMode::kDefault;
+    }
+    return static_cast<DspPerformanceMode>(val);
+  }
 
   [[deprecated("This option is deprecated and will be no-op.")]]
-  void SetUseHtpPreference(bool use_htp_preference);
+  void SetUseHtpPreference(bool use_htp_preference) {
+    LrtQualcommOptionsSetUseHtpPreference(options_, use_htp_preference);
+  }
   [[deprecated("This option is deprecated and will be no-op.")]]
-  bool GetUseHtpPreference();
+  bool GetUseHtpPreference() {
+    bool val;
+    auto status = LrtQualcommOptionsGetUseHtpPreference(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
 
   /// @brief This option controls whether to convert a quantized int16 model to
   /// a quantized uint16 model. Defaults to `false`.
   [[deprecated("This option is deprecated and will be no-op.")]]
-  void SetUseQint16AsQuint16(bool use_qin16_as_quint16);
+  void SetUseQint16AsQuint16(bool use_qin16_as_quint16) {
+    LrtQualcommOptionsSetUseQint16AsQuint16(options_, use_qin16_as_quint16);
+  }
   [[deprecated("This option is deprecated and will be no-op.")]]
-  bool GetUseQint16AsQuint16();
+  bool GetUseQint16AsQuint16() {
+    bool val;
+    auto status = LrtQualcommOptionsGetUseQint16AsQuint16(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
 
   /// @brief This option controls whether to convert bias tensors of
   /// FullyConnected and Conv2D Ops from int64 to int32. Defaults to `true`.
-  void SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32);
-  bool GetUseInt64BiasAsInt32();
+  void SetUseInt64BiasAsInt32(bool use_int64_bias_as_int32) {
+    LrtQualcommOptionsSetUseInt64BiasAsInt32(options_, use_int64_bias_as_int32);
+  }
+  bool GetUseInt64BiasAsInt32() {
+    bool val;
+    auto status = LrtQualcommOptionsGetUseInt64BiasAsInt32(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return true;
+    }
+    return val;
+  }
 
   /// @brief Indicates whether different subgraphs may share weight tensors.
   ///
   /// This is only supported on x86 AOT. Defaults to `false`.
-  void SetEnableWeightSharing(bool weight_sharing_enabled);
-  bool GetEnableWeightSharing();
+  void SetEnableWeightSharing(bool weight_sharing_enabled) {
+    LrtQualcommOptionsSetEnableWeightSharing(options_, weight_sharing_enabled);
+  }
+  bool GetEnableWeightSharing() {
+    bool val;
+    auto status = LrtQualcommOptionsGetEnableWeightSharing(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
 
   /// @brief When using short conv hmx, one might have better performance, but
   /// convolutions with short depth and/or non-symmetric weights could exhibit
   /// inaccurate results.
-  void SetUseConvHMX(bool use_conv_hmx);
-  bool GetUseConvHMX();
+  void SetUseConvHMX(bool use_conv_hmx) {
+    LrtQualcommOptionsSetUseConvHMX(options_, use_conv_hmx);
+  }
+  bool GetUseConvHMX() {
+    bool val;
+    auto status = LrtQualcommOptionsGetUseConvHMX(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return true;
+    }
+    return val;
+  }
 
   /// @brief When using fold relu, one might have better performance.
   ///
   /// This optimization is correct when quantization ranges for convolution are
   /// equal to or are a subset of the Relu operation.
-  void SetUseFoldReLU(bool use_fold_relu);
-  bool GetUseFoldReLU();
+  void SetUseFoldReLU(bool use_fold_relu) {
+    LrtQualcommOptionsSetUseFoldReLU(options_, use_fold_relu);
+  }
+  bool GetUseFoldReLU() {
+    bool val;
+    auto status = LrtQualcommOptionsGetUseFoldReLU(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return true;
+    }
+    return val;
+  }
 
   /// @brief This option controls the profiling level.
   ///
@@ -166,23 +259,80 @@ class QualcommOptions {
     kOptrace = kLiteRtQualcommProfilingOptrace,
   };
 
-  void SetProfiling(Profiling profiling);
-  Profiling GetProfiling();
+  void SetProfiling(Profiling profiling) {
+    LrtQualcommOptionsSetProfiling(
+        options_, static_cast<LrtQualcommOptionsProfiling>(profiling));
+  }
+  Profiling GetProfiling() {
+    LrtQualcommOptionsProfiling val;
+    auto status = LrtQualcommOptionsGetProfiling(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return Profiling::kOff;
+    }
+    return static_cast<Profiling>(val);
+  }
 
-  void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
-  std::vector<std::int32_t> GetDumpTensorIds();
+  void SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
+    LrtQualcommOptionsSetDumpTensorIds(options_, ids.data(), ids.size());
+  }
+  std::vector<std::int32_t> GetDumpTensorIds() {
+    const std::int32_t* ids;
+    size_t number_of_ids;
+    auto status =
+        LrtQualcommOptionsGetDumpTensorIds(options_, &ids, &number_of_ids);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return {};
+    }
+    return std::vector<std::int32_t>(ids, ids + number_of_ids);
+  }
 
-  void SetIrJsonDir(const std::string& ir_json_dir);
-  absl::string_view GetIrJsonDir();
+  void SetIrJsonDir(const std::string& ir_json_dir) {
+    LrtQualcommOptionsSetIrJsonDir(options_, ir_json_dir.c_str());
+  }
+  absl::string_view GetIrJsonDir() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetIrJsonDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
 
-  void SetDlcDir(const std::string& dlc_dir);
-  absl::string_view GetDlcDir();
+  void SetDlcDir(const std::string& dlc_dir) {
+    LrtQualcommOptionsSetDlcDir(options_, dlc_dir.c_str());
+  }
+  absl::string_view GetDlcDir() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetDlcDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
 
-  void SetVtcmSize(std::uint32_t vtcm_size);
-  std::uint32_t GetVtcmSize();
+  void SetVtcmSize(std::uint32_t vtcm_size) {
+    LrtQualcommOptionsSetVtcmSize(options_, vtcm_size);
+  }
+  std::uint32_t GetVtcmSize() {
+    std::uint32_t val;
+    auto status = LrtQualcommOptionsGetVtcmSize(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
 
-  void SetNumHvxThreads(std::uint32_t num_hvx_threads);
-  std::uint32_t GetNumHvxThreads();
+  void SetNumHvxThreads(std::uint32_t num_hvx_threads) {
+    LrtQualcommOptionsSetNumHvxThreads(options_, num_hvx_threads);
+  }
+  std::uint32_t GetNumHvxThreads() {
+    std::uint32_t val;
+    auto status = LrtQualcommOptionsGetNumHvxThreads(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
 
   enum class OptimizationLevel : int {
     kOptimizeForInference = kHtpOptimizeForInference,
@@ -190,8 +340,19 @@ class QualcommOptions {
     kOptimizeForInferenceO3 = kHtpOptimizeForInferenceO3,
   };
 
-  void SetOptimizationLevel(OptimizationLevel optimization_level);
-  OptimizationLevel GetOptimizationLevel();
+  void SetOptimizationLevel(OptimizationLevel optimization_level) {
+    LrtQualcommOptionsSetOptimizationLevel(
+        options_,
+        static_cast<LrtQualcommOptionsOptimizationLevel>(optimization_level));
+  }
+  OptimizationLevel GetOptimizationLevel() {
+    LrtQualcommOptionsOptimizationLevel val;
+    auto status = LrtQualcommOptionsGetOptimizationLevel(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return OptimizationLevel::kOptimizeForInferenceO3;
+    }
+    return static_cast<OptimizationLevel>(val);
+  }
 
   enum class GraphPriority : int {
     kDefault = kLiteRTQualcommGraphPriorityDefault,
@@ -201,8 +362,18 @@ class QualcommOptions {
     kHigh = kLiteRTQualcommGraphPriorityHigh,
   };
 
-  void SetGraphPriority(GraphPriority graph_priority);
-  GraphPriority GetGraphPriority();
+  void SetGraphPriority(GraphPriority graph_priority) {
+    LrtQualcommOptionsSetGraphPriority(
+        options_, static_cast<LrtQualcommOptionsGraphPriority>(graph_priority));
+  }
+  GraphPriority GetGraphPriority() {
+    LrtQualcommOptionsGraphPriority val;
+    auto status = LrtQualcommOptionsGetGraphPriority(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return GraphPriority::kDefault;
+    }
+    return static_cast<GraphPriority>(val);
+  }
 
   enum class Backend : int {
     kUndefined = kLiteRtQualcommBackendUndefined,
@@ -212,11 +383,30 @@ class QualcommOptions {
     kIr = kLiteRtQualcommBackendIr,
   };
 
-  void SetBackend(Backend qnn_backend);
-  Backend GetBackend();
+  void SetBackend(Backend backend) {
+    LrtQualcommOptionsSetBackend(
+        options_, static_cast<LrtQualcommOptionsBackend>(backend));
+  }
+  Backend GetBackend() {
+    LrtQualcommOptionsBackend val;
+    auto status = LrtQualcommOptionsGetBackend(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return Backend::kHtp;
+    }
+    return static_cast<Backend>(val);
+  }
 
-  void SetSaverOutputDir(const std::string& saver_output_dir);
-  absl::string_view GetSaverOutputDir();
+  void SetSaverOutputDir(const std::string& saver_output_dir) {
+    LrtQualcommOptionsSetSaverOutputDir(options_, saver_output_dir.c_str());
+  }
+  absl::string_view GetSaverOutputDir() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetSaverOutputDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
 
  private:
   LrtQualcommOptions options_;

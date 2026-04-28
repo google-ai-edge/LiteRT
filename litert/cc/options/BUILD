@@ -149,7 +149,6 @@ cc_library(
 
 cc_library(
     name = "litert_qualcomm_options",
-    srcs = ["litert_qualcomm_options.cc"],
     hdrs = ["litert_qualcomm_options.h"],
     deps = [
         "//litert/c:litert_common",
