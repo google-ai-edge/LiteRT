@@ -1082,7 +1082,6 @@ cc_test(
 
 cc_library_with_testonly_vis(
     name = "litert_options",
-    srcs = ["litert_options.cc"],
     hdrs = ["litert_options.h"],
     vis = [
         # copybara:uncomment_begin(oss litert_lm)

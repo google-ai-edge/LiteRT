@@ -8,7 +8,6 @@ litert/cc/internal/scoped_file_win.cc
 litert/cc/litert_compiled_model.cc
 litert/cc/litert_custom_op_kernel.cc
 litert/cc/litert_model.cc
-litert/cc/litert_options.cc
 litert/cc/litert_tensor_buffer.cc
 litert/c/options/litert_compiler_options.cc
 litert/c/options/litert_cpu_options.cc

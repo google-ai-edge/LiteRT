@@ -19,11 +19,22 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/options/litert_compiler_options.h"
+#include "litert/c/options/litert_cpu_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_gpu_options.h"
+#include "litert/c/options/litert_intel_openvino_options.h"
+#include "litert/c/options/litert_mediatek_options.h"
+#include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/c/options/litert_runtime_options.h"
+#include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
@@ -41,6 +52,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
+#include "litert/core/options.h"
 
 namespace litert {
 
@@ -51,6 +63,39 @@ namespace tools {
 struct ApplyPluginRun;
 LiteRtStatus ApplyPlugin(std::unique_ptr<ApplyPluginRun> run);
 }  // namespace tools
+
+namespace internal::options_detail {
+
+template <typename OptionType>
+Expected<OptionType&> EnsureOption(std::optional<OptionType>& slot) {
+  if (!slot) {
+    LITERT_ASSIGN_OR_RETURN(auto option, OptionType::Create());
+    slot.emplace(std::move(option));
+  }
+  return slot.value();
+}
+
+template <typename OptionType, typename GetDataFunc>
+LiteRtStatus AppendAndResetOpaqueData(LiteRtOptions options,
+                                      std::optional<OptionType>& slot,
+                                      GetDataFunc get_data_func) {
+  if (!slot) {
+    return kLiteRtStatusOk;
+  }
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      get_data_func(slot->Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+      identifier, payload, payload_deleter, &opaque_opts));
+  LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(options, opaque_opts));
+  slot.reset();
+  return kLiteRtStatusOk;
+}
+
+}  // namespace internal::options_detail
 
 /// Manages the configuration options for compiling a LiteRT model.
 ///
@@ -192,55 +237,116 @@ class Options : public internal::BaseHandle<LiteRtOptions> {
   /// @return An `Expected` object that is empty on success, or contains an
   /// error.
   Expected<void> SetExternalWeightScopedFile(ScopedFile& scoped_file,
-                                             ScopedWeightSectionMap sections);
+                                             ScopedWeightSectionMap sections) {
+    if (!scoped_file.IsValid()) {
+      return Unexpected(Status::kErrorInvalidArgument,
+                        "Scoped file handle must be valid");
+    }
+    if (sections.empty()) {
+      return Unexpected(Status::kErrorInvalidArgument,
+                        "At least one external buffer group must be provided");
+    }
+    for (const auto& [name, section] : sections) {
+      if (section.length == 0) {
+        return Unexpected(Status::kErrorInvalidArgument,
+                          "Section length must be positive for group " + name);
+      }
+    }
+    auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(Get());
+    if (!options_impl) {
+      return Unexpected(Status::kErrorRuntimeFailure,
+                        "Options handle must not be null");
+    }
+    options_impl->scoped_weight_source = std::make_unique<ScopedWeightSource>(
+        std::move(scoped_file), std::move(sections));
+    return {};
+  }
 
   /// Returns a reference to the GPU options.
   ///
   /// Use this to configure GPU-specific settings.
-  Expected<GpuOptions&> GetGpuOptions();
+  Expected<GpuOptions&> GetGpuOptions() {
+    return internal::options_detail::EnsureOption(gpu_options_);
+  }
 
   /// Returns a reference to the CPU options.
   ///
   /// Use this to configure CPU-specific settings.
-  Expected<CpuOptions&> GetCpuOptions();
+  Expected<CpuOptions&> GetCpuOptions() {
+    return internal::options_detail::EnsureOption(cpu_options_);
+  }
 
   /// Returns a reference to the Qualcomm options.
   ///
   /// Use this to configure Qualcomm-specific settings.
-  Expected<qualcomm::QualcommOptions&> GetQualcommOptions();
+  Expected<qualcomm::QualcommOptions&> GetQualcommOptions() {
+    return internal::options_detail::EnsureOption(qualcomm_options_);
+  }
 
   /// Returns a reference to the MediaTek options.
   ///
   /// Use this to configure MediaTek-specific settings.
-  Expected<mediatek::MediatekOptions&> GetMediatekOptions();
+  Expected<mediatek::MediatekOptions&> GetMediatekOptions() {
+    return internal::options_detail::EnsureOption(mediatek_options_);
+  }
 
   /// Returns a reference to the Google Tensor options.
   ///
   /// Use this to configure Google Tensor-specific settings.
-  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions();
+  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions() {
+    return internal::options_detail::EnsureOption(google_tensor_options_);
+  }
 
   /// Returns a reference to the Intel OpenVINO options.
   ///
   /// Use this to configure Intel OpenVINO-specific settings.
-  Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions();
+  Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions() {
+    return internal::options_detail::EnsureOption(intel_openvino_options_);
+  }
 
   /// Returns a reference to the Samsung options.
   ///
   /// Use this to configure Samsung-specific settings.
-  Expected<samsung::SamsungOptions&> GetSamsungOptions();
+  Expected<samsung::SamsungOptions&> GetSamsungOptions() {
+    return internal::options_detail::EnsureOption(samsung_options_);
+  }
 
   /// Returns a reference to the runtime options.
-  Expected<RuntimeOptions&> GetRuntimeOptions();
+  Expected<RuntimeOptions&> GetRuntimeOptions() {
+    return internal::options_detail::EnsureOption(runtime_options_);
+  }
 
   /// Returns a reference to the compiler options.
-  Expected<CompilerOptions&> GetCompilerOptions();
+  Expected<CompilerOptions&> GetCompilerOptions() {
+    return internal::options_detail::EnsureOption(compiler_options_);
+  }
 
  private:
   /// Builds the options object.
   ///
   /// This should be called after all setters have been invoked. It is
   /// automatically called in `CompiledModel::Create`.
-  Expected<void> Build();
+  Expected<void> Build() {
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), gpu_options_, LrtGetOpaqueGpuOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), cpu_options_, LrtGetOpaqueCpuOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), qualcomm_options_, LrtGetOpaqueQualcommOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), mediatek_options_, LrtGetOpaqueMediatekOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), google_tensor_options_, LrtGetOpaqueGoogleTensorOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), intel_openvino_options_, LrtGetOpaqueIntelOpenVinoOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), samsung_options_, LrtGetOpaqueSamsungOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), runtime_options_, LrtGetOpaqueRuntimeOptionsData));
+    LITERT_RETURN_IF_ERROR(internal::options_detail::AppendAndResetOpaqueData(
+        Get(), compiler_options_, LrtGetOpaqueCompilerOptionsData));
+    return {};
+  }
 
   std::optional<GpuOptions> gpu_options_;
   std::optional<CpuOptions> cpu_options_;

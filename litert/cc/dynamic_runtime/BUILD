@@ -700,7 +700,6 @@ cc_test(
 
 cc_library(
     name = "litert_options",
-    srcs = ["//litert/cc:litert_options.cc"],
     hdrs = ["//litert/cc:litert_options.h"],
     deps = [
         ":litert_custom_op_kernel",
