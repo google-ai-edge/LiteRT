@@ -188,6 +188,14 @@ void Options::SetSaverOutputDir(absl::string_view saver_output_dir) {
   saver_output_dir_ = saver_output_dir;
 }
 
+void Options::SetGraphIOTensorMemType(GraphIOTensorMemType mem_type) {
+  graph_io_tensor_mem_type_ = mem_type;
+}
+
+GraphIOTensorMemType Options::GetGraphIOTensorMemType() const {
+  return graph_io_tensor_mem_type_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -208,16 +216,18 @@ VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n\
 GraphPriority: %d\n\
-SaverOutputDir: %s\n";  // NOLINT
+SaverOutputDir: %s\n\
+GraphIOTensorMemType: %d\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
-  return absl::StrFormat(
-      kQnnOptionsDumpFormat, log_level_, backend_type_, profiling_,
-      use_int64_bias_as_int32_, enable_weight_sharing_, use_conv_hmx_,
-      use_fold_relu_, htp_performance_mode_, dsp_performance_mode_,
-      dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_, num_hvx_threads_,
-      optimization_level_, graph_priority_, saver_output_dir_);
+  return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, backend_type_,
+                         profiling_, use_int64_bias_as_int32_,
+                         enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
+                         htp_performance_mode_, dsp_performance_mode_,
+                         dump_tensor_ids, ir_json_dir_, dlc_dir_, vtcm_size_,
+                         num_hvx_threads_, optimization_level_, graph_priority_,
+                         saver_output_dir_, graph_io_tensor_mem_type_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

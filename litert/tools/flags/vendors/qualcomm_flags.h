@@ -77,6 +77,8 @@ ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
                   qualcomm_optimization_level);
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
                   qualcomm_graph_priority);
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GraphIOTensorMemType,
+                  qualcomm_graph_io_tensor_mem_type);
 
 namespace litert::qualcomm {
 
@@ -92,6 +94,12 @@ bool AbslParseFlag(absl::string_view text,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority);
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GraphIOTensorMemType* memory_type,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::GraphIOTensorMemType memory_type);
 
 }  // namespace litert::qualcomm
 

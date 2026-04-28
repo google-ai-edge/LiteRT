@@ -153,6 +153,24 @@ LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
                                               bool* use_fold_relu);
 
+// graph_io_tensor_mem_type
+
+// This controls whether graph inputs and outputs use MemHandle or Raw buffers
+// during compilation.
+
+typedef enum LrtQualcommOptionsGraphIOTensorMemType {
+  kLiteRtQualcommGraphIOTensorMemTypeRaw = 0,
+  kLiteRtQualcommGraphIOTensorMemTypeMemHandle,
+} LrtQualcommOptionsGraphIOTensorMemType;
+
+LiteRtStatus LrtQualcommOptionsSetGraphIOTensorMemType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGraphIOTensorMemType mem_type);
+
+LiteRtStatus LrtQualcommOptionsGetGraphIOTensorMemType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGraphIOTensorMemType* mem_type);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 // htp_performance_mode

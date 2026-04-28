@@ -40,7 +40,7 @@ LiteRtStatus ConvertTensor(
     const litert::Tensor& litert_tensor, ::qnn::TensorPool& tensor_pool,
     ::qnn::TensorWrapper*& tensor_wrapper,
     const absl::flat_hash_set<std::int32_t>& ids_to_dump = {},
-    bool is_tensor_read_and_write = false);
+    bool is_tensor_output = false);
 
 LiteRtStatus ConvertOp(bool use_int64_bias_as_int32,
                        const litert::Op& litert_op,
