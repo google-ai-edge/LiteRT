@@ -835,7 +835,6 @@ cc_library(
 
 cc_library(
     name = "litert_model",
-    srcs = [":litert_model.cc"],
     hdrs = [":litert_model.h"],
     defines = select({
         "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
@@ -1338,6 +1337,8 @@ cc_library(
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/core:options",
+        "//litert/core/model:model_load",
+        "//tflite/converter:allocation",
         "@opencl_headers",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
