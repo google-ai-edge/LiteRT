@@ -269,7 +269,6 @@ cc_test(
 
 cc_library(
     name = "litert_compiled_model",
-    srcs = [":litert_compiled_model.cc"],
     hdrs = [":litert_compiled_model.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)

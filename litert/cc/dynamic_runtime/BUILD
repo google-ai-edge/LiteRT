@@ -580,7 +580,6 @@ cc_test(
 
 cc_library(
     name = "litert_compiled_model",
-    srcs = ["//litert/cc:litert_compiled_model.cc"],
     hdrs = ["//litert/cc:litert_compiled_model.h"],
     deps = [
         ":litert_custom_op_kernel",

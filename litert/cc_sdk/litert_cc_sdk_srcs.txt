@@ -5,7 +5,6 @@ litert/cc/internal/litert_shared_library.cc
 litert/cc/internal/scoped_file.cc
 litert/cc/internal/scoped_file_posix.cc
 litert/cc/internal/scoped_file_win.cc
-litert/cc/litert_compiled_model.cc
 litert/c/options/litert_compiler_options.cc
 litert/c/options/litert_cpu_options.cc
 litert/c/options/litert_google_tensor_options.cc

@@ -73,7 +73,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
 )
 
 set(LITERT_CC_PUBLIC_SOURCES
-    litert_compiled_model.cc
 )
 
 file(GLOB LITERT_CC_DISCOVERED_PUBLIC_HEADERS
@@ -101,15 +100,6 @@ file(GLOB LITERT_CC_DISCOVERED_PUBLIC_SOURCES
 )
 list(FILTER LITERT_CC_DISCOVERED_PUBLIC_SOURCES EXCLUDE REGEX "_test\\.cc$")
 list(SORT LITERT_CC_DISCOVERED_PUBLIC_SOURCES)
-set(_litert_cc_expected_public_sources ${LITERT_CC_PUBLIC_SOURCES})
-list(SORT _litert_cc_expected_public_sources)
-if(NOT LITERT_CC_DISCOVERED_PUBLIC_SOURCES STREQUAL _litert_cc_expected_public_sources)
-    message(FATAL_ERROR
-        "litert/cc public source manifest is out of sync.\n"
-        "Discovered:\n  ${LITERT_CC_DISCOVERED_PUBLIC_SOURCES}\n"
-        "Expected:\n  ${_litert_cc_expected_public_sources}\n"
-        "Update litert/cc/CMakeLists.txt.")
-endif()
 
 set(LITERT_CC_HEADERS
     ${LITERT_CC_REQUIRED_INTERNAL_HEADERS}

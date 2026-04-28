@@ -371,14 +371,16 @@ target_link_libraries(litert_runtime_c_api_shared_lib
 if(APPLE)
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
-        ${_litert_runtime_c_api_private_archives})
+        ${_litert_runtime_c_api_private_archives}
+        ${_litert_runtime_c_api_public_deps})
   target_link_options(litert_runtime_c_api_shared_lib PRIVATE -Wl,-all_load)
 else()
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
         -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        -Wl,--no-whole-archive)
+        -Wl,--no-whole-archive
+        ${_litert_runtime_c_api_public_deps})
 endif()
 # GPU/GL dependencies by platform
 if(APPLE)
