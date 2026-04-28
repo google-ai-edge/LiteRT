@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_framework", "ios_unit_test")
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
@@ -360,17 +360,13 @@ cc_library(
 
 litert_c_api_library(
     name = "litert_tensor_buffer",
-    srcs = [
-        "litert_tensor_buffer.cc",
-    ],
+    srcs = ["litert_tensor_buffer.cc"],
     hdrs = [
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
-    header_deps = [
-        ":litert_tensor_buffer_requirements_header",
-    ],
+    header_deps = [":litert_tensor_buffer_requirements_header"],
     impl_deps = [
         ":litert_event",
         "@com_google_absl//absl/types:span",
@@ -835,6 +831,21 @@ copy_file(
     name = "litert_runtime_c_api_dylib",
     src = ":build_litert_runtime_c_api_dylib",
     target = "libLiteRt.dylib",
+)
+
+ios_framework(
+    name = "build_litert_runtime_c_api_framework",
+    bundle_id = "com.google.litert.runtime",
+    bundle_name = "libLiteRt.dylib",
+    exported_symbols_lists = export_lrt_runtime_only_script(),
+    families = [
+        "iphone",
+        "ipad",
+    ],
+    infoplists = ["LiteRtInfo.plist"],
+    linkopts = ["-install_name @rpath/libLiteRt.dylib"],
+    minimum_os_version = LITERT_MIN_IOS_VERSION,
+    deps = LITERT_C_API_COMMON_DEPS,
 )
 
 # Target for windows libLiteRt.dll.

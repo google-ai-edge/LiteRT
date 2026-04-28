@@ -87,7 +87,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -142,7 +141,6 @@ cc_library(
         "//litert/cc/internal:litert_handle",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -196,7 +194,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -210,7 +207,6 @@ cc_library(
     visibility = ["//litert:litert_public"],
     deps = [] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -243,7 +239,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -273,7 +268,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -375,7 +369,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -413,7 +406,6 @@ cc_library(
         "//litert/cc:litert_macros",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -479,7 +471,6 @@ cc_library(
         "@opencl_headers",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -555,7 +546,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -621,7 +611,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -740,7 +729,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -757,7 +745,6 @@ cc_library(
         "//litert/cc:litert_expected",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -774,7 +761,6 @@ cc_library(
         "//litert/cc/internal:litert_handle",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",

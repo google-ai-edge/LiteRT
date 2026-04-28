@@ -19,8 +19,6 @@
 
 #include "litert/build_common/build_config.h"  // IWYU pragma: keep
 
-
-
 // Define LITERT_WINDOWS_OS if the current OS is Windows.
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || \
     defined(__NT__) || defined(_WIN64)
