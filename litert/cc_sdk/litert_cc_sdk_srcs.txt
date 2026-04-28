@@ -21,7 +21,6 @@ litert/c/options/litert_qualcomm_options.cc
 litert/c/options/litert_runtime_options.cc
 litert/c/options/litert_samsung_options.cc
 litert/cc/options/litert_google_tensor_options.cc
-litert/cc/options/litert_gpu_options.cc
 litert/cc/options/litert_intel_openvino_options.cc
 litert/cc/options/litert_magic_number_options.cc
 litert/cc/options/litert_mediatek_options.cc

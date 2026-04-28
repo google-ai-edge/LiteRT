@@ -110,7 +110,6 @@ cc_test(
 
 cc_library(
     name = "litert_gpu_options",
-    srcs = ["litert_gpu_options.cc"],
     hdrs = ["litert_gpu_options.h"],
     deps = [
         "//litert/c:litert_common",

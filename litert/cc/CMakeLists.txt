@@ -80,7 +80,6 @@ set(LITERT_CC_PUBLIC_SOURCES
     litert_options.cc
     litert_tensor_buffer.cc
     options/litert_google_tensor_options.cc
-    options/litert_gpu_options.cc
     options/litert_intel_openvino_options.cc
     options/litert_magic_number_options.cc
     options/litert_mediatek_options.cc
