@@ -452,6 +452,23 @@ LiteRtStatus LiteRtCreateManagedTensorBuffer(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCreateManagedTensorBufferWithContext(
+    LiteRtEnvironment env, LiteRtDispatchDeviceContext device_context,
+    unsigned tensor_index, bool is_input, LiteRtTensorBufferType buffer_type,
+    const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
+    LiteRtTensorBuffer* tensor_buffer) {
+  if (!env || !tensor_type || !tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateManagedCustomTensorBufferWithContext(
+          env, device_context, tensor_index, is_input, *tensor_type, buffer_type,
+          buffer_size));
+  *tensor_buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements requirements,

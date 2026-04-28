@@ -116,6 +116,20 @@ LiteRtStatus LiteRtGetCompiledModelEnvironment(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelCreateBufferForIoTensor(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* tensor_name, bool is_input, LiteRtTensorBuffer* tensor_buffer) {
+  if (!compiled_model || !tensor_name || !tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto buffer,
+      compiled_model->CreateBufferForIoTensor(signature_index, tensor_name,
+                                              is_input));
+  *tensor_buffer = buffer.release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     size_t num_layouts, LiteRtLayout* layouts, bool update_allocation) {

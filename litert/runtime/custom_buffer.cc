@@ -132,7 +132,7 @@ LITERT_NO_CFI_CHECK Expected<CustomBuffer> CustomBuffer::Alloc(
 
   HwMemoryInfoPtr hw_memory_info = nullptr;
   auto status = custom_buffer_handlers.create_func(
-      gpu_resource.first, gpu_resource.second, &tensor_type, buffer_type,
+      gpu_resource.first, gpu_resource.second, nullptr, 0, false, &tensor_type, buffer_type,
       buffer_size, packed_buffer_size, &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to create custom tensor buffer.");
@@ -140,7 +140,26 @@ LITERT_NO_CFI_CHECK Expected<CustomBuffer> CustomBuffer::Alloc(
   return CustomBuffer(env, tensor_type, buffer_type, hw_memory_info);
 }
 
-// Implementation for Wrap
+LITERT_NO_CFI_CHECK Expected<CustomBuffer> CustomBuffer::Alloc(
+    LiteRtEnvironment env, LiteRtDispatchDeviceContext device_context,
+    unsigned tensor_index, bool is_input,
+    const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t buffer_size,
+    size_t packed_buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env));
+  LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
+                          registry->GetCustomHandlers(buffer_type));
+
+  HwMemoryInfoPtr hw_memory_info = nullptr;
+  auto status = custom_buffer_handlers.create_func(
+      nullptr, nullptr, device_context, tensor_index, is_input, &tensor_type, buffer_type,
+      buffer_size, packed_buffer_size, &hw_memory_info);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to create custom tensor buffer.");
+  }
+  return CustomBuffer(env, tensor_type, buffer_type, hw_memory_info);
+}
+
 Expected<CustomBuffer> CustomBuffer::Wrap(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
@@ -161,7 +180,7 @@ Expected<CustomBuffer> CustomBuffer::Wrap(
   // The import_func is responsible for creating HwMemoryInfo
   // and setting its internal 'owns_handle' flag to false.
   auto status = custom_buffer_handlers.import_func(
-      gpu_resource.first, gpu_resource.second, &tensor_type, buffer_type,
+      gpu_resource.first, gpu_resource.second, nullptr, 0, false, &tensor_type, buffer_type,
       hw_buffer_handle, buffer_size, packed_buffer_size, &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to import custom tensor buffer.");

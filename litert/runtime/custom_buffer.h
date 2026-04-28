@@ -23,6 +23,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 
+LITERT_DEFINE_HANDLE(LiteRtDispatchDeviceContext);
 namespace litert::internal {
 
 /**
@@ -60,6 +61,14 @@ class CustomBuffer {
 
   // Creates a custom buffer.
   static Expected<CustomBuffer> Alloc(LiteRtEnvironment env,
+                                      const LiteRtRankedTensorType& tensor_type,
+                                      LiteRtTensorBufferType buffer_type,
+                                      size_t buffer_size,
+                                      size_t packed_buffer_size);
+
+  static Expected<CustomBuffer> Alloc(LiteRtEnvironment env,
+                                      LiteRtDispatchDeviceContext device_context,
+                                      unsigned tensor_index, bool is_input,
                                       const LiteRtRankedTensorType& tensor_type,
                                       LiteRtTensorBufferType buffer_type,
                                       size_t buffer_size,

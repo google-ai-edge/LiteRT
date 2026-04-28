@@ -95,6 +95,15 @@ LiteRtExternalLiteRtBufferContextT::GetTensorBuffer(
   return LiteRtTensorBufferPtr(it->second.get());
 }
 
+void LiteRtExternalLiteRtBufferContextT::SetDispatchCustomBufferContext(
+    LiteRtDispatchDeviceContext device_context,
+    std::vector<litert::internal::TfLiteTensorIdentifier> input_tensor_ids,
+    std::vector<litert::internal::TfLiteTensorIdentifier> output_tensor_ids) {
+  dispatch_device_context_for_custom_buffers_ = device_context;
+  dispatch_input_tensor_ids_ = std::move(input_tensor_ids);
+  dispatch_output_tensor_ids_ = std::move(output_tensor_ids);
+}
+
 litert::Expected<LiteRtTensorBufferPtr>
 LiteRtExternalLiteRtBufferContextT::CreateBufferForTensor(
     const TfLiteOpaqueTensor* tensor) {
@@ -119,7 +128,46 @@ LiteRtExternalLiteRtBufferContextT::CreateBufferForTensor(
   size_t tensor_buffer_size = tensor_buffer_requirements->BufferSize();
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
 
-  LiteRtTensorBufferT* litert_tensor_buffer;
+  LiteRtTensorBufferT* litert_tensor_buffer = nullptr;
+
+  if (dispatch_device_context_for_custom_buffers_ != nullptr &&
+      IsUserCustomBuffer(tensor_buffer_type)) {
+    const litert::internal::TfLiteTensorIdentifier tid =
+        get_tensor_identifier_fn_(tensor);
+    litert::internal::TensorIdentifierEqual id_eq;
+    constexpr litert::internal::TfLiteTensorIdentifier kInvalidId{-1, -1};
+    bool found = false;
+    unsigned io_index = 0;
+    bool io_is_input = false;
+    for (size_t i = 0; i < dispatch_input_tensor_ids_.size(); ++i) {
+      if (!id_eq(dispatch_input_tensor_ids_[i], kInvalidId) &&
+          id_eq(dispatch_input_tensor_ids_[i], tid)) {
+        io_index = static_cast<unsigned>(i);
+        io_is_input = true;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      for (size_t i = 0; i < dispatch_output_tensor_ids_.size(); ++i) {
+        if (!id_eq(dispatch_output_tensor_ids_[i], kInvalidId) &&
+            id_eq(dispatch_output_tensor_ids_[i], tid)) {
+          io_index = static_cast<unsigned>(i);
+          io_is_input = false;
+          found = true;
+          break;
+        }
+      }
+    }
+    if (found) {
+      LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBufferWithContext(
+          env_, dispatch_device_context_for_custom_buffers_, io_index,
+          io_is_input, tensor_buffer_type, &litert_tensor_type,
+          tensor_buffer_size, &litert_tensor_buffer));
+      return LiteRtTensorBufferPtr(litert_tensor_buffer);
+    }
+  }
+
   LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
       env_, tensor_buffer_type, &litert_tensor_type, tensor_buffer_size,
       &litert_tensor_buffer));

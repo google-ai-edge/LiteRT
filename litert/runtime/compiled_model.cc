@@ -1338,6 +1338,39 @@ tflite::SignatureRunner* LiteRtCompiledModelT::GetSignatureRunner(
   return runner;
 }
 
+litert::Expected<LiteRtTensorBufferPtr> LiteRtCompiledModelT::CreateBufferForIoTensor(
+    size_t signature_index, absl::string_view tensor_name, bool is_input) {
+#if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  if (fabric_runtime_) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorUnsupported,
+        "CreateBufferForIoTensor is not supported for Fabric runtime.");
+  }
+#endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  if (!buffer_context_) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Buffer context is unavailable");
+  }
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(kLiteRtStatusErrorIndexOOB,
+                              "Signature index is out of range of signature keys");
+  }
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Failed to get signature runner");
+  }
+  std::string name(tensor_name);
+  const TfLiteTensor* tensor =
+      is_input ? runner->input_tensor(name.c_str())
+               : runner->output_tensor(name.c_str());
+  if (tensor == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Tensor not found for signature");
+  }
+  return buffer_context_->CreateBufferForTensor(tensor);
+}
+
 Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
     const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,

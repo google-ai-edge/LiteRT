@@ -28,6 +28,8 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+
+LITERT_DEFINE_HANDLE(LiteRtDispatchDeviceContext);
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
@@ -111,6 +113,13 @@ class LiteRtTensorBufferT {
       LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
       size_t alignment);
+
+  // Managed custom buffer with dispatch context.
+  static litert::Expected<Ptr> CreateManagedCustomTensorBufferWithContext(
+      LiteRtEnvironment env, LiteRtDispatchDeviceContext device_context,
+      unsigned tensor_index, bool is_input,
+      const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
 
 #if LITERT_HAS_OPENCL_SUPPORT
   static litert::Expected<Ptr> CreateFromOpenClMemory(
