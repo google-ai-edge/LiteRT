@@ -27,7 +27,7 @@ pytype_strict_contrib_test(
         "//litert/python/tools/model_utils",
         "//litert/python/tools/model_utils:testing",
         "@absl_py//absl/testing:absltest",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "@org_tensorflow//third_party/py/numpy",
         "@xdsl",
     ],
 )
@@ -54,7 +54,7 @@ pytype_strict_contrib_test(
         "//litert/python/tools/model_utils:testing",
         "@absl_py//absl/testing:absltest",
         "@ml_dtypes_py//ml_dtypes",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "@org_tensorflow//third_party/py/numpy",
     ],
 )
 

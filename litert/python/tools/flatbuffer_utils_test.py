@@ -20,7 +20,7 @@ import sys
 import flatbuffers
 from absl.testing import absltest as googletest
 from litert.python.tools import flatbuffer_utils
-from litert.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
+from tensorflow.lite.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
 
 _SKIPPED_BUFFER_INDEX = 1
 
