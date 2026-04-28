@@ -391,15 +391,24 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kWrite));
     absl::Cleanup unlock = [this] { Unlock(); };
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
-    if (size < data.size() * sizeof(T)) {
+    // Check for potential integer overflow in size calculation
+    if (data.size() > SIZE_MAX / sizeof(T)) {
+      return Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          "Data size would cause integer overflow");
+    }
+    // Calculate byte size safely after overflow check
+    const size_t byte_size = data.size() * sizeof(T);
+    // Validate destination buffer has sufficient capacity
+    if (size < byte_size) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
           absl::StrFormat(
               "TensorBuffer host memory buffer size is smaller than the "
               "given data size, %zu vs %zu",
-              size, data.size() * sizeof(T)));
+              size, byte_size));
     }
-    std::memcpy(host_mem_addr, data.data(), data.size() * sizeof(T));
+    std::memcpy(host_mem_addr, data.data(), byte_size);
     return {};
   }
 
@@ -414,7 +423,15 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kRead));
     absl::Cleanup unlock = [this] { Unlock(); };
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
-    size_t total_read_size = data.size() * sizeof(T);
+    // Check for potential integer overflow in size calculation
+    if (data.size() > SIZE_MAX / sizeof(T)) {
+      return Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          "Data size would cause integer overflow");
+    }
+    // Calculate byte size safely after overflow check
+    const size_t total_read_size = data.size() * sizeof(T);
+    // Validate source buffer has sufficient data
     if (size < total_read_size) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
