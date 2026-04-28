@@ -236,7 +236,6 @@ cc_library(
 
 cc_library(
     name = "litert_magic_number_options",
-    srcs = ["litert_magic_number_options.cc"],
     hdrs = ["litert_magic_number_options.h"],
     deps = [
         "//litert/c:litert_common",

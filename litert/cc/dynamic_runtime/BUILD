@@ -740,7 +740,6 @@ cc_library(
 
 cc_library(
     name = "litert_magic_number_options",
-    srcs = ["//litert/cc/options:litert_magic_number_options.cc"],
     hdrs = ["//litert/cc/options:litert_magic_number_options.h"],
     deps = [
         "//litert/cc:litert_common",

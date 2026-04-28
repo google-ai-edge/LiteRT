@@ -16,9 +16,13 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MAGIC_NUMBER_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <memory>
 
 #include "litert/c/litert_environment_options.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 /// @file
@@ -27,11 +31,11 @@
 namespace litert::options {
 
 struct MagicNumberConfigsDeleter {
-  void operator()(LiteRtMagicNumberConfigs* ptr) const;
+  void operator()(LiteRtMagicNumberConfigs* ptr) const { std::free(ptr); }
 };
 
 struct MagicNumberVerificationsDeleter {
-  void operator()(LiteRtMagicNumberVerifications* ptr) const;
+  void operator()(LiteRtMagicNumberVerifications* ptr) const { std::free(ptr); }
 };
 
 using MagicNumberConfigsPtr =
@@ -55,6 +59,54 @@ Expected<MagicNumberConfigsPtr> CreateMagicNumberConfigs(
 /// it when destroyed.
 Expected<MagicNumberVerificationsPtr> CreateMagicNumberVerifications(
     std::size_t num_verifications);
+
+inline Expected<MagicNumberConfigsPtr> CreateMagicNumberConfigs(
+    std::size_t num_configs) {
+  constexpr std::size_t kHeaderSize = sizeof(LiteRtMagicNumberConfigs);
+  constexpr std::size_t kElementSize = sizeof(LiteRtMagicNumberConfig);
+  if (num_configs == 0 ||
+
+      num_configs > (std::numeric_limits<std::size_t>::max() - kHeaderSize) /
+                        kElementSize) {
+    return Unexpected(Error(Status::kErrorInvalidArgument,
+                            "Magic number configs allocation size overflow"));
+  }
+
+  const std::size_t total_size = kHeaderSize + num_configs * kElementSize;
+  auto* raw = static_cast<LiteRtMagicNumberConfigs*>(std::malloc(total_size));
+
+  raw->num_configs = static_cast<int64_t>(num_configs);
+  return MagicNumberConfigsPtr(raw);
+}
+
+inline Expected<MagicNumberVerificationsPtr> CreateMagicNumberVerifications(
+    std::size_t num_verifications) {
+  if (num_verifications >
+      static_cast<std::size_t>(std::numeric_limits<int64_t>::max())) {
+    return Unexpected(
+        Error(Status::kErrorInvalidArgument,
+              "Number of magic number verifications exceeds supported range"));
+  }
+
+  constexpr std::size_t kHeaderSize = sizeof(LiteRtMagicNumberVerifications);
+  constexpr std::size_t kElementSize = sizeof(LiteRtMagicNumberVerification);
+  if (num_verifications == 0 ||
+
+      num_verifications >
+          (std::numeric_limits<std::size_t>::max() - kHeaderSize) /
+              kElementSize) {
+    return Unexpected(
+        Error(Status::kErrorInvalidArgument,
+              "Magic number verifications allocation size overflow"));
+  }
+
+  const std::size_t total_size = kHeaderSize + num_verifications * kElementSize;
+  auto* raw =
+      static_cast<LiteRtMagicNumberVerifications*>(std::malloc(total_size));
+
+  raw->num_verifications = static_cast<int64_t>(num_verifications);
+  return MagicNumberVerificationsPtr(raw);
+}
 
 }  // namespace litert::options
 
