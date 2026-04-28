@@ -204,7 +204,6 @@ cc_test(
 
 cc_library(
     name = "litert_samsung_options",
-    srcs = ["litert_samsung_options.cc"],
     hdrs = ["litert_samsung_options.h"],
     deps = [
         "//litert/c:litert_common",

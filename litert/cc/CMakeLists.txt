@@ -79,7 +79,6 @@ set(LITERT_CC_PUBLIC_SOURCES
     litert_opaque_options.cc
     litert_options.cc
     litert_tensor_buffer.cc
-    options/litert_samsung_options.cc
 )
 
 file(GLOB LITERT_CC_DISCOVERED_PUBLIC_HEADERS
