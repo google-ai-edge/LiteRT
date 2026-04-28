@@ -134,7 +134,6 @@ cc_test(
 
 cc_library(
     name = "litert_google_tensor_options",
-    srcs = ["litert_google_tensor_options.cc"],
     hdrs = ["litert_google_tensor_options.h"],
     deps = [
         "//litert/c:litert_common",
