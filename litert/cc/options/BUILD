@@ -87,7 +87,6 @@ cc_test(
 
 cc_library(
     name = "litert_webnn_options",
-    srcs = ["litert_webnn_options.cc"],
     hdrs = ["litert_webnn_options.h"],
     deps = [
         "//litert/c:litert_common",

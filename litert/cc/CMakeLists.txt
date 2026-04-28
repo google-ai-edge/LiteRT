@@ -87,7 +87,6 @@ set(LITERT_CC_PUBLIC_SOURCES
     options/litert_qualcomm_options.cc
     options/litert_runtime_options.cc
     options/litert_samsung_options.cc
-    options/litert_webnn_options.cc
 )
 
 file(GLOB LITERT_CC_DISCOVERED_PUBLIC_HEADERS
