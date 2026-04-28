@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -261,7 +262,7 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   qnn_opts->SetEnableWeightSharing(false);
 
   auto plugin =
-      CreatePlugin(/*runtime_context=*/nullptr, /*env=*/nullptr, opts->Get());
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, opts->Get());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
   LiteRtCompiledResult compiled;
