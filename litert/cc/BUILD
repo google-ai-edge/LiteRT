@@ -618,7 +618,6 @@ litert_device_test(
 
 cc_library(
     name = "litert_custom_op_kernel",
-    srcs = [":litert_custom_op_kernel.cc"],
     hdrs = [":litert_custom_op_kernel.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)

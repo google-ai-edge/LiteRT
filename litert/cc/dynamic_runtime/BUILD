@@ -75,7 +75,6 @@ LITERT_C_API_DEPS = [
 
 cc_library(
     name = "litert_custom_op_kernel",
-    srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
         ":litert_environment",

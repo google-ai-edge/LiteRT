@@ -74,7 +74,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
 
 set(LITERT_CC_PUBLIC_SOURCES
     litert_compiled_model.cc
-    litert_custom_op_kernel.cc
     litert_model.cc
     litert_tensor_buffer.cc
 )
