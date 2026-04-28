@@ -411,6 +411,11 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
   if (src_quantization && src_quantization->details_type() ==
                               QuantizationDetails_BlockwiseQuantization) {
     auto* src_quant = src_quantization->details_as_BlockwiseQuantization();
+    if (!src_quant) {
+      TF_LITE_REPORT_ERROR(error_reporter_,
+                           "Quantization details are missing.");
+      return kTfLiteError;
+    }
     quantization->type = kTfLiteBlockwiseQuantization;
     auto* blockwise_quantization =
         reinterpret_cast<TfLiteBlockwiseQuantization*>(
