@@ -98,21 +98,17 @@ cc_library(
     srcs = ["tf_to_tfl_flatbuffer.cc"],
     hdrs = ["tf_to_tfl_flatbuffer.h"],
     deps = [
+        ":status_scoped_diagnostic_handler",
         "//tflite/converter:common",
         "//tflite/converter:converter_flags_proto_cc",
         "//tflite/converter:tf_tfl_passes",
         "//tflite/converter/metrics:converter_error_data_proto_cc",
-        "//tflite/converter/metrics:error_collector_inst",
         "//tflite/converter/stablehlo:prepare_hlo",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:Support",
-        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
-        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:error_util",
-        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_ops",
     ],
 )
 
