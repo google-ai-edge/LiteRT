@@ -94,6 +94,7 @@ py_library(
     name = "compiled_model",
     srcs = [
         "compiled_model.py",
+        "cpu_kernel_mode.py",
         "hardware_accelerator.py",
     ],
     visibility = ["//visibility:public"],
