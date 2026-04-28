@@ -20,6 +20,5 @@ litert/c/options/litert_mediatek_options.cc
 litert/c/options/litert_qualcomm_options.cc
 litert/c/options/litert_runtime_options.cc
 litert/c/options/litert_samsung_options.cc
-litert/cc/options/litert_runtime_options.cc
 litert/cc/options/litert_samsung_options.cc
 litert/core/litert_toml_parser.cc

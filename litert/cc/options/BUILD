@@ -221,7 +221,6 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_options",
-    srcs = ["litert_runtime_options.cc"],
     hdrs = ["litert_runtime_options.h"],
     deps = [
         "//litert/c:litert_common",
