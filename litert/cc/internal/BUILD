@@ -73,7 +73,6 @@ cc_library(
 # This is for accelerator shared libs not to depend on the registry, but depend on CAPI.so instead.
 cc_library(
     name = "litert_tensor_buffer_without_registry",
-    srcs = ["//litert/cc:litert_tensor_buffer.cc"],
     hdrs = [
         "//litert/cc:litert_tensor_buffer.h",
     ],

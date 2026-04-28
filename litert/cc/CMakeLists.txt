@@ -74,7 +74,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
 
 set(LITERT_CC_PUBLIC_SOURCES
     litert_compiled_model.cc
-    litert_tensor_buffer.cc
 )
 
 file(GLOB LITERT_CC_DISCOVERED_PUBLIC_HEADERS
