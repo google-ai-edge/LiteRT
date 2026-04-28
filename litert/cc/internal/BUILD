@@ -280,7 +280,6 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer_utils",
-    srcs = ["litert_tensor_buffer_utils.cc"],
     hdrs = ["litert_tensor_buffer_utils.h"],
     visibility = ["//litert:litert_public"],
     deps = [

@@ -49,7 +49,6 @@ set(LITERT_CC_INTERNAL_MAIN_SRCS
     litert_op_options.cc
     litert_builder.cc
     litert_shared_library.cc
-    litert_tensor_buffer_utils.cc
     litert_extended_model.cc
     litert_runtime_builtin.cc
 )
