@@ -60,7 +60,6 @@ cc_test(
 
 cc_library(
     name = "litert_compiler_options",
-    srcs = ["litert_compiler_options.cc"],
     hdrs = ["litert_compiler_options.h"],
     deps = [
         "//litert/c:litert_common",

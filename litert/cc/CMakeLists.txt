@@ -79,7 +79,6 @@ set(LITERT_CC_PUBLIC_SOURCES
     litert_opaque_options.cc
     litert_options.cc
     litert_tensor_buffer.cc
-    options/litert_compiler_options.cc
     options/litert_cpu_options.cc
     options/litert_google_tensor_options.cc
     options/litert_gpu_options.cc
