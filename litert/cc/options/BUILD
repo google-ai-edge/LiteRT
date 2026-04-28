@@ -28,7 +28,6 @@ package(
 
 cc_library(
     name = "litert_cpu_options",
-    srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
     deps = [
         "//litert/c:litert_common",
