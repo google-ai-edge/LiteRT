@@ -18,7 +18,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 
@@ -101,6 +103,11 @@ typedef struct LiteRtCompilerContext {
                                            const char* payload_identifier,
                                            void** payload_data);
   void (*destroy_options)(LiteRtOptions options);
+
+  // Environment options
+  LiteRtStatus (*get_environment_options_value)(
+      LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
+      LiteRtAny* value);
 } LiteRtCompilerContext;
 
 LiteRtCompilerContext* LrtGetCompilerContext();
