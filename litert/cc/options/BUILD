@@ -165,7 +165,6 @@ cc_library(
 
 cc_library(
     name = "litert_mediatek_options",
-    srcs = ["litert_mediatek_options.cc"],
     hdrs = ["litert_mediatek_options.h"],
     deps = [
         "//litert/c:litert_common",
