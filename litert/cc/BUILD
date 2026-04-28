@@ -106,7 +106,6 @@ cc_library(
 
 cc_library(
     name = "litert_macros",
-    srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
