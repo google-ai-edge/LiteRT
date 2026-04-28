@@ -181,7 +181,6 @@ cc_library(
 
 cc_library(
     name = "litert_intel_openvino_options",
-    srcs = ["litert_intel_openvino_options.cc"],
     hdrs = ["litert_intel_openvino_options.h"],
     deps = [
         "//litert/c:litert_common",
