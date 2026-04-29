@@ -591,7 +591,6 @@ exports_files(glob([
 # Advanced CompiledModel with new / experimental features.
 cc_library(
     name = "litert_compiled_model_next",
-    srcs = ["litert_compiled_model_next.cc"],
     hdrs = ["litert_compiled_model_next.h"],
     visibility = next_library_visibility,
     deps = [

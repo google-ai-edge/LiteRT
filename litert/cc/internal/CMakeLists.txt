@@ -51,7 +51,6 @@ set(LITERT_CC_INTERNAL_MAIN_SRCS
 )
 
 set(LITERT_CC_INTERNAL_EXTRA_SRCS
-    litert_compiled_model_next.cc
 )
 
 set(LITERT_CC_INTERNAL_ALL_SRCS

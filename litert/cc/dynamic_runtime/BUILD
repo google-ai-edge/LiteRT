@@ -778,7 +778,6 @@ next_library_visibility = [
 
 cc_library(
     name = "litert_compiled_model_next",
-    srcs = ["//litert/cc/internal:litert_compiled_model_next.cc"],
     hdrs = ["//litert/cc/internal:litert_compiled_model_next.h"],
     visibility = next_library_visibility,
     deps = [
