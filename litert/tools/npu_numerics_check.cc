@@ -323,6 +323,11 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
       LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(data)));
       copy_data_and_return(buffer_data, data, total_elements);
     }
+    if (element_type == ElementType::Bool) {
+      std::vector<uint8_t> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Unsupported element type for reading tensor.");
   };
