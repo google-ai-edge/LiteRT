@@ -215,7 +215,6 @@ cc_library(
 
 cc_library(
     name = "litert_extended_model",
-    srcs = ["//litert/cc/internal:litert_extended_model.cc"],
     hdrs = ["//litert/cc/internal:litert_extended_model.h"],
     defines = ["LITERT_DYNAMIC_RUNTIME"],
     visibility = [

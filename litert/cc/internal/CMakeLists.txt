@@ -48,7 +48,6 @@ set(LITERT_CC_INTERNAL_HEADERS
 )
 
 set(LITERT_CC_INTERNAL_MAIN_SRCS
-    litert_extended_model.cc
 )
 
 set(LITERT_CC_INTERNAL_EXTRA_SRCS
