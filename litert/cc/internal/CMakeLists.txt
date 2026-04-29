@@ -47,17 +47,6 @@ set(LITERT_CC_INTERNAL_HEADERS
     scoped_weight_source.h
 )
 
-set(LITERT_CC_INTERNAL_MAIN_SRCS
-)
-
-set(LITERT_CC_INTERNAL_EXTRA_SRCS
-)
-
-set(LITERT_CC_INTERNAL_ALL_SRCS
-    ${LITERT_CC_INTERNAL_MAIN_SRCS}
-    ${LITERT_CC_INTERNAL_EXTRA_SRCS}
-)
-
 file(GLOB LITERT_CC_INTERNAL_DISCOVERED_HEADERS
     RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     CONFIGURE_DEPENDS
@@ -81,22 +70,16 @@ file(GLOB LITERT_CC_INTERNAL_DISCOVERED_SRCS
 )
 list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "_test\\.cc$")
 list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "^test_shared_library\\.cc$")
-if(WIN32)
-    list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "^scoped_file_posix\\.cc$")
-else()
-    list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "^scoped_file_win\\.cc$")
+if(LITERT_CC_INTERNAL_DISCOVERED_SRCS)
+    message(FATAL_ERROR
+        "litert/cc/internal wrapper sources should be header-only.\n"
+        "Discovered implementation sources:\n  ${LITERT_CC_INTERNAL_DISCOVERED_SRCS}\n"
+        "Update litert/cc/internal/CMakeLists.txt.")
 endif()
-list(SORT LITERT_CC_INTERNAL_DISCOVERED_SRCS)
 
-if(LITERT_CC_INTERNAL_MAIN_SRCS)
-    add_library(litert_cc_internal STATIC
-        ${LITERT_CC_INTERNAL_MAIN_SRCS}
-    )
-else()
-    add_library(litert_cc_internal STATIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
-    )
-endif()
+add_library(litert_cc_internal STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
+)
 
 target_include_directories(litert_cc_internal
     PUBLIC
@@ -120,15 +103,9 @@ target_link_libraries(litert_cc_internal
         Threads::Threads
 )
 
-if(LITERT_CC_INTERNAL_EXTRA_SRCS)
-    add_library(litert_cc_internal_extra STATIC
-        ${LITERT_CC_INTERNAL_EXTRA_SRCS}
-    )
-else()
-    add_library(litert_cc_internal_extra STATIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
-    )
-endif()
+add_library(litert_cc_internal_extra STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
+)
 
 target_include_directories(litert_cc_internal_extra
     PUBLIC
