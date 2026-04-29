@@ -24,19 +24,10 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/except.hpp"
-#include "openvino/core/model.hpp"
-#include "openvino/core/rt_info.hpp"
-#include "openvino/core/rtti.hpp"
-#include "openvino/core/type/element_type.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/op/convert.hpp"
-#include "openvino/op/sign.hpp"
 #include "openvino/openvino.hpp"
-#include "openvino/pass/manager.hpp"
-#include "openvino/pass/pass.hpp"
 #include "openvino/runtime/core.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper.h"
@@ -53,6 +44,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
 
@@ -96,6 +88,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflArgMax,
     kLiteRtOpCodeTflOneHot,
     kLiteRtOpCodeTflUnpack,
+    kLiteRtOpCodeTflReduceAll,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -138,47 +131,10 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflRelu0To1,
     kLiteRtOpCodeTflSquare,
-    kLiteRtOpCodeTflSign,
     kLiteRtOpCodeTflFloorMod,
-    // This op calls get_attribute (keep_dims)
-    kLiteRtOpCodeTflReduceAll,
+    kLiteRtOpCodeTflSign,
 };
 // clang format on
-
-// The Intel NPU compiler's IE.Sign op only accepts float operands
-// (f16/f32/f64). When the TFLite frontend produces a Sign node with integer
-// input, NPU compilation fails. This pass wraps such Sign nodes with Convert
-// ops:
-//   Convert(int→f32) → Sign → Convert(f32→original_int_type)
-class CastIntegerSignToFloat : public ov::pass::ModelPass {
- public:
-  OPENVINO_RTTI("CastIntegerSignToFloat");
-  bool run_on_model(const std::shared_ptr<ov::Model>& model) override {
-    bool modified = false;
-    for (const auto& node : model->get_ordered_ops()) {
-      if (node->get_type_info() != ov::op::v0::Sign::get_type_info_static()) {
-        continue;
-      }
-      auto input_type = node->get_input_element_type(0);
-      if (input_type.is_real()) {
-        continue;  // Already a float type — no fix needed.
-      }
-      // Insert Convert int→f32 before Sign.
-      auto cast_to_f32 = std::make_shared<ov::op::v0::Convert>(
-          node->input_value(0), ov::element::f32);
-      node->input(0).replace_source_output(cast_to_f32->output(0));
-      node->validate_and_infer_types();
-      // Insert Convert f32→original_int_type after Sign.
-      auto cast_back =
-          std::make_shared<ov::op::v0::Convert>(node->output(0), input_type);
-      ov::copy_runtime_info(node, {cast_to_f32, cast_back});
-      node->output(0).replace(
-          cast_back->output(0));  // Rewire all downstream consumers.
-      modified = true;
-    }
-    return modified;
-  }
-};
 
 // When exporting a model via the OpenVINO NPU plugin, standard string streams
 // might encounter a 32-bit std::streamsize limitation on specific platforms,
@@ -419,87 +375,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
     const auto num_partitions = model.NumSubgraphs();
 
-    // Configure device and OpenVINO settings from Intel OpenVINO options
-
-    std::string device = "NPU";  // Default device
-    ov::AnyMap configs_map;
-
-    if (compiler_plugin->GetIntelOpenVinoOptions().HasValue()) {
-      const auto& intel_opts =
-          compiler_plugin->GetIntelOpenVinoOptions().Value();
-
-      // Configure device type
-      auto device_type = intel_opts.GetDeviceType();
-      switch (device_type) {
-        case kLiteRtIntelOpenVinoDeviceTypeCPU:
-          device = "CPU";
-          break;
-        case kLiteRtIntelOpenVinoDeviceTypeGPU:
-          device = "GPU";
-          break;
-        case kLiteRtIntelOpenVinoDeviceTypeNPU:
-          device = "NPU";
-          break;
-        case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-          device = "AUTO";
-          break;
-      }
-
-      LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s",
-                 device.c_str());
-
-      auto performance_mode = intel_opts.GetPerformanceMode();
-
-      // Add custom configuration options
-      int num_custom_options = intel_opts.GetNumConfigsMapOptions();
-      for (int i = 0; i < num_custom_options; ++i) {
-        auto [key, value] = intel_opts.GetConfigsMapOption(i);
-        if (!key.empty()) {  // Valid config option
-          configs_map[key] = value;
-          LITERT_LOG(LITERT_INFO, "Custom config: %s = %s", key.c_str(),
-                     value.c_str());
-        }
-      }
-
-      // Configure performance mode (can be overridden by custom options)
-      switch (performance_mode) {
-        case kLiteRtIntelOpenVinoPerformanceModeLatency:
-          if (configs_map.find(ov::hint::performance_mode.name()) ==
-              configs_map.end()) {
-            configs_map[ov::hint::performance_mode.name()] =
-                ov::hint::PerformanceMode::LATENCY;
-            LITERT_LOG(LITERT_INFO, "Performance mode: LATENCY");
-          }
-          break;
-        case kLiteRtIntelOpenVinoPerformanceModeThroughput:
-          if (configs_map.find(ov::hint::performance_mode.name()) ==
-              configs_map.end()) {
-            configs_map[ov::hint::performance_mode.name()] =
-                ov::hint::PerformanceMode::THROUGHPUT;
-            LITERT_LOG(LITERT_INFO, "Performance mode: THROUGHPUT");
-          }
-          break;
-        case kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput:
-          if (configs_map.find(ov::hint::performance_mode.name()) ==
-              configs_map.end()) {
-            configs_map[ov::hint::performance_mode.name()] =
-                ov::hint::PerformanceMode::CUMULATIVE_THROUGHPUT;
-            LITERT_LOG(LITERT_INFO, "Performance mode: CUMULATIVE_THROUGHPUT");
-          }
-          break;
-      }
-    } else {
-      // Default configuration if no options provided
-      configs_map[ov::hint::performance_mode.name()] =
-          ov::hint::PerformanceMode::LATENCY;
-      LITERT_LOG(LITERT_INFO, "Using default configuration (LATENCY mode)");
-    }
-
-    // Configure the NPU platform string used by OpenVINO.
-    if (device == "NPU") {
-      LITERT_RETURN_IF_ERROR(
-          litert::openvino::ConfigureCompilationParams(soc_model, configs_map));
-    }
+    // Build the OpenVINO compile context from options.
+    LITERT_ASSIGN_OR_RETURN(
+        litert::openvino::OpenVinoCompileContext context,
+        litert::openvino::OpenVinoCompileContext::Create(
+            compiler_plugin->GetIntelOpenVinoOptions()));
+    LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
 
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);
@@ -522,13 +403,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
 
-        // Fix integer Sign ops for NPU compatibility.
-        ov::pass::Manager pass_manager;
-        pass_manager.register_pass<CastIntegerSignToFloat>();
-        pass_manager.run_passes(ov_model);
+        // Run NPU-specific optimization passes.
+        context.OptimizeModel(ov_model);
 
-        // Use device and configs_map from Intel OpenVINO options
-        auto compiled_model = core.compile_model(ov_model, device, configs_map);
+        // Compile using the configured device and properties.
+        auto compiled_model = core.compile_model(
+            ov_model, context.Device(), context.ConfigsMap());
 
         CustomOStreamBuf obuf;
         std::ostream oss(&obuf);

@@ -35,6 +35,34 @@ litert_lib(
     ],
 )
 
+litert_lib(
+    name = "npu_optimizer",
+    srcs = ["npu_optimizer.cc"],
+    hdrs = ["npu_optimizer.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
+    name = "openvino_compile_context",
+    srcs = ["openvino_compile_context.cc"],
+    hdrs = ["openvino_compile_context.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        ":npu_optimizer",
+        ":openvino_soc_config",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@intel_openvino//:openvino",
+    ],
+)
+
 litert_dynamic_lib(
     name = "openvino_compiler_plugin",
     srcs = ["openvino_compiler_plugin.cc"],
@@ -62,6 +90,7 @@ litert_dynamic_lib(
         "//litert:__subpackages__",
     ],
     deps = [
+        ":openvino_compile_context",
         ":graph_iterator",
         ":openvino_soc_config",
         "//litert/c:litert_common",
@@ -94,6 +123,7 @@ litert_bin(
     linkshared = 1,
     visibility = ["//visibility:public"],
     deps = [
+        ":openvino_compile_context",
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
         ":openvino_soc_config",
