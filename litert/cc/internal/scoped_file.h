@@ -15,12 +15,10 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
 
-#if defined(_WIN32)
-#include <Windows.h>
-#endif
-
 #include <cstddef>
+#include <string_view>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
@@ -34,7 +32,7 @@ namespace litert {
 class ScopedFile {
  public:
 #if defined(_WIN32)
-  using PlatformFile = HANDLE;
+  using PlatformFile = void*;
   static const PlatformFile kInvalidPlatformFile;
 #else
   using PlatformFile = int;
@@ -43,6 +41,16 @@ class ScopedFile {
 
   static absl::StatusOr<ScopedFile> Open(absl::string_view path);
   static absl::StatusOr<ScopedFile> OpenWritable(absl::string_view path);
+
+#ifdef LITERT_NO_ABSL
+  static absl::StatusOr<ScopedFile> Open(std::string_view path) {
+    return Open(absl::string_view(path.data(), path.size()));
+  }
+
+  static absl::StatusOr<ScopedFile> OpenWritable(std::string_view path) {
+    return OpenWritable(absl::string_view(path.data(), path.size()));
+  }
+#endif  // LITERT_NO_ABSL
 
   ScopedFile() : file_(kInvalidPlatformFile) {}
   explicit ScopedFile(PlatformFile file) : file_(file) {}
@@ -112,6 +120,27 @@ class ScopedFile {
   PlatformFile file_;
 };
 
+namespace internal::scoped_file_detail {
+
+inline bool IsFileValid(ScopedFile::PlatformFile file) {
+  return file != ScopedFile::kInvalidPlatformFile;
+}
+
+}  // namespace internal::scoped_file_detail
+
+inline absl::StatusOr<size_t> ScopedFile::GetSize(PlatformFile file) {
+  if (!internal::scoped_file_detail::IsFileValid(file)) {
+    return absl::FailedPreconditionError("Scoped file is not valid");
+  }
+  return GetSizeImpl(file);
+}
+
 }  // namespace litert
+
+#if defined(_WIN32)
+#include "litert/cc/internal/scoped_file_win.h"
+#else
+#include "litert/cc/internal/scoped_file_posix.h"
+#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_SCOPED_FILE_H_
