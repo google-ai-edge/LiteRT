@@ -58,6 +58,7 @@ class OpenVinoCompileContext {
 
   std::string device_ = "NPU";
   ov::AnyMap configs_map_;
+  bool eliminate_fq_after_matmul_ = false;
 };
 
 }  // namespace openvino

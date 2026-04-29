@@ -24,6 +24,18 @@
 namespace litert {
 namespace openvino {
 
+// Eliminates FakeQuantize nodes that immediately follow MatMul operations.
+//
+// The FakeQuantize directly after a MatMul re-quantize its output to a
+// calibrated range. This pass detects the MatMul -> FakeQuantize pattern
+// and removes the FakeQuantize, rewiring downstream consumers to read
+// directly from the MatMul output to reduce NPU overhead.
+class EliminateMatMulFakeQuantize : public ov::pass::MatcherPass {
+ public:
+  OPENVINO_MATCHER_PASS_RTTI("EliminateMatMulFakeQuantize");
+  EliminateMatMulFakeQuantize();
+};
+
 // The Intel NPU compiler's IE.Sign op only accepts float operands
 // (f16/f32/f64). When the TFLite frontend produces a Sign node with integer
 // input, NPU compilation fails. This pass wraps such Sign nodes with Convert
@@ -40,6 +52,12 @@ class CastIntegerSignToFloat : public ov::pass::MatcherPass {
 // apply the enabled passes to a model.
 class NpuOptimizer {
  public:
+  // Toggles the EliminateMatMulFakeQuantize pass. Disabled by default.
+  NpuOptimizer& SetEliminateMatMulFakeQuantize(bool enable) {
+    eliminate_matmul_fq_ = enable;
+    return *this;
+  }
+
   // Toggles the CastIntegerSignToFloat pass. Enabled by default because the
   // NPU plugin cannot lower integer Sign operations.
   NpuOptimizer& SetCastIntegerSignToFloat(bool enable) {
@@ -51,6 +69,7 @@ class NpuOptimizer {
   void Run(const std::shared_ptr<ov::Model>& model) const;
 
  private:
+  bool eliminate_matmul_fq_ = false;
   bool cast_integer_sign_to_float_ = true;
 };
 

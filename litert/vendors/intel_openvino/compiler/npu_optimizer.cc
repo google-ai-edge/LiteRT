@@ -20,6 +20,8 @@
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/rt_info.hpp"
 #include "openvino/op/convert.hpp"
+#include "openvino/op/fake_quantize.hpp"
+#include "openvino/op/matmul.hpp"
 #include "openvino/op/sign.hpp"
 #include "openvino/pass/graph_rewrite.hpp"
 #include "openvino/pass/manager.hpp"
@@ -27,6 +29,30 @@
 
 namespace litert {
 namespace openvino {
+
+EliminateMatMulFakeQuantize::EliminateMatMulFakeQuantize() {
+  namespace pattern = ov::pass::pattern;
+  auto matmul_pattern = pattern::wrap_type<ov::op::v0::MatMul>(
+      {pattern::any_input(), pattern::any_input()},
+      pattern::consumers_count(1));
+  auto fq_pattern = pattern::wrap_type<ov::op::v0::FakeQuantize>(
+      {matmul_pattern, pattern::any_input(), pattern::any_input(),
+       pattern::any_input(), pattern::any_input()});
+
+  ov::matcher_pass_callback callback = [=](pattern::Matcher& m) {
+    auto pattern_map = m.get_pattern_value_map();
+    auto matmul = pattern_map[matmul_pattern];
+    auto fq = pattern_map[fq_pattern].get_node_shared_ptr();
+
+    ov::copy_runtime_info(fq, matmul.get_node_shared_ptr());
+    ov::replace_node(fq, matmul.get_node_shared_ptr());
+    return true;
+  };
+
+  auto m = std::make_shared<pattern::Matcher>(fq_pattern,
+                                              "EliminateMatMulFakeQuantize");
+  register_matcher(m, callback);
+}
 
 CastIntegerSignToFloat::CastIntegerSignToFloat() {
   namespace pattern = ov::pass::pattern;
@@ -69,6 +95,9 @@ void NpuOptimizer::Run(const std::shared_ptr<ov::Model>& model) const {
   ov::pass::Manager pass_manager;
   if (cast_integer_sign_to_float_) {
     pass_manager.register_pass<CastIntegerSignToFloat>();
+  }
+  if (eliminate_matmul_fq_) {
+    pass_manager.register_pass<EliminateMatMulFakeQuantize>();
   }
   pass_manager.run_passes(model);
 }

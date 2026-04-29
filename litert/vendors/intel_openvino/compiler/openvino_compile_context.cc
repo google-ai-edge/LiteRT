@@ -72,6 +72,13 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
   for (int i = 0; i < num_custom_options; ++i) {
     auto [key, value] = options.GetConfigsMapOption(i);
     if (!key.empty()) {
+      if (key == "optimize_fq_after_matmul") {
+        LITERT_LOG(LITERT_INFO,
+                   "Custom config: optimize_fq_after_matmul = %s",
+                   value.c_str());
+        context.eliminate_fq_after_matmul_ = (value == "true");
+        continue;
+      }
       context.configs_map_[key] = value;
       LITERT_LOG(LITERT_INFO, "Custom config: %s = %s", key.c_str(),
                  value.c_str());
@@ -120,7 +127,9 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
 void OpenVinoCompileContext::OptimizeModel(
     const std::shared_ptr<ov::Model>& model) const {
   if (device_ == "NPU") {
-    NpuOptimizer().Run(model);
+    NpuOptimizer()
+        .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
+        .Run(model);
   }
 }
 
