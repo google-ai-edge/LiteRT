@@ -32,9 +32,12 @@ else:
 class Environment:
   """Python wrapper for a shared LiteRT environment."""
 
-  def __init__(self, capsule, cpu_num_threads: int = 0):
+  def __init__(
+      self, capsule, cpu_num_threads: int = 0, enforce_f32_gpu: bool = False
+  ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
+    self.enforce_f32_gpu = enforce_f32_gpu
 
   @classmethod
   def create(
@@ -43,6 +46,7 @@ class Environment:
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
       cpu_num_threads: int = 1,
+      enforce_f32_gpu: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -52,6 +56,7 @@ class Environment:
       compiler_plugin_path: Optional path to compiler plugin libraries.
       dispatch_library_path: Optional path to dispatch libraries.
       cpu_num_threads: Number of threads for CPU execution.
+      enforce_f32_gpu: Enforce F32 precision on GPU.
 
     Returns:
       A new Environment instance.
@@ -63,7 +68,7 @@ class Environment:
         compiler_plugin_path=compiler_plugin_path,
         dispatch_library_path=dispatch_library_path,
     )
-    return cls(capsule, cpu_num_threads)
+    return cls(capsule, cpu_num_threads, enforce_f32_gpu)
 
   @property
   def capsule(self):
