@@ -23,12 +23,15 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/core/environment_options.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -297,6 +300,24 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   ASSERT_EQ("qnn_partition_0", op_data_string);
 
   LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestQnnPlugin, CompileMulSubgraphWithLibraryDir) {
+  LiteRtEnvironmentOptionsT env_options;
+  LiteRtEnvOption compiler_plugin_option;
+  compiler_plugin_option.tag = kLiteRtEnvOptionTagCompilerPluginLibraryDir;
+  compiler_plugin_option.value.type = kLiteRtAnyTypeString;
+  compiler_plugin_option.value.str_value = "/tmp/bogus_qnn_path";
+  env_options.SetOption(compiler_plugin_option);
+
+  auto plugin = CreatePlugin(/*compiler_context=*/nullptr, /*env=*/&env_options,
+                             /*options=*/nullptr);
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+
+  LiteRtCompiledResult compiled;
+  // This should fail because it tries to load libraries from bogus path.
+  LITERT_EXPECT_ERROR(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                                  model.Get(), &compiled));
 }
 
 TEST(TestQnnPlugin, ShareContextBinary) {
