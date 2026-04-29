@@ -264,7 +264,6 @@ cc_library(
 
 cc_library(
     name = "litert_rng",
-    srcs = ["litert_rng.cc"],
     hdrs = ["litert_rng.h"],
     deps = [
         ":litert_detail",
