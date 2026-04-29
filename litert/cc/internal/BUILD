@@ -354,8 +354,10 @@ cc_test(
 
 cc_library(
     name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
-    hdrs = ["litert_shared_library.h"],
+    hdrs = [
+        "litert_shared_library.h",
+        "litert_shared_library_windows.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",

@@ -37,6 +37,7 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_runtime_builtin.h
     litert_runtime_proxy.h
     litert_shared_library.h
+    litert_shared_library_windows.h
     litert_source_location.h
     litert_tensor_buffer_utils.h
     litert_tflite_error_status_builder.h
@@ -49,7 +50,6 @@ set(LITERT_CC_INTERNAL_HEADERS
 set(LITERT_CC_INTERNAL_MAIN_SRCS
     litert_op_options.cc
     litert_builder.cc
-    litert_shared_library.cc
     litert_extended_model.cc
     litert_runtime_builtin.cc
 )
