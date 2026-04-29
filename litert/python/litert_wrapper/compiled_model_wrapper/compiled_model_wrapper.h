@@ -47,12 +47,16 @@ class CompiledModelWrapper {
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param cpu_num_threads Number of threads for CPU execution.
+   * @param gpu_enforce_f32 Enforce F32 precision on GPU.
+   * @param gpu_share_constant_tensors Share constant tensors among subgraphs on
+   *        GPU.
    * @param out_error String to store error message if creation fails
    * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromFile(
       PyObject* environment_capsule, const char* model_path, int hardware_accel,
-      int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error);
+      int cpu_num_threads, bool gpu_enforce_f32,
+      bool gpu_share_constant_tensors, std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
@@ -68,12 +72,16 @@ class CompiledModelWrapper {
    *        Use kCpu | kGpu (3) for GPU with CPU fallback.
    *        Note: 0 (kNone) will fail; at least one accelerator must be set.
    * @param cpu_num_threads Number of threads for CPU execution.
+   * @param gpu_enforce_f32 Enforce F32 precision on GPU.
+   * @param gpu_share_constant_tensors Share constant tensors among subgraphs on
+   *        GPU.
    * @param out_error String to store error message if creation fails
    * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromBuffer(
       PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-      int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error);
+      int cpu_num_threads, bool gpu_enforce_f32,
+      bool gpu_share_constant_tensors, std::string* out_error);
 
   CompiledModelWrapper(litert::ExtendedModel model,
                        litert::CompiledModel compiled);

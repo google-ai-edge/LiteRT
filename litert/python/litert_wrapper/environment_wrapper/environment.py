@@ -33,11 +33,16 @@ class Environment:
   """Python wrapper for a shared LiteRT environment."""
 
   def __init__(
-      self, capsule, cpu_num_threads: int = 0, enforce_f32_gpu: bool = False
+      self,
+      capsule,
+      cpu_num_threads: int = 0,
+      gpu_enforce_f32: bool = False,
+      gpu_share_constant_tensors: bool = False,
   ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
-    self.enforce_f32_gpu = enforce_f32_gpu
+    self.gpu_enforce_f32 = gpu_enforce_f32
+    self.gpu_share_constant_tensors = gpu_share_constant_tensors
 
   @classmethod
   def create(
@@ -46,7 +51,8 @@ class Environment:
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
       cpu_num_threads: int = 1,
-      enforce_f32_gpu: bool = False,
+      gpu_enforce_f32: bool = False,
+      gpu_share_constant_tensors: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -56,7 +62,8 @@ class Environment:
       compiler_plugin_path: Optional path to compiler plugin libraries.
       dispatch_library_path: Optional path to dispatch libraries.
       cpu_num_threads: Number of threads for CPU execution.
-      enforce_f32_gpu: Enforce F32 precision on GPU.
+      gpu_enforce_f32: Enforce F32 precision on GPU.
+      gpu_share_constant_tensors: Share constant tensors among subgraphs on GPU.
 
     Returns:
       A new Environment instance.
@@ -68,7 +75,9 @@ class Environment:
         compiler_plugin_path=compiler_plugin_path,
         dispatch_library_path=dispatch_library_path,
     )
-    return cls(capsule, cpu_num_threads, enforce_f32_gpu)
+    return cls(
+        capsule, cpu_num_threads, gpu_enforce_f32, gpu_share_constant_tensors
+    )
 
   @property
   def capsule(self):

@@ -88,7 +88,8 @@ class CompiledModel:
         model_path,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
-        enforce_f32_gpu=env.enforce_f32_gpu,
+        gpu_enforce_f32=env.gpu_enforce_f32,
+        gpu_share_constant_tensors=env.gpu_share_constant_tensors,
     )
     return cls(ptr, env)
 
@@ -120,7 +121,8 @@ class CompiledModel:
         model_data,
         hardware_accel=hardware_accel,
         cpu_num_threads=env.cpu_num_threads,
-        enforce_f32_gpu=env.enforce_f32_gpu,
+        gpu_enforce_f32=env.gpu_enforce_f32,
+        gpu_share_constant_tensors=env.gpu_share_constant_tensors,
     )
     return cls(ptr, env)
 

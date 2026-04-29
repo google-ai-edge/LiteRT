@@ -172,7 +172,8 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     PyObject* environment_capsule, const char* model_path, int hardware_accel,
-    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
+    int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
+    std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -197,13 +198,18 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
 
-  if (enforce_f32_gpu) {
+  if (gpu_enforce_f32 || gpu_share_constant_tensors) {
     auto gpu_options_or = options.GetGpuOptions();
     if (!gpu_options_or) {
       if (out_error) *out_error = gpu_options_or.Error().Message();
       return nullptr;
     }
-    gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    if (gpu_enforce_f32) {
+      gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    }
+    if (gpu_share_constant_tensors) {
+      gpu_options_or->EnableConstantTensorSharing(true);
+    }
   }
 
   if (cpu_num_threads > 0) {
@@ -237,7 +243,8 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-    int cpu_num_threads, bool enforce_f32_gpu, std::string* out_error) {
+    int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
+    std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -272,13 +279,18 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
 
-  if (enforce_f32_gpu) {
+  if (gpu_enforce_f32 || gpu_share_constant_tensors) {
     auto gpu_options_or = options.GetGpuOptions();
     if (!gpu_options_or) {
       if (out_error) *out_error = gpu_options_or.Error().Message();
       return nullptr;
     }
-    gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    if (gpu_enforce_f32) {
+      gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    }
+    if (gpu_share_constant_tensors) {
+      gpu_options_or->EnableConstantTensorSharing(true);
+    }
   }
 
   if (cpu_num_threads > 0) {
