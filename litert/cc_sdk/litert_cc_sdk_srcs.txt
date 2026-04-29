@@ -1,6 +1,5 @@
 litert/c/litert_layout.cc
 litert/c/internal/litert_logging.cc
-litert/cc/internal/litert_runtime_builtin.cc
 litert/c/options/litert_compiler_options.cc
 litert/c/options/litert_cpu_options.cc
 litert/c/options/litert_google_tensor_options.cc

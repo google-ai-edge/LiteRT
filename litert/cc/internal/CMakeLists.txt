@@ -51,14 +51,12 @@ set(LITERT_CC_INTERNAL_MAIN_SRCS
     litert_op_options.cc
     litert_builder.cc
     litert_extended_model.cc
-    litert_runtime_builtin.cc
 )
 
 set(LITERT_CC_INTERNAL_EXTRA_SRCS
     litert_compiled_model_next.cc
     litert_model_predicates.cc
     litert_rng.cc
-    litert_runtime_no_builtin.cc
 )
 
 set(LITERT_CC_INTERNAL_ALL_SRCS
