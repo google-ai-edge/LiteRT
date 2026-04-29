@@ -772,6 +772,15 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/options:litert_samsung_options",
 ]
 
+LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS = [
+    # The macOS/iOS dylib must export the full LiteRt C API surface. The
+    # exported-symbols list allows these symbols, but it does not force archive
+    # members into the link. Pull one symbol from litert_builder.cc so the
+    # complete builder C API object is kept for dynamic-runtime C++ wrappers.
+    "-u",
+    "_LiteRtBuilderBuildOp",
+]
+
 # This test verifies that the C API header files can build via C compiler.
 cc_test(
     name = "litert_c_api_common_test",
@@ -822,7 +831,9 @@ sh_test(
 macos_dylib(
     name = "build_litert_runtime_c_api_dylib",
     exported_symbols_lists = export_lrt_runtime_only_script(),
-    linkopts = ["-install_name @rpath/libLiteRt.dylib"],
+    linkopts = [
+        "-install_name @rpath/libLiteRt.dylib",
+    ] + LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS,
     minimum_os_version = LITERT_MIN_MACOS_VERSION,
     deps = LITERT_C_API_COMMON_DEPS,
 )
@@ -843,7 +854,9 @@ ios_framework(
         "ipad",
     ],
     infoplists = ["LiteRtInfo.plist"],
-    linkopts = ["-install_name @rpath/libLiteRt.dylib"],
+    linkopts = [
+        "-install_name @rpath/libLiteRt.dylib",
+    ] + LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS,
     minimum_os_version = LITERT_MIN_IOS_VERSION,
     deps = LITERT_C_API_COMMON_DEPS,
 )

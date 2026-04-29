@@ -478,7 +478,6 @@ cc_test(
 
 cc_library(
     name = "litert_builder",
-    srcs = ["litert_builder.cc"],
     hdrs = ["litert_builder.h"],
     visibility = internal_static_library_visibility,
     deps = [

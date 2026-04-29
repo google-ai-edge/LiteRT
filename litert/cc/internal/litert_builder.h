@@ -32,6 +32,7 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_op_options.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -115,10 +116,71 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
   explicit Builder(LiteRtBuilder builder)
       : internal::NonOwnedHandle<LiteRtBuilder>(builder) {}
   /// @brief Builds a tensor from a `RankedTensorSpec`.
-  Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
+  Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const {
+    LiteRtTensor tensor;
+    LiteRtRankedTensorType ranked_tensor_type_litert =
+        static_cast<LiteRtRankedTensorType>(spec.ranked_tensor_type);
+
+    LiteRtWeights litert_weights;
+    if (spec.weights.has_value()) {
+      litert_weights = spec.weights->Get();
+    } else {
+      litert_weights = nullptr;
+    }
+
+    LiteRtQuantizationTypeId quantization_type_id = kLiteRtQuantizationNone;
+    LiteRtQuantizationPerTensor litert_per_tensor_quantization;
+    if (spec.per_tensor_quantization.has_value()) {
+      litert_per_tensor_quantization = *spec.per_tensor_quantization;
+      quantization_type_id = kLiteRtQuantizationPerTensor;
+    }
+    LiteRtQuantizationPerChannel litert_per_channel_quantization;
+    if (spec.per_channel_quantization.has_value()) {
+      litert_per_channel_quantization = *spec.per_channel_quantization;
+      quantization_type_id = kLiteRtQuantizationPerChannel;
+    }
+    const char* name = spec.tensor_name ? spec.tensor_name->c_str() : nullptr;
+    internal::AssertOk(LiteRtBuilderBuildTensor, Get(), kLiteRtRankedTensorType,
+                       ranked_tensor_type_litert, LiteRtUnrankedTensorType(),
+                       litert_weights, quantization_type_id,
+                       litert_per_tensor_quantization,
+                       litert_per_channel_quantization, name, &tensor);
+    return Tensor(tensor);
+  }
 
   /// @brief Builds a tensor similar to the given tensor.
-  Expected<Tensor> CloneTensor(const Tensor& src) const;
+  Expected<Tensor> CloneTensor(const Tensor& src) const {
+    if (src.TypeId() != kLiteRtRankedTensorType) {
+      return Unexpected(Status::kErrorUnsupported);
+    }
+    auto ranked_type = src.RankedTensorType();
+    if (!ranked_type) {
+      return ranked_type.Error();
+    }
+
+    RankedTensorSpecBuilder spec_builder(*ranked_type);
+
+    if (src.HasWeights()) {
+      spec_builder = std::move(spec_builder).WithWeights(src.Weights());
+    }
+
+    if (src.HasQuantization()) {
+      auto q_type = src.QTypeId();
+      if (q_type == kLiteRtQuantizationPerTensor) {
+        spec_builder =
+            std::move(spec_builder)
+                .WithPerTensorQuantization(src.PerTensorQuantization());
+      } else if (q_type == kLiteRtQuantizationPerChannel) {
+        spec_builder =
+            std::move(spec_builder)
+                .WithPerChannelQuantization(src.PerChannelQuantization());
+      }
+    }
+
+    return BuildTensor(std::move(spec_builder)
+                           .WithTensorName(std::string(src.Name()))
+                           .Build());
+  }
 
   /// @brief Builds weights for a tensor.
   template <typename T>
@@ -132,13 +194,49 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
     return Weights(weights);
   }
 
+#ifdef LITERT_NO_ABSL
+  template <typename T>
+  Expected<Weights> BuildWeights(std::span<const T> data,
+                                 Tensor& tensor) const {
+    return BuildWeights(internal::ToAbslSpan(data), tensor);
+  }
+#endif  // LITERT_NO_ABSL
+
   /// @brief A trait for building scalars.
   Expected<Tensor> BuildScalar(
       LiteRtElementType element_type,
-      std::optional<std::string> name = std::nullopt) const;
+      std::optional<std::string> name = std::nullopt) const {
+    LiteRtTensor tensor;
+    LiteRtUnrankedTensorType unranked_tensor_type;
+    unranked_tensor_type.element_type = element_type;
+    const char* name_ptr = name ? name->c_str() : nullptr;
+    internal::AssertOk(LiteRtBuilderBuildTensor, Get(),
+                       kLiteRtUnrankedTensorType, LiteRtRankedTensorType(),
+                       unranked_tensor_type, LiteRtWeights(),
+                       kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
+                       LiteRtQuantizationPerChannel(), name_ptr, &tensor);
+    return Tensor(tensor);
+  }
 
   Op BuildOp(LiteRtOpCode op_code, const std::vector<Tensor>& inputs,
-             const std::vector<Tensor>& outputs) const;
+             const std::vector<Tensor>& outputs) const {
+    LiteRtOp litert_op;
+    std::vector<LiteRtTensor> input_tensors;
+    input_tensors.reserve(inputs.size());
+    for (const auto& input : inputs) {
+      input_tensors.push_back(input.Get());
+    }
+    std::vector<LiteRtTensor> output_tensors;
+    output_tensors.reserve(outputs.size());
+    for (const auto& output : outputs) {
+      output_tensors.push_back(output.Get());
+    }
+    internal::AssertOk(LiteRtBuilderBuildOp, Get(), op_code,
+                       input_tensors.size(), input_tensors.data(),
+                       output_tensors.size(), output_tensors.data(),
+                       &litert_op);
+    return Op(litert_op);
+  }
 
   /// @brief Clones the given op.
   Op BuildOp(Op& src, const std::vector<Tensor>& inputs,
@@ -172,18 +270,54 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
   /// Returns all output tensors.
   Expected<std::vector<Tensor>> CreateOpWithOutputSpec(
       LiteRtOpCode code, const std::vector<Tensor>& inputs,
-      const std::vector<RankedTensorSpec>& output_specs) const;
+      const std::vector<RankedTensorSpec>& output_specs) const {
+    std::vector<Tensor> outputs;
+    outputs.reserve(output_specs.size());
+
+    std::vector<Tensor> results;
+    results.reserve(output_specs.size());
+
+    for (const auto& spec : output_specs) {
+      auto t_res = BuildTensor(spec);
+      if (!t_res) {
+        return t_res.Error();
+      }
+      outputs.push_back(Tensor(*t_res));
+      results.push_back(std::move(*t_res));
+    }
+
+    BuildOp(code, inputs, outputs);
+    return results;
+  }
 
   /// @brief Overload for single-output Ops.
   Expected<Tensor> CreateOpWithOutputSpec(LiteRtOpCode code,
                                           const std::vector<Tensor>& inputs,
-                                          RankedTensorSpec output_spec) const;
+                                          RankedTensorSpec output_spec) const {
+    std::vector<RankedTensorSpec> specs;
+    specs.push_back(std::move(output_spec));
+    auto results = CreateOpWithOutputSpec(code, inputs, specs);
+    if (!results) {
+      return results.Error();
+    }
+    return std::move((*results)[0]);
+  }
 
   /// @brief Replaces the given op with a new op.
   /// The outputs of the old op are reused for the new op.
   /// The old op is erased.
   Op ReplaceOp(Op& op, LiteRtOpCode new_code,
-               const std::vector<Tensor>& inputs) const;
+               const std::vector<Tensor>& inputs) const {
+    OpOutputs op_outputs = op.Outputs();
+    std::vector<Tensor> outputs;
+    outputs.reserve(op_outputs.size());
+    for (const auto& out : op_outputs) {
+      outputs.push_back(Tensor(out));
+    }
+    Op new_op = BuildOp(new_code, inputs, outputs);
+    EraseOp(op);
+    return new_op;
+  }
 };
 
 }  // namespace litert

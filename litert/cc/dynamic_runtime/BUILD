@@ -248,7 +248,6 @@ cc_library(
 
 cc_library(
     name = "litert_builder",
-    srcs = ["//litert/cc/internal:litert_builder.cc"],
     hdrs = ["//litert/cc/internal:litert_builder.h"],
     visibility = [
         "//litert:litert_public",
