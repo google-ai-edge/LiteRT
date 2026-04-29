@@ -48,6 +48,8 @@ litert/cc/internal/litert_op_options.h
 litert/cc/internal/litert_platform_support.h
 litert/cc/internal/scoped_weight_source.h
 litert/cc/internal/scoped_file.h
+litert/cc/internal/scoped_file_posix.h
+litert/cc/internal/scoped_file_win.h
 litert/cc/internal/litert_runtime_builtin.h
 litert/cc/internal/litert_runtime_proxy.h
 litert/cc/internal/litert_shared_library.h
