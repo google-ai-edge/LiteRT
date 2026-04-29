@@ -29,25 +29,21 @@ TEST(ModelTest, BasicModelInspection) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   litert::compiler::Model model(ctx, c_model);
 
-  auto num_subgraphs_or = model.NumSubgraphs();
-  ASSERT_TRUE(num_subgraphs_or.HasValue());
-  EXPECT_EQ(num_subgraphs_or.Value(), 1);
+  auto num_subgraphs = model.NumSubgraphs();
+  EXPECT_EQ(num_subgraphs, 1);
 
-  auto subgraph_or = model.GetSubgraph(0);
+  auto subgraph_or = model.Subgraph(0);
   ASSERT_TRUE(subgraph_or.HasValue());
   auto subgraph = subgraph_or.Value();
 
-  auto ops_or = subgraph.Ops();
-  ASSERT_TRUE(ops_or.HasValue());
-  EXPECT_GT(ops_or.Value().size(), 0);
+  auto ops = subgraph.Ops();
+  EXPECT_GT(ops.size(), 0);
 
-  auto inputs_or = subgraph.Inputs();
-  ASSERT_TRUE(inputs_or.HasValue());
-  EXPECT_FALSE(inputs_or.Value().empty());
+  auto inputs = subgraph.Inputs();
+  EXPECT_FALSE(inputs.empty());
 
-  auto outputs_or = subgraph.Outputs();
-  ASSERT_TRUE(outputs_or.HasValue());
-  EXPECT_FALSE(outputs_or.Value().empty());
+  auto outputs = subgraph.Outputs();
+  EXPECT_FALSE(outputs.empty());
 }
 
 }  // namespace

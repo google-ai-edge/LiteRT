@@ -489,6 +489,23 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_logging_helper_with_compiler_context",
+    srcs = ["litert_logging_helper_with_compiler_context.cc"],
+    hdrs = ["litert_logging_helper_with_compiler_context.h"],
+    visibility = [
+        "//litert/runtime/accelerators/gpu:__pkg__",
+        "//litert/vendors:__subpackages__",
+    ],
+    deps = [
+        ":litert_compiler_context_header",
+        ":litert_logging",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+    ],
+)
+
 cc_test(
     name = "litert_logging_test",
     srcs = ["litert_logging_test.cc"],

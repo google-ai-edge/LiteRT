@@ -55,6 +55,7 @@ typedef struct LiteRtCompilerContext {
 
   // Op inspection
   LiteRtStatus (*get_op_code)(LiteRtOp op, LiteRtOpCode* code);
+  LiteRtStatus (*get_custom_code)(LiteRtOp op, const char** code);
   LiteRtStatus (*get_num_op_inputs)(LiteRtOp op, LiteRtParamIndex* num_inputs);
   LiteRtStatus (*get_op_input)(LiteRtOp op, LiteRtParamIndex input_index,
                                LiteRtTensor* input);
@@ -65,12 +66,26 @@ typedef struct LiteRtCompilerContext {
 
   // Tensor inspection
   LiteRtStatus (*get_tensor_name)(LiteRtTensor tensor, const char** name);
+  LiteRtStatus (*get_tensor_index)(LiteRtTensor tensor, uint32_t* tensor_index);
   LiteRtStatus (*get_tensor_type_id)(LiteRtTensor tensor,
                                      LiteRtTensorTypeId* type_id);
   LiteRtStatus (*get_ranked_tensor_type)(
       LiteRtTensor tensor, LiteRtRankedTensorType* ranked_tensor_type);
   LiteRtStatus (*get_unranked_tensor_type)(
       LiteRtTensor tensor, LiteRtUnrankedTensorType* unranked_tensor_type);
+  LiteRtStatus (*get_quantization_type_id)(LiteRtTensor tensor,
+                                           LiteRtQuantizationTypeId* q_type_id);
+  LiteRtStatus (*get_per_tensor_quantization)(
+      LiteRtTensor tensor,
+      LiteRtQuantizationPerTensor* per_tensor_quantization);
+  LiteRtStatus (*get_per_channel_quantization)(
+      LiteRtTensor tensor,
+      LiteRtQuantizationPerChannel* per_channel_quantization);
+  LiteRtStatus (*get_num_tensor_uses)(LiteRtTensor tensor,
+                                      LiteRtParamIndex* num_uses);
+  LiteRtStatus (*get_tensor_use)(LiteRtTensor tensor,
+                                 LiteRtParamIndex use_index, LiteRtOp* user,
+                                 LiteRtParamIndex* user_arg_index);
   LiteRtStatus (*get_tensor_defining_op)(LiteRtTensor tensor,
                                          bool* has_defining_op,
                                          LiteRtTensorDefiningOp* defining_op);
