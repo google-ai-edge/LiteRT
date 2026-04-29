@@ -324,7 +324,6 @@ cc_test(
 
 cc_library(
     name = "litert_model_predicates",
-    srcs = ["//litert/cc/internal:litert_model_predicates.cc"],
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
