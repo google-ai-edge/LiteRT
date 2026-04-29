@@ -80,7 +80,7 @@ absl::Status RunConvertTFExecutorToTFLPasses(
   }
 
   pass_manager.clear();
-  return absl::OkStatus();
+  return status_handler->ConsumeStatus();
 }
 
 }  // namespace litert
