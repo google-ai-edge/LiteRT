@@ -36,6 +36,7 @@ class LiteRtDispatchDeviceContextT {
   ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
+      const LiteRtRuntimeContext* runtime_context,
       const litert::mediatek::NeuronAdapterApi& neuron_adapter_api);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
@@ -54,6 +55,10 @@ class LiteRtDispatchDeviceContextT {
     } else {
       return NeuronMemoryInfo(**record);
     }
+  }
+
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
   }
 
  private:
@@ -76,10 +81,13 @@ class LiteRtDispatchDeviceContextT {
   };
 
   explicit LiteRtDispatchDeviceContextT(
+      const LiteRtRuntimeContext* runtime_context,
       const litert::mediatek::NeuronAdapterApi& neuron_adapter_api)
-      : neuron_adapter_api_(neuron_adapter_api),
+      : runtime_context_(runtime_context),
+        neuron_adapter_api_(neuron_adapter_api),
         neuron_memory_registry_(neuron_adapter_api) {}
 
+  const LiteRtRuntimeContext* runtime_context_;
   const litert::mediatek::NeuronAdapterApi& neuron_adapter_api_;
   NeuronMemoryRegistry neuron_memory_registry_;
 };

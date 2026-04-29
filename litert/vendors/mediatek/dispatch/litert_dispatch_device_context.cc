@@ -22,12 +22,8 @@
 #include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 using litert::Error;
 
@@ -35,17 +31,18 @@ LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() = default;
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
+    const LiteRtRuntimeContext* runtime_context,
     const litert::mediatek::NeuronAdapterApi& neuron_adapter_api) {
   return std::unique_ptr<LiteRtDispatchDeviceContextT>(
-      new LiteRtDispatchDeviceContextT(neuron_adapter_api));
+      new LiteRtDispatchDeviceContextT(runtime_context, neuron_adapter_api));
 }
 
 litert::Expected<LiteRtTensorBufferHandle>
 LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     LiteRtTensorBuffer tensor_buffer) {
   LiteRtTensorBufferType tensor_buffer_type;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type));
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_type(
+      tensor_buffer, &tensor_buffer_type));
 
   if (tensor_buffer_type != kLiteRtTensorBufferTypeAhwb &&
       tensor_buffer_type != kLiteRtTensorBufferTypeDmaBuf) {
@@ -55,12 +52,12 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   }
 
   size_t tensor_buffer_size;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size));
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_size(
+      tensor_buffer, &tensor_buffer_size));
 
   size_t tensor_buffer_offset;
-  if (auto status =
-          LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset);
+  if (auto status = runtime_context_->get_tensor_buffer_offset(
+          tensor_buffer, &tensor_buffer_offset);
       status != kLiteRtStatusOk) {
     if (status == kLiteRtStatusErrorNotFound) {
       tensor_buffer_offset = 0;
@@ -71,8 +68,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   }
 
   LiteRtRankedTensorType tensor_type;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type));
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_tensor_type(
+      tensor_buffer, &tensor_type));
 
   // Strides are allowed as they are used for padding.
   if (tensor_type.layout.has_strides) {
@@ -83,7 +80,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     case kLiteRtTensorBufferTypeAhwb:
 #if LITERT_HAS_AHWB_SUPPORT
       AHardwareBuffer* ahwb;
-      if (auto status = LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb);
+      if (auto status =
+              runtime_context_->get_tensor_buffer_ahwb(tensor_buffer, &ahwb);
           status != kLiteRtStatusOk) {
         return Error(status, "Failed to get AHWB");
       }
@@ -113,8 +111,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       int fd;
 #if LITERT_HAS_DMABUF_SUPPORT
       void* addr;
-      if (auto status =
-              LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &addr, &fd);
+      if (auto status = runtime_context_->get_tensor_buffer_dma_buf_buffer(
+              tensor_buffer, &addr, &fd);
           status != kLiteRtStatusOk) {
         return Error(status, "Failed to get DMA-BUF");
       }
