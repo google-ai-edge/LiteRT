@@ -72,9 +72,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
     internal/scoped_weight_source.h
 )
 
-set(LITERT_CC_PUBLIC_SOURCES
-)
-
 file(GLOB LITERT_CC_DISCOVERED_PUBLIC_HEADERS
     RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     CONFIGURE_DEPENDS
@@ -99,7 +96,12 @@ file(GLOB LITERT_CC_DISCOVERED_PUBLIC_SOURCES
     "options/*.cc"
 )
 list(FILTER LITERT_CC_DISCOVERED_PUBLIC_SOURCES EXCLUDE REGEX "_test\\.cc$")
-list(SORT LITERT_CC_DISCOVERED_PUBLIC_SOURCES)
+if(LITERT_CC_DISCOVERED_PUBLIC_SOURCES)
+    message(FATAL_ERROR
+        "litert/cc wrapper sources should be header-only.\n"
+        "Discovered implementation sources:\n  ${LITERT_CC_DISCOVERED_PUBLIC_SOURCES}\n"
+        "Update litert/cc/CMakeLists.txt.")
+endif()
 
 set(LITERT_CC_HEADERS
     ${LITERT_CC_REQUIRED_INTERNAL_HEADERS}
@@ -107,17 +109,10 @@ set(LITERT_CC_HEADERS
 )
 
 # Core C++ API library
-# If no public sources, create an empty library to avoid build failures.
 # TODO (b/507233667): Convert this to an INTERFACE library.
-if(LITERT_CC_PUBLIC_SOURCES)
-    add_library(litert_cc_api STATIC
-        ${LITERT_CC_PUBLIC_SOURCES}
-    )
-else()
-    add_library(litert_cc_api STATIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../c/empty.cc
-    )
-endif()
+add_library(litert_cc_api STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../c/empty.cc
+)
 
 target_include_directories(litert_cc_api
     PUBLIC

@@ -75,11 +75,6 @@ string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_SRCS "${FILE_CONTENTS}")
 list(REMOVE_ITEM LITERT_CC_SRCS "")
 list(TRANSFORM LITERT_CC_SRCS PREPEND "${LITERT_CC_SDK_TREE_ROOT}/")
 
-if(NOT WIN32)
-    list(REMOVE_ITEM LITERT_CC_SRCS "${LITERT_CC_SDK_TREE_ROOT}/litert/cc/internal/scoped_file_win.cc")
-else()
-    list(REMOVE_ITEM LITERT_CC_SRCS "${LITERT_CC_SDK_TREE_ROOT}/litert/cc/internal/scoped_file_posix.cc")
-endif()
 
 # Core C++ API library
 add_library(litert_cc_api STATIC
