@@ -435,7 +435,6 @@ cc_test(
 
 cc_library(
     name = "litert_op_options",
-    srcs = ["litert_op_options.cc"],
     hdrs = ["litert_op_options.h"],
     visibility = internal_static_library_visibility,
     deps = [
