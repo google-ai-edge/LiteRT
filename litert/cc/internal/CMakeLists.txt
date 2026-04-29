@@ -41,23 +41,18 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_tensor_buffer_utils.h
     litert_tflite_error_status_builder.h
     scoped_file.h
+    scoped_file_posix.h
+    scoped_file_win.h
     scoped_weight_source.h
 )
 
 set(LITERT_CC_INTERNAL_MAIN_SRCS
-    scoped_file.cc
     litert_op_options.cc
     litert_builder.cc
     litert_shared_library.cc
     litert_extended_model.cc
     litert_runtime_builtin.cc
 )
-
-if(WIN32)
-    list(APPEND LITERT_CC_INTERNAL_MAIN_SRCS scoped_file_win.cc)
-else()
-    list(APPEND LITERT_CC_INTERNAL_MAIN_SRCS scoped_file_posix.cc)
-endif()
 
 set(LITERT_CC_INTERNAL_EXTRA_SRCS
     litert_compiled_model_next.cc
