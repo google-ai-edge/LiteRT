@@ -401,7 +401,6 @@ cc_test(
 
 cc_library(
     name = "litert_model_predicates",
-    srcs = ["litert_model_predicates.cc"],
     hdrs = ["litert_model_predicates.h"],
     visibility = internal_static_library_visibility,
     deps = [
