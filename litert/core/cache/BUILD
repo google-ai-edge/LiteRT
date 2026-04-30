@@ -47,6 +47,7 @@ cc_library(
         "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -63,15 +64,14 @@ cc_test(
         "//litert/c:litert_environment",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
-        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_macros",
-        "//litert/core:environment",
+        "//litert/core:filesystem",
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/model:model_load",
-        "//litert/runtime:compiled_model",
         "//litert/test:common",
         "//litert/test:simple_model",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 
@@ -47,11 +48,17 @@ bool IsDir(absl::string_view path);
 // Get size of file.
 Expected<size_t> Size(absl::string_view path);
 
+// Get last modification time of file.
+Expected<absl::Time> GetLastWriteTime(absl::string_view path);
+
 // Load the bytes of the file at given path.
 Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path);
 
 // List all files in the directory at the given path.
 Expected<std::vector<std::string>> ListDir(absl::string_view path);
+
+// List all files in the directory tree at the given path.
+Expected<std::vector<std::string>> RecursiveListDir(absl::string_view path);
 
 // Get filename from path string.
 Expected<std::string> Filename(absl::string_view path);
