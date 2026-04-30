@@ -74,6 +74,9 @@ class AtsInferenceTest : public RngTest {
   }
 
   void SetUp() override {
+    if (names_.should_skip) {
+      GTEST_SKIP() << "Filtered by dont_register";
+    }
     ASSERT_EQ(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
@@ -104,7 +107,9 @@ class AtsInferenceTest : public RngTest {
       }
     }
 
-    if (HasFailure()) {
+    if (::testing::Test::IsSkipped()) {
+      cap_.run.status = RunStatus::kSkipped;
+    } else if (HasFailure()) {
       cap_.run.status = RunStatus::kError;
     } else if (TimedOut()) {
       cap_.run.status = RunStatus::kTimeout;
