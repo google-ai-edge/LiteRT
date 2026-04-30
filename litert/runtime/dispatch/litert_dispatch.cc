@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
@@ -171,6 +172,22 @@ LiteRtStatus LiteRtDispatchInitialize(
   if (!litert::internal::IsSameVersionAsRuntime(TheApi.version)) {
     LITERT_LOG(LITERT_ERROR, "Unsupported dispatch runtime version");
     return kLiteRtStatusErrorWrongVersion;
+  }
+
+  if (TheApi.tensor_buffer_handlers != nullptr) {
+    for (size_t i = 0;
+         i < TheApi.tensor_buffer_handlers->num_supported_buffer_types; ++i) {
+      LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
+          env, TheApi.tensor_buffer_handlers->supported_buffer_types[i],
+          TheApi.tensor_buffer_handlers->create_func,
+          TheApi.tensor_buffer_handlers->destroy_func,
+          TheApi.tensor_buffer_handlers->lock_func,
+          TheApi.tensor_buffer_handlers->unlock_func,
+          TheApi.tensor_buffer_handlers->clear_func,
+          TheApi.tensor_buffer_handlers->import_func,
+          TheApi.tensor_buffer_handlers->device_tag,
+          TheApi.tensor_buffer_handlers->queue_tag));
+    }
   }
 
   auto status = Initialize(runtime_context, env, options);

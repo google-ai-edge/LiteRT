@@ -19,6 +19,8 @@
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -285,12 +287,29 @@ typedef struct LiteRtDispatchGraphInterface {
 
 // /////////////////////////////////////////////////////////////////////////////
 
+typedef struct LiteRtCustomTensorBufferHandlersDef {
+  int version;
+  CreateCustomTensorBuffer create_func;
+  DestroyCustomTensorBuffer destroy_func;
+  LockCustomTensorBuffer lock_func;
+  UnlockCustomTensorBuffer unlock_func;
+  ClearCustomTensorBuffer clear_func;
+  ImportCustomTensorBuffer import_func;
+
+  LiteRtEnvOptionTag device_tag;
+  LiteRtEnvOptionTag queue_tag;
+
+  size_t num_supported_buffer_types;
+  LiteRtTensorBufferType supported_buffer_types[16];
+} LiteRtCustomTensorBufferHandlersDef;
+
 // FIXME See Vulkan and OpenCL extensions.
 typedef struct LiteRtDispatchApi {
   LiteRtApiVersion version;
   LiteRtDispatchInterface* interface;
   LiteRtDispatchAsyncInterface* async_interface;
   LiteRtDispatchGraphInterface* graph_interface;
+  LiteRtCustomTensorBufferHandlersDef* tensor_buffer_handlers;
 } LiteRtDispatchApi;
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api);
