@@ -24,6 +24,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 ####################################################################################################
@@ -266,6 +267,31 @@ def gpu_accelerator_exported_symbols_linkopt():
     }) + symbol_opts()
 
 ####################################################################################################
+# Static Initializer Checks
+
+_CHECK_STATIC_INITIALIZERS_SCRIPT = "//litert/build_common:check_static_initializers.sh"
+
+_LITERT_DEFAULT_COPTS = ["-Wglobal-constructors"]
+
+def litert_static_initializer_test(name, target, allowed_initializers = 0, **kwargs):
+    """
+    Test that a binary has no more than the allowed number of static initializers.
+
+    Args:
+      name: The name of the test.
+      target: The binary target to check.
+      allowed_initializers: The number of static initializers allowed in the binary.
+      **kwargs: Additional arguments passed to the sh_test.
+    """
+    sh_test(
+        name = name,
+        srcs = [_CHECK_STATIC_INITIALIZERS_SCRIPT],
+        args = ["$(location %s)" % target, str(allowed_initializers)],
+        data = [target],
+        **kwargs
+    )
+
+####################################################################################################
 # Macros
 
 # Private
@@ -290,6 +316,11 @@ def _litert_base(
     _DEFAULT_LINK_OPTS = ["-Wl,--disable-new-dtags"]
 
     _UNGRTE_LINK_OPTS = [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64]
+
+    append_rule_kwargs(
+        cc_rule_kwargs,
+        copts = _LITERT_DEFAULT_COPTS,
+    )
 
     if ungrte:
         append_rule_kwargs(
@@ -411,6 +442,7 @@ def litert_dynamic_lib(
         so_name,
         export_litert_only = False,
         ungrte = False,
+        allowed_initializers = 0,
         **cc_lib_kwargs):
     """
     LiteRT dynamic library rule.
@@ -421,6 +453,7 @@ def litert_dynamic_lib(
       so_name: The name of the shared object file.
       export_litert_only: Whether to export only LiteRT symbols.
       ungrte: Whether to link against system libraries ("ungrte").
+      allowed_initializers: The number of static initializers allowed in the binary.
       **cc_lib_kwargs: Keyword arguments to pass to the underlying rule.
     """
     if not _valid_shared_lib_name(shared_lib_name):
@@ -462,6 +495,12 @@ def litert_dynamic_lib(
             "//litert/c:resolve_symbols_in_exec": ["-no_undefined"],
             "//conditions:default": [],
         }),
+    )
+
+    litert_static_initializer_test(
+        name = shared_lib_name + "_initializer_test",
+        target = ":" + shared_lib_name,
+        allowed_initializers = allowed_initializers,
     )
 
     # Workaround needed because `xeno_mobile_test` conflates target names with target output
@@ -640,7 +679,7 @@ def litert_c_api_library(
         **header_kwargs
     )
 
-    cc_library(
+    litert_lib(
         name = name + "_impl",
         srcs = srcs,
         hdrs = hdrs,
@@ -689,7 +728,7 @@ def litert_accelerator_library(
       macos_dylib: Whether to use for a macOS dylib.
       **kwargs: Additional arguments passed to the implementation cc_library.
     """
-    cc_library(
+    litert_lib(
         name = name,
         srcs = srcs,
         hdrs = hdrs,
@@ -701,7 +740,7 @@ def litert_accelerator_library(
         **kwargs
     )
 
-    cc_library(
+    litert_lib(
         name = name + "_runtimecapi",
         srcs = srcs,
         hdrs = hdrs,
@@ -727,7 +766,14 @@ def litert_accelerator_library(
             deps = [name + "_runtimecapi"],
         )
 
-        cc_library(
+        if shared_lib_name:
+            litert_static_initializer_test(
+                name = name + "_so_initializer_test",
+                target = ":" + name + "_so",
+                allowed_initializers = 0,
+            )
+
+        litert_lib(
             name = name + "_shared_lib",
             srcs = [name + "_so"],
             linkstatic = 1,
