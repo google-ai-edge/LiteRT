@@ -279,6 +279,7 @@ class LitertLmFileBuilder:
       tflite_model_path: str,
       model_type: TfLiteModelType,
       backend_constraint: Optional[str] = None,
+      prefer_activation_type: Optional[str] = None,
       additional_metadata: Optional[list[Metadata]] = None,
   ) -> LitertLmFileBuilderT:
     """Adds a tflite model to the litertlm file.
@@ -287,6 +288,8 @@ class LitertLmFileBuilder:
       tflite_model_path: The path to the tflite model file.
       model_type: The type of the tflite model.
       backend_constraint: The backend constraint for the tflite model.
+      prefer_activation_type: The preferred activation type for the tflite
+        model.
       additional_metadata: Additional metadata to add to the tflite model.
 
     Returns:
@@ -310,6 +313,14 @@ class LitertLmFileBuilder:
           Metadata(
               key="backend_constraint",
               value=backend_constraint.lower(),
+              dtype=DType.STRING,
+          )
+      )
+    if prefer_activation_type:
+      metadata.append(
+          Metadata(
+              key="prefer_activation_type",
+              value=prefer_activation_type.lower(),
               dtype=DType.STRING,
           )
       )
