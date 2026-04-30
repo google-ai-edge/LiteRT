@@ -15,19 +15,15 @@
 
 #include "openvino/core/except.hpp"
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
-#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
@@ -102,9 +98,10 @@ LiteRtStatus LockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info,
 LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
                                 LiteRtEnvironment env, LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  if (LiteRtGetEnvironmentOptions(env, &environment_options) ==
+  if (runtime_context->get_environment_options(env, &environment_options) ==
       kLiteRtStatusOk) {
-    LiteRtPropagateMinLoggerSeverity(environment_options);
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
   }
 
   ov::Core core;
@@ -112,13 +109,6 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
   for (auto&& device : availableDevices)
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
-
-  LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
-      env, kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
-      CreateOpenVinoTensorBuffer, DestroyOpenVinoTensorBuffer,
-      LockOpenVinoTensorBuffer, UnlockOpenVinoTensorBuffer, nullptr, nullptr,
-      /*device_tag=*/kLiteRtEnvOptionTagNull,
-      /*queue_tag=*/kLiteRtEnvOptionTagNull));
 
   if (options) {
     litert::internal::OptionsWrapper internal_options(
@@ -176,7 +166,8 @@ LiteRtStatus DispatchDeviceContextCreate(
     const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
   try {
-    if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
+    if (auto context = LiteRtDispatchDeviceContextT::Create(runtime_context);
+        context) {
       *device_context = context->release();
       return kLiteRtStatusOk;
     } else {
@@ -453,6 +444,20 @@ LiteRtDispatchInterface TheInterface = {
     .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
 };
 
+LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
+    .version = 1,
+    .create_func = litert::openvino::CreateOpenVinoTensorBuffer,
+    .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
+    .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
+    .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
+    .clear_func = nullptr,
+    .import_func = nullptr,
+    .device_tag = kLiteRtEnvOptionTagNull,
+    .queue_tag = kLiteRtEnvOptionTagNull,
+    .num_supported_buffer_types = 1,
+    .supported_buffer_types = {kLiteRtTensorBufferTypeOpenVINOTensorBuffer},
+};
+
 LiteRtDispatchApi TheApi = {
     .version = {.major = LITERT_API_VERSION_MAJOR,
                 .minor = LITERT_API_VERSION_MINOR,
@@ -460,6 +465,7 @@ LiteRtDispatchApi TheApi = {
     .interface = &TheInterface,
     .async_interface = nullptr,
     .graph_interface = nullptr,
+    .tensor_buffer_handlers = &TheTensorBufferHandlers,
 };
 
 }  // namespace
