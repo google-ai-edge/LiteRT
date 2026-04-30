@@ -36,7 +36,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
-        "^(?!.*Pad).*i32",  # XNNPACK does not support int32 (except Pad weights)
+        "^(?!.*(Pad|Reduction|Transpose)).*i32",  # XNNPACK does not support int32 math (except Pad/Reduction/Transpose static constants)
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -46,18 +46,14 @@ litert_define_ats(
         "tfl\\.sign",  # XNNPACK does not support Sign
         "tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
         "tfl\\.elu",  # XNNPACK does not support Elu
-        "tfl\\.reduce_max",  # XNNPACK does not support ReduceMax
-        "tfl\\.reduce_min",  # XNNPACK does not support ReduceMin
         "tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
         "LogSoftmax",  # XNNPACK does not support LogSoftmax
         "Pooling",  # XNNPACK rejects pooling when stride > filter size
-        "Conv2d.*f16",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
-        "BatchMatmul.*f16",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
-        "FullyConnected.*(f16|i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "FullyConnected.*(i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
         "FullyConnected.*,2d_f32.*,1d_f32",
         "FullyConnected.*,2d_f32[^c]",
         "FullyConnected.*_cst.*,1d_f32[^c]",
-        "Transpose.*(f16|i4|bool|u16|u32|u64|i64)",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
@@ -103,8 +99,26 @@ litert_define_ats(
     dont_register = [
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
-        "5d",
-        "6d",
+        "5d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "6d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "7d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "8d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+        "Binary.*i32",  # Qualcomm QNN does not support int32 binary arithmetic
+        "NoOp.*i32",  # Qualcomm QNN does not support int32 NoOp (add)
+        "OneHot",  # Qualcomm QNN compiler does not support dynamic depth/axis OneHot
+        "tfl[.]zeros_like",  # Qualcomm QNN compiler does not support ZerosLike
+        "tfl[.]reduce_prod",  # Qualcomm QNN reduce_prod exhibits numerical accumulation divergence
+        "tfl[.]ceil.*f32",  # Qualcomm QNN ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
+        "Transpose.*[(]1d_",  # Qualcomm QNN Transpose requires multidimensional tensors (rank >= 2)
+        "Transpose.*i4",  # Qualcomm QNN MemHandle registration does not support int4 graph I/O buffers
+        "Transpose.*[(][1-8]d_(i32|u32|i64|u64)<",  # Qualcomm QNN Transpose does not support 32-bit and 64-bit integer I/O buffers
+        "Transpose.*f32",  # Qualcomm QNN executes Transpose in FP16 precision
+        "Pooling.*filter_height=14",  # Qualcomm QNN max pool filter size exceeds 11x11 hardware limit
+        "Reduction.*sum.*->[(]0d",  # Qualcomm QNN does not support full reduction to 0D scalar
+        "Pad.*4d_f32<4x1x5x5>",  # Boundary Pad permutation
+        "FullyConnected.*u8",  # Qualcomm QNN does not support quantized UINT8 GEMM
+        "FullyConnected.*,2d_f32[^c]",  # Qualcomm QNN does not support dynamic weights for FP32 FC
+        "FullyConnected.*_cst.*,1d_f32[^c]",  # Qualcomm QNN does not support dynamic bias for FP32 FC
     ],
     extra_flags = [
         "--data_seed=42",
@@ -194,7 +208,31 @@ litert_define_ats(
         "yamnet",
         "yolo11n",
     ],
-    dont_register = [],
+    dont_register = [
+        "Binary.*i32",  # OpenCL delegate does not support int32 binary arithmetic
+        "NoOp.*i32",  # OpenCL delegate does not support int32 NoOp (add)
+        "OneHot",  # OpenCL delegate does not support OneHot
+        "LogSoftmax",  # OpenCL delegate does not support LogSoftmax
+        "tfl[.]prelu",  # OpenCL delegate requires PRelu alpha to be statically allocated
+        "tfl[.]zeros_like",  # OpenCL delegate does not support ZerosLike
+        "tfl[.]relu_0_to_1",  # OpenCL delegate does not support Relu0To1
+        "tfl[.]floor_div",  # OpenCL evaluates floor_div with FP16 precision boundary roundoffs
+        "tfl[.]ceil.*f32",  # OpenCL ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
+        "5d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "6d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "7d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "8d",  # OpenCL delegate only supports up to 4D tensor layouts
+        "Pad.*[(][123]d",  # OpenCL Pad kernel requires 4D tensor layouts
+        "Transpose.*[(]1d_",  # OpenCL Transpose requires multidimensional tensors (rank >= 2)
+        "Transpose.*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",  # OpenCL Transpose executes in FP16 texture buffers; only explicit FP16 Transpose is supported
+        "FullyConnected.*(i8|u8)",  # OpenCL delegate does not support quantized INT8/UINT8 GEMM
+        "FullyConnected.*_cst.*,1d_f32[^c]",  # OpenCL does not support dynamic bias
+        "FullyConnected.*,2d_f32[^c]",  # OpenCL does not support dynamic weights
+        "FullyConnected.*,2d_f32.*,1d_f32",  # OpenCL dynamic bias permutations
+        "BatchMatmul.*2d.*,[34]d",  # OpenCL does not support rank-asymmetric batch broadcasting
+        "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
+        "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
+    ],
     extra_flags = [
         "--data_seed=42",
     ],
@@ -260,7 +298,7 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=^(?!.*Pad).*i32",  # XNNPACK does not support int32 (except Pad weights)
+        "--dont_register=^(?!.*(Pad|Reduction|Transpose)).*i32",  # XNNPACK does not support int32 math (except Pad/Reduction/Transpose static constants)
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -270,18 +308,14 @@ litert_test(
         "--dont_register=tfl\\.sign",  # XNNPACK does not support Sign
         "--dont_register=tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
         "--dont_register=tfl\\.elu",  # XNNPACK does not support Elu
-        "--dont_register=tfl\\.reduce_max",  # XNNPACK does not support ReduceMax
-        "--dont_register=tfl\\.reduce_min",  # XNNPACK does not support ReduceMin
         "--dont_register=tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
         "--dont_register=LogSoftmax",  # XNNPACK does not support LogSoftmax
         "--dont_register=Pooling",  # XNNPACK rejects pooling when stride > filter size
-        "--dont_register=Conv2d.*f16",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
-        "--dont_register=BatchMatmul.*f16",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
-        "--dont_register=FullyConnected.*(f16|i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "--dont_register=FullyConnected.*(i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
         "--dont_register=FullyConnected.*,2d_f32.*,1d_f32",
         "--dont_register=FullyConnected.*,2d_f32[^c]",
         "--dont_register=FullyConnected.*_cst.*,1d_f32[^c]",
-        "--dont_register=Transpose.*(f16|i4|bool|u16|u32|u64|i64)",  # XNNPACK delegate at ToT does not yet support these Transpose presets
+        "--dont_register=Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "--dont_register=simple_add_dynamic_shape",
         "--dont_register=hf_all_minilm_l6_v2",
