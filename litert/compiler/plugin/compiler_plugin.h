@@ -110,6 +110,9 @@ class CompilerPlugin {
   // Get the supported HW accelerators (e.g., GPU, NPU).
   Expected<LiteRtHwAccelerators> SupportedHardware() const;
 
+  // Get the SDK version of the vendor's compiler plugin.
+  Expected<std::string> SdkVersion() const;
+
   // Get the manufacturer associated with this plugin. NOTE: SocManufacturer
   // string returned by the underlying plugin are expected to have static
   // lifetime.

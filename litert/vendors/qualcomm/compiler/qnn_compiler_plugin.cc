@@ -57,6 +57,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "QnnCommon.h"  // from @qairt
 
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
@@ -270,7 +271,9 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
                "defaulted.");
   }
   // Propagate the min logger severity from the environment.
-  LiteRtPropagateMinLoggerSeverity(env);
+  if (env != nullptr) {
+    LiteRtPropagateMinLoggerSeverity(env);
+  }
 
   auto* plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   *compiler_plugin = plugin;
@@ -279,6 +282,38 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
 
 void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (!compiler_plugin || !sdk_version) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  QnnManager* qnn_manager = compiler_plugin->QNN();
+  if (!qnn_manager) {
+    std::optional<::qnn::SocInfo> soc_info = std::nullopt;
+#if defined(__x86_64__) || defined(_M_X64)
+    soc_info = qnn::FindSocModel("SM8750");
+#endif
+    auto qnn_manager_or =
+        QnnManager::Create(compiler_plugin->Options(), std::nullopt, soc_info);
+    if (!qnn_manager_or) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create QNN manager: %s",
+                 qnn_manager_or.Error().Message().data());
+      return qnn_manager_or.Error().Status();
+    }
+    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    qnn_manager = compiler_plugin->QNN();
+  }
+
+  const char* build_id = nullptr;
+  if (qnn_manager->Api()->backendGetBuildId(&build_id) != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get QNN backend build ID");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  *sdk_version = build_id;
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
