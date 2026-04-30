@@ -44,7 +44,7 @@ litert_dynamic_lib(
     ],
     export_litert_only = True,
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//litert:android": ["-landroid"],
         "//conditions:default": [],
     }) + [
         "-Wl,-soname=libLiteRtDispatch_Samsung.so",
