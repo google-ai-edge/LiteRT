@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CORE_CACHE_COMPILATION_CACHE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CORE_CACHE_COMPILATION_CACHE_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -22,6 +23,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -38,6 +40,21 @@ class CompilationCache {
     LiteRtApiVersion api_version;
     LiteRtHwAccelerators hw_accelerators;
     std::string_view manufacturer;
+    std::string sdk_version;
+  };
+
+  struct CacheKey {
+    uint64_t content_hash;
+    uint64_t config_hash;
+  };
+
+  struct CacheEntry {
+    std::string path;
+    size_t size;
+    absl::Time last_modified;
+    std::string model_id;  // "mem" or model_name
+    uint64_t content_hash;
+    uint64_t config_hash;
   };
 
   // Creates a compilation cache instance that uses the provided
@@ -52,33 +69,43 @@ class CompilationCache {
   // - the compiler plugin information
   // - TODO(b/414861277): Take runtime shapes into account
   // - TODO(b/414861277): Take opaque vendor options into account
-  static Expected<uint64_t> GetModelHash(
+  static Expected<CacheKey> GetModelHash(
       const LiteRtModelT& model, const LiteRtOptionsT& options,
       const CompilerPluginInfo& compiler_plugin_info);
-  static Expected<uint64_t> GetModelHash(
+  static Expected<CacheKey> GetModelHash(
       const LiteRtModelT& model, const LiteRtOptionsT& options,
       const std::vector<CompilerPluginInfo>& compiler_plugin_infos);
   // Returns the hash of the model, with respect to the given options and
   // compiler plugins.
-  static litert::Expected<uint64_t> TryGetModelHash(
+  static litert::Expected<CacheKey> TryGetModelHash(
       LiteRtModelT& model, LiteRtOptions options,
       litert::Expected<std::vector<litert::internal::CompilerPlugin>>&
           compiler_plugins);
 
-  // Saves the provided 'model' in the cache, associated with the 'model_hash'.
+  // Saves the provided 'model' in the cache, associated with the 'cache_key'.
   // The overload taking a 'model_buffer' assumes the caller already
   // has obtained the serialized representation of the LiteRtModelT.
-  Expected<void> SaveModel(const LiteRtModelT& model, uint64_t model_hash);
+  Expected<void> SaveModel(const LiteRtModelT& model, CacheKey cache_key,
+                           absl::string_view model_name = "");
   Expected<void> SaveModel(const litert::BufferRef<uint8_t>& model_buffer,
-                           uint64_t model_hash);
+                           CacheKey cache_key,
+                           absl::string_view model_name = "");
 
-  // Tries to load a model associated with the 'model_hash' from the cache.
+  // Tries to load a model associated with the 'cache_key' from the cache.
   //
   // - Returns an empty optional if no such model can be found, i.e. a cache
   //   miss occured.
   // - Returns an optional of value 'LiteRtModelT::Ptr' if a cache hit occured.
   // - Returns a failure status if an error occurred trying to load the model.
-  Expected<std::optional<LiteRtModelT::Ptr>> TryLoadModel(uint64_t model_hash);
+  Expected<std::optional<LiteRtModelT::Ptr>> TryLoadModel(
+      CacheKey cache_key, absl::string_view model_name = "");
+
+  // Builds an inventory of all cached models.
+  // Visible for testing.
+  Expected<std::vector<CacheEntry>> BuildInventory() const;
+  void SetMaxConfigsPerModel(int max_configs) {
+    max_configs_per_model_ = max_configs;
+  }
 
  private:
   // Creates a compilation cache instance that uses the provided
@@ -87,6 +114,8 @@ class CompilationCache {
 
   // The cache root path.
   std::string cache_root_path_;
+
+  int max_configs_per_model_ = 1;
 };
 
 }  // namespace litert::internal
