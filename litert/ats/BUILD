@@ -51,10 +51,7 @@ litert_define_ats(
         ".*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
         ".*LogSoftmax.*",  # XNNPACK does not support LogSoftmax
         ".*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
-        ".*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
-        ".*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
-        ".*Softmax.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Softmax
-        ".*FullyConnected.*(f16|i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        ".*FullyConnected.*(i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
         ".*FullyConnected.*,2d_f32.*,1d_f32.*",
         ".*FullyConnected.*,2d_f32[^c].*",
         ".*FullyConnected.*_cst.*,1d_f32[^c].*",
@@ -276,10 +273,7 @@ litert_test(
         "--dont_register=.*tfl\\.reduce_prod.*",  # XNNPACK does not support ReduceProd
         "--dont_register=.*LogSoftmax.*",  # XNNPACK does not support LogSoftmax
         "--dont_register=.*Pooling.*",  # XNNPACK rejects pooling when stride > filter size
-        "--dont_register=.*Conv2d.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
-        "--dont_register=.*BatchMatmul.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
-        "--dont_register=.*Softmax.*f16.*",  # XNNPACK delegate at ToT does not yet support f16 Softmax
-        "--dont_register=.*FullyConnected.*(f16|i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "--dont_register=.*FullyConnected.*(i8|u8|SHUFFLED).*",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
         "--dont_register=.*FullyConnected.*,2d_f32.*,1d_f32.*",
         "--dont_register=.*FullyConnected.*,2d_f32[^c].*",
         "--dont_register=.*FullyConnected.*_cst.*,1d_f32[^c].*",
