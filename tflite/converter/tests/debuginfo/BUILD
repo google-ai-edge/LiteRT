@@ -46,6 +46,10 @@ filegroup(
 py_binary(
     name = "saved_model_error",
     srcs = ["saved_model_error.py"],
+    exec_properties = select({
+        "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
+        "//conditions:default": None,
+    }),
     main = "saved_model_error.py",
     strict_deps = True,
     deps = [
@@ -57,6 +61,10 @@ py_binary(
 py_binary(
     name = "concrete_function_error",
     srcs = ["concrete_function_error.py"],
+    exec_properties = select({
+        "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
+        "//conditions:default": None,
+    }),
     main = "concrete_function_error.py",
     strict_deps = True,
     deps = [
