@@ -93,6 +93,36 @@ litert_define_ats(
     jit_suffix = "",
 )
 
+# copybara:uncomment_begin(google-only)
+# litert_define_ats(
+#     name = "google_tensor_ats",
+#     backend = "google_tensor",
+#     compile_only_suffix = "_aot",
+#     do_register = [
+#         "SingleOp",
+#         "hf_all_minilm_l6_v2",
+#         "hf_mobilevit_small",
+#         "qai_hub_midas",
+#         "qai_hub_real_esrgan_x4plus",
+#         "torchvision_mobilenet_v2",
+#         "u2net_lite",
+#         "torchvision_resnet18",
+#         "torchvision_squeezenet1_1",
+#         "whisper_tiny_encoder",
+#         "yamnet",
+#         "yolo11n",
+#     ],
+#     dont_register = [
+#         "hf_all_minilm_l6_v2",
+#         "whisper_tiny_decoder",
+#         ".*5d.*",
+#         ".*6d.*",
+#     ],
+#     extra_flags = ["--soc_model=Tensor_G5"],
+#     jit_suffix = "",
+# )
+# copybara:uncomment_end
+
 litert_define_ats(
     name = "mediatek_ats",
     backend = "mediatek",

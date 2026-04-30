@@ -167,6 +167,9 @@ _device_script_lib = rule(
             mandatory = False,
             default = [],
             allow_files = True,
+            # copybara:uncomment_begin(google-only)
+            # cfg = "exec",
+            # copybara:uncomment_end
             doc = "The pre-compiled host shared libraries to package with the script (e.g. vendor sdk).",
         ),
         "device_libs": attr.label_list(

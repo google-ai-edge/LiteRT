@@ -255,6 +255,7 @@ def _GoogleTensorSpec():
             id = "google_tensor",
             libs = [
                 ("//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/google_tensor/compiler:libLiteRtCompilerPlugin_google_tensor.so", "LD_LIBRARY_PATH"),
             ],
             mh_devices = [{
                 "label": "odml-test",
@@ -262,6 +263,12 @@ def _GoogleTensorSpec():
             }],
             mh_user = "odml-team",
             dispatch = "libLiteRtDispatch_GoogleTensor.so",
+            plugin = "libLiteRtCompilerPlugin_google_tensor.so",
+            # copybara:uncomment_begin(google-only)
+            # host_libs = [
+            # "//platforms/darwinn/compiler/external:litert_plugin_compiler",
+            # ],
+            # copybara:uncomment_end
         ),
     }
 

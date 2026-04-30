@@ -66,7 +66,9 @@ class AtsCompileTest : public ::testing::Test {
 
   void TestBody() override {
     auto start = cap_.compilation_time.Start();
-    auto stat = ApplyPlugin(conf_.Plugin()->get(), graph_->Graph());
+    auto stat =
+        ApplyPlugin(conf_.Plugin()->get(), graph_->Graph(), conf_.SocModel());
+
     cap_.compilation_time.Stop(start);
     cap_.compilation_detail.SetFields(conf_, graph_->Graph(), !stat.HasValue());
     ASSERT_TRUE(stat);
