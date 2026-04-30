@@ -818,15 +818,6 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any("NDHWC");
       }
       break;
-    case LiteRtOpCode::kLiteRtOpCodeTflReduceAll:
-      if (name == "keep_dims") {
-        bool keep_dims;
-        LITERT_RETURN_IF_ERROR(
-            LiteRtGetReduceAllKeepDimsOption(litert_op_, &keep_dims),
-            ERROR_LOG_STR("keep_dims", op_name_.c_str()));
-        return ov::Any(keep_dims);
-      }
-      break;
     case LiteRtOpCode::kLiteRtOpCodeTflArgMax:
       if (name == "output_type") {
         // Get the output tensor to extract its element type
@@ -849,6 +840,15 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         // Using the default value as per TFLite and OV spec.
         int32_t axis = -1;
         return ov::Any(axis);
+      }
+      break;
+    case LiteRtOpCode::kLiteRtOpCodeTflReduceAll:
+      if (name == "keep_dims") {
+        bool keep_dims;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetReduceAllKeepDimsOption(litert_op_, &keep_dims),
+            ERROR_LOG_STR("keep_dims", op_name_.c_str()));
+        return ov::Any(keep_dims);
       }
       break;
     default:
