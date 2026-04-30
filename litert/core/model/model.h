@@ -434,7 +434,7 @@ class LiteRtTensorT {
   std::vector<LiteRtParamIndex> user_arg_inds_;
 
   LiteRtOp defining_op_ = nullptr;
-  LiteRtParamIndex defining_op_out_ind_;
+  LiteRtParamIndex defining_op_out_ind_ = 0;
 
   LiteRtWeightsT weights_;
   Quantization quantization_;
@@ -442,7 +442,7 @@ class LiteRtTensorT {
 
   std::string name_;
 
-  std::uint32_t tensor_index_;
+  std::uint32_t tensor_index_ = 0;
 
   std::vector<UserData> user_data_;
 };
