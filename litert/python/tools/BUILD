@@ -54,6 +54,10 @@ pytype_strict_library(
 py_strict_test(
     name = "mmap_utils_test",
     srcs = ["mmap_utils_test.py"],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":mmap_utils",
         # Dependency placeholder: gfile,

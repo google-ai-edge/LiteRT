@@ -186,6 +186,10 @@ cc_test(
         "nosan",
         "notsan",
     ],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
@@ -254,6 +258,10 @@ cc_library(
 cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_common",
@@ -274,7 +282,7 @@ cc_test(
     srcs = ["end_to_end_test.cc"],
     data = [
         ":example_dispatch_so",
-        ":libLiteRtCompilerPlugin_Example.so",
+        ":example_plugin_so",
         "//litert/test:mlir_test_data",
     ],
     # This test dlopens, so sanitzers are prone to false positive.
@@ -335,6 +343,10 @@ litert_test(
         "notap",
         "nosan",
     ],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = True,
     use_sys_malloc = True,
     deps = [
