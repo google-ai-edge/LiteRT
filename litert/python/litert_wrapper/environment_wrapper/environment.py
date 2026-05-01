@@ -44,6 +44,7 @@ class Environment:
       enable_constant_tensor_sharing: bool = False,
       enable_infinite_float_capping: bool = False,
       enable_benchmark_mode: bool = False,
+      enable_allow_src_quantized_fc_conv_ops: bool = False,
   ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
@@ -55,6 +56,9 @@ class Environment:
     self.enable_constant_tensor_sharing = enable_constant_tensor_sharing
     self.enable_infinite_float_capping = enable_infinite_float_capping
     self.enable_benchmark_mode = enable_benchmark_mode
+    self.enable_allow_src_quantized_fc_conv_ops = (
+        enable_allow_src_quantized_fc_conv_ops
+    )
 
   @classmethod
   def create(
@@ -71,6 +75,7 @@ class Environment:
       enable_constant_tensor_sharing: bool = False,
       enable_infinite_float_capping: bool = False,
       enable_benchmark_mode: bool = False,
+      enable_allow_src_quantized_fc_conv_ops: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -88,6 +93,8 @@ class Environment:
       enable_constant_tensor_sharing: Enable constant tensor sharing on GPU.
       enable_infinite_float_capping: Enable infinite float capping on GPU.
       enable_benchmark_mode: Enable benchmark mode on GPU.
+      enable_allow_src_quantized_fc_conv_ops: Enable allow src quantized fc conv
+        ops on GPU.
 
     Returns:
       A new Environment instance.
@@ -110,6 +117,7 @@ class Environment:
         enable_constant_tensor_sharing,
         enable_infinite_float_capping,
         enable_benchmark_mode,
+        enable_allow_src_quantized_fc_conv_ops,
     )
 
   @property

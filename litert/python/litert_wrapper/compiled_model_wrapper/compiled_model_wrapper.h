@@ -58,7 +58,8 @@ class CompiledModelWrapper {
       int cpu_num_threads, bool gpu_enforce_f32,
       bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
       bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
-      bool enable_benchmark_mode, std::string* out_error);
+      bool enable_benchmark_mode, bool enable_allow_src_quantized_fc_conv_ops,
+      std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
@@ -85,7 +86,8 @@ class CompiledModelWrapper {
       int cpu_num_threads, bool gpu_enforce_f32,
       bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
       bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
-      bool enable_benchmark_mode, std::string* out_error);
+      bool enable_benchmark_mode, bool enable_allow_src_quantized_fc_conv_ops,
+      std::string* out_error);
 
   CompiledModelWrapper(litert::ExtendedModel model,
                        litert::CompiledModel compiled);

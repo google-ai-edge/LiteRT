@@ -100,6 +100,7 @@ class CompiledModel:
         enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
         enable_infinite_float_capping=env.enable_infinite_float_capping,
         enable_benchmark_mode=env.enable_benchmark_mode,
+        enable_allow_src_quantized_fc_conv_ops=env.enable_allow_src_quantized_fc_conv_ops,
     )
     return cls(ptr, env)
 
@@ -139,6 +140,7 @@ class CompiledModel:
         enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
         enable_infinite_float_capping=env.enable_infinite_float_capping,
         enable_benchmark_mode=env.enable_benchmark_mode,
+        enable_allow_src_quantized_fc_conv_ops=env.enable_allow_src_quantized_fc_conv_ops,
     )
     return cls(ptr, env)
 
