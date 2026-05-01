@@ -25,17 +25,21 @@ if not os.path.splitext(__file__)[0].endswith(
   from litert.python.litert_wrapper.compiled_model_wrapper import (
       _pywrap_litert_compiled_model_wrapper as _cm,
   )
+  from litert.python.litert_wrapper.compiled_model_wrapper import cpu_kernel_mode
   from litert.python.litert_wrapper.compiled_model_wrapper import hardware_accelerator
   from litert.python.litert_wrapper.environment_wrapper import (
       environment as environment_wrapper,
   )
   from litert.python.litert_wrapper.tensor_buffer_wrapper import tensor_buffer
+
+  CpuKernelMode = cpu_kernel_mode.CpuKernelMode
   HardwareAccelerator = hardware_accelerator.HardwareAccelerator
   Environment = environment_wrapper.Environment
   TensorBuffer = tensor_buffer.TensorBuffer
 else:
   # This file is part of ai_edge_litert package.
   from ai_edge_litert import _pywrap_litert_compiled_model_wrapper as _cm
+  from ai_edge_litert.cpu_kernel_mode import CpuKernelMode
   from ai_edge_litert.environment import Environment
   from ai_edge_litert.hardware_accelerator import HardwareAccelerator
   from ai_edge_litert.tensor_buffer import TensorBuffer
@@ -90,6 +94,7 @@ class CompiledModel:
         cpu_num_threads=env.cpu_num_threads,
         gpu_enforce_f32=env.gpu_enforce_f32,
         gpu_share_constant_tensors=env.gpu_share_constant_tensors,
+        cpu_kernel_mode=env.cpu_kernel_mode,
     )
     return cls(ptr, env)
 
@@ -123,6 +128,7 @@ class CompiledModel:
         cpu_num_threads=env.cpu_num_threads,
         gpu_enforce_f32=env.gpu_enforce_f32,
         gpu_share_constant_tensors=env.gpu_share_constant_tensors,
+        cpu_kernel_mode=env.cpu_kernel_mode,
     )
     return cls(ptr, env)
 

@@ -38,11 +38,15 @@ class Environment:
       cpu_num_threads: int = 0,
       gpu_enforce_f32: bool = False,
       gpu_share_constant_tensors: bool = False,
+      cpu_kernel_mode: int = -1,
+      xnnpack_flags: int = -1,
   ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
     self.gpu_enforce_f32 = gpu_enforce_f32
     self.gpu_share_constant_tensors = gpu_share_constant_tensors
+    self.cpu_kernel_mode = cpu_kernel_mode
+    self.xnnpack_flags = xnnpack_flags
 
   @classmethod
   def create(
@@ -53,6 +57,8 @@ class Environment:
       cpu_num_threads: int = 1,
       gpu_enforce_f32: bool = False,
       gpu_share_constant_tensors: bool = False,
+      cpu_kernel_mode: int = -1,
+      xnnpack_flags: int = -1,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -64,6 +70,8 @@ class Environment:
       cpu_num_threads: Number of threads for CPU execution.
       gpu_enforce_f32: Enforce F32 precision on GPU.
       gpu_share_constant_tensors: Share constant tensors among subgraphs on GPU.
+      cpu_kernel_mode: CPU kernel mode option.
+      xnnpack_flags: XNNPACK flags option.
 
     Returns:
       A new Environment instance.
@@ -76,7 +84,12 @@ class Environment:
         dispatch_library_path=dispatch_library_path,
     )
     return cls(
-        capsule, cpu_num_threads, gpu_enforce_f32, gpu_share_constant_tensors
+        capsule,
+        cpu_num_threads,
+        gpu_enforce_f32,
+        gpu_share_constant_tensors,
+        cpu_kernel_mode,
+        xnnpack_flags,
     )
 
   @property
