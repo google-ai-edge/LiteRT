@@ -29,13 +29,31 @@ no_push=""
 
 # Resolves user provided data paths (files or directories) to absolute paths.
 # If a directory is provided, it resolves all files within it (non-recursive).
+# copybara:comment_begin(google-only)
+source third_party/odml/litert/litert/integration_test/google/remote_path_helper.sh || exit 1
+# copybara:comment_end
+
 function handle_user_data() {
   local user_data=()
-  for f in "$@"; do
-    if [[ -f "$f" ]]; then
-      user_data+=($(realpath "${f}"))
-    elif [[ -d "$f" ]]; then
-      for ff in "${f%/}/"*; do
+  for arg_f in "$@"; do
+    local f="$arg_f"
+    # copybara:comment_begin(google-only)
+    if type handle_remote_path >/dev/null 2>&1; then
+      f="$(handle_remote_path "$arg_f")"
+    fi
+    # copybara:comment_end
+
+
+
+    local check_f="$f"
+    if [[ ! -f "$check_f" && ! -d "$check_f" && -n "${BUILD_WORKING_DIRECTORY}" && "$check_f" != "/"* ]]; then
+      check_f="${BUILD_WORKING_DIRECTORY}/${f}"
+    fi
+
+    if [[ -f "$check_f" ]]; then
+      user_data+=($(realpath "${check_f}"))
+    elif [[ -d "$check_f" ]]; then
+      for ff in "${check_f%/}/"*; do
         if [[ -f "$ff" ]]; then
           user_data+=($(realpath "${ff}"))
         fi
@@ -65,11 +83,21 @@ function setup_context() {
       d_args+=("--extra_models=${dev_path}")
       d_args+=("--do_register='ExtraModel'")
       has_user_models="true"
+    elif [[ $a == "--graph="* ]]; then
+      local g_path="${a#*=}"
+      local resolved_paths=($(handle_user_data "${g_path}"))
+      if [[ ${#resolved_paths[@]} -gt 0 ]]; then
+        d_data+=("${resolved_paths[@]}")
+        local dev_path=$(device_path "${resolved_paths[0]}")
+        d_args+=("--graph=${dev_path}")
+      else
+        d_args+=("${a}")
+      fi
     else
       d_args+=("${a}")
     fi
   done
-  
+ 
   if [[ -z "${no_push}" && -z "${has_user_models}" ]]; then
     provided_models=($(get_provided_models))
     if [ $? -ne 0 ]; then

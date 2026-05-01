@@ -289,6 +289,9 @@ def litert_device_script(
         srcs = [":" + name + "_lib_expanded"],
         deps = [
             "//litert/integration_test:device_script_common",
+            # copybara:uncomment_begin(google-only)
+            # "//litert/integration_test/google:remote_path_helper",
+            # copybara:uncomment_end
         ],
         testonly = testonly,
     )
