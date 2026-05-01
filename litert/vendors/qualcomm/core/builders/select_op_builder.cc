@@ -7,7 +7,6 @@
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
-#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
@@ -25,13 +24,6 @@ OpWrapper CreateSelectOp(const TensorWrapper& condition,
   op.AddInputTensor(input_2);
   op.AddOutputTensor(output);
   return op;
-}
-
-std::vector<OpWrapper> BuildSelectOp(
-    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs) {
-  return MakeVector(
-      CreateSelectOp(inputs[0], inputs[1], inputs[2], outputs[0]));
 }
 
 }  // namespace qnn
