@@ -41,6 +41,7 @@ class Environment:
       cpu_kernel_mode: int = -1,
       xnnpack_flags: int = -1,
       xnnpack_weight_cache_path: str = "",
+      enable_constant_tensor_sharing: bool = False,
   ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
@@ -49,6 +50,7 @@ class Environment:
     self.cpu_kernel_mode = cpu_kernel_mode
     self.xnnpack_flags = xnnpack_flags
     self.xnnpack_weight_cache_path = xnnpack_weight_cache_path
+    self.enable_constant_tensor_sharing = enable_constant_tensor_sharing
 
   @classmethod
   def create(
@@ -62,6 +64,7 @@ class Environment:
       cpu_kernel_mode: int = -1,
       xnnpack_flags: int = -1,
       xnnpack_weight_cache_path: str = "",
+      enable_constant_tensor_sharing: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -76,6 +79,7 @@ class Environment:
       cpu_kernel_mode: CPU kernel mode option.
       xnnpack_flags: XNNPACK flags option.
       xnnpack_weight_cache_path: XNNPACK weight cache path option.
+      enable_constant_tensor_sharing: Enable constant tensor sharing on GPU.
 
     Returns:
       A new Environment instance.
@@ -95,6 +99,7 @@ class Environment:
         cpu_kernel_mode,
         xnnpack_flags,
         xnnpack_weight_cache_path,
+        enable_constant_tensor_sharing,
     )
 
   @property

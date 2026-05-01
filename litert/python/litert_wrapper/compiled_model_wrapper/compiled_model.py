@@ -97,6 +97,7 @@ class CompiledModel:
         cpu_kernel_mode=env.cpu_kernel_mode,
         xnnpack_flags=env.xnnpack_flags,
         xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
+        enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
     )
     return cls(ptr, env)
 
@@ -133,6 +134,7 @@ class CompiledModel:
         cpu_kernel_mode=env.cpu_kernel_mode,
         xnnpack_flags=env.xnnpack_flags,
         xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
+        enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
     )
     return cls(ptr, env)
 
