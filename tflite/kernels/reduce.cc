@@ -21,9 +21,11 @@ limitations under the License.
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <tuple>
 
 #include "absl/algorithm/container.h"
+#include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"
 #include "absl/types/span.h"
 #include "ruy/profiler/instrumentation.h"  // from @ruy
@@ -53,6 +55,8 @@ namespace reduce {
 const int kMaxConstantOutputTensorSize = 8;
 /// Stores reducer axes inline for common rank <= 4 tensors.
 using ResolvedAxisVector = absl::InlinedVector<int, 4>;
+using TfLiteIntArrayUniquePtr =
+    std::unique_ptr<TfLiteIntArray, void (*)(TfLiteIntArray*)>;
 
 // This file has reference implementation of reduce_* operators.
 enum KernelType {
@@ -70,7 +74,8 @@ struct OpData {
 };
 
 /// Validates that the node has the reducer op arity and parameter storage.
-TfLiteStatus ValidateNode(TfLiteContext* context, TfLiteNode* node) {
+TfLiteStatus ValidateNode(TfLiteContext* absl_nonnull context,
+                          TfLiteNode* node) {
   TF_LITE_ENSURE(context, node != nullptr);
   TF_LITE_ENSURE(context, node->inputs != nullptr);
   TF_LITE_ENSURE(context, node->outputs != nullptr);
@@ -84,17 +89,16 @@ TfLiteStatus ValidateNode(TfLiteContext* context, TfLiteNode* node) {
 }
 
 /// Validates that a tensor has usable dimension metadata.
-TfLiteStatus ValidateTensorShape(TfLiteContext* context,
-                                 const TfLiteTensor* tensor) {
-  TF_LITE_ENSURE(context, tensor != nullptr);
+TfLiteStatus ValidateTensorShape(TfLiteContext* absl_nonnull context,
+                                 const TfLiteTensor* absl_nonnull tensor) {
   TF_LITE_ENSURE(context, tensor->dims != nullptr);
   TF_LITE_ENSURE(context, tensor->dims->size >= 0);
   return kTfLiteOk;
 }
 
 /// Validates that a tensor with elements has a data buffer.
-TfLiteStatus ValidateTensorData(TfLiteContext* context,
-                                const TfLiteTensor* tensor) {
+TfLiteStatus ValidateTensorData(TfLiteContext* absl_nonnull context,
+                                const TfLiteTensor* absl_nonnull tensor) {
   TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, tensor));
   size_t count = 0;
   TF_LITE_ENSURE_MSG(context, CheckedNumElements(tensor, count) == kTfLiteOk,
@@ -104,9 +108,9 @@ TfLiteStatus ValidateTensorData(TfLiteContext* context,
 }
 
 /// Returns a tensor element count after checking for overflow and narrowing.
-TfLiteStatus GetTensorNumElementsAsInt(TfLiteContext* context,
-                                       const TfLiteTensor* tensor, int* count) {
-  TF_LITE_ENSURE(context, count != nullptr);
+TfLiteStatus GetTensorNumElementsAsInt(
+    TfLiteContext* absl_nonnull context,
+    const TfLiteTensor* absl_nonnull tensor, int* absl_nonnull count) {
   TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, tensor));
   TF_LITE_ENSURE_MSG(context, CheckedNumElements(tensor, *count) == kTfLiteOk,
                      "Reduce tensor size overflowed.");
@@ -114,8 +118,9 @@ TfLiteStatus GetTensorNumElementsAsInt(TfLiteContext* context,
 }
 
 /// Validates tensor data for reducer APIs that use int-sized offsets.
-TfLiteStatus ValidateTensorDataForIntIndexedKernel(TfLiteContext* context,
-                                                   const TfLiteTensor* tensor) {
+TfLiteStatus ValidateTensorDataForIntIndexedKernel(
+    TfLiteContext* absl_nonnull context,
+    const TfLiteTensor* absl_nonnull tensor) {
   int count = 0;
   TF_LITE_ENSURE_OK(context,
                     GetTensorNumElementsAsInt(context, tensor, &count));
@@ -124,7 +129,7 @@ TfLiteStatus ValidateTensorDataForIntIndexedKernel(TfLiteContext* context,
 }
 
 struct OpContext {
-  OpContext(TfLiteContext* context, TfLiteNode* node) {
+  OpContext(TfLiteContext* absl_nonnull context, TfLiteNode* node) {
     status = ValidateNode(context, node);
     if (status != kTfLiteOk) {
       return;
@@ -156,11 +161,11 @@ struct OpContext {
 };
 
 /// Resolves and validates the axis tensor for an input rank.
-TfLiteStatus ResolveAxisForShape(TfLiteContext* context,
-                                 const TfLiteTensor* axis_tensor,
+TfLiteStatus ResolveAxisForShape(TfLiteContext* absl_nonnull context,
+                                 const TfLiteTensor* absl_nonnull axis_tensor,
                                  int input_num_dims,
-                                 ResolvedAxisVector* resolved_axis) {
-  TF_LITE_ENSURE(context, resolved_axis != nullptr);
+                                 ResolvedAxisVector* absl_nonnull
+                                     resolved_axis) {
   TF_LITE_ENSURE_MSG(context, input_num_dims >= 0,
                      "Reduce input rank must be non-negative.");
   TF_LITE_ENSURE_OK(context, ValidateTensorData(context, axis_tensor));
@@ -188,15 +193,10 @@ TfLiteStatus ResolveAxisForShape(TfLiteContext* context,
   return kTfLiteOk;
 }
 
-/// Returns true when `axis` contains `dimension`.
-bool AxisContains(absl::Span<const int> axis, int dimension) {
-  return absl::c_contains(axis, dimension);
-}
-
 /// Computes a checked flat size as an int for legacy reducer kernel APIs.
-TfLiteStatus GetFlatSizeAsInt(TfLiteContext* context, const RuntimeShape& shape,
-                              int* flat_size) {
-  TF_LITE_ENSURE(context, flat_size != nullptr);
+TfLiteStatus GetFlatSizeAsInt(TfLiteContext* absl_nonnull context,
+                              const RuntimeShape& shape,
+                              int* absl_nonnull flat_size) {
   size_t checked_flat_size = 0;
   TF_LITE_ENSURE_MSG(context, shape.CheckedFlatSize(checked_flat_size),
                      "Reduce tensor size overflowed.");
@@ -208,10 +208,9 @@ TfLiteStatus GetFlatSizeAsInt(TfLiteContext* context, const RuntimeShape& shape,
 }
 
 /// Builds parameters for the specialized 4D mean kernels.
-TfLiteStatus BuildMeanParamsFor4D(TfLiteContext* context,
+TfLiteStatus BuildMeanParamsFor4D(TfLiteContext* absl_nonnull context,
                                   const OpContext& op_context,
-                                  tflite::MeanParams* op_params) {
-  TF_LITE_ENSURE(context, op_params != nullptr);
+                                  tflite::MeanParams* absl_nonnull op_params) {
   TF_LITE_ENSURE_EQ(context, NumDimensions(op_context.input), 4);
   ResolvedAxisVector resolved_axis;
   TF_LITE_ENSURE_OK(
@@ -244,35 +243,33 @@ template <KernelType kernel_type>
 TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node);
 
 // Resizes the temp tensor that stores resolved axis.
-TfLiteStatus ResizeTempAxis(TfLiteContext* context, OpContext* op_context,
-                            TfLiteTensor* resolved_axis) {
-  TF_LITE_ENSURE(context, op_context != nullptr);
-  TF_LITE_ENSURE(context, resolved_axis != nullptr);
-  TfLiteIntArray* axis_size = TfLiteIntArrayCreate(1);
+TfLiteStatus ResizeTempAxis(TfLiteContext* absl_nonnull context,
+                            OpContext* absl_nonnull op_context,
+                            TfLiteTensor* absl_nonnull resolved_axis) {
+  TfLiteIntArrayUniquePtr axis_size(TfLiteIntArrayCreate(1),
+                                    TfLiteIntArrayFree);
   TF_LITE_ENSURE(context, axis_size != nullptr);
   TF_LITE_ENSURE_OK(context,
                     GetTensorNumElementsAsInt(context, op_context->axis,
                                               &axis_size->data[0]));
-  return context->ResizeTensor(context, resolved_axis, axis_size);
+  return context->ResizeTensor(context, resolved_axis, axis_size.release());
 }
 
 // Resizes the temp tensor that stores temp sum of reduced elements.
-TfLiteStatus ResizeTempAccum(TfLiteContext* context, OpContext* op_context,
-                             TfLiteTensor* temp_accum) {
-  TF_LITE_ENSURE(context, op_context != nullptr);
-  TF_LITE_ENSURE(context, temp_accum != nullptr);
-  TfLiteIntArray* size = TfLiteIntArrayCreate(1);
+TfLiteStatus ResizeTempAccum(TfLiteContext* absl_nonnull context,
+                             OpContext* absl_nonnull op_context,
+                             TfLiteTensor* absl_nonnull temp_accum) {
+  TfLiteIntArrayUniquePtr size(TfLiteIntArrayCreate(1), TfLiteIntArrayFree);
   TF_LITE_ENSURE(context, size != nullptr);
   TF_LITE_ENSURE_OK(context, GetTensorNumElementsAsInt(
                                  context, op_context->output, &size->data[0]));
-  return context->ResizeTensor(context, temp_accum, size);
+  return context->ResizeTensor(context, temp_accum, size.release());
 }
 
 // Returns the output shape.
-TfLiteStatus GetOutputShape(TfLiteContext* context, OpContext* op_context,
-                            TfLiteIntArray** output_shape) {
-  TF_LITE_ENSURE(context, op_context != nullptr);
-  TF_LITE_ENSURE(context, output_shape != nullptr);
+TfLiteStatus GetOutputShape(TfLiteContext* absl_nonnull context,
+                            OpContext* absl_nonnull op_context,
+                            TfLiteIntArrayUniquePtr& output_shape) {
   TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, op_context->input));
   const TfLiteIntArray* input_dims = op_context->input->dims;
   int input_num_dims = NumDimensions(op_context->input);
@@ -281,81 +278,85 @@ TfLiteStatus GetOutputShape(TfLiteContext* context, OpContext* op_context,
       context, ResolveAxisForShape(context, op_context->axis, input_num_dims,
                                    &resolved_axis));
   if (input_num_dims == 0) {
-    *output_shape = TfLiteIntArrayCreate(0);
-    TF_LITE_ENSURE(context, *output_shape != nullptr);
+    output_shape.reset(TfLiteIntArrayCreate(0));
+    TF_LITE_ENSURE(context, output_shape != nullptr);
     return kTfLiteOk;
   }
   if (op_context->params->keep_dims) {
-    TfLiteIntArray* output_dims = TfLiteIntArrayCreate(input_num_dims);
-    TF_LITE_ENSURE(context, output_dims != nullptr);
+    output_shape.reset(TfLiteIntArrayCreate(input_num_dims));
+    TF_LITE_ENSURE(context, output_shape != nullptr);
     for (int idx = 0; idx < input_num_dims; ++idx) {
-      if (AxisContains(resolved_axis, idx)) {
-        output_dims->data[idx] = 1;
+      if (absl::c_contains(resolved_axis, idx)) {
+        output_shape->data[idx] = 1;
       } else {
-        output_dims->data[idx] = input_dims->data[idx];
+        output_shape->data[idx] = input_dims->data[idx];
       }
     }
-    *output_shape = output_dims;
     return kTfLiteOk;
   } else {
     // Determines output dimensions.
-    TfLiteIntArray* output_dims = TfLiteIntArrayCreate(
-        input_num_dims - static_cast<int>(resolved_axis.size()));
-    TF_LITE_ENSURE(context, output_dims != nullptr);
+    output_shape.reset(TfLiteIntArrayCreate(
+        input_num_dims - static_cast<int>(resolved_axis.size())));
+    TF_LITE_ENSURE(context, output_shape != nullptr);
     int num_skip_axis = 0;
     for (int idx = 0; idx < input_num_dims; ++idx) {
-      if (AxisContains(resolved_axis, idx)) {
+      if (absl::c_contains(resolved_axis, idx)) {
         ++num_skip_axis;
       } else {
-        output_dims->data[idx - num_skip_axis] = input_dims->data[idx];
+        output_shape->data[idx - num_skip_axis] = input_dims->data[idx];
       }
     }
-    *output_shape = output_dims;
     return kTfLiteOk;
   }
 }
 
 // Resizes output array based on the input size and resolved axis.
-TfLiteStatus ResizeOutputTensor(TfLiteContext* context, OpContext* op_context) {
-  TfLiteIntArray* output_dims;
-  TF_LITE_ENSURE_OK(context, GetOutputShape(context, op_context, &output_dims));
-  return context->ResizeTensor(context, op_context->output, output_dims);
+TfLiteStatus ResizeOutputTensor(TfLiteContext* absl_nonnull context,
+                                OpContext* absl_nonnull op_context) {
+  TfLiteIntArrayUniquePtr output_dims(nullptr, TfLiteIntArrayFree);
+  TF_LITE_ENSURE_OK(context, GetOutputShape(context, op_context, output_dims));
+  TF_LITE_ENSURE(context, output_dims != nullptr);
+  return context->ResizeTensor(context, op_context->output,
+                               output_dims.release());
 }
 
 // Resizes the temp tensor that stores normalized dims.
-TfLiteStatus ResizeTempDims(TfLiteContext* context, OpContext* op_context,
-                            TfLiteTensor* normalized_dims) {
-  TF_LITE_ENSURE(context, op_context != nullptr);
-  TF_LITE_ENSURE(context, normalized_dims != nullptr);
+TfLiteStatus ResizeTempDims(TfLiteContext* absl_nonnull context,
+                            OpContext* absl_nonnull op_context,
+                            TfLiteTensor* absl_nonnull normalized_dims) {
   TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, op_context->input));
-  TfLiteIntArray* dims_size = TfLiteIntArrayCreate(1);
+  TfLiteIntArrayUniquePtr dims_size(TfLiteIntArrayCreate(1),
+                                    TfLiteIntArrayFree);
   TF_LITE_ENSURE(context, dims_size != nullptr);
   dims_size->data[0] = (op_context->input->dims->size);
-  return context->ResizeTensor(context, normalized_dims, dims_size);
+  return context->ResizeTensor(context, normalized_dims, dims_size.release());
 }
 
 // Initializes temp tensors to store index and resolved axis.
-TfLiteStatus InitializeTemporaries(TfLiteContext* context, TfLiteNode* node,
-                                   OpContext* op_context) {
+TfLiteStatus InitializeTemporaries(TfLiteContext* absl_nonnull context,
+                                   TfLiteNode* absl_nonnull node,
+                                   OpContext* absl_nonnull op_context) {
   // Creates a temp index to iterate through input data.
-  TF_LITE_ENSURE(context, node != nullptr);
-  TF_LITE_ENSURE(context, op_context != nullptr);
   OpData* op_data = reinterpret_cast<OpData*>(node->user_data);
   TF_LITE_ENSURE(context, op_data != nullptr);
   TfLiteIntArrayFree(node->temporaries);
-  node->temporaries = TfLiteIntArrayCreate(4);
-  TF_LITE_ENSURE(context, node->temporaries != nullptr);
+  node->temporaries = nullptr;
+  TfLiteIntArrayUniquePtr temporaries(TfLiteIntArrayCreate(4),
+                                      TfLiteIntArrayFree);
+  TF_LITE_ENSURE(context, temporaries != nullptr);
+  node->temporaries = temporaries.release();
   node->temporaries->data[0] = op_data->scratch_tensor_index;
   TfLiteTensor* scratch_tensor;
   TF_LITE_ENSURE_OK(
       context, GetTemporarySafe(context, node, /*index=*/0, &scratch_tensor));
   scratch_tensor->type = kTfLiteInt32;
   scratch_tensor->allocation_type = kTfLiteArenaRw;
-  TfLiteIntArray* index_size = TfLiteIntArrayCreate(1);
+  TfLiteIntArrayUniquePtr index_size(TfLiteIntArrayCreate(1),
+                                     TfLiteIntArrayFree);
   TF_LITE_ENSURE(context, index_size != nullptr);
   index_size->data[0] = NumDimensions(op_context->input);
-  TF_LITE_ENSURE_OK(context,
-                    context->ResizeTensor(context, scratch_tensor, index_size));
+  TF_LITE_ENSURE_OK(context, context->ResizeTensor(context, scratch_tensor,
+                                                   index_size.release()));
 
   // Creates a temp tensor to store resolved axis given input data.
   node->temporaries->data[1] = op_data->scratch_tensor_index + 1;
@@ -419,16 +420,15 @@ TfLiteStatus PrepareSimple(TfLiteContext* context, TfLiteNode* node) {
     // Constant reductions should only be used for small outputs, typically
     // coming from Shape tensors. Constant reductions on larger tensors could
     // increase memory usage due to the output not being stored in the Arena.
-    TfLiteIntArray* output_shape;
+    TfLiteIntArrayUniquePtr output_shape(nullptr, TfLiteIntArrayFree);
     TF_LITE_ENSURE_OK(context,
-                      GetOutputShape(context, &op_context, &output_shape));
+                      GetOutputShape(context, &op_context, output_shape));
     int output_num_elements = 0;
     TF_LITE_ENSURE_MSG(
         context,
-        CheckedNumElements(output_shape, output_num_elements) == kTfLiteOk,
+        CheckedNumElements(output_shape.get(), output_num_elements) == kTfLiteOk,
         "Reduce output size overflowed.");
     data->noop &= output_num_elements <= kMaxConstantOutputTensorSize;
-    TfLiteIntArrayFree(output_shape);
   }
 
   if (op_context.input->type == kTfLiteInt16) {
@@ -588,8 +588,9 @@ TfLiteStatus PrepareProd(TfLiteContext* context, TfLiteNode* node) {
 }
 
 template <typename T, typename U, KernelType kernel_type>
-TfLiteStatus Mean(TfLiteContext* context, const OpContext* op_context,
-                  int* temp_index, int* resolved_axis, U* temp_sum) {
+TfLiteStatus Mean(TfLiteContext* absl_nonnull context,
+                  const OpContext* absl_nonnull op_context, int* temp_index,
+                  int* resolved_axis, U* temp_sum) {
   int num_axis = 0;
   TF_LITE_ENSURE_OK(
       context, GetTensorNumElementsAsInt(context, op_context->axis, &num_axis));
@@ -614,11 +615,12 @@ TfLiteStatus Mean(TfLiteContext* context, const OpContext* op_context,
 }
 
 template <typename T, KernelType kernel_type>
-TfLiteStatus QuantizedMeanOrSum(TfLiteContext* context,
-                                const OpContext& op_context,
-                                const OpData* op_data, TfLiteTensor* temp_index,
-                                TfLiteTensor* resolved_axis,
-                                TfLiteTensor* temp_sum, bool compute_sum) {
+TfLiteStatus QuantizedMeanOrSum(
+    TfLiteContext* absl_nonnull context, const OpContext& op_context,
+    const OpData* absl_nonnull op_data,
+    TfLiteTensor* absl_nonnull temp_index,
+    TfLiteTensor* absl_nonnull resolved_axis,
+    TfLiteTensor* absl_nonnull temp_sum, bool compute_sum) {
   int num_axis = 0;
   TF_LITE_ENSURE_OK(
       context, GetTensorNumElementsAsInt(context, op_context.axis, &num_axis));
@@ -659,11 +661,12 @@ TfLiteStatus QuantizedMeanOrSum(TfLiteContext* context,
 }
 
 template <typename integer_type>
-TfLiteStatus EvalQuantizedMean(TfLiteContext* context,
-                               const OpContext& op_context, int num_axis,
-                               OpData* data, TfLiteTensor* temp_index,
-                               TfLiteTensor* resolved_axis,
-                               TfLiteTensor* temp_sum) {
+TfLiteStatus EvalQuantizedMean(
+    TfLiteContext* absl_nonnull context, const OpContext& op_context,
+    int num_axis, OpData* absl_nonnull data,
+    TfLiteTensor* absl_nonnull temp_index,
+    TfLiteTensor* absl_nonnull resolved_axis,
+    TfLiteTensor* absl_nonnull temp_sum) {
   const TfLiteTensor* input = op_context.input;
   TfLiteTensor* output = op_context.output;
 
@@ -683,8 +686,8 @@ TfLiteStatus EvalQuantizedMean(TfLiteContext* context,
 }
 
 template <typename T>
-TfLiteStatus InitializeMeanOutputTyped(TfLiteContext* context,
-                                       TfLiteTensor* output) {
+TfLiteStatus InitializeMeanOutputTyped(TfLiteContext* absl_nonnull context,
+                                       TfLiteTensor* absl_nonnull output) {
   TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, output));
   RuntimeShape output_shape = GetTensorShape(output);
   size_t flat_size = 0;
@@ -700,8 +703,8 @@ TfLiteStatus InitializeMeanOutputTyped(TfLiteContext* context,
 }
 
 /// Initializes mean output for empty inputs.
-TfLiteStatus InitializeMeanOutput(TfLiteContext* context,
-                                  TfLiteTensor* output) {
+TfLiteStatus InitializeMeanOutput(TfLiteContext* absl_nonnull context,
+                                  TfLiteTensor* absl_nonnull output) {
   switch (output->type) {
     case kTfLiteFloat32:
       return InitializeMeanOutputTyped<float>(context, output);
@@ -881,7 +884,7 @@ bool IsReduceAllDims(int num_resolved_axis, int num_dims) {
 // from [start, end).
 template <typename T>
 struct ReduceWorkerTask : cpu_backend_threadpool::Task {
-  ReduceWorkerTask(EvalData<T>* eval_data, int start, int end)
+  ReduceWorkerTask(EvalData<T>* absl_nonnull eval_data, int start, int end)
       : eval_data(eval_data), start(start), end(end) {}
   void Run() override {
     auto* input_data = eval_data->input_data;
@@ -901,10 +904,10 @@ struct ReduceWorkerTask : cpu_backend_threadpool::Task {
 /// Applies a reducer over all input elements into a single output element.
 template <typename T>
 TfLiteStatus ReduceAllDims(const T* input_data,
-                           absl::Span<const int> input_dims, T* output_data,
+                           absl::Span<const int> input_dims,
+                           T* absl_nonnull output_data,
                            T init_value, T reducer(const T current, const T in),
-                           TfLiteContext* context) {
-  TF_LITE_ENSURE(context, output_data != nullptr);
+                           TfLiteContext* absl_nonnull context) {
   EvalData<T> eval_data;
   eval_data.reduce_func = reducer;
   eval_data.input_data = input_data;
@@ -954,9 +957,10 @@ TfLiteStatus ReduceAllDims(const T* input_data,
 
 // The underlying logic for Reduce Sum/Prod/Max/Min/Any
 template <typename T, KernelType kernel_type>
-TfLiteStatus EvalType(TfLiteContext* context, TfLiteNode* node,
-                      OpContext* op_context, ReduceType reduce_type) {
-  TF_LITE_ENSURE(context, op_context != nullptr);
+TfLiteStatus EvalType(TfLiteContext* absl_nonnull context,
+                      TfLiteNode* absl_nonnull node,
+                      OpContext* absl_nonnull op_context,
+                      ReduceType reduce_type) {
   TF_LITE_ENSURE_OK(context, op_context->status);
   int num_axis = 0;
   TF_LITE_ENSURE_OK(
@@ -1179,9 +1183,9 @@ TfLiteStatus EvalSum(TfLiteContext* context, TfLiteNode* node) {
 }
 
 template <KernelType kernel_type, typename T>
-TfLiteStatus EvalQuantizedProd(TfLiteContext* context, TfLiteNode* node,
-                               OpContext* op_context) {
-  TF_LITE_ENSURE(context, op_context != nullptr);
+TfLiteStatus EvalQuantizedProd(TfLiteContext* absl_nonnull context,
+                               TfLiteNode* absl_nonnull node,
+                               OpContext* absl_nonnull op_context) {
   TF_LITE_ENSURE_OK(context, op_context->status);
   OpData* data = reinterpret_cast<OpData*>(node->user_data);
   TF_LITE_ENSURE(context, data != nullptr);
@@ -1205,13 +1209,14 @@ TfLiteStatus EvalQuantizedProd(TfLiteContext* context, TfLiteNode* node,
   TfLiteTensor* output = op_context->output;
   TF_LITE_ENSURE_OK(context, ValidateTensorData(context, input));
   TF_LITE_ENSURE_OK(context, ValidateTensorData(context, op_context->axis));
+  ResolvedAxisVector resolved_axis_values;
+  TF_LITE_ENSURE_OK(
+      context, ResolveAxisForShape(context, op_context->axis,
+                                   input->dims->size, &resolved_axis_values));
 
   const absl::Span<const int> input_dims = absl::MakeConstSpan(
       input->dims->data, static_cast<size_t>(input->dims->size));
-  // Return early when input shape has zero dim.
-  if (absl::c_contains(input_dims, 0)) {
-    return kTfLiteOk;
-  }
+  const bool input_has_zero_dim = absl::c_contains(input_dims, 0);
 
   if (IsDynamicTensor(normalized_dims)) {
     TF_LITE_ENSURE_OK(context,
@@ -1224,22 +1229,31 @@ TfLiteStatus EvalQuantizedProd(TfLiteContext* context, TfLiteNode* node,
     TF_LITE_ENSURE_OK(context, ResizeOutputTensor(context, op_context));
     TF_LITE_ENSURE_OK(context, ResizeTempAccum(context, op_context, temp_prod));
 
-    int input_size = 0;
-    TF_LITE_ENSURE_OK(
-        context, GetFlatSizeAsInt(context, GetTensorShape(input), &input_size));
-    int output_size = 0;
-    TF_LITE_ENSURE_OK(context, GetFlatSizeAsInt(context, GetTensorShape(output),
-                                                &output_size));
-    TF_LITE_ENSURE(context, input_size != 0);
-    TF_LITE_ENSURE(context, output_size != 0);
+    if (!input_has_zero_dim) {
+      int input_size = 0;
+      TF_LITE_ENSURE_OK(context,
+                        GetFlatSizeAsInt(context, GetTensorShape(input),
+                                         &input_size));
+      int output_size = 0;
+      TF_LITE_ENSURE_OK(context,
+                        GetFlatSizeAsInt(context, GetTensorShape(output),
+                                         &output_size));
+      TF_LITE_ENSURE(context, input_size != 0);
+      TF_LITE_ENSURE(context, output_size != 0);
 
-    const int reduced_axis_size = input_size / output_size;
-    const double scaling = GetQuantProdScaling(
-        static_cast<double>(input->params.scale),
-        static_cast<double>(output->params.scale), reduced_axis_size);
-    QuantizeMultiplier(scaling, &data->multiplier, &data->shift);
+      const int reduced_axis_size = input_size / output_size;
+      const double scaling = GetQuantProdScaling(
+          static_cast<double>(input->params.scale),
+          static_cast<double>(output->params.scale), reduced_axis_size);
+      QuantizeMultiplier(scaling, &data->multiplier, &data->shift);
+    }
   }
   TF_LITE_ENSURE_OK(context, ValidateTensorData(context, output));
+  // Return early when input shape has zero dim after validating the dynamic axis
+  // and sizing any dynamic output tensors.
+  if (input_has_zero_dim) {
+    return kTfLiteOk;
+  }
 
   if (kernel_type == kReference) {
     TF_LITE_ENSURE(

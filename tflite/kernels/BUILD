@@ -780,6 +780,7 @@ BUILTIN_KERNEL_DEPS = [
     "@eigen_archive//:eigen3",
     "@flatbuffers",
     "@com_google_absl//absl/algorithm:container",
+    "@com_google_absl//absl/base:nullability",
     "@com_google_absl//absl/container:inlined_vector",
     "@com_google_absl//absl/types:span",
     "//tflite:framework_stable",

@@ -1242,6 +1242,23 @@ TEST(ConstInt8ProdOpTest, ZeroInputDim) {
   EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({1, 0, 1}));
 }
 
+TEST(DynamicInt8ProdOpTest, ZeroInputDim) {
+  ProdOpDynamicModel m({TensorType_INT8, {4, 0, 2}, 0.0, 1.0},
+                       {TensorType_INT8, {3}, 0.0, 1.0},
+                       {TensorType_INT32, {2}}, true);
+  m.SetAxis({0, 2});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({1, 0, 1}));
+}
+
+TEST(DynamicInt8ProdOpTest, ZeroInputDimRejectsOutOfRangeAxis) {
+  ProdOpDynamicModel m({TensorType_INT8, {4, 0, 2}, 0.0, 1.0},
+                       {TensorType_INT8, {3}, 0.0, 1.0},
+                       {TensorType_INT32, {1}}, true);
+  m.SetAxis({3});
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+}
+
 TEST(DynamicFloatProdOpTest, NotKeepDims) {
   std::vector<float> data = {1.0,  2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,
                              9.0,  10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
