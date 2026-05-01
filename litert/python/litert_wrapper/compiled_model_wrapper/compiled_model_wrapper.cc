@@ -175,7 +175,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     PyObject* environment_capsule, const char* model_path, int hardware_accel,
     int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
     int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
-    bool enable_constant_tensor_sharing, std::string* out_error) {
+    bool enable_constant_tensor_sharing, bool enable_infinite_float_capping, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -200,7 +200,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
 
-  if (gpu_enforce_f32 || gpu_share_constant_tensors || enable_constant_tensor_sharing) {
+  if (gpu_enforce_f32 || gpu_share_constant_tensors || enable_constant_tensor_sharing || enable_infinite_float_capping) {
     auto gpu_options_or = options.GetGpuOptions();
     if (!gpu_options_or) {
       if (out_error) *out_error = gpu_options_or.Error().Message();
@@ -211,6 +211,9 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     }
     if (gpu_share_constant_tensors || enable_constant_tensor_sharing) {
       gpu_options_or->EnableConstantTensorSharing(true);
+    }
+    if (enable_infinite_float_capping) {
+      gpu_options_or->EnableInfiniteFloatCapping(true);
     }
   }
 
@@ -260,7 +263,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
     int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
     int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
-    bool enable_constant_tensor_sharing, std::string* out_error) {
+    bool enable_constant_tensor_sharing, bool enable_infinite_float_capping, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -295,7 +298,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   auto& options = *options_or;
   options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
 
-  if (gpu_enforce_f32 || gpu_share_constant_tensors || enable_constant_tensor_sharing) {
+  if (gpu_enforce_f32 || gpu_share_constant_tensors || enable_constant_tensor_sharing || enable_infinite_float_capping) {
     auto gpu_options_or = options.GetGpuOptions();
     if (!gpu_options_or) {
       if (out_error) *out_error = gpu_options_or.Error().Message();
@@ -306,6 +309,9 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     }
     if (gpu_share_constant_tensors || enable_constant_tensor_sharing) {
       gpu_options_or->EnableConstantTensorSharing(true);
+    }
+    if (enable_infinite_float_capping) {
+      gpu_options_or->EnableInfiniteFloatCapping(true);
     }
   }
 
