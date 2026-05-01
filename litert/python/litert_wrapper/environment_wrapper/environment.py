@@ -43,6 +43,7 @@ class Environment:
       xnnpack_weight_cache_path: str = "",
       enable_constant_tensor_sharing: bool = False,
       enable_infinite_float_capping: bool = False,
+      enable_benchmark_mode: bool = False,
   ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
@@ -53,6 +54,7 @@ class Environment:
     self.xnnpack_weight_cache_path = xnnpack_weight_cache_path
     self.enable_constant_tensor_sharing = enable_constant_tensor_sharing
     self.enable_infinite_float_capping = enable_infinite_float_capping
+    self.enable_benchmark_mode = enable_benchmark_mode
 
   @classmethod
   def create(
@@ -68,6 +70,7 @@ class Environment:
       xnnpack_weight_cache_path: str = "",
       enable_constant_tensor_sharing: bool = False,
       enable_infinite_float_capping: bool = False,
+      enable_benchmark_mode: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -84,6 +87,7 @@ class Environment:
       xnnpack_weight_cache_path: XNNPACK weight cache path option.
       enable_constant_tensor_sharing: Enable constant tensor sharing on GPU.
       enable_infinite_float_capping: Enable infinite float capping on GPU.
+      enable_benchmark_mode: Enable benchmark mode on GPU.
 
     Returns:
       A new Environment instance.
@@ -105,6 +109,7 @@ class Environment:
         xnnpack_weight_cache_path,
         enable_constant_tensor_sharing,
         enable_infinite_float_capping,
+        enable_benchmark_mode,
     )
 
   @property

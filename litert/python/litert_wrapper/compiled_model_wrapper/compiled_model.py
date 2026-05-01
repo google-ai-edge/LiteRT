@@ -99,6 +99,7 @@ class CompiledModel:
         xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
         enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
         enable_infinite_float_capping=env.enable_infinite_float_capping,
+        enable_benchmark_mode=env.enable_benchmark_mode,
     )
     return cls(ptr, env)
 
@@ -137,6 +138,7 @@ class CompiledModel:
         xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
         enable_constant_tensor_sharing=env.enable_constant_tensor_sharing,
         enable_infinite_float_capping=env.enable_infinite_float_capping,
+        enable_benchmark_mode=env.enable_benchmark_mode,
     )
     return cls(ptr, env)
 

@@ -38,14 +38,15 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags,
          const std::string& xnnpack_weight_cache_path,
          bool enable_constant_tensor_sharing,
-         bool enable_infinite_float_capping) {
+         bool enable_infinite_float_capping, bool enable_benchmark_mode) {
         std::string error;
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
                 environment_capsule.ptr(), model_path.c_str(), hardware_accel,
                 cpu_num_threads, gpu_enforce_f32, gpu_share_constant_tensors,
                 cpu_kernel_mode, xnnpack_flags, xnnpack_weight_cache_path.c_str(),
-                enable_constant_tensor_sharing, enable_infinite_float_capping, &error);
+                enable_constant_tensor_sharing, enable_infinite_float_capping,
+                enable_benchmark_mode, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -59,7 +60,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("xnnpack_flags") = -1,
       py::arg("xnnpack_weight_cache_path") = "",
       py::arg("enable_constant_tensor_sharing") = false,
-      py::arg("enable_infinite_float_capping") = false);
+      py::arg("enable_infinite_float_capping") = false,
+      py::arg("enable_benchmark_mode") = false);
 
   // Factory method to create a CompiledModelWrapper from a model buffer.
   m.def(
@@ -69,7 +71,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags,
          const std::string& xnnpack_weight_cache_path,
          bool enable_constant_tensor_sharing,
-         bool enable_infinite_float_capping) {
+         bool enable_infinite_float_capping, bool enable_benchmark_mode) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
         CompiledModelWrapper* wrapper =
@@ -77,7 +79,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
                 environment_capsule.ptr(), data_obj, hardware_accel,
                 cpu_num_threads, gpu_enforce_f32, gpu_share_constant_tensors,
                 cpu_kernel_mode, xnnpack_flags, xnnpack_weight_cache_path.c_str(),
-                enable_constant_tensor_sharing, enable_infinite_float_capping, &error);
+                enable_constant_tensor_sharing, enable_infinite_float_capping,
+                enable_benchmark_mode, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -91,7 +94,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("xnnpack_flags") = -1,
       py::arg("xnnpack_weight_cache_path") = "",
       py::arg("enable_constant_tensor_sharing") = false,
-      py::arg("enable_infinite_float_capping") = false);
+      py::arg("enable_infinite_float_capping") = false,
+      py::arg("enable_benchmark_mode") = false);
 
   // Bindings for the CompiledModelWrapper class.
   py::class_<CompiledModelWrapper>(m, "CompiledModelWrapper")
