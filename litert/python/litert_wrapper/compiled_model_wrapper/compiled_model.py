@@ -96,6 +96,7 @@ class CompiledModel:
         gpu_share_constant_tensors=env.gpu_share_constant_tensors,
         cpu_kernel_mode=env.cpu_kernel_mode,
         xnnpack_flags=env.xnnpack_flags,
+        xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
     )
     return cls(ptr, env)
 
@@ -131,6 +132,7 @@ class CompiledModel:
         gpu_share_constant_tensors=env.gpu_share_constant_tensors,
         cpu_kernel_mode=env.cpu_kernel_mode,
         xnnpack_flags=env.xnnpack_flags,
+        xnnpack_weight_cache_path=env.xnnpack_weight_cache_path,
     )
     return cls(ptr, env)
 

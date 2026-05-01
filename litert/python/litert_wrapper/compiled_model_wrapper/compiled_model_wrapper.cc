@@ -174,7 +174,8 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     PyObject* environment_capsule, const char* model_path, int hardware_accel,
     int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
-    int cpu_kernel_mode, int xnnpack_flags, std::string* out_error) {
+    int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
+    std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -213,7 +214,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     }
   }
 
-  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0) {
+  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0 ||
+      (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path)) {
     auto cpu_options_or = options.GetCpuOptions();
     if (!cpu_options_or) {
       if (out_error) *out_error = cpu_options_or.Error().Message();
@@ -228,6 +230,9 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     }
     if (xnnpack_flags >= 0) {
       cpu_options_or->SetXNNPackFlags(static_cast<uint32_t>(xnnpack_flags));
+    }
+    if (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path) {
+      cpu_options_or->SetXNNPackWeightCachePath(xnnpack_weight_cache_path);
     }
   }
 
@@ -254,7 +259,8 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
     int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
-    int cpu_kernel_mode, int xnnpack_flags, std::string* out_error) {
+    int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
+    std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -303,7 +309,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     }
   }
 
-  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0) {
+  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0 ||
+      (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path)) {
     auto cpu_options_or = options.GetCpuOptions();
     if (!cpu_options_or) {
       if (out_error) *out_error = cpu_options_or.Error().Message();
@@ -318,6 +325,9 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     }
     if (xnnpack_flags >= 0) {
       cpu_options_or->SetXNNPackFlags(static_cast<uint32_t>(xnnpack_flags));
+    }
+    if (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path) {
+      cpu_options_or->SetXNNPackWeightCachePath(xnnpack_weight_cache_path);
     }
   }
 
