@@ -35,13 +35,13 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       "CreateCompiledModelFromFile",
       [](py::object environment_capsule, const std::string& model_path,
          int hardware_accel, int cpu_num_threads, bool gpu_enforce_f32,
-         bool gpu_share_constant_tensors, int cpu_kernel_mode) {
+         bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags) {
         std::string error;
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
                 environment_capsule.ptr(), model_path.c_str(), hardware_accel,
                 cpu_num_threads, gpu_enforce_f32, gpu_share_constant_tensors,
-                cpu_kernel_mode, &error);
+                cpu_kernel_mode, xnnpack_flags, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -51,21 +51,22 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0,
       py::arg("gpu_enforce_f32") = false,
       py::arg("gpu_share_constant_tensors") = false,
-      py::arg("cpu_kernel_mode") = -1);
+      py::arg("cpu_kernel_mode") = -1,
+      py::arg("xnnpack_flags") = -1);
 
   // Factory method to create a CompiledModelWrapper from a model buffer.
   m.def(
       "CreateCompiledModelFromBuffer",
       [](py::object environment_capsule, py::bytes model_data,
          int hardware_accel, int cpu_num_threads, bool gpu_enforce_f32,
-         bool gpu_share_constant_tensors, int cpu_kernel_mode) {
+         bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromBuffer(
                 environment_capsule.ptr(), data_obj, hardware_accel,
                 cpu_num_threads, gpu_enforce_f32, gpu_share_constant_tensors,
-                cpu_kernel_mode, &error);
+                cpu_kernel_mode, xnnpack_flags, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -75,7 +76,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("hardware_accel") = 0, py::arg("cpu_num_threads") = 0,
       py::arg("gpu_enforce_f32") = false,
       py::arg("gpu_share_constant_tensors") = false,
-      py::arg("cpu_kernel_mode") = -1);
+      py::arg("cpu_kernel_mode") = -1,
+      py::arg("xnnpack_flags") = -1);
 
   // Bindings for the CompiledModelWrapper class.
   py::class_<CompiledModelWrapper>(m, "CompiledModelWrapper")

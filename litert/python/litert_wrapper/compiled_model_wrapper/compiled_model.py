@@ -95,6 +95,7 @@ class CompiledModel:
         gpu_enforce_f32=env.gpu_enforce_f32,
         gpu_share_constant_tensors=env.gpu_share_constant_tensors,
         cpu_kernel_mode=env.cpu_kernel_mode,
+        xnnpack_flags=env.xnnpack_flags,
     )
     return cls(ptr, env)
 
@@ -129,6 +130,7 @@ class CompiledModel:
         gpu_enforce_f32=env.gpu_enforce_f32,
         gpu_share_constant_tensors=env.gpu_share_constant_tensors,
         cpu_kernel_mode=env.cpu_kernel_mode,
+        xnnpack_flags=env.xnnpack_flags,
     )
     return cls(ptr, env)
 
