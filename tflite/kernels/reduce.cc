@@ -52,7 +52,7 @@ namespace ops {
 namespace builtin {
 namespace reduce {
 
-const int kMaxConstantOutputTensorSize = 8;
+constexpr size_t kMaxConstantOutputTensorSize = 8;
 /// Stores reducer axes inline for common rank <= 4 tensors.
 using ResolvedAxisVector = absl::InlinedVector<int, 4>;
 using TfLiteIntArrayUniquePtr =
@@ -106,22 +106,13 @@ TfLiteStatus ValidateTensorData(TfLiteContext* absl_nonnull context,
   return kTfLiteOk;
 }
 
-/// Returns a tensor element count after checking for overflow and narrowing.
-TfLiteStatus GetTensorNumElementsAsInt(
-    TfLiteContext* absl_nonnull context,
-    const TfLiteTensor* absl_nonnull tensor, int* absl_nonnull count) {
-  TF_LITE_ENSURE_MSG(context, CheckedNumElements(tensor, *count) == kTfLiteOk,
-                     "Reduce tensor shape is invalid or size overflowed.");
-  return kTfLiteOk;
-}
-
 /// Validates tensor data for reducer APIs that use int-sized offsets.
 TfLiteStatus ValidateTensorDataForIntIndexedKernel(
     TfLiteContext* absl_nonnull context,
     const TfLiteTensor* absl_nonnull tensor) {
   int count = 0;
-  TF_LITE_ENSURE_OK(context,
-                    GetTensorNumElementsAsInt(context, tensor, &count));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(tensor, count) == kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   TF_LITE_ENSURE(context, count == 0 || tensor->data.raw != nullptr);
   return kTfLiteOk;
 }
@@ -166,14 +157,14 @@ TfLiteStatus ResolveAxisForShape(TfLiteContext* absl_nonnull context,
                                      resolved_axis) {
   TF_LITE_ENSURE_MSG(context, input_num_dims >= 0,
                      "Reduce input rank must be non-negative.");
-  TF_LITE_ENSURE_OK(context, ValidateTensorData(context, axis_tensor));
-  int num_axis = 0;
-  TF_LITE_ENSURE_OK(context,
-                    GetTensorNumElementsAsInt(context, axis_tensor, &num_axis));
+  size_t num_axis = 0;
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(axis_tensor, num_axis) ==
+                                  kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   const int* axis_data = GetTensorData<int>(axis_tensor);
   TF_LITE_ENSURE(context, axis_data != nullptr || num_axis == 0);
   const absl::Span<const int> axis_values =
-      absl::MakeConstSpan(axis_data, static_cast<size_t>(num_axis));
+      absl::MakeConstSpan(axis_data, num_axis);
   resolved_axis->clear();
   if (input_num_dims == 0) {
     return kTfLiteOk;
@@ -247,9 +238,10 @@ TfLiteStatus ResizeTempAxis(TfLiteContext* absl_nonnull context,
   TfLiteIntArrayUniquePtr axis_size(TfLiteIntArrayCreate(1),
                                     TfLiteIntArrayFree);
   TF_LITE_ENSURE(context, axis_size != nullptr);
-  TF_LITE_ENSURE_OK(context,
-                    GetTensorNumElementsAsInt(context, op_context->axis,
-                                              &axis_size->data[0]));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(op_context->axis,
+                                                 axis_size->data[0]) ==
+                                  kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   return context->ResizeTensor(context, resolved_axis, axis_size.release());
 }
 
@@ -259,8 +251,9 @@ TfLiteStatus ResizeTempAccum(TfLiteContext* absl_nonnull context,
                              TfLiteTensor* absl_nonnull temp_accum) {
   TfLiteIntArrayUniquePtr size(TfLiteIntArrayCreate(1), TfLiteIntArrayFree);
   TF_LITE_ENSURE(context, size != nullptr);
-  TF_LITE_ENSURE_OK(context, GetTensorNumElementsAsInt(
-                                 context, op_context->output, &size->data[0]));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(op_context->output,
+                                                 size->data[0]) == kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   return context->ResizeTensor(context, temp_accum, size.release());
 }
 
@@ -421,11 +414,11 @@ TfLiteStatus PrepareSimple(TfLiteContext* context, TfLiteNode* node) {
     TfLiteIntArrayUniquePtr output_shape(nullptr, TfLiteIntArrayFree);
     TF_LITE_ENSURE_OK(context,
                       GetOutputShape(context, &op_context, output_shape));
-    int output_num_elements = 0;
+    size_t output_num_elements = 0;
     TF_LITE_ENSURE_MSG(
         context,
         CheckedNumElements(output_shape.get(), output_num_elements) == kTfLiteOk,
-        "Reduce output size overflowed.");
+        "Reduce output shape is invalid or size overflowed.");
     data->noop &= output_num_elements <= kMaxConstantOutputTensorSize;
   }
 
@@ -590,8 +583,9 @@ TfLiteStatus Mean(TfLiteContext* absl_nonnull context,
                   const OpContext* absl_nonnull op_context, int* temp_index,
                   int* resolved_axis, U* temp_sum) {
   int num_axis = 0;
-  TF_LITE_ENSURE_OK(
-      context, GetTensorNumElementsAsInt(context, op_context->axis, &num_axis));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(op_context->axis, num_axis) ==
+                                  kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   if (kernel_type == kGenericOptimized) {
     TF_LITE_ENSURE_OK(context, ValidateTensorDataForIntIndexedKernel(
                                    context, op_context->input));
@@ -620,8 +614,9 @@ TfLiteStatus QuantizedMeanOrSum(
     TfLiteTensor* absl_nonnull resolved_axis,
     TfLiteTensor* absl_nonnull temp_sum, bool compute_sum) {
   int num_axis = 0;
-  TF_LITE_ENSURE_OK(
-      context, GetTensorNumElementsAsInt(context, op_context.axis, &num_axis));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(op_context.axis, num_axis) ==
+                                  kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   if (kernel_type == kGenericOptimized) {
     TF_LITE_ENSURE_OK(context, ValidateTensorDataForIntIndexedKernel(
                                    context, op_context.input));
@@ -729,8 +724,9 @@ TfLiteStatus EvalMean(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE(context, data != nullptr);
 
   int num_axis = 0;
-  TF_LITE_ENSURE_OK(
-      context, GetTensorNumElementsAsInt(context, op_context.axis, &num_axis));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(op_context.axis, num_axis) ==
+                                  kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   TfLiteTensor* temp_index;
   TF_LITE_ENSURE_OK(context,
                     GetTemporarySafe(context, node, /*index=*/0, &temp_index));
@@ -961,8 +957,9 @@ TfLiteStatus EvalType(TfLiteContext* absl_nonnull context,
                       ReduceType reduce_type) {
   TF_LITE_ENSURE_OK(context, op_context->status);
   int num_axis = 0;
-  TF_LITE_ENSURE_OK(
-      context, GetTensorNumElementsAsInt(context, op_context->axis, &num_axis));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(op_context->axis, num_axis) ==
+                                  kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   TfLiteTensor* temp_index;
   TF_LITE_ENSURE_OK(context,
                     GetTemporarySafe(context, node, /*index=*/0, &temp_index));
@@ -1189,8 +1186,9 @@ TfLiteStatus EvalQuantizedProd(TfLiteContext* absl_nonnull context,
   TF_LITE_ENSURE(context, data != nullptr);
 
   int num_axis = 0;
-  TF_LITE_ENSURE_OK(
-      context, GetTensorNumElementsAsInt(context, op_context->axis, &num_axis));
+  TF_LITE_ENSURE_MSG(context, CheckedNumElements(op_context->axis, num_axis) ==
+                                  kTfLiteOk,
+                     "Reduce tensor shape is invalid or size overflowed.");
   TfLiteTensor* temp_index;
   TF_LITE_ENSURE_OK(context,
                     GetTemporarySafe(context, node, /*index=*/0, &temp_index));
