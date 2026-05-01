@@ -99,10 +99,9 @@ TfLiteStatus ValidateTensorShape(TfLiteContext* absl_nonnull context,
 /// Validates that a tensor with elements has a data buffer.
 TfLiteStatus ValidateTensorData(TfLiteContext* absl_nonnull context,
                                 const TfLiteTensor* absl_nonnull tensor) {
-  TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, tensor));
   size_t count = 0;
   TF_LITE_ENSURE_MSG(context, CheckedNumElements(tensor, count) == kTfLiteOk,
-                     "Reduce tensor size overflowed.");
+                     "Reduce tensor shape is invalid or size overflowed.");
   TF_LITE_ENSURE(context, count == 0 || tensor->data.raw != nullptr);
   return kTfLiteOk;
 }
@@ -111,9 +110,8 @@ TfLiteStatus ValidateTensorData(TfLiteContext* absl_nonnull context,
 TfLiteStatus GetTensorNumElementsAsInt(
     TfLiteContext* absl_nonnull context,
     const TfLiteTensor* absl_nonnull tensor, int* absl_nonnull count) {
-  TF_LITE_ENSURE_OK(context, ValidateTensorShape(context, tensor));
   TF_LITE_ENSURE_MSG(context, CheckedNumElements(tensor, *count) == kTfLiteOk,
-                     "Reduce tensor size overflowed.");
+                     "Reduce tensor shape is invalid or size overflowed.");
   return kTfLiteOk;
 }
 
