@@ -123,11 +123,9 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
 }
 
 int Ats() {
-  auto env = litert::Environment::Create({});
-  ABSL_CHECK(env);
   std::cerr << kArt << std::endl;
 
-  auto options = AtsConf::ParseFlagsAndDoSetup(*env);
+  auto options = AtsConf::ParseFlagsAndDoSetup();
   ABSL_CHECK(options);
 
   size_t test_id = 0;

@@ -122,11 +122,12 @@ class AtsInferenceTest : public RngTest {
   double Tol() const { return graph_->HasReference() ? 1e-4 : 1e2; }
 
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
+    auto& env = conf_.GetEnvironment();
+
     CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
-      auto exec = NpuCompiledModelExecutor::Create(
-          Graph(), conf_.TargetOptions(), conf_.DispatchDir(),
-          conf_.PluginDir());
+      auto exec =
+          NpuCompiledModelExecutor::Create(Graph(), conf_.TargetOptions(), env);
       cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
       if (!exec) {
         return exec.Error();
@@ -135,8 +136,15 @@ class AtsInferenceTest : public RngTest {
       return res;
     }
     if (conf_.IsCpu()) {
-      LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                             Graph(), conf_.TargetOptions()));
+      LITERT_ASSIGN_OR_RETURN(auto exec,
+                              CpuCompiledModelExecutor::Create(
+                                  Graph(), conf_.TargetOptions(), env));
+      return std::make_unique<CompiledModelExecutor>(std::move(exec));
+    }
+    if (conf_.IsGpu()) {
+      LITERT_ASSIGN_OR_RETURN(auto exec,
+                              GpuCompiledModelExecutor::Create(
+                                  Graph(), conf_.TargetOptions(), env));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
 
@@ -168,7 +176,8 @@ class AtsInferenceTest : public RngTest {
 
   Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
     LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                           Graph(), conf_.ReferenceOptions()));
+                                           Graph(), conf_.ReferenceOptions(),
+                                           conf_.GetEnvironment()));
     return exec.Run(inputs);
   }
 

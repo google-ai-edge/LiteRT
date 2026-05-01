@@ -157,6 +157,40 @@ litert_define_ats(
 )
 
 litert_define_ats(
+    name = "gpu_ats",
+    backend = "gpu",
+    compile_only_suffix = "_aot",
+    do_register = [
+        "SingleOp",
+        "hf_mobilevit_small",
+        "qai_hub_midas",
+        "torchvision_mobilenet_v2",
+        "u2net_lite",
+        "torchvision_squeezenet1_1",
+        "yamnet",
+        "yolo11n",
+    ],
+    dont_register = [
+        ".*tfl\\.sub.*",
+        ".*tfl\\.add.*i32.*",
+        ".*861.*",
+        ".*tfl\\.relu_0_to_1.*",
+        ".*resnet18.*",
+        ".*BinaryNoBroadcast.*",
+        ".*tfl\\.exp.*",
+        ".*f16.*",
+        ".*tfl\\.ceil.*",
+        ".*5d.*",
+        ".*6d.*",
+        ".*tfl\\.zeros_like.*",
+    ],
+    extra_flags = [
+        "--data_seed=42",
+    ],
+    jit_suffix = "",
+)
+
+litert_define_ats(
     name = "intel_openvino_ats",
     backend = "intel_openvino",
     compile_only_suffix = None,
@@ -243,6 +277,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
@@ -301,10 +336,10 @@ cc_test(
     srcs = ["executor_test.cc"],
     deps = [
         ":executor",
-        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",
@@ -372,10 +407,10 @@ litert_device_test(
     defines = ["_TEST_NPU"],
     deps = [
         ":executor",
-        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",

@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -49,34 +50,32 @@
 namespace litert::testing {
 namespace {
 
-Expected<AtsConf> NpuInferenceOptions(litert::Environment& env) {
+Expected<AtsConf> NpuInferenceOptions() {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_backend, "npu");
   absl::SetFlag(&FLAGS_soc_manufacturer, "ExampleSocManufacturer");
-  return AtsConf::ParseFlagsAndDoSetup(env);
+  return AtsConf::ParseFlagsAndDoSetup();
 }
 
-Expected<AtsConf> CpuInferenceOptions(litert::Environment& env) {
+Expected<AtsConf> CpuInferenceOptions() {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_backend, "cpu");
-  return AtsConf::ParseFlagsAndDoSetup(env);
+  return AtsConf::ParseFlagsAndDoSetup();
 }
 
-Expected<AtsConf> CompileOptions(litert::Environment& env) {
+Expected<AtsConf> CompileOptions() {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
   absl::SetFlag(&FLAGS_compile_mode, true);
   absl::SetFlag(&FLAGS_soc_manufacturer, "ExampleSocManufacturer");
   absl::SetFlag(&FLAGS_backend, "npu");
-  return AtsConf::ParseFlagsAndDoSetup(env);
+  return AtsConf::ParseFlagsAndDoSetup();
 }
 
 Expected<void> CheckAts() {
-  LITERT_ASSIGN_OR_RETURN(auto env, litert::Environment::Create({}));
-
   absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
 
   LITERT_ASSIGN_OR_RETURN(auto dir, UniqueTestDirectory::Create());
@@ -87,9 +86,9 @@ Expected<void> CheckAts() {
   AtsInferenceTest::Capture i_cap;
   AtsCompileTest::Capture c_cap;
 
-  LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions(env));
-  LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions(env));
-  LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions(env));
+  LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions());
+  LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions());
+  LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions());
 
   // CPU
   {
@@ -183,7 +182,7 @@ Expected<void> CheckAts() {
     LITERT_ASSIGN_OR_RETURN(auto exec,
                             NpuCompiledModelExecutor::Create(
                                 *model, npu_inference_options.TargetOptions(),
-                                npu_inference_options.DispatchDir()));
+                                npu_inference_options.GetEnvironment()));
     const auto& subgraph = *model->Subgraphs()[0];
     LITERT_ASSIGN_OR_RETURN(
         auto inputs, SimpleBuffer::LikeSignature(subgraph.Inputs().begin(),
