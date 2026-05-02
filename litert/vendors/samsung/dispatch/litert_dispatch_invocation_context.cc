@@ -16,6 +16,7 @@
 
 #include "litert/vendors/samsung/dispatch/litert_dispatch_invocation_context.h"
 
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -30,6 +31,7 @@ namespace litert::samsung {
 
 // Require continuous memory for tensor buffer. No strides.
 Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+    const LiteRtRuntimeContext* runtime_context,
     const LiteRtRankedTensorType& tensor_type) {
   static constexpr std::array<const LiteRtTensorBufferType, 1>
       kSupportedTensorBufferTypes = {
@@ -42,7 +44,7 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
   }
 
   LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
+  if (auto status = runtime_context->create_tensor_buffer_requirements(
           kSupportedTensorBufferTypes.size(),
           kSupportedTensorBufferTypes.data(), *buffer_size, /*num_strides=*/0,
           /*strides=*/nullptr, &requirements);
@@ -133,13 +135,13 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
 litert::Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
     int input_index, const LiteRtRankedTensorType& tensor_type) {
-  return litert::samsung::GetTensorBufferRequirements(tensor_type);
+  return litert::samsung::GetTensorBufferRequirements(device_context_->runtime_context(), tensor_type);
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
-  return litert::samsung::GetTensorBufferRequirements(tensor_type);
+  return litert::samsung::GetTensorBufferRequirements(device_context_->runtime_context(), tensor_type);
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(

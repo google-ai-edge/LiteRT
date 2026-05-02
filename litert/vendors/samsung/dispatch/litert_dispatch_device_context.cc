@@ -16,16 +16,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "litert/vendors/samsung/dispatch/litert_dispatch_device_context.h"
+#include "litert/c/internal/litert_runtime_context.h"
 
 LiteRtDispatchDeviceContextT::LiteRtDispatchDeviceContextT(
+    const LiteRtRuntimeContext* runtime_context,
     const litert::samsung::EnnManager* enn_manager)
-    : enn_manager_(enn_manager), tensor_buffer_registry_(enn_manager) {}
+    : runtime_context_(runtime_context), enn_manager_(enn_manager), tensor_buffer_registry_(enn_manager) {}
 
 litert::Expected<LiteRtDispatchDeviceContextT::UniquePtr>
 LiteRtDispatchDeviceContextT::Create(
+    const LiteRtRuntimeContext* runtime_context,
     const litert::samsung::EnnManager* enn_manager) {
   return LiteRtDispatchDeviceContextT::UniquePtr(
-      new LiteRtDispatchDeviceContextT(enn_manager));
+      new LiteRtDispatchDeviceContextT(runtime_context, enn_manager));
 }
 
 litert::Expected<LiteRtTensorBufferHandle>
@@ -34,7 +37,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   LITERT_LOG(LITERT_DEBUG, "Registering tensor buffer %p", tensor_buffer);
   LiteRtTensorBufferType tensor_buffer_type;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type));
+      runtime_context_->get_tensor_buffer_type(tensor_buffer, &tensor_buffer_type));
 
   if (tensor_buffer_type != kLiteRtTensorBufferTypeDmaBuf) {
     return litert::Error(
@@ -44,18 +47,18 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   size_t tensor_buffer_size;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size));
+      runtime_context_->get_tensor_buffer_size(tensor_buffer, &tensor_buffer_size));
 
   size_t tensor_buffer_offset;
   if (auto status =
-          LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset);
+          runtime_context_->get_tensor_buffer_offset(tensor_buffer, &tensor_buffer_offset);
       status != kLiteRtStatusOk) {
     return litert::Unexpected(status, "Failed to get tensor buffer offset");
   }
 
   LiteRtRankedTensorType tensor_type;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type));
+      runtime_context_->get_tensor_buffer_tensor_type(tensor_buffer, &tensor_type));
 
   if (tensor_type.layout.has_strides) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
@@ -69,7 +72,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 #if LITERT_HAS_DMABUF_SUPPORT
       void* addr = nullptr;
       if (auto status =
-              LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &addr, &fd);
+              runtime_context_->get_tensor_buffer_dma_buf_buffer(tensor_buffer, &addr, &fd);
           status != kLiteRtStatusOk) {
         return litert::Error(status, "Failed to get DMA-BUF");
       }
