@@ -502,7 +502,7 @@ cc_library(
         ":litert_logging",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_environment_options_header",
     ],
 )
 

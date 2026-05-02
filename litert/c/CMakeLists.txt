@@ -151,6 +151,7 @@ add_library(litert_logging
     STATIC
         internal/litert_logging.cc
         internal/litert_logging_helper.cc
+        internal/litert_logging_helper_with_compiler_context.cc
         internal/litert_logging_helper_with_runtime_context.cc
 )
 

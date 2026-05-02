@@ -46,6 +46,7 @@ set_target_properties(qnn_compiler_plugin PROPERTIES
 if(APPLE)
     target_link_libraries(qnn_compiler_plugin PRIVATE
         litert_runtime_c_api_shared_lib
+        litert_logging
         tensorflow-lite
         Threads::Threads
         litert_compiler_plugin
@@ -60,6 +61,7 @@ elseif(UNIX)
     target_link_libraries(qnn_compiler_plugin PRIVATE
         "-Wl,--start-group"
         litert_runtime_c_api_shared_lib
+        litert_logging
         tensorflow-lite
         Threads::Threads
         litert_compiler_plugin

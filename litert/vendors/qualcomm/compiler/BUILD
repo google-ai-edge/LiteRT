@@ -15,6 +15,7 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
@@ -53,18 +54,23 @@ litert_dynamic_lib(
     ],
     deps = [
         ":qnn_compose_graph",
+        "//litert/c:litert_any",
+        "//litert/c:litert_builder",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_logging_helper",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_qualcomm_options",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
@@ -113,8 +119,10 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":qnn_compiler_plugin",  # buildcleaner: keep
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_testonly",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
@@ -125,6 +133,7 @@ litert_test(
         "//litert/cc/dynamic_runtime:litert_model_predicates",
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/options:litert_qualcomm_options",
+        "//litert/compiler/cc:litert_model",
         "//litert/core:environment_options",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
@@ -153,13 +162,16 @@ litert_lib(
     deps = [
         ":graph_mapper",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/cc:namespace_heuristics",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
@@ -241,11 +253,10 @@ litert_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
@@ -255,5 +266,16 @@ litert_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
+    ],
+)
+
+sh_test(
+    name = "qualcomm_compiler_plugin_so_symbol_test",
+    srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
+    args = [
+        "$(location :qnn_compiler_plugin_so)",
+    ],
+    data = [
+        ":qnn_compiler_plugin_so",
     ],
 )

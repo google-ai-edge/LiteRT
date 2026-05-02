@@ -21,8 +21,8 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -37,13 +37,13 @@ LiteRtStatus ConvertDataType(const litert::ElementType litert_type,
                              const bool is_quantized, Qnn_DataType_t& qnn_type);
 
 LiteRtStatus ConvertTensor(
-    const litert::Tensor& litert_tensor, ::qnn::TensorPool& tensor_pool,
-    ::qnn::TensorWrapper*& tensor_wrapper,
+    const litert::compiler::Tensor& litert_tensor,
+    ::qnn::TensorPool& tensor_pool, ::qnn::TensorWrapper*& tensor_wrapper,
     const absl::flat_hash_set<std::int32_t>& ids_to_dump = {},
     bool is_tensor_read_and_write = false);
 
 LiteRtStatus ConvertOp(bool use_int64_bias_as_int32,
-                       const litert::Op& litert_op,
+                       const litert::compiler::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -51,7 +51,8 @@ LiteRtStatus ConvertOp(bool use_int64_bias_as_int32,
 
 // Composes a new QNN Graph from given LiteRt Graph. Qnn Graph is written to
 // context behind "qnn". Uses given graph_name to name entry point.
-LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
+LiteRtStatus ComposeGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
+                          Qnn_ContextHandle_t context_handle,
                           Qnn_ProfileHandle_t profile_handle,
                           LiteRtSubgraph subgraph,
                           absl::string_view qnn_graph_name,
