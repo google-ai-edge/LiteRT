@@ -16,8 +16,10 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -29,6 +31,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
@@ -119,7 +122,82 @@ class AtsInferenceTest : public RngTest {
   }
 
  private:
-  double Tol() const { return graph_->HasReference() ? 1e-4 : 1e2; }
+  ConformanceSpec Conformance() const { return graph_->GetConformanceSpec(); }
+
+  template <typename T>
+  static double MeanSquaredError(absl::Span<const T> actual,
+                                 absl::Span<const T> ref) {
+    if (actual.empty()) {
+      return 0.0;
+    }
+    double mse = 0.0;
+    for (size_t i = 0; i < actual.size(); ++i) {
+      const double diff =
+          static_cast<double>(actual[i]) - static_cast<double>(ref[i]);
+      mse += diff * diff;
+    }
+    return mse / static_cast<double>(actual.size());
+  }
+
+  template <typename T>
+  void CheckMseOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref,
+                          double tol) {
+    double mse = std::numeric_limits<double>::max();
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, tol, &mse));
+    cap_.numerics.NewMse(mse);
+  }
+
+  template <typename T>
+  void CheckExactOutputImpl(const BufferView<T>& actual,
+                            const BufferView<T>& ref) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      EXPECT_EQ(actual.data[i], ref.data[i]) << "index=" << i;
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  void CheckExactOutputBytesImpl(const SimpleBuffer& actual,
+                                 const SimpleBuffer& ref) {
+    const auto actual_bytes = actual.Span<uint8_t>();
+    const auto ref_bytes = ref.Span<uint8_t>();
+    ASSERT_EQ(actual_bytes.size(), ref_bytes.size());
+    for (size_t i = 0; i < actual_bytes.size(); ++i) {
+      EXPECT_EQ(actual_bytes[i], ref_bytes[i]) << "byte=" << i;
+    }
+    cap_.numerics.NewMse(0.0);
+  }
+
+  void CheckFloatAccumulationAwareOutputImpl(const BufferView<float>& actual,
+                                             const BufferView<float>& ref,
+                                             const ConformanceSpec& spec) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      const double expected = static_cast<double>(ref.data[i]);
+      const double diff =
+          std::abs(static_cast<double>(actual.data[i]) - expected);
+      const double tol = spec.absolute_tolerance +
+                         spec.relative_tolerance * std::abs(expected);
+      EXPECT_LE(diff, tol) << "index=" << i << ", expected=" << expected
+                           << ", actual=" << actual.data[i];
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
+
+  template <typename T>
+  void CheckQuantizedBucketOutputImpl(const BufferView<T>& actual,
+                                      const BufferView<T>& ref,
+                                      int64_t bucket_tolerance) {
+    ASSERT_EQ(actual.data.size(), ref.data.size());
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+      const int64_t diff = std::llabs(static_cast<int64_t>(actual.data[i]) -
+                                      static_cast<int64_t>(ref.data[i]));
+      EXPECT_LE(diff, bucket_tolerance)
+          << "index=" << i << ", expected=" << static_cast<int64_t>(ref.data[i])
+          << ", actual=" << static_cast<int64_t>(actual.data[i]);
+    }
+    cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
+  }
 
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     auto& env = conf_.GetEnvironment();
@@ -145,6 +223,11 @@ class AtsInferenceTest : public RngTest {
       LITERT_ASSIGN_OR_RETURN(auto exec,
                               GpuCompiledModelExecutor::Create(
                                   Graph(), conf_.TargetOptions(), env));
+      return std::make_unique<CompiledModelExecutor>(std::move(exec));
+    }
+    if (conf_.IsGpu()) {
+      LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
+                                             Graph(), conf_.TargetOptions()));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
 
@@ -187,14 +270,12 @@ class AtsInferenceTest : public RngTest {
   }
 
   void CheckOutputs(const VarBuffers& actual, const VarBuffers& ref) {
+    // const ConformanceSpec spec = Conformance();
     ASSERT_EQ(actual.size(), ref.size());
     for (size_t i = 0; i < actual.size(); ++i) {
       ASSERT_EQ(actual[i].Type(), ref[i].Type());
       if (actual[i].Type().ElementType() == ElementType::Float32) {
         CheckOutputImpl(actual[i].AsView<float>(), ref[i].AsView<float>());
-      } else if (actual[i].Type().ElementType() == ElementType::Float16) {
-        CheckOutputImpl(actual[i].AsView<tflite::half>(),
-                        ref[i].AsView<tflite::half>());
       } else if (actual[i].Type().ElementType() == ElementType::Int32) {
         CheckOutputImpl(actual[i].AsView<int32_t>(), ref[i].AsView<int32_t>());
       } else {
@@ -207,11 +288,14 @@ class AtsInferenceTest : public RngTest {
 
   template <typename T>
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
+#if 0
+    const ConformanceSpec spec = Conformance();
     double mse = std::numeric_limits<double>::max();
-    double tol = std::max(
-        Tol(), static_cast<double>(NumericLimits<T>::Epsilon()) * 10.0);
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, tol, &mse));
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, Tol(), &mse));
     cap_.numerics.NewMse(mse);
+#else
+    abort();  // NOT IMPLEMENTED
+#endif
   }
 
   LiteRtModelT& Graph() const { return graph_->Graph(); }

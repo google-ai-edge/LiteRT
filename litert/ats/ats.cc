@@ -34,6 +34,7 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
+#include "tflite/c/common.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -114,12 +115,81 @@ void RegisterUnary(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterTranspose(const AtsConf& options, size_t& test_id, size_t iters,
+                       typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Transpose,
+      SizeListC<1, 2, 3, 4, 5, 6>,
+      TypeList<float>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterCpuTranspose(const AtsConf& options, size_t& test_id, size_t iters,
+                          typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Transpose,
+      SizeListC<1, 2, 3, 4, 5, 6>,
+      TypeList<
+          bool,
+          int8_t,
+          uint8_t,
+          int16_t,
+          uint16_t,
+          int32_t,
+          uint32_t,
+          int64_t,
+          uint64_t,
+          double,
+          TfLiteFloat16,
+          TfLiteBFloat16,
+          TfLiteComplex64>>
+    (iters, test_id, options, cap);
+  RegisterCombinations<
+      Fixture,
+      TransposeInt4,
+      SizeListC<1, 2, 3, 4, 5, 6>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
+void RegisterCpuFullyConnected(const AtsConf& options, size_t& test_id,
+                               size_t iters, typename Fixture::Capture& cap) {
+  RegisterCombinationsWithFamily<Fixture, FullyConnected,
+                                 FullyConnectedAtsCpuPresets>(
+      "SingleOpCpu", iters, test_id, options, cap);
+}
+
+template <typename Fixture>
+void RegisterGpuFullyConnected(const AtsConf& options, size_t& test_id,
+                               size_t iters, typename Fixture::Capture& cap) {
+  RegisterCombinationsWithFamily<Fixture, FullyConnected,
+                                 FullyConnectedAtsGpuPresets>(
+      "SingleOpGpu", iters, test_id, options, cap);
+}
+
+template <typename Fixture>
+void RegisterCompileFullyConnected(const AtsConf& options, size_t& test_id,
+                                   size_t iters,
+                                   typename Fixture::Capture& cap) {
+  RegisterCombinations<Fixture, FullyConnected, FullyConnectedAtsCompilePresets>(
+      iters, test_id, options, cap);
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
   RegisterNoOp<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBinaryNoBroadcast<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterUnary<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterTranspose<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {
@@ -134,8 +204,19 @@ int Ats() {
 
   if (!options->CompileMode()) {
     RegisterAll<AtsInferenceTest>(*options, test_id, i_cap);
+    if (options->IsCpu()) {
+      RegisterCpuTranspose<AtsInferenceTest>(*options, test_id,
+                                             /*iters=*/10, i_cap);
+      RegisterCpuFullyConnected<AtsInferenceTest>(*options, test_id,
+                                                  /*iters=*/10, i_cap);
+    } else if (options->IsGpu()) {
+      RegisterGpuFullyConnected<AtsInferenceTest>(*options, test_id,
+                                                  /*iters=*/10, i_cap);
+    }
   } else {
     RegisterAll<AtsCompileTest>(*options, test_id, c_cap);
+    RegisterCompileFullyConnected<AtsCompileTest>(*options, test_id,
+                                                  /*iters=*/10, c_cap);
   }
 
   // Preliminary report.
