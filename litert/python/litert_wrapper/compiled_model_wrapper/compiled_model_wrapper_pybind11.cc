@@ -39,7 +39,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          const std::string& xnnpack_weight_cache_path,
          bool enable_constant_tensor_sharing,
          bool enable_infinite_float_capping, bool enable_benchmark_mode,
-         bool enable_allow_src_quantized_fc_conv_ops) {
+         bool enable_allow_src_quantized_fc_conv_ops,
+         bool enable_hint_waiting_for_completion) {
         std::string error;
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
@@ -48,7 +49,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
                 cpu_kernel_mode, xnnpack_flags, xnnpack_weight_cache_path.c_str(),
                 enable_constant_tensor_sharing, enable_infinite_float_capping,
                 enable_benchmark_mode, enable_allow_src_quantized_fc_conv_ops,
-                &error);
+                enable_hint_waiting_for_completion, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -64,7 +65,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("enable_constant_tensor_sharing") = false,
       py::arg("enable_infinite_float_capping") = false,
       py::arg("enable_benchmark_mode") = false,
-      py::arg("enable_allow_src_quantized_fc_conv_ops") = false);
+      py::arg("enable_allow_src_quantized_fc_conv_ops") = false,
+      py::arg("enable_hint_waiting_for_completion") = false);
 
   // Factory method to create a CompiledModelWrapper from a model buffer.
   m.def(
@@ -75,7 +77,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          const std::string& xnnpack_weight_cache_path,
          bool enable_constant_tensor_sharing,
          bool enable_infinite_float_capping, bool enable_benchmark_mode,
-         bool enable_allow_src_quantized_fc_conv_ops) {
+         bool enable_allow_src_quantized_fc_conv_ops,
+         bool enable_hint_waiting_for_completion) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
         CompiledModelWrapper* wrapper =
@@ -85,7 +88,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
                 cpu_kernel_mode, xnnpack_flags, xnnpack_weight_cache_path.c_str(),
                 enable_constant_tensor_sharing, enable_infinite_float_capping,
                 enable_benchmark_mode, enable_allow_src_quantized_fc_conv_ops,
-                &error);
+                enable_hint_waiting_for_completion, &error);
         if (!wrapper) {
           throw std::runtime_error(error);
         }
@@ -101,7 +104,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("enable_constant_tensor_sharing") = false,
       py::arg("enable_infinite_float_capping") = false,
       py::arg("enable_benchmark_mode") = false,
-      py::arg("enable_allow_src_quantized_fc_conv_ops") = false);
+      py::arg("enable_allow_src_quantized_fc_conv_ops") = false,
+      py::arg("enable_hint_waiting_for_completion") = false);
 
   // Bindings for the CompiledModelWrapper class.
   py::class_<CompiledModelWrapper>(m, "CompiledModelWrapper")

@@ -45,6 +45,7 @@ class Environment:
       enable_infinite_float_capping: bool = False,
       enable_benchmark_mode: bool = False,
       enable_allow_src_quantized_fc_conv_ops: bool = False,
+      enable_hint_waiting_for_completion: bool = False,
   ):
     self._capsule = capsule
     self.cpu_num_threads = cpu_num_threads
@@ -59,6 +60,7 @@ class Environment:
     self.enable_allow_src_quantized_fc_conv_ops = (
         enable_allow_src_quantized_fc_conv_ops
     )
+    self.enable_hint_waiting_for_completion = enable_hint_waiting_for_completion
 
   @classmethod
   def create(
@@ -76,6 +78,7 @@ class Environment:
       enable_infinite_float_capping: bool = False,
       enable_benchmark_mode: bool = False,
       enable_allow_src_quantized_fc_conv_ops: bool = False,
+      enable_hint_waiting_for_completion: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -95,6 +98,8 @@ class Environment:
       enable_benchmark_mode: Enable benchmark mode on GPU.
       enable_allow_src_quantized_fc_conv_ops: Enable allow src quantized fc conv
         ops on GPU.
+      enable_hint_waiting_for_completion: Enable hint waiting for completion on
+        GPU.
 
     Returns:
       A new Environment instance.
@@ -118,6 +123,7 @@ class Environment:
         enable_infinite_float_capping,
         enable_benchmark_mode,
         enable_allow_src_quantized_fc_conv_ops,
+        enable_hint_waiting_for_completion,
     )
 
   @property

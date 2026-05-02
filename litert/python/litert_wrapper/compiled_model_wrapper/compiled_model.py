@@ -101,6 +101,7 @@ class CompiledModel:
         enable_infinite_float_capping=env.enable_infinite_float_capping,
         enable_benchmark_mode=env.enable_benchmark_mode,
         enable_allow_src_quantized_fc_conv_ops=env.enable_allow_src_quantized_fc_conv_ops,
+        enable_hint_waiting_for_completion=env.enable_hint_waiting_for_completion,
     )
     return cls(ptr, env)
 
@@ -141,6 +142,7 @@ class CompiledModel:
         enable_infinite_float_capping=env.enable_infinite_float_capping,
         enable_benchmark_mode=env.enable_benchmark_mode,
         enable_allow_src_quantized_fc_conv_ops=env.enable_allow_src_quantized_fc_conv_ops,
+        enable_hint_waiting_for_completion=env.enable_hint_waiting_for_completion,
     )
     return cls(ptr, env)
 
