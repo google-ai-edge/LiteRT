@@ -52,4 +52,18 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-exports_files(glob(["**/*.so"]))
+# Runtime libraries for tests (core libs + plugins)
+filegroup(
+    name = "openvino_libs",
+    srcs = select({
+        "@org_tensorflow//tensorflow:android": glob([
+            "openvino_android/runtime/lib/intel64/*.so*",
+        ]),
+        "//conditions:default": glob([
+            "openvino/runtime/lib/intel64/*.so*",
+        ]),
+    }),
+    visibility = ["//visibility:public"],
+)
+
+exports_files(glob(["**/*.so*"]))
