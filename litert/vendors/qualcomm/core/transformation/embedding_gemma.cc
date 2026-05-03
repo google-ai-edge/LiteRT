@@ -11,11 +11,13 @@
 #include <iterator>
 #include <optional>
 #include <vector>
+#include <variant>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/embedding_lookup_op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -250,6 +252,62 @@ size_t TransformEmbeddingGemma(
               ops.begin() + start_index + pattern_size);
     QNN_LOG_INFO("[G2G] Done transforming MHA to SHA in Embedding Gemma!");
     return step_size;
+  }
+  QNN_LOG_WARNING(
+      "[G2G] Validation failed. Rolling back to the original graph.");
+  return 1;
+}
+
+size_t FuseEmbedder(std::function<bool(OpWrapper&)> validate_op_config,
+                    std::vector<OpWrapper>& ops, size_t start_index,
+                    TensorPool& tensor_pool, size_t pattern_size) {
+  QNN_LOG_INFO("[G2G] Let's fuse Embedder.");
+
+  const auto& quant_in = ops[start_index + pattern_size - 1].GetOutputTensor(0);
+  auto it = std::find_if(ops.begin(), ops.end(), [&](const auto& op) {
+    return op.IsOpCode(QnnOpCode::kQuantize) &&
+           (quant_in == op.GetInputTensor(0));
+  });
+  if (it == ops.end()) return 1;
+  const size_t quant_index = std::distance(ops.begin(), it);
+  QNN_LOG_INFO("%d, %d, %d, %d", start_index, start_index + 1, start_index + 2,
+               quant_index);
+  // Quantize whole table to Int16.
+  const auto& gather = ops[start_index];
+  auto fp_data = gather.GetInputTensor(0).GetTensorData<float>();
+  if (!fp_data) return 1;
+  const auto& quant_output = ops[quant_index].GetOutputTensor(0);
+  if (!quant_output.IsQuantI16()) return 1;
+  auto output_quant = std::get_if<ScaleOffsetQuantizeParamsWrapper>(
+      &quant_output.GetQuantParams());
+  if (!output_quant) return 1;
+  const float scale = output_quant->GetScale();
+  const int32_t offset = output_quant->GetOffset();
+  std::vector<int16_t> table;
+  table.reserve(fp_data.value().size());
+  for (const auto fp_val : fp_data.value()) {
+    table.emplace_back(std::round(fp_val / scale) - offset);
+  }
+  auto dims = gather.GetInputTensor(0).GetDimensions();
+  dims.insert(dims.begin(), 1u);
+  const auto& int16_table_tensor = tensor_pool.CreateStaticTensor(
+      quant_output.GetDataType(), quant_output.GetQuantParams(), dims,
+      sizeof(table[0]) * table.size(), table.data());
+  OpWrapper new_op = CreateGatherOp(
+      int16_table_tensor, gather.GetInputTensor(1), quant_output, 1u);
+  QNN_LOG_INFO("[G2G] Fuse Embedder - Start.");
+  
+  // Validate new graph.
+  if (validate_op_config(new_op)) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    new_op.AddSuffixToName(absl::StrCat("_qcg2g_0"));
+    // Replace the matched pattern with a newly generated subgraph.
+    ops.erase(ops.begin() + quant_index);
+    ops.insert(ops.begin() + start_index + pattern_size, new_op);
+    ops.erase(ops.begin() + start_index,
+              ops.begin() + start_index + pattern_size);
+    QNN_LOG_INFO("[G2G] Done fuse embedder in Embedding Gemma!");
+    return 1;
   }
   QNN_LOG_WARNING(
       "[G2G] Validation failed. Rolling back to the original graph.");
