@@ -211,6 +211,49 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetOutputRequirements(
     LiteRtTensorBufferRequirements* tensor_buffer_requirements);
 ```
 
+### Custom TensorBuffer Handlers (optional)
+
+If your Dispatch API needs to create custom TensorBuffer types, your Dispatch
+API should provide custom hardware buffer handlers for creating, destroying,
+locking, and unlocking custom tensor buffers.
+
+This information is passed to LiteRT Runtime with the
+`LiteRtCustomTensorBufferHandlersDef` struct in the `LiteRtDispatchApi`
+returned by `LiteRtDispatchGetApi`. Then, the LiteRT runtime will automatically
+register these handlers when the Dispatch API is initialized.
+
+Here is the definition of `LiteRtCustomTensorBufferHandlersDef`:
+
+```c
+typedef struct LiteRtCustomTensorBufferHandlersDef {
+  int version;
+  CreateCustomTensorBuffer create_func;
+  DestroyCustomTensorBuffer destroy_func;
+  LockCustomTensorBuffer lock_func;
+  UnlockCustomTensorBuffer unlock_func;
+  ClearCustomTensorBuffer clear_func;
+  ImportCustomTensorBuffer import_func;
+
+  LiteRtEnvOptionTag device_tag;
+  LiteRtEnvOptionTag queue_tag;
+
+  size_t num_supported_buffer_types;
+  LiteRtTensorBufferType supported_buffer_types[16];
+} LiteRtCustomTensorBufferHandlersDef;
+```
+
+Vendors should initialize this struct and set the `tensor_buffer_handlers`
+field in `LiteRtDispatchApi`.
+
+```c
+typedef struct LiteRtDispatchApi {
+  LiteRtApiVersion version;
+  LiteRtDispatchInterface* interface;
+  LiteRtDispatchAsyncInterface* async_interface;
+  LiteRtDispatchGraphInterface* graph_interface;
+  LiteRtCustomTensorBufferHandlersDef* tensor_buffer_handlers; // Set this field
+} LiteRtDispatchApi;
+```
 
 #### Buffer Requirement Handshaking
 

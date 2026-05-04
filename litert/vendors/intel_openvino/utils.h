@@ -4,10 +4,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #include "openvino/core/type/element_type.hpp"
-#include "openvino/frontend/tensorflow_lite/decoder.hpp"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/cc/internal/litert_extended_model.h"
 
 namespace litert {
 namespace openvino {
@@ -67,21 +64,6 @@ static const ov::element::Type MapLiteTypeToOV(
       ov_type = ov::element::dynamic;
   }
   return ov_type;
-}
-
-static const LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
-                                           std::vector<int64_t>& ov_shape_vec) {
-  if (litert_tensor.TypeId() != kLiteRtRankedTensorType)
-    return kLiteRtStatusErrorInvalidArgument;
-
-  LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
-                          litert_tensor.RankedTensorType());
-
-  const auto tensor_layout = ranked_tensor_type.Layout();
-  ov_shape_vec.resize(tensor_layout.Rank());
-  for (int i = 0; i < ov_shape_vec.size(); i++)
-    ov_shape_vec[i] = tensor_layout.Dimensions()[i];
-  return kLiteRtStatusOk;
 }
 
 }  // namespace openvino
