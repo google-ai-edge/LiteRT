@@ -199,8 +199,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get LiteRT Tensor Buffer for AHWB"));
 
-      auto fd_exp = GetFdFromUnixHandle(ahwb);
-      int fd = fd_exp.Value();
+      LITERT_ASSIGN_OR_RETURN(int fd, GetFdFromUnixHandle(ahwb));
       LITERT_RETURN_IF_ERROR(
           fd != -1, litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                        "Failed to get FD from unix handle"));
