@@ -230,16 +230,6 @@ class CompiledModelNext : public CompiledModel {
                      options_handle, nullptr);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(size_t signature_index,
-                     std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     Options* run_options) const {
-    return Run(signature_index, internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), run_options);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Runs with per-request scheduling info for a given signature index.
   Expected<void> Run(size_t signature_index,
                      absl::Span<const TensorBuffer> input_buffers,
@@ -249,16 +239,6 @@ class CompiledModelNext : public CompiledModel {
     return RunHelper(signature_index, input_buffers, output_buffers, async,
                      nullptr, &scheduling_info);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(size_t signature_index,
-                     std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     const LiteRtSchedulingInfo& scheduling_info) const {
-    return Run(signature_index, internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), scheduling_info);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs default signature with per-run options.
   Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
@@ -275,15 +255,6 @@ class CompiledModelNext : public CompiledModel {
                      async, options_handle, nullptr);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     Options* run_options) const {
-    return Run(internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), run_options);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Runs default signature with per-request scheduling info.
   Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
                      absl::Span<const TensorBuffer> output_buffers,
@@ -292,15 +263,6 @@ class CompiledModelNext : public CompiledModel {
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
                      async, nullptr, &scheduling_info);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     const LiteRtSchedulingInfo& scheduling_info) const {
-    return Run(internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), scheduling_info);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs asynchronously with per-run options for a given signature.
   Expected<void> RunAsync(size_t signature_index,
@@ -366,16 +328,6 @@ class CompiledModelNext : public CompiledModel {
     return Run(signature_index, input_buffers, output_buffers, run_options);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(std::string_view signature_key,
-                     const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers,
-                     Options* run_options) const {
-    return Run(internal::ToAbslStringView(signature_key), input_buffers,
-               output_buffers, run_options);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Runs by signature key with per-request scheduling info.
   Expected<void> Run(absl::string_view signature_key,
                      const std::vector<TensorBuffer>& input_buffers,
@@ -385,16 +337,6 @@ class CompiledModelNext : public CompiledModel {
                             GetSignatureIndex(signature_key));
     return Run(signature_index, input_buffers, output_buffers, scheduling_info);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(std::string_view signature_key,
-                     const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers,
-                     const LiteRtSchedulingInfo& scheduling_info) const {
-    return Run(internal::ToAbslStringView(signature_key), input_buffers,
-               output_buffers, scheduling_info);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs by signature key asynchronously with per-run options.
   Expected<void> RunAsync(absl::string_view signature_key,
@@ -407,16 +349,6 @@ class CompiledModelNext : public CompiledModel {
     return RunAsync(signature_index, input_buffers, output_buffers, async,
                     run_options);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> RunAsync(std::string_view signature_key,
-                          const std::vector<TensorBuffer>& input_buffers,
-                          const std::vector<TensorBuffer>& output_buffers,
-                          bool& async, Options* run_options) const {
-    return RunAsync(internal::ToAbslStringView(signature_key), input_buffers,
-                    output_buffers, async, run_options);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs by signature key asynchronously with per-request scheduling
   /// info.
@@ -431,17 +363,6 @@ class CompiledModelNext : public CompiledModel {
     return RunAsync(signature_index, input_buffers, output_buffers, async,
                     scheduling_info);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> RunAsync(std::string_view signature_key,
-                          const std::vector<TensorBuffer>& input_buffers,
-                          const std::vector<TensorBuffer>& output_buffers,
-                          bool& async,
-                          const LiteRtSchedulingInfo& scheduling_info) const {
-    return RunAsync(internal::ToAbslStringView(signature_key), input_buffers,
-                    output_buffers, async, scheduling_info);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs by signature key with per-run options using named maps.
   Expected<void> Run(

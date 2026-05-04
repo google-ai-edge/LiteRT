@@ -194,14 +194,6 @@ class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
     return Weights(weights);
   }
 
-#ifdef LITERT_NO_ABSL
-  template <typename T>
-  Expected<Weights> BuildWeights(std::span<const T> data,
-                                 Tensor& tensor) const {
-    return BuildWeights(internal::ToAbslSpan(data), tensor);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief A trait for building scalars.
   Expected<Tensor> BuildScalar(
       LiteRtElementType element_type,
