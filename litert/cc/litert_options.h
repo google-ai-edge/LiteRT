@@ -211,6 +211,15 @@ class Options {
                              static_cast<void*>(&custom_op_kernel));
   }
 
+  /// Adds a custom build action.
+  /// @internal This is experimental and primarily for internal use.
+  Expected<void> AddBuildAction(
+      std::function<LiteRtStatus(internal::RuntimeProxy*, LiteRtOptions)>
+          action) {
+    build_actions_.push_back(std::move(action));
+    return {};
+  }
+
   /// Binds an external memory buffer to a specific tensor in the model.
   ///
   /// This function sets the tensor's allocation type to `kTfLiteCustom`,

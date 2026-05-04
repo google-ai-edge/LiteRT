@@ -1402,6 +1402,64 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_options_experimental",
+    srcs = ["litert_options_experimental.cc"],
+    hdrs = ["litert_options_experimental.h"],
+    deps = [
+        ":litert_expected",
+        ":litert_options",
+        "//litert/c:litert_common",
+        "//litert/core:options",
+    ],
+)
+
+genrule(
+    name = "max_unpooling_2d_tflite",
+    srcs = ["max_unpooling_2d.mlir"],
+    outs = ["max_unpooling_2d.tflite"],
+    cmd = "$(location //tflite/converter:flatbuffer_translate) -mlir-to-tflite-flatbuffer $< -o $@",
+    tools = ["//tflite/converter:flatbuffer_translate"],
+)
+
+genrule(
+    name = "max_unpooling_2d_valid_tflite",
+    srcs = ["max_unpooling_2d_valid.mlir"],
+    outs = ["max_unpooling_2d_valid.tflite"],
+    cmd = "$(location //tflite/converter:flatbuffer_translate) -mlir-to-tflite-flatbuffer $< -o $@",
+    tools = ["//tflite/converter:flatbuffer_translate"],
+)
+
+cc_test(
+    name = "litert_options_experimental_test",
+    srcs = ["litert_options_experimental_test.cc"],
+    data = [
+        ":max_unpooling_2d_tflite",
+        ":max_unpooling_2d_valid_tflite",
+        "//tflite:testdata/custom_sinh.bin",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_compiled_model",
+        ":litert_environment_testonly",
+        ":litert_options",
+        ":litert_options_experimental",
+        ":litert_tensor_buffer",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/test:matchers",
+        "//tflite:builtin_ops",
+        "//tflite/core/c:private_c_api_opaque_without_op_resolver",
+        "//tflite/core/c:private_common",
+        "//tflite/kernels/perception:perception_ops",  # buildcleaner: keep
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(glob([
     "*.h",
     "*.cc",

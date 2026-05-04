@@ -563,6 +563,9 @@ class LiteRtCompiledModelT {
 
   // Indicates whether the model is fully delegated on GPU or NPU.
   bool non_cpu_fully_delegated_ = false;
+
+  // Owns dynamically created TfLiteRegistration objects for TfLiteOperator.
+  std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

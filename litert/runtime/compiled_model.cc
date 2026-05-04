@@ -32,6 +32,7 @@
 
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/internal/scoped_weight_source.h"
+#include "tflite/c/c_api.h"
 #include "tflite/mutable_op_resolver.h"
 
 #if !defined(LITERT_WINDOWS_OS)
@@ -336,6 +337,32 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       auto* tflite_registration =
           custom_op_dispatchers_.back()->GetTfLiteRegistration();
       resolver->AddCustom(option.op_name.c_str(), tflite_registration);
+    }
+    for (const auto* reg :
+         jit_compilation_options->custom_tflite_op_registrations) {
+      if (reg->custom_name == nullptr) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Custom op name is null, skipping registration");
+        continue;
+      }
+      resolver->AddCustom(reg->custom_name, reg);
+    }
+    for (const auto* op : jit_compilation_options->custom_tflite_op_operators) {
+      const char* custom_name = TfLiteOperatorGetCustomName(op);
+      if (custom_name == nullptr) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Custom op name is null for TfLiteOperator, skipping "
+                   "registration");
+        continue;
+      }
+      auto new_reg = std::make_unique<TfLiteRegistration>();
+      new_reg->custom_name = custom_name;
+      new_reg->version = TfLiteOperatorGetVersion(op);
+      new_reg->registration_external = const_cast<TfLiteOperator*>(op);
+
+      resolver->AddCustom(new_reg->custom_name, new_reg.get());
+
+      owned_tflite_registrations_.push_back(std::move(new_reg));
     }
   }
 

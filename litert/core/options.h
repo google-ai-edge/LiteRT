@@ -43,6 +43,9 @@ struct LiteRtExternalTensorBinding {
   size_t size_bytes;
 };
 
+struct TfLiteRegistration;
+struct TfLiteOperator;
+
 struct LiteRtOptionsT {
   struct CustomOpOption {
     std::string op_name;
@@ -62,6 +65,8 @@ struct LiteRtOptionsT {
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
+  std::vector<const TfLiteRegistration*> custom_tflite_op_registrations;
+  std::vector<const TfLiteOperator*> custom_tflite_op_operators;
   std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
   // Non-owning pointer used to expose the runtime's WeightLoader to delegates.
   weight_loader::WeightLoader* weight_loader = nullptr;
