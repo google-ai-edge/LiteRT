@@ -571,9 +571,29 @@ class LitertLmFileBuilder:
 
 def _copy_file_to_stream(f_src: Any, f_dst: BinaryIO, buffer_size=1024 * 1024):
   """Copies data from f_src to f_dst efficiently."""
-  # shutil.copyfileobj attempts to use os.sendfile (zero-copy) if available.
-  # This avoids loading data into Python memory, resulting in massive speedups
-  # for large files (>20GB).
+  # Try to use os.sendfile (zero-copy) if available.
+  if hasattr(os, "sendfile"):
+    try:
+      # Flush the destination stream to ensure all buffered data is written
+      # before using os.sendfile, which operates directly on the file
+      # descriptor.
+      f_dst.flush()
+
+      in_fd, out_fd = f_src.fileno(), f_dst.fileno()
+      num_bytes = os.fstat(in_fd).st_size
+      os.sendfile(out_fd, in_fd, offset=0, count=num_bytes)
+
+      # os.sendfile updates the file descriptor's offset but doesn't update
+      # the Python file object's internal buffer/position. We need to seek
+      # to the current position to synchronize the Python object's state.
+      f_dst.seek(0, os.SEEK_CUR)
+    except OSError:
+      pass
+    else:
+      return
+
+  # If the above did not work, then just copy the file in chunks to avoid
+  # flooding the memory memory when reading/writing large files.
   shutil.copyfileobj(f_src, f_dst, length=buffer_size)
 
 
