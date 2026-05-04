@@ -353,9 +353,11 @@ Expected<TflModelPtr> PackAsTflite(SerializationContext& builder) {
 
 // Appends external buffers to the back of the serialized tflite model. Updates
 // the ops that references them with the correct offset and size in-place.
-Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
-    SerializationContext& builder, OwningBufferRef<uint8_t> serialized_tfl,
-    LiteRtModelT& litert_model) {
+Expected<OwningBufferRef<uint8_t, Mallocator<uint8_t>>>
+SerializeWithAppendedBuffers(SerializationContext& builder,
+                             OwningBufferRef<uint8_t, Mallocator<uint8_t>>
+                                 serialized_tfl,
+                             LiteRtModelT& litert_model) {
   if (builder.OpAssetMap().empty() && builder.OffsetTensorMap().empty()) {
     return serialized_tfl;
   }
@@ -477,7 +479,7 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
     }
   }
   // Allocate buffer enough for original model and appended buffers and copy.
-  OwningBufferRef<uint8_t> final_model(cur_offset);
+  OwningBufferRef<uint8_t, Mallocator<uint8_t>> final_model(cur_offset);
 
   // Copy serialized tflite model.
   uint8_t* const start = final_model.Data();
@@ -520,8 +522,8 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
 
 }  // namespace
 
-Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
-                                                  size_t bytecode_alignment) {
+Expected<OwningBufferRef<uint8_t, Mallocator<uint8_t>>> SerializeModel(
+    LiteRtModelT&& model, size_t bytecode_alignment) {
   // Pass the op code list through that was saved during loading. Add one more
   // op code for the dispatch ops
   auto tfl_op_codes = litert::internal::TakeTflOpCodes(model);

@@ -316,22 +316,35 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
   return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
 }
 
-OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model) {
-  flatbuffers::FlatBufferBuilder b;
+namespace {
+
+class MallocAllocator : public flatbuffers::Allocator {
+ public:
+  uint8_t* allocate(size_t size) override {
+    return static_cast<uint8_t*>(malloc(size));
+  }
+
+  void deallocate(uint8_t* p, size_t) override { free(p); }
+};
+
+}  // namespace
+
+OwningBufferRef<uint8_t, Mallocator<uint8_t>> SerializeFlatbuffer(
+    const TflModel& tfl_model) {
+  MallocAllocator allocator;
+  flatbuffers::FlatBufferBuilder b(1024, &allocator);
   auto model_offset = tflite::Model::Pack(b, &tfl_model);
   tflite::FinishModelBuffer(b, model_offset);
 
-  OwningBufferRef<uint8_t> buffer;
-  auto [new_buf, new_size, new_offset] = buffer.GetWeak();
-  new_buf = b.ReleaseRaw(new_size, new_offset);
+  size_t size, offset;
+  uint8_t* data = b.ReleaseRaw(size, offset);
 
-  return buffer;
+  return OwningBufferRef<uint8_t, Mallocator<uint8_t>>(data, size, offset);
 }
 
-OwningBufferRef<uint8_t> SerializeFlatbuffer(
+OwningBufferRef<uint8_t, Mallocator<uint8_t>> SerializeFlatbuffer(
     const FlatbufferWrapper& flatbuffer) {
-  auto tfl_model = flatbuffer.Unpack();
-  return SerializeFlatbuffer(*tfl_model);
+  return SerializeFlatbuffer(*flatbuffer.Unpack());
 }
 
 }  // namespace litert::internal

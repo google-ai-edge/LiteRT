@@ -21,7 +21,7 @@
 
 namespace litert::internal {
 
-Expected<OwningBufferRef<uint8_t>> SerializeModel(
+Expected<OwningBufferRef<uint8_t, Mallocator<uint8_t>>> SerializeModel(
     LiteRtModelT&& model, size_t bytecode_alignment = 1);
 
 }  // namespace litert::internal

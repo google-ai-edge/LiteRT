@@ -312,9 +312,10 @@ class FlatbufferWrapper {
 };
 
 // Re-serialize the unpacked model from flatbuffer wrapper.
-OwningBufferRef<uint8_t> SerializeFlatbuffer(
+OwningBufferRef<uint8_t, Mallocator<uint8_t>> SerializeFlatbuffer(
     const FlatbufferWrapper& flatbuffer);
-OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model);
+OwningBufferRef<uint8_t, Mallocator<uint8_t>> SerializeFlatbuffer(
+    const TflModel& tfl_model);
 
 }  // namespace litert::internal
 
