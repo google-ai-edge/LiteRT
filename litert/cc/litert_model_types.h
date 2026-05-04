@@ -123,11 +123,7 @@ class SimpleTensor {
   }
 
   /// @brief Returns the name of the tensor.
-#ifdef LITERT_NO_ABSL
-  std::string_view Name() const { return name_; }
-#else
   absl::string_view Name() const { return name_; }
-#endif
 
   /// @brief Returns the index of the tensor.
   std::uint32_t TensorIndex() const { return index_; }
@@ -187,20 +183,11 @@ class SimpleSignature {
   SimpleSignature& operator=(SimpleSignature&&) = default;
 
   /// @brief Returns the key of the signature.
-#ifdef LITERT_NO_ABSL
-  std::string_view Key() const { return key_; }
-#else
   absl::string_view Key() const { return key_; }
-#endif
 
   /// @brief Returns the names of the input tensors.
-#ifdef LITERT_NO_ABSL
-  std::vector<std::string_view> InputNames() const {
-    std::vector<std::string_view> input_names;
-#else
   std::vector<absl::string_view> InputNames() const {
     std::vector<absl::string_view> input_names;
-#endif
     input_names.reserve(input_names_.size());
     for (const auto& input_name : input_names_) {
       input_names.push_back(input_name);
@@ -209,13 +196,8 @@ class SimpleSignature {
   }
 
   /// @brief Returns the names of the output tensors.
-#ifdef LITERT_NO_ABSL
-  std::vector<std::string_view> OutputNames() const {
-    std::vector<std::string_view> output_names;
-#else
   std::vector<absl::string_view> OutputNames() const {
     std::vector<absl::string_view> output_names;
-#endif
     output_names.reserve(output_names_.size());
     for (const auto& output_name : output_names_) {
       output_names.push_back(output_name);
@@ -231,12 +213,6 @@ class SimpleSignature {
     LITERT_ASSIGN_OR_RETURN(auto tensor, InputTensor(name));
     return tensor.RankedTensorType();
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<RankedTensorType> InputTensorType(std::string_view name) const {
-    return InputTensorType(internal::ToAbslStringView(name));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Returns the input tensor type at the given index.
   /// @param index The index of the input tensor.
@@ -256,12 +232,6 @@ class SimpleSignature {
     LITERT_ASSIGN_OR_RETURN(auto tensor, OutputTensor(name));
     return tensor.RankedTensorType();
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<RankedTensorType> OutputTensorType(std::string_view name) const {
-    return OutputTensorType(internal::ToAbslStringView(name));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Returns the output tensor type at the given index.
   /// @param index The index of the output tensor.
@@ -284,12 +254,6 @@ class SimpleSignature {
     return Error(Status::kErrorNotFound, "Input tensor not found");
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<const SimpleTensor&> InputTensor(std::string_view name) const {
-    return InputTensor(internal::ToAbslStringView(name));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the input tensor at the given index.
   /// @param index The index of the input tensor.
   /// @return The input tensor, or an error if the index is out of bounds.
@@ -311,12 +275,6 @@ class SimpleSignature {
     }
     return Error(Status::kErrorNotFound, "Output tensor not found");
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<const SimpleTensor&> OutputTensor(std::string_view name) const {
-    return OutputTensor(internal::ToAbslStringView(name));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Returns the output tensor at the given index.
   /// @param index The index of the output tensor.

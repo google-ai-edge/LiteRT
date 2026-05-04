@@ -617,13 +617,6 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     return {};
   }
 
-#ifdef LITERT_NO_ABSL
-  template <typename T>
-  Expected<void> Write(std::span<const T> data) {
-    return Write(internal::ToAbslSpan(data));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Reads data from the tensor buffer into a user-provided
   /// `absl::Span<T>`.
   ///
@@ -647,13 +640,6 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     std::memcpy(data.data(), host_mem_addr, total_read_size);
     return {};
   }
-
-#ifdef LITERT_NO_ABSL
-  template <typename T>
-  Expected<void> Read(std::span<T> data) {
-    return Read(internal::ToAbslSpan(data));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Clears the tensor buffer possibly asynchronously.
   ///

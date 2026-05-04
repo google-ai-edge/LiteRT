@@ -419,15 +419,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return GetInputBufferRequirements(signature_index, input_name);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<TensorBufferRequirements> GetInputBufferRequirements(
-      std::string_view signature_name, std::string_view input_name) {
-    return GetInputBufferRequirements(
-        internal::ToAbslStringView(signature_name),
-        internal::ToAbslStringView(input_name));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the buffer requirements for the n-th input tensor.
   ///
   /// The returned `TensorBufferRequirements` is used to create the input
@@ -465,18 +456,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return GetInputBufferRequirements(/*signature_index=*/0, input_name);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<TensorBufferRequirements> GetInputBufferRequirements(
-      size_t signature_index, std::string_view input_name) const {
-    return GetInputBufferRequirements(signature_index,
-                                      internal::ToAbslStringView(input_name));
-  }
-
-  Expected<TensorBufferRequirements> GetInputBufferRequirements(
-      std::string_view input_name) const {
-    return GetInputBufferRequirements(/*signature_index=*/0, input_name);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Gets output buffer requirements for the given signature and output
   /// name.
@@ -486,15 +465,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                             GetSignatureIndex(signature_name));
     return GetOutputBufferRequirements(signature_index, output_name);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<TensorBufferRequirements> GetOutputBufferRequirements(
-      std::string_view signature_name, std::string_view output_name) {
-    return GetOutputBufferRequirements(
-        internal::ToAbslStringView(signature_name),
-        internal::ToAbslStringView(output_name));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Returns the layout of the given input tensor.
   ///
@@ -571,19 +541,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return GetOutputBufferRequirements(/*signature_index=*/0, output_name);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<TensorBufferRequirements> GetOutputBufferRequirements(
-      size_t signature_index, std::string_view output_name) const {
-    return GetOutputBufferRequirements(signature_index,
-                                       internal::ToAbslStringView(output_name));
-  }
-
-  Expected<TensorBufferRequirements> GetOutputBufferRequirements(
-      std::string_view output_name) const {
-    return GetOutputBufferRequirements(/*signature_index=*/0, output_name);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Creates an input tensor buffer for the given signature and input
   /// name.
   Expected<TensorBuffer> CreateInputBuffer(absl::string_view signature_name,
@@ -598,18 +555,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return CreateInputOutputBuffer(/*signature_index=*/0, input_name,
                                    /*is_input=*/true);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<TensorBuffer> CreateInputBuffer(std::string_view signature_name,
-                                           std::string_view input_name) const {
-    return CreateInputBuffer(internal::ToAbslStringView(signature_name),
-                             internal::ToAbslStringView(input_name));
-  }
-
-  Expected<TensorBuffer> CreateInputBuffer(std::string_view input_name) const {
-    return CreateInputBuffer(internal::ToAbslStringView(input_name));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Creates an output tensor buffer for the given signature and output
   /// name.
@@ -627,19 +572,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                    /*is_input=*/false);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<TensorBuffer> CreateOutputBuffer(
-      std::string_view signature_name, std::string_view output_name) const {
-    return CreateOutputBuffer(internal::ToAbslStringView(signature_name),
-                              internal::ToAbslStringView(output_name));
-  }
-
-  Expected<TensorBuffer> CreateOutputBuffer(
-      std::string_view output_name) const {
-    return CreateOutputBuffer(internal::ToAbslStringView(output_name));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief A helper function to create input tensor buffers for a given
   /// signature.
   ///
@@ -651,13 +583,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                             GetSignatureIndex(signature_name));
     return CreateInputOutputBuffers(signature_index, /*is_input=*/true);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<TensorBuffer>> CreateInputBuffers(
-      std::string_view signature_name) const {
-    return CreateInputBuffers(internal::ToAbslStringView(signature_name));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief A helper function to create input tensor buffers for a given
   /// signature.
@@ -689,13 +614,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                             GetSignatureIndex(signature_name));
     return CreateOutputBuffers(signature_index);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<TensorBuffer>> CreateOutputBuffers(
-      std::string_view signature_name) const {
-    return CreateOutputBuffers(internal::ToAbslStringView(signature_name));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief A helper function to create output tensor buffers for a given
   /// signature.
@@ -754,21 +672,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                      async);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(size_t signature_index,
-                     std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers) const {
-    return Run(signature_index, internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers));
-  }
-
-  Expected<void> Run(std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers) const {
-    return Run(internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Runs with per-run options for a given signature index.
   Expected<void> Run(size_t signature_index,
                      absl::Span<const TensorBuffer> input_buffers,
@@ -821,38 +724,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
                      async, nullptr, &scheduling_info);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(size_t signature_index,
-                     std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     Options* run_options) const {
-    return Run(signature_index, internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), run_options);
-  }
-
-  Expected<void> Run(size_t signature_index,
-                     std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     const LiteRtSchedulingInfo& scheduling_info) const {
-    return Run(signature_index, internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), scheduling_info);
-  }
-
-  Expected<void> Run(std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     Options* run_options) const {
-    return Run(internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), run_options);
-  }
-
-  Expected<void> Run(std::span<const TensorBuffer> input_buffers,
-                     std::span<const TensorBuffer> output_buffers,
-                     const LiteRtSchedulingInfo& scheduling_info) const {
-    return Run(internal::ToAbslSpan(input_buffers),
-               internal::ToAbslSpan(output_buffers), scheduling_info);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs the model for a given signature index asynchronously, if
   /// possible, with the provided input/output `TensorBuffer`s.
@@ -946,15 +817,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return Run(signature_index, input_buffers, output_buffers);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(std::string_view signature_key,
-                     const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers) const {
-    return Run(internal::ToAbslStringView(signature_key), input_buffers,
-               output_buffers);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Runs by signature key with per-run options.
   Expected<void> Run(absl::string_view signature_key,
                      const std::vector<TensorBuffer>& input_buffers,
@@ -965,16 +827,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return Run(signature_index, input_buffers, output_buffers, run_options);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(std::string_view signature_key,
-                     const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers,
-                     Options* run_options) const {
-    return Run(internal::ToAbslStringView(signature_key), input_buffers,
-               output_buffers, run_options);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Runs by signature key with per-request scheduling info.
   Expected<void> Run(absl::string_view signature_key,
                      const std::vector<TensorBuffer>& input_buffers,
@@ -984,16 +836,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                             GetSignatureIndex(signature_key));
     return Run(signature_index, input_buffers, output_buffers, scheduling_info);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> Run(std::string_view signature_key,
-                     const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers,
-                     const LiteRtSchedulingInfo& scheduling_info) const {
-    return Run(internal::ToAbslStringView(signature_key), input_buffers,
-               output_buffers, scheduling_info);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs the model for a given signature key asynchronously, if
   /// possible, with the provided input/output `TensorBuffer`s.
@@ -1010,16 +852,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return RunAsync(signature_index, input_buffers, output_buffers, async);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> RunAsync(std::string_view signature_key,
-                          const std::vector<TensorBuffer>& input_buffers,
-                          const std::vector<TensorBuffer>& output_buffers,
-                          bool& async) const {
-    return RunAsync(internal::ToAbslStringView(signature_key), input_buffers,
-                    output_buffers, async);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Runs by signature key asynchronously with per-run options.
   Expected<void> RunAsync(absl::string_view signature_key,
                           const std::vector<TensorBuffer>& input_buffers,
@@ -1031,16 +863,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return RunAsync(signature_index, input_buffers, output_buffers, async,
                     run_options);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> RunAsync(std::string_view signature_key,
-                          const std::vector<TensorBuffer>& input_buffers,
-                          const std::vector<TensorBuffer>& output_buffers,
-                          bool& async, Options* run_options) const {
-    return RunAsync(internal::ToAbslStringView(signature_key), input_buffers,
-                    output_buffers, async, run_options);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs by signature key asynchronously with per-request scheduling
   /// info.
@@ -1055,17 +877,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return RunAsync(signature_index, input_buffers, output_buffers, async,
                     scheduling_info);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<void> RunAsync(std::string_view signature_key,
-                          const std::vector<TensorBuffer>& input_buffers,
-                          const std::vector<TensorBuffer>& output_buffers,
-                          bool& async,
-                          const LiteRtSchedulingInfo& scheduling_info) const {
-    return RunAsync(internal::ToAbslStringView(signature_key), input_buffers,
-                    output_buffers, async, scheduling_info);
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Runs the model for a given signature key synchronously with the
   /// provided input/output `TensorBuffer` map.
@@ -1466,13 +1277,9 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   //----------------------------------------------------------------------------
 
   /// @brief Returns the default signature key of the model.
-#ifdef LITERT_NO_ABSL
-  static std::string_view DefaultSignatureKey() { return kDefaultSignatureKey; }
-#else
   static absl::string_view DefaultSignatureKey() {
     return kDefaultSignatureKey;
   }
-#endif
 
   /// @brief Returns the number of signatures defined in the model.
   size_t GetNumSignatures() const {
@@ -1483,15 +1290,9 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   }
 
   /// @brief Returns the list of signature key names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureKeys() const {
-    return internal::ToStdStringViews(GetSignatureKeysImpl());
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
     return GetSignatureKeysImpl();
   }
-#endif
 
   /// @brief Returns the list of signatures defined in the model.
   Expected<std::vector<SimpleSignature>> GetSignatures() const {
@@ -1544,49 +1345,22 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return Unexpected(Status::kErrorNotFound, "Signature not found");
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<size_t> GetSignatureIndex(std::string_view signature_key) const {
-    return GetSignatureIndex(internal::ToAbslStringView(signature_key));
-  }
-#endif  // LITERT_NO_ABSL
-
   Expected<SimpleSignature> FindSignature(
       absl::string_view signature_key) const {
     LITERT_ASSIGN_OR_RETURN(auto index, GetSignatureIndex(signature_key));
     return GetSignature(index);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<SimpleSignature> FindSignature(
-      std::string_view signature_key) const {
-    return FindSignature(internal::ToAbslStringView(signature_key));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the list of input names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureInputNames(
-      size_t signature_index) const {
-    return internal::ToStdStringViews(
-        GetSignatureInputNamesImpl(signature_index));
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       size_t signature_index) const {
     return GetSignatureInputNamesImpl(signature_index);
   }
-#endif
 
   /// @brief Returns the list of input names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureInputNames() const {
-    return GetSignatureInputNames(/*signature_index=*/0);
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
     return GetSignatureInputNames(/*signature_index=*/0);
   }
-#endif
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
@@ -1598,38 +1372,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return signature->InputNames();
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureInputNames(
-      std::string_view signature_key) const {
-    return internal::ToStdStringViews(
-        GetSignatureInputNames(internal::ToAbslStringView(signature_key)));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the list of output names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureOutputNames(
-      size_t signature_index) const {
-    return internal::ToStdStringViews(
-        GetSignatureOutputNamesImpl(signature_index));
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       size_t signature_index) const {
     return GetSignatureOutputNamesImpl(signature_index);
   }
-#endif
 
   /// @brief Returns the list of output names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureOutputNames() const {
-    return GetSignatureOutputNames(/*signature_index=*/0);
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
     return GetSignatureOutputNames(/*signature_index=*/0);
   }
-#endif
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
@@ -1640,14 +1392,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     }
     return signature->OutputNames();
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureOutputNames(
-      std::string_view signature_key) const {
-    return internal::ToStdStringViews(
-        GetSignatureOutputNames(internal::ToAbslStringView(signature_key)));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Returns the tensor type for the n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
@@ -1682,25 +1426,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return signature.InputTensorType(input_name);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<RankedTensorType> GetInputTensorType(
-      size_t signature_index, std::string_view input_name) const {
-    return GetInputTensorType(signature_index,
-                              internal::ToAbslStringView(input_name));
-  }
-
-  Expected<RankedTensorType> GetInputTensorType(
-      std::string_view signature_key, std::string_view input_name) const {
-    return GetInputTensorType(internal::ToAbslStringView(signature_key),
-                              internal::ToAbslStringView(input_name));
-  }
-
-  Expected<RankedTensorType> GetInputTensorType(
-      std::string_view input_name) const {
-    return GetInputTensorType(/*signature_index=*/0, input_name);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the tensor type for the n-th output tensor.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  size_t output_index) const {
@@ -1733,25 +1458,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                             GetSignature(/*signature_index=*/0));
     return signature.OutputTensorType(output_name);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<RankedTensorType> GetOutputTensorType(
-      size_t signature_index, std::string_view output_name) const {
-    return GetOutputTensorType(signature_index,
-                               internal::ToAbslStringView(output_name));
-  }
-
-  Expected<RankedTensorType> GetOutputTensorType(
-      std::string_view signature_key, std::string_view output_name) const {
-    return GetOutputTensorType(internal::ToAbslStringView(signature_key),
-                               internal::ToAbslStringView(output_name));
-  }
-
-  Expected<RankedTensorType> GetOutputTensorType(
-      std::string_view output_name) const {
-    return GetOutputTensorType(/*signature_index=*/0, output_name);
-  }
-#endif  // LITERT_NO_ABSL
 
  protected:
   /// @internal
