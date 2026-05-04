@@ -113,13 +113,6 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
 
-  LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
-      env, kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
-      CreateOpenVinoTensorBuffer, DestroyOpenVinoTensorBuffer,
-      LockOpenVinoTensorBuffer, UnlockOpenVinoTensorBuffer, nullptr, nullptr,
-      /*device_tag=*/kLiteRtEnvOptionTagNull,
-      /*queue_tag=*/kLiteRtEnvOptionTagNull));
-
   if (options) {
     litert::internal::OptionsWrapper internal_options(
         litert::internal::ContextWrapper(runtime_context), options);
@@ -453,6 +446,20 @@ LiteRtDispatchInterface TheInterface = {
     .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
 };
 
+LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
+    .version = 1,
+    .create_func = litert::openvino::CreateOpenVinoTensorBuffer,
+    .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
+    .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
+    .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
+    .clear_func = nullptr,
+    .import_func = nullptr,
+    .device_tag = kLiteRtEnvOptionTagNull,
+    .queue_tag = kLiteRtEnvOptionTagNull,
+    .num_supported_buffer_types = 1,
+    .supported_buffer_types = {kLiteRtTensorBufferTypeOpenVINOTensorBuffer},
+};
+
 LiteRtDispatchApi TheApi = {
     .version = {.major = LITERT_API_VERSION_MAJOR,
                 .minor = LITERT_API_VERSION_MINOR,
@@ -460,6 +467,7 @@ LiteRtDispatchApi TheApi = {
     .interface = &TheInterface,
     .async_interface = nullptr,
     .graph_interface = nullptr,
+    .tensor_buffer_handlers = &TheTensorBufferHandlers,
 };
 
 }  // namespace
