@@ -798,6 +798,36 @@ litert_bin(
     deps = [":benchmark_model_main"] + litert_gpu_accelerator_deps(),
 )
 
+[
+    litert_device_exec(
+        name = "benchmark_model_device_{}".format(backend),
+        backend_id = backend,
+        exec_args = [
+            "--dispatch_library_path={}".format(dispatch_device_rlocation(backend)),
+            "--compiler_plugin_library_path={}".format(plugin_device_rlocation(backend)),
+            "--use_npu=true",
+        ] if backend in [
+            "qualcomm",
+            "qualcomm_v79",
+            "mediatek",
+            "google_tensor",
+        ] else (
+            ["--use_gpu=true"] if backend == "gpu" else ["--use_cpu=true"]
+        ),
+        local_suffix = "",
+        remote_suffix = None,
+        target = ":benchmark_model",
+    )
+    for backend in [
+        "qualcomm",
+        "qualcomm_v79",
+        "mediatek",
+        "cpu",
+        "gpu",
+        "google_tensor",
+    ]
+]
+
 cc_binary(
     name = "benchmark_model_allgpu",
     deps = [
