@@ -321,6 +321,7 @@ cc_library(
         ":ops_reductions",
         ":ops_reshape",
         ":ops_select",
+        ":ops_shape",
         ":ops_simple_binary",
         ":ops_simple_unary",
         ":ops_slice",
@@ -333,6 +334,8 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
@@ -449,6 +452,9 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -671,6 +677,30 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ops_shape",
+    hdrs = ["ops/shape.h"],
+    deps = [
+        ":model",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_test(
+    name = "ops_shape_test",
+    srcs = ["ops/shape_test.cc"],
+    deps = [
+        ":model",
+        ":ops_shape",
+        ":shape_inference",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "ops_topk_test",
     srcs = ["ops/topk_test.cc"],
@@ -810,6 +840,7 @@ cc_test(
         ":ops_reshape",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//tflite/converter/schema:schema_fbs",
