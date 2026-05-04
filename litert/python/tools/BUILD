@@ -67,6 +67,7 @@ py_strict_test(
 
 pytype_strict_library(
     name = "benchmark_litert_model",
+    imports = ["."],
     srcs = ["benchmark_litert_model.py"],
     deps = [
         # Dependency placeholder: gfile,
