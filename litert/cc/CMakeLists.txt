@@ -142,6 +142,46 @@ set_target_properties(litert_cc_api PROPERTIES
     PUBLIC_HEADER "${LITERT_CC_HEADERS}"
 )
 
+# Header-only C++ API usage requirements for consumers that want to compile
+# against the C++ wrappers while resolving symbols from the LiteRT runtime
+# shared library.
+add_library(litert_cc_api_headers INTERFACE)
+
+target_include_directories(litert_cc_api_headers
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
+        $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
+        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
+)
+
+target_compile_features(litert_cc_api_headers INTERFACE cxx_std_20)
+
+target_link_libraries(litert_cc_api_headers
+    INTERFACE
+        absl::algorithm_container
+        absl::any_invocable
+        absl::cleanup
+        absl::flat_hash_map
+        absl::status
+        absl::statusor
+        absl::span
+        absl::str_format
+        absl::strings
+        absl::log
+        absl::die_if_null
+)
+
+add_library(litert_cc_api_with_dynamic_runtime INTERFACE)
+
+target_link_libraries(litert_cc_api_with_dynamic_runtime
+    INTERFACE
+        litert_cc_api_headers
+        litert_runtime_c_api_shared_lib
+)
+
 # Also copy headers to build directory for local testing convenience
 foreach(header ${LITERT_CC_HEADERS})
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${header})
