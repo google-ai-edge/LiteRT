@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -101,6 +102,38 @@ litert_device_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "jit_compilation_example_test",
+    srcs = ["jit_compilation_example_test.cc"],
+    data = [
+        "//litert/test:testdata/one_mul.tflite",
+        "//litert/test:testdata/simple_model.tflite",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",

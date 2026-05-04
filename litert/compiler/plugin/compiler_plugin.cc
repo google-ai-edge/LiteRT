@@ -102,21 +102,35 @@ Expected<CallInformation> CompiledResult::CallInfo(
   return ::litert::internal::CallInformation(call_info_str, byte_code_idx);
 }
 
+Expected<const void*> CompiledResult::GetHandle(
+    LiteRtParamIndex byte_code_idx) const {
+  if (parent_.get_compiled_result_handle) {
+    const void* handle = nullptr;
+    LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_handle(
+        compiled_result_handle_, byte_code_idx, &handle));
+    return handle;
+  }
+  return litert::Error(kLiteRtStatusErrorUnsupported);
+}
+
 CompiledResult::~CompiledResult() {
   if (compiled_result_handle_ != nullptr) {
     parent_.destroy_compiled_result(compiled_result_handle_);
   }
 }
 
-CompiledResult::CompiledResult(CompiledResult&& other)
+CompiledResult::CompiledResult(CompiledResult&& other) noexcept
     : parent_(other.parent_),
       compiled_result_handle_(other.compiled_result_handle_) {
   other.parent_ = {};
   other.compiled_result_handle_ = nullptr;
 }
 
-CompiledResult& CompiledResult::operator=(CompiledResult&& other) {
+CompiledResult& CompiledResult::operator=(CompiledResult&& other) noexcept {
   if (this != &other) {
+    if (compiled_result_handle_ != nullptr) {
+      parent_.destroy_compiled_result(compiled_result_handle_);
+    }
     parent_ = other.parent_;
     other.parent_ = {};
 
@@ -163,6 +177,14 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
                    result.get_compiled_result_num_byte_code);
   RESOLVE_API_FUNC(kLiteRtGetCompiledResultByteCode,
                    result.get_compiled_result_byte_code);
+  // Optional JIT Handle API
+  if (auto resolved = lib.LookupSymbol<LiteRtGetCompiledResultHandleT>(
+          kLiteRtGetCompiledResultHandle.data());
+      resolved.HasValue()) {
+    result.get_compiled_result_handle = resolved.Value();
+  } else {
+    result.get_compiled_result_handle = nullptr;
+  }
   RESOLVE_API_FUNC(kLiteRtGetCompiledResultCallInfo,
                    result.get_compiled_result_call_info);
   RESOLVE_API_FUNC(kLiteRtGetNumCompiledResultCalls,
@@ -766,6 +788,7 @@ Expected<PartitionResult> PartitionModelDirect(
 Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
                                         LiteRtModelT& model,
                                         PartitionResult partitions,
+                                        ApplyPluginsResult& result,
                                         absl::string_view soc_model) {
   auto& dispatch_ops = partitions.first;
   auto& sliced_model = partitions.second;
@@ -776,9 +799,12 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
     return compiled_result.Error();
   }
 
+  result.compiled_results.push_back(std::move(*compiled_result));
+  CompiledResult& stored_result = result.compiled_results.back();
+
   // Register byte code buffers as external buffers. Map the byte code indices
   // to the registered buffer ids.
-  auto num_byte_code = compiled_result->NumByteCodeModules();
+  auto num_byte_code = stored_result.NumByteCodeModules();
   if (!num_byte_code) {
     return num_byte_code.Error();
   }
@@ -786,25 +812,44 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
   std::vector<LiteRtParamIndex> byte_code_idx_to_buf_id(*num_byte_code);
 
   for (auto i = 0; i < *num_byte_code; ++i) {
-    auto byte_code = compiled_result->ByteCode(i);
-    if (!byte_code) {
-      return byte_code.Error();
+    // Check if the compiler yielded a JIT handle
+    auto handle_or_error = stored_result.GetHandle(i);
+    const void* exec_handle = nullptr;
+    if (handle_or_error.HasValue()) {
+      exec_handle = handle_or_error.Value();
+    } else if (handle_or_error.Error().Status() !=
+               kLiteRtStatusErrorUnsupported) {
+      LITERT_LOG(LITERT_WARNING, "Failed to get JIT handle %d: %s", i,
+                 handle_or_error.Error().Message().c_str());
     }
 
-    // TODO: This copy could probably be avoided.
-    OwningBufferRef<uint8_t> owned_byte_code(byte_code->Data(),
-                                             byte_code->Size());
-    const auto buf_id =
-        model.Buffers()->RegisterOwnedBuffer(std::move(owned_byte_code));
+    if (exec_handle != nullptr) {
+      // If we have a JIT handle, we don't need to register the bytecode buffer.
+      // We register an empty buffer to keep indices consistent and satisfy
+      // the model's asset attachment requirements.
+      OwningBufferRef<uint8_t> empty_byte_code;
+      const auto buf_id =
+          model.Buffers()->RegisterOwnedBuffer(std::move(empty_byte_code));
+      byte_code_idx_to_buf_id[i] = buf_id;
+    } else {
+      auto byte_code = stored_result.ByteCode(i);
+      if (!byte_code) {
+        return byte_code.Error();
+      }
 
-    byte_code_idx_to_buf_id[i] = buf_id;
+      OwningBufferRef<uint8_t> owned_byte_code(byte_code->Data(),
+                                               byte_code->Size());
+      const auto buf_id =
+          model.Buffers()->RegisterOwnedBuffer(std::move(owned_byte_code));
+      byte_code_idx_to_buf_id[i] = buf_id;
+    }
   }
 
   // Register byte code buffers and add edges from dispatch ops to them.
   for (auto i = 0; i < dispatch_ops.size(); ++i) {
     auto* dispatch_op = dispatch_ops.at(i);
 
-    auto call_info = compiled_result->CallInfo(i);
+    auto call_info = stored_result.CallInfo(i);
     if (!call_info) {
       return call_info.Error();
     }
@@ -812,6 +857,12 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
     const auto buf_id = byte_code_idx_to_buf_id[byte_code_idx];
 
     model.AttachAssetToOp(dispatch_op, buf_id, std::string(name));
+
+    // Store the JIT handle if we got one.
+    auto handle_or_error = stored_result.GetHandle(byte_code_idx);
+    if (handle_or_error.HasValue() && handle_or_error.Value() != nullptr) {
+      result.jit_executable_handles[name] = handle_or_error.Value();
+    }
   }
 
   // Tag the model with make/model from the plugin.
@@ -851,7 +902,7 @@ Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
 
 Expected<void> ApplyPlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
-    absl::string_view soc_model,
+    ApplyPluginsResult& result, absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
   // Check compiler compatibility.
   const auto compatibility =
@@ -864,7 +915,7 @@ Expected<void> ApplyPlugin(
   // Compiler Plugin: Transformation, apply transformations to model.
   auto status = TransformModel(compiler_plugin, model, soc_model);
   if (!status) {
-    return status;
+    return status.Error();
   }
 
   // Compiler Plugin: Partitioning, collect partitions to pass to compilation.
@@ -876,7 +927,7 @@ Expected<void> ApplyPlugin(
 
   // Compiler Plugin: Compilation, compile partitions and apply to model.
   return ApplyPluginWithPartition(compiler_plugin, model,
-                                  std::move(*partitions), soc_model);
+                                  std::move(*partitions), result, soc_model);
 }
 
 Expected<ApplyPluginsResult> ApplyPlugins(
@@ -926,7 +977,7 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     }
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
-      auto status = ApplyPlugin(compiler_plugin, *model);
+      auto status = ApplyPlugin(compiler_plugin, *model, result);
       if (mutated != nullptr) {
         *mutated = true;
       }
