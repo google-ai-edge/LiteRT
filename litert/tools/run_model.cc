@@ -471,10 +471,14 @@ Expected<void> RunModel() {
   ABSL_LOG(INFO) << "Fastest run took "
                  << *std::min_element(timers.begin(), timers.end())
                  << " microseconds";
-  ABSL_LOG(INFO) << "All runs took average "
-                 << std::accumulate(timers.begin(), timers.end(), uint64_t{0}) /
-                        timers.size()
-                 << " microseconds";
+  auto mid = timers.begin() + timers.size() / 2;
+  std::nth_element(timers.begin(), mid, timers.end());
+  const uint64_t median = timers.size() % 2 == 1
+                              ? timers[timers.size() / 2]
+                              : (*std::max_element(timers.begin(), mid) +
+                                 timers[timers.size() / 2]) /
+                                    2;
+  ABSL_LOG(INFO) << "Median run took " << median << " microseconds";
 
   // Print output tensor information and values if requested
   if (absl::GetFlag(FLAGS_print_tensors)) {
