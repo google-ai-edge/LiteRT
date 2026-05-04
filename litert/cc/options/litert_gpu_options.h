@@ -87,6 +87,7 @@ class GpuOptions {
     kDefault = kLiteRtDelegatePrecisionDefault,
     kFp16 = kLiteRtDelegatePrecisionFp16,
     kFp32 = kLiteRtDelegatePrecisionFp32,
+    kFp32_16 = kLiteRtDelegatePrecisionFp32_16,
   };
   Expected<void> SetPrecision(Precision precision) {
     LITERT_RETURN_IF_ERROR(LrtSetGpuAcceleratorCompilationOptionsPrecision(
