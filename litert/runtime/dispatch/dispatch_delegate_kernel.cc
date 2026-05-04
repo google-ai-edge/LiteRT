@@ -648,7 +648,21 @@ DispatchDelegateKernel::GetBufferRequirements(int node_idx,
     }
   }
 
-  return LiteRtTensorBufferRequirementsPtr(tensor_buffer_requirements);
+  // TODO (b/406285051): Remove this once we have a proper solution.
+  // Deep clone the requirements into the framework's memory domain.
+  // This ensures that when the buffer context is destroyed, the framework's
+  // operator delete matches the framework's operator new.
+  // Note: This temporarily leaks the original `tensor_buffer_requirements`
+  // pointer allocated by the dispatch API, until the dispatch API ownership
+  // model is updated to retain ownership.
+  std::vector<uint32_t> cloned_strides = tensor_buffer_requirements->Strides();
+  auto* cloned_requirements = new LiteRtTensorBufferRequirementsT(
+      tensor_buffer_requirements->SupportedBufferTypes().size(),
+      tensor_buffer_requirements->SupportedBufferTypes().data(),
+      tensor_buffer_requirements->BufferSize(), std::move(cloned_strides),
+      tensor_buffer_requirements->Alignment());
+
+  return LiteRtTensorBufferRequirementsPtr(cloned_requirements);
 }
 
 Expected<void> DispatchDelegateKernel::ComputeRequirements(
