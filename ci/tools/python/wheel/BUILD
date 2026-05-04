@@ -88,7 +88,7 @@ genrule(
                     \\$$out_dir = \\$$base_out
                 };
                 \\$$out_path = Join-Path \\$$out_dir \\$$fname;
-                (Get-Content \\$$f -Raw).Replace('tflite.converter', 'ai_edge_litert.tflite.converter') | Set-Content \\$$out_path -Encoding UTF8
+                (Get-Content \\$$f -Raw).Replace('tensorflow.compiler.mlir.lite', 'ai_edge_litert.tflite.converter') | Set-Content \\$$out_path -Encoding UTF8
             }
         " """,
         "//conditions:default": """
@@ -100,7 +100,7 @@ genrule(
                 else
                     out_dir=$(RULEDIR)/ai_edge_litert/tflite/converter
                 fi
-                sed 's/tflite\\.converter/ai_edge_litert.tflite.converter/g' $$f > $$out_dir/$$fname
+                sed 's/tensorflow\\.compiler\\.mlir\\.lite/ai_edge_litert.tflite.converter/g' $$f > $$out_dir/$$fname
             done
         """,
     }),
