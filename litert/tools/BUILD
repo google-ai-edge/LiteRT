@@ -403,6 +403,7 @@ cc_library(
         "//litert/cc/internal:litert_compiled_model_next",
         "//litert/cc/internal:litert_tflite_error_status_builder",
         "//litert/cc/options:litert_cpu_options",
+        "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",

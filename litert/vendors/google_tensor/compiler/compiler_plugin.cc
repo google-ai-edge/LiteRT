@@ -428,6 +428,11 @@ class LiteRtCompilerPluginT {
         opq_ = opts_->GetOpaqueOptions();
       }
     }
+    LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
+    // TODO(b/508022996): Refactor LiteRtCompilerPluginT to avoid initialization
+    // in constructor.
+    adapter_or_ = litert::google_tensor::Adapter::Create(
+        /*shared_library_dir=*/std::nullopt);
   }
 
   litert::Expected<LrtGoogleTensorOptions> CreateGoogleTensorOptions() const {
@@ -475,6 +480,13 @@ class LiteRtCompilerPluginT {
   void SetLiteRtVersion(LiteRtApiVersion v) { litert_version_ = v; }
   LiteRtApiVersion GetLiteRtVersion() const { return litert_version_; }
 
+  litert::Expected<litert::google_tensor::Adapter*> GetAdapter() {
+    if (!adapter_or_) {
+      return adapter_or_.Error();
+    }
+    return adapter_or_->get();
+  }
+
   LiteRtStatus ReadOpFilters(const std::string& path,
                              OpFilters& op_filters) const {
     if (path.empty()) {
@@ -519,6 +531,7 @@ class LiteRtCompilerPluginT {
   LiteRtApiVersion litert_version_{LITERT_API_VERSION_MAJOR,
                                    LITERT_API_VERSION_MINOR,
                                    LITERT_API_VERSION_PATCH};
+  litert::Expected<litert::google_tensor::Adapter::Ptr> adapter_or_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -719,11 +732,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
 
-  // Loading Google Tensor Compiler Adapter
-  LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
-  LITERT_ASSIGN_OR_RETURN(auto adapter,
-                          litert::google_tensor::Adapter::Create(
-                              /*shared_library_dir=*/std::nullopt));
+  LITERT_ASSIGN_OR_RETURN(auto adapter, compiler_plugin->GetAdapter());
   if (adapter->IsAot()) {
     // soc_model is required for AOT mode.
     if (soc_model == nullptr) {

@@ -273,6 +273,20 @@ TEST(LiteRtQualcommOptionsTest, SaverOutputDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, GraphIOTensorMemType) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetGraphIOTensorMemType(
+      qualcomm_options, kLiteRtQualcommGraphIOTensorMemTypeRaw));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetGraphIOTensorMemType(),
+            QualcommOptions::GraphIOTensorMemType::kRaw);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, Profiling) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -388,6 +402,16 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetSaverOutputDir(), "");
   options->SetSaverOutputDir("tmp");
   EXPECT_EQ(options->GetSaverOutputDir(), "tmp");
+
+  EXPECT_EQ(options->GetGraphIOTensorMemType(),
+            QualcommOptions::GraphIOTensorMemType::kMemHandle);
+  options->SetGraphIOTensorMemType(QualcommOptions::GraphIOTensorMemType::kRaw);
+  EXPECT_EQ(options->GetGraphIOTensorMemType(),
+            QualcommOptions::GraphIOTensorMemType::kRaw);
+  options->SetGraphIOTensorMemType(
+      QualcommOptions::GraphIOTensorMemType::kMemHandle);
+  EXPECT_EQ(options->GetGraphIOTensorMemType(),
+            QualcommOptions::GraphIOTensorMemType::kMemHandle);
 }
 
 }  // namespace

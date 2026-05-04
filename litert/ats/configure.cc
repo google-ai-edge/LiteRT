@@ -18,6 +18,7 @@
 #include <chrono>  // NOLINT
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <regex>  // NOLINT
 #include <string>
@@ -33,6 +34,8 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -169,14 +172,14 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
 
 Expected<std::optional<internal::CompilerPlugin>> ParsePlugin(
     absl::string_view plugin_dir, absl::string_view soc_manufacturer,
-    bool compile_mode, const Options& litert_options) {
+    bool compile_mode, LiteRtOptions litert_options) {
   using R = std::optional<internal::CompilerPlugin>;
   if (!compile_mode) {
     return R(std::nullopt);
   }
   LITERT_ASSIGN_OR_RETURN(auto plugin, internal::CompilerPlugin::FindPlugin(
                                            soc_manufacturer, {plugin_dir},
-                                           nullptr, litert_options.Get()));
+                                           nullptr, litert_options));
   return R(std::move(plugin));
 }
 
@@ -221,16 +224,74 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto target_options, ParseOptions(backend));
   LITERT_ASSIGN_OR_RETURN(auto reference_options, Options::Create());
   reference_options.SetHardwareAccelerators(HwAccelerators::kCpu);
-  LITERT_ASSIGN_OR_RETURN(
-      auto plugin,
-      ParsePlugin(plugin_dir, soc_manufacturer, compile_mode, target_options));
+
+  std::optional<Environment> environment;
+  if (backend == ExecutionBackend::kGpu) {
+    const char* ld_path = std::getenv("LD_LIBRARY_PATH");
+    std::vector<litert::EnvironmentOptions::Option> env_opts;
+    if (ld_path) {
+      std::string full_path = std::string(ld_path);
+      // LiteRT only supports a single directory for kRuntimeLibraryDir,
+      // so we only take the first path if there are multiple.
+      if (auto pos = full_path.find(':'); pos != std::string::npos) {
+        full_path = full_path.substr(0, pos);
+      }
+      env_opts.push_back(litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kRuntimeLibraryDir,
+          full_path,
+      });
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto env,
+        litert::Environment::Create(litert::EnvironmentOptions(env_opts)));
+    environment = std::move(env);
+  } else if (backend == ExecutionBackend::kNpu) {
+    std::vector<litert::EnvironmentOptions::Option> env_opts = {
+        litert::EnvironmentOptions::Option{
+            litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+            absl::string_view(dispatch_dir),
+        }};
+    if (!plugin_dir.empty()) {
+      env_opts.push_back(litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          absl::string_view(plugin_dir),
+      });
+      env_opts.push_back(litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerCacheDir,
+          "/data/local/tmp/litert_compiler_cache",
+      });
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto env,
+        litert::Environment::Create(litert::EnvironmentOptions(env_opts)));
+    environment = std::move(env);
+  } else {
+    LITERT_ASSIGN_OR_RETURN(
+        auto env, litert::Environment::Create(litert::EnvironmentOptions({})));
+    environment = std::move(env);
+  }
+
+  internal::LiteRtOptionsPtr target_options_handle;
+  std::optional<internal::CompilerPlugin> plugin;
+
+  if (compile_mode) {
+    LITERT_ASSIGN_OR_RETURN(target_options_handle,
+                            internal::LiteRtOptionsPtrBuilder::Build(
+                                target_options, environment->GetHolder()));
+    LITERT_ASSIGN_OR_RETURN(
+        plugin, ParsePlugin(plugin_dir, soc_manufacturer, compile_mode,
+                            target_options_handle.get()));
+  }
+
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               data_seed, iters_per_test, std::move(max_ms_per_test_opt),
               fail_on_timeout, dump_report, std::move(csv), compile_mode,
               std::move(models_out), limit, std::move(plugin),
               std::move(soc_manufacturer), std::move(soc_model),
-              std::move(target_options), std::move(reference_options));
+              std::move(target_options), std::move(reference_options),
+              std::move(target_options_handle),
+              std::move(*environment));
   Setup(res);
   return res;
 }

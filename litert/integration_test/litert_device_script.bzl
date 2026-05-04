@@ -167,6 +167,9 @@ _device_script_lib = rule(
             mandatory = False,
             default = [],
             allow_files = True,
+            # copybara:uncomment_begin(google-only)
+            # cfg = "exec",
+            # copybara:uncomment_end
             doc = "The pre-compiled host shared libraries to package with the script (e.g. vendor sdk).",
         ),
         "device_libs": attr.label_list(
@@ -286,6 +289,9 @@ def litert_device_script(
         srcs = [":" + name + "_lib_expanded"],
         deps = [
             "//litert/integration_test:device_script_common",
+            # copybara:uncomment_begin(google-only)
+            # "//litert/integration_test/google:remote_path_helper",
+            # copybara:uncomment_end
         ],
         testonly = testonly,
     )

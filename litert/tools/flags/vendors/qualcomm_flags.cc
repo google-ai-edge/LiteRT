@@ -14,12 +14,12 @@
 
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -84,19 +84,22 @@ std::string AbslUnparseFlag(QualcommOptions::LogLevel options) {
       return "debug";
   }
 }
+
 }  // namespace litert::qualcomm
 
 ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
           "platforms.");
 
-ABSL_RETIRED_FLAG(bool, qualcomm_use_htp_preference, false,
-          "DEPRECATED: Whether to transform a litert op into the HTP prefered "
-          "pattern.");
+ABSL_RETIRED_FLAG(
+    bool, qualcomm_use_htp_preference, false,
+    "DEPRECATED: Whether to transform a litert op into the HTP prefered "
+    "pattern.");
 
-ABSL_RETIRED_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
-          "DEPRECATED: Whether to automatically convert a quantized int16 "
-          "model into a quantized uin16 model.");
+ABSL_RETIRED_FLAG(
+    bool, qualcomm_use_qint16_as_quint16, false,
+    "DEPRECATED: Whether to automatically convert a quantized int16 "
+    "model into a quantized uin16 model.");
 
 ABSL_FLAG(bool, qualcomm_use_int64_bias_as_int32, true,
           "Whether to convert bias tensors of FullyConnected "
@@ -118,7 +121,6 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerformanceMode,
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
-
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -259,6 +261,42 @@ std::string AbslUnparseFlag(QualcommOptions::DspPerformanceMode options) {
   }
 }
 
+}  // namespace litert::qualcomm
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphIOTensorMemType,
+          qualcomm_graph_io_tensor_mem_type,
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle,
+          "Specifies mem type to be used for input and output tensors during "
+          "graph creation. Valid settings:\"raw\" and \"memhandle\"");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GraphIOTensorMemType* memory_type,
+                   std::string* error) {
+  if (text == "raw") {
+    *memory_type = QualcommOptions::GraphIOTensorMemType::kRaw;
+    return true;
+  }
+  if (text == "memhandle") {
+    *memory_type = QualcommOptions::GraphIOTensorMemType::kMemHandle;
+    return true;
+  }
+  *error = "Unknown graph input output tensor mem type";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::GraphIOTensorMemType memory_type) {
+  switch (memory_type) {
+    case QualcommOptions::GraphIOTensorMemType::kRaw:
+      return "raw";
+    case QualcommOptions::GraphIOTensorMemType::kMemHandle:
+      return "memhandle";
+    default:
+      ABSL_CHECK(false) << "Unknown GraphIOTensorMemType: "
+                        << static_cast<int>(memory_type);
+  }
+}
 }  // namespace litert::qualcomm
 
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Profiling, qualcomm_profiling,
@@ -542,6 +580,11 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const std::string saver_output_dir =
       absl::GetFlag(FLAGS_qualcomm_saver_output_dir);
   opts.SetSaverOutputDir(saver_output_dir);
+
+  const auto graph_io_tensor_mem_type =
+      absl::GetFlag(FLAGS_qualcomm_graph_io_tensor_mem_type);
+  opts.SetGraphIOTensorMemType(graph_io_tensor_mem_type);
+
   return {};
 }
 

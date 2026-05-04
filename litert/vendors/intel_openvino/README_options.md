@@ -51,6 +51,44 @@ compilation.
 Control number of inference streams (e.g., `NUM_STREAMS`) - Configure
 device-specific optimization parameters
 
+### Plugin-Specific Options
+
+In addition to OpenVINO Core properties, the following keys are recognized by
+the LiteRT Intel OpenVINO compiler plugin and are consumed internally rather
+than forwarded to the OpenVINO Core:
+
+-   **`optimize_fq_after_matmul`** (`"true"` | `"false"`): When set to `"true"`,
+    enables an NPU-only model optimization pass that eliminates `FakeQuantize`
+    operations placed immediately after `MatMul` nodes. This can improve NPU
+    performance for quantized models. Has no effect on non-NPU devices. Defaults
+    to `false`.
+
+    ```cpp
+    options.SetConfigsMapOption("optimize_fq_after_matmul", "true");
+    ```
+
+#### Example: passing `optimize_fq_after_matmul` through `apply_plugin_main`
+
+The flag is forwarded via the generic `--intel_openvino_configs_map` flag, which
+takes a comma-separated list of `KEY=VALUE` pairs:
+
+```bash
+apply_plugin_main \
+    --cmd=apply \
+    --model=/path/to/model.tflite \
+    --soc_manufacturer=IntelOpenVINO \
+    --soc_model=PTL \
+    --libs=/path/to/plugin/dir \
+    --o=/path/to/output.tflite \
+    --intel_openvino_device_type=npu \
+    --intel_openvino_performance_mode=latency \
+    --intel_openvino_configs_map="optimize_fq_after_matmul=true,INFERENCE_PRECISION_HINT=f16"
+```
+
+The plugin recognizes `optimize_fq_after_matmul` as an internal key and consumes
+it directly; the remaining entries are forwarded to the OpenVINO Core as
+configuration properties.
+
 ## Usage Example
 
 ### C++ API

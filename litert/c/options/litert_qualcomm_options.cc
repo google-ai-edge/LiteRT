@@ -53,6 +53,8 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
   std::optional<LrtQualcommOptionsGraphPriority> graph_priority;
   std::optional<std::string> saver_output_dir;
+  std::optional<LrtQualcommOptionsGraphIOTensorMemType>
+      graph_io_tensor_mem_type;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -69,55 +71,56 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
       toml_payload,
       [&parsed_options](absl::string_view key,
                         absl::string_view value) -> LiteRtStatus {
+        LiteRtStatus status = kLiteRtStatusOk;
         if (key == "log_level") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetLogLevel(
+          status = LrtQualcommOptionsSetLogLevel(
               parsed_options, static_cast<LrtQualcommOptionsLogLevel>(*v));
         } else if (key == "profiling") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetProfiling(
+          status = LrtQualcommOptionsSetProfiling(
               parsed_options, static_cast<LrtQualcommOptionsProfiling>(*v));
         } else if (key == "use_htp_preference") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetUseHtpPreference(parsed_options, *v);
+          status = LrtQualcommOptionsSetUseHtpPreference(parsed_options, *v);
         } else if (key == "use_qint16_as_quint16") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetUseQint16AsQuint16(parsed_options, *v);
+          status = LrtQualcommOptionsSetUseQint16AsQuint16(parsed_options, *v);
         } else if (key == "use_int64_bias_as_int32") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetUseInt64BiasAsInt32(parsed_options, *v);
+          status = LrtQualcommOptionsSetUseInt64BiasAsInt32(parsed_options, *v);
         } else if (key == "qnn_backend") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetBackend(
+          status = LrtQualcommOptionsSetBackend(
               parsed_options, static_cast<LrtQualcommOptionsBackend>(*v));
         } else if (key == "enable_weight_sharing") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetEnableWeightSharing(parsed_options, *v);
+          status = LrtQualcommOptionsSetEnableWeightSharing(parsed_options, *v);
         } else if (key == "use_conv_hmx") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetUseConvHMX(parsed_options, *v);
+          status = LrtQualcommOptionsSetUseConvHMX(parsed_options, *v);
         } else if (key == "use_fold_relu") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
+          status = LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetHtpPerformanceMode(
+          status = LrtQualcommOptionsSetHtpPerformanceMode(
               parsed_options,
               static_cast<LrtQualcommOptionsHtpPerformanceMode>(*v));
         } else if (key == "dsp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetDspPerformanceMode(
+          status = LrtQualcommOptionsSetDspPerformanceMode(
               parsed_options,
               static_cast<LrtQualcommOptionsDspPerformanceMode>(*v));
         } else if (key == "dump_tensor_ids") {
@@ -129,41 +132,47 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
             if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
             ids.push_back(*v);
           }
-          LrtQualcommOptionsSetDumpTensorIds(parsed_options, ids.data(),
-                                             ids.size());
+          status = LrtQualcommOptionsSetDumpTensorIds(parsed_options,
+                                                      ids.data(), ids.size());
         } else if (key == "ir_json_dir") {
-          LrtQualcommOptionsSetIrJsonDir(parsed_options,
-                                         std::string(value).c_str());
+          status = LrtQualcommOptionsSetIrJsonDir(parsed_options,
+                                                  std::string(value).c_str());
         } else if (key == "dlc_dir") {
-          LrtQualcommOptionsSetDlcDir(parsed_options,
-                                      std::string(value).c_str());
+          status = LrtQualcommOptionsSetDlcDir(parsed_options,
+                                               std::string(value).c_str());
         } else if (key == "vtcm_size") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetVtcmSize(parsed_options,
-                                        static_cast<uint32_t>(*v));
+          status = LrtQualcommOptionsSetVtcmSize(parsed_options,
+                                                 static_cast<uint32_t>(*v));
         } else if (key == "num_hvx_threads") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetNumHvxThreads(parsed_options,
-                                             static_cast<uint32_t>(*v));
+          status = LrtQualcommOptionsSetNumHvxThreads(
+              parsed_options, static_cast<uint32_t>(*v));
         } else if (key == "optimization_level") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetOptimizationLevel(
+          status = LrtQualcommOptionsSetOptimizationLevel(
               parsed_options,
               static_cast<LrtQualcommOptionsOptimizationLevel>(*v));
         } else if (key == "graph_priority") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
-          LrtQualcommOptionsSetGraphPriority(
+          status = LrtQualcommOptionsSetGraphPriority(
               parsed_options, static_cast<LrtQualcommOptionsGraphPriority>(*v));
         } else if (key == "saver_output_dir") {
-          LrtQualcommOptionsSetSaverOutputDir(parsed_options,
-                                              std::string(value).c_str());
+          status = LrtQualcommOptionsSetSaverOutputDir(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "graph_io_tensor_mem_type") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetGraphIOTensorMemType(
+              parsed_options,
+              static_cast<LrtQualcommOptionsGraphIOTensorMemType>(*v));
         }
 
-        return kLiteRtStatusOk;
+        return status;
       });
 
   if (status != kLiteRtStatusOk) {
@@ -267,7 +276,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->saver_output_dir.has_value()) {
     toml << "saver_output_dir = \"" << *options->saver_output_dir << "\"\n";
   }
-
+  if (options->graph_io_tensor_mem_type.has_value()) {
+    toml << "graph_io_tensor_mem_type = "
+         << static_cast<int>(*options->graph_io_tensor_mem_type) << "\n";
+  }
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -507,6 +519,33 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   }
 
   *use_fold_relu = options->use_fold_relu.value_or(true);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetGraphIOTensorMemType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGraphIOTensorMemType graph_io_tensor_mem_type) {
+  if (options == nullptr ||
+      graph_io_tensor_mem_type > kLiteRtQualcommGraphIOTensorMemTypeMemHandle ||
+      graph_io_tensor_mem_type < kLiteRtQualcommGraphIOTensorMemTypeRaw) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->graph_io_tensor_mem_type = graph_io_tensor_mem_type;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetGraphIOTensorMemType(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGraphIOTensorMemType* graph_io_tensor_mem_type) {
+  if (options == nullptr || graph_io_tensor_mem_type == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *graph_io_tensor_mem_type = options->graph_io_tensor_mem_type.value_or(
+      kLiteRtQualcommGraphIOTensorMemTypeMemHandle);
 
   return kLiteRtStatusOk;
 }

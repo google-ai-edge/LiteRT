@@ -20,26 +20,40 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_webnn_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert {
 
 /// @brief Defines the C++ wrapper for WebNN-specific LiteRT options.
 class WebNnOptions {
  public:
-  static Expected<WebNnOptions> Create();
+  static Expected<WebNnOptions> Create() {
+    LrtWebNnOptions* options = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtCreateWebNnOptions(&options));
+    return WebNnOptions(options);
+  }
 
-  LiteRtStatus SetDevicePreference(LiteRtWebNnDeviceType device_type);
-  LiteRtStatus SetPowerPreference(LiteRtWebNnPowerPreference power_preference);
-  LiteRtStatus SetPrecision(LiteRtWebNnPrecision precision);
+  LiteRtStatus SetDevicePreference(LiteRtWebNnDeviceType device_type) {
+    return LrtSetWebNnOptionsDevicePreference(Get(), device_type);
+  }
+  LiteRtStatus SetPowerPreference(LiteRtWebNnPowerPreference power_preference) {
+    return LrtSetWebNnOptionsPowerPreference(Get(), power_preference);
+  }
+  LiteRtStatus SetPrecision(LiteRtWebNnPrecision precision) {
+    return LrtSetWebNnOptionsPrecision(Get(), precision);
+  }
 
   LrtWebNnOptions* Get() { return options_.get(); }
   const LrtWebNnOptions* Get() const { return options_.get(); }
 
   LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
-                                    void (**payload_deleter)(void*)) const;
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueWebNnOptionsData(Get(), identifier, payload,
+                                        payload_deleter);
+  }
 
  private:
-  explicit WebNnOptions(LrtWebNnOptions* options);
+  explicit WebNnOptions(LrtWebNnOptions* options) : options_(options) {}
 
   struct Deleter {
     void operator()(LrtWebNnOptions* ptr) const { LrtDestroyWebNnOptions(ptr); }

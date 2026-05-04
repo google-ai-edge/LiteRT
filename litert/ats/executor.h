@@ -88,11 +88,11 @@ class CompiledModelExecutor {
   virtual ~CompiledModelExecutor() = default;
 
  protected:
-  CompiledModelExecutor(CompiledModelNext&& api, Environment&& env)
-      : env_(std::move(env)), api_(std::move(api)) {}
+  CompiledModelExecutor(CompiledModelNext&& api, Environment& env)
+      : env_(&env), api_(std::move(api)) {}
 
-  // env_ must be destroyed after api_ to avoid use-after-free.
-  Environment env_;
+  // env_ must be outlived by this executor to avoid use-after-free.
+  Environment* env_;
   CompiledModelNext api_;
 };
 
@@ -105,34 +105,50 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
   CpuCompiledModelExecutor(const CpuCompiledModelExecutor&) = delete;
   CpuCompiledModelExecutor& operator=(const CpuCompiledModelExecutor&) = delete;
 
-  struct Args {};
-
   static constexpr absl::string_view Name() { return "cpu"; }
 
   static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model,
-                                                   const Options& options) {
-    // Setup options.
-    LITERT_ASSIGN_OR_RETURN(
-        auto env, litert::Environment::Create(litert::EnvironmentOptions({})));
+                                                   const Options& options,
+                                                   Environment& env) {
     // Init compiled model api.
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModelNext::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
 
-    return CpuCompiledModelExecutor(std::move(api), std::move(env));
-  }
-
-  static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model,
-                                                   const Options& options,
-                                                   const Args& args) {
-    return Create(model, options);
+    return CpuCompiledModelExecutor(std::move(api), env);
   }
 
  private:
-  CpuCompiledModelExecutor(CompiledModelNext&& api, Environment&& env)
-      : CompiledModelExecutor(std::move(api), std::move(env)) {}
+  CpuCompiledModelExecutor(CompiledModelNext&& api, Environment& env)
+      : CompiledModelExecutor(std::move(api), env) {}
 };
 
+// Executor for the GPU backend.
+class GpuCompiledModelExecutor : public CompiledModelExecutor {
+ public:
+  GpuCompiledModelExecutor(GpuCompiledModelExecutor&& other) = default;
+  GpuCompiledModelExecutor& operator=(GpuCompiledModelExecutor&& other) =
+      default;
+  GpuCompiledModelExecutor(const GpuCompiledModelExecutor&) = delete;
+  GpuCompiledModelExecutor& operator=(const GpuCompiledModelExecutor&) = delete;
+
+  static constexpr absl::string_view Name() { return "gpu"; }
+
+  static Expected<GpuCompiledModelExecutor> Create(LiteRtModelT& model,
+                                                   const Options& options,
+                                                   Environment& env) {
+    // Init compiled model api.
+    LITERT_ASSIGN_OR_RETURN(
+        auto api, CompiledModelNext::Create(
+                      env, Model::CreateFromNonOwnedHandle(&model), options));
+
+    return GpuCompiledModelExecutor(std::move(api), env);
+  }
+
+ private:
+  GpuCompiledModelExecutor(CompiledModelNext&& api, Environment& env)
+      : CompiledModelExecutor(std::move(api), env) {}
+};
 // Executor for the NPU backend.
 class NpuCompiledModelExecutor : public CompiledModelExecutor {
  public:
@@ -142,53 +158,21 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
   NpuCompiledModelExecutor(const NpuCompiledModelExecutor&) = delete;
   NpuCompiledModelExecutor& operator=(const NpuCompiledModelExecutor&) = delete;
 
-  struct Args {
-    std::string dispatch_dir;
-    std::optional<std::string> plugin_dir;
-  };
-
   static constexpr absl::string_view Name() { return "npu"; }
 
   static Expected<NpuCompiledModelExecutor> Create(LiteRtModelT& model,
                                                    const Options& options,
-                                                   const Args& args) {
-    return Create(model, options, args.dispatch_dir, args.plugin_dir);
-  }
-
-  static Expected<NpuCompiledModelExecutor> Create(
-      LiteRtModelT& model, const Options& options,
-      const std::string& dispatch_dir,
-      const std::optional<std::string>& plugin_dir = std::nullopt) {
-    std::vector<litert::EnvironmentOptions::Option> environment_options = {
-        litert::EnvironmentOptions::Option{
-            litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-            absl::string_view(dispatch_dir),
-        }};
-
-    if (plugin_dir) {
-      environment_options.push_back(litert::EnvironmentOptions::Option{
-          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
-          absl::string_view(*plugin_dir),
-      });
-      environment_options.push_back(litert::EnvironmentOptions::Option{
-          litert::EnvironmentOptions::Tag::kCompilerCacheDir,
-          // TODO: Make this configurable.
-          "/data/local/tmp/litert_compiler_cache",
-      });
-    }
-
-    LITERT_ASSIGN_OR_RETURN(
-        auto env, Environment::Create(EnvironmentOptions(environment_options)));
+                                                   Environment& env) {
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModelNext::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
 
-    return NpuCompiledModelExecutor(std::move(api), std::move(env));
+    return NpuCompiledModelExecutor(std::move(api), env);
   }
 
  private:
-  NpuCompiledModelExecutor(CompiledModelNext&& api, Environment&& env)
-      : CompiledModelExecutor(std::move(api), std::move(env)) {}
+  NpuCompiledModelExecutor(CompiledModelNext&& api, Environment& env)
+      : CompiledModelExecutor(std::move(api), env) {}
 };
 
 }  // namespace litert::testing

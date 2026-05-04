@@ -93,6 +93,9 @@ function install_sdk {
   local mtk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_mediatek*.tar.gz)"
   SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
 
+  local intel_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_intel*.tar.gz)"
+  ${PYTHON_BIN} -m pip install ${intel_dist_pkg?} --ignore-installed
+
   echo
 }
 
@@ -119,6 +122,10 @@ function uninstall_pip {
 
   yes | ${PYTHON_BIN} -m pip uninstall ${mtk_pip_pkg}
 
+  local intel_pip_pkg="ai_edge_litert_sdk_intel"
+
+  yes | ${PYTHON_BIN} -m pip uninstall ${intel_pip_pkg}
+
   echo
 }
 
@@ -129,6 +136,19 @@ function test_import {
   ${PYTHON_BIN} -c "import ai_edge_litert.environment"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_mediatek"
+  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_intel"
+
+  # Intel OpenVINO backend imports
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    ${PYTHON_BIN} -c "from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend; print('Intel OpenVINO backend ID:', intel_openvino_backend.IntelOpenVinoBackend.id())"
+    ${PYTHON_BIN} -c "
+import os
+from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
+d = intel_openvino_backend.get_dispatch_dir()
+assert d and os.path.isdir(d), f'Dispatch dir not found: {d}'
+print('Dispatch dir:', d)
+"
+  fi
   echo
 }
 

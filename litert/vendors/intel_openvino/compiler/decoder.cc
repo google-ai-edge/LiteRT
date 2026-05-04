@@ -842,6 +842,15 @@ litert::Expected<ov::Any> DecoderOperation::fetch_attribute(
         return ov::Any(axis);
       }
       break;
+    case LiteRtOpCode::kLiteRtOpCodeTflReduceAll:
+      if (name == "keep_dims") {
+        bool keep_dims;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetReduceAllKeepDimsOption(litert_op_, &keep_dims),
+            ERROR_LOG_STR("keep_dims", op_name_.c_str()));
+        return ov::Any(keep_dims);
+      }
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return ov::Any(nullptr);

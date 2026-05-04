@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -34,7 +35,9 @@ class LiteRtDispatchDeviceContextT {
 
   ~LiteRtDispatchDeviceContextT() = default;
 
-  static litert::Expected<Ptr> Create(litert::qnn::QnnManager& qnn_manager);
+  static litert::Expected<Ptr> Create(
+      const LiteRtRuntimeContext* runtime_context,
+      litert::qnn::QnnManager& qnn_manager);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer) {
@@ -67,6 +70,10 @@ class LiteRtDispatchDeviceContextT {
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
                      Qnn_ProfileHandle_t profile_handle);
 
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
+  }
+
  private:
   struct TensorBufferRegistryEntry {
     LiteRtTensorBuffer tensor_buffer;
@@ -81,12 +88,15 @@ class LiteRtDispatchDeviceContextT {
   using TensorBufferRegistry = litert::qnn::Registry<LiteRtTensorBufferHandle,
                                                      TensorBufferRegistryEntry>;
 
-  explicit LiteRtDispatchDeviceContextT(litert::qnn::QnnManager& qnn_manager)
-      : qnn_manager_(qnn_manager) {}
+  explicit LiteRtDispatchDeviceContextT(
+      const LiteRtRuntimeContext* runtime_context,
+      litert::qnn::QnnManager& qnn_manager)
+      : runtime_context_(runtime_context), qnn_manager_(qnn_manager) {}
 
   litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor);
 
+  const LiteRtRuntimeContext* runtime_context_;
   litert::qnn::QnnManager& qnn_manager_;
   TensorBufferRegistry tensor_buffer_registry_;
   LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;

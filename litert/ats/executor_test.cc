@@ -15,6 +15,7 @@
 #include "litert/ats/executor.h"
 
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/matchers.h"
@@ -52,8 +54,11 @@ TEST(CpuCompiledModelExecutorTest, CreateAndRunModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_expected,
+                              litert::Environment::Create({}));
+  auto env = std::make_shared<Environment>(std::move(env_expected));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto executor, CpuCompiledModelExecutor::Create(*model, options));
+      auto executor, CpuCompiledModelExecutor::Create(*model, options, *env));
   std::vector<SimpleBuffer> inputs;
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input, SimpleBuffer::Create<int32_t>({2, 2}, {1, 1, 1, 1}));
@@ -80,10 +85,21 @@ TEST(NpuCompiledModelExecutorTest, CreateAndRunModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kNpu);
+  std::vector<litert::EnvironmentOptions::Option> env_opts = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+          absl::string_view("/data/local/tmp"),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          absl::string_view("/data/local/tmp"),
+      }};
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto executor,
-      NpuCompiledModelExecutor::Create(*model, options, "/data/local/tmp",
-                                       "/data/local/tmp"));
+      auto env_expected,
+      litert::Environment::Create(litert::EnvironmentOptions(env_opts)));
+  auto env = std::make_shared<Environment>(std::move(env_expected));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto executor, NpuCompiledModelExecutor::Create(*model, options, *env));
 
   std::vector<SimpleBuffer> inputs;
   LITERT_ASSERT_OK_AND_ASSIGN(

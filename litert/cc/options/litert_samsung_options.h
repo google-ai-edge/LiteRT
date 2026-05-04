@@ -17,6 +17,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_samsung_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert::samsung {
 
@@ -34,20 +35,38 @@ class SamsungOptions {
 
   ~SamsungOptions() = default;
 
-  static const char* Discriminator();
+  static const char* Discriminator() {
+    return LrtSamsungOptionsGetIdentifier();
+  }
 
-  static Expected<SamsungOptions> Create();
+  static Expected<SamsungOptions> Create() {
+    LrtSamsungOptions options = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtCreateSamsungOptions(&options));
+    return SamsungOptions(options);
+  }
 
   LrtSamsungOptions Release() { return options_.release(); }
   LrtSamsungOptions Get() const { return options_.get(); }
 
   LiteRtStatus GetOpaqueOptionsData(const char** identifier, void** payload,
-                                    void (**payload_deleter)(void*)) const;
+                                    void (**payload_deleter)(void*)) const {
+    return LrtGetOpaqueSamsungOptionsData(Get(), identifier, payload,
+                                          payload_deleter);
+  }
 
   /// @brief This option hints whether current model is LLM. This influences
   /// compilation behavior. Defaults to `false`.
-  Expected<void> SetEnableLargeModelSupport(bool large_model_support);
-  Expected<bool> GetEnableLargeModelSupport() const;
+  Expected<void> SetEnableLargeModelSupport(bool large_model_support) {
+    LITERT_RETURN_IF_ERROR(LrtSamsungOptionsSetEnableLargeModelSupport(
+        Get(), large_model_support));
+    return {};
+  }
+  Expected<bool> GetEnableLargeModelSupport() const {
+    bool large_model_support;
+    LITERT_RETURN_IF_ERROR(LrtSamsungOptionsGetEnableLargeModelSupport(
+        Get(), &large_model_support));
+    return large_model_support;
+  }
 
  private:
   std::unique_ptr<LrtSamsungOptionsT, void (*)(LrtSamsungOptions)> options_;

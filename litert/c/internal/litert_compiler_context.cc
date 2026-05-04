@@ -14,6 +14,7 @@
 
 #include "litert/c/internal/litert_compiler_context.h"
 
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/c/litert_opaque_options.h"
@@ -30,14 +31,21 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .get_num_subgraph_outputs = LiteRtGetNumSubgraphOutputs,
       .get_subgraph_output = LiteRtGetSubgraphOutput,
       .get_op_code = LiteRtGetOpCode,
+      .get_custom_code = LiteRtGetCustomCode,
       .get_num_op_inputs = LiteRtGetNumOpInputs,
       .get_op_input = LiteRtGetOpInput,
       .get_num_op_outputs = LiteRtGetNumOpOutputs,
       .get_op_output = LiteRtGetOpOutput,
       .get_tensor_name = LiteRtGetTensorName,
+      .get_tensor_index = LiteRtGetTensorIndex,
       .get_tensor_type_id = LiteRtGetTensorTypeId,
       .get_ranked_tensor_type = LiteRtGetRankedTensorType,
       .get_unranked_tensor_type = LiteRtGetUnrankedTensorType,
+      .get_quantization_type_id = LiteRtGetQuantizationTypeId,
+      .get_per_tensor_quantization = LiteRtGetPerTensorQuantization,
+      .get_per_channel_quantization = LiteRtGetPerChannelQuantization,
+      .get_num_tensor_uses = LiteRtGetNumTensorUses,
+      .get_tensor_use = LiteRtGetTensorUse,
       .get_tensor_defining_op = LiteRtGetTensorDefiningOp,
       .get_tensor_weights = LiteRtGetTensorWeights,
       .get_weights_buffer_id = LiteRtGetWeightsBufferId,
@@ -51,6 +59,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .get_opaque_options = LiteRtGetOpaqueOptions,
       .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
       .destroy_options = LiteRtDestroyOptions,
+      .get_environment_options_value = LiteRtGetEnvironmentOptionsValue,
   };
   return &ctx;
 }

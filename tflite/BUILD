@@ -676,7 +676,7 @@ cc_library_with_tflite(
         "//tflite/core/api:verifier",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
-        "//tflite/delegates:telemetry",
+        # copybara:uncomment "//tflite/delegates:telemetry",
         "//tflite/delegates/xnnpack:tflite_with_xnnpack_qs8",
         "//tflite/delegates/xnnpack:tflite_with_xnnpack_qu8",
         "//tflite/experimental/resource",

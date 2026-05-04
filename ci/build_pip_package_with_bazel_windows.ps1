@@ -75,6 +75,7 @@ function Get-BazelInfo {
   else {
     $ProcInfo.Arguments = "info $Key"
   }
+  $ProcInfo.WorkingDirectory = $RepoRoot
   $ProcInfo.RedirectStandardOutput = $true
   $ProcInfo.RedirectStandardError = $true
   $ProcInfo.UseShellExecute = $false
@@ -400,4 +401,37 @@ if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 
 Get-ChildItem -Path (Join-Path $RepoRoot 'bazel-bin\ci\tools\python\wheel\dist') -Filter *.whl | Move-Item -Destination $DistDir
+
+# Vendor SDK sdist packages
+$SdkArgs = @(
+  'build',
+  '-c',
+  'opt',
+  '--config=windows',
+  '--repo_env=USE_PYWRAP_RULES=True'
+)
+if ($env:HERMETIC_PYTHON_VERSION) { $SdkArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
+if ($env:NIGHTLY_RELEASE_DATE) { $SdkArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
+if ($env:USE_LOCAL_TF -eq 'true') { $SdkArgs += '--config=use_local_tf' }
+if ($env:CUSTOM_BAZEL_FLAGS) { $SdkArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
+
+$SdkTargets = @(
+  @{ Name = 'Qualcomm'; Target = '//ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist'; Glob = 'qualcomm' },
+  @{ Name = 'MediaTek'; Target = '//ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist'; Glob = 'mediatek' },
+  @{ Name = 'Intel';    Target = '//ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist';       Glob = 'intel' },
+  @{ Name = 'Samsung';  Target = '//ci/tools/python/vendor_sdk/samsung:ai_edge_litert_sdk_samsung_sdist';   Glob = 'samsung' }
+)
+
+foreach ($Sdk in $SdkTargets) {
+  Write-Host "Building $($Sdk.Name) SDK sdist..."
+  & $Bazel $BazelStartupOpts @SdkArgs $Sdk.Target
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "$($Sdk.Name) SDK build failed (non-fatal)"
+  }
+  else {
+    $SdkDist = Join-Path $RepoRoot "bazel-bin\ci\tools\python\vendor_sdk\$($Sdk.Glob)"
+    Get-ChildItem -Path $SdkDist -Filter *.tar.gz -ErrorAction SilentlyContinue | Move-Item -Destination $DistDir
+  }
+}
+
 Write-Host 'Output can be found here:' $DistDir

@@ -75,7 +75,6 @@ LITERT_C_API_DEPS = [
 
 cc_library(
     name = "litert_custom_op_kernel",
-    srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
         ":litert_environment",
@@ -87,7 +86,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -142,7 +140,6 @@ cc_library(
         "//litert/cc/internal:litert_handle",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -172,7 +169,6 @@ litert_device_exec(
 
 cc_library(
     name = "litert_model",
-    srcs = ["//litert/cc:litert_model.cc"],
     hdrs = ["//litert/cc:litert_model.h"],
     defines = ["LITERT_DYNAMIC_RUNTIME"],
     visibility = [
@@ -196,7 +192,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -208,9 +203,10 @@ cc_library(
     name = "litert_tensor_buffer_types",
     hdrs = ["//litert/cc:litert_tensor_buffer_types.h"],
     visibility = ["//litert:litert_public"],
-    deps = [] + select({
+    deps = [
+        "//litert/cc/internal:litert_tensor_buffer_utils",
+    ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -219,7 +215,6 @@ cc_library(
 
 cc_library(
     name = "litert_extended_model",
-    srcs = ["//litert/cc/internal:litert_extended_model.cc"],
     hdrs = ["//litert/cc/internal:litert_extended_model.h"],
     defines = ["LITERT_DYNAMIC_RUNTIME"],
     visibility = [
@@ -243,7 +238,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -253,7 +247,6 @@ cc_library(
 
 cc_library(
     name = "litert_builder",
-    srcs = ["//litert/cc/internal:litert_builder.cc"],
     hdrs = ["//litert/cc/internal:litert_builder.h"],
     visibility = [
         "//litert:litert_public",
@@ -273,7 +266,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -334,7 +326,6 @@ cc_test(
 
 cc_library(
     name = "litert_model_predicates",
-    srcs = ["//litert/cc/internal:litert_model_predicates.cc"],
     hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
@@ -369,7 +360,6 @@ cc_test(
 
 cc_library(
     name = "litert_opaque_options",
-    srcs = ["//litert/cc:litert_opaque_options.cc"],
     hdrs = ["//litert/cc:litert_opaque_options.h"],
     deps = [
         "//litert/cc:litert_common",
@@ -379,7 +369,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -405,7 +394,6 @@ cc_test(
 
 cc_library(
     name = "litert_op_options",
-    srcs = ["//litert/cc/internal:litert_op_options.cc"],
     hdrs = ["//litert/cc/internal:litert_op_options.h"],
     visibility = ["//litert:litert_public"],
     deps = [
@@ -417,7 +405,6 @@ cc_library(
         "//litert/cc:litert_macros",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -462,7 +449,6 @@ cc_test(
 
 cc_library(
     name = "litert_tensor_buffer",
-    srcs = ["//litert/cc:litert_tensor_buffer.cc"],
     hdrs = [
         "//litert/cc:litert_tensor_buffer.h",
     ],
@@ -483,7 +469,6 @@ cc_library(
         "@opencl_headers",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -563,7 +548,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -600,7 +584,6 @@ cc_test(
 
 cc_library(
     name = "litert_compiled_model",
-    srcs = ["//litert/cc:litert_compiled_model.cc"],
     hdrs = ["//litert/cc:litert_compiled_model.h"],
     deps = [
         ":litert_custom_op_kernel",
@@ -629,7 +612,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -718,10 +700,10 @@ cc_test(
 
 cc_library(
     name = "litert_options",
-    srcs = ["//litert/cc:litert_options.cc"],
     hdrs = ["//litert/cc:litert_options.h"],
     deps = [
         ":litert_custom_op_kernel",
+        ":litert_environment",
         ":litert_opaque_options",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_intel_openvino_options",
@@ -733,6 +715,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_runtime_proxy_runtimecapi",
         "//litert/cc/internal:scoped_file",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/cc/options:litert_compiler_options",
@@ -748,7 +731,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -758,14 +740,12 @@ cc_library(
 
 cc_library(
     name = "litert_magic_number_options",
-    srcs = ["//litert/cc/options:litert_magic_number_options.cc"],
     hdrs = ["//litert/cc/options:litert_magic_number_options.h"],
     deps = [
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
     ] + select({
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//litert:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -782,7 +762,6 @@ cc_library(
         "//litert/cc/internal:litert_handle",
     ] + select({
         "//litert:emscripten": LITERT_C_API_DEPS,
-        "//litert:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
             "//litert/c:litert_runtime_c_api_shared_lib",
@@ -807,7 +786,6 @@ next_library_visibility = [
 
 cc_library(
     name = "litert_compiled_model_next",
-    srcs = ["//litert/cc/internal:litert_compiled_model_next.cc"],
     hdrs = ["//litert/cc/internal:litert_compiled_model_next.h"],
     visibility = next_library_visibility,
     deps = [

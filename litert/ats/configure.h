@@ -19,11 +19,14 @@
 #include <fstream>
 #include <optional>
 #include <regex>  // NOLINT
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/declare.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/cc/internal/litert_rng.h"
@@ -237,6 +240,9 @@ class AtsConf {
   // Litert options to use for the reference backend.
   const Options& ReferenceOptions() const { return reference_options_; }
 
+  // Get the environment.
+  Environment& GetEnvironment() const { return environment_; }
+
   AtsConf(const AtsConf&) = delete;
   AtsConf& operator=(const AtsConf&) = delete;
   AtsConf(AtsConf&&) = default;
@@ -254,7 +260,9 @@ class AtsConf {
                    bool compile_mode, std::string models_out, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,
                    std::string soc_manufacturer, std::string soc_model,
-                   Options&& target_options, Options&& reference_options)
+                   Options&& target_options, Options&& reference_options,
+                   internal::LiteRtOptionsPtr&& target_options_handle,
+                   Environment&& environment)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -276,7 +284,9 @@ class AtsConf {
         soc_manufacturer_(std::move(soc_manufacturer)),
         soc_model_(std::move(soc_model)),
         target_options_(std::move(target_options)),
-        reference_options_(std::move(reference_options)) {
+        reference_options_(std::move(reference_options)),
+        target_options_handle_(std::move(target_options_handle)),
+        environment_(std::move(environment)) {
     // For now, we will provide default settings for data generation.
     // More configurability may be introduced later.
     data_builder_.SetSin();
@@ -305,6 +315,9 @@ class AtsConf {
   std::string soc_model_;
   Options target_options_;
   Options reference_options_;
+  internal::LiteRtOptionsPtr target_options_handle_;
+
+  mutable Environment environment_;
 
   RandomTensorDataBuilder data_builder_;
 };

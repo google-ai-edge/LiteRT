@@ -74,6 +74,9 @@ class AtsInferenceTest : public RngTest {
   }
 
   void SetUp() override {
+    if (names_.should_skip) {
+      GTEST_SKIP() << "Filtered by dont_register";
+    }
     ASSERT_EQ(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
@@ -104,7 +107,9 @@ class AtsInferenceTest : public RngTest {
       }
     }
 
-    if (HasFailure()) {
+    if (::testing::Test::IsSkipped()) {
+      cap_.run.status = RunStatus::kSkipped;
+    } else if (HasFailure()) {
       cap_.run.status = RunStatus::kError;
     } else if (TimedOut()) {
       cap_.run.status = RunStatus::kTimeout;
@@ -117,11 +122,12 @@ class AtsInferenceTest : public RngTest {
   double Tol() const { return graph_->HasReference() ? 1e-4 : 1e2; }
 
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
+    auto& env = conf_.GetEnvironment();
+
     CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
-      auto exec = NpuCompiledModelExecutor::Create(
-          Graph(), conf_.TargetOptions(), conf_.DispatchDir(),
-          conf_.PluginDir());
+      auto exec =
+          NpuCompiledModelExecutor::Create(Graph(), conf_.TargetOptions(), env);
       cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
       if (!exec) {
         return exec.Error();
@@ -130,8 +136,15 @@ class AtsInferenceTest : public RngTest {
       return res;
     }
     if (conf_.IsCpu()) {
-      LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                             Graph(), conf_.TargetOptions()));
+      LITERT_ASSIGN_OR_RETURN(auto exec,
+                              CpuCompiledModelExecutor::Create(
+                                  Graph(), conf_.TargetOptions(), env));
+      return std::make_unique<CompiledModelExecutor>(std::move(exec));
+    }
+    if (conf_.IsGpu()) {
+      LITERT_ASSIGN_OR_RETURN(auto exec,
+                              GpuCompiledModelExecutor::Create(
+                                  Graph(), conf_.TargetOptions(), env));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
 
@@ -163,7 +176,8 @@ class AtsInferenceTest : public RngTest {
 
   Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
     LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                           Graph(), conf_.ReferenceOptions()));
+                                           Graph(), conf_.ReferenceOptions(),
+                                           conf_.GetEnvironment()));
     return exec.Run(inputs);
   }
 

@@ -35,6 +35,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -180,9 +181,8 @@ LiteRtDispatchInvocationContextT::Create(
       profile_handle, graph_index, graph_handle));
 }
 
-namespace {
-
-Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   if (tensor_type.layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -201,18 +201,18 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
   }
 
   LiteRtTensorBufferRequirements requirements;
-  if (auto status = LiteRtCreateTensorBufferRequirements(
-          kSupportedTensorBufferTypes.size(),
-          kSupportedTensorBufferTypes.data(), *buffer_size, /*num_strides=*/0,
-          /*strides=*/nullptr, &requirements);
+  if (auto status =
+          device_context_->runtime_context()->create_tensor_buffer_requirements(
+              kSupportedTensorBufferTypes.size(),
+              kSupportedTensorBufferTypes.data(), *buffer_size,
+              /*num_strides=*/0,
+              /*strides=*/nullptr, &requirements);
       status != kLiteRtStatusOk) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Not implemented");
   }
 
   return requirements;
 }
-
-}  // namespace
 
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(

@@ -127,7 +127,7 @@ litert_test(
         "embedding_lookup_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",
@@ -163,7 +163,7 @@ litert_test(
         "onehot_test.cc",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
+        "//litert:android": [],
         "//conditions:default": [
             make_rpaths([
                 "//litert/c:litert_runtime_c_api_so",

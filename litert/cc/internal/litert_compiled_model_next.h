@@ -18,12 +18,14 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -57,29 +59,91 @@ class CompiledModelNext : public CompiledModel {
   /// compilation options. The passed options will be built during creation.
   static Expected<CompiledModelNext> Create(litert::Environment& env,
                                             const litert::Model& model,
-                                            Options& compilation_options);
+                                            Options& compilation_options) {
+    auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        CompiledModel::BuildOptions(compilation_options, env.GetHolder()));
+    LiteRtModel litert_model = model.Get();
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+        env_holder.handle, litert_model, owned_options.get(), &compiled_model));
+    return CompiledModelNext(env_holder, litert_model, compiled_model,
+                             OwnHandle::kYes, std::move(owned_options));
+  }
 
   /// @brief Creates a `CompiledModelNext` with const compilation options that
   /// are already built.
-  static Expected<CompiledModelNext> Create(litert::Environment& env,
-                                            const litert::Model& model,
-                                            const Options& compilation_options);
+  static Expected<CompiledModelNext> Create(
+      litert::Environment& env, const litert::Model& model,
+      const Options& compilation_options) {
+    auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        CompiledModel::BuildOptions(compilation_options, env.GetHolder()));
+    LiteRtModel litert_model = model.Get();
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+        env_holder.handle, litert_model, owned_options.get(), &compiled_model));
+    return CompiledModelNext(env_holder, litert_model, compiled_model,
+                             OwnHandle::kYes, std::move(owned_options));
+  }
 
   /// @brief Creates a `CompiledModelNext` from a model file.
   static Expected<CompiledModelNext> Create(litert::Environment& env,
                                             const std::string& model_filename,
-                                            Options& compilation_options);
+                                            Options& compilation_options) {
+    auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        CompiledModel::BuildOptions(compilation_options, env.GetHolder()));
+    LiteRtModel litert_model;
+    if (auto status = env_holder.runtime->CreateModelFromFile(
+            model_filename.c_str(), &litert_model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from file");
+    }
+    LiteRtCompiledModel compiled_model;
+    if (auto status = env_holder.runtime->CreateCompiledModel(
+            env_holder.handle, litert_model, owned_options.get(),
+            &compiled_model);
+        status != kLiteRtStatusOk) {
+      env_holder.runtime->DestroyModel(litert_model);
+      return Unexpected(ToStatus(status), "Failed to compile model");
+    }
+    return CompiledModelNext(env_holder, litert_model,
+                             /*model_owned=*/OwnHandle::kYes, compiled_model,
+                             OwnHandle::kYes, std::move(owned_options));
+  }
 
   /// @brief A simplified version that only takes hardware accelerators.
   static Expected<CompiledModelNext> Create(
       litert::Environment& env, const litert::Model& model,
-      litert::HwAccelerators hardware_accelerators);
+      litert::HwAccelerators hardware_accelerators) {
+    auto env_holder = env.GetHolder();
+    Options compilation_options;
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        CompiledModel::BuildOptions(std::move(compilation_options),
+                                    env.GetHolder()));
+    LiteRtModel litert_model = model.Get();
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+        env_holder.handle, litert_model, owned_options.get(), &compiled_model));
+    return CompiledModelNext(env_holder, litert_model, compiled_model,
+                             OwnHandle::kYes, std::move(owned_options));
+  }
 
   /// @brief Creates a `CompiledModelNext` from a model file using default
   /// compilation options.
   static Expected<CompiledModelNext> Create(
       litert::Environment& env, const std::string& model_filename,
-      litert::HwAccelerators hardware_accelerators);
+      litert::HwAccelerators hardware_accelerators) {
+    Options compilation_options;
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
+    return Create(env, model_filename, compilation_options);
+  }
 
   // Keep the stable CompiledModel APIs available alongside Next-only overloads.
   using CompiledModel::Run;
@@ -97,31 +161,84 @@ class CompiledModelNext : public CompiledModel {
 
   /// @brief Starts the collection of hardware-specific metrics at a given
   /// level of detail.
-  Expected<void> StartMetricsCollection(int detail_level);
+  Expected<void> StartMetricsCollection(int detail_level) {
+    if (auto status = env_.runtime->CompiledModelStartMetricsCollection(
+            Get(), detail_level);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to start metrics collection");
+    }
+    return {};
+  }
 
   /// @brief Stops the collection of hardware-specific metrics and reports the
   /// collected data.
-  Expected<Metrics> StopMetricsCollection();
+  Expected<Metrics> StopMetricsCollection() {
+    LiteRtMetrics metrics = nullptr;
+    LITERT_RETURN_IF_ERROR(env_.runtime->CreateMetrics(&metrics));
+    absl::Cleanup metrics_cleanup = [&metrics, runtime = env_.runtime] {
+      runtime->DestroyMetrics(metrics);
+    };
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelStopMetricsCollection(Get(), metrics));
+    int num_metrics;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetNumMetrics(metrics, &num_metrics));
+
+    std::vector<Metrics::Metric> compiled_model_metrics;
+    compiled_model_metrics.reserve(num_metrics);
+    for (int i = 0; i < num_metrics; ++i) {
+      LiteRtMetric metric;
+      LITERT_RETURN_IF_ERROR(env_.runtime->GetMetric(metrics, i, &metric));
+      compiled_model_metrics.push_back({metric.name, metric.value});
+    }
+    return CompiledModelNext::Metrics{.metrics =
+                                          std::move(compiled_model_metrics)};
+  }
 
   /// @brief Sets model-level default scheduling info.
   Expected<void> SetSchedulingInfo(
-      const LiteRtSchedulingInfo& scheduling_info) const;
+      const LiteRtSchedulingInfo& scheduling_info) const {
+    auto status =
+        env_.runtime->CompiledModelSetSchedulingInfo(Get(), &scheduling_info);
+    if (status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to set scheduling info");
+    }
+    return {};
+  }
 
   /// @brief Clears model-level default scheduling info.
-  Expected<void> ClearSchedulingInfo() const;
+  Expected<void> ClearSchedulingInfo() const {
+    auto status = env_.runtime->CompiledModelSetSchedulingInfo(Get(), nullptr);
+    if (status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to clear scheduling info");
+    }
+    return {};
+  }
 
   /// @brief Runs with per-run options for a given signature index.
   Expected<void> Run(size_t signature_index,
                      absl::Span<const TensorBuffer> input_buffers,
                      absl::Span<const TensorBuffer> output_buffers,
                      Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunHelper(signature_index, input_buffers, output_buffers, async,
-                     run_options ? run_options->Get() : nullptr, nullptr);
+                     options_handle, nullptr);
   }
+
+#ifdef LITERT_NO_ABSL
+  Expected<void> Run(size_t signature_index,
+                     std::span<const TensorBuffer> input_buffers,
+                     std::span<const TensorBuffer> output_buffers,
+                     Options* run_options) const {
+    return Run(signature_index, internal::ToAbslSpan(input_buffers),
+               internal::ToAbslSpan(output_buffers), run_options);
+  }
+#endif  // LITERT_NO_ABSL
 
   /// @brief Runs with per-request scheduling info for a given signature index.
   Expected<void> Run(size_t signature_index,
@@ -133,18 +250,39 @@ class CompiledModelNext : public CompiledModel {
                      nullptr, &scheduling_info);
   }
 
+#ifdef LITERT_NO_ABSL
+  Expected<void> Run(size_t signature_index,
+                     std::span<const TensorBuffer> input_buffers,
+                     std::span<const TensorBuffer> output_buffers,
+                     const LiteRtSchedulingInfo& scheduling_info) const {
+    return Run(signature_index, internal::ToAbslSpan(input_buffers),
+               internal::ToAbslSpan(output_buffers), scheduling_info);
+  }
+#endif  // LITERT_NO_ABSL
+
   /// @brief Runs default signature with per-run options.
   Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
                      absl::Span<const TensorBuffer> output_buffers,
                      Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async, run_options ? run_options->Get() : nullptr,
-                     nullptr);
+                     async, options_handle, nullptr);
   }
+
+#ifdef LITERT_NO_ABSL
+  Expected<void> Run(std::span<const TensorBuffer> input_buffers,
+                     std::span<const TensorBuffer> output_buffers,
+                     Options* run_options) const {
+    return Run(internal::ToAbslSpan(input_buffers),
+               internal::ToAbslSpan(output_buffers), run_options);
+  }
+#endif  // LITERT_NO_ABSL
 
   /// @brief Runs default signature with per-request scheduling info.
   Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
@@ -155,17 +293,29 @@ class CompiledModelNext : public CompiledModel {
                      async, nullptr, &scheduling_info);
   }
 
+#ifdef LITERT_NO_ABSL
+  Expected<void> Run(std::span<const TensorBuffer> input_buffers,
+                     std::span<const TensorBuffer> output_buffers,
+                     const LiteRtSchedulingInfo& scheduling_info) const {
+    return Run(internal::ToAbslSpan(input_buffers),
+               internal::ToAbslSpan(output_buffers), scheduling_info);
+  }
+#endif  // LITERT_NO_ABSL
+
   /// @brief Runs asynchronously with per-run options for a given signature.
   Expected<void> RunAsync(size_t signature_index,
                           const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
                           bool& async, Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     async = true;
     return RunHelper(signature_index, input_buffers, output_buffers, async,
-                     run_options ? run_options->Get() : nullptr, nullptr);
+                     options_handle, nullptr);
   }
 
   /// @brief Runs asynchronously with per-request scheduling info for a given
@@ -184,13 +334,15 @@ class CompiledModelNext : public CompiledModel {
   Expected<void> RunAsync(const std::vector<TensorBuffer>& input_buffers,
                           const std::vector<TensorBuffer>& output_buffers,
                           bool& async, Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     async = true;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
-                     async, run_options ? run_options->Get() : nullptr,
-                     nullptr);
+                     async, options_handle, nullptr);
   }
 
   /// @brief Runs default signature asynchronously with per-request scheduling
@@ -214,6 +366,16 @@ class CompiledModelNext : public CompiledModel {
     return Run(signature_index, input_buffers, output_buffers, run_options);
   }
 
+#ifdef LITERT_NO_ABSL
+  Expected<void> Run(std::string_view signature_key,
+                     const std::vector<TensorBuffer>& input_buffers,
+                     const std::vector<TensorBuffer>& output_buffers,
+                     Options* run_options) const {
+    return Run(internal::ToAbslStringView(signature_key), input_buffers,
+               output_buffers, run_options);
+  }
+#endif  // LITERT_NO_ABSL
+
   /// @brief Runs by signature key with per-request scheduling info.
   Expected<void> Run(absl::string_view signature_key,
                      const std::vector<TensorBuffer>& input_buffers,
@@ -223,6 +385,16 @@ class CompiledModelNext : public CompiledModel {
                             GetSignatureIndex(signature_key));
     return Run(signature_index, input_buffers, output_buffers, scheduling_info);
   }
+
+#ifdef LITERT_NO_ABSL
+  Expected<void> Run(std::string_view signature_key,
+                     const std::vector<TensorBuffer>& input_buffers,
+                     const std::vector<TensorBuffer>& output_buffers,
+                     const LiteRtSchedulingInfo& scheduling_info) const {
+    return Run(internal::ToAbslStringView(signature_key), input_buffers,
+               output_buffers, scheduling_info);
+  }
+#endif  // LITERT_NO_ABSL
 
   /// @brief Runs by signature key asynchronously with per-run options.
   Expected<void> RunAsync(absl::string_view signature_key,
@@ -235,6 +407,16 @@ class CompiledModelNext : public CompiledModel {
     return RunAsync(signature_index, input_buffers, output_buffers, async,
                     run_options);
   }
+
+#ifdef LITERT_NO_ABSL
+  Expected<void> RunAsync(std::string_view signature_key,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async, Options* run_options) const {
+    return RunAsync(internal::ToAbslStringView(signature_key), input_buffers,
+                    output_buffers, async, run_options);
+  }
+#endif  // LITERT_NO_ABSL
 
   /// @brief Runs by signature key asynchronously with per-request scheduling
   /// info.
@@ -250,18 +432,32 @@ class CompiledModelNext : public CompiledModel {
                     scheduling_info);
   }
 
+#ifdef LITERT_NO_ABSL
+  Expected<void> RunAsync(std::string_view signature_key,
+                          const std::vector<TensorBuffer>& input_buffers,
+                          const std::vector<TensorBuffer>& output_buffers,
+                          bool& async,
+                          const LiteRtSchedulingInfo& scheduling_info) const {
+    return RunAsync(internal::ToAbslStringView(signature_key), input_buffers,
+                    output_buffers, async, scheduling_info);
+  }
+#endif  // LITERT_NO_ABSL
+
   /// @brief Runs by signature key with per-run options using named maps.
   Expected<void> Run(
       absl::string_view signature_key,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunMapHelper(signature_key, input_map, output_map, async,
-                        run_options ? run_options->Get() : nullptr, nullptr);
+                        options_handle, nullptr);
   }
 
   /// @brief Runs by signature key with per-request scheduling info using named
@@ -281,13 +477,16 @@ class CompiledModelNext : public CompiledModel {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     bool async = false;
     return RunMapWithIndexHelper(
-        /*signature_index=*/0, input_map, output_map, async,
-        run_options ? run_options->Get() : nullptr, nullptr);
+        /*signature_index=*/0, input_map, output_map, async, options_handle,
+        nullptr);
   }
 
   /// @brief Runs default signature with per-request scheduling info using named
@@ -308,12 +507,15 @@ class CompiledModelNext : public CompiledModel {
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async, Options* run_options) const {
+    LiteRtOptions options_handle = nullptr;
+    internal::LiteRtOptionsPtr owned_options;
     if (run_options) {
-      LITERT_RETURN_IF_ERROR(run_options->Build());
+      LITERT_ASSIGN_OR_RETURN(owned_options, BuildOptions(*run_options, env_));
+      options_handle = owned_options.get();
     }
     async = true;
     return RunMapHelper(signature_key, input_map, output_map, async,
-                        run_options ? run_options->Get() : nullptr, nullptr);
+                        options_handle, nullptr);
   }
 
   /// @brief Runs by signature key asynchronously with per-request scheduling
@@ -429,15 +631,19 @@ class CompiledModelNext : public CompiledModel {
   explicit CompiledModelNext(internal::EnvironmentHolder& env,
                              LiteRtModel litert_model,
                              LiteRtCompiledModel compiled_model,
-                             OwnHandle owned)
+                             OwnHandle owned,
+                             internal::LiteRtOptionsPtr options = {})
       : CompiledModel(env, litert_model,
-                      /*model_owned=*/OwnHandle::kNo, compiled_model, owned) {}
+                      /*model_owned=*/OwnHandle::kNo, compiled_model, owned,
+                      std::move(options)) {}
 
   explicit CompiledModelNext(internal::EnvironmentHolder& env,
                              LiteRtModel litert_model, OwnHandle model_owned,
                              LiteRtCompiledModel compiled_model,
-                             OwnHandle owned)
-      : CompiledModel(env, litert_model, model_owned, compiled_model, owned) {}
+                             OwnHandle owned,
+                             internal::LiteRtOptionsPtr options = {})
+      : CompiledModel(env, litert_model, model_owned, compiled_model, owned,
+                      std::move(options)) {}
 };
 
 }  // namespace litert

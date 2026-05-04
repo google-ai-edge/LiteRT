@@ -73,7 +73,6 @@ cc_library(
 # This is for accelerator shared libs not to depend on the registry, but depend on CAPI.so instead.
 cc_library(
     name = "litert_tensor_buffer_without_registry",
-    srcs = ["//litert/cc:litert_tensor_buffer.cc"],
     hdrs = [
         "//litert/cc:litert_tensor_buffer.h",
     ],
@@ -198,6 +197,7 @@ cc_test(
         ":litert_options_wrapper",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
@@ -229,6 +229,7 @@ cc_test(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
@@ -263,7 +264,6 @@ cc_library(
 
 cc_library(
     name = "litert_rng",
-    srcs = ["litert_rng.cc"],
     hdrs = ["litert_rng.h"],
     deps = [
         ":litert_detail",
@@ -280,7 +280,6 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer_utils",
-    srcs = ["litert_tensor_buffer_utils.cc"],
     hdrs = ["litert_tensor_buffer_utils.h"],
     visibility = ["//litert:litert_public"],
     deps = [
@@ -354,8 +353,10 @@ cc_test(
 
 cc_library(
     name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
-    hdrs = ["litert_shared_library.h"],
+    hdrs = [
+        "litert_shared_library.h",
+        "litert_shared_library_windows.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -384,10 +385,6 @@ cc_test(
     srcs = ["litert_shared_library_test.cc"],
     data = [":test_litert_shared_library"],
     defines = ["LITERT_DEFINE_GTEST_STATUS_PRINTER"],
-    target_compatible_with = select({
-        "@platforms//os:windows": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":litert_shared_library",
         "//litert/test:matchers",
@@ -404,7 +401,6 @@ cc_test(
 
 cc_library(
     name = "litert_model_predicates",
-    srcs = ["litert_model_predicates.cc"],
     hdrs = ["litert_model_predicates.h"],
     visibility = internal_static_library_visibility,
     deps = [
@@ -439,7 +435,6 @@ cc_test(
 
 cc_library(
     name = "litert_op_options",
-    srcs = ["litert_op_options.cc"],
     hdrs = ["litert_op_options.h"],
     visibility = internal_static_library_visibility,
     deps = [
@@ -483,7 +478,6 @@ cc_test(
 
 cc_library(
     name = "litert_builder",
-    srcs = ["litert_builder.cc"],
     hdrs = ["litert_builder.h"],
     visibility = internal_static_library_visibility,
     deps = [
@@ -529,7 +523,6 @@ cc_test(
 
 cc_library(
     name = "litert_extended_model",
-    srcs = ["litert_extended_model.cc"],
     hdrs = ["litert_extended_model.h"],
     defines = select({
         "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
@@ -598,7 +591,6 @@ exports_files(glob([
 # Advanced CompiledModel with new / experimental features.
 cc_library(
     name = "litert_compiled_model_next",
-    srcs = ["litert_compiled_model_next.cc"],
     hdrs = ["litert_compiled_model_next.h"],
     visibility = next_library_visibility,
     deps = [
@@ -693,11 +685,11 @@ cc_test(
 
 cc_library(
     name = "scoped_file",
-    srcs = ["scoped_file.cc"] + select({
-        "//litert:windows": ["scoped_file_win.cc"],
-        "//conditions:default": ["scoped_file_posix.cc"],
-    }),
-    hdrs = ["scoped_file.h"],
+    hdrs = [
+        "scoped_file.h",
+        "scoped_file_posix.h",
+        "scoped_file_win.h",
+    ],
     deps = [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -730,7 +722,6 @@ cc_test(
 # Do not use this target directly. It should only be used by Environment.
 cc_library(
     name = "litert_runtime_builtin_dynamic",
-    srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
     # The visibility is for testing only, otherwise it would be private.
     visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
@@ -752,7 +743,6 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_builtin_static",
-    srcs = ["litert_runtime_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
     visibility = friends_of_litert_runtime_builtin_static() + [
         # This extra visibility is for testing only.
@@ -776,8 +766,8 @@ cc_library(
 
 cc_library(
     name = "litert_runtime_builtin_none",
-    srcs = ["litert_runtime_no_builtin.cc"],
     hdrs = ["litert_runtime_builtin.h"],
+    defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
     visibility = ["//visibility:private"],
     deps = [
         "//litert/c/internal:litert_runtime_c_api",

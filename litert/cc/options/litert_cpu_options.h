@@ -19,8 +19,10 @@
 #include <memory>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 struct LrtCpuOptions;
 
@@ -30,45 +32,127 @@ namespace litert {
 class CpuOptions {
  public:
   /// @brief Creates a new CPU options instance.
-  static Expected<CpuOptions> Create();
+  static Expected<CpuOptions> Create() {
+    LrtCpuOptions* options = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtCreateCpuOptions(&options));
+    return CpuOptions(options);
+  }
 
   /// @brief Sets the number of threads for the CPU backend.
-  Expected<void> SetNumThreads(int num_threads);
+  Expected<void> SetNumThreads(int num_threads) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCpuOptionsNumThread(options_.get(), num_threads));
+    return {};
+  }
 
   /// @brief Gets the number of threads for the CPU backend that was set.
-  Expected<int> GetNumThreads() const;
+  Expected<int> GetNumThreads() const {
+    int num_threads;
+    auto s = LrtGetCpuOptionsNumThread(options_.get(), &num_threads);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return num_threads;
+  }
 
   /// @brief Selects which CPU kernel mode LiteRT should use.
-  Expected<void> SetKernelMode(LiteRtCpuKernelMode mode);
+  Expected<void> SetKernelMode(LiteRtCpuKernelMode mode) {
+    LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsKernelMode(options_.get(), mode));
+    return {};
+  }
 
   /// @brief Gets the configured CPU kernel mode.
-  Expected<LiteRtCpuKernelMode> GetKernelMode() const;
+  Expected<LiteRtCpuKernelMode> GetKernelMode() const {
+    LiteRtCpuKernelMode mode;
+    auto s = LrtGetCpuOptionsKernelMode(options_.get(), &mode);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return kLiteRtCpuKernelModeXnnpack;
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return mode;
+  }
 
   /// @brief Sets the XNNPack flags.
-  Expected<void> SetXNNPackFlags(uint32_t flags);
+  Expected<void> SetXNNPackFlags(uint32_t flags) {
+    LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsXNNPackFlags(options_.get(), flags));
+    return {};
+  }
 
   /// @brief Gets the XNNPack flags that were set.
   ///
   /// To get a default XNNPack flags, use `TfLiteXNNPackDelegateOptionsDefault`.
-  Expected<uint32_t> GetXNNPackFlags() const;
+  Expected<uint32_t> GetXNNPackFlags() const {
+    uint32_t flags;
+    auto s = LrtGetCpuOptionsXNNPackFlags(options_.get(), &flags);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return flags;
+  }
 
   /// @brief Sets the XNNPack weight cache file path.
-  Expected<void> SetXNNPackWeightCachePath(const char* path);
+  Expected<void> SetXNNPackWeightCachePath(const char* path) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCpuOptionsXnnPackWeightCachePath(options_.get(), path));
+    return {};
+  }
+
+#ifdef LITERT_NO_ABSL
+  Expected<void> SetXNNPackWeightCachePath(std::string_view path) {
+    const std::string owned_path(path);
+    return SetXNNPackWeightCachePath(owned_path.c_str());
+  }
+#endif
 
   /// @brief Gets the XNNPack weight cache file path.
-  Expected<absl::string_view> GetXNNPackWeightCachePath() const;
+#ifdef LITERT_NO_ABSL
+  Expected<std::string_view> GetXNNPackWeightCachePath() const {
+    const char* path;
+    auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return std::string_view();
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return std::string_view(path ? path : "");
+  }
+#else
+  Expected<absl::string_view> GetXNNPackWeightCachePath() const {
+    const char* path;
+    auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return absl::string_view();
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return absl::NullSafeStringView(path);
+  }
+#endif
 
   /// @brief Sets the XNNPack weight cache file descriptor.
-  Expected<void> SetXNNPackWeightCacheFileDescriptor(int fd);
+  Expected<void> SetXNNPackWeightCacheFileDescriptor(int fd) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCpuOptionsXnnPackWeightCacheFileDescriptor(options_.get(), fd));
+    return {};
+  }
 
   /// @brief Gets the XNNPack weight cache file descriptor.
-  Expected<int> GetXNNPackWeightCacheFileDescriptor() const;
+  Expected<int> GetXNNPackWeightCacheFileDescriptor() const {
+    int fd;
+    auto s =
+        LrtGetCpuOptionsXnnPackWeightCacheFileDescriptor(options_.get(), &fd);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return -1;
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return fd;
+  }
 
   LrtCpuOptions* Get() { return options_.get(); }
   const LrtCpuOptions* Get() const { return options_.get(); }
 
  private:
-  explicit CpuOptions(LrtCpuOptions* options);
+  explicit CpuOptions(LrtCpuOptions* options) : options_(options) {}
 
   struct Deleter {
     void operator()(LrtCpuOptions* ptr) const { LrtDestroyCpuOptions(ptr); }

@@ -31,21 +31,33 @@ add_compile_options(
   -fpermissive
 )
 
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/litert/build_common/build_config.h.in")
+  set(LITERT_CC_SDK_TREE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../build_common/build_config.h.in")
+  set(LITERT_CC_SDK_TREE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+else()
+  message(FATAL_ERROR
+      "Could not locate the LiteRT source root for cc_sdk from ${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
 set(LITERT_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/include")
 set(LITERT_BUILD_COMMON_GENERATED_DIR "${LITERT_GENERATED_INCLUDE_DIR}/litert/build_common")
 file(MAKE_DIRECTORY "${LITERT_BUILD_COMMON_GENERATED_DIR}")
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/litert/build_common/build_config.h.in
+    ${LITERT_CC_SDK_TREE_ROOT}/litert/build_common/build_config.h.in
     ${LITERT_BUILD_COMMON_GENERATED_DIR}/build_config.h
 )
 include_directories(${LITERT_GENERATED_INCLUDE_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+if(EXISTS "${LITERT_CC_SDK_TREE_ROOT}/tflite/tools/cmake/modules")
+  list(APPEND CMAKE_MODULE_PATH "${LITERT_CC_SDK_TREE_ROOT}/tflite/tools/cmake/modules")
+endif()
 
 find_package(absl REQUIRED)
 find_package(FlatBuffers REQUIRED)
-find_package(opencl_headers REQUIRED)
+find_package(opencl_headers QUIET)
 
 # C API library
 add_library(litert_c_api SHARED IMPORTED)
@@ -56,16 +68,13 @@ set_target_properties(litert_c_api PROPERTIES
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/litert_cc_sdk_hdrs.txt FILE_CONTENTS)
 string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_HEADERS "${FILE_CONTENTS}")
 list(REMOVE_ITEM LITERT_CC_HEADERS "")
+list(TRANSFORM LITERT_CC_HEADERS PREPEND "${LITERT_CC_SDK_TREE_ROOT}/")
 
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/litert_cc_sdk_srcs.txt FILE_CONTENTS)
 string(REGEX REPLACE "[ \t\r\n]+" ";" LITERT_CC_SRCS "${FILE_CONTENTS}")
 list(REMOVE_ITEM LITERT_CC_SRCS "")
+list(TRANSFORM LITERT_CC_SRCS PREPEND "${LITERT_CC_SDK_TREE_ROOT}/")
 
-if(NOT WIN32)
-    list(REMOVE_ITEM LITERT_CC_SRCS litert/cc/internal/scoped_file_win.cc)
-else()
-    list(REMOVE_ITEM LITERT_CC_SRCS litert/cc/internal/scoped_file_posix.cc)
-endif()
 
 # Core C++ API library
 add_library(litert_cc_api STATIC
@@ -79,7 +88,7 @@ set_target_properties(litert_cc_api PROPERTIES
 
 target_include_directories(litert_cc_api
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${LITERT_CC_SDK_TREE_ROOT}>
         $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -100,12 +109,12 @@ target_link_libraries(litert_cc_api
 
 # run_model_simple target for testing.
 add_executable(run_model_simple
-    litert/tools/run_model_simple.cc
+    ${LITERT_CC_SDK_TREE_ROOT}/litert/tools/run_model_simple.cc
 )
 
 target_include_directories(run_model_simple
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${LITERT_CC_SDK_TREE_ROOT}
 )
 
 target_link_libraries(run_model_simple
@@ -115,6 +124,7 @@ target_link_libraries(run_model_simple
         absl::flags_parse
         absl::random_random
         absl::log
+        absl::log_internal_message
         absl::log_internal_check_op
         absl::string_view
         absl::span
@@ -122,12 +132,12 @@ target_link_libraries(run_model_simple
 
 # dump_model_simple target for testing.
 add_executable(dump_model_simple
-    litert/tools/dump_model_simple.cc
+    ${LITERT_CC_SDK_TREE_ROOT}/litert/tools/dump_model_simple.cc
 )
 
 target_include_directories(dump_model_simple
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${LITERT_CC_SDK_TREE_ROOT}
 )
 
 target_link_libraries(dump_model_simple
@@ -135,5 +145,6 @@ target_link_libraries(dump_model_simple
         litert_cc_api
         absl::span
         absl::log
+        absl::log_internal_message
         absl::log_internal_check_op
 )

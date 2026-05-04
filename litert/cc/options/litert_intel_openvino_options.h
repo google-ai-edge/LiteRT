@@ -19,8 +19,10 @@
 #include <string>
 #include <utility>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert::intel_openvino {
 
@@ -35,26 +37,65 @@ class IntelOpenVinoOptions {
   IntelOpenVinoOptions(IntelOpenVinoOptions&&) = default;
   IntelOpenVinoOptions& operator=(IntelOpenVinoOptions&&) = default;
 
-  static Expected<IntelOpenVinoOptions> Create();
+  static Expected<IntelOpenVinoOptions> Create() {
+    LrtIntelOpenVinoOptions options;
+    LITERT_RETURN_IF_ERROR(LrtIntelOpenVinoOptionsCreate(&options));
+    return IntelOpenVinoOptions(options);
+  }
 
   static IntelOpenVinoOptions CreateFromOwnedHandle(
       LrtIntelOpenVinoOptions options) {
     return IntelOpenVinoOptions(options);
   }
 
-  void SetDeviceType(LiteRtIntelOpenVinoDeviceType device_type);
+  void SetDeviceType(LiteRtIntelOpenVinoDeviceType device_type) {
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsSetDeviceType(Get(), device_type));
+  }
 
-  LiteRtIntelOpenVinoDeviceType GetDeviceType() const;
+  LiteRtIntelOpenVinoDeviceType GetDeviceType() const {
+    LiteRtIntelOpenVinoDeviceType device_type;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetDeviceType(Get(), &device_type));
+    return device_type;
+  }
 
-  void SetPerformanceMode(LiteRtIntelOpenVinoPerformanceMode performance_mode);
+  void SetPerformanceMode(LiteRtIntelOpenVinoPerformanceMode performance_mode) {
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsSetPerformanceMode(Get(), performance_mode));
+  }
 
-  LiteRtIntelOpenVinoPerformanceMode GetPerformanceMode() const;
+  LiteRtIntelOpenVinoPerformanceMode GetPerformanceMode() const {
+    LiteRtIntelOpenVinoPerformanceMode performance_mode;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetPerformanceMode(Get(), &performance_mode));
+    return performance_mode;
+  }
 
-  void SetConfigsMapOption(const char* key, const char* value);
+  void SetConfigsMapOption(const char* key, const char* value) {
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsSetConfigsMapOption(Get(), key, value));
+  }
 
-  int GetNumConfigsMapOptions() const;
+  int GetNumConfigsMapOptions() const {
+    int num_options;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetNumConfigsMapOptions(Get(), &num_options));
+    return num_options;
+  }
 
-  std::pair<std::string, std::string> GetConfigsMapOption(int index) const;
+  std::pair<std::string, std::string> GetConfigsMapOption(int index) const {
+    const char* key = nullptr;
+    const char* value = nullptr;
+    auto status =
+        LrtIntelOpenVinoOptionsGetConfigsMapOption(Get(), index, &key, &value);
+
+    if (status != kLiteRtStatusOk) {
+      return std::make_pair(std::string(), std::string());
+    }
+
+    return std::make_pair(std::string(key), std::string(value));
+  }
 
   LrtIntelOpenVinoOptions Get() const { return options_.get(); }
 

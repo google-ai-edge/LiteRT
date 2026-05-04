@@ -36,6 +36,8 @@ struct TestNames {
   std::string desc;
   // Identifier for the test in the report.
   std::string report_id;
+  // Flag to skip this test in execution.
+  bool should_skip = false;
 
   // Create using repr of ops as desc. Only use if the model has 1-ish ops.
   static TestNames Create(size_t test_id, absl::string_view family,
@@ -44,7 +46,7 @@ struct TestNames {
     auto test = absl::StrFormat("%v", graph.Subgraph(0).Ops());
     auto desc = test;
     auto report_id = suite;
-    return {suite, test, desc, report_id};
+    return {suite, test, desc, report_id, false};
   }
 
   // Create with an explicit desc.
@@ -54,7 +56,7 @@ struct TestNames {
                           absl::string_view desc = "") {
     auto suite = MakeSuite(test_id, fixture, source);
     return {suite, std::string(test), std::string(desc),
-            std::string(report_id)};
+            std::string(report_id), false};
   }
 
  private:
@@ -82,6 +84,8 @@ enum class RunStatus {
   kError,
   // The runs failed due to timeout.
   kTimeout,
+  // The test was skipped.
+  kSkipped,
 };
 
 enum class CompilationStatus {
@@ -151,6 +155,9 @@ void AbslStringify(Sink& sink, const RunStatus& status) {
       break;
     case RunStatus::kTimeout:
       sink.Append("timeout");
+      break;
+    case RunStatus::kSkipped:
+      sink.Append("skipped");
       break;
   }
 }

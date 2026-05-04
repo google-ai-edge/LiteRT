@@ -19,12 +19,14 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -54,12 +56,21 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
     return OpaqueOptions(options, OwnHandle::kYes);
   }
 
+#ifdef LITERT_NO_ABSL
+  Expected<std::string_view> GetIdentifier() const {
+    const char* payload_identifier;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
+    return std::string_view(payload_identifier);
+  }
+#else
   Expected<absl::string_view> GetIdentifier() const {
     const char* payload_identifier;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
     return absl::string_view(payload_identifier);
   }
+#endif
 
   template <typename T>
   Expected<T*> GetData() const {
@@ -103,7 +114,11 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
 
   Expected<void> SetHash(LiteRtOpaqueOptionsHashFunc payload_hash_func);
 
-  Expected<uint64_t> Hash() const;
+  Expected<uint64_t> Hash() const {
+    uint64_t hash;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsHash(Get(), &hash));
+    return hash;
+  }
 
   /// @internal
   /// @brief Wraps a `LiteRtOpaqueOptions` C object in an `OpaqueOptions` C++
@@ -156,6 +171,28 @@ Expected<T*> FindOpaqueData(OpaqueOptions& options,
   LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
       options.Get(), payload_identifier.c_str(), &payload_data));
   return reinterpret_cast<T*>(payload_data);
+}
+
+inline Expected<OpaqueOptions> FindOpaqueOptions(
+    OpaqueOptions& options, const std::string& payload_identifier) {
+  Expected<OpaqueOptions> chain(
+      OpaqueOptions::WrapCObject(options.Get(), OwnHandle::kNo));
+  while (chain) {
+    // TODO: lukeboyer - Error out in all the cases where there isn't
+    // a valid identifier.
+    const auto next_id = chain->GetIdentifier();
+    if (next_id && *next_id == payload_identifier) {
+      return OpaqueOptions::WrapCObject(chain->Get(), OwnHandle::kNo);
+    }
+    chain = chain->Next();
+  }
+  return Error(Status::kErrorInvalidArgument);
+}
+
+inline Expected<void> OpaqueOptions::SetHash(
+    LiteRtOpaqueOptionsHashFunc payload_hash_func) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(Get(), payload_hash_func));
+  return {};
 }
 
 }  // namespace litert

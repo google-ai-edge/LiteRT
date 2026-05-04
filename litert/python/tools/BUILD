@@ -64,3 +64,23 @@ py_strict_test(
         "@absl_py//absl/testing:absltest",
     ],
 )
+
+pytype_strict_library(
+    name = "benchmark_litert_model",
+    srcs = ["benchmark_litert_model.py"],
+    deps = [
+        # Dependency placeholder: gfile,
+        # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
+        "@org_tensorflow//third_party/py/numpy",  # copybara:comment
+    ],
+)
+
+py_strict_test(
+    name = "benchmark_litert_model_test",
+    srcs = ["benchmark_litert_model_test.py"],
+    deps = [
+        ":benchmark_litert_model",
+        # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
+        "@org_tensorflow//third_party/py/numpy",  # copybara:comment
+    ],
+)

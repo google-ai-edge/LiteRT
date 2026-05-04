@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -32,6 +33,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
@@ -180,7 +182,7 @@ Expected<void> CheckAts() {
     LITERT_ASSIGN_OR_RETURN(auto exec,
                             NpuCompiledModelExecutor::Create(
                                 *model, npu_inference_options.TargetOptions(),
-                                npu_inference_options.DispatchDir()));
+                                npu_inference_options.GetEnvironment()));
     const auto& subgraph = *model->Subgraphs()[0];
     LITERT_ASSIGN_OR_RETURN(
         auto inputs, SimpleBuffer::LikeSignature(subgraph.Inputs().begin(),

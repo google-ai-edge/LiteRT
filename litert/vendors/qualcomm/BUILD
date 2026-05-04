@@ -31,7 +31,6 @@ cc_library(
     hdrs = ["common.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_element_type",
@@ -48,7 +47,6 @@ cc_library(
     deps = [
         ":common",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -75,7 +73,6 @@ litert_cc_lib_with_qnn(
         ":common",
         ":qnn_saver_utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -149,7 +146,6 @@ cc_library(
     deps = [
         ":qnn_manager",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -172,7 +168,6 @@ cc_library(
     hdrs = ["qnn_saver_utils.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",

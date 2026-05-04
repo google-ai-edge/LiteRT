@@ -1,5 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 22026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +27,6 @@
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
 #include "openvino/openvino.hpp"
 #include "openvino/runtime/core.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper.h"
@@ -46,6 +44,7 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
+#include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
 
 namespace {
@@ -88,6 +87,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflArgMax,
     kLiteRtOpCodeTflOneHot,
     kLiteRtOpCodeTflUnpack,
+    kLiteRtOpCodeTflReduceAll,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -130,6 +130,8 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeTflRelu0To1,
     kLiteRtOpCodeTflSquare,
+    kLiteRtOpCodeTflFloorMod,
+    kLiteRtOpCodeTflSign,
 };
 // clang format on
 
@@ -372,87 +374,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
     const auto num_partitions = model.NumSubgraphs();
 
-    // Configure device and OpenVINO settings from Intel OpenVINO options
-
-    std::string device = "NPU";  // Default device
-    ov::AnyMap configs_map;
-
-    if (compiler_plugin->GetIntelOpenVinoOptions().HasValue()) {
-      const auto& intel_opts =
-          compiler_plugin->GetIntelOpenVinoOptions().Value();
-
-      // Configure device type
-      auto device_type = intel_opts.GetDeviceType();
-      switch (device_type) {
-        case kLiteRtIntelOpenVinoDeviceTypeCPU:
-          device = "CPU";
-          break;
-        case kLiteRtIntelOpenVinoDeviceTypeGPU:
-          device = "GPU";
-          break;
-        case kLiteRtIntelOpenVinoDeviceTypeNPU:
-          device = "NPU";
-          break;
-        case kLiteRtIntelOpenVinoDeviceTypeAUTO:
-          device = "AUTO";
-          break;
-      }
-
-      LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s",
-                 device.c_str());
-
-      auto performance_mode = intel_opts.GetPerformanceMode();
-
-      // Add custom configuration options
-      int num_custom_options = intel_opts.GetNumConfigsMapOptions();
-      for (int i = 0; i < num_custom_options; ++i) {
-        auto [key, value] = intel_opts.GetConfigsMapOption(i);
-        if (!key.empty()) {  // Valid config option
-          configs_map[key] = value;
-          LITERT_LOG(LITERT_INFO, "Custom config: %s = %s", key.c_str(),
-                     value.c_str());
-        }
-      }
-
-      // Configure performance mode (can be overridden by custom options)
-      switch (performance_mode) {
-        case kLiteRtIntelOpenVinoPerformanceModeLatency:
-          if (configs_map.find(ov::hint::performance_mode.name()) ==
-              configs_map.end()) {
-            configs_map[ov::hint::performance_mode.name()] =
-                ov::hint::PerformanceMode::LATENCY;
-            LITERT_LOG(LITERT_INFO, "Performance mode: LATENCY");
-          }
-          break;
-        case kLiteRtIntelOpenVinoPerformanceModeThroughput:
-          if (configs_map.find(ov::hint::performance_mode.name()) ==
-              configs_map.end()) {
-            configs_map[ov::hint::performance_mode.name()] =
-                ov::hint::PerformanceMode::THROUGHPUT;
-            LITERT_LOG(LITERT_INFO, "Performance mode: THROUGHPUT");
-          }
-          break;
-        case kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput:
-          if (configs_map.find(ov::hint::performance_mode.name()) ==
-              configs_map.end()) {
-            configs_map[ov::hint::performance_mode.name()] =
-                ov::hint::PerformanceMode::CUMULATIVE_THROUGHPUT;
-            LITERT_LOG(LITERT_INFO, "Performance mode: CUMULATIVE_THROUGHPUT");
-          }
-          break;
-      }
-    } else {
-      // Default configuration if no options provided
-      configs_map[ov::hint::performance_mode.name()] =
-          ov::hint::PerformanceMode::LATENCY;
-      LITERT_LOG(LITERT_INFO, "Using default configuration (LATENCY mode)");
-    }
-
-    // Configure the NPU platform string used by OpenVINO.
-    if (device == "NPU") {
-      LITERT_RETURN_IF_ERROR(
-          litert::openvino::ConfigureCompilationParams(soc_model, configs_map));
-    }
+    // Build the OpenVINO compile context from options.
+    LITERT_ASSIGN_OR_RETURN(litert::openvino::OpenVinoCompileContext context,
+                            litert::openvino::OpenVinoCompileContext::Create(
+                                compiler_plugin->GetIntelOpenVinoOptions()));
+    LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
 
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);
@@ -475,8 +401,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
 
-        // Use device and configs_map from Intel OpenVINO options
-        auto compiled_model = core.compile_model(ov_model, device, configs_map);
+        // Run NPU-specific optimization passes.
+        context.OptimizeModel(ov_model);
+
+        // Compile using the configured device and properties.
+        auto compiled_model = core.compile_model(ov_model, context.Device(),
+                                                 context.ConfigsMap());
 
         CustomOStreamBuf obuf;
         std::ostream oss(&obuf);

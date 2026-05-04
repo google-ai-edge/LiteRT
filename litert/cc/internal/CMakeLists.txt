@@ -37,39 +37,14 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_runtime_builtin.h
     litert_runtime_proxy.h
     litert_shared_library.h
+    litert_shared_library_windows.h
     litert_source_location.h
     litert_tensor_buffer_utils.h
     litert_tflite_error_status_builder.h
     scoped_file.h
+    scoped_file_posix.h
+    scoped_file_win.h
     scoped_weight_source.h
-)
-
-set(LITERT_CC_INTERNAL_MAIN_SRCS
-    scoped_file.cc
-    litert_op_options.cc
-    litert_builder.cc
-    litert_shared_library.cc
-    litert_tensor_buffer_utils.cc
-    litert_extended_model.cc
-    litert_runtime_builtin.cc
-)
-
-if(WIN32)
-    list(APPEND LITERT_CC_INTERNAL_MAIN_SRCS scoped_file_win.cc)
-else()
-    list(APPEND LITERT_CC_INTERNAL_MAIN_SRCS scoped_file_posix.cc)
-endif()
-
-set(LITERT_CC_INTERNAL_EXTRA_SRCS
-    litert_compiled_model_next.cc
-    litert_model_predicates.cc
-    litert_rng.cc
-    litert_runtime_no_builtin.cc
-)
-
-set(LITERT_CC_INTERNAL_ALL_SRCS
-    ${LITERT_CC_INTERNAL_MAIN_SRCS}
-    ${LITERT_CC_INTERNAL_EXTRA_SRCS}
 )
 
 file(GLOB LITERT_CC_INTERNAL_DISCOVERED_HEADERS
@@ -95,24 +70,15 @@ file(GLOB LITERT_CC_INTERNAL_DISCOVERED_SRCS
 )
 list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "_test\\.cc$")
 list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "^test_shared_library\\.cc$")
-if(WIN32)
-    list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "^scoped_file_posix\\.cc$")
-else()
-    list(FILTER LITERT_CC_INTERNAL_DISCOVERED_SRCS EXCLUDE REGEX "^scoped_file_win\\.cc$")
-endif()
-list(SORT LITERT_CC_INTERNAL_DISCOVERED_SRCS)
-set(_litert_cc_internal_expected_sources ${LITERT_CC_INTERNAL_ALL_SRCS})
-list(SORT _litert_cc_internal_expected_sources)
-if(NOT LITERT_CC_INTERNAL_DISCOVERED_SRCS STREQUAL _litert_cc_internal_expected_sources)
+if(LITERT_CC_INTERNAL_DISCOVERED_SRCS)
     message(FATAL_ERROR
-        "litert/cc/internal source manifest is out of sync.\n"
-        "Discovered:\n  ${LITERT_CC_INTERNAL_DISCOVERED_SRCS}\n"
-        "Expected:\n  ${_litert_cc_internal_expected_sources}\n"
+        "litert/cc/internal wrapper sources should be header-only.\n"
+        "Discovered implementation sources:\n  ${LITERT_CC_INTERNAL_DISCOVERED_SRCS}\n"
         "Update litert/cc/internal/CMakeLists.txt.")
 endif()
 
 add_library(litert_cc_internal STATIC
-    ${LITERT_CC_INTERNAL_MAIN_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
 )
 
 target_include_directories(litert_cc_internal
@@ -138,7 +104,7 @@ target_link_libraries(litert_cc_internal
 )
 
 add_library(litert_cc_internal_extra STATIC
-    ${LITERT_CC_INTERNAL_EXTRA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../c/empty.cc
 )
 
 target_include_directories(litert_cc_internal_extra

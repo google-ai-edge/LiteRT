@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 
 package(
@@ -44,7 +45,7 @@ litert_dynamic_lib(
     ],
     export_litert_only = True,
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//litert:android": ["-landroid"],
         "//conditions:default": [],
     }) + [
         "-Wl,-soname=libLiteRtDispatch_Samsung.so",
@@ -54,10 +55,19 @@ litert_dynamic_lib(
     so_name = "libLiteRtDispatch_Samsung.so",
     visibility = ["//litert:litert_public"],
     deps = [
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
-        "//litert/c/internal:litert_logging_helper",
+        "//litert/c/internal:litert_logging_helper_with_runtime_context",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -66,5 +76,17 @@ litert_dynamic_lib(
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+sh_test(
+    name = "samsung_dispatch_so_symbol_test",
+    srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
+    args = [
+        "LiteRtDispatchGetApi",
+        "$(location :dispatch_api_so)",
+    ],
+    data = [
+        ":dispatch_api_so",
     ],
 )

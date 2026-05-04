@@ -113,6 +113,16 @@ LiteRtStatus LrtGoogleTensorOptionsSetEnableDynamicRangeQuantization(
 LiteRtStatus LrtGoogleTensorOptionsGetEnableDynamicRangeQuantization(
     LrtGoogleTensorOptions options, bool* enable_dynamic_range_quantization);
 
+// performance mode ----------------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetPerformanceMode(
+    LrtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsPerformanceMode mode);
+
+LiteRtStatus LrtGoogleTensorOptionsGetPerformanceMode(
+    LrtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsPerformanceMode* mode);
+
 // op_filters_proto --------------------------------------------------
 
 LiteRtStatus LrtGoogleTensorOptionsSetOpFiltersProto(

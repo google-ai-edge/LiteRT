@@ -24,6 +24,8 @@
 #include "litert/vendors/samsung/dispatch/enn_manager.h"
 #include "litert/vendors/samsung/dispatch/enn_type.h"
 
+struct LiteRtRuntimeContext;
+
 class LiteRtDispatchDeviceContextT {
  public:
   using UniquePtr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
@@ -31,6 +33,7 @@ class LiteRtDispatchDeviceContextT {
   ~LiteRtDispatchDeviceContextT() = default;
 
   static litert::Expected<LiteRtDispatchDeviceContextT::UniquePtr> Create(
+      const LiteRtRuntimeContext* runtime_context,
       const litert::samsung::EnnManager* enn_manager);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
@@ -55,6 +58,10 @@ class LiteRtDispatchDeviceContextT {
     return {};
   }
 
+  const LiteRtRuntimeContext* runtime_context() const {
+    return runtime_context_;
+  }
+
  private:
   class EnnBufferRegistry {
    public:
@@ -75,8 +82,10 @@ class LiteRtDispatchDeviceContextT {
     std::vector<EnnBufferPtr> buffers_;
   };
 
-  LiteRtDispatchDeviceContextT(const litert::samsung::EnnManager* enn_manager);
+  LiteRtDispatchDeviceContextT(const LiteRtRuntimeContext* runtime_context,
+                               const litert::samsung::EnnManager* enn_manager);
 
+  const LiteRtRuntimeContext* runtime_context_;
   const litert::samsung::EnnManager* enn_manager_;
   EnnBufferRegistry tensor_buffer_registry_;
   EnnBufferPtr* _commit_buf_set;

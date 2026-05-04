@@ -279,6 +279,7 @@ class LitertLmFileBuilder:
       tflite_model_path: str,
       model_type: TfLiteModelType,
       backend_constraint: Optional[str] = None,
+      prefer_activation_type: Optional[str] = None,
       additional_metadata: Optional[list[Metadata]] = None,
   ) -> LitertLmFileBuilderT:
     """Adds a tflite model to the litertlm file.
@@ -287,6 +288,11 @@ class LitertLmFileBuilder:
       tflite_model_path: The path to the tflite model file.
       model_type: The type of the tflite model.
       backend_constraint: The backend constraint for the tflite model.
+      prefer_activation_type: The preferred activation type for the tflite
+        model.
+        - fp16/float16 for float16 activation.
+        - fp32/float32 for float32 activation.
+        - fp32_fp16 for mixed activation.
       additional_metadata: Additional metadata to add to the tflite model.
 
     Returns:
@@ -310,6 +316,14 @@ class LitertLmFileBuilder:
           Metadata(
               key="backend_constraint",
               value=backend_constraint.lower(),
+              dtype=DType.STRING,
+          )
+      )
+    if prefer_activation_type:
+      metadata.append(
+          Metadata(
+              key="prefer_activation_type",
+              value=prefer_activation_type.lower(),
               dtype=DType.STRING,
           )
       )
@@ -491,7 +505,7 @@ class LitertLmFileBuilder:
     assert self._system_metadata, "System metadata is empty."
 
     stream.seek(0)
-    stream.write(b"LITERTLM")
+    stream.write(litertlm_core.HEADER_MAGIC_BYTES)
     stream.write(litertlm_core.LITERTLM_MAJOR_VERSION.to_bytes(4, "little"))
     stream.write(litertlm_core.LITERTLM_MINOR_VERSION.to_bytes(4, "little"))
     stream.write(litertlm_core.LITERTLM_PATCH_VERSION.to_bytes(4, "little"))
@@ -557,9 +571,29 @@ class LitertLmFileBuilder:
 
 def _copy_file_to_stream(f_src: Any, f_dst: BinaryIO, buffer_size=1024 * 1024):
   """Copies data from f_src to f_dst efficiently."""
-  # shutil.copyfileobj attempts to use os.sendfile (zero-copy) if available.
-  # This avoids loading data into Python memory, resulting in massive speedups
-  # for large files (>20GB).
+  # Try to use os.sendfile (zero-copy) if available.
+  if hasattr(os, "sendfile"):
+    try:
+      # Flush the destination stream to ensure all buffered data is written
+      # before using os.sendfile, which operates directly on the file
+      # descriptor.
+      f_dst.flush()
+
+      in_fd, out_fd = f_src.fileno(), f_dst.fileno()
+      num_bytes = os.fstat(in_fd).st_size
+      os.sendfile(out_fd, in_fd, offset=0, count=num_bytes)
+
+      # os.sendfile updates the file descriptor's offset but doesn't update
+      # the Python file object's internal buffer/position. We need to seek
+      # to the current position to synchronize the Python object's state.
+      f_dst.seek(0, os.SEEK_CUR)
+    except OSError:
+      pass
+    else:
+      return
+
+  # If the above did not work, then just copy the file in chunks to avoid
+  # flooding the memory memory when reading/writing large files.
   shutil.copyfileobj(f_src, f_dst, length=buffer_size)
 
 

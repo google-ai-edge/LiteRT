@@ -91,9 +91,9 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "977114079cda0d6aa9d05bc73ae2c2e3d36705fbb041e631a564e4d42e1e1dd9",
-    strip_prefix = "tensorflow-49e7f1937d1509dd7fea41bff9ccc994baa97258",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/49e7f1937d1509dd7fea41bff9ccc994baa97258.tar.gz"],
+    sha256 = "ad40291c7b7153d99d29211b7e2c7f51f512e8139b1da93a3ef12e162bd434a7",
+    strip_prefix = "tensorflow-590800be33a3e4801d5a57b15a7c907d8d562363",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/590800be33a3e4801d5a57b15a7c907d8d562363.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -105,17 +105,6 @@ tensorflow_source_repo(
 load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 
 tf_workspace3()
-
-# Toolchains for ML projects hermetic builds.
-# Details: https://github.com/google-ml-infra/rules_ml_toolchain
-http_archive(
-    name = "rules_ml_toolchain",
-    sha256 = "5014d544b42b946524e196d6d20c5edf9211651ce310bf20e308d057a20d37b7",
-    strip_prefix = "rules_ml_toolchain-adf936c8f9254d66f77e3bcab96a723b0703be89",
-    urls = [
-        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/adf936c8f9254d66f77e3bcab96a723b0703be89.tar.gz",
-    ],
-)
 
 # Initialize hermetic Python
 load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
@@ -172,6 +161,7 @@ load(
 
 python_wheel_version_suffix_repository(name = "tf_wheel_version_suffix")
 
+# Initialize hermetic C++
 load(
     "@rules_ml_toolchain//cc/deps:cc_toolchain_deps.bzl",
     "cc_toolchain_deps",
@@ -180,6 +170,7 @@ load(
 cc_toolchain_deps()
 
 register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_x86_64")
+# End hermetic C++ initialization
 
 load(
     "@rules_ml_toolchain//gpu/cuda:cuda_json_init_repository.bzl",

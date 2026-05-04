@@ -21,6 +21,7 @@ latency and a small binary size on Android, iOS, and other operating systems.
 
 import os
 import stat
+import sys
 
 import setuptools
 from setuptools.command.build_py import build_py as _build_py  # pylint: disable=g-importing-member
@@ -30,7 +31,9 @@ PACKAGE_VERSION = os.environ['PACKAGE_VERSION']
 DOCLINES = __doc__.split('\n')
 
 EXECUTABLE_FILENAMES = [
-    'tools/apply_plugin_main',
+    'tools/apply_plugin_main.exe'
+    if sys.platform == 'win32'
+    else 'tools/apply_plugin_main',
 ]
 
 
@@ -179,6 +182,7 @@ setuptools.setup(
             '*.dylib',
             '*.dll',
             '**/*_main',
+            '**/*_main.exe',
             '**/*.so',
             '**/*.dylib',
             '**/*.dll',
@@ -195,14 +199,23 @@ setuptools.setup(
         'protobuf',
     ],
     extras_require={
+        'npu-intel': [
+            'ai-edge-litert-sdk-intel~=0.2.0',
+        ],
         'npu-sdk': [
-            'ai-edge-litert-sdk-qualcomm~=0.1.0',
-            'ai-edge-litert-sdk-mediatek~=0.1.0',
+            'ai-edge-litert-sdk-intel~=0.2.0',
+            'ai-edge-litert-sdk-qualcomm~=0.2.0',
+            'ai-edge-litert-sdk-mediatek~=0.2.0',
         ],
         'model-utils': [
             'lark',
             'ml_dtypes',
             'xdsl==0.28.0',
+        ],
+    },
+    entry_points={
+        'console_scripts': [
+            'litert-benchmark=ai_edge_litert.tools.benchmark_litert_model:main',
         ],
     },
     # Use the custom command for the build_py step

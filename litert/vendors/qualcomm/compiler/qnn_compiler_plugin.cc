@@ -32,19 +32,21 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
-#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
@@ -199,7 +201,8 @@ class LiteRtCompilerPluginT {
  public:
   LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
                         LiteRtEnvironmentOptions env_options,
-                        LiteRtOptions litert_options) {
+                        LiteRtOptions litert_options)
+      : ctx_(ctx) {
     if (litert_options) {
       opts_ = litert::internal::OptionsWrapper(
           litert::internal::ContextWrapper(ctx), litert_options,
@@ -223,6 +226,17 @@ class LiteRtCompilerPluginT {
         }
       }
     }
+
+    if (env_options) {
+      LiteRtAny compiler_plugin_lib_dir_any;
+      auto status = ctx->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagCompilerPluginLibraryDir,
+          &compiler_plugin_lib_dir_any);
+      if (status == kLiteRtStatusOk && compiler_plugin_lib_dir_any.str_value) {
+        shared_library_dir_ =
+            std::string(compiler_plugin_lib_dir_any.str_value);
+      }
+    }
   }
 
   const ::qnn::Options& Options() const { return qnn_options_; }
@@ -233,13 +247,21 @@ class LiteRtCompilerPluginT {
 
   QnnManager* QNN() { return qnn_manager_.get(); }
 
+  const LiteRtCompilerContext* ctx() const { return ctx_; }
+
+  const std::optional<std::string>& shared_library_dir() const {
+    return shared_library_dir_;
+  }
+
  private:
+  const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::qualcomm::QualcommOptions> qualcomm_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null Qualcomm options");
   ::qnn::Options qnn_options_{};
   QnnManager::Ptr qnn_manager_ = nullptr;
+  std::optional<std::string> shared_library_dir_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -252,7 +274,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
                "defaulted.");
   }
   // Propagate the min logger severity from the environment.
-  LiteRtPropagateMinLoggerSeverity(env);
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
 
   auto* plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   *compiler_plugin = plugin;
@@ -267,11 +289,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  ::litert::Subgraph graph(subgraph);
+  ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
   QnnManager* qnn_manager = compiler_plugin->QNN();
   if (!qnn_manager) {
     auto qnn_manager_or = QnnManager::Create(
-        compiler_plugin->Options(), std::nullopt,
+        compiler_plugin->Options(), compiler_plugin->shared_library_dir(),
         soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
@@ -320,7 +342,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       LITERT_RETURN_IF_ERROR(
           // Use default partition index if vendor doesn't support multiple
           // partitions.
-          LiteRtPushOp(selected_ops, op.Get(), kDefaultPartitionIndex));
+          compiler_plugin->ctx()->push_op(selected_ops, op.Get(),
+                                          kDefaultPartitionIndex));
     }
   }
 
@@ -330,8 +353,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
-  const auto num_partitions = model.NumSubgraphs();
+  litert::compiler::Model model(compiler_plugin->ctx(), partitions);
+  auto num_partitions = model.NumSubgraphs();
 
   LITERT_LOG(LITERT_INFO,
              "Starting QNN Compilation for %d subgraphs, soc_model=%s",
@@ -364,8 +387,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   if (!qnn_manager || ir_backend_override) {
     // Initialize SDK and load qnn shared libraries.
     LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
-    auto qnn_manager_or =
-        QnnManager::Create(options, std::nullopt, opt_soc_model);
+    auto qnn_manager_or = QnnManager::Create(
+        options, compiler_plugin->shared_library_dir(), opt_soc_model);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return qnn_manager_or.Error().Status();
@@ -468,7 +491,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
 
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
-        *qnn_manager, context_handles[context_handle_idx].Get(),
+        compiler_plugin->ctx(), *qnn_manager,
+        context_handles[context_handle_idx].Get(),
         context_handles[context_handle_idx].get_profile_handle(),
         partition.Get(), entry_point_name, options));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");

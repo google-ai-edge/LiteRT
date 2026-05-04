@@ -310,8 +310,7 @@ typedef enum {
 // Returns a string describing the status value.
 const char* LiteRtGetStatusString(LiteRtStatus status);
 
-#ifdef __cplusplus
-typedef enum : int {
+typedef enum LiteRtHwAccelerators {
   kLiteRtHwAcceleratorNone = 0,
   kLiteRtHwAcceleratorCpu = 1 << 0,
   kLiteRtHwAcceleratorGpu = 1 << 1,
@@ -319,19 +318,10 @@ typedef enum : int {
 #if defined(__EMSCRIPTEN__)
   kLiteRtHwAcceleratorWebNn = 1 << 3,
 #endif  // __EMSCRIPTEN__
+  // Force standard C compilers to use a signed 32-bit integer
+  // as the underlying type for Rust `bindgen` compatibility.
+  _kLiteRtHwAcceleratorNegativeDummy = -1,
 } LiteRtHwAccelerators;
-#else
-typedef int LiteRtHwAccelerators;
-enum {
-  kLiteRtHwAcceleratorNone = 0,
-  kLiteRtHwAcceleratorCpu = 1 << 0,
-  kLiteRtHwAcceleratorGpu = 1 << 1,
-  kLiteRtHwAcceleratorNpu = 1 << 2,
-#if defined(__EMSCRIPTEN__)
-  kLiteRtHwAcceleratorWebNn = 1 << 3,
-#endif  // __EMSCRIPTEN__
-};
-#endif  // __cplusplus
 
 typedef enum {
   kLiteRtDelegatePrecisionDefault = 0,

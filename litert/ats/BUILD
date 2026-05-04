@@ -93,6 +93,36 @@ litert_define_ats(
     jit_suffix = "",
 )
 
+# copybara:uncomment_begin(google-only)
+# litert_define_ats(
+#     name = "google_tensor_ats",
+#     backend = "google_tensor",
+#     compile_only_suffix = "_aot",
+#     do_register = [
+#         "SingleOp",
+#         "hf_all_minilm_l6_v2",
+#         "hf_mobilevit_small",
+#         "qai_hub_midas",
+#         "qai_hub_real_esrgan_x4plus",
+#         "torchvision_mobilenet_v2",
+#         "u2net_lite",
+#         "torchvision_resnet18",
+#         "torchvision_squeezenet1_1",
+#         "whisper_tiny_encoder",
+#         "yamnet",
+#         "yolo11n",
+#     ],
+#     dont_register = [
+#         "hf_all_minilm_l6_v2",
+#         "whisper_tiny_decoder",
+#         ".*5d.*",
+#         ".*6d.*",
+#     ],
+#     extra_flags = ["--soc_model=Tensor_G5"],
+#     jit_suffix = "",
+# )
+# copybara:uncomment_end
+
 litert_define_ats(
     name = "mediatek_ats",
     backend = "mediatek",
@@ -122,6 +152,40 @@ litert_define_ats(
         "--mediatek_performance_mode_type=turbo_boost",
         "--mediatek_optimization_hint=low_latency",
         "--mediatek_enable_l1_cache_optimizations=true",
+    ],
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "gpu_ats",
+    backend = "gpu",
+    compile_only_suffix = "_aot",
+    do_register = [
+        "SingleOp",
+        "hf_mobilevit_small",
+        "qai_hub_midas",
+        "torchvision_mobilenet_v2",
+        "u2net_lite",
+        "torchvision_squeezenet1_1",
+        "yamnet",
+        "yolo11n",
+    ],
+    dont_register = [
+        ".*tfl\\.sub.*",
+        ".*tfl\\.add.*i32.*",
+        ".*861.*",
+        ".*tfl\\.relu_0_to_1.*",
+        ".*resnet18.*",
+        ".*BinaryNoBroadcast.*",
+        ".*tfl\\.exp.*",
+        ".*f16.*",
+        ".*tfl\\.ceil.*",
+        ".*5d.*",
+        ".*6d.*",
+        ".*tfl\\.zeros_like.*",
+    ],
+    extra_flags = [
+        "--data_seed=42",
     ],
     jit_suffix = "",
 )
@@ -185,6 +249,7 @@ litert_test(
         ":register",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators",
@@ -215,6 +280,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
@@ -277,10 +344,10 @@ cc_test(
     }),
     deps = [
         ":executor",
-        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",
@@ -348,10 +415,10 @@ litert_device_test(
     defines = ["_TEST_NPU"],
     deps = [
         ":executor",
-        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",
@@ -391,6 +458,7 @@ cc_test(
         ":register",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",

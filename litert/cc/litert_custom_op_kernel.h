@@ -15,10 +15,16 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_CUSTOM_OP_KERNEL_H_
 #define ODML_LITERT_LITERT_CC_LITERT_CUSTOM_OP_KERNEL_H_
 
+#include <cstddef>
 #include <string>
+#include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_layout.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -56,16 +62,74 @@ class CustomOpKernel {
 
  private:
   static LiteRtStatus InitHelper(void* user_data, const void* init_data,
-                                 size_t init_data_size);
+                                 size_t init_data_size) {
+    auto* self = static_cast<CustomOpKernel*>(user_data);
+    if (auto status = self->Init(init_data, init_data_size); !status) {
+      LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+      return litert::ToLiteRtStatus(status.Error().StatusCC());
+    }
+    return kLiteRtStatusOk;
+  }
   static LiteRtStatus GetOutputLayoutsHelper(void* user_data, size_t num_inputs,
                                              const LiteRtLayout* input_layouts,
                                              size_t num_outputs,
-                                             LiteRtLayout* output_layouts);
+                                             LiteRtLayout* output_layouts) {
+    auto* self = static_cast<CustomOpKernel*>(user_data);
+
+    std::vector<Layout> input_layouts_vector;
+    input_layouts_vector.reserve(num_inputs);
+    for (auto i = 0; i < num_inputs; ++i) {
+      input_layouts_vector.push_back(Layout(input_layouts[i]));
+    }
+
+    std::vector<Layout> output_layouts_vector(num_outputs);
+
+    if (auto status =
+            self->GetOutputLayouts(input_layouts_vector, output_layouts_vector);
+        !status) {
+      LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+      return litert::ToLiteRtStatus(status.Error().StatusCC());
+    }
+
+    for (auto i = 0; i < num_outputs; ++i) {
+      output_layouts[i] = static_cast<LiteRtLayout>(output_layouts_vector[i]);
+    }
+
+    return kLiteRtStatusOk;
+  }
   static LiteRtStatus RunHelper(void* user_data, size_t num_inputs,
                                 const LiteRtTensorBuffer* inputs,
                                 size_t num_outputs,
-                                LiteRtTensorBuffer* outputs);
-  static LiteRtStatus DestroyHelper(void* user_data);
+                                LiteRtTensorBuffer* outputs) {
+    auto* self = static_cast<CustomOpKernel*>(user_data);
+
+    std::vector<TensorBuffer> inputs_;
+    inputs_.reserve(num_inputs);
+    for (auto i = 0; i < num_inputs; ++i) {
+      inputs_.push_back(TensorBuffer::WrapCObject(inputs[i], OwnHandle::kNo));
+    }
+
+    std::vector<TensorBuffer> outputs_;
+    outputs_.reserve(num_outputs);
+    for (auto i = 0; i < num_outputs; ++i) {
+      outputs_.push_back(TensorBuffer::WrapCObject(outputs[i], OwnHandle::kNo));
+    }
+
+    if (auto status = self->Run(inputs_, outputs_); !status) {
+      LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+      return litert::ToLiteRtStatus(status.Error().StatusCC());
+    }
+
+    return kLiteRtStatusOk;
+  }
+  static LiteRtStatus DestroyHelper(void* user_data) {
+    auto* self = static_cast<CustomOpKernel*>(user_data);
+    if (auto status = self->Destroy(); !status) {
+      LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+      return litert::ToLiteRtStatus(status.Error().StatusCC());
+    }
+    return kLiteRtStatusOk;
+  }
 
   LiteRtCustomOpKernel custom_op_kernel_;
 };

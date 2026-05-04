@@ -20,11 +20,14 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_opencl_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
+#include "litert/c/litert_opencl_types.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #ifdef __cplusplus
 extern "C" {

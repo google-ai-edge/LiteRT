@@ -682,5 +682,17 @@ INSTANTIATE_TEST_SUITE_P(TensorWrapperTest_Combinations, TensorWrapperEqualTest,
                                                {1, 1, 3},
                                                {1, 1, 3},
                                                false}));
+
+TEST(TensorWrapperTest, SetMemHandle) {
+  TensorWrapper tensor_wrapper{};
+  const auto& qnn_tensor = tensor_wrapper.GetQnnTensor();
+  int mem_handle{};
+  tensor_wrapper.SetMemHandle(&mem_handle);
+  EXPECT_EQ(qnn_tensor.v2.memType, QNN_TENSORMEMTYPE_MEMHANDLE);
+  EXPECT_EQ(qnn_tensor.v2.memHandle, &mem_handle);
+  tensor_wrapper.SetMemHandle(nullptr);
+  EXPECT_EQ(qnn_tensor.v2.memType, QNN_TENSORMEMTYPE_MEMHANDLE);
+  EXPECT_FALSE(qnn_tensor.v2.memHandle);
+}
 }  // namespace
 }  // namespace qnn

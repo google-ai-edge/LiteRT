@@ -19,8 +19,10 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_mediatek_options.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert::mediatek {
 
@@ -34,46 +36,114 @@ class MediatekOptions {
             options, own == OwnHandle::kYes ? LrtDestroyMediatekOptions
                                             : [](LrtMediatekOptions*) {}) {}
 
-  static Expected<MediatekOptions> Create();
+  static Expected<MediatekOptions> Create() {
+    LrtMediatekOptions* options = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtCreateMediatekOptions(&options));
+    return MediatekOptions(options, OwnHandle::kYes);
+  }
 
   LrtMediatekOptions* Get() const { return options_.get(); }
   LrtMediatekOptions* Release() { return options_.release(); }
 
   void SetNeronSDKVersionType(
-      LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
+      LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type) {
+    internal::AssertOk(LrtSetMediatekOptionsNeronSDKVersionType, Get(),
+                       sdk_version_type);
+  }
 
-  LiteRtMediatekOptionsNeronSDKVersionType GetNeronSDKVersionType();
+  LiteRtMediatekOptionsNeronSDKVersionType GetNeronSDKVersionType() {
+    LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type;
+    internal::AssertOk(LrtGetMediatekOptionsNeronSDKVersionType, Get(),
+                       &sdk_version_type);
+    return sdk_version_type;
+  }
 
   void SetEnableGemmaCompilerOptimizations(
-      bool enable_gemma_compiler_optimizations);
+      bool enable_gemma_compiler_optimizations) {
+    internal::AssertOk(LrtSetMediatekOptionsGemmaCompilerOptimizations, Get(),
+                       enable_gemma_compiler_optimizations);
+  }
 
-  bool GetEnableGemmaCompilerOptimizations();
+  bool GetEnableGemmaCompilerOptimizations() {
+    bool enable_gemma_compiler_optimizations;
+    internal::AssertOk(LrtGetMediatekOptionsGemmaCompilerOptimizations, Get(),
+                       &enable_gemma_compiler_optimizations);
+    return enable_gemma_compiler_optimizations;
+  }
 
   void SetPerformanceMode(
-      LiteRtMediatekNeuronAdapterPerformanceMode performance_mode);
+      LiteRtMediatekNeuronAdapterPerformanceMode performance_mode) {
+    internal::AssertOk(LrtSetMediatekOptionsPerformanceMode, Get(),
+                       performance_mode);
+  }
 
-  LiteRtMediatekNeuronAdapterPerformanceMode GetPerformanceMode();
+  LiteRtMediatekNeuronAdapterPerformanceMode GetPerformanceMode() {
+    LiteRtMediatekNeuronAdapterPerformanceMode performance_mode;
+    internal::AssertOk(LrtGetMediatekOptionsPerformanceMode, Get(),
+                       &performance_mode);
+    return performance_mode;
+  }
 
-  void SetEnableL1CacheOptimizations(bool enable_l1_cache_optimizations);
+  void SetEnableL1CacheOptimizations(bool enable_l1_cache_optimizations) {
+    internal::AssertOk(LrtSetMediatekOptionsL1CacheOptimizations, Get(),
+                       enable_l1_cache_optimizations);
+  }
 
-  bool GetEnableL1CacheOptimizations();
+  bool GetEnableL1CacheOptimizations() {
+    bool enable_l1_cache_optimizations;
+    internal::AssertOk(LrtGetMediatekOptionsL1CacheOptimizations, Get(),
+                       &enable_l1_cache_optimizations);
+    return enable_l1_cache_optimizations;
+  }
 
   void SetOptimizationHint(
-      LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint);
+      LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint) {
+    internal::AssertOk(LrtSetMediatekOptionsOptimizationHint, Get(),
+                       optimization_hint);
+  }
 
-  LiteRtMediatekNeuronAdapterOptimizationHint GetOptimizationHint();
+  LiteRtMediatekNeuronAdapterOptimizationHint GetOptimizationHint() {
+    LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint;
+    internal::AssertOk(LrtGetMediatekOptionsOptimizationHint, Get(),
+                       &optimization_hint);
+    return optimization_hint;
+  }
 
-  void SetDisableDlaDirRemoval(bool disable_dla_dir_removal);
+  void SetDisableDlaDirRemoval(bool disable_dla_dir_removal) {
+    internal::AssertOk(LrtSetMediatekOptionsDisableDlaDirRemoval, Get(),
+                       disable_dla_dir_removal);
+  }
 
-  bool GetDisableDlaDirRemoval();
+  bool GetDisableDlaDirRemoval() {
+    bool disable_dla_dir_removal;
+    internal::AssertOk(LrtGetMediatekOptionsDisableDlaDirRemoval, Get(),
+                       &disable_dla_dir_removal);
+    return disable_dla_dir_removal;
+  }
 
-  void SetMediatekDlaDir(const std::string& mediatek_dla_dir);
+  void SetMediatekDlaDir(const std::string& mediatek_dla_dir) {
+    internal::AssertOk(LrtSetMediatekOptionsMediatekDlaDir, Get(),
+                       mediatek_dla_dir.c_str());
+  }
 
-  absl::string_view GetMediatekDlaDir();
+  absl::string_view GetMediatekDlaDir() {
+    const char* mediatek_dla_dir;
+    internal::AssertOk(LrtGetMediatekOptionsMediatekDlaDir, Get(),
+                       &mediatek_dla_dir);
+    return absl::string_view(mediatek_dla_dir);
+  }
 
-  void SetAotCompilationOptions(const std::string& aot_compilation_options);
+  void SetAotCompilationOptions(const std::string& aot_compilation_options) {
+    internal::AssertOk(LrtSetMediatekOptionsAotCompilationOptions, Get(),
+                       aot_compilation_options.c_str());
+  }
 
-  absl::string_view GetAotCompilationOptions();
+  absl::string_view GetAotCompilationOptions() {
+    const char* aot_compilation_options;
+    internal::AssertOk(LrtGetMediatekOptionsAotCompilationOptions, Get(),
+                       &aot_compilation_options);
+    return absl::string_view(aot_compilation_options);
+  }
 
  private:
   std::unique_ptr<LrtMediatekOptions, void (*)(LrtMediatekOptions*)> options_;

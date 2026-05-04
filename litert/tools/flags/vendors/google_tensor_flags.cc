@@ -133,9 +133,63 @@ ABSL_FLAG(
     "A path to a file containing proto text formatted OpFilters for the Google "
     "Tensor plugin.");
 
-// NOLINTEND(*alien-types*)
+ABSL_FLAG(
+    litert::google_tensor::GoogleTensorOptions::PerformanceMode,
+    google_tensor_performance_mode,
+    litert::google_tensor::GoogleTensorOptions::PerformanceMode::kBalanced,
+    "Performance mode for Google Tensor.");
 
 namespace litert::google_tensor {
+
+bool AbslParseFlag(::absl::string_view text,
+                   GoogleTensorOptions::PerformanceMode* options,
+                   ::std::string* error) {
+  using PerformanceMode = GoogleTensorOptions::PerformanceMode;
+  if (text == "extreme_power_saver") {
+    *options = PerformanceMode::kExtremePowerSaver;
+    return true;
+  }
+  if (text == "power_saver") {
+    *options = PerformanceMode::kPowerSaver;
+    return true;
+  }
+  if (text == "balanced") {
+    *options = PerformanceMode::kBalanced;
+    return true;
+  }
+  if (text == "high_performance") {
+    *options = PerformanceMode::kHighPerformance;
+    return true;
+  }
+  if (text == "sustained_performance") {
+    *options = PerformanceMode::kSustainedPerformance;
+    return true;
+  }
+  if (text == "burst") {
+    *options = PerformanceMode::kBurst;
+    return true;
+  }
+  *error = "Unknown performance mode";
+  return false;
+}
+
+::std::string AbslUnparseFlag(GoogleTensorOptions::PerformanceMode options) {
+  using PerformanceMode = GoogleTensorOptions::PerformanceMode;
+  switch (options) {
+    case PerformanceMode::kExtremePowerSaver:
+      return "extreme_power_saver";
+    case PerformanceMode::kPowerSaver:
+      return "power_saver";
+    case PerformanceMode::kBalanced:
+      return "balanced";
+    case PerformanceMode::kHighPerformance:
+      return "high_performance";
+    case PerformanceMode::kSustainedPerformance:
+      return "sustained_performance";
+    case PerformanceMode::kBurst:
+      return "burst";
+  }
+}
 
 Expected<void> UpdateGoogleTensorOptionsFromFlags(
     GoogleTensorOptions& options) {
@@ -155,6 +209,8 @@ Expected<void> UpdateGoogleTensorOptionsFromFlags(
   options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
   options.SetOpFiltersProto(
       absl::GetFlag(FLAGS_google_tensor_op_filters_proto));
+  options.SetPerformanceMode(
+      ::absl::GetFlag(::FLAGS_google_tensor_performance_mode));
   return {};
 }
 
@@ -165,3 +221,5 @@ LITERT_REGISTER_OPTIONS_PARSER([](Options& options) -> Expected<void> {
 });
 
 }  // namespace litert::google_tensor
+
+// NOLINTEND(*alien-types*)
