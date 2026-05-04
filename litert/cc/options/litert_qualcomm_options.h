@@ -408,6 +408,26 @@ class QualcommOptions {
     return val;
   }
 
+  enum class GraphIOTensorMemType : int {
+    kRaw = kLiteRtQualcommGraphIOTensorMemTypeRaw,
+    kMemHandle = kLiteRtQualcommGraphIOTensorMemTypeMemHandle,
+  };
+
+  void SetGraphIOTensorMemType(GraphIOTensorMemType mem_type) {
+    LrtQualcommOptionsSetGraphIOTensorMemType(
+        options_,
+        static_cast<LrtQualcommOptionsGraphIOTensorMemType>(mem_type));
+  }
+
+  GraphIOTensorMemType GetGraphIOTensorMemType() const {
+    LrtQualcommOptionsGraphIOTensorMemType val;
+    auto status = LrtQualcommOptionsGetGraphIOTensorMemType(options_, &val);
+    if (status != kLiteRtStatusOk) {
+      return GraphIOTensorMemType::kMemHandle;
+    }
+    return static_cast<GraphIOTensorMemType>(val);
+  }
+
  private:
   LrtQualcommOptions options_;
 };

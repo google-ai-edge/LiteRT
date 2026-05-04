@@ -262,6 +262,21 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
+}
+
+TEST(QnnOptionTest, SetGraphIOTensorMemType) {
+  Options options;
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
+
+  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kRaw);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(), GraphIOTensorMemType::kRaw);
+
+  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kMemHandle);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(),
+            GraphIOTensorMemType::kMemHandle);
 }
 
 }  // namespace
