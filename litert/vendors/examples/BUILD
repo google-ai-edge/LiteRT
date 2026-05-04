@@ -298,7 +298,7 @@ cc_test(
     srcs = ["end_to_end_test.cc"],
     data = [
         ":example_dispatch_so",
-        ":example_plugin_so_data",
+        ":example_plugin_so",
         "//litert/test:mlir_test_data",
     ],
     # This test dlopens, so sanitzers are prone to false positive.
