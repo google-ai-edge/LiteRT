@@ -1,6 +1,6 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "py_test")
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pywrap_binaries", "pywrap_library")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
@@ -301,6 +301,13 @@ py_test(
         "//tflite/python/testdata:test_delegate.so",
         "//tflite/python/testdata/control_flow_v1_saved_model:saved_model.pb",
     ],
+    exec_properties = if_oss(
+        None,
+        select({
+            "//tools/cpp:asan_build": {"cpp_link.mem": "20g"},
+            "//conditions:default": None,
+        }),
+    ),
     shard_count = 18,
     strict_deps = True,
     tags = [
