@@ -35,7 +35,6 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
-
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
