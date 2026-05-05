@@ -18,12 +18,12 @@
 #include <any>
 #include <cstdint>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <variant>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
@@ -47,7 +47,7 @@ using LiteRtVariant =
                  float,              // kLiteRtAnyTypeReal (single)
                  double,             // kLiteRtAnyTypeReal (double)
                  const char*,        // kLiteRtAnyTypeString
-                 absl::string_view,  // kLiteRtAnyTypeString (alternative)
+                 StringView,  // kLiteRtAnyTypeString (alternative)
                  const void*,        // kLiteRtAnyTypeVoidPtr
                  void*               // kLiteRtAnyTypeVoidPtr (non-const)
                  >;
@@ -102,7 +102,7 @@ inline Expected<LiteRtAny> ToLiteRtAny(const LiteRtVariant& var) {
           result.type = kLiteRtAnyTypeString;
           result.str_value = arg;
           return result;
-        } else if constexpr (std::is_same_v<T, absl::string_view>) {
+        } else if constexpr (std::is_same_v<T, StringView>) {
           result.type = kLiteRtAnyTypeString;
           result.str_value = arg.data();
           return result;
@@ -128,11 +128,20 @@ inline Expected<void> CheckType(const LiteRtAny& any,
                                 const LiteRtAnyType type) {
   if (any.type != type) {
     return Error(Status::kErrorInvalidArgument,
-                 absl::StrFormat("Wrong LiteRtAny type. Expected %s, got %s.",
-                                 LiteRtAnyTypeToString(type),
-                                 LiteRtAnyTypeToString(any.type)));
+                 std::string("Wrong LiteRtAny type. Expected ") +
+                     LiteRtAnyTypeToString(type) + ", got " +
+                     LiteRtAnyTypeToString(any.type) + ".");
   }
   return {};
+}
+
+template <class T, class V>
+std::string OutOfRangeMessage(const char* type_name, V value) {
+  std::stringstream message;
+  message << "LiteRtAny " << type_name << " is out of range. "
+          << std::numeric_limits<T>::lowest() << " <= " << value << " <= "
+          << std::numeric_limits<T>::max();
+  return message.str();
 }
 
 template <class T>
@@ -140,11 +149,8 @@ Expected<T> GetInt(const LiteRtAny& any) {
   LITERT_RETURN_IF_ERROR(CheckType(any, kLiteRtAnyTypeInt));
   if (any.int_value > std::numeric_limits<T>::max() ||
       any.int_value < std::numeric_limits<T>::lowest()) {
-    return Error(
-        Status::kErrorInvalidArgument,
-        absl::StrFormat("LiteRtAny integer is out of range. %v <= %v <= %v",
-                        std::numeric_limits<T>::lowest(), any.int_value,
-                        std::numeric_limits<T>::max()));
+    return Error(Status::kErrorInvalidArgument,
+                 OutOfRangeMessage<T>("integer", any.int_value));
   }
   return static_cast<T>(any.int_value);
 }
@@ -154,11 +160,8 @@ Expected<T> GetReal(const LiteRtAny& any) {
   LITERT_RETURN_IF_ERROR(CheckType(any, kLiteRtAnyTypeReal));
   if (any.real_value > std::numeric_limits<T>::max() ||
       any.real_value < std::numeric_limits<T>::lowest()) {
-    return Error(
-        Status::kErrorInvalidArgument,
-        absl::StrFormat("LiteRtAny real is out of range. %v <= %v <= %v",
-                        std::numeric_limits<T>::lowest(), any.real_value,
-                        std::numeric_limits<T>::max()));
+    return Error(Status::kErrorInvalidArgument,
+                 OutOfRangeMessage<T>("real", any.real_value));
   }
   return static_cast<T>(any.real_value);
 }
@@ -211,9 +214,9 @@ inline Expected<std::string> Get(const LiteRtAny& any) {
 }
 
 template <>
-inline Expected<absl::string_view> Get(const LiteRtAny& any) {
+inline Expected<StringView> Get(const LiteRtAny& any) {
   LITERT_RETURN_IF_ERROR(internal::CheckType(any, kLiteRtAnyTypeString));
-  return absl::string_view(any.str_value);
+  return StringView(any.str_value);
 }
 
 template <>

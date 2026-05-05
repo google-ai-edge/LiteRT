@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -44,18 +44,18 @@ class TensorBufferRequirements {
   TensorBufferRequirements() = default;
 
   static Expected<TensorBufferRequirements> Create(
-      absl::Span<const TensorBufferType> buffer_types, size_t buffer_size,
-      absl::Span<const uint32_t> strides =
-          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
+      Span<const TensorBufferType> buffer_types, size_t buffer_size,
+      Span<const uint32_t> strides =
+          internal::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
     return CreateWithAlignment(buffer_types, buffer_size,
                                kHostMemoryBufferAlignment, strides);
   }
 
   static Expected<TensorBufferRequirements> CreateWithAlignment(
-      absl::Span<const TensorBufferType> buffer_types, size_t buffer_size,
+      Span<const TensorBufferType> buffer_types, size_t buffer_size,
       size_t alignment,
-      absl::Span<const uint32_t> strides =
-          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
+      Span<const uint32_t> strides =
+          internal::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
     if (buffer_types.empty() || alignment == 0 ||
         (alignment & (alignment - 1)) != 0) {
       LITERT_LOG(LITERT_ERROR,
@@ -86,8 +86,8 @@ class TensorBufferRequirements {
   /// @brief Returns the strides of the tensor buffer requirements.
   ///
   /// If the strides are not specified, an empty span is returned.
-  Expected<absl::Span<const uint32_t>> Strides() const {
-    return absl::MakeConstSpan(strides_);
+  Expected<Span<const uint32_t>> Strides() const {
+    return internal::MakeConstSpan(strides_);
   }
 
   Expected<size_t> Alignment() const { return alignment_; }

@@ -13,9 +13,11 @@
 # limitations under the License.
 
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 load("//litert/build_common:special_rule.bzl", "get_compatible_with_portable", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
@@ -37,6 +39,68 @@ package(
     features = ["allow_starlark_transitions"],
 )
 
+LITERT_CC_NO_ABSL_PUBLIC_HEADERS = [
+    "litert_any.h",
+    "litert_api_types.h",
+    "litert_buffer_ref.h",
+    "litert_common.h",
+    "litert_compiled_model.h",
+    "litert_custom_op_kernel.h",
+    "litert_element_type.h",
+    "litert_environment.h",
+    "litert_environment_options.h",
+    "litert_event.h",
+    "litert_expected.h",
+    "litert_layout.h",
+    "litert_macros.h",
+    "litert_model.h",
+    "litert_model_types.h",
+    "litert_opaque_options.h",
+    "litert_options.h",
+    "litert_profiler.h",
+    "litert_ranked_tensor_type.h",
+    "litert_tensor_buffer.h",
+    "litert_tensor_buffer_requirements.h",
+    "litert_tensor_buffer_types.h",
+    "//litert/cc/options:litert_compiler_options.h",
+    "//litert/cc/options:litert_cpu_options.h",
+    "//litert/cc/options:litert_google_tensor_options.h",
+    "//litert/cc/options:litert_gpu_options.h",
+    "//litert/cc/options:litert_intel_openvino_options.h",
+    "//litert/cc/options:litert_magic_number_options.h",
+    "//litert/cc/options:litert_mediatek_options.h",
+    "//litert/cc/options:litert_qualcomm_options.h",
+    "//litert/cc/options:litert_runtime_options.h",
+    "//litert/cc/options:litert_samsung_options.h",
+    "//litert/cc/options:litert_webnn_options.h",
+]
+
+LITERT_CC_NO_ABSL_SUPPORT_HEADERS = [
+    "//litert/c:litert_common.h",
+    "//litert/c:c_api_headers",
+    "//litert/c/internal:internal_headers",
+    "//litert/c/internal:litert_logging_header",
+    "//litert/c/internal:litert_runtime_c_api_headers",
+    "//litert/c/options:options_headers",
+    "//litert/cc/internal:litert_consts.h",
+    "//litert/cc/internal:litert_detail.h",
+    "//litert/cc/internal:litert_handle.h",
+    "//litert/cc/internal:litert_numerics.h",
+    "//litert/cc/internal:litert_runtime_builtin.h",
+    "//litert/cc/internal:litert_runtime_proxy.h",
+    "//litert/cc/internal:litert_shared_library.h",
+    "//litert/cc/internal:litert_source_location.h",
+    "//litert/cc/internal:litert_tensor_buffer_utils.h",
+    "//litert/cc/internal:scoped_file.h",
+    "//litert/cc/internal:scoped_file_posix.h",
+    "//litert/cc/internal:scoped_file_win.h",
+    "//litert/cc/internal:scoped_weight_source.h",
+    "//litert/core:options_header",
+    "//tflite:builtin_ops.h",
+    "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
+    "//tflite/core/c:headers_filegroup",
+]
+
 # -----------------------------------------------------------------------------
 # LiteRT C++ APIs which don't use C API calls to framework.
 #
@@ -44,10 +108,59 @@ package(
 # -----------------------------------------------------------------------------
 
 cc_library(
+    name = "litert_api_types",
+    hdrs = ["litert_api_types.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "litert_api_no_absl_headers",
+    hdrs = LITERT_CC_NO_ABSL_PUBLIC_HEADERS + LITERT_CC_NO_ABSL_SUPPORT_HEADERS,
+    compatible_with = get_compatible_with_portable(),
+    defines = ["LITERT_NO_ABSL"],
+    deps = [
+        "//litert/build_common:build_config",
+        "@opencl_headers",
+    ],
+)
+
+cc_test(
+    name = "litert_no_absl_api_compile_test",
+    srcs = ["litert_no_absl_api_compile_test.cc"],
+    copts = ["-std=c++20"],
+    defines = ["LITERT_NO_ABSL"],
+    deps = [":litert_api_no_absl_headers"],
+)
+
+cc_binary(
+    name = "litert_no_absl_api_symbol_test_bin",
+    testonly = True,
+    srcs = ["litert_no_absl_api_compile_test.cc"],
+    copts = ["-std=c++20"],
+    defines = ["LITERT_NO_ABSL"],
+    deps = [":litert_api_no_absl_headers"],
+)
+
+sh_test(
+    name = "litert_no_absl_api_symbol_test",
+    srcs = ["litert_no_absl_api_symbol_test.sh"],
+    args = ["$(location :litert_no_absl_api_symbol_test_bin)"],
+    data = [":litert_no_absl_api_symbol_test_bin"],
+)
+
+cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_macros",
@@ -77,6 +190,7 @@ cc_library(
     name = "litert_buffer_ref",
     hdrs = ["litert_buffer_ref.h"],
     deps = [
+        ":litert_api_types",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -109,6 +223,7 @@ cc_library(
     hdrs = ["litert_macros.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         "//litert/c:litert_common",
@@ -141,6 +256,7 @@ cc_library(
     hdrs = ["litert_expected.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
+        ":litert_api_types",
         ":litert_common",
         "//litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
@@ -186,6 +302,7 @@ cc_library(
     name = "litert_layout",
     hdrs = ["litert_layout.h"],
     deps = [
+        ":litert_api_types",
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_layout",
@@ -208,6 +325,7 @@ cc_library(
     name = "litert_opaque_options",
     hdrs = ["litert_opaque_options.h"],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_macros",
@@ -238,6 +356,7 @@ cc_library(
     name = "litert_environment_options",
     hdrs = ["litert_environment_options.h"],
     deps = [
+        ":litert_api_types",
         ":litert_any",
         ":litert_common",
         ":litert_expected",
@@ -278,6 +397,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_buffer_ref",
         ":litert_common",
         ":litert_environment",
@@ -821,6 +941,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_element_type",
         ":litert_expected",
@@ -847,6 +968,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_buffer_ref",
         ":litert_common",
         ":litert_element_type",
@@ -878,6 +1000,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_element_type",
         ":litert_expected",
@@ -944,6 +1067,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_expected",
         ":litert_tensor_buffer_types",
@@ -979,6 +1103,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_environment",
         ":litert_event",
@@ -1091,6 +1216,7 @@ cc_library_with_testonly_vis(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_api_types",
         ":litert_common",
         ":litert_custom_op_kernel",
         ":litert_environment",
@@ -1230,6 +1356,7 @@ cc_library(
     name = "litert_api_with_dynamic_runtime",
     hdrs = [
         # C++ API headers.
+        "litert_api_types.h",
         "litert_any.h",
         "litert_common.h",
         "//litert/c/internal:litert_scheduling_info",
@@ -1312,6 +1439,7 @@ cc_library(
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_qualcomm_options",
         # Other (static) C++ API targets.
+        ":litert_api_types",
         ":litert_any",
         ":litert_buffer_ref",
         ":litert_common",

@@ -577,3 +577,18 @@ filegroup(
         "//litert/cc:__pkg__",
     ],
 )
+
+filegroup(
+    name = "litert_logging_header",
+    srcs = ["litert_logging.h"],
+    visibility = ["//litert/cc:__pkg__"],
+)
+
+filegroup(
+    name = "litert_runtime_c_api_headers",
+    srcs = [
+        "litert_runtime_c_api.h",
+        "litert_scheduling_info.h",
+    ],
+    visibility = ["//litert/cc:__pkg__"],
+)

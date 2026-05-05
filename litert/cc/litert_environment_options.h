@@ -20,8 +20,7 @@
 #include <variant>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_common.h"
@@ -100,8 +99,8 @@ class EnvironmentOptions {
     std::string str_value;
 
     Option(Tag param_tag, LiteRtVariant param_value) : tag(param_tag) {
-      if (std::holds_alternative<absl::string_view>(param_value)) {
-        str_value = std::get<absl::string_view>(param_value);
+      if (std::holds_alternative<StringView>(param_value)) {
+        str_value = std::get<StringView>(param_value);
         value = str_value.c_str();
       } else if (std::holds_alternative<const char*>(param_value)) {
         str_value = std::get<const char*>(param_value);
@@ -158,13 +157,13 @@ class EnvironmentOptions {
   /// Constructs an `EnvironmentOptions` object from a span of options.
   /// @param options A span of `Option` objects to initialize the environment
   /// options with.
-  explicit EnvironmentOptions(absl::Span<const Option> options)
+  explicit EnvironmentOptions(Span<const Option> options)
       : options_(options.begin(), options.end()) {}
 
   /// Retrieves all options.
   /// @return A span of all options.
-  absl::Span<const Option> GetOptions() const {
-    return absl::MakeConstSpan(options_);
+  Span<const Option> GetOptions() const {
+    return internal::MakeConstSpan(options_);
   }
 
   /// Retrieves the value of an option specified by a tag.

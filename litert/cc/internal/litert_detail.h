@@ -27,8 +27,7 @@
 #include <variant>
 #include <vector>
 
-#include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 
@@ -228,14 +227,14 @@ auto Avg(It begin, It end) -> RemoveCvRefT<decltype(*std::declval<It>())> {
 /// @brief Checks if a string starts with a given prefix.
 /// @note `std::string::ends_with` is not available until C++20, and
 /// `absl::StartsWith` is not portable.
-inline bool StartsWith(absl::string_view str, absl::string_view prefix) {
+inline bool StartsWith(StringView str, StringView prefix) {
   return str.size() >= prefix.size() &&
          std::equal(prefix.begin(), prefix.end(), str.begin());
 }
 /// @brief Checks if a string ends with a given suffix.
 /// @note `std::string::ends_with` is not available until C++20, and
 /// `absl::EndsWith` is not portable.
-inline bool EndsWith(absl::string_view str, absl::string_view suffix) {
+inline bool EndsWith(StringView str, StringView suffix) {
   return str.size() >= suffix.size() &&
          std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
 }
@@ -258,8 +257,8 @@ class CtStr {
   template <size_t N, class I = std::make_index_sequence<N - 1>>
   constexpr explicit CtStr(StrLiteral<N> lit) : CtStr(lit, I{}) {}
 
-  constexpr absl::string_view Str() const {
-    return absl::string_view(data_.data(), data_.size());
+  constexpr StringView Str() const {
+    return StringView(data_.data(), data_.size());
   }
 
   //  private:
@@ -303,7 +302,7 @@ namespace internal {
 template <class F, class Expected, typename... Args>
 inline void AssertEq(F get, Expected expected, Args&&... args) {
   auto status = get(std::forward<Args>(args)...);
-  ABSL_CHECK_EQ(status, expected);
+  LITERT_INTERNAL_CHECK_EQ(status, expected);
 }
 
 /// @brief Calls a function `get` and asserts that it returns `true`.

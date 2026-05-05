@@ -27,6 +27,12 @@ package(
     ],
 )
 
+filegroup(
+    name = "options_header",
+    srcs = ["options.h"],
+    visibility = ["//litert/cc:__pkg__"],
+)
+
 cc_library(
     name = "options",
     hdrs = [

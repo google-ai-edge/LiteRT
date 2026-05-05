@@ -24,8 +24,7 @@
 #include <variant>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
@@ -50,7 +49,7 @@ namespace litert {
 
 namespace internal::model_detail {
 
-inline absl::string_view FetchTensorName(LiteRtTensor tensor) {
+inline StringView FetchTensorName(LiteRtTensor tensor) {
   const char* name;
   internal::AssertOk(LiteRtGetTensorName, tensor, &name);
   return name;
@@ -112,17 +111,17 @@ inline LiteRtQuantizationPerChannel FetchTensorQuantizationPerChannel(
   return per_channel_quantization;
 }
 
-inline absl::string_view FetchSignatureKey(LiteRtSignature signature) {
+inline StringView FetchSignatureKey(LiteRtSignature signature) {
   const char* key;
   internal::AssertOk(LiteRtGetSignatureKey, signature, &key);
   return key;
 }
 
-inline std::vector<absl::string_view> FetchSignatureInputNames(
+inline std::vector<StringView> FetchSignatureInputNames(
     LiteRtSignature signature) {
   LiteRtParamIndex num_inputs;
   internal::AssertOk(LiteRtGetNumSignatureInputs, signature, &num_inputs);
-  std::vector<absl::string_view> input_names;
+  std::vector<StringView> input_names;
   input_names.reserve(num_inputs);
   for (int i = 0; i < num_inputs; ++i) {
     const char* name;
@@ -132,11 +131,11 @@ inline std::vector<absl::string_view> FetchSignatureInputNames(
   return input_names;
 }
 
-inline std::vector<absl::string_view> FetchSignatureOutputNames(
+inline std::vector<StringView> FetchSignatureOutputNames(
     LiteRtSignature signature) {
   LiteRtParamIndex num_outputs;
   internal::AssertOk(LiteRtGetNumSignatureOutputs, signature, &num_outputs);
-  std::vector<absl::string_view> output_names;
+  std::vector<StringView> output_names;
   output_names.reserve(num_outputs);
   for (int i = 0; i < num_outputs; ++i) {
     const char* name;
@@ -249,7 +248,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   // copybara:uncomment_end
 #endif  // !defined(LITERT_DYNAMIC_RUNTIME)
 
-  Expected<absl::Span<const uint8_t>> Metadata(
+  Expected<Span<const uint8_t>> Metadata(
       const std::string& metadata_key) const {
     const void* buffer;
     size_t buffer_size;
@@ -257,7 +256,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
                                &buffer_size) != kLiteRtStatusOk) {
       return Unexpected(Status::kErrorNotFound, "Metadata key not found");
     }
-    return absl::MakeSpan(static_cast<const uint8_t*>(buffer), buffer_size);
+    return internal::MakeSpan(static_cast<const uint8_t*>(buffer), buffer_size);
   }
 
   size_t GetNumSignatures() const {
@@ -279,24 +278,24 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   }
 
   /// @brief Returns the list of signature key names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
+  Expected<std::vector<StringView>> GetSignatureKeys() const {
     return GetSignatureKeysImpl();
   }
 
   /// @brief Returns the list of input names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureInputNames(
+  Expected<std::vector<StringView>> GetSignatureInputNames(
       size_t signature_index) const {
     return GetSignatureInputNamesImpl(signature_index);
   }
 
   /// @brief Returns the list of input names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
+  Expected<std::vector<StringView>> GetSignatureInputNames() const {
     return GetSignatureInputNames(/*signature_index=*/0);
   }
 
   /// @brief Returns the list of input names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureInputNames(
-      absl::string_view signature_key) const {
+  Expected<std::vector<StringView>> GetSignatureInputNames(
+      StringView signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
       return Unexpected(Status::kErrorNotFound, "Signature not found");
@@ -305,19 +304,19 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   }
 
   /// @brief Returns the list of output names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
+  Expected<std::vector<StringView>> GetSignatureOutputNames(
       size_t signature_index) const {
     return GetSignatureOutputNamesImpl(signature_index);
   }
 
   /// @brief Returns the list of output names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
+  Expected<std::vector<StringView>> GetSignatureOutputNames() const {
     return GetSignatureOutputNames(/*signature_index=*/0);
   }
 
   /// @brief Returns the list of output names defined in the signature.
-  Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
-      absl::string_view signature_key) const {
+  Expected<std::vector<StringView>> GetSignatureOutputNames(
+      StringView signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
       return Unexpected(Status::kErrorNotFound, "Signature not found");
@@ -342,7 +341,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   /// @brief Returns the signature index for the given signature key.
   ///
   /// Returns 0 if the signature key is empty.
-  Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const {
+  Expected<size_t> GetSignatureIndex(StringView signature_key) const {
     if (signature_key.empty()) {
       return 0;
     }
@@ -362,13 +361,13 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   ///
   /// Returns the default signature if the signature key is empty.
   Expected<SimpleSignature> FindSignature(
-      absl::string_view signature_key) const {
+      StringView signature_key) const {
     LITERT_ASSIGN_OR_RETURN(auto signature_index,
                             GetSignatureIndex(signature_key));
     return GetSignature(signature_index);
   }
 
-  static absl::string_view DefaultSignatureKey() {
+  static StringView DefaultSignatureKey() {
     return kDefaultSignatureKey;
   }
 
@@ -382,7 +381,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
 
   /// @brief Returns the tensor type for the given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
-      size_t signature_index, absl::string_view input_name) const {
+      size_t signature_index, StringView input_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
                             GetSignature(signature_index));
     return signature.InputTensorType(input_name);
@@ -390,7 +389,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
 
   /// @brief Returns the tensor type for the given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
-      absl::string_view signature_key, absl::string_view input_name) const {
+      StringView signature_key, StringView input_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
                             FindSignature(signature_key));
     return signature.InputTensorType(input_name);
@@ -399,7 +398,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   /// @brief Gets the input tensor type of the default signature for a given
   /// input name.
   Expected<RankedTensorType> GetInputTensorType(
-      absl::string_view input_name) const {
+      StringView input_name) const {
     return GetInputTensorType(/*signature_index=*/0, input_name);
   }
 
@@ -413,7 +412,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
 
   /// @brief Returns the tensor type for the given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
-      size_t signature_index, absl::string_view output_name) const {
+      size_t signature_index, StringView output_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
                             GetSignature(signature_index));
     return signature.OutputTensorType(output_name);
@@ -421,7 +420,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
 
   /// @brief Returns the tensor type for the given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
-      absl::string_view signature_key, absl::string_view output_name) const {
+      StringView signature_key, StringView output_name) const {
     LITERT_ASSIGN_OR_RETURN(const SimpleSignature& signature,
                             FindSignature(signature_key));
     return signature.OutputTensorType(output_name);
@@ -430,7 +429,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   /// @brief Gets the output tensor type of the default signature for a given
   /// output name.
   Expected<RankedTensorType> GetOutputTensorType(
-      absl::string_view output_name) const {
+      StringView output_name) const {
     return GetOutputTensorType(/*signature_index=*/0, output_name);
   }
 
@@ -441,9 +440,9 @@ class Model : public internal::BaseHandle<LiteRtModel> {
       : internal::BaseHandle<LiteRtModel>(model, LiteRtDestroyModel, owned) {}
 
  private:
-  Expected<std::vector<absl::string_view>> GetSignatureKeysImpl() const {
+  Expected<std::vector<StringView>> GetSignatureKeysImpl() const {
     size_t num_signatures = GetNumSignatures();
-    std::vector<absl::string_view> signature_keys;
+    std::vector<StringView> signature_keys;
     signature_keys.reserve(num_signatures);
     for (int i = 0; i < num_signatures; ++i) {
       LiteRtSignature lite_rt_signature;
@@ -453,14 +452,14 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     }
     return signature_keys;
   }
-  Expected<std::vector<absl::string_view>> GetSignatureInputNamesImpl(
+  Expected<std::vector<StringView>> GetSignatureInputNamesImpl(
       size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
     internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
                        &lite_rt_signature);
     return internal::model_detail::FetchSignatureInputNames(lite_rt_signature);
   }
-  Expected<std::vector<absl::string_view>> GetSignatureOutputNamesImpl(
+  Expected<std::vector<StringView>> GetSignatureOutputNamesImpl(
       size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
     internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,

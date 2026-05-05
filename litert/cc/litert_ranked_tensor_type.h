@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_common.h"

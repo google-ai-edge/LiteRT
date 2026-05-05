@@ -145,6 +145,7 @@ cc_library(
     name = "litert_detail",
     hdrs = ["litert_detail.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/log:absl_check",
@@ -358,6 +359,7 @@ cc_library(
         "litert_shared_library_windows.h",
     ],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
@@ -404,6 +406,7 @@ cc_library(
     hdrs = ["litert_model_predicates.h"],
     visibility = internal_static_library_visibility,
     deps = [
+        "//litert/cc:litert_api_types",
         ":litert_detail",
         ":litert_extended_model",
         "//litert/c:litert_common",
@@ -481,6 +484,7 @@ cc_library(
     hdrs = ["litert_builder.h"],
     visibility = internal_static_library_visibility,
     deps = [
+        "//litert/cc:litert_api_types",
         ":litert_detail",
         ":litert_extended_model",
         ":litert_handle",
@@ -691,6 +695,7 @@ cc_library(
         "scoped_file_win.h",
     ],
     deps = [
+        "//litert/cc:litert_api_types",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -702,6 +707,7 @@ cc_library(
     name = "scoped_weight_source",
     hdrs = ["scoped_weight_source.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         ":scoped_file",
         "@com_google_absl//absl/container:flat_hash_map",
     ],
@@ -810,6 +816,7 @@ cc_library(
     name = "litert_runtime_proxy",
     hdrs = ["litert_runtime_proxy.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",

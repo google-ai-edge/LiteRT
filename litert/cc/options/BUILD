@@ -30,6 +30,7 @@ cc_library(
     name = "litert_cpu_options",
     hdrs = ["litert_cpu_options.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/c:litert_common",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
@@ -136,6 +137,7 @@ cc_library(
     name = "litert_google_tensor_options",
     hdrs = ["litert_google_tensor_options.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/c:litert_common",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
@@ -151,6 +153,7 @@ cc_library(
     name = "litert_qualcomm_options",
     hdrs = ["litert_qualcomm_options.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/c:litert_common",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
@@ -166,6 +169,7 @@ cc_library(
     name = "litert_mediatek_options",
     hdrs = ["litert_mediatek_options.h"],
     deps = [
+        "//litert/cc:litert_api_types",
         "//litert/c:litert_common",
         "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",

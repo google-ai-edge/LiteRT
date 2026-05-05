@@ -26,16 +26,17 @@
 #include <cstddef>
 #include <string>
 
+#ifndef LITERT_NO_ABSL
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#endif  // LITERT_NO_ABSL
 #include "litert/cc/internal/scoped_file.h"
 
 namespace litert {
 namespace internal::scoped_file_detail {
 
-inline std::wstring Utf8ToWideChar(absl::string_view utf8str) {
+inline std::wstring Utf8ToWideChar(StringView utf8str) {
   int size_required = MultiByteToWideChar(CP_UTF8, 0, utf8str.data(),
                                           (int)utf8str.size(), nullptr, 0);
   std::wstring ws_translated_str(size_required, 0);
@@ -44,8 +45,8 @@ inline std::wstring Utf8ToWideChar(absl::string_view utf8str) {
   return ws_translated_str;
 }
 
-inline absl::StatusOr<ScopedFile> OpenImpl(absl::string_view path,
-                                           DWORD file_attribute_flag) {
+inline ScopedFileStatusOr<ScopedFile> OpenImpl(StringView path,
+                                               DWORD file_attribute_flag) {
   std::wstring ws_path = Utf8ToWideChar(path);
 
   DWORD share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
@@ -56,7 +57,12 @@ inline absl::StatusOr<ScopedFile> OpenImpl(absl::string_view path,
   HANDLE hfile = ::CreateFileW(ws_path.c_str(), access, share_mode, nullptr,
                                OPEN_EXISTING, file_attribute_flag, nullptr);
   if (hfile == INVALID_HANDLE_VALUE) {
+#ifndef LITERT_NO_ABSL
     return absl::UnknownError(absl::StrCat("Failed to open: ", path));
+#else
+    return Unexpected(Status::kErrorFileIO,
+                      "Failed to open: " + std::string(path));
+#endif  // LITERT_NO_ABSL
   }
   return ScopedFile(hfile);
 }
@@ -84,57 +90,87 @@ inline std::string GetLastErrorString() {
 
 inline const HANDLE ScopedFile::kInvalidPlatformFile = INVALID_HANDLE_VALUE;
 
-inline absl::StatusOr<ScopedFile> ScopedFile::Open(absl::string_view path) {
+inline ScopedFileStatusOr<ScopedFile> ScopedFile::Open(StringView path) {
   return internal::scoped_file_detail::OpenImpl(path, FILE_ATTRIBUTE_READONLY);
 }
 
-inline absl::StatusOr<ScopedFile> ScopedFile::OpenWritable(
-    absl::string_view path) {
+inline ScopedFileStatusOr<ScopedFile> ScopedFile::OpenWritable(
+    StringView path) {
   return internal::scoped_file_detail::OpenImpl(path, FILE_ATTRIBUTE_NORMAL);
 }
 
 inline void ScopedFile::CloseFile(HANDLE file) { ::CloseHandle(file); }
 
-inline absl::StatusOr<size_t> ScopedFile::GetSizeImpl(HANDLE file) {
+inline ScopedFileStatusOr<size_t> ScopedFile::GetSizeImpl(HANDLE file) {
   LARGE_INTEGER size;
   if (!::GetFileSizeEx(file, &size)) {
+#ifndef LITERT_NO_ABSL
     return absl::UnknownError("Failed to get file size");
+#else
+    return Unexpected(Status::kErrorFileIO, "Failed to get file size");
+#endif  // LITERT_NO_ABSL
   }
   return static_cast<size_t>(size.QuadPart);
 }
 
-inline absl::StatusOr<ScopedFile> ScopedFile::Duplicate() {
+inline ScopedFileStatusOr<ScopedFile> ScopedFile::Duplicate() {
   if (!IsValid()) {
+#ifndef LITERT_NO_ABSL
     return absl::InvalidArgumentError("File is not opened.");
+#else
+    return Unexpected(Status::kErrorInvalidArgument, "File is not opened.");
+#endif  // LITERT_NO_ABSL
   }
   HANDLE duplicated;
   if (!DuplicateHandle(GetCurrentProcess(), file_, GetCurrentProcess(),
                        &duplicated, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+#ifndef LITERT_NO_ABSL
     return absl::FailedPreconditionError(
         "Could not duplicate handle: " +
         internal::scoped_file_detail::GetLastErrorString());
+#else
+    return Unexpected(Status::kErrorFileIO,
+                      "Could not duplicate handle: " +
+                          internal::scoped_file_detail::GetLastErrorString());
+#endif  // LITERT_NO_ABSL
   }
   return ScopedFile(duplicated);
 }
 
-inline absl::StatusOr<int> ScopedFile::Release() {
+inline ScopedFileStatusOr<int> ScopedFile::Release() {
   if (!IsValid()) {
+#ifndef LITERT_NO_ABSL
     return absl::InvalidArgumentError("File is not opened.");
+#else
+    return Unexpected(Status::kErrorInvalidArgument, "File is not opened.");
+#endif  // LITERT_NO_ABSL
   }
 
   char buffer[1];
   if (!ReadFile(file_, &buffer, /*nNumberOfBytesToRead=*/0,
                 /*lpNumberOfBytesRead=*/nullptr, /*lpOverlapped=*/nullptr)) {
+#ifndef LITERT_NO_ABSL
     return absl::FailedPreconditionError(
         "Could not convert asynchronous handle to C file descriptor: " +
         internal::scoped_file_detail::GetLastErrorString());
+#else
+    return Unexpected(Status::kErrorFileIO,
+                      "Could not convert asynchronous handle to C file "
+                      "descriptor: " +
+                          internal::scoped_file_detail::GetLastErrorString());
+#endif  // LITERT_NO_ABSL
   }
 
   const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(file_),
                                  /*flags=*/_O_RDWR | _O_BINARY);
   if (fd < 0) {
+#ifndef LITERT_NO_ABSL
     return absl::ErrnoToStatus(
         errno, "Could not convert HANDLE to a C file descriptor");
+#else
+    return Unexpected(Status::kErrorFileIO,
+                      "Could not convert HANDLE to a C file descriptor");
+#endif  // LITERT_NO_ABSL
   }
   ReleasePlatformFile();
   return fd;

@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
@@ -289,7 +289,7 @@ class QualcommOptions {
   void SetIrJsonDir(const std::string& ir_json_dir) {
     LrtQualcommOptionsSetIrJsonDir(options_, ir_json_dir.c_str());
   }
-  absl::string_view GetIrJsonDir() {
+  StringView GetIrJsonDir() {
     const char* val;
     auto status = LrtQualcommOptionsGetIrJsonDir(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
@@ -301,7 +301,7 @@ class QualcommOptions {
   void SetDlcDir(const std::string& dlc_dir) {
     LrtQualcommOptionsSetDlcDir(options_, dlc_dir.c_str());
   }
-  absl::string_view GetDlcDir() {
+  StringView GetDlcDir() {
     const char* val;
     auto status = LrtQualcommOptionsGetDlcDir(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
@@ -399,7 +399,7 @@ class QualcommOptions {
   void SetSaverOutputDir(const std::string& saver_output_dir) {
     LrtQualcommOptionsSetSaverOutputDir(options_, saver_output_dir.c_str());
   }
-  absl::string_view GetSaverOutputDir() {
+  StringView GetSaverOutputDir() {
     const char* val;
     auto status = LrtQualcommOptionsGetSaverOutputDir(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {

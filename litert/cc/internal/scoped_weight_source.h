@@ -19,7 +19,7 @@
 #include <string>
 #include <utility>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/internal/scoped_file.h"
 
 /// @file
@@ -41,7 +41,7 @@ struct ScopedWeightSource {
   ScopedWeightSource() = default;
   ScopedWeightSource(
       ScopedFile scoped_file,
-      absl::flat_hash_map<std::string, ScopedWeightSection> sections)
+      FlatHashMap<std::string, ScopedWeightSection> sections)
       : file(std::move(scoped_file)), sections(std::move(sections)) {}
 
   ScopedWeightSource(ScopedWeightSource&&) = default;
@@ -52,7 +52,7 @@ struct ScopedWeightSource {
   bool empty() const { return sections.empty(); }
 
   ScopedFile file;
-  absl::flat_hash_map<std::string, ScopedWeightSection> sections;
+  FlatHashMap<std::string, ScopedWeightSection> sections;
 };
 
 }  // namespace litert

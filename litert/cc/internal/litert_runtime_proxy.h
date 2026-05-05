@@ -17,9 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
-#include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -37,17 +36,18 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/internal/litert_runtime_builtin.h"
+#include "litert/cc/litert_api_types.h"
 
 namespace litert {
 class Options;
 namespace internal {
 
 #define LITERT_PROXY_METHOD_STATUS(method, ...) \
-  ABSL_CHECK(runtime_c_api_->method);           \
+  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
   return runtime_c_api_->method(__VA_ARGS__);
 
 #define LITERT_PROXY_METHOD_VOID(method, ...) \
-  ABSL_CHECK(runtime_c_api_->method);         \
+  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
   runtime_c_api_->method(__VA_ARGS__);
 
 // A proxy class that provides a C++ interface to the LiteRT Runtime C Api.
@@ -63,9 +63,9 @@ class RuntimeProxy {
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
-      : runtime_c_api_(ABSL_DIE_IF_NULL(runtime_c_api == nullptr
-                                            ? kLiteRtRuntimeBuiltin
-                                            : runtime_c_api)) {};
+      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(
+            runtime_c_api == nullptr ? kLiteRtRuntimeBuiltin
+                                     : runtime_c_api)) {};
 
   ~RuntimeProxy() = default;
 
@@ -616,7 +616,7 @@ class RuntimeProxy {
                                         const char* format, Args&&... args) {
     // We cannot forward variadic arguments, so this function cannot use the
     // macro.
-    ABSL_CHECK(runtime_c_api_->litert_compiled_model_report_error);
+    LITERT_INTERNAL_CHECK(runtime_c_api_->litert_compiled_model_report_error);
     return runtime_c_api_->litert_compiled_model_report_error(
         compiled_model, format, std::forward<Args>(args)...);
   }
