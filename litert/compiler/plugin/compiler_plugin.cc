@@ -14,11 +14,14 @@
 
 #include "litert/compiler/plugin/compiler_plugin.h"
 
+#include <stdlib.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <queue>
 #include <string>
 #include <utility>
