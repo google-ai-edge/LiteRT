@@ -422,6 +422,47 @@ inline LiteRtStatus InferConv3DTranspose(const LiteRtOpT& op,
   return kLiteRtStatusOk;
 }
 
+inline void ReferenceConv2D(const float* input_data, const float* filter_data,
+                            const float* bias_data, float* output_data,
+                            int batch, int in_h, int in_w, int in_c, int out_h,
+                            int out_w, int out_c, int filter_h, int filter_w,
+                            int stride_h, int stride_w, int dilation_h,
+                            int dilation_w, int pad_t, int pad_l,
+                            tflite::ActivationFunctionType faf) {
+  for (int b = 0; b < batch; ++b) {
+    for (int oh = 0; oh < out_h; ++oh) {
+      for (int ow = 0; ow < out_w; ++ow) {
+        for (int oc = 0; oc < out_c; ++oc) {
+          float sum = 0;
+          for (int kh = 0; kh < filter_h; ++kh) {
+            for (int kw = 0; kw < filter_w; ++kw) {
+              for (int ic = 0; ic < in_c; ++ic) {
+                int ih = oh * stride_h + kh * dilation_h - pad_t;
+                int iw = ow * stride_w + kw * dilation_w - pad_l;
+                if (ih >= 0 && ih < in_h && iw >= 0 && iw < in_w) {
+                  int input_idx = ((b * in_h + ih) * in_w + iw) * in_c + ic;
+                  int filter_idx =
+                      ((oc * filter_h + kh) * filter_w + kw) * in_c + ic;
+                  sum += input_data[input_idx] * filter_data[filter_idx];
+                }
+              }
+            }
+          }
+          float output_val = sum + (bias_data ? bias_data[oc] : 0.0f);
+          if (faf == tflite::ActivationFunctionType_RELU) {
+            if (output_val < 0.0f) output_val = 0.0f;
+          } else if (faf == tflite::ActivationFunctionType_RELU6) {
+            if (output_val < 0.0f) output_val = 0.0f;
+            if (output_val > 6.0f) output_val = 6.0f;
+          }
+          output_data[((b * out_h + oh) * out_w + ow) * out_c + oc] =
+              output_val;
+        }
+      }
+    }
+  }
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_CONVOLUTION_H_

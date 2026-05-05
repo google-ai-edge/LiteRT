@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -34,6 +35,7 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
+
 #include "tflite/schema/schema_generated.h"
 #include "tflite/types/half.h"
 
@@ -114,12 +116,35 @@ void RegisterUnary(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterConv2d(const AtsConf& options, size_t& test_id, size_t iters,
+                    typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      Conv2d,
+      SizeListC<4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflConv2d>,
+      TypeList<std::integral_constant<tflite::Padding, tflite::Padding_VALID>,
+               std::integral_constant<tflite::Padding, tflite::Padding_SAME>>,
+      SizeListC<1, 2>,
+      SizeListC<1, 2>,
+      SizeListC<1>,
+      SizeListC<1>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
   RegisterNoOp<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBinaryNoBroadcast<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterUnary<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

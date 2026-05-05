@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <tuple>
 #include <type_traits>
@@ -30,6 +31,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/test/simple_buffer.h"
@@ -118,7 +120,10 @@ using FbOpTypes =
         std::bool_constant<OpCode == kLiteRtOpCodeTflRelu0To1>,
             FbOpTraitsNoOptions<tflite::BuiltinOperator_RELU_0_TO_1>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflSign>,
-            FbOpTraitsNoOptions<tflite::BuiltinOperator_SIGN>
+            FbOpTraitsNoOptions<tflite::BuiltinOperator_SIGN>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflConv2d>,
+            FbOpTraits<tflite::Conv2DOptionsT, tflite::BuiltinOperator_CONV_2D,
+                       tflite::BuiltinOptions_Conv2DOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
@@ -262,6 +267,23 @@ class TestGraph {
  private:
   LiteRtModelT::Ptr model_;
 };
+
+inline int ComputePaddingBefore(int in_size, int filter_size, int stride,
+                                int dilation, tflite::Padding padding,
+                                int out_size) {
+  if (padding == tflite::Padding_SAME) {
+    int effective_filter_size = (filter_size - 1) * dilation + 1;
+    int pad_along = (out_size - 1) * stride + effective_filter_size - in_size;
+    return pad_along / 2;
+  }
+  return 0;
+}
+
+template <typename T>
+inline OwningBufferRef<uint8_t> MakeOwningBufferRef(const std::vector<T>& vec) {
+  return OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(vec.data()),
+                                  vec.size() * sizeof(T));
+}
 
 }  // namespace litert::testing
 

@@ -31,6 +31,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_rng",
@@ -211,12 +212,38 @@ cc_test(
 )
 
 cc_library(
+    name = "conv_2d",
+    testonly = True,
+    hdrs = ["conv_2d.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/core/model:ops_convolution",
+        "//litert/core/model:shape_inference_types",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "generators",
     testonly = True,
     hdrs = ["generators.h"],
     deps = [
         ":binary_no_bcast",
         ":common",
+        ":conv_2d",
         ":extra_model",
         ":no_op",
         ":unary",

@@ -1485,6 +1485,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", sub_opts);
       break;
     }
+    case tflite::BuiltinOptions_Conv2DOptions: {
+      const auto* conv_opts = opts.AsConv2DOptions();
+      absl::Format(&sink, "%v", conv_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1568,6 +1573,39 @@ void AbslStringify(Sink& sink, const SubOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const SubOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const Padding& type) {
+  switch (type) {
+    case Padding_SAME:
+      sink.Append("SAME");
+      break;
+    case Padding_VALID:
+      sink.Append("VALID");
+      break;
+    default:
+      sink.Append(::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Conv2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pad = opts.padding;
+  b("padding", pad);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("dilation_w", opts.dilation_w_factor);
+  b("dilation_h", opts.dilation_h_factor);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Conv2DOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 
