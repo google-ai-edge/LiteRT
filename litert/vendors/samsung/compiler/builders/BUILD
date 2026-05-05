@@ -208,6 +208,33 @@ cc_library(
 )
 
 cc_library(
+    name = "relu1_op_builder",
+    srcs = ["relu1_op_builder.cc"],
+    hdrs = ["relu1_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "relu6_op_builder",
+    srcs = ["relu6_op_builder.cc"],
+    hdrs = ["relu6_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
     name = "reshape_op_builder",
     srcs = ["reshape_op_builder.cc"],
     hdrs = ["reshape_op_builder.h"],
@@ -502,5 +529,99 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_model",
+    ],
+)
+
+cc_library(
+    name = "l2normalization_op_builder",
+    srcs = ["l2normalization_op_builder.cc"],
+    hdrs = ["l2normalization_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "conv3d_op_builder",
+    srcs = ["conv3d_op_builder.cc"],
+    hdrs = ["conv3d_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "relun1to1_op_builder",
+    srcs = ["relun1to1_op_builder.cc"],
+    hdrs = ["relun1to1_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "broadcastto_op_builder",
+    srcs = ["broadcastto_op_builder.cc"],
+    hdrs = ["broadcastto_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "quantize_op_builder",
+    srcs = ["quantize_op_builder.cc"],
+    hdrs = ["quantize_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "dequantize_op_builder",
+    srcs = ["dequantize_op_builder.cc"],
+    hdrs = ["dequantize_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "reversev2_op_builder",
+    srcs = ["reversev2_op_builder.cc"],
+    hdrs = ["reversev2_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        ":utils",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
     ],
 )
