@@ -92,11 +92,19 @@ DispatchDelegateKernel::~DispatchDelegateKernel() {
     }
   }
 
-  // Unregister all buffer handles.
+  // Unregister all active buffer handles.
   for (const auto& p : tensor_buffer_infos_) {
     auto& tensor_buffer_info = p.second;
     (void)LiteRtDispatchUnregisterTensorBuffer(
         device_context_, tensor_buffer_info.buffer_handle);
+  }
+
+  // Unregister all stale/deferred buffer handles.
+  for (auto& info : deferred_unregistrations_) {
+    if (info.buffer_handle) {
+      (void)LiteRtDispatchUnregisterTensorBuffer(device_context_,
+                                                 info.buffer_handle);
+    }
   }
 
   // Destroy all invocation contexts.
@@ -702,11 +710,8 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
   // also keep a non-owned alias of I/O tensor buffers in tensor_buffer_infos_,
   // for internal processing.
 
-  std::set<LiteRtTensorBufferHandle> unused_buffer_handles;
-
   auto allocate_and_register =
-      [this, context, &unused_buffer_handles,
-       &io_tensor_ids](int tensor_id) -> Expected<void> {
+      [this, context, &io_tensor_ids](int tensor_id) -> Expected<void> {
     auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
     if (!tfl_tensor) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
@@ -729,38 +734,56 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
         return {};
       }
 
-      // The tensor buffer associated with tfl_tensor has changed. Consequently,
-      // we must detach the old tensor buffer from the model and attach the new
-      // one.
+      // The tensor buffer associated with tfl_tensor has changed across frames.
+      // To safely defer unregistration until this specific pipeline stage truly
+      // finishes, we locate an output buffer for the current frame, duplicate
+      // its reference to pin its completion out-fence, and poll it
+      // (in a non-blocking way) during subsequent runs.
 
-      auto port_connections_it = io_tensors_port_connections_.find(tensor_id);
-      if (port_connections_it == io_tensors_port_connections_.end()) {
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Tensor port connections not found");
-      }
-      const auto& port_connections = port_connections_it->second;
-      for (auto& pc : port_connections) {
-        auto* invocation_context = node_invocation_contexts_[pc.node_idx];
-        if (pc.is_input_port) {
-          LITERT_RETURN_IF_ERROR(
-              LiteRtDispatchDetachInput(invocation_context, pc.port_idx,
-                                        tensor_buffer_info.buffer_handle));
-        } else {
-          LITERT_RETURN_IF_ERROR(
-              LiteRtDispatchDetachOutput(invocation_context, pc.port_idx,
-                                         tensor_buffer_info.buffer_handle));
+      for (int out_id : output_tensor_ids_) {
+        auto info_it = tensor_buffer_infos_.find(out_id);
+        if (info_it != tensor_buffer_infos_.end() &&
+            info_it->second.tensor_buffer) {
+          // Increment ref count via Duplicate() to safely share the specific
+          // output buffer and its completion event.
+          info_it->second.tensor_buffer->Duplicate();
+          tensor_buffer_info.out_fence_buffer.reset(
+              info_it->second.tensor_buffer.get());
+          break;
         }
       }
 
-      tensor_buffer_info.attached = false;
+      deferred_unregistrations_.push_back(std::move(tensor_buffer_info));
 
-      // Unregister the old tensor buffer with the Dispatch API. We do that at
-      // the end after collecting all tensor buffer handles to unregister
-      // because a tensor buffer may be connected to multiple TFL tensors
-      // (once we implement a proper tensor buffer allocation algorithm).
-      unused_buffer_handles.insert(tensor_buffer_info.buffer_handle);
+      auto it = deferred_unregistrations_.begin();
+      while (it != deferred_unregistrations_.end()) {
+        bool ready = false;
+        if (it->out_fence_buffer) {
+          if (it->out_fence_buffer->HasEvent()) {
+            if (auto ev_res = it->out_fence_buffer->GetEvent();
+                ev_res && *ev_res) {
+              if ((*ev_res)->Wait(0).HasValue()) {
+                ready = true;
+              }
+            }
+          } else {
+            ready = true;
+          }
+        } else {
+          ready = true;
+        }
 
-      // Register the tensor buffer with the dispatch API.
+        if (ready) {
+          (void)LiteRtDispatchUnregisterTensorBuffer(device_context_,
+                                                     it->buffer_handle);
+          it = deferred_unregistrations_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      // Reset the current TensorInfo slot and register the new buffer.
+      tensor_buffer_infos_[tensor_id] = TensorInfo();
       LITERT_RETURN_IF_ERROR(
           RegisterBufferWithDispatchApi(tensor_id, std::move(tensor_buffer)));
 
@@ -854,11 +877,6 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     // Register an allocated tensor buffer with the dispatch API.
     LITERT_RETURN_IF_ERROR(
         RegisterBufferWithDispatchApi(tensor_id, std::move(tensor_buffer)));
-  }
-
-  for (auto buffer_handle : unused_buffer_handles) {
-    LITERT_RETURN_IF_ERROR(
-        LiteRtDispatchUnregisterTensorBuffer(device_context_, buffer_handle));
   }
 
   return {};
