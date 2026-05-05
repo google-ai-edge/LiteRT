@@ -15,13 +15,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_ACCELERATOR_DEF_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_ACCELERATOR_DEF_H_
 
-#include <cstddef>
-
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,8 +28,6 @@ extern "C" {
 // definition. Any changes to the LiteRtAcceleratorDef struct and HwMemoryInfo
 // struct should be accompanied by an update to this version.
 #define LITERT_ACCELERATOR_DEF_CURRENT_VERSION 1
-
-#define LITERT_ACCELERATOR_DEF_MAX_SUPPORTED_BUFFER_TYPES 16
 
 // A struct that contains the data and functions that are used to define an
 // accelerator. Refer litert_accelerator_registration.h for more details.
@@ -63,19 +57,7 @@ typedef struct {
                                           LiteRtDelegateWrapper delegate,
                                           LiteRtMetrics metrics);
 
-  CreateCustomTensorBuffer create_func;
-  DestroyCustomTensorBuffer destroy_func;
-  LockCustomTensorBuffer lock_func;
-  UnlockCustomTensorBuffer unlock_func;
-  ClearCustomTensorBuffer clear_func;
-  ImportCustomTensorBuffer import_func;
-
-  LiteRtEnvOptionTag device_tag;
-  LiteRtEnvOptionTag queue_tag;
-
-  size_t num_supported_buffer_types;
-  LiteRtTensorBufferType
-      supported_buffer_types[LITERT_ACCELERATOR_DEF_MAX_SUPPORTED_BUFFER_TYPES];
+  LiteRtCustomTensorBufferHandlersDef buffer_handlers;
 } LiteRtAcceleratorDefV1;
 
 typedef LiteRtAcceleratorDefV1 LiteRtAcceleratorDef;

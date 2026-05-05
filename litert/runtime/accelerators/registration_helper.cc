@@ -20,6 +20,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_shared_library.h"
@@ -41,8 +42,8 @@ LiteRtStatus RegisterAcceleratorFromDef(
           nullptr ||
       accelerator_def->create_delegate == nullptr ||
       accelerator_def->destroy_delegate == nullptr ||
-      accelerator_def->num_supported_buffer_types >=
-          LITERT_ACCELERATOR_DEF_MAX_SUPPORTED_BUFFER_TYPES) {
+      accelerator_def->buffer_handlers.num_supported_buffer_types >=
+          LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -65,13 +66,18 @@ LiteRtStatus RegisterAcceleratorFromDef(
   LITERT_RETURN_IF_ERROR(
       LiteRtRegisterAccelerator(env, accelerator, nullptr, nullptr));
 
-  for (size_t i = 0; i < accelerator_def->num_supported_buffer_types; ++i) {
+  for (size_t i = 0;
+       i < accelerator_def->buffer_handlers.num_supported_buffer_types; ++i) {
     LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
-        env, accelerator_def->supported_buffer_types[i],
-        accelerator_def->create_func, accelerator_def->destroy_func,
-        accelerator_def->lock_func, accelerator_def->unlock_func,
-        accelerator_def->clear_func, accelerator_def->import_func,
-        accelerator_def->device_tag, accelerator_def->queue_tag));
+        env, accelerator_def->buffer_handlers.supported_buffer_types[i],
+        accelerator_def->buffer_handlers.create_func,
+        accelerator_def->buffer_handlers.destroy_func,
+        accelerator_def->buffer_handlers.lock_func,
+        accelerator_def->buffer_handlers.unlock_func,
+        accelerator_def->buffer_handlers.clear_func,
+        accelerator_def->buffer_handlers.import_func,
+        accelerator_def->buffer_handlers.device_tag,
+        accelerator_def->buffer_handlers.queue_tag));
   }
 
   return kLiteRtStatusOk;

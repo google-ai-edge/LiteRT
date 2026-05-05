@@ -76,6 +76,7 @@ py_strict_test(
     srcs = ["benchmark_litert_model_test.py"],
     deps = [
         ":benchmark_litert_model",
+        "//litert/python/litert_wrapper/compiled_model_wrapper:options",
         # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
         "@org_tensorflow//third_party/py/numpy",  # copybara:comment
     ],

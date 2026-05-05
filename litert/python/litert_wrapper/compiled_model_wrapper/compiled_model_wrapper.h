@@ -17,6 +17,8 @@
 
 #include <Python.h>
 
+#include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -25,6 +27,45 @@
 
 namespace litert {
 namespace compiled_model_wrapper {
+
+struct CompilationOptions {
+  int hardware_accel = 0;
+  int cpu_num_threads = 0;
+  bool gpu_enforce_f32 = false;
+  bool gpu_share_constant_tensors = false;
+  int cpu_kernel_mode = -1;
+  int xnnpack_flags = -1;
+  std::string xnnpack_weight_cache_path;
+  bool enable_constant_tensor_sharing = false;
+  bool enable_infinite_float_capping = false;
+  bool enable_benchmark_mode = false;
+  bool enable_allow_src_quantized_fc_conv_ops = false;
+  bool enable_hint_waiting_for_completion = false;
+
+  int qualcomm_log_level = -1;
+  int qualcomm_htp_performance_mode = -1;
+  int qualcomm_dsp_performance_mode = -1;
+  int qualcomm_use_int64_bias_as_int32 = -1;
+  int qualcomm_enable_weight_sharing = -1;
+  int qualcomm_use_conv_hmx = -1;
+  int qualcomm_use_fold_relu = -1;
+  int qualcomm_profiling = -1;
+  bool qualcomm_has_dump_tensor_ids = false;
+  std::vector<std::int32_t> qualcomm_dump_tensor_ids;
+  std::string qualcomm_ir_json_dir;
+  std::string qualcomm_dlc_dir;
+  int qualcomm_vtcm_size = -1;
+  int qualcomm_num_hvx_threads = -1;
+  int qualcomm_optimization_level = -1;
+  int qualcomm_graph_priority = -1;
+  int qualcomm_backend = -1;
+  std::string qualcomm_saver_output_dir;
+  int qualcomm_graph_io_tensor_mem_type = -1;
+
+  int intel_openvino_device_type = -1;
+  int intel_openvino_performance_mode = -1;
+  std::map<std::string, std::string> intel_openvino_configs_map;
+};
 
 /**
  * Wrapper class for LiteRT models that provides Python bindings.
@@ -54,12 +95,8 @@ class CompiledModelWrapper {
    * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromFile(
-      PyObject* environment_capsule, const char* model_path, int hardware_accel,
-      int cpu_num_threads, bool gpu_enforce_f32,
-      bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
-      bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
-      bool enable_benchmark_mode, bool enable_allow_src_quantized_fc_conv_ops,
-      bool enable_hint_waiting_for_completion, std::string* out_error);
+      PyObject* environment_capsule, const char* model_path,
+      const CompilationOptions& compilation_options, std::string* out_error);
 
   /**
    * Creates a wrapper from a model buffer in memory.
@@ -82,12 +119,8 @@ class CompiledModelWrapper {
    * @return A new CompiledModelWrapper instance, or nullptr on failure
    */
   static CompiledModelWrapper* CreateWrapperFromBuffer(
-      PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-      int cpu_num_threads, bool gpu_enforce_f32,
-      bool gpu_share_constant_tensors, int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
-      bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
-      bool enable_benchmark_mode, bool enable_allow_src_quantized_fc_conv_ops,
-      bool enable_hint_waiting_for_completion, std::string* out_error);
+      PyObject* environment_capsule, PyObject* model_data,
+      const CompilationOptions& compilation_options, std::string* out_error);
 
   CompiledModelWrapper(litert::ExtendedModel model,
                        litert::CompiledModel compiled);

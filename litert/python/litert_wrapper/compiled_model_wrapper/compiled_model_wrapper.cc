@@ -29,6 +29,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/options/litert_cpu_options.h"
+#include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -40,8 +42,9 @@
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
 namespace litert::compiled_model_wrapper {
@@ -132,6 +135,222 @@ bool SetTensorDetailsDictItem(PyObject* result_dict, absl::string_view key,
   Py_DECREF(value);
   return status == 0;
 }
+
+bool TriStateBoolIsSet(int value) { return value >= 0; }
+
+bool TriStateBoolValue(int value) { return value != 0; }
+
+bool HasQualcommOptions(const CompilationOptions& compilation_options) {
+  return compilation_options.qualcomm_log_level >= 0 ||
+         compilation_options.qualcomm_htp_performance_mode >= 0 ||
+         compilation_options.qualcomm_dsp_performance_mode >= 0 ||
+         TriStateBoolIsSet(
+             compilation_options.qualcomm_use_int64_bias_as_int32) ||
+         TriStateBoolIsSet(
+             compilation_options.qualcomm_enable_weight_sharing) ||
+         TriStateBoolIsSet(compilation_options.qualcomm_use_conv_hmx) ||
+         TriStateBoolIsSet(compilation_options.qualcomm_use_fold_relu) ||
+         compilation_options.qualcomm_profiling >= 0 ||
+         compilation_options.qualcomm_has_dump_tensor_ids ||
+         !compilation_options.qualcomm_ir_json_dir.empty() ||
+         !compilation_options.qualcomm_dlc_dir.empty() ||
+         compilation_options.qualcomm_vtcm_size >= 0 ||
+         compilation_options.qualcomm_num_hvx_threads >= 0 ||
+         compilation_options.qualcomm_optimization_level >= 0 ||
+         compilation_options.qualcomm_graph_priority >= 0 ||
+         compilation_options.qualcomm_backend >= 0 ||
+         !compilation_options.qualcomm_saver_output_dir.empty() ||
+         compilation_options.qualcomm_graph_io_tensor_mem_type >= 0;
+}
+
+bool HasIntelOpenVinoOptions(const CompilationOptions& compilation_options) {
+  return compilation_options.intel_openvino_device_type >= 0 ||
+         compilation_options.intel_openvino_performance_mode >= 0 ||
+         !compilation_options.intel_openvino_configs_map.empty();
+}
+
+bool PopulateCompilationOptions(litert::Options& options,
+                                const CompilationOptions& compilation_options,
+                                std::string* out_error) {
+  auto accelerator_status = options.SetHardwareAccelerators(
+      static_cast<HwAccelerators>(compilation_options.hardware_accel));
+  if (!accelerator_status) {
+    if (out_error) *out_error = accelerator_status.Error().Message();
+    return false;
+  }
+
+  if (compilation_options.gpu_enforce_f32 ||
+      compilation_options.gpu_share_constant_tensors ||
+      compilation_options.enable_constant_tensor_sharing ||
+      compilation_options.enable_infinite_float_capping ||
+      compilation_options.enable_benchmark_mode ||
+      compilation_options.enable_allow_src_quantized_fc_conv_ops ||
+      compilation_options.enable_hint_waiting_for_completion) {
+    auto gpu_options_or = options.GetGpuOptions();
+    if (!gpu_options_or) {
+      if (out_error) *out_error = gpu_options_or.Error().Message();
+      return false;
+    }
+    if (compilation_options.gpu_enforce_f32) {
+      gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
+    }
+    if (compilation_options.gpu_share_constant_tensors ||
+        compilation_options.enable_constant_tensor_sharing) {
+      gpu_options_or->EnableConstantTensorSharing(true);
+    }
+    if (compilation_options.enable_infinite_float_capping) {
+      gpu_options_or->EnableInfiniteFloatCapping(true);
+    }
+    if (compilation_options.enable_benchmark_mode) {
+      gpu_options_or->EnableBenchmarkMode(true);
+    }
+    if (compilation_options.enable_allow_src_quantized_fc_conv_ops) {
+      gpu_options_or->EnableAllowSrcQuantizedFcConvOps(true);
+    }
+    if (compilation_options.enable_hint_waiting_for_completion) {
+      gpu_options_or->HintWaitingForCompletion(true);
+    }
+  }
+
+  if (compilation_options.cpu_num_threads > 0 ||
+      compilation_options.cpu_kernel_mode >= 0 ||
+      compilation_options.xnnpack_flags >= 0 ||
+      !compilation_options.xnnpack_weight_cache_path.empty()) {
+    auto cpu_options_or = options.GetCpuOptions();
+    if (!cpu_options_or) {
+      if (out_error) *out_error = cpu_options_or.Error().Message();
+      return false;
+    }
+    if (compilation_options.cpu_num_threads > 0) {
+      cpu_options_or->SetNumThreads(compilation_options.cpu_num_threads);
+    }
+    if (compilation_options.cpu_kernel_mode >= 0) {
+      cpu_options_or->SetKernelMode(static_cast<LiteRtCpuKernelMode>(
+          compilation_options.cpu_kernel_mode));
+    }
+    if (compilation_options.xnnpack_flags >= 0) {
+      cpu_options_or->SetXNNPackFlags(
+          static_cast<uint32_t>(compilation_options.xnnpack_flags));
+    }
+    if (!compilation_options.xnnpack_weight_cache_path.empty()) {
+      cpu_options_or->SetXNNPackWeightCachePath(
+          compilation_options.xnnpack_weight_cache_path.c_str());
+    }
+  }
+
+  if (HasQualcommOptions(compilation_options)) {
+    auto qualcomm_options_or = options.GetQualcommOptions();
+    if (!qualcomm_options_or) {
+      if (out_error) *out_error = qualcomm_options_or.Error().Message();
+      return false;
+    }
+    auto& qualcomm_options = *qualcomm_options_or;
+    if (compilation_options.qualcomm_log_level >= 0) {
+      qualcomm_options.SetLogLevel(
+          static_cast<qualcomm::QualcommOptions::LogLevel>(
+              compilation_options.qualcomm_log_level));
+    }
+    if (compilation_options.qualcomm_htp_performance_mode >= 0) {
+      qualcomm_options.SetHtpPerformanceMode(
+          static_cast<qualcomm::QualcommOptions::HtpPerformanceMode>(
+              compilation_options.qualcomm_htp_performance_mode));
+    }
+    if (compilation_options.qualcomm_dsp_performance_mode >= 0) {
+      qualcomm_options.SetDspPerformanceMode(
+          static_cast<qualcomm::QualcommOptions::DspPerformanceMode>(
+              compilation_options.qualcomm_dsp_performance_mode));
+    }
+    if (TriStateBoolIsSet(
+            compilation_options.qualcomm_use_int64_bias_as_int32)) {
+      qualcomm_options.SetUseInt64BiasAsInt32(TriStateBoolValue(
+          compilation_options.qualcomm_use_int64_bias_as_int32));
+    }
+    if (TriStateBoolIsSet(compilation_options.qualcomm_enable_weight_sharing)) {
+      qualcomm_options.SetEnableWeightSharing(TriStateBoolValue(
+          compilation_options.qualcomm_enable_weight_sharing));
+    }
+    if (TriStateBoolIsSet(compilation_options.qualcomm_use_conv_hmx)) {
+      qualcomm_options.SetUseConvHMX(
+          TriStateBoolValue(compilation_options.qualcomm_use_conv_hmx));
+    }
+    if (TriStateBoolIsSet(compilation_options.qualcomm_use_fold_relu)) {
+      qualcomm_options.SetUseFoldReLU(
+          TriStateBoolValue(compilation_options.qualcomm_use_fold_relu));
+    }
+    if (compilation_options.qualcomm_profiling >= 0) {
+      qualcomm_options.SetProfiling(
+          static_cast<qualcomm::QualcommOptions::Profiling>(
+              compilation_options.qualcomm_profiling));
+    }
+    if (compilation_options.qualcomm_has_dump_tensor_ids) {
+      qualcomm_options.SetDumpTensorIds(
+          compilation_options.qualcomm_dump_tensor_ids);
+    }
+    if (!compilation_options.qualcomm_ir_json_dir.empty()) {
+      qualcomm_options.SetIrJsonDir(compilation_options.qualcomm_ir_json_dir);
+    }
+    if (!compilation_options.qualcomm_dlc_dir.empty()) {
+      qualcomm_options.SetDlcDir(compilation_options.qualcomm_dlc_dir);
+    }
+    if (compilation_options.qualcomm_vtcm_size >= 0) {
+      qualcomm_options.SetVtcmSize(
+          static_cast<uint32_t>(compilation_options.qualcomm_vtcm_size));
+    }
+    if (compilation_options.qualcomm_num_hvx_threads >= 0) {
+      qualcomm_options.SetNumHvxThreads(
+          static_cast<uint32_t>(compilation_options.qualcomm_num_hvx_threads));
+    }
+    if (compilation_options.qualcomm_optimization_level >= 0) {
+      qualcomm_options.SetOptimizationLevel(
+          static_cast<qualcomm::QualcommOptions::OptimizationLevel>(
+              compilation_options.qualcomm_optimization_level));
+    }
+    if (compilation_options.qualcomm_graph_priority >= 0) {
+      qualcomm_options.SetGraphPriority(
+          static_cast<qualcomm::QualcommOptions::GraphPriority>(
+              compilation_options.qualcomm_graph_priority));
+    }
+    if (compilation_options.qualcomm_backend >= 0) {
+      qualcomm_options.SetBackend(
+          static_cast<qualcomm::QualcommOptions::Backend>(
+              compilation_options.qualcomm_backend));
+    }
+    if (!compilation_options.qualcomm_saver_output_dir.empty()) {
+      qualcomm_options.SetSaverOutputDir(
+          compilation_options.qualcomm_saver_output_dir);
+    }
+    if (compilation_options.qualcomm_graph_io_tensor_mem_type >= 0) {
+      qualcomm_options.SetGraphIOTensorMemType(
+          static_cast<qualcomm::QualcommOptions::GraphIOTensorMemType>(
+              compilation_options.qualcomm_graph_io_tensor_mem_type));
+    }
+  }
+
+  if (HasIntelOpenVinoOptions(compilation_options)) {
+    auto intel_openvino_options_or = options.GetIntelOpenVinoOptions();
+    if (!intel_openvino_options_or) {
+      if (out_error) *out_error = intel_openvino_options_or.Error().Message();
+      return false;
+    }
+    auto& intel_openvino_options = *intel_openvino_options_or;
+    if (compilation_options.intel_openvino_device_type >= 0) {
+      intel_openvino_options.SetDeviceType(
+          static_cast<LiteRtIntelOpenVinoDeviceType>(
+              compilation_options.intel_openvino_device_type));
+    }
+    if (compilation_options.intel_openvino_performance_mode >= 0) {
+      intel_openvino_options.SetPerformanceMode(
+          static_cast<LiteRtIntelOpenVinoPerformanceMode>(
+              compilation_options.intel_openvino_performance_mode));
+    }
+    for (const auto& [key, value] :
+         compilation_options.intel_openvino_configs_map) {
+      intel_openvino_options.SetConfigsMapOption(key.c_str(), value.c_str());
+    }
+  }
+
+  return true;
+}
 }  // namespace
 
 // Returns the byte width of a data type.
@@ -172,12 +391,8 @@ PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
 
 // Creates a CompiledModelWrapper from a model file.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
-    PyObject* environment_capsule, const char* model_path, int hardware_accel,
-    int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
-    int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
-    bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
-    bool enable_benchmark_mode, bool enable_allow_src_quantized_fc_conv_ops,
-    bool enable_hint_waiting_for_completion, std::string* out_error) {
+    PyObject* environment_capsule, const char* model_path,
+    const CompilationOptions& compilation_options, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -200,54 +415,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     return nullptr;
   }
   auto& options = *options_or;
-  options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
-
-  if (gpu_enforce_f32 || gpu_share_constant_tensors || enable_constant_tensor_sharing || enable_infinite_float_capping || enable_benchmark_mode || enable_allow_src_quantized_fc_conv_ops || enable_hint_waiting_for_completion) {
-    auto gpu_options_or = options.GetGpuOptions();
-    if (!gpu_options_or) {
-      if (out_error) *out_error = gpu_options_or.Error().Message();
-      return nullptr;
-    }
-    if (gpu_enforce_f32) {
-      gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
-    }
-    if (gpu_share_constant_tensors || enable_constant_tensor_sharing) {
-      gpu_options_or->EnableConstantTensorSharing(true);
-    }
-    if (enable_infinite_float_capping) {
-      gpu_options_or->EnableInfiniteFloatCapping(true);
-    }
-    if (enable_benchmark_mode) {
-      gpu_options_or->EnableBenchmarkMode(true);
-    }
-    if (enable_allow_src_quantized_fc_conv_ops) {
-      gpu_options_or->EnableAllowSrcQuantizedFcConvOps(true);
-    }
-    if (enable_hint_waiting_for_completion) {
-      gpu_options_or->HintWaitingForCompletion(true);
-    }
-  }
-
-  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0 ||
-      (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path)) {
-    auto cpu_options_or = options.GetCpuOptions();
-    if (!cpu_options_or) {
-      if (out_error) *out_error = cpu_options_or.Error().Message();
-      return nullptr;
-    }
-    if (cpu_num_threads > 0) {
-      cpu_options_or->SetNumThreads(cpu_num_threads);
-    }
-    if (cpu_kernel_mode >= 0) {
-      cpu_options_or->SetKernelMode(
-          static_cast<LiteRtCpuKernelMode>(cpu_kernel_mode));
-    }
-    if (xnnpack_flags >= 0) {
-      cpu_options_or->SetXNNPackFlags(static_cast<uint32_t>(xnnpack_flags));
-    }
-    if (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path) {
-      cpu_options_or->SetXNNPackWeightCachePath(xnnpack_weight_cache_path);
-    }
+  if (!PopulateCompilationOptions(options, compilation_options, out_error)) {
+    return nullptr;
   }
 
   // Create a compiled model
@@ -271,12 +440,8 @@ int ConvertFromPyString(PyObject* obj, char** data, Py_ssize_t* length) {
 
 // Creates a CompiledModelWrapper from a model buffer.
 CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
-    PyObject* environment_capsule, PyObject* model_data, int hardware_accel,
-    int cpu_num_threads, bool gpu_enforce_f32, bool gpu_share_constant_tensors,
-    int cpu_kernel_mode, int xnnpack_flags, const char* xnnpack_weight_cache_path,
-    bool enable_constant_tensor_sharing, bool enable_infinite_float_capping,
-    bool enable_benchmark_mode, bool enable_allow_src_quantized_fc_conv_ops,
-    bool enable_hint_waiting_for_completion, std::string* out_error) {
+    PyObject* environment_capsule, PyObject* model_data,
+    const CompilationOptions& compilation_options, std::string* out_error) {
   auto* env =
       litert_wrapper_utils::GetEnvironmentFromCapsule(environment_capsule);
   if (env == nullptr) {
@@ -309,54 +474,8 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     return nullptr;
   }
   auto& options = *options_or;
-  options.SetHardwareAccelerators(static_cast<HwAccelerators>(hardware_accel));
-
-  if (gpu_enforce_f32 || gpu_share_constant_tensors || enable_constant_tensor_sharing || enable_infinite_float_capping || enable_benchmark_mode || enable_allow_src_quantized_fc_conv_ops || enable_hint_waiting_for_completion) {
-    auto gpu_options_or = options.GetGpuOptions();
-    if (!gpu_options_or) {
-      if (out_error) *out_error = gpu_options_or.Error().Message();
-      return nullptr;
-    }
-    if (gpu_enforce_f32) {
-      gpu_options_or->SetPrecision(GpuOptions::Precision::kFp32);
-    }
-    if (gpu_share_constant_tensors || enable_constant_tensor_sharing) {
-      gpu_options_or->EnableConstantTensorSharing(true);
-    }
-    if (enable_infinite_float_capping) {
-      gpu_options_or->EnableInfiniteFloatCapping(true);
-    }
-    if (enable_benchmark_mode) {
-      gpu_options_or->EnableBenchmarkMode(true);
-    }
-    if (enable_allow_src_quantized_fc_conv_ops) {
-      gpu_options_or->EnableAllowSrcQuantizedFcConvOps(true);
-    }
-    if (enable_hint_waiting_for_completion) {
-      gpu_options_or->HintWaitingForCompletion(true);
-    }
-  }
-
-  if (cpu_num_threads > 0 || cpu_kernel_mode >= 0 || xnnpack_flags >= 0 ||
-      (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path)) {
-    auto cpu_options_or = options.GetCpuOptions();
-    if (!cpu_options_or) {
-      if (out_error) *out_error = cpu_options_or.Error().Message();
-      return nullptr;
-    }
-    if (cpu_num_threads > 0) {
-      cpu_options_or->SetNumThreads(cpu_num_threads);
-    }
-    if (cpu_kernel_mode >= 0) {
-      cpu_options_or->SetKernelMode(
-          static_cast<LiteRtCpuKernelMode>(cpu_kernel_mode));
-    }
-    if (xnnpack_flags >= 0) {
-      cpu_options_or->SetXNNPackFlags(static_cast<uint32_t>(xnnpack_flags));
-    }
-    if (xnnpack_weight_cache_path != nullptr && *xnnpack_weight_cache_path) {
-      cpu_options_or->SetXNNPackWeightCachePath(xnnpack_weight_cache_path);
-    }
+  if (!PopulateCompilationOptions(options, compilation_options, out_error)) {
+    return nullptr;
   }
 
   // Create a compiled model

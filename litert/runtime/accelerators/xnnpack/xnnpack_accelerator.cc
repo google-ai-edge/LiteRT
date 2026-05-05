@@ -19,6 +19,7 @@
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -151,13 +152,18 @@ static LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
         litert::CpuAccelerator::IsTfLiteDelegateResponsibleForJitCompilation,
     .create_delegate = litert::CpuAccelerator::CreateDelegate,
     .destroy_delegate = litert::CpuAccelerator::DestroyDelegate,
-    .create_func = nullptr,
-    .destroy_func = nullptr,
-    .lock_func = nullptr,
-    .unlock_func = nullptr,
-    .clear_func = nullptr,
-    .import_func = nullptr,
-    .num_supported_buffer_types = 0,
+    .buffer_handlers =
+        {
+            .create_func = nullptr,
+            .destroy_func = nullptr,
+            .lock_func = nullptr,
+            .unlock_func = nullptr,
+            .clear_func = nullptr,
+            .import_func = nullptr,
+            .device_tag = kLiteRtEnvOptionTagNull,
+            .queue_tag = kLiteRtEnvOptionTagNull,
+            .num_supported_buffer_types = 0,
+        },
 };
 
 // Accelerator definition pointer referenced by auto_registration.cc.
