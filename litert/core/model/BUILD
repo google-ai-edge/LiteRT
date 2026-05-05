@@ -578,6 +578,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tflite/kernels/internal:reference_base",
         "@com_google_absl//absl/types:span",
     ],
 )
