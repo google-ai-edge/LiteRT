@@ -85,6 +85,12 @@ class EnvironmentOptions {
     kRuntimeLibraryDir = kLiteRtEnvOptionTagRuntimeLibraryDir,
     /// \internal This is for internal use only.
     kSystemRuntimeHandle = kLiteRtEnvOptionTagSystemRuntimeHandle,
+    /// Maximum number of configurations to store per model in the compiler
+    /// cache.
+    kCompilerCacheMaxConfigsPerModel =
+        kLiteRtEnvOptionTagCompilerCacheMaxConfigsPerModel,
+    /// Maximum total size of the compiler cache in bytes.
+    kCompilerCacheMaxTotalSize = kLiteRtEnvOptionTagCompilerCacheMaxTotalSize,
     /// Bitmask of LiteRtHwAccelerators to auto-register during environment
     /// creation. If unset, LiteRT auto-registers all supported accelerators.
     kAutoRegisterAccelerators = kLiteRtEnvOptionTagAutoRegisterAccelerators,
