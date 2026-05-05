@@ -143,11 +143,9 @@ TEST_P(QnnModelTest, SingleElementWiseBinaryMulAsymmetricQuant) {
           std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.06f,
           -68},
       kDims);
-  auto ops = ::qnn::BuildElementwiseMulOp(tensor_pool_, {input_0, input_1},
-                                          {output_0});
-  ASSERT_FALSE(ops.empty());
 
-  qnn_model_.MoveOpsToGraph(std::move(ops));
+  qnn_model_.MoveOpToGraph(
+      ::qnn::CreateElementWiseMulOp(input_0, input_1, output_0));
 
   ASSERT_TRUE(qnn_model_.ValidateOpConfig());
   ASSERT_TRUE(qnn_model_.Finalize());
