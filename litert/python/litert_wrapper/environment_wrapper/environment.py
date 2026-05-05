@@ -14,8 +14,9 @@
 
 """Python wrapper for LiteRT environments."""
 
+import dataclasses
 import os
-from typing import Optional
+from typing import Optional, Union
 
 # pylint: disable=g-import-not-at-top
 if not os.path.splitext(__file__)[0].endswith(
@@ -29,102 +30,89 @@ else:
 # pylint: enable=g-import-not-at-top
 
 
+@dataclasses.dataclass(frozen=True)
+class EnvironmentOptions:
+  """Environment-level options for a shared LiteRT environment."""
+
+  runtime_path: Optional[str] = None
+  compiler_plugin_path: str = ""
+  dispatch_library_path: str = ""
+
+
 class Environment:
   """Python wrapper for a shared LiteRT environment."""
 
   def __init__(
       self,
       capsule,
-      cpu_num_threads: int = 0,
-      gpu_enforce_f32: bool = False,
-      gpu_share_constant_tensors: bool = False,
-      cpu_kernel_mode: int = -1,
-      xnnpack_flags: int = -1,
-      xnnpack_weight_cache_path: str = "",
-      enable_constant_tensor_sharing: bool = False,
-      enable_infinite_float_capping: bool = False,
-      enable_benchmark_mode: bool = False,
-      enable_allow_src_quantized_fc_conv_ops: bool = False,
-      enable_hint_waiting_for_completion: bool = False,
+      options: EnvironmentOptions,
   ):
     self._capsule = capsule
-    self.cpu_num_threads = cpu_num_threads
-    self.gpu_enforce_f32 = gpu_enforce_f32
-    self.gpu_share_constant_tensors = gpu_share_constant_tensors
-    self.cpu_kernel_mode = cpu_kernel_mode
-    self.xnnpack_flags = xnnpack_flags
-    self.xnnpack_weight_cache_path = xnnpack_weight_cache_path
-    self.enable_constant_tensor_sharing = enable_constant_tensor_sharing
-    self.enable_infinite_float_capping = enable_infinite_float_capping
-    self.enable_benchmark_mode = enable_benchmark_mode
-    self.enable_allow_src_quantized_fc_conv_ops = (
-        enable_allow_src_quantized_fc_conv_ops
-    )
-    self.enable_hint_waiting_for_completion = enable_hint_waiting_for_completion
+    self._options = options
 
   @classmethod
   def create(
       cls,
+      *,
+      options: Optional[Union[EnvironmentOptions, str]] = None,
       runtime_path: Optional[str] = None,
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
-      cpu_num_threads: int = 1,
-      gpu_enforce_f32: bool = False,
-      gpu_share_constant_tensors: bool = False,
-      cpu_kernel_mode: int = -1,
-      xnnpack_flags: int = -1,
-      xnnpack_weight_cache_path: str = "",
-      enable_constant_tensor_sharing: bool = False,
-      enable_infinite_float_capping: bool = False,
-      enable_benchmark_mode: bool = False,
-      enable_allow_src_quantized_fc_conv_ops: bool = False,
-      enable_hint_waiting_for_completion: bool = False,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
     Args:
-      runtime_path: Optional path to the LiteRT runtime library directory.
-        Defaults to the directory containing the Python wheel modules.
-      compiler_plugin_path: Optional path to compiler plugin libraries.
-      dispatch_library_path: Optional path to dispatch libraries.
-      cpu_num_threads: Number of threads for CPU execution.
-      gpu_enforce_f32: Enforce F32 precision on GPU.
-      gpu_share_constant_tensors: Share constant tensors among subgraphs on GPU.
-      cpu_kernel_mode: CPU kernel mode option.
-      xnnpack_flags: XNNPACK flags option.
-      xnnpack_weight_cache_path: XNNPACK weight cache path option.
-      enable_constant_tensor_sharing: Enable constant tensor sharing on GPU.
-      enable_infinite_float_capping: Enable infinite float capping on GPU.
-      enable_benchmark_mode: Enable benchmark mode on GPU.
-      enable_allow_src_quantized_fc_conv_ops: Enable allow src quantized fc conv
-        ops on GPU.
-      enable_hint_waiting_for_completion: Enable hint waiting for completion on
-        GPU.
+      options: Optional grouped environment options. Use this to mirror the
+        native C++ EnvironmentOptions API.
+      runtime_path: Optional path to the LiteRT runtime library directory. This
+        shortcut is mutually exclusive with options.
+      compiler_plugin_path: Optional path to compiler plugin libraries. This
+        shortcut is mutually exclusive with options.
+      dispatch_library_path: Optional path to dispatch libraries. This shortcut
+        is mutually exclusive with options.
 
     Returns:
       A new Environment instance.
     """
-    if runtime_path is None:
-      runtime_path = os.path.dirname(os.path.abspath(__file__))
+    provided_runtime_path = runtime_path
+    if isinstance(options, str):
+      if provided_runtime_path is not None:
+        raise ValueError("runtime_path was provided twice.")
+      provided_runtime_path = options
+      options = None
+    if options is not None and (
+        provided_runtime_path is not None
+        or compiler_plugin_path
+        or dispatch_library_path
+    ):
+      raise ValueError("Pass either options or environment path shortcuts.")
+    if options is None:
+      options = EnvironmentOptions(
+          runtime_path=provided_runtime_path,
+          compiler_plugin_path=compiler_plugin_path,
+          dispatch_library_path=dispatch_library_path,
+      )
+
+    # Determine the final runtime path to be used.
+    final_runtime_path = (
+        provided_runtime_path
+        or options.runtime_path
+        or os.path.dirname(os.path.abspath(__file__))
+    )
+
     capsule = _env.CreateEnvironment(
-        runtime_path=runtime_path,
-        compiler_plugin_path=compiler_plugin_path,
-        dispatch_library_path=dispatch_library_path,
+        runtime_path=final_runtime_path,
+        compiler_plugin_path=options.compiler_plugin_path,
+        dispatch_library_path=options.dispatch_library_path,
     )
     return cls(
-        capsule,
-        cpu_num_threads,
-        gpu_enforce_f32,
-        gpu_share_constant_tensors,
-        cpu_kernel_mode,
-        xnnpack_flags,
-        xnnpack_weight_cache_path,
-        enable_constant_tensor_sharing,
-        enable_infinite_float_capping,
-        enable_benchmark_mode,
-        enable_allow_src_quantized_fc_conv_ops,
-        enable_hint_waiting_for_completion,
+        capsule, dataclasses.replace(options, runtime_path=final_runtime_path)
     )
+
+  @property
+  def options(self) -> EnvironmentOptions:
+    """Returns the environment options used to create this environment."""
+    return self._options
 
   @property
   def capsule(self):
