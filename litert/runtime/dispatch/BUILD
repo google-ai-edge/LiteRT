@@ -128,7 +128,7 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     deps = [
         "//litert/cc:litert_common",
@@ -152,7 +152,7 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     deps = [
         "//litert/c:litert_common",

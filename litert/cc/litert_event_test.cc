@@ -27,6 +27,9 @@ TEST(Event, DupFdOnNegativeFd) {
   if (!HasSyncFenceSupport()) {
     GTEST_SKIP() << "Sync fences are not supported on this platform.";
   }
+#ifdef _WIN32
+  GTEST_SKIP() << "Sync fence file descriptors are not supported on Windows.";
+#endif
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(Event event,
                               Event::CreateFromSyncFenceFd(env, -1, true));
@@ -37,6 +40,9 @@ TEST(Event, IsSignaledOnNegativeFd) {
   if (!HasSyncFenceSupport()) {
     GTEST_SKIP() << "Sync fences are not supported on this platform.";
   }
+#ifdef _WIN32
+  GTEST_SKIP() << "Sync fence file descriptors are not supported on Windows.";
+#endif
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(Event event,
                               Event::CreateFromSyncFenceFd(env, -1, true));

@@ -14,7 +14,9 @@
 
 #include "litert/cc/internal/litert_shared_library.h"
 
+#if !LITERT_WINDOWS_OS
 #include <dlfcn.h>
+#endif
 
 #include <string>
 #include <utility>

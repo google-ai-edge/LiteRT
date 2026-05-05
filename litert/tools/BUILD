@@ -57,7 +57,7 @@ cc_test(
     srcs = ["apply_plugin_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
     # Workaround to disable mismatched-size-delete.
     # This test uses`libLiteRt.so` with some system components.
@@ -95,7 +95,7 @@ litert_bin(
             # copybara:uncomment_end
             "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
             "//litert/vendors/mediatek/compiler:compiler_plugin_so",
-            "//litert/vendors/examples:example_plugin_so",
+            "//litert/vendors/examples:example_plugin_so_data",
             "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
             "//litert/vendors/samsung/compiler:compiler_plugin_so",
             "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
@@ -268,7 +268,7 @@ cc_binary(
     name = "apply_plugin_main_for_test",
     testonly = 1,
     srcs = ["apply_plugin_main.cc"],
-    data = ["//litert/vendors/examples:example_plugin_so"],
+    data = ["//litert/vendors/examples:example_plugin_so_data"],
     linkstatic = 1,
     tags = [
         "noasan",
