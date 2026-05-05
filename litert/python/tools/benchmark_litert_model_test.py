@@ -24,7 +24,7 @@ import unittest
 import numpy as np
 
 # Import the module under test.
-from litert.python.tools import benchmark_litert_model as bm
+import benchmark_litert_model as bm
 
 # Suppress INFO/DEBUG logs from the module under test during test runs.
 # Set to logging.DEBUG to see benchmark module logs when debugging tests.

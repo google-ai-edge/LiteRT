@@ -211,4 +211,3 @@ add_subdirectory("${LITERT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/litert")
 add_executable(my_litert_app main.cc)
 target_link_libraries(my_litert_app PRIVATE litert_cc_api_with_dynamic_runtime)
 ```
-
