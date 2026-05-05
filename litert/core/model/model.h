@@ -1490,6 +1490,31 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", conv_opts);
       break;
     }
+    case tflite::BuiltinOptions_DepthwiseConv2DOptions: {
+      const auto* dw_opts = opts.AsDepthwiseConv2DOptions();
+      absl::Format(&sink, "%v", dw_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_ReducerOptions: {
+      const auto* reducer_opts = opts.AsReducerOptions();
+      absl::Format(&sink, "%v", reducer_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_MulOptions: {
+      const auto* mul_opts = opts.AsMulOptions();
+      absl::Format(&sink, "%v", mul_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_DivOptions: {
+      const auto* div_opts = opts.AsDivOptions();
+      absl::Format(&sink, "%v", div_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_Pool2DOptions: {
+      const auto* pool_opts = opts.AsPool2DOptions();
+      absl::Format(&sink, "%v", pool_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1606,6 +1631,74 @@ void AbslStringify(Sink& sink, const Conv2DOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const Conv2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pad = opts.padding;
+  b("padding", pad);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("depth_multiplier", opts.depth_multiplier);
+  b("dilation_w", opts.dilation_w_factor);
+  b("dilation_h", opts.dilation_h_factor);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReducerOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("keep_dims", opts.keep_dims);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ReducerOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const MulOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const MulOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DivOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DivOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Pool2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+  b("padding", opts.padding);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("filter_width", opts.filter_width);
+  b("filter_height", opts.filter_height);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const Pool2DOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

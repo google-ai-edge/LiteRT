@@ -25,6 +25,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "tflite/kernels/internal/reference/reduce.h"
 
 namespace litert::internal {
 
@@ -106,6 +107,22 @@ inline LiteRtStatus InferArgMinMax(const LiteRtOpT& op,
                                    std::vector<Dims>& output_shapes) {
   return InferGenericReduction(op, input_shapes, output_shapes,
                                /*keep_dims=*/false);
+}
+
+template <typename T>
+inline bool ReferenceReduction(const T* input_data, const int* input_dims,
+                               int input_num_dims, T* output_data,
+                               const int* output_dims, int output_num_dims,
+                               const int* axis, int num_axis, bool keep_dims,
+                               T init_value,
+                               T reducer(const T current, const T in)) {
+  std::vector<int> temp_index(input_num_dims);
+  std::vector<int> resolved_axis(input_num_dims);
+
+  return tflite::reference_ops::ReduceGeneric<T>(
+      input_data, input_dims, input_num_dims, output_data, output_dims,
+      output_num_dims, axis, num_axis, keep_dims, temp_index.data(),
+      resolved_axis.data(), init_value, reducer);
 }
 
 }  // namespace litert::internal
