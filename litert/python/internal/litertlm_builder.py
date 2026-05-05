@@ -581,16 +581,19 @@ def _copy_file_to_stream(f_src: Any, f_dst: BinaryIO, buffer_size=1024 * 1024):
 
       in_fd, out_fd = f_src.fileno(), f_dst.fileno()
       num_bytes = os.fstat(in_fd).st_size
-      os.sendfile(out_fd, in_fd, offset=0, count=num_bytes)
-
-      # os.sendfile updates the file descriptor's offset but doesn't update
-      # the Python file object's internal buffer/position. We need to seek
-      # to the current position to synchronize the Python object's state.
-      f_dst.seek(0, os.SEEK_CUR)
+      offset = 0
+      while num_bytes > 0 and (
+          bytes_sent := os.sendfile(
+              out_fd, in_fd, offset=offset, count=num_bytes
+          )
+      ):
+        offset += bytes_sent
+        num_bytes -= bytes_sent
     except OSError:
       pass
     else:
-      return
+      if num_bytes == 0:
+        return
 
   # If the above did not work, then just copy the file in chunks to avoid
   # flooding the memory memory when reading/writing large files.

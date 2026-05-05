@@ -200,10 +200,14 @@ setuptools.setup(
     ],
     extras_require={
         'npu-intel': [
-            'ai-edge-litert-sdk-intel~=0.2.0',
+            # TODO(weiyiw): Update to non-nightly
+            # (ai-edge-litert-sdk-intel~=0.2.0) once it is released.
+            'ai-edge-litert-sdk-intel-nightly',
         ],
         'npu-sdk': [
-            'ai-edge-litert-sdk-intel~=0.2.0',
+            # TODO(weiyiw): Update to non-nightly
+            # (ai-edge-litert-sdk-intel~=0.2.0) once it is released.
+            'ai-edge-litert-sdk-intel-nightly',
             'ai-edge-litert-sdk-qualcomm~=0.2.0',
             'ai-edge-litert-sdk-mediatek~=0.2.0',
         ],

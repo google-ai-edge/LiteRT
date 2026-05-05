@@ -15,6 +15,8 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
 #include <inttypes.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <cstddef>
 #include <optional>
@@ -43,6 +45,7 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
 namespace gt = litert::google_tensor;
 
@@ -133,6 +136,14 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Destroy() {
     LITERT_LOG(LITERT_ERROR,
                "Cannot destroy device context with %zu graphs registered",
                registered_graphs_.size());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  if (!mmap_regions_.empty()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Cannot destroy device context with %zu mmap'd executable(s) "
+               "still loaded",
+               mmap_regions_.size());
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
@@ -246,13 +257,55 @@ LiteRtStatus LiteRtDispatchDeviceContextT::LoadExecutable(
   }
 
   if (bytecode_buffer.fd >= 0) {
+    if (GoogleTensorSouthBoundFeatureSupported(
+            GoogleTensorSouthBoundFeature::kSqContainerFdWithOffset)) {
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrLoadSqContainerFdWithOffset(
+              thr_context_, thr_type, bytecode_buffer.fd, bytecode_buffer.size,
+              bytecode_buffer.offset, /*lazy_loading=*/false, &exec_handle),
+          "Failed to load SQ container from FD with offset");
+      return kLiteRtStatusOk;
+    }
+
+    // Old SouthBound, offset == 0: legacy FD entry point handles it directly.
+    if (bytecode_buffer.offset == 0) {
+      GT_LOG_RETURN_IF_SB_ERROR(
+          thrLoadSqContainerFd(thr_context_, thr_type, bytecode_buffer.fd,
+                               bytecode_buffer.size, /*lazy_loading=*/false,
+                               &exec_handle),
+          "Failed to load SQ container from FD");
+      return kLiteRtStatusOk;
+    }
+
+    // Old SouthBound, offset > 0 (e.g. AOT .tflite with embedded DISPATCH_OP):
+    // mmap a page-aligned region and load via the pointer-based API.
+    const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    const size_t aligned_offset = bytecode_buffer.offset & ~(page_size - 1);
+    const size_t offset_delta = bytecode_buffer.offset - aligned_offset;
+    const size_t map_length = bytecode_buffer.size + offset_delta;
+    void* mapped = mmap(nullptr, map_length, PROT_READ, MAP_PRIVATE,
+                        bytecode_buffer.fd, static_cast<off_t>(aligned_offset));
+    if (mapped == MAP_FAILED) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to mmap SQ bytecode (fd=%d, size=%zu, offset=%zu)",
+                 bytecode_buffer.fd, bytecode_buffer.size,
+                 bytecode_buffer.offset);
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    absl::Cleanup mmap_cleanup = [mapped, map_length] {
+      munmap(mapped, map_length);
+    };
+
+    const void* bytecode_ptr =
+        static_cast<const std::byte*>(mapped) + offset_delta;
     GT_LOG_RETURN_IF_SB_ERROR(
-        thrLoadSqContainerFdWithOffset(thr_context_, thr_type,
-                                       bytecode_buffer.fd, bytecode_buffer.size,
-                                       bytecode_buffer.offset,
-                                       /*lazy_loading=*/false, &exec_handle),
-        "Failed to load SQ container from fd %d with size %zu and offset %zu",
-        bytecode_buffer.fd, bytecode_buffer.size, bytecode_buffer.offset);
+        thrLoadSqContainer(thr_context_, thr_type, bytecode_ptr,
+                           bytecode_buffer.size, &exec_handle),
+        "Failed to load SQ container from mmap'd buffer");
+
+    mmap_regions_.push_back({exec_handle, mapped, map_length});
+    std::move(mmap_cleanup).Cancel();
+    return kLiteRtStatusOk;
   } else {
     const auto* sq_bytecode =
         static_cast<const std::byte*>(bytecode_buffer.base_addr) +
@@ -273,6 +326,15 @@ LiteRtStatus LiteRtDispatchDeviceContextT::UnloadExecutable(
   GT_LOG_RETURN_IF_SB_ERROR(thrUnloadSqContainer(thr_context_, exec_handle),
                             "Failed to unload SQ container %" PRIu64,
                             exec_handle);
+
+  // Release any mmap'd region associated with this executable.
+  for (auto it = mmap_regions_.begin(); it != mmap_regions_.end(); ++it) {
+    if (it->exec_handle == exec_handle) {
+      munmap(it->addr, it->length);
+      mmap_regions_.erase(it);
+      break;
+    }
+  }
 
   return kLiteRtStatusOk;
 }
