@@ -91,8 +91,16 @@ cc_library(
     name = "litert_accelerator_def",
     hdrs = ["litert_accelerator_def.h"],
     deps = [
+        ":litert_custom_tensor_buffer_handlers_def",
         ":litert_runtime_context_header",
         "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "litert_custom_tensor_buffer_handlers_def",
+    hdrs = ["litert_custom_tensor_buffer_handlers_def.h"],
+    deps = [
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
@@ -550,6 +558,7 @@ cc_library(
 _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_accelerator.h",
     "litert_runtime_context.h",
+    "litert_custom_tensor_buffer_handlers_def.h",
     "litert_accelerator_def.h",
     "litert_accelerator_registration.h",
     "litert_delegate_wrapper.h",
