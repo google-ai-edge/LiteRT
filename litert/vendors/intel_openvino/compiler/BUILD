@@ -207,8 +207,16 @@ litert_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
+        "@intel_openvino//:openvino_libs",
     ],
+    env = select({
+        "//litert:linux": {
+            "LD_LIBRARY_PATH": "external/intel_openvino/openvino/runtime/lib/intel64",
+        },
+        "//conditions:default": {},
+    }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkstatic = 1,  # Avoid std::filesystem ABI conflicts with OpenVINO
     tags = [
         "manual",
         "nobuilder",
@@ -238,13 +246,20 @@ litert_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
+        "@intel_openvino//:openvino_libs",
     ],
+    env = select({
+        "//litert:linux": {
+            "LD_LIBRARY_PATH": "external/intel_openvino/openvino/runtime/lib/intel64",
+        },
+        "//conditions:default": {},
+    }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkstatic = 1,  # Avoid std::filesystem ABI conflicts with OpenVINO
     tags = [
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",
-        "no_oss",
         "manual",
         "nobuilder",
     ],
