@@ -563,6 +563,21 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     }
   }
 
+  /// @brief Locks the tensor buffer and returns a pointer to the host memory.
+  ///
+  /// The mapped host memory is synchronized with the underlying hardware
+  /// tensor buffer.
+  /// For some memory types like AHWB, the pointer reflects changes of
+  /// underlying memory after locking, but it's not always the case.
+  /// For example, for most GPU memory types, the pointer memory is a snapshot
+  /// of the underlying memory at the time of locking. If the underlying
+  /// memory is modified after locking, the changes are not reflected in the
+  /// mapped host memory.
+  ///
+  /// The same thing happens to write lock. If you locked a tensor buffer for
+  /// write, the underlying memory is not guaranteed to be updated immediately.
+  /// For most GPU memory types, the CPU -> GPU copy is only performed when the
+  /// tensor buffer is unlocked.
   Expected<void*> Lock(LockMode mode = LockMode::kWrite) {
     void* host_mem_addr;
     LITERT_RETURN_IF_ERROR(env_.runtime->LockTensorBuffer(
@@ -570,6 +585,11 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     return host_mem_addr;
   }
 
+  /// @brief Unlocks the tensor buffer and may synchronize the underlying
+  /// hardware tensor buffer.
+  ///
+  /// For most GPU memory types, the CPU -> GPU copy is performed if it was
+  /// locked for write.
   Expected<void> Unlock() {
     LITERT_RETURN_IF_ERROR(env_.runtime->UnlockTensorBuffer(Get()));
     return {};
