@@ -13,17 +13,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/broadcastto_op_builder.h"
+#include "litert/c/litert_op_options.h"
+#include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildGatherOp(const Op& op);
+constexpr int32_t kInputIndex = 0;
+constexpr int32_t kShapeIndex = 1;
 
-Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op);
+Expected<OpWrapper> BuildBroadcastToOp(const Op& op) {
+  OpWrapper op_wrapper("Expand");
 
+  op_wrapper.AddInput(op.Inputs()[kInputIndex]);
+  for (const auto& output : op.Outputs()) {
+    op_wrapper.AddOutput(output);
+  }
+  LITERT_ASSIGN_OR_RETURN(auto shape,
+                          GetWeightDataAs<int64_t>(op.Inputs()[kShapeIndex]));
+  op_wrapper.AddParam("shape", shape);
+
+  return op_wrapper;
 }
-
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
+} // namespace litert::samsung

@@ -12,18 +12,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "litert/vendors/samsung/compiler/builders/relu6_op_builder.h"
 
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
 
 namespace litert::samsung {
+Expected<OpWrapper> BuildRelu6Op(const Op& op) {
+  OpWrapper op_wrapper("Relu6");
 
-Expected<OpWrapper> BuildGatherOp(const Op& op);
+  for (const auto& input : op.Inputs()) {
+    op_wrapper.AddInput(input);
+  }
+  for (const auto& output : op.Outputs()) {
+    op_wrapper.AddOutput(output);
+  }
 
-Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op);
-
+  return op_wrapper;
 }
-
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
+} // namespace litert::samsung
