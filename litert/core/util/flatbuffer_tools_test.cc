@@ -14,7 +14,9 @@
 
 #include "litert/core/util/flatbuffer_tools.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -172,6 +174,20 @@ TEST(FlatbufferToolsTest, PerChannelQuantizedTest) {
 
   auto per_channel = AsPerChannelQparams(q_parms);
   ASSERT_TRUE(per_channel);
+}
+
+TEST(FlatbufferToolsTest, VerifyLargeFlatbuffer) {
+  auto flatbuffer = TestFlatbuffer();
+  auto serialized = SerializeFlatbuffer(*flatbuffer);
+
+  // Create a large buffer and copy the serialized model to the beginning.
+  // We use a size larger than 2GB to verify the fix.
+  const size_t large_size = static_cast<size_t>(2) * 1024 * 1024 * 1024 + 100;
+  OwningBufferRef<uint8_t> large_buffer(large_size);
+  std::memcpy(large_buffer.Data(), serialized.Data(), serialized.Size());
+
+  // The verifier should succeed because we increased the max_size.
+  EXPECT_TRUE(VerifyFlatbuffer(large_buffer.Data(), large_buffer.Size()));
 }
 
 }  // namespace
