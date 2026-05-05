@@ -40,6 +40,10 @@ pytype_strict_library(
 pytype_strict_contrib_test(
     name = "export_lib_test",
     srcs = ["export_lib_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":export_lib",
         "//litert/python/aot/core:aot_types",

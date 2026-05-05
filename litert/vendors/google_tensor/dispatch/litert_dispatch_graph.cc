@@ -32,6 +32,7 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
 namespace gt = litert::google_tensor;
 
@@ -227,13 +228,25 @@ LiteRtStatus LiteRtDispatchGraphT::AssignNodeFunction(
   // An empty function name represents no function name being provided, and
   // therefore we must pass `nullptr` to the call below, otherwise SB expects a
   // model with a signature - b/378913220.
+  const char* valid_function_name =
+      (!function_name || *function_name == '\0') ? nullptr : function_name;
+
+  if (valid_function_name != nullptr &&
+      !GoogleTensorSouthBoundFeatureSupported(
+          GoogleTensorSouthBoundFeature::kTachyonNamedSqFunctions)) {
+    LITERT_LOG(LITERT_VERBOSE,
+               "Named SQ functions are not supported, so overriding function "
+               "name '%s' to ''",
+               valid_function_name);
+    valid_function_name = nullptr;
+  }
+
   GT_LOG_RETURN_IF_SB_ERROR(
-      thrGraphAssignSq(
-          thr_graph_, gt::ToThrNodeId(node_id), exec_handle,
-          !function_name || *function_name == '\0' ? nullptr : function_name),
+      thrGraphAssignSq(thr_graph_, gt::ToThrNodeId(node_id), exec_handle,
+                       valid_function_name),
       "Failed to assign function '%s' from executable %" PRIu64
       " to node %" PRIu64,
-      function_name, exec_handle, node_id);
+      valid_function_name, exec_handle, node_id);
 
   return kLiteRtStatusOk;
 }

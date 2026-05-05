@@ -66,9 +66,14 @@ TEST_P(LiteRtLog, SanityTest) {
       std::filesystem::temp_directory_path() / "temp.log";
   std::ofstream fout(temp_path);
   ASSERT_TRUE(fout.is_open());
+  fout.close();
 
   // Set log file pointer
+#ifdef _WIN32
+  FILE* file_ptr = _wfopen(temp_path.c_str(), L"w");
+#else
   FILE* file_ptr = fopen(temp_path.c_str(), "w");
+#endif
   ASSERT_TRUE(file_ptr);
   qnn::QNNLogger::SetLogFilePointer(file_ptr);
 
