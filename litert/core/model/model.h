@@ -1490,6 +1490,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", conv_opts);
       break;
     }
+    case tflite::BuiltinOptions_DepthwiseConv2DOptions: {
+      const auto* dw_opts = opts.AsDepthwiseConv2DOptions();
+      absl::Format(&sink, "%v", dw_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1606,6 +1611,25 @@ void AbslStringify(Sink& sink, const Conv2DOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const Conv2DOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pad = opts.padding;
+  b("padding", pad);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+  b("depth_multiplier", opts.depth_multiplier);
+  b("dilation_w", opts.dilation_w_factor);
+  b("dilation_h", opts.dilation_h_factor);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthwiseConv2DOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

@@ -138,6 +138,29 @@ void RegisterConv2d(const AtsConf& options, size_t& test_id, size_t iters,
 }
 
 template <typename Fixture>
+void RegisterDepthwiseConv2d(const AtsConf& options, size_t& test_id,
+                             size_t iters, typename Fixture::Capture& cap) {
+  // clang-format off
+  RegisterCombinations<
+      Fixture,
+      DepthwiseConv2d,
+      SizeListC<4>,
+      TypeList<float>,
+      OpCodeListC<kLiteRtOpCodeTflDepthwiseConv2d>,
+      TypeList<std::integral_constant<tflite::Padding, tflite::Padding_VALID>,
+               std::integral_constant<tflite::Padding, tflite::Padding_SAME>>,
+      SizeListC<1, 2>,
+      SizeListC<1, 2>,
+      SizeListC<1>,
+      SizeListC<1>,
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>,
+      SizeListC<1>>
+    (iters, test_id, options, cap);
+  // clang-format on
+}
+
+template <typename Fixture>
 void RegisterAll(const AtsConf& options, size_t& test_id,
                  typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
@@ -145,6 +168,7 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterBinaryNoBroadcast<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterUnary<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
+  RegisterDepthwiseConv2d<Fixture>(options, test_id, /*iters=*/10, cap);
 }
 
 int Ats() {

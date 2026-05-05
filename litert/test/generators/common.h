@@ -123,7 +123,11 @@ using FbOpTypes =
             FbOpTraitsNoOptions<tflite::BuiltinOperator_SIGN>,
         std::bool_constant<OpCode == kLiteRtOpCodeTflConv2d>,
             FbOpTraits<tflite::Conv2DOptionsT, tflite::BuiltinOperator_CONV_2D,
-                       tflite::BuiltinOptions_Conv2DOptions>
+                       tflite::BuiltinOptions_Conv2DOptions>,
+        std::bool_constant<OpCode == kLiteRtOpCodeTflDepthwiseConv2d>,
+            FbOpTraits<tflite::DepthwiseConv2DOptionsT,
+                       tflite::BuiltinOperator_DEPTHWISE_CONV_2D,
+                       tflite::BuiltinOptions_DepthwiseConv2DOptions>
     >;
 // clang-format on
 static_assert(FbOpTypes<kLiteRtOpCodeTflAdd>::kHasOptions);
