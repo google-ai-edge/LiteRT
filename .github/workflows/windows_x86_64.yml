@@ -113,7 +113,7 @@ jobs:
             "-//litert/runtime:compiled_model_test"
             "-//litert/runtime:profiler_summarizer_test"
             "-//litert/tools:benchmark_litert_model_test"
-            "-//litert/tools/culprit_finder:model_metadata_lib_test"
+            "-//litert/tools/culprit_finder/..."
             "-//litert/vendors/examples:end_to_end_test"
             "-//litert/vendors/examples:example_plugin_so"
             "-//litert/vendors/intel_openvino/compiler:decoder_test"
