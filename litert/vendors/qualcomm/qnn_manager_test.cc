@@ -51,6 +51,10 @@ std::optional<::qnn::Options> GetOptionsForTarget() {
     options.SetBackendType(::qnn::BackendType::kDspBackend);
     return options;
   }
+  if (::qnn::IsTestGpuBackend()) {
+    options.SetBackendType(::qnn::BackendType::kGpuBackend);
+    return options;
+  }
   return std::nullopt;
 }
 

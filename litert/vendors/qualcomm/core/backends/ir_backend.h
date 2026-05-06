@@ -29,7 +29,7 @@ class IrBackend : public QnnBackend {
 
   explicit IrBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
-  ~IrBackend();
+  ~IrBackend() = default;
 
   bool Init(const Options& options,
             std::optional<::qnn::SocInfo> soc_info) override;

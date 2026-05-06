@@ -41,6 +41,7 @@
 #include "litert/core/dynamic_loading.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
+#include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -48,6 +49,7 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_saver_utils.h"
+#include "GPU/QnnGpuContext.h"  // from @qairt
 #include "HTP/QnnHtpContext.h"  // from @qairt
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -432,6 +434,16 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
 
   options_ = options;
   switch (options_.GetBackendType()) {
+    case ::qnn::BackendType::kGpuBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::GpuBackend::GetLibraryName()));
+      LITERT_RETURN_IF_ERROR(
+          ResolveApi(::qnn::GpuBackend::GetExpectedBackendVersion()));
+
+      backend_ = std::make_unique<::qnn::GpuBackend>(Api());
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
+
+      break;
+    }
     case ::qnn::BackendType::kHtpBackend: {
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
@@ -630,6 +642,34 @@ Expected<SdkVersion> QnnManager::ParseSdkVersion(const char* build_id) {
   if (!parse_component(version.patch)) return parsing_error;
 
   return version;
+}
+
+absl::Span<const QnnContext_Config_t*>
+QnnManager::GpuPerformanceContextConfigs(
+    ::qnn::GpuPerformanceMode performance_mode) {
+  static QnnGpuContext_CustomConfig_t customConfig =
+      QNN_GPU_CONTEXT_CUSTOM_CONFIG_INIT;
+  customConfig.option = QNN_GPU_CONTEXT_CONFIG_OPTION_PERF_HINT;
+  switch (performance_mode) {
+    case ::qnn::GpuPerformanceMode::kHigh:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_HIGH;
+      break;
+    case ::qnn::GpuPerformanceMode::kNormal:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_NORMAL;
+      break;
+    case ::qnn::GpuPerformanceMode::kLow:
+      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_LOW;
+      break;
+    case ::qnn::GpuPerformanceMode::kDefault:
+    default:
+      return DefaultContextConfigs();
+  }
+
+  static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
+  contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+  contextConfig.customConfig = &customConfig;
+  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
+  return absl::MakeSpan(configs);
 }
 
 };  // namespace litert::qnn

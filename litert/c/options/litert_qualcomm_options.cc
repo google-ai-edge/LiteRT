@@ -45,6 +45,8 @@ struct LrtQualcommOptionsT {
   std::optional<bool> use_fold_relu;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
+  std::optional<LrtQualcommOptionsGpuPerformanceMode> gpu_performance_mode;
+  std::optional<LrtQualcommOptionsGpuPrecision> gpu_precision;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
@@ -123,6 +125,17 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           status = LrtQualcommOptionsSetDspPerformanceMode(
               parsed_options,
               static_cast<LrtQualcommOptionsDspPerformanceMode>(*v));
+        } else if (key == "gpu_performance_mode") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          LrtQualcommOptionsSetGpuPerformanceMode(
+              parsed_options,
+              static_cast<LrtQualcommOptionsGpuPerformanceMode>(*v));
+        } else if (key == "gpu_precision") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          LrtQualcommOptionsSetGpuPrecision(
+              parsed_options, static_cast<LrtQualcommOptionsGpuPrecision>(*v));
         } else if (key == "dump_tensor_ids") {
           auto parts = litert::internal::ParseTomlStringArray(value);
           if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
@@ -244,6 +257,14 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->dsp_performance_mode.has_value()) {
     toml << "dsp_performance_mode = "
          << static_cast<int>(*options->dsp_performance_mode) << "\n";
+  }
+  if (options->gpu_performance_mode.has_value()) {
+    toml << "gpu_performance_mode = "
+         << static_cast<int>(*options->gpu_performance_mode) << "\n";
+  }
+  if (options->gpu_precision.has_value()) {
+    toml << "gpu_precision = " << static_cast<int>(*options->gpu_precision)
+         << "\n";
   }
   if (options->dump_tensor_ids.has_value()) {
     toml << "dump_tensor_ids = [";
@@ -759,6 +780,56 @@ LiteRtStatus LrtQualcommOptionsGetBackend(
   }
 
   *qnn_backend = options->qnn_backend.value_or(kLiteRtQualcommBackendHtp);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetGpuPrecision(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGpuPrecision gpu_precision) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->gpu_precision = gpu_precision;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetGpuPrecision(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGpuPrecision* gpu_precision) {
+  if (gpu_precision == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *gpu_precision =
+      options->gpu_precision.value_or(kLiteRtQualcommGpuPrecisionFp16);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetGpuPerformanceMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGpuPerformanceMode gpu_performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->gpu_performance_mode = gpu_performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetGpuPerformanceMode(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGpuPerformanceMode* gpu_performance_mode) {
+  if (gpu_performance_mode == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *gpu_performance_mode = options->gpu_performance_mode.value_or(
+      kLiteRtQualcommGpuPerformanceModeDefault);
 
   return kLiteRtStatusOk;
 }
