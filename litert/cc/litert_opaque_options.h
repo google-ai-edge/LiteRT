@@ -56,21 +56,12 @@ class OpaqueOptions : public internal::BaseHandle<LiteRtOpaqueOptions> {
     return OpaqueOptions(options, OwnHandle::kYes);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<std::string_view> GetIdentifier() const {
-    const char* payload_identifier;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
-    return std::string_view(payload_identifier);
-  }
-#else
   Expected<absl::string_view> GetIdentifier() const {
     const char* payload_identifier;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
     return absl::string_view(payload_identifier);
   }
-#endif
 
   template <typename T>
   Expected<T*> GetData() const {
