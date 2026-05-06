@@ -135,15 +135,6 @@ typedef struct {
   LiteRtMagicNumberVerification verifications[_LITERT_ARBITRARY_ARRAY_SIZE];
 } LiteRtMagicNumberVerifications;
 
-typedef struct {
-  CreateCustomTensorBuffer create_func;
-  DestroyCustomTensorBuffer destroy_func;
-  LockCustomTensorBuffer lock_func;
-  UnlockCustomTensorBuffer unlock_func;
-  ClearCustomTensorBuffer clear_func;
-  ImportCustomTensorBuffer import_func;
-} LiteRtCustomTensorBufferHandlers;
-
 // Retrieves the value corresponding to the given tag.
 //
 // Returns kLiteRtStatusErrorNotFound if the option tag is not found.

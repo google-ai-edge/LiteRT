@@ -68,12 +68,22 @@ def _import_litert():
     from litert.python.litert_wrapper.compiled_model_wrapper import (
         hardware_accelerator as _ha,
     )
+    from litert.python.litert_wrapper.compiled_model_wrapper import (
+        options as _options,
+    )
     from litert.python.litert_wrapper.environment_wrapper import (
         environment as _env,
     )
     # pytype: enable=import-error
     # pylint: enable=g-import-not-at-top
-    return _cm.CompiledModel, _ha.HardwareAccelerator, _env.Environment
+    return (
+        _cm.CompiledModel,
+        _ha.HardwareAccelerator,
+        _env.Environment,
+        _env.EnvironmentOptions,
+        _options.Options,
+        _options.CpuOptions,
+    )
   except ImportError:
     pass
   try:
@@ -82,9 +92,19 @@ def _import_litert():
     from ai_edge_litert.compiled_model import CompiledModel
     from ai_edge_litert.hardware_accelerator import HardwareAccelerator
     from ai_edge_litert.environment import Environment
+    from ai_edge_litert.environment import EnvironmentOptions
+    from ai_edge_litert.options import CpuOptions
+    from ai_edge_litert.options import Options
     # pytype: enable=import-error
     # pylint: enable=g-import-not-at-top
-    return CompiledModel, HardwareAccelerator, Environment
+    return (
+        CompiledModel,
+        HardwareAccelerator,
+        Environment,
+        EnvironmentOptions,
+        Options,
+        CpuOptions,
+    )
   except ImportError:
     logger.error(
         'Could not import LiteRT. Install with:\n'
@@ -192,7 +212,7 @@ def build_hardware_accelerators(args, hardware_accelerator_cls):
   return hardware_accelerator_cls(accel)
 
 
-def create_environment(args, environment):
+def create_environment(args, environment, environment_options):
   """Create a LiteRT Environment with the requested paths."""
   kwargs = {}
   if args.runtime_path:
@@ -210,8 +230,15 @@ def create_environment(args, environment):
       dispatch_path = os.path.dirname(dispatch_path)
     kwargs['dispatch_library_path'] = dispatch_path
 
-  kwargs['cpu_num_threads'] = args.num_threads
-  return environment.create(**kwargs)
+  return environment.create(environment_options(**kwargs))
+
+
+def create_model_options(args, options, cpu_options, hardware_accel):
+  """Create grouped LiteRT model options for CompiledModel creation."""
+  return options(
+      hardware_accelerators=hardware_accel,
+      cpu_options=cpu_options(num_threads=args.num_threads),
+  )
 
 
 def get_numpy_dtype(dtype_str):
@@ -258,9 +285,14 @@ def percentile(sorted_data, p):
 
 def run_benchmark(args):
   """Run the benchmark and return results dict."""
-  compiled_model_cls, hardware_accelerator_cls, environment_cls = (
-      _import_litert()
-  )
+  (
+      compiled_model_cls,
+      hardware_accelerator_cls,
+      environment_cls,
+      environment_options_cls,
+      options_cls,
+      cpu_options_cls,
+  ) = _import_litert()
 
   model_path = args.model
   if not os.path.isfile(model_path):
@@ -290,16 +322,19 @@ def run_benchmark(args):
     logger.info('Compiler plugin: %s', args.compiler_plugin_path)
   logger.info('Creating environment...')
   t0 = time.perf_counter()
-  env = create_environment(args, environment_cls)
+  env = create_environment(args, environment_cls, environment_options_cls)
   env_time_ms = (time.perf_counter() - t0) * 1000
   logger.info('Environment created (%.1f ms)', env_time_ms)
 
   logger.info('Loading model...')
   t0 = time.perf_counter()
+  model_options = create_model_options(
+      args, options_cls, cpu_options_cls, hw_accel
+  )
   model = compiled_model_cls.from_file(
       model_path,
-      hardware_accel=hw_accel,
       environment=env,
+      options=model_options,
   )
   init_time_ms = (time.perf_counter() - t0) * 1000
   logger.info('Model loaded (%.1f ms)', init_time_ms)
