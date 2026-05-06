@@ -47,6 +47,8 @@ cc_library(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_model_types",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
         "//tflite/core:framework",
@@ -91,11 +93,32 @@ pybind_extension(
 )
 
 py_library(
+    name = "options",
+    srcs = [
+        "cpu_kernel_mode.py",
+        "cpu_options.py",
+        "gpu_options.py",
+        "hardware_accelerator.py",
+        "intel_openvino_options.py",
+        "option_utils.py",
+        "options.py",
+        "qualcomm_options.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "compiled_model",
     srcs = [
         "compiled_model.py",
         "cpu_kernel_mode.py",
+        "cpu_options.py",
+        "gpu_options.py",
         "hardware_accelerator.py",
+        "intel_openvino_options.py",
+        "option_utils.py",
+        "options.py",
+        "qualcomm_options.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
