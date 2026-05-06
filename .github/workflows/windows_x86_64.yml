@@ -43,6 +43,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Print disk space
+        run: |
+          Write-Host "RUNNER_TEMP=$env:RUNNER_TEMP"
+          Get-PSDrive -PSProvider FileSystem |
+            Select-Object Name, Root,
+              @{Name="UsedGB";Expression={[math]::Round($_.Used / 1GB, 2)}},
+              @{Name="FreeGB";Expression={[math]::Round($_.Free / 1GB, 2)}} |
+            Format-Table -AutoSize
+
       - name: Configure tensorflow & python path
         run: |
           $env:PYTHON_BIN_PATH = (Get-Command python).Source
@@ -67,7 +76,8 @@ jobs:
           echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
           $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
-          echo "BAZEL_OUTPUT_BASE=C:/w-$SHORT_SHA" >> "$env:GITHUB_ENV"
+          $BAZEL_OUTPUT_BASE = Join-Path "$env:RUNNER_TEMP" "w-$SHORT_SHA"
+          echo "BAZEL_OUTPUT_BASE=$BAZEL_OUTPUT_BASE" >> "$env:GITHUB_ENV"
 
       - name: Clean build outputs if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
