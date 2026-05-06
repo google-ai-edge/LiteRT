@@ -13,16 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
-
-#include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/reversev2_op_builder.h"
 
 namespace litert::samsung {
 
-Expected<OpWrapper> BuildGatherOp(const Op& op);
+Expected<OpWrapper> BuildReverseV2Op(const Op& op) {
+  OpWrapper op_wrapper("ReverseV2");
 
-Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op);
+  for (const auto& input : op.Inputs()) {
+    op_wrapper.AddInput(input);
+  }
+  for (const auto& output : op.Outputs()) {
+    op_wrapper.AddOutput(output);
+  }
+
+  return op_wrapper;
 }
-
-#endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_
+}  // namespace litert::samsung
