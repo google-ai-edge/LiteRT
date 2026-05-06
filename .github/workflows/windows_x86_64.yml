@@ -46,11 +46,21 @@ jobs:
       - name: Print disk space
         run: |
           Write-Host "RUNNER_TEMP=$env:RUNNER_TEMP"
+          Write-Host "PowerShell FileSystem drives:"
           Get-PSDrive -PSProvider FileSystem |
             Select-Object Name, Root,
               @{Name="UsedGB";Expression={[math]::Round($_.Used / 1GB, 2)}},
               @{Name="FreeGB";Expression={[math]::Round($_.Free / 1GB, 2)}} |
             Format-Table -AutoSize
+          Write-Host "Win32 logical disks:"
+          Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" |
+            Select-Object DeviceID, VolumeName,
+              @{Name="SizeGB";Expression={[math]::Round($_.Size / 1GB, 2)}},
+              @{Name="FreeGB";Expression={[math]::Round($_.FreeSpace / 1GB, 2)}} |
+            Format-Table -AutoSize
+          $RunnerTempDrive = Split-Path -Qualifier "$env:RUNNER_TEMP"
+          Write-Host "Disk free for RUNNER_TEMP drive ($RunnerTempDrive):"
+          fsutil volume diskfree $RunnerTempDrive
 
       - name: Configure tensorflow & python path
         run: |
