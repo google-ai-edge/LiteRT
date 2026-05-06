@@ -112,6 +112,8 @@ std::string_view OpWrapper::GetName() const {
   return std::string_view(name_.data(), name_.size());
 }
 
+const char* OpWrapper::GetTypeName() const { return type_name_; }
+
 bool OpWrapper::IsOpCode(QnnOpCode op_code) const {
   return op_code_ == op_code;
 }
@@ -138,28 +140,9 @@ std::optional<ScalarParamWrapper> OpWrapper::GetScalarParam(size_t i) const {
   return scalar_params_[i];
 }
 
-void OpWrapper::SwapOutputs(OpWrapper& other) {
-  this->output_tensors_.swap(other.output_tensors_);
-}
-
-void OpWrapper::UpdateTensors(
-    const std::vector<std::optional<TensorWrapperRef>>& inputs,
-    const std::vector<std::optional<TensorWrapperRef>>& outputs) {
-  if (inputs.size() != input_tensors_.size() ||
-      outputs.size() != output_tensors_.size()) {
-    QNN_LOG_WARNING("UpdateTensors skipped due to incorrect tensor count.");
-    return;
-  }
-  for (size_t i = 0; i < inputs.size(); ++i) {
-    if (inputs[i].has_value()) {
-      input_tensors_[i] = inputs[i].value().get();
-    }
-  }
-  for (size_t i = 0; i < outputs.size(); ++i) {
-    if (outputs[i].has_value()) {
-      output_tensors_[i] = outputs[i].value().get();
-    }
-  }
+void OpWrapper::ClearInputOutputTensors() {
+  input_tensors_.clear();
+  output_tensors_.clear();
 }
 
 std::vector<std::reference_wrapper<TensorWrapper>> OpWrapper::GetAllTensors() {

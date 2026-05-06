@@ -388,7 +388,6 @@ LiteRtStatus Adapt(const litert::compiler::Op& op, ::qnn::TensorPool& tp,
     return kLiteRtStatusOk;                                                 \
   }
 
-REGISTER_SIMPLE_OP_BUILDER(BuildCastOp, BuildCastOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogicalAndOp, BuildElementwiseAndOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildBroadcastToOp, BuildBroadcastToOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildCeilOp, BuildElementwiseCeilOp)
@@ -406,7 +405,6 @@ REGISTER_SIMPLE_OP_BUILDER(BuildMaximumOp, BuildElementwiseMaximumOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildEluOp, BuildElementwiseEluOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildFloorOp, BuildElementwiseFloorOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildFloorDivOp, BuildElementwiseFloorDivOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildNotEqualOp, BuildElementwiseNotEqualOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogicalOrOp, BuildElementwiseOrOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildEmbeddingLookupOp, BuildEmbeddingLookupOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildGeluOp, BuildGeluOp)
@@ -418,8 +416,6 @@ REGISTER_SIMPLE_OP_BUILDER(BuildPreluOp, BuildPreluOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogisticOp, BuildLogisticOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildQuantizeOp, BuildQuantizeOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildDequantizeOp, BuildDequantizeOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildReshapeOp, BuildReshapeOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildSelectOp, BuildSelectOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildSliceOp, BuildSliceOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildTanhOp, BuildTanhOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildTransposeOp, BuildTransposeOp)
@@ -430,10 +426,8 @@ REGISTER_SIMPLE_OP_BUILDER(BuildConstantPadOp, BuildConstantPadOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildGatherNdOp, BuildGatherNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildPowOp, BuildElementwisePowerOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLessEqualOp, BuildElementwiseLessEqualOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildLogicalNotOp, BuildElementwiseNotOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildGreaterEqualOp, BuildElementwiseGreaterEqualOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildExpOp, BuildElementwiseExpOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildEqualOp, BuildElementwiseEqualOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogOp, BuildElementwiseLogOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildAbsOp, BuildElementwiseAbsOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildReverseV2Op, BuildReverseOp)
@@ -445,6 +439,75 @@ REGISTER_SIMPLE_OP_BUILDER(BuildSignOp, BuildElementwiseSignOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildScatterNdOp, BuildScatterNdOp)
 
 #undef REGISTER_SIMPLE_OP_BUILDER
+
+LiteRtStatus BuildCastOp(const litert::Op& litert_op,
+                         ::qnn::TensorPool& tensor_pool,
+                         std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                         std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                         std::vector<::qnn::OpWrapper>& op_wrappers,
+                         bool use_htp_preferences) {
+  op_wrappers.clear();
+  op_wrappers.emplace_back(
+      ::qnn::CreateCastOp(input_tensors[0], output_tensors[0]));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildNotEqualOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateElementWiseNotEqualOp(
+      input_tensors[0], input_tensors[1], output_tensors[0]));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildReshapeOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  op_wrappers.clear();
+  op_wrappers.emplace_back(
+      ::qnn::CreateReshapeOp(input_tensors[0], output_tensors[0]));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildSelectOp(const litert::Op& litert_op,
+                           ::qnn::TensorPool& tensor_pool,
+                           std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                           std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                           std::vector<::qnn::OpWrapper>& op_wrappers,
+                           bool use_htp_preferences) {
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateSelectOp(
+      input_tensors[0], input_tensors[1], input_tensors[2], output_tensors[0]));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildLogicalNotOp(
+    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers, bool use_htp_preferences) {
+  op_wrappers.clear();
+  op_wrappers.emplace_back(
+      ::qnn::CreateElementWiseNotOp(input_tensors[0], output_tensors[0]));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BuildEqualOp(const litert::Op& litert_op,
+                          ::qnn::TensorPool& tensor_pool,
+                          std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                          std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                          std::vector<::qnn::OpWrapper>& op_wrappers,
+                          bool use_htp_preferences) {
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateElementWiseEqualOp(
+      input_tensors[0], input_tensors[1], output_tensors[0]));
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus BuildConcatenationOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
@@ -458,10 +521,15 @@ LiteRtStatus BuildConcatenationOp(
   LITERT_RETURN_IF_ERROR(LiteRtGetConcatenationFusedActivationOption(
       litert_op.Get(), &fused_activation));
 
-  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+  std::uint32_t adjusted_axis =
+      (axis >= 0) ? axis : axis + input_tensors[0].get().GetRank();
+  const auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers = ::qnn::BuildConcatenationOp(tensor_pool, input_tensors,
-                                            {activation_input}, axis);
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateConcatenationOp(
+      std::vector<::qnn::ConstTensorWrapperRef>(input_tensors.begin(),
+                                                input_tensors.end()),
+      activation_input, adjusted_axis));
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
@@ -478,8 +546,9 @@ LiteRtStatus BuildAddOp(const litert::compiler::Op& litert_op,
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers = ::qnn::BuildElementwiseAddOp(tensor_pool, input_tensors,
-                                             {activation_input});
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateElementWiseAddOp(
+      input_tensors[0], input_tensors[1], activation_input));
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
@@ -514,8 +583,9 @@ LiteRtStatus BuildMulOp(const litert::compiler::Op& litert_op,
 
   auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers = ::qnn::BuildElementwiseMulOp(tensor_pool, input_tensors,
-                                             {activation_input});
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateElementWiseMulOp(
+      input_tensors[0], input_tensors[1], activation_input));
   ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
                                 output_tensors[0]);
   return kLiteRtStatusOk;
@@ -589,8 +659,9 @@ LiteRtStatus BuildBatchMatmulOp(
   bool adj_y{};
   LITERT_RETURN_IF_ERROR(
       LiteRtGetBatchMatmulAdjYOption(litert_op.Get(), &adj_y));
-  op_wrappers = ::qnn::BuildMatmulOp(tensor_pool, input_tensors, output_tensors,
-                                     adj_x, adj_y);
+  op_wrappers.clear();
+  op_wrappers.emplace_back(::qnn::CreateMatmulOp(
+      input_tensors[0], input_tensors[1], output_tensors[0], adj_x, adj_y));
   return kLiteRtStatusOk;
 }
 
@@ -679,8 +750,9 @@ LiteRtStatus BuildSoftmaxOp(
     std::vector<::qnn::OpWrapper>& op_wrappers) {
   float beta{};
   LITERT_RETURN_IF_ERROR(LiteRtGetSoftmaxBetaOption(litert_op.Get(), &beta));
-  op_wrappers =
-      ::qnn::BuildSoftmaxOp(tensor_pool, input_tensors, output_tensors, beta);
+  op_wrappers.clear();
+  op_wrappers.emplace_back(
+      ::qnn::CreateSoftmaxOp(input_tensors[0], output_tensors[0], beta));
   return kLiteRtStatusOk;
 }
 
@@ -750,8 +822,15 @@ LiteRtStatus BuildUnpackOp(const litert::compiler::Op& litert_op,
                            std::vector<::qnn::OpWrapper>& op_wrappers) {
   int32_t axis{};
   LITERT_RETURN_IF_ERROR(LiteRtGetUnpackAxisOption(litert_op.Get(), &axis));
-  op_wrappers =
-      ::qnn::BuildUnpackOp(tensor_pool, input_tensors, output_tensors, axis);
+
+  const std::uint32_t adjusted_axis =
+      axis < 0 ? axis + input_tensors[0].get().GetRank() : axis;
+  op_wrappers.clear();
+  op_wrappers.emplace_back(
+      ::qnn::CreateUnpackOp(input_tensors[0],
+                            std::vector<::qnn::ConstTensorWrapperRef>{
+                                output_tensors.begin(), output_tensors.end()},
+                            adjusted_axis));
   return kLiteRtStatusOk;
 }
 
