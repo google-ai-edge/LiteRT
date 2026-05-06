@@ -260,13 +260,6 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return absl::MakeSpan(static_cast<const uint8_t*>(buffer), buffer_size);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<std::span<const uint8_t>> Metadata(
-      std::string_view metadata_key) const {
-    return internal::ToStdSpan(Metadata(std::string(metadata_key)));
-  }
-#endif  // LITERT_NO_ABSL
-
   size_t GetNumSignatures() const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
@@ -286,29 +279,11 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   }
 
   /// @brief Returns the list of signature key names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureKeys() const {
-    return internal::ToStdStringViews(GetSignatureKeysImpl());
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
     return GetSignatureKeysImpl();
   }
-#endif
 
   /// @brief Returns the list of input names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureInputNames(
-      size_t signature_index) const {
-    return internal::ToStdStringViews(
-        GetSignatureInputNamesImpl(signature_index));
-  }
-
-  /// @brief Returns the list of input names defined in the signature.
-  Expected<std::vector<std::string_view>> GetSignatureInputNames() const {
-    return GetSignatureInputNames(/*signature_index=*/0);
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       size_t signature_index) const {
     return GetSignatureInputNamesImpl(signature_index);
@@ -318,7 +293,6 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
     return GetSignatureInputNames(/*signature_index=*/0);
   }
-#endif
 
   /// @brief Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
@@ -330,27 +304,7 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return signature->InputNames();
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureInputNames(
-      std::string_view signature_key) const {
-    return internal::ToStdStringViews(
-        GetSignatureInputNames(internal::ToAbslStringView(signature_key)));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the list of output names defined in the signature.
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureOutputNames(
-      size_t signature_index) const {
-    return internal::ToStdStringViews(
-        GetSignatureOutputNamesImpl(signature_index));
-  }
-
-  /// @brief Returns the list of output names defined in the signature.
-  Expected<std::vector<std::string_view>> GetSignatureOutputNames() const {
-    return GetSignatureOutputNames(/*signature_index=*/0);
-  }
-#else
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
       size_t signature_index) const {
     return GetSignatureOutputNamesImpl(signature_index);
@@ -360,7 +314,6 @@ class Model : public internal::BaseHandle<LiteRtModel> {
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
     return GetSignatureOutputNames(/*signature_index=*/0);
   }
-#endif
 
   /// @brief Returns the list of output names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
@@ -372,13 +325,6 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return signature->OutputNames();
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<std::vector<std::string_view>> GetSignatureOutputNames(
-      std::string_view signature_key) const {
-    return internal::ToStdStringViews(
-        GetSignatureOutputNames(internal::ToAbslStringView(signature_key)));
-  }
-#endif  // LITERT_NO_ABSL
 
   /// @brief Returns the signature at the given index.
   Expected<SimpleSignature> GetSignature(size_t signature_index) const {
@@ -412,12 +358,6 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return Unexpected(Status::kErrorNotFound, "Signature not found");
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<size_t> GetSignatureIndex(std::string_view signature_key) const {
-    return GetSignatureIndex(internal::ToAbslStringView(signature_key));
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the `SimpleSignature` object for the given signature key.
   ///
   /// Returns the default signature if the signature key is empty.
@@ -428,20 +368,9 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return GetSignature(signature_index);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<SimpleSignature> FindSignature(
-      std::string_view signature_key) const {
-    return FindSignature(internal::ToAbslStringView(signature_key));
-  }
-#endif  // LITERT_NO_ABSL
-
-#ifdef LITERT_NO_ABSL
-  static std::string_view DefaultSignatureKey() { return kDefaultSignatureKey; }
-#else
   static absl::string_view DefaultSignatureKey() {
     return kDefaultSignatureKey;
   }
-#endif
 
   /// @brief Returns the tensor type for the n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
@@ -474,25 +403,6 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return GetInputTensorType(/*signature_index=*/0, input_name);
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<RankedTensorType> GetInputTensorType(
-      size_t signature_index, std::string_view input_name) const {
-    return GetInputTensorType(signature_index,
-                              internal::ToAbslStringView(input_name));
-  }
-
-  Expected<RankedTensorType> GetInputTensorType(
-      std::string_view signature_key, std::string_view input_name) const {
-    return GetInputTensorType(internal::ToAbslStringView(signature_key),
-                              internal::ToAbslStringView(input_name));
-  }
-
-  Expected<RankedTensorType> GetInputTensorType(
-      std::string_view input_name) const {
-    return GetInputTensorType(/*signature_index=*/0, input_name);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Returns the tensor type for the n-th output tensor.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  size_t output_index) const {
@@ -523,25 +433,6 @@ class Model : public internal::BaseHandle<LiteRtModel> {
       absl::string_view output_name) const {
     return GetOutputTensorType(/*signature_index=*/0, output_name);
   }
-
-#ifdef LITERT_NO_ABSL
-  Expected<RankedTensorType> GetOutputTensorType(
-      size_t signature_index, std::string_view output_name) const {
-    return GetOutputTensorType(signature_index,
-                               internal::ToAbslStringView(output_name));
-  }
-
-  Expected<RankedTensorType> GetOutputTensorType(
-      std::string_view signature_key, std::string_view output_name) const {
-    return GetOutputTensorType(internal::ToAbslStringView(signature_key),
-                               internal::ToAbslStringView(output_name));
-  }
-
-  Expected<RankedTensorType> GetOutputTensorType(
-      std::string_view output_name) const {
-    return GetOutputTensorType(/*signature_index=*/0, output_name);
-  }
-#endif  // LITERT_NO_ABSL
 
  protected:
   /// @param owned Indicates if the created `TensorBuffer` object should take

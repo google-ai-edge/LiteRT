@@ -99,25 +99,7 @@ class CpuOptions {
     return {};
   }
 
-#ifdef LITERT_NO_ABSL
-  Expected<void> SetXNNPackWeightCachePath(std::string_view path) {
-    const std::string owned_path(path);
-    return SetXNNPackWeightCachePath(owned_path.c_str());
-  }
-#endif
-
   /// @brief Gets the XNNPack weight cache file path.
-#ifdef LITERT_NO_ABSL
-  Expected<std::string_view> GetXNNPackWeightCachePath() const {
-    const char* path;
-    auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
-    if (s == kLiteRtStatusErrorNotFound) {
-      return std::string_view();
-    }
-    LITERT_RETURN_IF_ERROR(s);
-    return std::string_view(path ? path : "");
-  }
-#else
   Expected<absl::string_view> GetXNNPackWeightCachePath() const {
     const char* path;
     auto s = LrtGetCpuOptionsXnnPackWeightCachePath(options_.get(), &path);
@@ -127,7 +109,6 @@ class CpuOptions {
     LITERT_RETURN_IF_ERROR(s);
     return absl::NullSafeStringView(path);
   }
-#endif
 
   /// @brief Sets the XNNPack weight cache file descriptor.
   Expected<void> SetXNNPackWeightCacheFileDescriptor(int fd) {

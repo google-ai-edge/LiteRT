@@ -42,16 +42,6 @@ class ScopedFile {
   static absl::StatusOr<ScopedFile> Open(absl::string_view path);
   static absl::StatusOr<ScopedFile> OpenWritable(absl::string_view path);
 
-#ifdef LITERT_NO_ABSL
-  static absl::StatusOr<ScopedFile> Open(std::string_view path) {
-    return Open(absl::string_view(path.data(), path.size()));
-  }
-
-  static absl::StatusOr<ScopedFile> OpenWritable(std::string_view path) {
-    return OpenWritable(absl::string_view(path.data(), path.size()));
-  }
-#endif  // LITERT_NO_ABSL
-
   ScopedFile() : file_(kInvalidPlatformFile) {}
   explicit ScopedFile(PlatformFile file) : file_(file) {}
   ~ScopedFile() {
