@@ -32,6 +32,7 @@
 #include <windows.h>
 
 #include <cctype>
+#include <filesystem>  // NOLINT
 #include <string>
 
 namespace litert::internal::shared_library_windows {
@@ -64,6 +65,10 @@ inline const char* DlError() {
   return g_last_error.empty() ? nullptr : g_last_error.c_str();
 }
 
+inline bool IsAbsolutePath(const std::string& path) {
+  return std::filesystem::path(path).is_absolute();
+}
+
 inline void* DlOpen(const char* filename, int flags) {
   g_last_error.clear();
 
@@ -71,17 +76,34 @@ inline void* DlOpen(const char* filename, int flags) {
     return GetModuleHandle(NULL);
   }
 
-  std::string dll_name(filename);
-  size_t pos = dll_name.rfind(".so");
-  if (pos != std::string::npos && pos == dll_name.length() - 3) {
-    dll_name.replace(pos, 3, ".dll");
+  std::filesystem::path requested_path(filename);
+  requested_path.make_preferred();
+  std::string requested_name = requested_path.string();
+  std::string fallback_name = requested_name;
+  size_t pos = fallback_name.rfind(".so");
+  if (pos != std::string::npos && pos == fallback_name.length() - 3) {
+    fallback_name.replace(pos, 3, ".dll");
   }
 
-  HMODULE handle = LoadLibraryA(dll_name.c_str());
+  const auto load_with_search_path = [](const std::string& path) {
+    if (IsAbsolutePath(path)) {
+      return LoadLibraryExA(path.c_str(), nullptr,
+                            LOAD_WITH_ALTERED_SEARCH_PATH);
+    }
+    return LoadLibraryA(path.c_str());
+  };
+
+  HMODULE handle = load_with_search_path(requested_name);
+  if (!handle && fallback_name != requested_name) {
+    handle = load_with_search_path(fallback_name);
+  }
   if (!handle) {
     DWORD error = GetLastError();
-    g_last_error = "Failed to load library '" + dll_name +
-                   "': " + GetWindowsErrorString(error);
+    g_last_error = "Failed to load library '" + requested_name + "'";
+    if (fallback_name != requested_name) {
+      g_last_error += " or fallback '" + fallback_name + "'";
+    }
+    g_last_error += ": " + GetWindowsErrorString(error);
   }
 
   return handle;

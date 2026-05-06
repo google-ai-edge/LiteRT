@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_metal_linkopts", "litert_metal_opts")
 
 package(
@@ -71,10 +72,22 @@ cc_test(
     name = "compiler_plugin_test",
     srcs = ["compiler_plugin_test.cc"],
     data = [
+        "//litert/c:litert_runtime_c_api_so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
+    linkopts = select({
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+                "//litert/c:litert_so",
+            ]),
+        ],
+    }),
     # Workaround to disable mismatched-size-delete.
     # A compiler plugin uses `libLiteRt.so` but `compiler_plugin` is a static library for runtime.
     # So mixing of the two will cause mismatched-size-delete error.
@@ -122,10 +135,22 @@ cc_test(
     name = "compiler_plugin_transformation_test",
     srcs = ["compiler_plugin_transformation_test.cc"],
     data = [
+        "//litert/c:litert_runtime_c_api_so",
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/examples:example_plugin_so_data",
     ],
+    linkopts = select({
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+                "//litert/c:litert_so",
+            ]),
+        ],
+    }),
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [
         # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.

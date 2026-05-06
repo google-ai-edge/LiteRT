@@ -142,6 +142,10 @@ pywrap_binaries(
 py_strict_test(
     name = "converter_wrapper_test",
     srcs = ["converter_wrapper_test.py"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":pywrap_litert",
         "//ci/tools/python/wheel:tflite_converter_protos",

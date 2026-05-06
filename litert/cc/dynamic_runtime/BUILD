@@ -297,6 +297,10 @@ cc_test(
         "//litert/test:tflite_test_data",
     ],
     defines = ["LITERT_DYNAMIC_RUNTIME"],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_model",
         "//litert/c:litert_common",
@@ -476,6 +480,10 @@ cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["//litert/cc:litert_tensor_buffer_test.cc"],
     linkopts = litert_android_linkopts(),
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_environment",
         ":litert_event",
