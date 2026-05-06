@@ -61,6 +61,8 @@ enum class GoogleTensorSouthBoundFeature {
   kOriginalUidDispatchDirective = 7,
   // BufferDirectiveAnnotations::kRequestFence
   kRequestFence = 8,
+  // thrLoadSqContainerFdWithOffset
+  kSqContainerFdWithOffset = 9,
 };
 
 // Returns `true` if `feature` is supported by the available Google Tensor
@@ -93,6 +95,10 @@ inline bool GoogleTensorSouthBoundFeatureSupported(
     case GoogleTensorSouthBoundFeature::kRequestFence:
       return GoogleTensorSouthBoundMajorVersion() > 0 ||
              GoogleTensorSouthBoundMinorVersion() >= 17;
+    case GoogleTensorSouthBoundFeature::kSqContainerFdWithOffset:
+      // TODO(google-tensor): confirm minor version.
+      return GoogleTensorSouthBoundMajorVersion() > 0 ||
+             GoogleTensorSouthBoundMinorVersion() >= 18;
   }
 }
 
