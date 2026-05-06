@@ -47,10 +47,21 @@ IS_WINDOWS = sys.platform == 'win32'
 IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'AMD64', 'i386', 'i686')
 
 # --- Configuration for OpenVINO NPU Compiler Download ---
+#
+# Must match the OpenVINO build pinned in third_party/intel_openvino/
+# openvino.bzl. That workspace file pins the OpenVINO SDK used to compile the
+# Intel OV compiler plugin and dispatch library at build time; this file pins
+# the OpenVINO release that provides the NPU compiler shared library fetched
+# at pip install time. Drift between the two causes runtime compiler/plugin
+# ABI mismatches. ci/check_openvino_version_sync.py enforces this.
+# LINT.IfChange(wheel_openvino_sdk_version)
 _OV_BUILD = '2026.1.0.21367.63e31528c62'
 _OV_BASE_URL = (
     'https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.1'
 )
+# LINT.ThenChange(
+#   ../../../../../third_party/intel_openvino/openvino.bzl:openvino_packages,
+# )
 
 # Archive -> in-archive member is always <archive_prefix>/<member_suffix>, where
 # archive_prefix is the archive filename minus the extension.

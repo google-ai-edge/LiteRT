@@ -14,7 +14,9 @@
 
 """Python wrapper for LiteRT environments."""
 
+import glob
 import os
+import sys
 from typing import Optional
 
 # pylint: disable=g-import-not-at-top
@@ -27,6 +29,40 @@ if not os.path.splitext(__file__)[0].endswith(
 else:
   from ai_edge_litert import _pywrap_litert_environment_wrapper as _env
 # pylint: enable=g-import-not-at-top
+
+
+def _autodiscover_dispatch_library_path() -> str:
+  """Returns a vendor dispatch directory under the installed ai_edge_litert.
+
+  Scans `<ai_edge_litert>/vendors/*/dispatch/` and returns the first directory
+  that contains a dispatch shared library, or "" when none is found. The C++
+  runtime loads every shared library it finds in the returned directory.
+  """
+  try:
+    import ai_edge_litert  # pytype: disable=import-error  # pylint: disable=g-import-not-at-top
+  except ImportError:
+    return ""
+  vendors_dir = os.path.join(
+      os.path.dirname(os.path.abspath(ai_edge_litert.__file__)), "vendors"
+  )
+  if not os.path.isdir(vendors_dir):
+    return ""
+  lib_glob = (
+      "LiteRtDispatch*.dll"
+      if sys.platform == "win32"
+      else "libLiteRtDispatch_*.so"
+  )
+  try:
+    entries = sorted(os.listdir(vendors_dir))
+  except OSError:
+    return ""
+  for entry in entries:
+    dispatch_dir = os.path.join(vendors_dir, entry, "dispatch")
+    if os.path.isdir(dispatch_dir) and glob.glob(
+        os.path.join(dispatch_dir, lib_glob)
+    ):
+      return dispatch_dir
+  return ""
 
 
 class Environment:
@@ -86,7 +122,11 @@ class Environment:
       runtime_path: Optional path to the LiteRT runtime library directory.
         Defaults to the directory containing the Python wheel modules.
       compiler_plugin_path: Optional path to compiler plugin libraries.
-      dispatch_library_path: Optional path to dispatch libraries.
+      dispatch_library_path: Optional path to dispatch libraries. When omitted
+        or empty, auto-discovers a vendor dispatch directory under the
+        installed `ai_edge_litert` package (the first
+        `vendors/<vendor>/dispatch/` dir that contains a dispatch shared
+        library).
       cpu_num_threads: Number of threads for CPU execution.
       gpu_enforce_f32: Enforce F32 precision on GPU.
       gpu_share_constant_tensors: Share constant tensors among subgraphs on GPU.
@@ -106,6 +146,8 @@ class Environment:
     """
     if runtime_path is None:
       runtime_path = os.path.dirname(os.path.abspath(__file__))
+    if not dispatch_library_path:
+      dispatch_library_path = _autodiscover_dispatch_library_path()
     capsule = _env.CreateEnvironment(
         runtime_path=runtime_path,
         compiler_plugin_path=compiler_plugin_path,

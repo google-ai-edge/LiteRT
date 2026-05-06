@@ -22,6 +22,13 @@ def openvino_configure():
     # are downloaded. Bazel's select() picks the correct one at build time based on
     # target platform, enabling Android cross-compilation from Linux.
     # On Windows hosts, only the Windows SDK is downloaded.
+    #
+    # The OpenVINO build pinned here must match the build that
+    # ci/tools/python/vendor_sdk/intel/setup.py fetches at pip install time;
+    # otherwise the Intel OV compiler plugin (built against the version below)
+    # will be paired with a mismatched libopenvino_intel_npu_compiler at
+    # runtime.
+    # LINT.IfChange(openvino_packages)
     configurable_repo(
         name = "intel_openvino",
         build_file = "@//third_party/intel_openvino:openvino.bazel",
@@ -53,3 +60,6 @@ def openvino_configure():
             },
         ]),
     )
+    # LINT.ThenChange(
+    #   //ci/tools/python/vendor_sdk/intel/setup.py:wheel_openvino_sdk_version,
+    # )
