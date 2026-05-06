@@ -111,5 +111,94 @@ TEST(TestOVPlugin, GetSocModelConfigUnknownReturnsError) {
   EXPECT_EQ(config_map.count("NPU_PLATFORM"), 0u);
 }
 
+// ===== Negative tests for compiled result getters =====
+
+// Null compiled_result returns InvalidArgument.
+TEST(TestOVPlugin, GetByteCodeNullCompiledResult) {
+  const void* byte_code = nullptr;
+  size_t byte_code_size = 0;
+  EXPECT_EQ(LiteRtGetCompiledResultByteCode(
+                /*compiled_result=*/nullptr, /*byte_code_idx=*/0, &byte_code,
+                &byte_code_size),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+// Null output pointer returns InvalidArgument.
+TEST(TestOVPlugin, GetByteCodeNullOutputPointer) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("add_simple.tflite");
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginCompile(plugin.get(), "PTL", model.Get(), &compiled));
+
+  size_t byte_code_size = 0;
+  EXPECT_EQ(
+      LiteRtGetCompiledResultByteCode(compiled, /*byte_code_idx=*/0,
+                                      /*byte_code=*/nullptr, &byte_code_size),
+      kLiteRtStatusErrorInvalidArgument);
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+// OOB byte_code_idx returns IndexOOB.
+TEST(TestOVPlugin, GetByteCodeOobIndex) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("add_simple.tflite");
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginCompile(plugin.get(), "PTL", model.Get(), &compiled));
+
+  const void* byte_code = nullptr;
+  size_t byte_code_size = 0;
+  EXPECT_EQ(LiteRtGetCompiledResultByteCode(compiled, /*byte_code_idx=*/999,
+                                            &byte_code, &byte_code_size),
+            kLiteRtStatusErrorIndexOOB);
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+// Null compiled_result for CallInfo returns InvalidArgument.
+TEST(TestOVPlugin, GetCallInfoNullCompiledResult) {
+  const void* call_info = nullptr;
+  size_t call_info_size = 0;
+  LiteRtParamIndex byte_code_idx = 0;
+  EXPECT_EQ(LiteRtGetCompiledResultCallInfo(
+                /*compiled_result=*/nullptr, /*call_idx=*/0, &call_info,
+                &call_info_size, &byte_code_idx),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+// OOB call_idx returns IndexOOB.
+TEST(TestOVPlugin, GetCallInfoOobIndex) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("add_simple.tflite");
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginCompile(plugin.get(), "PTL", model.Get(), &compiled));
+
+  const void* call_info = nullptr;
+  size_t call_info_size = 0;
+  LiteRtParamIndex byte_code_idx = 0;
+  EXPECT_EQ(
+      LiteRtGetCompiledResultCallInfo(compiled, /*call_idx=*/999, &call_info,
+                                      &call_info_size, &byte_code_idx),
+      kLiteRtStatusErrorIndexOOB);
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+// Null compiled_result for NumCalls returns InvalidArgument.
+TEST(TestOVPlugin, GetNumCallsNullCompiledResult) {
+  LiteRtParamIndex num_calls = 0;
+  EXPECT_EQ(LiteRtGetNumCompiledResultCalls(
+                /*compiled_result=*/nullptr, &num_calls),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+// Null compiled_result for NumByteCodeModules returns InvalidArgument.
+TEST(TestOVPlugin, NumByteCodeModulesNullCompiledResult) {
+  LiteRtParamIndex num_byte_code = 0;
+  EXPECT_EQ(LiteRtCompiledResultNumByteCodeModules(
+                /*compiled_result=*/nullptr, &num_byte_code),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 }  // namespace
 }  // namespace litert

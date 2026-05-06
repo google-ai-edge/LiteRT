@@ -58,8 +58,10 @@ LiteRtStatus CreateOpenVinoTensorBuffer(
   litert::Expected<void> result =
       custom_tensor_buffer->Alloc(*tensor_type, bytes);
   if (!result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to alloc OpenVino tensor buffer %d.",
+    LITERT_LOG(LITERT_ERROR, "Failed to alloc OpenVino tensor buffer %zu.",
                bytes);
+    delete custom_tensor_buffer;
+    delete memory_info;
     return kLiteRtStatusErrorMemoryAllocationFailure;
   }
   memory_info->memory_handle = custom_tensor_buffer;
@@ -70,9 +72,7 @@ LiteRtStatus CreateOpenVinoTensorBuffer(
 LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   OpenVinoTensorBuffer* custom_tensor_buffer =
       reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
-  if (custom_tensor_buffer->GetTensorData()) {
-    delete custom_tensor_buffer;
-  }
+  delete custom_tensor_buffer;
   delete hw_memory_info;
   return kLiteRtStatusOk;
 }
