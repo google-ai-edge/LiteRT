@@ -161,16 +161,54 @@ import os as _os
 import sys as _sys
 
 if _sys.platform == "win32" and hasattr(_os, "add_dll_directory"):
+    # Collect DLL dirs and register them two ways:
+    #   1) os.add_dll_directory  -> honored by LoadLibraryExA(LOAD_LIBRARY_*).
+    #   2) prepend to PATH       -> honored by plain LoadLibraryA.
+    # Both are needed because LiteRT's C++ shared-library loader falls back to
+    # LoadLibraryA when LoadLibraryExA rejects the flag combination used with
+    # absolute paths; that fallback only consults PATH, not add_dll_directory.
+    _dll_dirs = []
     _pkg_dir = _os.path.dirname(_os.path.abspath(__file__))
     if _os.path.isdir(_pkg_dir):
-        _os.add_dll_directory(_pkg_dir)
+        _dll_dirs.append(_pkg_dir)
     try:
         import openvino as _ov
         _ov_libs = _os.path.join(_os.path.dirname(_ov.__file__), "libs")
         if _os.path.isdir(_ov_libs):
-            _os.add_dll_directory(_ov_libs)
+            _dll_dirs.append(_ov_libs)
     except ImportError:
         pass
+    # Register vendor SDK data dirs so in-process dispatch DLLs can resolve
+    # vendor-shipped dependencies (e.g. openvino_intel_npu_compiler.dll).
+    # The SDK packages also self-register on import; this loop covers the
+    # case where the user imports ai_edge_litert before the SDK.
+    for _sdk_mod in ("ai_edge_litert_sdk_intel",):
+        try:
+            _sdk = __import__(_sdk_mod)
+        except ImportError:
+            continue
+        try:
+            _sdk_dir = _sdk.path_to_sdk_libs()
+        except AttributeError:
+            continue
+        if _sdk_dir and _os.path.isdir(str(_sdk_dir)):
+            _dll_dirs.append(str(_sdk_dir))
+    _seen = set()
+    for _d in _dll_dirs:
+        if _d in _seen:
+            continue
+        _seen.add(_d)
+        try:
+            _os.add_dll_directory(_d)
+        except OSError:
+            pass
+    if _dll_dirs:
+        _cur_path = _os.environ.get("PATH", "")
+        _path_parts = _cur_path.split(_os.pathsep) if _cur_path else []
+        _path_lower = {p.lower() for p in _path_parts}
+        _new_prefix = [d for d in _dll_dirs if d.lower() not in _path_lower]
+        if _new_prefix:
+            _os.environ["PATH"] = _os.pathsep.join(_new_prefix + _path_parts)
 else:
     _pkg_dir = _os.path.dirname(_os.path.abspath(__file__))
     _litert_so = _os.path.join(_pkg_dir, "libLiteRt.so")
@@ -240,6 +278,56 @@ def _postprocess_macos_binaries(package_dir: str) -> None:
     for name in files:
       if name.endswith((".dylib", ".so")):
         _dedupe_macos_rpaths(os.path.join(root, name))
+
+
+# Add an RPATH hint to the Intel OpenVINO compiler plugin and dispatch library
+# so they can locate their OpenVINO runtime deps (libopenvino.so.* and the
+# device plugins libopenvino_intel_npu_plugin.so etc.) via the pip-installed
+# `openvino` package at `<site-packages>/openvino/libs/`.
+#
+# Without this, the plugin's dlopen fails on machines that don't have a
+# system-wide OpenVINO installation: the bundled plugin .so has no RPATH and
+# ld.so falls back to LD_LIBRARY_PATH / /etc/ld.so.cache, which don't know
+# about the venv's openvino/libs/.
+#
+# Scoped to intel_openvino only — other vendors ship their own SDK bundles
+# (Qualcomm QNN, MediaTek Neuron, etc.) and should not inherit an Intel path.
+_INTEL_OV_WHEEL_RPATH = "$ORIGIN/../../../../openvino/libs"
+
+
+def _postprocess_linux_binaries(package_dir: str) -> None:
+  if sys.platform != "linux":
+    return
+  # package_dir is already <tree>/ai_edge_litert (see prepare_build_tree:
+  # src_dir = os.path.join(tree_path, project_name.replace("-", "_"))).
+  intel_ov_dir = os.path.join(package_dir, "vendors", "intel_openvino")
+  if not os.path.isdir(intel_ov_dir):
+    return
+  if not shutil.which("patchelf"):
+    print(
+        "warning: patchelf not found; skipping Intel OpenVINO RPATH injection."
+        " libLiteRtCompilerPlugin_IntelOpenvino.so will fail to locate"
+        " libopenvino.so at runtime unless LD_LIBRARY_PATH is set manually.",
+        file=sys.stderr,
+    )
+    return
+  for root, _, files in os.walk(intel_ov_dir):
+    for name in files:
+      if not name.endswith(".so"):
+        continue
+      path = os.path.join(root, name)
+      try:
+        subprocess.run(
+            ["patchelf", "--set-rpath", _INTEL_OV_WHEEL_RPATH, path],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+      except subprocess.CalledProcessError as e:
+        print(
+            f"warning: patchelf failed on {path}: {e.stderr}",
+            file=sys.stderr,
+        )
 
 
 def prepare_build_tree(tree_path, args, project_name: str):
@@ -323,6 +411,7 @@ def prepare_build_tree(tree_path, args, project_name: str):
       os.makedirs(os.path.dirname(dest), exist_ok=True)
       shutil.copyfile(src, dest)
   _postprocess_macos_binaries(src_dir)
+  _postprocess_linux_binaries(src_dir)
 
 
 def build_pyproject_wheel(
