@@ -491,5 +491,36 @@ TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPluginOpCompatibilityTest,
                          kSupportedOps);
 
+TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
+  auto model = litert::testing::LoadTestFileModel("rms_norm_composite.tflite");
+
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+
+  auto qnn_opts = opts->GetQualcommOptions();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetEnableJustInTime(true);
+
+  auto plugin = CreatePlugin(/*env=*/nullptr, opts->Get());
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  LiteRtParamIndex num_byte_code;
+  LITERT_ASSERT_OK(
+      LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
+  EXPECT_EQ(num_byte_code, 2);
+
+  const void* handle_0 = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(compiled, 0, &handle_0));
+  EXPECT_NE(handle_0, nullptr);
+
+  const void* handle_1 = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultHandle(compiled, 1, &handle_1));
+  EXPECT_NE(handle_1, nullptr);
+
+  LiteRtDestroyCompiledResult(compiled);
+}
 }  // namespace
 }  // namespace litert

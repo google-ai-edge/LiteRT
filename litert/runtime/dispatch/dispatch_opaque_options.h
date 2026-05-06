@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
@@ -55,6 +56,12 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+  // Add an opaque executable handle for JIT
+  Expected<void> AddExecHandle(absl::string_view name, const void* handle);
+
+  // Get the opaque executable handle for JIT
+  Expected<const void*> GetExecHandle(absl::string_view name);
 };
 
 }  // namespace litert::internal

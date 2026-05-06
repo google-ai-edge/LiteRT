@@ -263,7 +263,7 @@ LiteRtStatus InvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      Qnn(), *device_context, exec_bytecode_buffer, function_name);
+      Qnn(), *device_context, exec_type, exec_bytecode_buffer, function_name);
   if (!context) {
     LITERT_LOG(LITERT_ERROR,
                "Failed to create context from context binary: %s for function "

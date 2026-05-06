@@ -216,6 +216,21 @@ class QualcommOptions {
     return val;
   }
 
+  /// @brief Just-In-Time allows passing the QNN Context directly from the
+  /// compiler plugin to the dispatcher in-memory, bypassing graph finalization.
+  /// Defaults to `false`.
+  void SetEnableJustInTime(bool enable_just_in_time) {
+    LrtQualcommOptionsSetEnableJustInTime(options_, enable_just_in_time);
+  }
+  bool GetEnableJustInTime() {
+    bool val;
+    auto status = LrtQualcommOptionsGetEnableJustInTime(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   /// @brief When using short conv hmx, one might have better performance, but
   /// convolutions with short depth and/or non-symmetric weights could exhibit
   /// inaccurate results.
