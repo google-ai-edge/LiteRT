@@ -843,6 +843,10 @@ cc_test(
         "nomacos",
         "nowindows",
     ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":ahwb_buffer",
         ":gl_buffer",
