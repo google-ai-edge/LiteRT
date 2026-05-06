@@ -262,6 +262,7 @@ litert_device_test(
     deps = [
         ":dispatch_delegate",
         ":dispatch_opaque_options",
+        "//platforms/darwinn/tachyon/core/fence",
         # TODO: gt team update visibility.
         # "//platforms/darwinn/tachyon/core/fence",
         "@com_google_googletest//:gtest_main",
@@ -270,6 +271,7 @@ litert_device_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc/internal:litert_handle",
         "//litert/cc:litert_buffer_ref",

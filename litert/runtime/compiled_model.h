@@ -225,6 +225,11 @@ class LiteRtCompiledModelT {
     return buffer_context_.get();
   }
 
+  // Creates a tensor buffer via the external buffer context (same path as
+  // delegate registration), so dispatch custom buffers receive device context.
+  litert::Expected<LiteRtTensorBufferPtr> CreateBufferForIoTensor(
+      size_t signature_index, absl::string_view tensor_name, bool is_input);
+
   // Returns the number of signatures in the model.
   size_t GetNumSignatures() const { return signature_keys_.size(); }
 
