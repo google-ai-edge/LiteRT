@@ -204,13 +204,6 @@ class SharedLibrary {
     return LoadImpl(HandleKind::kPath, path, flags);
   }
 
-#ifdef LITERT_NO_ABSL
-  static Expected<SharedLibrary> Load(std::string_view path,
-                                      RtldFlags flags) noexcept {
-    return Load(internal::ToAbslStringView(path), flags);
-  }
-#endif  // LITERT_NO_ABSL
-
   /// @brief Loads the library as the `RTLD_NEXT` special handle.
   static Expected<SharedLibrary> Load(RtldFlags::NextTag) noexcept {
     return LoadImpl(HandleKind::kRtldNext, "", RtldFlags{});
@@ -224,13 +217,7 @@ class SharedLibrary {
   /// @brief Gets the last shared library operation error, if any.
   ///
   /// If there was no error, returns an empty view.
-#ifdef LITERT_NO_ABSL
-  static std::string_view DlError() noexcept {
-    return internal::ToStdStringView(DlErrorImpl());
-  }
-#else
   static absl::string_view DlError() noexcept { return DlErrorImpl(); }
-#endif
 
   friend std::ostream& operator<<(std::ostream& os, const SharedLibrary& lib);
 

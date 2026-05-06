@@ -1,21 +1,45 @@
 """Run the profiling script."""
 
-import argparse
 import getpass
 import json
-import logging
 import os
 import pathlib
 import re
 import shutil
 import subprocess
 from typing import Any, Optional
+from absl import app
+from absl import flags
+from absl import logging
 import numpy as np
+
+_MODEL = flags.DEFINE_string(
+    "model", None, "path to the tflite model", short_name="m"
+)
+_OUTPUT_DIR = flags.DEFINE_string(
+    "output_dir", None, "path to output folder", short_name="o"
+)
+_HOSTNAME = flags.DEFINE_string(
+    "hostname", "localhost", "hostname for adb", short_name="H"
+)
+_SERIAL = flags.DEFINE_string("serial", None, "serial for adb", short_name="s")
+_SOC_MODEL = flags.DEFINE_string("soc_model", None, "SoC Model (e.g. SM8650)")
+_HTP_ARCH = flags.DEFINE_string("htp_arch", None, "HTP Arch (e.g. V75)")
+_QAIRT_SDK = flags.DEFINE_string("qairt_sdk", None, "Path to qairt sdk folder")
+
+flags.mark_flag_as_required(_MODEL.name)
+flags.mark_flag_as_required(_OUTPUT_DIR.name)
+flags.mark_flag_as_required(_SERIAL.name)
+flags.mark_flag_as_required(_SOC_MODEL.name)
+flags.mark_flag_as_required(_HTP_ARCH.name)
 
 Path = pathlib.Path
 _DEVICE_WORKING_DIR = f"/data/local/tmp/{getpass.getuser()}/litert"
-_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-_LITERT_ROOT = Path(__file__).resolve().parents[5]
+_ASSETS_DIR = Path(__file__).parent / "assets"
+
+# Resolve paths relative to script location in runfiles.
+_WORKSPACE_ROOT = Path(__file__).parents[8]
+_LITERT_ROOT = Path(__file__).parents[4]
 
 
 def _extract_build_id(build_id_hdr: str) -> Optional[str]:
@@ -47,8 +71,13 @@ def _get_ctx_bin_info(ctx_bin_path: str, qairt_sdk: Path) -> dict[str, Any]:
 
   Returns:
       json_data (dict): Context binary information.
+  Raises:
+      RuntimeError: If the context binary is compiled with a different BUILD ID
+        than the current qairt sdk.
+      subprocess.CalledProcessError: If the qnn-context-binary-utility command
+        fails.
   """
-  json_path = _ASSETS_DIR / "tmp.json"
+  json_path = Path(_OUTPUT_DIR.value) / "tmp.json"
   subprocess.run(
       [
           qairt_sdk
@@ -67,9 +96,21 @@ def _get_ctx_bin_info(ctx_bin_path: str, qairt_sdk: Path) -> dict[str, Any]:
     json_data = json.load(file)
   os.remove(json_path)
   bin_id = json_data["info"]["buildId"]
-  qairt_id = _extract_build_id(
-      qairt_sdk / "include" / "QNN" / "QnnSdkBuildId.h"
-  )
+  hdr_path = qairt_sdk / "include" / "QNN" / "QnnSdkBuildId.h"
+  if not hdr_path.exists():
+    workspace_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    if workspace_dir:
+      hdr_path = (
+          Path(workspace_dir)
+          / "third_party"
+          / "qairt"
+          / "latest"
+          / "include"
+          / "QNN"
+          / "QnnSdkBuildId.h"
+      )
+
+  qairt_id = _extract_build_id(hdr_path)
   logging.info("Context Binary Build Id: %s", bin_id)
 
   def version_parse(build_id: str) -> tuple[int, ...]:
@@ -111,10 +152,12 @@ def _generate_zero_inputs(ctx_bin_info: dict[str, Any], graph_idx: int) -> None:
       ValueError: If the context binary contains more or less than one graph.
       TypeError: If an unknown QNN datatype is encountered.
   """
-  logging.info("Generating input data for graph %d.")
+  logging.info("Generating input data for graph %d.", graph_idx)
 
   if len(ctx_bin_info["graphs"]) <= graph_idx:
-    raise ValueError("Graph %d is not available in the context binary.")
+    raise ValueError(
+        "Graph {graph_idx} is not available in the context binary."
+    )
 
   graph = ctx_bin_info["graphs"][graph_idx]
   dtype_map = {
@@ -146,7 +189,7 @@ def _generate_zero_inputs(ctx_bin_info: dict[str, Any], graph_idx: int) -> None:
     input_tensor = np.zeros(inp["info"]["dimensions"]).astype(dtype)
     input_list.append(input_tensor)
   graph_name = graph["info"]["graphName"]
-  graph_input_path = _ASSETS_DIR / "inputs" / graph_name
+  graph_input_path = Path(_OUTPUT_DIR.value) / "inputs" / graph_name
   os.makedirs(graph_input_path, exist_ok=True)
   input_dirs = Path("inputs") / graph_name
   lines = []
@@ -215,7 +258,7 @@ def _push_target(adb_cmd: str, ctx_bin_path: str) -> None:
       "Pushing inputs, ctx binary, and .json files to the target device..."
   )
   for file_path in [
-      _ASSETS_DIR / "inputs",
+      Path(_OUTPUT_DIR.value) / "inputs",
       _ASSETS_DIR / "htp_ext_config.json",
       _ASSETS_DIR / "config.json",
       Path(ctx_bin_path).resolve(),
@@ -291,56 +334,71 @@ def _generate_profiler_output(
   """
   logging.info("Exectuing qnn-profile-viewer with the outputs...")
   os.makedirs(output_dir, exist_ok=True)
-  cmd = f"{adb_cmd} pull {_DEVICE_WORKING_DIR}/output_htp ./"
+  cmd = f"{adb_cmd} pull {_DEVICE_WORKING_DIR}/output_htp {_OUTPUT_DIR.value}"
   subprocess.run(cmd, check=True, shell=True)
-  log_path = Path("output_htp") / "qnn-profiling-data_0.log"
-  schematic_path = (
-      _LITERT_ROOT
-      / "bazel-bin"
-      / "litert"
-      / "tools"
-      / "apply_plugin_main.runfiles"
-      / "litert"
-      / f"{ctx_bin_name}_schematic.bin"
-  )
+  log_path = Path(_OUTPUT_DIR.value) / "output_htp" / "qnn-profiling-data_0.log"
+
+  workspace_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+  schematic_path = None
+  if workspace_dir:
+    schematic_path = (
+        Path(workspace_dir)
+        / "bazel-bin"
+        / "litert"
+        / "tools"
+        / "apply_plugin_main.runfiles"
+        / "litert"
+        / f"{ctx_bin_name}_schematic.bin"
+    )
+
+  if not schematic_path or not schematic_path.exists():
+    schematic_path = Path(_OUTPUT_DIR.value) / f"{ctx_bin_name}_schematic.bin"
+
+  if not schematic_path.exists():
+    schematic_path = Path(f"{ctx_bin_name}_schematic.bin")
+
   logging.info("schematic_path %s", schematic_path)
-  cmd_lst = [
-      qairt_sdk / "bin" / "x86_64-linux-clang" / "qnn-profile-viewer",
-      "--input_log",
-      log_path,
-      "--config",
-      _ASSETS_DIR / "config_viewer.json",
-      "--reader",
+
+  qnn_profile_viewer = (
+      qairt_sdk / "bin" / "x86_64-linux-clang" / "qnn-profile-viewer"
+  )
+  profiling_reader = (
       qairt_sdk
       / "lib"
       / "x86_64-linux-clang"
-      / "libQnnHtpOptraceProfilingReader.so",
+      / "libQnnHtpOptraceProfilingReader.so"
+  )
+
+  cmd_lst = [
+      str(qnn_profile_viewer),
+      "--input_log",
+      str(log_path),
+      "--config",
+      str(_ASSETS_DIR / "config_viewer.json"),
+      "--reader",
+      str(profiling_reader),
       "--schematic",
-      schematic_path,
+      str(schematic_path),
       "--output",
-      Path(output_dir) / "chromeTrace.json",
+      str(Path(output_dir) / "chromeTrace.json"),
   ]
   os.makedirs(output_dir, exist_ok=True)
-  logging.info(" ".join(str(item) for item in cmd_lst))
+  logging.info("Running: %s", " ".join(cmd_lst))
   subprocess.run(
       cmd_lst,
       check=True,
   )
 
 
-def _setup_logging(level_name):
-  level = getattr(logging, level_name.upper(), logging.INFO)
-  logging.basicConfig(
-      level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  )
-
-
-def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
+def _generate_ctx_bin(
+    model_path: Path, soc_model: str, qairt_sdk: Path
+) -> Path:
   """Generate the ctx.bin file from a given model.
 
   Args:
       model_path (Path): The path to the model.
       soc_model (str): The SOC model to use.
+      qairt_sdk (Path): The path to the QAIRT SDK.
 
   Returns:
       Optional[Path]: The path to the generated ctx.bin file, or None if the
@@ -350,20 +408,26 @@ def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
       RuntimeError: If the context binary path cannot be extracted from the
         subprocess output.
   """
-  tmp_tflite_path = _ASSETS_DIR / "tmp.tflite"
-  bazel_run = [
+  tmp_tflite_path = Path(_OUTPUT_DIR.value) / "tmp.tflite"
+
+  cwd = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+
+  _libs_path = "third_party/odml/litert/litert/vendors/qualcomm/compiler"
+  if cwd:
+    if not Path(cwd, _libs_path).exists():
+      _libs_path = "litert/vendors/qualcomm/compiler"
+  else:
+    if not Path(_libs_path).exists():
+      _libs_path = "litert/vendors/qualcomm/compiler"
+
+  apply_plugin_main_cmd = [
       "bazel",
       "run",
       "-c",
       "opt",
-      "--cxxopt=--std=c++17",
-      "--nocheck_visibility",
-  ]
-  apply_pluin_main_cmd = [
-      *bazel_run,
       "//litert/tools:apply_plugin_main",
       "--",
-      "--libs=litert/vendors/qualcomm/compiler",
+      f"--libs={_libs_path}",
       "--cmd=apply",
       f"--model={model_path}",
       f"--o={tmp_tflite_path}",
@@ -371,30 +435,37 @@ def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
       f"--soc_model={soc_model.upper()}",
       "--qualcomm_profiling=optrace",
   ]
-  logging.debug(" ".join(str(item) for item in apply_pluin_main_cmd))
-  subprocess.run(
-      apply_pluin_main_cmd, check=True, cwd=Path(__file__).resolve().parent
+
+  env = os.environ.copy()
+  qairt_host_lib_path = qairt_sdk.resolve() / "lib" / "x86_64-linux-clang"
+  env["LD_LIBRARY_PATH"] = (
+      f"{qairt_host_lib_path}:{env.get('LD_LIBRARY_PATH', '')}"
   )
 
+  logging.debug("Running: %s", " ".join(apply_plugin_main_cmd))
+  subprocess.run(apply_plugin_main_cmd, check=True, cwd=cwd, env=env)
+
   extract_bytecode_lst = [
-      *bazel_run,
+      "bazel",
+      "run",
+      "-c",
+      "opt",
       "//litert/tools:extract_bytecode",
       "--",
       f"--model_path={tmp_tflite_path}",
-      f"--output_dir={_ASSETS_DIR}",
+      f"--output_dir={_OUTPUT_DIR.value}",
   ]
-  logging.debug(" ".join(str(item) for item in extract_bytecode_lst))
+  logging.debug("Running: %s", " ".join(extract_bytecode_lst))
   result = subprocess.run(
       extract_bytecode_lst,
       check=True,
-      cwd=Path(__file__).resolve().parent,
+      cwd=cwd,
       capture_output=True,
       text=True,
   )
   os.remove(tmp_tflite_path)
   logging.info("Subprocess output:\n%s", result.stderr)
-  # Parse the stderr to extract the path to the generated ctx.bin file.
-  # "Wrote ... bytes to '<context binary path>"
+
   match = re.search(r"bytes to '([^']+)'", result.stderr)
   if match:
     output_path = Path(match.group(1))
@@ -404,72 +475,56 @@ def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
   return output_path
 
 
-if __name__ == "__main__":
-  parser = argparse.ArgumentParser(
-      description="Given a context binary, generate QNN HTP Optrace Profiling."
-  )
-  parser.add_argument(
-      "--model", "-m", type=str, help="path to the tflite model", required=True
-  )
-  parser.add_argument(
-      "--output_dir",
-      "-o",
-      type=str,
-      help="path to output folder",
-      required=True,
-  )
-  parser.add_argument(
-      "--hostname", "-H", type=str, help="hostname for adb", default="localhost"
-  )
-  parser.add_argument(
-      "--serial", "-s", type=str, help="serial for adb", required=True
-  )
-  parser.add_argument(
-      "--soc_model", type=str, help="SoC Model (e.g. SM8650)", required=True
-  )
-  parser.add_argument(
-      "--htp_arch", type=str, help="HTP Arch (e.g. V75)", required=True
-  )
-  parser.add_argument(
-      "--log_level",
-      default="INFO",
-      choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-      help="Set the logging level",
-  )
-  default_qairt_sdk = (
-      Path(__file__).resolve().parents[5] / "third_party" / "qairt" / "latest"
-  )
-  if "LITERT_QAIRT_SDK" in os.environ:
-    default_qairt_sdk = Path(os.environ["LITERT_QAIRT_SDK"]) / "latest"
-  parser.add_argument(
-      "--qairt_sdk",
-      type=Path,
-      help="Path to qairt sdk folder",
-      required=False,
-      default=default_qairt_sdk,
-  )
-  args = parser.parse_args()
-  _setup_logging(args.log_level)
-  ctx_bin = _generate_ctx_bin(args.model, args.soc_model)
-  ctx_bin_info = _get_ctx_bin_info(ctx_bin, args.qairt_sdk)
-  ADB_CMD = _get_adb_cmd(args.hostname, args.serial)
+def main(argv):
+  if len(argv) > 1:
+    raise app.UsageError("Too many command-line arguments.")
+
+  working_dir = os.environ.get("BUILD_WORKING_DIRECTORY")
+  if working_dir:
+    logging.info("Changing working directory to %s", working_dir)
+    os.chdir(working_dir)
+
+  qairt_sdk = _QAIRT_SDK.value
+  if qairt_sdk:
+    qairt_sdk = Path(qairt_sdk)
+  else:
+    if "LITERT_QAIRT_SDK" in os.environ:
+      qairt_sdk = Path(os.environ["LITERT_QAIRT_SDK"]) / "latest"
+    else:
+      workspace_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+      if workspace_dir:
+        qairt_sdk = Path(workspace_dir) / "third_party" / "qairt" / "latest"
+      else:
+        qairt_sdk = _WORKSPACE_ROOT / "third_party" / "qairt" / "latest"
+
+  os.makedirs(_OUTPUT_DIR.value, exist_ok=True)
+
+  ctx_bin = _generate_ctx_bin(Path(_MODEL.value), _SOC_MODEL.value, qairt_sdk)
+  ctx_bin_info = _get_ctx_bin_info(str(ctx_bin), qairt_sdk)
+  adb_cmd = _get_adb_cmd(_HOSTNAME.value, _SERIAL.value)
+
   for index, _ in enumerate(ctx_bin_info["graphs"]):
     _generate_zero_inputs(ctx_bin_info, index)
     _run_ctx_bin(
-        ADB_CMD,
-        ctx_bin,
-        args.htp_arch,
-        args.qairt_sdk,
+        adb_cmd,
+        str(ctx_bin),
+        _HTP_ARCH.value,
+        qairt_sdk,
         index,
         len(ctx_bin_info["graphs"]),
     )
-    profiling_output_dir = Path(args.output_dir) / f"qnn_partition_{index}"
+    profiling_output_dir = Path(_OUTPUT_DIR.value) / f"qnn_partition_{index}"
     _generate_profiler_output(
-        ADB_CMD,
+        adb_cmd,
         f"qnn_partition_{index}",
-        profiling_output_dir,
-        args.qairt_sdk,
+        str(profiling_output_dir),
+        qairt_sdk,
     )
     logging.info("Profiling data for qnn_partition_%d is generated.", index)
+
   os.remove(ctx_bin)
-  logging.info("Success! Profiling data is in %s", args.output_dir)
+  logging.info("Success! Profiling data is in %s", _OUTPUT_DIR.value)
+
+
+if __name__ == "__main__":
+  app.run(main)
