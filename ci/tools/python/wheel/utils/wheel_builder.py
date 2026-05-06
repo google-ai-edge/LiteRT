@@ -171,6 +171,24 @@ if _sys.platform == "win32" and hasattr(_os, "add_dll_directory"):
             _os.add_dll_directory(_ov_libs)
     except ImportError:
         pass
+    # Register vendor SDK data dirs so in-process dispatch DLLs can resolve
+    # vendor-shipped dependencies (e.g. openvino_intel_npu_compiler.dll).
+    # The SDK packages also self-register on import; this loop covers the
+    # case where the user imports ai_edge_litert before the SDK.
+    for _sdk_mod in ("ai_edge_litert_sdk_intel",):
+        try:
+            _sdk = __import__(_sdk_mod)
+        except ImportError:
+            continue
+        try:
+            _sdk_dir = _sdk.path_to_sdk_libs()
+        except AttributeError:
+            continue
+        if _sdk_dir and _os.path.isdir(str(_sdk_dir)):
+            try:
+                _os.add_dll_directory(str(_sdk_dir))
+            except OSError:
+                pass
 else:
     _pkg_dir = _os.path.dirname(_os.path.abspath(__file__))
     _litert_so = _os.path.join(_pkg_dir, "libLiteRt.so")
