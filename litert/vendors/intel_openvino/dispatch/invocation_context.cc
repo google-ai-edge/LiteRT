@@ -131,6 +131,18 @@ LiteRtDispatchInvocationContextT::Create(
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs,
     const IntelOpenVinoOptions* intel_openvino_opts) {
+  if (!exec_bytecode_buffer) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Null bytecode buffer");
+  }
+  if (!exec_bytecode_buffer->base_addr) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Null bytecode base address");
+  }
+  if (exec_bytecode_buffer->offset > exec_bytecode_buffer->size) {
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "Bytecode buffer offset exceeds size");
+  }
   const void* exec_bytecode_ptr =
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;
@@ -231,6 +243,10 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (graph_input_index < 0 || graph_input_index >= num_inputs_) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Input index out of range");
+  }
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
@@ -241,6 +257,10 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (graph_output_index < 0 || graph_output_index >= num_outputs_) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Output index out of range");
+  }
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
