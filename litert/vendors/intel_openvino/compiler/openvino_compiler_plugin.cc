@@ -1,4 +1,4 @@
-// Copyright 22026 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <streambuf>
@@ -135,30 +136,95 @@ constexpr LiteRtOpCode kSupportedOps[] = {
 };
 // clang format on
 
-// When exporting a model via the OpenVINO NPU plugin, standard string streams
-// might encounter a 32-bit std::streamsize limitation on specific platforms,
-// which restricts model export capacity. This custom output stream buffer
-// bypasses that limitation, enabling support for larger models.
+// When exporting a model via the OpenVINO, standard string streams might
+// encounter a 32-bit std::streamsize limitation on specific platforms, which
+// restricts model export capacity. This custom output stream buffer bypasses
+// that limitation, enabling support for larger models.
 class CustomOStreamBuf : public std::streambuf {
  public:
-  CustomOStreamBuf() = default;
+  CustomOStreamBuf() : pos_(0) {}
   std::string drain_str() { return std::move(target_); }
 
  protected:
   std::streamsize xsputn(const char* s, std::streamsize n) override {
-    target_.append(s, n);
+    if (n <= 0) {
+      return 0;
+    }
+    const size_t write_size = static_cast<size_t>(n);
+    if (write_size > target_.size() - pos_) {
+      target_.resize(pos_ + write_size);
+    }
+    std::memcpy(&target_[pos_], s, write_size);
+    pos_ += write_size;
     return n;
   }
   int_type overflow(int_type ch) override {
     if (ch != traits_type::eof()) {
-      target_.push_back(static_cast<char>(ch));
+      char c = static_cast<char>(ch);
+      if (pos_ >= target_.size()) {
+        target_.push_back(c);
+      } else {
+        target_[pos_] = c;
+      }
+      ++pos_;
       return ch;
     }
     return traits_type::eof();
   }
 
+  pos_type seekoff(off_type off, std::ios_base::seekdir dir,
+                   std::ios_base::openmode which) override {
+    // This buffer is output-only; reject seeks for other directions.
+    if (!(which & std::ios_base::out)) {
+      return pos_type(off_type(-1));
+    }
+
+    if (target_.size() >
+        static_cast<size_t>(std::numeric_limits<off_type>::max())) {
+      return pos_type(off_type(-1));
+    }
+
+    off_type base_pos = 0;
+    switch (dir) {
+      case std::ios_base::beg:
+        base_pos = 0;
+        break;
+      case std::ios_base::cur:
+        if (pos_ > static_cast<size_t>(std::numeric_limits<off_type>::max())) {
+          return pos_type(off_type(-1));
+        }
+        base_pos = static_cast<off_type>(pos_);
+        break;
+      case std::ios_base::end:
+        base_pos = static_cast<off_type>(target_.size());
+        break;
+      default:
+        return pos_type(off_type(-1));
+    }
+
+    // Guard against signed overflow when computing base_pos + off.
+    if ((off > 0 && base_pos > std::numeric_limits<off_type>::max() - off) ||
+        (off < 0 && base_pos < std::numeric_limits<off_type>::min() - off)) {
+      return pos_type(off_type(-1));
+    }
+
+    const off_type new_pos = base_pos + off;
+    // Keep position within [0, target_.size()] for valid write seeks.
+    if (new_pos < 0 || static_cast<size_t>(new_pos) > target_.size()) {
+      return pos_type(off_type(-1));
+    }
+
+    pos_ = static_cast<size_t>(new_pos);
+    return pos_type(pos_);
+  }
+
+  pos_type seekpos(pos_type pos, std::ios_base::openmode which) override {
+    return seekoff(off_type(pos), std::ios_base::beg, which);
+  }
+
  private:
   std::string target_;
+  size_t pos_;
 };
 }  // namespace
 
