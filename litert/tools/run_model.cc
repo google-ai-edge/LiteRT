@@ -115,6 +115,10 @@ litert::HwAcceleratorSet GetAccelerator() {
 Expected<Environment> GetEnvironment() {
   std::vector<litert::EnvironmentOptions::Option> environment_options = {};
 
+  environment_options.push_back(litert::EnvironmentOptions::Option{
+      litert::EnvironmentOptions::Tag::kAutoRegisterAccelerators,
+      static_cast<int64_t>(GetAccelerator().value)});
+
   const auto dispatch_library_dir = absl::GetFlag(FLAGS_dispatch_library_dir);
   if (!dispatch_library_dir.empty()) {
     environment_options.push_back(litert::EnvironmentOptions::Option{
