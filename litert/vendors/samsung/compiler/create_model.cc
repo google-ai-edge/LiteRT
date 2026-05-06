@@ -37,24 +37,35 @@
 #include "litert/vendors/samsung/ai_litecore_manager.h"
 #include "litert/vendors/samsung/compiler/builders/argmax_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/batch_matmul_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/broadcastto_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cast_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/concat_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/conv3d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/dequantize_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gather_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/gathernd_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/gelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/hardswish_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/l2normalization_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/leakyrelu_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/logistic_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
 #include "litert/vendors/samsung/compiler/builders/pad_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/pool2d_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/quantize_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reduce_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/relu1_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/relu6_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/relu_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/relun1to1_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/reshape_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizebilinear_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/resizenearestneighbor_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/reversev2_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/rms_norm_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/select_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/selectv2_op_builder.h"
@@ -63,6 +74,7 @@
 #include "litert/vendors/samsung/compiler/builders/spacetodepth_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/split_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/strided_slice_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
@@ -302,6 +314,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflBatchMatmul:
         op_wrapper = BuildBatchMatMulOp(op);
         break;
+      case kLiteRtOpCodeTflBroadcastTo:
+        op_wrapper = BuildBroadcastToOp(op);
+        break;
       case kLiteRtOpCodeTflCast:
         op_wrapper = BuildCastOp(op);
         break;
@@ -314,6 +329,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflConv2d:
         op_wrapper = BuildConv2dOp(op);
         break;
+      case kLiteRtOpCodeTflConv3d:
+        op_wrapper = BuildConv3dOp(op);
+        break;
       case kLiteRtOpCodeTflCos:
         op_wrapper = BuildCosOp(op);
         break;
@@ -323,8 +341,14 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflDepthwiseConv2d:
         op_wrapper = BuildDepthwiseConv2dOp(op);
         break;
+      case kLiteRtOpCodeTflDequantize:
+        op_wrapper = BuildDequantizeOp(op);
+        break;
       case kLiteRtOpCodeTflDiv:
         op_wrapper = BuildDivOp(op);
+        break;
+      case kLiteRtOpCodeTflEmbeddingLookup:
+        op_wrapper = BuildEmbeddingLookupOp(op);
         break;
       case kLiteRtOpCodeTflEqual:
         op_wrapper = BuildEqualOp(op);
@@ -347,6 +371,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflGatherNd:
         op_wrapper = BuildGatherNdOp(op);
         break;
+      case kLiteRtOpCodeTflGelu:
+        op_wrapper = BuildGeluOp(op);
+        break;
       case kLiteRtOpCodeTflGreater:
         op_wrapper = BuildGreaterOp(op);
         break;
@@ -355,6 +382,12 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflHardSwish:
         op_wrapper = BuildHardSwishOp(op);
+        break;
+      case kLiteRtOpCodeTflL2Normalization:
+        op_wrapper = BuildL2NormalizationOp(op);
+        break;
+      case kLiteRtOpCodeTflLeakyRelu:
+        op_wrapper = BuildLeakyReluOp(op);
         break;
       case kLiteRtOpCodeTflLess:
         op_wrapper = BuildLessOp(op);
@@ -396,8 +429,20 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
       case kLiteRtOpCodeTflPow:
         op_wrapper = BuildPowOp(op);
         break;
+      case kLiteRtOpCodeTflQuantize:
+        op_wrapper = BuildQuantizeOp(op);
+        break;
       case kLiteRtOpCodeTflRelu:
         op_wrapper = BuildReLUOp(op);
+        break;
+      case kLiteRtOpCodeTflRelu0To1:
+        op_wrapper = BuildRelu1Op(op);
+        break;
+      case kLiteRtOpCodeTflReluN1To1:
+        op_wrapper = BuildReluN1To1(op);
+        break;
+      case kLiteRtOpCodeTflRelu6:
+        op_wrapper = BuildRelu6Op(op);
         break;
       case kLiteRtOpCodeTflReshape:
         op_wrapper = BuildReshapeOp(op);
@@ -413,6 +458,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflResizeNearestNeighbor:
         op_wrapper = BuildResizeNearestNeighborOp(op);
+        break;
+      case kLiteRtOpCodeTflReverseV2:
+        op_wrapper = BuildReverseV2Op(op);
         break;
       case kLiteRtOpCodeTflRsqrt:
         op_wrapper = BuildRsqrtOp(op);
@@ -452,6 +500,9 @@ Expected<std::vector<char>> CreateModel(AiLiteCoreManager::Ptr ai_lite_core,
         break;
       case kLiteRtOpCodeTflStridedSlice:
         op_wrapper = BuildStridedSliceOp(op);
+        break;
+      case kLiteRtOpCodeTflTanh:
+        op_wrapper = BuildTanhOp(op);
         break;
       case kLiteRtOpCodeTflTranspose:
         op_wrapper = BuildTransposeOp(op);

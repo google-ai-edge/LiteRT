@@ -21,19 +21,36 @@ namespace litert::samsung {
 
 constexpr int kOutIndex = 0;
 
-Expected<OpWrapper> BuildGatherOp(const Op& op) {
+Expected<OpWrapper> BuildGeneralGatherOp(
+    const Op& op, const std::vector<int32_t>& input_order, int32_t& axis) {
   OpWrapper op_wrapper("GATHER");
-  for (const auto& input : op.Inputs()) {
-    op_wrapper.AddInput(input);
+  for (const auto& index : input_order) {
+    op_wrapper.AddInput(op.Inputs()[index]);
   }
   op_wrapper.AddOutput(op.Outputs()[kOutIndex]);
-
-  int32_t axis = 0, batch_dims = 0;
-  LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(op.Get(), &axis));
-  LITERT_RETURN_IF_ERROR(LiteRtGetGatherBatchDimsOption(op.Get(), &batch_dims));
   op_wrapper.AddParam("axis", axis);
-  op_wrapper.AddParam("batch_dims", batch_dims);
 
   return op_wrapper;
 }
+
+Expected<OpWrapper> BuildGatherOp(const Op& op) {
+  int32_t axis = 0;
+  std::vector<int32_t> gather_input_order = {0, 1};
+
+  LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(op.Get(), &axis));
+  LITERT_ASSIGN_OR_RETURN(auto op_wrapper,
+                          BuildGeneralGatherOp(op, gather_input_order, axis));
+
+  return op_wrapper;
+}
+
+Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op) {
+  int32_t axis = 0;
+  std::vector<int32_t> embeding_lookup_input_order = {1, 0};
+  LITERT_ASSIGN_OR_RETURN(
+      auto op_wrapper,
+      BuildGeneralGatherOp(op, embeding_lookup_input_order, axis));
+  return op_wrapper;
+}
+
 }  // namespace litert::samsung
