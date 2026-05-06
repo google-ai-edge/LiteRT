@@ -21,6 +21,8 @@
 namespace litert::samsung {
 
 Expected<OpWrapper> BuildGatherOp(const Op& op);
+
+Expected<OpWrapper> BuildEmbeddingLookupOp(const Op& op);
 }
 
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_GATHER_OP_BUILDER_H_

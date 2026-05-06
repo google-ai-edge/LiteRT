@@ -268,14 +268,14 @@ TEST(LiteRtAbortIfErrorTest, DoesntDieWithSuccessValues) {
 TEST(LiteRtAbortIfErrorTest, DiesWithErrorValue) {
   Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
+#ifndef NDEBUG
   EXPECT_DEATH(
       LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
-#ifndef NDEBUG
-      AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message"))
+      AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message")));
 #else
-      ""
+  EXPECT_DEATH(LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
+               "");
 #endif
-  );
 }
 
 TEST(LiteRtAssignOrAbortTest, WorksWithValidExpected) {
@@ -293,31 +293,36 @@ TEST(LiteRtAssignOrAbortTest, AllowsStructuredBindings) {
 TEST(LiteRtAssignOrAbortTest, DiesWithError) {
   Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
+#ifndef NDEBUG
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError),
-#ifndef NDEBUG
-      "Unexpected message"
+      "Unexpected message");
 #else
-      ""
+  EXPECT_DEATH(
+      LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError), "");
 #endif
-  );
 }
 
 TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
   Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(Status::kErrorInvalidArgument, "Unexpected message"));
+#ifndef NDEBUG
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
                              _ << "Error abort log"),
-#ifndef NDEBUG
-      AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message"))
+      AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message")));
 #else
-      ""
+  EXPECT_DEATH(
+      LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
+                             _ << "Error abort log"),
+      "");
 #endif
-  );
 }
 
 TEST(LiteRtErrorStatusBuilderTest, BacktraceWorks) {
+#if defined(LITERT_WINDOWS_OS)
+  GTEST_SKIP() << "Backtrace source locations are not available on Windows";
+#endif
   const int error_1_line = __LINE__ + 3;
   auto error_1 = []() -> Expected<void> {
     LITERT_RETURN_IF_ERROR(
