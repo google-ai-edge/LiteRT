@@ -31,7 +31,7 @@ import numpy as np
 
 import os # import gfile
 from litert.python.tools import mmap_utils
-from litert.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
+from tensorflow.lite.python import schema_py_generated as schema_fb  # pylint:disable=g-direct-tensorflow-import
 
 # Types imported from `schema_py_generated`.
 ActivationFunctionType = schema_fb.ActivationFunctionType

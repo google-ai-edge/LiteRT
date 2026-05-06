@@ -91,7 +91,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_tensor_buffer_wrapper",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "@org_tensorflow//third_party/py/numpy",
     ],
 )
 
@@ -104,7 +104,7 @@ py_library(
 #     # copybara:uncomment linking_mode = "static",
 #     deps = [
 #         ":tensor_buffer",
-#         "@org_tensorflow//third_party/py/numpy:headers",
+#         "@org_tensorflow//third_party/py/numpy",
 #     ],
 # )
 # copybara:uncomment_end
