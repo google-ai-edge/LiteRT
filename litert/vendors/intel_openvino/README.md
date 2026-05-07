@@ -117,12 +117,24 @@ under the installed `ai_edge_litert` package.
 
 ### 5. Run NPU Inference
 
+LiteRT supports two inference paths on Intel NPU:
+
+- **JIT** — load a raw `.tflite`, the compiler plugin partitions and compiles
+  supported ops for the NPU at `CompiledModel.from_file()` time. No AOT step
+  needed; ~250 ms extra first-run latency for a typical model.
+- **AOT-compiled** — load a `<model>_IntelOpenVINO_<SoC>_apply_plugin.tflite`
+  produced by step 4. Skips the partition/compile step at load time.
+
+The snippet below works for both; `Environment.create()` auto-discovers the
+Intel OV compiler plugin (JIT only) and dispatch library from the installed
+wheel.
+
 ```python
 from ai_edge_litert.compiled_model import CompiledModel
 from ai_edge_litert.hardware_accelerator import HardwareAccelerator
 
 model = CompiledModel.from_file(
-    "model.tflite",
+    "model.tflite",  # raw tflite (JIT) or ..._apply_plugin.tflite (AOT)
     hardware_accel=HardwareAccelerator.NPU | HardwareAccelerator.CPU,
 )
 
@@ -133,6 +145,66 @@ output_buffers = model.create_output_buffers(sig_idx)
 model.run_by_index(sig_idx, input_buffers, output_buffers)
 print("Fully accelerated:", model.is_fully_accelerated())
 ```
+
+#### Mixed-vendor wheels: pinning JIT to Intel OV
+
+The pip wheel ships compiler plugins for every registered vendor
+(`intel_openvino/`, `google_tensor/`, `mediatek/`, `qualcomm/`, `samsung/`).
+Auto-discovery picks the compiler plugin from the same vendor as the
+selected dispatch library, and today only Intel OV ships a dispatch
+library, so `CompiledModel.from_file(hardware_accel=NPU)` ends up on the
+Intel OV path by default.
+
+If you want to be explicit — or if a future wheel bundles additional
+dispatch libraries and changes the auto-discovery pick — pass the Intel OV
+directories by hand:
+
+```python
+from ai_edge_litert.environment import Environment
+from ai_edge_litert.compiled_model import CompiledModel
+from ai_edge_litert.hardware_accelerator import HardwareAccelerator
+from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend as ov
+
+env = Environment.create(
+    compiler_plugin_path=ov.get_compiler_plugin_dir(),   # JIT compiler
+    dispatch_library_path=ov.get_dispatch_dir(),          # runtime
+)
+model = CompiledModel.from_file(
+    "model.tflite",
+    hardware_accel=HardwareAccelerator.NPU | HardwareAccelerator.CPU,
+    environment=env,
+)
+```
+
+The runtime loads every shared library it finds in the given directory, so
+pointing at `vendors/intel_openvino/compiler/` loads only the Intel plugin;
+the Google Tensor / MediaTek / Qualcomm / Samsung plugins in sibling
+directories are never touched.
+
+For the CLI, the equivalent flags are:
+
+```bash
+DISPATCH_DIR=$(python3 -c 'from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend as ov; print(ov.get_dispatch_dir())')
+COMPILER_DIR=$(python3 -c 'from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend as ov; print(ov.get_compiler_plugin_dir())')
+
+litert-benchmark --model=model.tflite --use_npu \
+    --compiler_plugin_path=$COMPILER_DIR \
+    --dispatch_library_path=$DISPATCH_DIR
+```
+
+#### Confirming JIT actually ran
+
+When JIT succeeds, the log contains:
+
+```
+INFO: [compiler_plugin.cc:236] Loaded plugin at: .../libLiteRtCompilerPlugin_IntelOpenvino.so
+INFO: [compiler_plugin.cc:690] Partitioned subgraph<0>, selected N ops, from a total of N ops
+INFO: [compiled_model.cc:1006] JIT compilation changed model, reserializing...
+```
+
+If those lines are absent but `Fully accelerated: True` is still reported,
+the model was run on XNNPACK CPU fallback, not on the NPU — see the JIT
+troubleshooting row below.
 
 ### 6. Benchmark
 
@@ -269,6 +341,8 @@ bazel test \
 Issue                                                    | Fix
 -------------------------------------------------------- | ---
 AOT fails: `Device with "NPU" name is not registered`    | NPU compiler not fetched. Check `ai_edge_litert_sdk_intel.path_to_sdk_libs()` lists `libopenvino_intel_npu_compiler.so` / `.dll`. If empty, reinstall with network access, or set `LITERT_OV_OS_ID=ubuntu22`/`ubuntu24`.
+JIT runs on CPU instead of NPU (no `Partitioned subgraph` log, no `Loaded plugin` log, `Fully accelerated: True` still printed) | Compiler plugin was not discovered. Confirm `ov.get_compiler_plugin_dir()` returns a path under `ai_edge_litert/vendors/intel_openvino/compiler/`. If multiple vendor SDKs are installed, pass `compiler_plugin_path=ov.get_compiler_plugin_dir()` explicitly to `Environment.create()` (or `--compiler_plugin_path=...` to `litert-benchmark`).
+JIT fails: `Cannot load library .../openvino/libs/libopenvino_intel_npu_compiler.so` | The SDK sdist copies the NPU compiler to `openvino/libs/` on first `import ai_edge_litert_sdk_intel`. If the copy was skipped (readonly FS, missing `openvino`), reinstall `ai-edge-litert-sdk-intel` after `openvino` is installed, then `import ai_edge_litert` in a fresh process.
 `Level0 pfnCreate2 result: ZE_RESULT_ERROR_UNSUPPORTED_FEATURE` | Upgrade NPU driver to v1.32.1 (Linux).
 `/dev/accel/accel0` not found                            | `sudo dmesg \| grep -i vpu` to debug the driver; reboot after install.
 Permission denied on NPU                                 | `sudo gpasswd -a ${USER} render && newgrp render`.
