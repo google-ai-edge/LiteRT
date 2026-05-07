@@ -230,7 +230,7 @@ def create_environment(args, environment, environment_options):
       dispatch_path = os.path.dirname(dispatch_path)
     kwargs['dispatch_library_path'] = dispatch_path
 
-  return environment.create(environment_options(**kwargs))
+  return environment.create(options=environment_options(**kwargs))
 
 
 def create_model_options(args, options, cpu_options, hardware_accel):

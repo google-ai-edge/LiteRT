@@ -215,6 +215,15 @@ else:
     if _os.path.isfile(_litert_so):
         import ctypes as _ctypes
         _ctypes.CDLL(_litert_so, mode=_os.RTLD_LAZY | _ctypes.RTLD_GLOBAL)
+    # Import vendor SDKs so their __init__.py runs (which on Linux copies
+    # bundled libraries like libopenvino_intel_npu_compiler.so into their
+    # expected locations under openvino/libs/). Silent on ImportError since
+    # the SDK packages are optional extras.
+    for _sdk_mod in ("ai_edge_litert_sdk_intel",):
+        try:
+            __import__(_sdk_mod)
+        except ImportError:
+            pass
 """
 
 
