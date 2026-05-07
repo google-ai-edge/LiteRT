@@ -87,6 +87,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
+  auto convert_weights_on_gpu = params.Get<bool>("convert_weights_on_gpu");
   auto mediatek_nerun_pilot_version =
       params.Get<std::string>("mediatek_nerun_pilot_version");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
@@ -160,6 +161,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (enable_weight_sharing) {
       gpu_options.EnableConstantTensorSharing(true);
+    }
+    if (convert_weights_on_gpu) {
+      gpu_options.SetConvertWeightsOnGpu(true);
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");

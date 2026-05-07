@@ -254,6 +254,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("enable_weight_sharing",
                             BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("convert_weights_on_gpu",
+                            BenchmarkParam::Create<bool>(false));
     default_params.AddParam("result_file_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("model_runtime_info_output_file",
@@ -404,6 +406,10 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "input layers. Each item is separated by ':', and the item value "
         "consists of input layer name and range values (both low and high are "
         "inclusive) separated by ',', e.g. input1,1.0,2.0:input2,0,254"));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "enable_weight_sharing", &params_, "Whether to enable weight (constant tensor) sharing."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "convert_weights_on_gpu", &params_, "Whether to convert weights on the GPU."));
     return flags;
   }
 
