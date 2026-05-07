@@ -264,6 +264,10 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
 LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
                             const TflPackedSubgraph& tfl_subgraph,
                             LiteRtSubgraphT& litert_subgraph) {
+  if (tfl_subgraph.name() != nullptr) {
+    litert_subgraph.SetName(tfl_subgraph.name()->str());
+  }
+
   // Unpack tensors.
   const auto num_tensors = tfl_subgraph.tensors()->size();
   for (auto i = 0; i < num_tensors; ++i) {

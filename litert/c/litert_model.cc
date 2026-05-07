@@ -375,6 +375,14 @@ LiteRtStatus LiteRtGetSignatureOutputTensorByIndex(LiteRtSignature signature,
 // Subgraph
 //
 
+LiteRtStatus LiteRtGetSubgraphName(LiteRtSubgraph subgraph, const char** name) {
+  if (!subgraph || !name) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *name = subgraph->Name().data();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetNumSubgraphInputs(LiteRtSubgraph subgraph,
                                         LiteRtParamIndex* num_inputs) {
   if (!subgraph || !num_inputs) {

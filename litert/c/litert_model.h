@@ -134,6 +134,10 @@ LiteRtStatus LiteRtGetOpOutput(LiteRtOp op, LiteRtParamIndex output_index,
 // LiteRtSubgraph
 //
 
+// Get the string name associated with this subgraph. This is an optional
+// attribute and if not set will return a zero-length string.
+LiteRtStatus LiteRtGetSubgraphName(LiteRtSubgraph subgraph, const char** name);
+
 // Get input tensors for given subgraph.
 //
 // Note: The returned LiteRtTensor is only valid during the LiteRtModel's

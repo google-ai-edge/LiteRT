@@ -315,6 +315,7 @@ LiteRtGetStridedSliceOffsetOption
 LiteRtGetStridedSliceShrinkAxisMaskOption
 LiteRtGetSubFusedActivationOption
 LiteRtGetSubgraphInput
+LiteRtGetSubgraphName
 LiteRtGetSubgraphOp
 LiteRtGetSubgraphOutput
 LiteRtGetSumKeepDimsOption
