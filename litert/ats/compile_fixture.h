@@ -17,10 +17,10 @@
 
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 
+#include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/capture_common.h"
 #include "litert/ats/common.h"
@@ -37,6 +37,7 @@
 namespace litert::testing {
 
 using internal::ApplyPlugin;
+using internal::ApplyPluginsResult;
 using internal::CompilerPlugin;
 using internal::IsDir;
 using ::testing::RegisterTest;
@@ -66,9 +67,8 @@ class AtsCompileTest : public ::testing::Test {
 
   void TestBody() override {
     auto start = cap_.compilation_time.Start();
-    auto stat =
-        ApplyPlugin(conf_.Plugin()->get(), graph_->Graph(), conf_.SocModel());
-
+    ApplyPluginsResult result;
+    auto stat = ApplyPlugin(conf_.Plugin()->get(), graph_->Graph(), result);
     cap_.compilation_time.Stop(start);
     cap_.compilation_detail.SetFields(conf_, graph_->Graph(), !stat.HasValue());
     ASSERT_TRUE(stat);
