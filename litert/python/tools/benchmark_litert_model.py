@@ -230,7 +230,7 @@ def create_environment(args, environment, environment_options):
       dispatch_path = os.path.dirname(dispatch_path)
     kwargs['dispatch_library_path'] = dispatch_path
 
-  return environment.create(environment_options(**kwargs))
+  return environment.create(options=environment_options(**kwargs))
 
 
 def create_model_options(args, options, cpu_options, hardware_accel):
@@ -399,7 +399,7 @@ def run_benchmark(args):
     fill_random_input(buf, input_details[name])
 
   total_input_bytes = 0
-  for name, detail in input_details.items():
+  for _, detail in input_details.items():
     shape = detail.get('shape', [1])
     dtype = get_numpy_dtype(detail.get('dtype', 'float32'))
     total_input_bytes += int(np.prod(shape)) * np.dtype(dtype).itemsize

@@ -52,6 +52,7 @@ RUN apt-get update && apt-get install -y \
     clang-18 \
     libc++-dev \
     libc++abi-dev \
+    patchelf \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
