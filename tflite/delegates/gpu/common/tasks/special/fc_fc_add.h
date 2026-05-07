@@ -25,6 +25,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/model.h"
 #include "tflite/delegates/gpu/common/operations.h"
