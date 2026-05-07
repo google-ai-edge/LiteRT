@@ -39,6 +39,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/dynamic_loading.h"
+#include "litert/core/filesystem.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
@@ -163,7 +164,15 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  auto lib_system_or = SharedLibrary::Load(path, GetRtldFlags());
+  std::string resolved_path;
+  if (shared_library_dir_) {
+    resolved_path = litert::internal::Join({*shared_library_dir_, path});
+  } else {
+    resolved_path = std::string(path);
+  }
+  LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
+             resolved_path.c_str());
+  auto lib_system_or = SharedLibrary::Load(resolved_path, GetRtldFlags());
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
@@ -432,6 +441,7 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::OpWrapper& op) {
 LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
                               const ::qnn::Options& options) {
+  shared_library_dir_ = shared_library_dir;
   options_ = options;
   auto backend_type = options_.GetBackendType();
 

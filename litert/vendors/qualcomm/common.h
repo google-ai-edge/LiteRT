@@ -15,12 +15,16 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
 
+#include <string>
+#include <vector>
+
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -108,8 +112,11 @@ inline LiteRtStatus LegalizeElementType(litert::ElementType litert_type,
 }
 #endif  // __cplusplus
 
+#ifdef __cplusplus
+
 inline LiteRtStatus InitQnnOptions(
     ::qnn::Options& qnn_options,
+
     litert::qualcomm::QualcommOptions& qualcomm_options) {
   qnn_options.SetLogLevel(
       static_cast<::qnn::LogLevel>(qualcomm_options.GetLogLevel()));
@@ -120,6 +127,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetBackendType(
       static_cast<::qnn::BackendType>(qualcomm_options.GetBackend()));
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
+  qnn_options.SetEnableJustInTime(qualcomm_options.GetEnableJustInTime());
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
   qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());
   qnn_options.SetHtpPPoint(qualcomm_options.GetHtpPPoint());
@@ -143,5 +151,22 @@ inline LiteRtStatus InitQnnOptions(
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
 }
+
+namespace litert {
+namespace qnn {
+
+// Struct used as the JIT Handle, passing necessary context and tensor
+// metadata from the compiler plugin to the runtime dispatcher.
+struct QnnJitGraph {
+  Qnn_ContextHandle_t context_handle;
+  std::string graph_name;
+  std::vector<::qnn::TensorWrapper> inputs;
+  std::vector<::qnn::TensorWrapper> outputs;
+};
+
+}  // namespace qnn
+}  // namespace litert
+
+#endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
