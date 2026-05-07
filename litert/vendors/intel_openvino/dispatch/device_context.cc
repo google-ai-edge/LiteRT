@@ -15,6 +15,7 @@
 
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #if __ANDROID__
@@ -46,8 +47,9 @@
 #endif
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create() {
-  return Ptr(new LiteRtDispatchDeviceContextT());
+LiteRtDispatchDeviceContextT::Create(
+    const LiteRtRuntimeContext* runtime_context) {
+  return Ptr(new LiteRtDispatchDeviceContextT(runtime_context));
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -113,25 +115,29 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   LiteRtTensorBufferType tensor_buffer_type;
 
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type),
+      runtime_context_->get_tensor_buffer_type(tensor_buffer,
+                                               &tensor_buffer_type),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer type"));
 
   size_t tensor_buffer_size;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
+      runtime_context_->get_tensor_buffer_size(tensor_buffer,
+                                               &tensor_buffer_size),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer size"));
 
   size_t tensor_buffer_offset;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset),
+      runtime_context_->get_tensor_buffer_offset(tensor_buffer,
+                                                 &tensor_buffer_offset),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer offset"));
 
   LiteRtRankedTensorType tensor_type;
   LITERT_RETURN_IF_ERROR(
-      LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type),
+      runtime_context_->get_tensor_buffer_tensor_type(tensor_buffer,
+                                                      &tensor_type),
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get tensor buffer's type"));
   LITERT_RETURN_IF_ERROR(
@@ -143,8 +149,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     case kLiteRtTensorBufferTypeOpenVINOTensorBuffer: {
       HwMemoryHandle hw_memory_handle;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferCustomTensorBufferHandle(tensor_buffer,
-                                                        &hw_memory_handle),
+          runtime_context_->get_tensor_buffer_custom_tensor_buffer_handle(
+              tensor_buffer, &hw_memory_handle),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get OpenVINO tensor buffer."));
       OpenVinoTensorBuffer* custom_tensor_buffer =
@@ -164,8 +170,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       int buffer_fd;
       void* buffer_host_addr;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &buffer_host_addr,
-                                            &buffer_fd),
+          runtime_context_->get_tensor_buffer_dma_buf_buffer(
+              tensor_buffer, &buffer_host_addr, &buffer_fd),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get DMA-BUF buffer"));
       auto context = getCore()
@@ -195,7 +201,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
           litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
       AHardwareBuffer* ahwb;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb),
+          runtime_context_->get_tensor_buffer_ahwb(tensor_buffer, &ahwb),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get LiteRT Tensor Buffer for AHWB"));
 

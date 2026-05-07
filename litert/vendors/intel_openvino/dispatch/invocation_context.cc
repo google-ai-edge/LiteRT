@@ -29,6 +29,7 @@
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -207,9 +208,10 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
   }
 
   LiteRtTensorBufferRequirements requirements;
-  auto status = LiteRtCreateTensorBufferRequirements(
-      num_supported_tensor_buffer_types, supported_tensor_buffer_types,
-      *buffer_size, 0, /*strides=*/nullptr, &requirements);
+  auto status =
+      device_context_.runtime_context()->create_tensor_buffer_requirements(
+          num_supported_tensor_buffer_types, supported_tensor_buffer_types,
+          *buffer_size, 0, /*strides=*/nullptr, &requirements);
   if (status != kLiteRtStatusOk)
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "Failed to get buffer requirements");

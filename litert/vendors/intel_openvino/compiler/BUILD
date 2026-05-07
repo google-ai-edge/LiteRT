@@ -173,9 +173,12 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":decoder",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/intel_openvino:ov_utils",
         "@intel_openvino//:openvino",

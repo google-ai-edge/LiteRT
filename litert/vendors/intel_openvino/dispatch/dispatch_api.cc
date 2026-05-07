@@ -16,21 +16,15 @@
 #include "openvino/core/except.hpp"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_logging_helper.h"
+#include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
-#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
@@ -105,9 +99,10 @@ LiteRtStatus LockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info,
 LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
                                 LiteRtEnvironment env, LiteRtOptions options) {
   LiteRtEnvironmentOptions environment_options;
-  if (LiteRtGetEnvironmentOptions(env, &environment_options) ==
+  if (runtime_context->get_environment_options(env, &environment_options) ==
       kLiteRtStatusOk) {
-    LiteRtPropagateMinLoggerSeverity(environment_options);
+    LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
+                                                       environment_options);
   }
 
   ov::Core core;
@@ -172,7 +167,8 @@ LiteRtStatus DispatchDeviceContextCreate(
     const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
   try {
-    if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
+    if (auto context = LiteRtDispatchDeviceContextT::Create(runtime_context);
+        context) {
       *device_context = context->release();
       return kLiteRtStatusOk;
     } else {

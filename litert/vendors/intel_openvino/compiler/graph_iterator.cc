@@ -23,11 +23,34 @@
 
 #include "openvino/core/type/element_type.hpp"
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
 namespace litert {
 namespace openvino {
+
+namespace {
+
+LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
+                              std::vector<int64_t>& ov_shape_vec) {
+  if (litert_tensor.TypeId() != kLiteRtRankedTensorType)
+    return kLiteRtStatusErrorInvalidArgument;
+
+  LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
+                          litert_tensor.RankedTensorType());
+
+  const auto tensor_layout = ranked_tensor_type.Layout();
+  ov_shape_vec.resize(tensor_layout.Rank());
+  for (int i = 0; i < ov_shape_vec.size(); i++)
+    ov_shape_vec[i] = tensor_layout.Dimensions()[i];
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
 
 size_t GraphIteratorDelegate::size() const {
   return iterator_indices_.input_index_ + iterator_indices_.output_index_ +
