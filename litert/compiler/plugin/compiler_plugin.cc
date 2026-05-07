@@ -171,6 +171,8 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
                    result.register_all_transformations);
   RESOLVE_API_FUNC(kLiteRtCompilerPluginCheckCompilerCompatibility,
                    result.check_compiler_compatibility);
+  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSDKVersion,
+                   result.get_compiler_plugin_sdk_version);
 
   return kLiteRtStatusOk;
 }
@@ -351,6 +353,19 @@ Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
   LITERT_RETURN_IF_ERROR(plugin_api_.get_compiler_plugin_supported_hardware(
       plugin_handle_, &supported_hardware));
   return supported_hardware;
+}
+
+Expected<std::string> CompilerPlugin::SdkVersion() const {
+  if (plugin_api_.get_compiler_plugin_sdk_version == nullptr) {
+    return std::string("");
+  }
+  const char* sdk_version = nullptr;
+  LITERT_RETURN_IF_ERROR(plugin_api_.get_compiler_plugin_sdk_version(
+      plugin_handle_, &sdk_version));
+  if (sdk_version == nullptr) {
+    return std::string("");
+  }
+  return std::string(sdk_version);
 }
 
 Expected<void> CompilerPlugin::RegisterAllTransformations() {

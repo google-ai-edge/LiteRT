@@ -208,6 +208,17 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (compiler_plugin == nullptr || sdk_version == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // No-op implementation for Intel OpenVINO plugin.
+  // TODO: Add the SDK version to the plugin.
+  *sdk_version = "";
+  return kLiteRtStatusOk;
+}
+
 // Compiled Result Definition
 /// \brief Define storage of compiled result object for OV compiler plugin
 struct LiteRtCompiledResultT {

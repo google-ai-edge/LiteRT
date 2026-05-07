@@ -115,6 +115,17 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (!compiler_plugin || !sdk_version) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // Example implementation returning a mock version.
+  static const char* kMockSdkVersion = "1.0.0-example";
+  *sdk_version = kMockSdkVersion;
+  return kLiteRtStatusOk;
+}
+
 //
 // Compiled Result Definition
 //

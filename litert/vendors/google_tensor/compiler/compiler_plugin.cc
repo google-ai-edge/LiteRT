@@ -334,6 +334,18 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version) {
+  if (compiler_plugin == nullptr || sdk_version == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "%s", "compiler_plugin or sdk_version is nullptr");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // No-op implementation for Google Tensor plugin.
+  // TODO: Add the SDK version to the plugin.
+  *sdk_version = "";
+  return kLiteRtStatusOk;
+}
+
 //
 // Compiled Result Definition
 //

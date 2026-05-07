@@ -79,6 +79,11 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     LiteRtCompilerPlugin compiler_plugin, LiteRtParamIndex soc_model_idx,
     const char** soc_model_name);
 
+// Gets the SDK version of the vendor's compiler plugin. The memory
+// associated with the returned version string is owned by the plugin.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
+    LiteRtCompilerPlugin compiler_plugin, const char** sdk_version);
+
 // Select desired ops for compilation. This will only be called once
 // per subgraph, plugins should select all supportable ops.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginPartition(
