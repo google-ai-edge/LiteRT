@@ -65,9 +65,54 @@ class GpuOptions {
     return LrtGetGpuOptionsIdentifier();
   }
 
+  /// @brief Sets whether to enable constant tensor sharing.
+  /// This feature enables sharing of constant tensors (weights) between
+  /// subgraphs. Internally, it manages constant tensor separately with
+  /// SharedMemoryManager.
+  /// @note: This feature has the following trade-offs:
+  /// The benefit is reducing additional memory allocation
+  /// for these constant tensors (by leveraging mmap and madvise behavior) even
+  /// though tensors are not shared with other subgraphs.
+  /// The downside is the performance penalty due to external tensor binding
+  /// APIs.
   LiteRtStatus EnableConstantTensorSharing(bool enabled) {
     return LrtSetGpuOptionsConstantTensorsSharing(options_, enabled);
   }
+
+  /// @brief Sets whether to madvise original shared tensors.
+  /// When the above constant tensor sharing is enabled, this option controls
+  /// whether to madvise the original shared tensors. By default, the madvising
+  /// behavior is enabled but you can disable it with this option.
+  LiteRtStatus SetMadviseOriginalSharedTensors(
+      bool madvise_original_shared_tensors) {
+    return LrtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+        options_, madvise_original_shared_tensors);
+  }
+
+  /// @brief Sets whether to convert weights on the GPU.
+  /// LiteRT GPU Accelerator uses different memory layout for constant tensors
+  /// (weights). So there is a step to convert weights to the GPU specific
+  /// layout. By default, the conversion is done on the CPU. Enabling this
+  /// option will convert weights on the GPU. Enabling this option will reduce
+  /// the CPU memory usage but increase the GPU memory usage.
+  LiteRtStatus SetConvertWeightsOnGpu(bool convert_weights_on_gpu) {
+    return LrtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+        options_, convert_weights_on_gpu);
+  }
+
+  /// @brief Wait for weights conversion on GPU complete.
+  /// When the above `SetConvertWeightsOnGpu` is enabled, this option controls
+  /// whether to wait for weights conversion on GPU complete. By default, the
+  /// conversion is done asynchronously and the control is returned immediately.
+  /// Enabling this option will block the execution until all the weights
+  /// conversion on GPU is complete.
+  /// @note This is an experimental feature and should only be used when
+  /// converting weights on GPU.
+  LiteRtStatus WaitForWeightsConversionComplete(bool wait) {
+    return LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
+        options_, wait);
+  }
+
   LiteRtStatus EnableInfiniteFloatCapping(bool enabled) {
     return LrtSetGpuOptionsInfiniteFloatCapping(options_, enabled);
   }
@@ -164,12 +209,6 @@ class GpuOptions {
     return {};
   }
 
-  LiteRtStatus SetMadviseOriginalSharedTensors(
-      bool madvise_original_shared_tensors) {
-    return LrtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
-        options_, madvise_original_shared_tensors);
-  }
-
   /// @brief Sets the number of steps to prepare WebGPU or Vulkan command
   /// buffers in advance.
   ///
@@ -234,13 +273,6 @@ class GpuOptions {
         options_, num_threads_to_compile);
   }
 
-  /// @brief Sets whether to convert weights on the GPU.
-  /// @note This is an experimental feature.
-  LiteRtStatus SetConvertWeightsOnGpu(bool convert_weights_on_gpu) {
-    return LrtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-        options_, convert_weights_on_gpu);
-  }
-
   /// @brief Sets a hint that the graph will be fully delegated to a single
   /// delegate.
   LiteRtStatus SetHintFullyDelegatedToSingleDelegate(
@@ -253,14 +285,6 @@ class GpuOptions {
   LiteRtStatus DisableShaderOptimization(bool disable) {
     return LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
         options_, disable);
-  }
-
-  /// @brief Wait for weights conversion on GPU complete.
-  /// @note This is an experimental feature and should only be used when
-  /// converting weights on GPU.
-  LiteRtStatus WaitForWeightsConversionComplete(bool wait) {
-    return LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
-        options_, wait);
   }
 
   /// @brief Cache only the compiled programs. If true, only the compiled
